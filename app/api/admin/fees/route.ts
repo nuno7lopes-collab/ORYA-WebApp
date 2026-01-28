@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getPlatformAndStripeFees, setPlatformFees, setStripeBaseFees } from "@/lib/platformSettings";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(_req: NextRequest) {
+async function _GET(_req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const { orya, stripe } = await getPlatformAndStripeFees();
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         orya,
@@ -21,15 +23,15 @@ export async function GET(_req: NextRequest) {
     );
   } catch (err) {
     console.error("[admin/fees] unexpected error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = await req.json();
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (updatesErrors.length > 0) {
-      return NextResponse.json({ ok: false, error: updatesErrors.join(", ") }, { status: 400 });
+      return jsonWrap({ ok: false, error: updatesErrors.join(", ") }, { status: 400 });
     }
 
     await Promise.all([
@@ -79,9 +81,11 @@ export async function POST(req: NextRequest) {
 
     const { orya, stripe } = await getPlatformAndStripeFees();
 
-    return NextResponse.json({ ok: true, orya, stripe }, { status: 200 });
+    return jsonWrap({ ok: true, orya, stripe }, { status: 200 });
   } catch (err) {
     console.error("[admin/fees] unexpected error on POST", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

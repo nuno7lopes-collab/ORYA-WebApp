@@ -48,7 +48,7 @@ describe("ops feed routes", () => {
     const res = await getInternal(req);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.data.items).toHaveLength(1);
+    expect(body.result.items).toHaveLength(1);
   });
 
   it("org feed isola por organizationId", async () => {
@@ -59,6 +59,6 @@ describe("ops feed routes", () => {
     const res = await getOrg(req);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.items[0].organizationId).toBe(10);
+    expect(body.result.items[0].organizationId).toBe(10);
   });
 });

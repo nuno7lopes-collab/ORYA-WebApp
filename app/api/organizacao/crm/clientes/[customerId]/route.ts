@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,13 +7,14 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { ConsentStatus, ConsentType, OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const MAX_NOTES = 50;
 const MAX_INTERACTIONS = 100;
 
-export async function GET(req: NextRequest, context: { params: Promise<{ customerId: string }> }) {
+async function _GET(req: NextRequest, context: { params: Promise<{ customerId: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -24,14 +26,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ custome
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const resolvedParams = await context.params;
@@ -67,7 +69,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ custome
     });
 
     if (!customer) {
-      return NextResponse.json({ ok: false, error: "Cliente não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Cliente não encontrado." }, { status: 404 });
     }
 
     const consents = await prisma.userConsent.findMany({
@@ -117,7 +119,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ custome
       },
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       customer: {
         id: customer.id,
@@ -150,9 +152,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ custome
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/crm/clientes/[customerId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar cliente." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar cliente." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

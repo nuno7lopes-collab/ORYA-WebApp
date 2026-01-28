@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -61,13 +63,13 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
-export async function PATCH(
+async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; imageId: string }> },
 ) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -75,28 +77,28 @@ export async function PATCH(
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return NextResponse.json({ ok: false, error: productId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
     }
 
     const imageId = parseId(resolvedParams.imageId);
     if (!imageId.ok) {
-      return NextResponse.json({ ok: false, error: imageId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: imageId.error }, { status: 400 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateImageSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -104,7 +106,7 @@ export async function PATCH(
       select: { id: true },
     });
     if (!product) {
-      return NextResponse.json({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
     }
 
     const existing = await prisma.storeProductImage.findFirst({
@@ -112,7 +114,7 @@ export async function PATCH(
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Imagem nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Imagem nao encontrada." }, { status: 404 });
     }
 
     const payload = parsed.data;
@@ -149,23 +151,23 @@ export async function PATCH(
       });
     });
 
-    return NextResponse.json({ ok: true, item: updated });
+    return jsonWrap({ ok: true, item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/organizacao/loja/products/[id]/images/[imageId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar imagem." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar imagem." }, { status: 500 });
   }
 }
 
-export async function DELETE(
+async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; imageId: string }> },
 ) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -173,22 +175,22 @@ export async function DELETE(
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return NextResponse.json({ ok: false, error: productId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
     }
 
     const imageId = parseId(resolvedParams.imageId);
     if (!imageId.ok) {
-      return NextResponse.json({ ok: false, error: imageId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: imageId.error }, { status: 400 });
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -196,7 +198,7 @@ export async function DELETE(
       select: { id: true },
     });
     if (!product) {
-      return NextResponse.json({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
     }
 
     const existing = await prisma.storeProductImage.findFirst({
@@ -204,17 +206,19 @@ export async function DELETE(
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Imagem nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Imagem nao encontrada." }, { status: 404 });
     }
 
     await prisma.storeProductImage.delete({ where: { id: imageId.id } });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/organizacao/loja/products/[id]/images/[imageId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover imagem." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover imagem." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

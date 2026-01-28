@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,6 +10,7 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, StoreOwnerType, StoreStatus } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -43,10 +45,10 @@ const updateStoreSchema = z.object({
   showOnProfile: z.boolean().optional(),
 });
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -59,16 +61,16 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return NextResponse.json({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
     }
 
     const store = await prisma.store.findFirst({
@@ -84,20 +86,20 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, store: store ? normalizeStore(store) : null });
+    return jsonWrap({ ok: true, store: store ? normalizeStore(store) : null });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/loja error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -110,16 +112,16 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return NextResponse.json({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
     }
 
     const existing = await prisma.store.findFirst({
@@ -136,7 +138,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (existing) {
-      return NextResponse.json({ ok: true, store: normalizeStore(existing) });
+      return jsonWrap({ ok: true, store: normalizeStore(existing) });
     }
 
     const created = await prisma.store.create({
@@ -160,20 +162,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, store: normalizeStore(created) }, { status: 201 });
+    return jsonWrap({ ok: true, store: normalizeStore(created) }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/loja error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar loja." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -186,12 +188,12 @@ export async function PATCH(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return NextResponse.json({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
     }
 
     const store = await prisma.store.findFirst({
@@ -199,13 +201,13 @@ export async function PATCH(req: NextRequest) {
       select: { id: true },
     });
     if (!store) {
-      return NextResponse.json({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateStoreSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -228,12 +230,15 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, store: normalizeStore(updated) });
+    return jsonWrap({ ok: true, store: normalizeStore(updated) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/organizacao/loja error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar loja." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);

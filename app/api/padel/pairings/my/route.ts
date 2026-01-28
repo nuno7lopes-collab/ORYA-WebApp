@@ -1,21 +1,23 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { Gender, PadelEligibilityType } from "@prisma/client";
 import { validateEligibility } from "@/domain/padelEligibility";
 import { validatePadelCategoryGender } from "@/domain/padelCategoryGender";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Lista pairings Padel v2 associados ao utilizador (captão ou slot preenchido).
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
@@ -175,9 +177,10 @@ export async function GET(req: NextRequest) {
         inviteEligibility,
       };
     });
-    return NextResponse.json({ ok: true, pairings: mapped }, { status: 200 });
+    return jsonWrap({ ok: true, pairings: mapped }, { status: 200 });
   } catch (err) {
     console.error("[padel/pairings/my] query error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

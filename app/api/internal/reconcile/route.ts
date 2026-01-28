@@ -2,16 +2,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { enqueueOperation } from "@/lib/operations/enqueue";
-import crypto from "crypto";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_STUCK_MINUTES = 15;
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const body = (await req.json().catch(() => null)) as { minutes?: number } | null;
@@ -41,7 +42,14 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     if (hasSummary) continue;
-    const dedupe = ev.stripePaymentIntentId ?? ev.purchaseId ?? crypto.randomUUID();
+    const dedupe = ev.stripePaymentIntentId ?? ev.purchaseId ?? null;
+    if (!dedupe) {
+      console.warn("[internal/reconcile] missing dedupe key for stuck payment event", {
+        paymentIntentId: ev.stripePaymentIntentId ?? null,
+        purchaseId: ev.purchaseId ?? null,
+      });
+      continue;
+    }
     await enqueueOperation({
       operationType: "FULFILL_PAYMENT",
       dedupeKey: dedupe,
@@ -66,5 +74,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ ok: true, requeued }, { status: 200 });
+  return jsonWrap({ ok: true, requeued }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

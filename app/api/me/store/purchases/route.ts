@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreAddressType, StoreOrderStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type StoreLabel = {
   id: number;
@@ -39,10 +41,10 @@ function buildStoreLabel(store: {
   };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -195,12 +197,13 @@ export async function GET(req: NextRequest) {
 
     const nextCursor = orders.length > limit ? orders[limit].createdAt.toISOString() : null;
 
-    return NextResponse.json({ ok: true, items, nextCursor });
+    return jsonWrap({ ok: true, items, nextCursor });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/purchases error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar compras da loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar compras da loja." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

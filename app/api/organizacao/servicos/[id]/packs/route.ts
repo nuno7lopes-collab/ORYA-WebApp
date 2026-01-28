@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -27,11 +29,11 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const serviceId = parseServiceId(resolved.id);
   if (!serviceId) {
-    return NextResponse.json({ ok: false, error: "Serviço inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
   }
 
   try {
@@ -40,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -50,18 +52,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const writeAccess = ensureOrganizationWriteAccess(organization, {
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return NextResponse.json({ ok: false, error: writeAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: writeAccess.error }, { status: 403 });
     }
 
     const service = await prisma.service.findFirst({
@@ -69,7 +71,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       select: { id: true },
     });
     if (!service) {
-      return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
     }
 
     const items = await prisma.servicePack.findMany({
@@ -78,21 +80,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       select: { id: true, quantity: true, packPriceCents: true, label: true, recommended: true, isActive: true },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/servicos/[id]/packs error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar packs." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar packs." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const serviceId = parseServiceId(resolved.id);
   if (!serviceId) {
-    return NextResponse.json({ ok: false, error: "Serviço inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
   }
 
   try {
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -111,11 +113,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
 
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const service = await prisma.service.findFirst({
@@ -123,7 +125,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       select: { id: true },
     });
     if (!service) {
-      return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -133,10 +135,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const recommended = Boolean(payload?.recommended);
 
     if (!Number.isFinite(quantityRaw) || quantityRaw <= 0) {
-      return NextResponse.json({ ok: false, error: "Quantidade inválida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Quantidade inválida." }, { status: 400 });
     }
     if (!Number.isFinite(packPriceCentsRaw) || packPriceCentsRaw <= 0) {
-      return NextResponse.json({ ok: false, error: "Preço inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Preço inválido." }, { status: 400 });
     }
 
     const pack = await prisma.servicePack.create({
@@ -166,12 +168,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userAgent,
     });
 
-    return NextResponse.json({ ok: true, pack }, { status: 201 });
+    return jsonWrap({ ok: true, pack }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/servicos/[id]/packs error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar pack." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar pack." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

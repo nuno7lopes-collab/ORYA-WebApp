@@ -1,37 +1,39 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { PadelPairingPaymentStatus, PadelPairingSlotStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const pairingId = readNumericParam(resolved?.id, req, "pairings");
-  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (pairingId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
     include: { slots: true },
   });
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.pairingStatus === "CANCELLED") {
-    return NextResponse.json({ ok: true, pairing }, { status: 200 });
+    return jsonWrap({ ok: true, pairing }, { status: 200 });
   }
 
   const partnerSlot = pairing.slots.find((s) => s.slot_role === "PARTNER" && s.slotStatus === "PENDING");
   if (!partnerSlot) {
-    return NextResponse.json({ ok: false, error: "NO_PENDING_INVITE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_PENDING_INVITE" }, { status: 400 });
   }
   if (partnerSlot.paymentStatus === "PAID") {
-    return NextResponse.json({ ok: false, error: "ALREADY_PAID" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "ALREADY_PAID" }, { status: 409 });
   }
 
   const profile = await prisma.profile.findUnique({
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       ));
 
   if (!isInviteTarget) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -84,5 +86,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   });
 
-  return NextResponse.json({ ok: true, pairing: updated }, { status: 200 });
+  return jsonWrap({ ok: true, pairing: updated }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

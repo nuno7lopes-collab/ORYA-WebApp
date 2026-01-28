@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { type PadelPointsTable } from "@/lib/padel/validation";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computePadelStandingsByGroup,
   normalizePadelPointsTable,
@@ -12,7 +14,7 @@ import {
 } from "@/domain/padel/standings";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -21,7 +23,7 @@ export async function GET(req: NextRequest) {
     const eventId = Number(req.nextUrl.searchParams.get("eventId"));
     const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
     if (!Number.isFinite(eventId)) {
-      return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
     }
     const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
 
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
       },
     });
     if (!event?.organizationId) {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
     const rateLimited = await enforcePublicRateLimit(req, {
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
         organizationId: event.organizationId,
         roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
       });
-      if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+      if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
     }
 
     const ruleSet = event.padelTournamentConfig?.ruleSetId
@@ -100,12 +102,13 @@ export async function GET(req: NextRequest) {
       ]),
     );
 
-    return NextResponse.json({ ok: true, standings });
+    return jsonWrap({ ok: true, standings });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("[padel/standings] error", err);
-    return NextResponse.json({ ok: false, error: "Erro ao gerar standings." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao gerar standings." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

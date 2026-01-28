@@ -1,15 +1,17 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET() {
+async function _GET() {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const requests = await prisma.follow_requests.findMany({
     where: { target_id: user.id },
@@ -33,5 +35,6 @@ export async function GET() {
     avatarUrl: req.profiles_follow_requests_requester?.avatarUrl ?? null,
   }));
 
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);

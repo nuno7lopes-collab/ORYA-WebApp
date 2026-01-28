@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { getClientIp } from "@/lib/auth/requestValidation";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 
 type Action = "ban" | "unban" | "hard_delete";
 
@@ -23,11 +25,11 @@ async function hardDeleteAuthUser(userId: string) {
   return { ok: false, note: null, error };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   // 1) Auth check
   const admin = await requireAdminUser();
   if (!admin.ok) {
-    return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+    return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
   }
   const ip = getClientIp(req);
   const userAgent = req.headers.get("user-agent");
@@ -48,11 +50,11 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     console.error("[admin/utilizadores/manage] parse error", err);
-    return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
   }
 
   if (!userId || !action) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "MISSING_PARAMS" },
       { status: 400 },
     );
@@ -70,7 +72,7 @@ export async function POST(req: NextRequest) {
         type: "admin_user_hard_delete",
         metadata: { actorUserId: admin.userId, ip, userAgent, note: authResult.note },
       });
-      return NextResponse.json({
+      return jsonWrap({
         ok: true,
         message: "Utilizador removido em definitivo.",
         note: authResult.note,
@@ -92,7 +94,7 @@ export async function POST(req: NextRequest) {
         type: "admin_user_ban",
         metadata: { actorUserId: admin.userId, ip, userAgent },
       });
-      return NextResponse.json({ ok: true, message: "Utilizador banido." });
+      return jsonWrap({ ok: true, message: "Utilizador banido." });
     }
 
     if (action === "unban") {
@@ -109,18 +111,19 @@ export async function POST(req: NextRequest) {
         type: "admin_user_unban",
         metadata: { actorUserId: admin.userId, ip, userAgent },
       });
-      return NextResponse.json({ ok: true, message: "Utilizador reativado." });
+      return jsonWrap({ ok: true, message: "Utilizador reativado." });
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "UNKNOWN_ACTION" },
       { status: 400 },
     );
   } catch (err) {
     console.error("[admin/utilizadores/manage] action error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 },
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

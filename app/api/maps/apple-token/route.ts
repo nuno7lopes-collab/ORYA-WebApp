@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { getAppleMapsConfig } from "@/lib/maps/appleConfig";
 import { mintAppleMapsToken } from "@/lib/maps/appleToken";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest) {
+async function _GET(_req: NextRequest) {
   try {
     const cfg = getAppleMapsConfig({ allowMissingInDev: true });
     if (!cfg) {
-      return NextResponse.json({ ok: false, provider: "osm" }, { status: 200 });
+      return jsonWrap({ ok: true, provider: "osm" }, { status: 200 });
     }
     const { token, expiresAt } = mintAppleMapsToken();
-    return NextResponse.json({ ok: true, token, expiresAt }, { status: 200 });
+    return jsonWrap({ ok: true, token, expiresAt }, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Apple Maps creds missing";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return jsonWrap(
+      { ok: false, errorCode: "APPLE_MAPS_TOKEN_FAILED", message, retryable: false },
+      { status: 500 },
+    );
   }
 }
+export const GET = withApiEnvelope(_GET);

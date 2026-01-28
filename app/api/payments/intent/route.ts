@@ -2,13 +2,15 @@
 // @deprecated Slice 4 cleanup: legacy payment intent endpoint (see cleanup plan).
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type Stripe from "stripe";
 import { createPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   EntitlementStatus,
   EntitlementType,
@@ -190,7 +192,7 @@ function intentError(
     extra?: Record<string, unknown>;
   },
 ) {
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: false,
       code,
@@ -232,7 +234,7 @@ async function hasExistingFreeEntryForUser(params: { eventId: number; userId: st
   });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (LEGACY_INTENT_DISABLED) {
     return intentError("LEGACY_INTENT_DISABLED", "Endpoint desativado.", { httpStatus: 410 });
   }
@@ -1474,7 +1476,7 @@ export async function POST(req: NextRequest) {
                 retryable: false,
               });
             }
-            return NextResponse.json(
+            return jsonWrap(
               {
                 ok: true,
                 reused: true,
@@ -1635,7 +1637,7 @@ export async function POST(req: NextRequest) {
           select: { id: true },
         });
         if (existingFreeTicket) {
-          return NextResponse.json({
+          return jsonWrap({
             ok: true,
             code: "OK",
             status: "OK",
@@ -1684,7 +1686,7 @@ export async function POST(req: NextRequest) {
           payload: outboxPayload,
         });
 
-        return NextResponse.json({
+        return jsonWrap({
           ok: true,
           code: "OK",
           status: "OK",
@@ -1771,7 +1773,7 @@ export async function POST(req: NextRequest) {
       });
 
       const createdTicketsCount = 0;
-      return NextResponse.json({
+      return jsonWrap({
         ok: true,
         code: "OK",
         status: "PROCESSING",
@@ -1904,7 +1906,7 @@ export async function POST(req: NextRequest) {
         if (isTerminal(paymentIntent?.status)) {
           // PI reaproveitado (provavelmente via idempotency) em estado terminal — gerar chave nova
           attempts += 1;
-          attemptKey = `${stripeIdempotencyKey}:retry:${attempts}:${Date.now()}`;
+          attemptKey = `${stripeIdempotencyKey}:retry:${attempts}`;
           paymentIntent = null as any;
           continue;
         }
@@ -1918,7 +1920,7 @@ export async function POST(req: NextRequest) {
 
         if (isIdem) {
           attempts += 1;
-          attemptKey = `${stripeIdempotencyKey}:idem:${attempts}:${Date.now()}`;
+          attemptKey = `${stripeIdempotencyKey}:idem:${attempts}`;
           console.warn("[payments/intent] Stripe idempotency mismatch, a recalcular com nova key", {
             purchaseId,
             intentFingerprint,
@@ -1952,7 +1954,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!paymentIntent.client_secret) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Não foi possível preparar o pagamento (client_secret em falta).",
@@ -1962,7 +1964,7 @@ export async function POST(req: NextRequest) {
         { status: 500 },
       );
     }
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       code: "OK",
       status: "REQUIRES_ACTION",
@@ -1991,9 +1993,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     logFinanceError("checkout", err, { route: "/api/payments/intent" });
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro ao criar PaymentIntent." },
       { status: 500 },
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

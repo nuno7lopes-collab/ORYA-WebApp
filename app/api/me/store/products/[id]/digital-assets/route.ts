@@ -9,6 +9,7 @@ import { env } from "@/lib/env";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const MAX_DIGITAL_BYTES = 100 * 1024 * 1024; // 100MB
 
@@ -63,7 +64,7 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
       return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
@@ -227,3 +228,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: false, error: "Erro ao criar ficheiro." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

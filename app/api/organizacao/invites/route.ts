@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
 
@@ -98,7 +100,7 @@ const serializeInvite = (
   };
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -107,7 +109,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const profile = await prisma.profile.findUnique({
@@ -191,9 +193,10 @@ export async function GET(req: NextRequest) {
         return serializeInvite(invite, viewer, { tokenMatches });
       });
 
-    return NextResponse.json({ ok: true, items }, { status: 200 });
+    return jsonWrap({ ok: true, items }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/invites][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

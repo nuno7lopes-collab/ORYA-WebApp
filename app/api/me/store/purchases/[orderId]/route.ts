@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { buildStoreOrderTimeline } from "@/lib/store/orderTimeline";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import type { CheckoutStatus } from "@/domain/finance/status";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function resolveOrderId(params: { orderId: string }) {
   const orderId = Number(params.orderId);
@@ -58,10 +60,10 @@ function mapCheckoutStatus(status: CheckoutStatus) {
   }
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -71,7 +73,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     const resolvedParams = await params;
     const resolved = resolveOrderId(resolvedParams);
     if (!resolved.ok) {
-      return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: resolved.error }, { status: 400 });
     }
 
     const order = await prisma.storeOrder.findFirst({
@@ -166,7 +168,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     });
 
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
     const productIds = Array.from(
@@ -245,7 +247,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
       })),
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       order: {
         id: order.id,
@@ -327,9 +329,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/purchases/[orderId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar encomenda." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar encomenda." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

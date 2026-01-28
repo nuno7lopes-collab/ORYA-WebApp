@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, SourceType, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const normalizeReason = (value: unknown) => (typeof value === "string" ? value.trim() : "");
@@ -16,18 +18,18 @@ const parseDate = (value: unknown) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const matchId = Number(resolved?.id);
   if (!Number.isFinite(matchId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const reason = normalizeReason(body?.reason);
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const windowEndOverride = parseDate(body?.windowEnd);
 
   if (reason && reason.length < 3) {
-    return NextResponse.json({ ok: false, error: "INVALID_REASON" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_REASON" }, { status: 400 });
   }
 
   const match = await prisma.padelMatch.findUnique({
@@ -61,17 +63,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
   if (!match || !match.event?.organizationId) {
-    return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   if (match.status !== padel_match_status.PENDING) {
-    return NextResponse.json({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
   }
 
   const outbox = await prisma.$transaction(async (tx) => {
@@ -115,5 +117,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return outbox;
   });
 
-  return NextResponse.json({ ok: true, queued: true, eventId: outbox.eventId }, { status: 202 });
+  return jsonWrap({ ok: true, queued: true, eventId: outbox.eventId }, { status: 202 });
 }
+export const POST = withApiEnvelope(_POST);

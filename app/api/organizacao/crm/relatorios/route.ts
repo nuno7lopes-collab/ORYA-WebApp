@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,6 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { CrmInteractionType, OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -50,7 +52,7 @@ const CATEGORY_CONFIG = [
   },
 ] as const;
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -62,14 +64,14 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissoes." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissoes." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const windowDays = 30;
@@ -119,7 +121,7 @@ export async function GET(req: NextRequest) {
       { interactions: 0, amountCents: 0 },
     );
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       windowDays,
       totals,
@@ -132,9 +134,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/crm/relatorios error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar relatorios." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar relatorios." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

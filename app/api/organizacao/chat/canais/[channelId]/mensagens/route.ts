@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -20,7 +22,7 @@ function parseLimit(value: string | null) {
   return Math.min(Math.max(raw, 1), 200);
 }
 
-export async function GET(
+async function _GET(
   req: NextRequest,
   context: { params: Promise<{ channelId: string }> },
 ) {
@@ -35,7 +37,7 @@ export async function GET(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
@@ -43,7 +45,7 @@ export async function GET(
       select: { moduleKey: true },
     });
     if (!moduleEnabled) {
-      return NextResponse.json({ ok: false, error: "Chat interno desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Chat interno desativado." }, { status: 403 });
     }
 
     const { channelId } = await context.params;
@@ -52,7 +54,7 @@ export async function GET(
       select: { id: true, name: true },
     });
     if (!channel) {
-      return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Canal não encontrado." }, { status: 404 });
     }
 
     const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
@@ -76,21 +78,21 @@ export async function GET(
       },
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       channel,
       items: messages.slice().reverse(),
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/chat/canais/[channelId]/mensagens error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar mensagens." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar mensagens." }, { status: 500 });
   }
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   context: { params: Promise<{ channelId: string }> },
 ) {
@@ -105,7 +107,7 @@ export async function POST(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
@@ -113,7 +115,7 @@ export async function POST(
       select: { moduleKey: true },
     });
     if (!moduleEnabled) {
-      return NextResponse.json({ ok: false, error: "Chat interno desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Chat interno desativado." }, { status: 403 });
     }
 
     const { channelId } = await context.params;
@@ -122,13 +124,13 @@ export async function POST(
       select: { id: true, organizationId: true },
     });
     if (!channel) {
-      return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Canal não encontrado." }, { status: 404 });
     }
 
     const payload = (await req.json().catch(() => null)) as { body?: unknown } | null;
     const body = typeof payload?.body === "string" ? payload.body.trim() : "";
     if (body.length < 1) {
-      return NextResponse.json({ ok: false, error: "Mensagem inválida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Mensagem inválida." }, { status: 400 });
     }
 
     const message = await prisma.internalChatMessage.create({
@@ -153,12 +155,14 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ ok: true, message });
+    return jsonWrap({ ok: true, message });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("POST /api/organizacao/chat/canais/[channelId]/mensagens error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao enviar mensagem." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao enviar mensagem." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

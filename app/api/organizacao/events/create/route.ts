@@ -2,6 +2,7 @@
 
 // app/api/organizacao/events/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -17,6 +18,7 @@ import { SourceType, EventPricingMode } from "@prisma/client";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   EventParticipantAccessMode,
   EventPublicAccessMode,
@@ -160,14 +162,14 @@ async function generateUniqueSlug(baseSlug: string) {
   return `${baseSlug}-${maxSuffix + 1}`;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     let body: CreateOrganizationEventBody | null = null;
 
     try {
       body = (await req.json()) as CreateOrganizationEventBody;
     } catch {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Body inválido." },
         { status: 400 }
       );
@@ -182,7 +184,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -195,7 +197,7 @@ export async function POST(req: NextRequest) {
       profile.onboardingDone ||
       (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
     if (!hasUserOnboarding) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -211,7 +213,7 @@ export async function POST(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -222,7 +224,7 @@ export async function POST(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
     const isPlatformAccount = organization?.orgType === "PLATFORM";
@@ -275,14 +277,14 @@ export async function POST(req: NextRequest) {
     const payoutMode: PayoutMode = isPlatformAccount ? PayoutMode.PLATFORM : payoutModeRequested;
 
     if (!title) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Título é obrigatório." },
         { status: 400 }
       );
     }
 
     if (!startsAtRaw) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Data/hora de início é obrigatória." },
         { status: 400 }
       );
@@ -290,7 +292,7 @@ export async function POST(req: NextRequest) {
 
     const isLocationTbd = locationSource === "MANUAL" && !locationName && !locationCity && !address;
     if (!locationCity && !isLocationTbd) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Cidade é obrigatória." },
         { status: 400 },
       );
@@ -298,7 +300,7 @@ export async function POST(req: NextRequest) {
     if (locationSource === "OSM") {
       const hasCoords = Number.isFinite(latitude ?? NaN) && Number.isFinite(longitude ?? NaN);
       if (!locationProviderId || !hasCoords) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Localização OSM inválida." },
           { status: 400 },
         );
@@ -318,7 +320,7 @@ export async function POST(req: NextRequest) {
 
     const startsAt = parseDate(startsAtRaw);
     if (!startsAt) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Data/hora de início inválida." },
         { status: 400 }
       );
@@ -413,7 +415,7 @@ export async function POST(req: NextRequest) {
       );
 
     if (ticketPriceError) {
-      return NextResponse.json({ ok: false, error: ticketPriceError }, { status: 400 });
+      return jsonWrap({ ok: false, error: ticketPriceError }, { status: 400 });
     }
 
     const pricingModeRaw = typeof body.pricingMode === "string" ? body.pricingMode.trim().toUpperCase() : null;
@@ -433,7 +435,7 @@ export async function POST(req: NextRequest) {
       ticketPrices,
     });
     if (!guard.ok) {
-      return NextResponse.json({ ok: false, error: guard.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: guard.error }, { status: 400 });
     }
 
     const hasPaidTickets = ticketTypesData.some((t) => t.price > 0);
@@ -447,7 +449,7 @@ export async function POST(req: NextRequest) {
         requireStripe: payoutMode === PayoutMode.ORGANIZATION && !isPlatformAccount,
       });
       if (!gate.ok) {
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             code: "PAYMENTS_NOT_READY",
@@ -463,7 +465,7 @@ export async function POST(req: NextRequest) {
     if (publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC") {
       const hasPublicTicket = ticketTypesData.some((t) => t.publicAccess);
       if (!hasPublicTicket) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Seleciona pelo menos um bilhete para o público." },
           { status: 400 },
         );
@@ -472,7 +474,7 @@ export async function POST(req: NextRequest) {
     if (participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC") {
       const hasParticipantTicket = ticketTypesData.some((t) => t.participantAccess);
       if (!hasParticipantTicket) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Seleciona pelo menos um bilhete para participantes." },
           { status: 400 },
         );
@@ -555,7 +557,7 @@ export async function POST(req: NextRequest) {
       let allowedCategoryIds: Set<number> | null = null;
 
       if (!padelClubId) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Seleciona um clube de padel." },
           { status: 400 },
         );
@@ -566,7 +568,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!club) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Clube de padel arquivado ou inexistente." },
           { status: 400 },
         );
@@ -577,7 +579,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (activeCourts.length === 0) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "O clube selecionado não tem courts ativos." },
           { status: 400 },
         );
@@ -586,7 +588,7 @@ export async function POST(req: NextRequest) {
       if (requestedCourtIds.length > 0) {
         resolvedCourtIds = requestedCourtIds.filter((id) => activeCourtIds.has(id));
         if (resolvedCourtIds.length === 0) {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "Seleciona courts válidos para o clube." },
             { status: 400 },
           );
@@ -603,7 +605,7 @@ export async function POST(req: NextRequest) {
         const activeStaffIds = new Set(activeStaff.map((member) => member.id));
         resolvedStaffIds = requestedStaffIds.filter((id) => activeStaffIds.has(id));
         if (resolvedStaffIds.length === 0) {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "Seleciona staff válido para o clube." },
             { status: 400 },
           );
@@ -910,7 +912,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         event: {
@@ -923,12 +925,13 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/events/create error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro interno ao criar evento." },
       { status: 500 }
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

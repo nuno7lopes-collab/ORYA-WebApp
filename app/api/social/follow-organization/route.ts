@@ -1,16 +1,18 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as {
     organizationId?: number | string;
@@ -18,7 +20,7 @@ export async function POST(req: NextRequest) {
   const rawId = body?.organizationId;
   const organizationId = parseOrganizationId(rawId);
   if (!organizationId) {
-    return NextResponse.json({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
   }
 
   const organization = await prisma.organization.findFirst({
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
     select: { id: true },
   });
   if (!organization) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
   await prisma.organization_follows.upsert({
@@ -46,5 +48,6 @@ export async function POST(req: NextRequest) {
     update: {},
   });
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return jsonWrap({ ok: true }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

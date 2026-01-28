@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { randomUUID } from "crypto";
 import { OrganizationMemberRole } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -7,12 +8,13 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { sendOfficialEmailVerificationEmail } from "@/lib/emailSender";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24; // 24h
 const STATUS_PENDING = "PENDING";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -21,22 +23,22 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const body = await req.json().catch(() => null);
     const organizationId = parseOrganizationId(body?.organizationId);
     const emailRaw = typeof body?.email === "string" ? body.email.trim().toLowerCase() : null;
     if (!organizationId || !emailRaw) {
-      return NextResponse.json({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
     }
     if (!EMAIL_REGEX.test(emailRaw)) {
-      return NextResponse.json({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!membership || membership.role !== OrganizationMemberRole.OWNER) {
-      return NextResponse.json({ ok: false, error: "ONLY_OWNER_CAN_UPDATE_OFFICIAL_EMAIL" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_UPDATE_OFFICIAL_EMAIL" }, { status: 403 });
     }
 
     const organization = await prisma.organization.findUnique({
@@ -50,11 +52,11 @@ export async function POST(req: NextRequest) {
       },
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "ORGANIZATION_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "ORGANIZATION_NOT_FOUND" }, { status: 404 });
     }
 
     if (organization.officialEmailVerifiedAt && organization.officialEmail === emailRaw) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           status: "VERIFIED",
@@ -124,7 +126,7 @@ export async function POST(req: NextRequest) {
       console.error("[organization/official-email] Falha ao enviar email de verificação", emailErr);
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         status: request.status,
@@ -135,6 +137,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organization/official-email][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

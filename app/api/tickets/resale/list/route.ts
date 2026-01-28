@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * F5-7 – Criar revenda (listar bilhete)
@@ -11,7 +13,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
  *   price: number; // em cêntimos
  * }
  */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "UNAUTHENTICATED" },
         { status: 401 }
       );
@@ -36,7 +38,7 @@ export async function POST(req: NextRequest) {
     const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
     const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
     if (!isAdmin) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "FORBIDDEN" },
         { status: 403 },
       );
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
       | null;
 
     if (!body || typeof body !== "object") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_BODY" },
         { status: 400 }
       );
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
     const { ticketId, price } = body;
 
     if (!ticketId || typeof ticketId !== "string") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "MISSING_TICKET_ID" },
         { status: 400 }
       );
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
       !Number.isFinite(price) ||
       price <= 0
     ) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_PRICE" },
         { status: 400 }
       );
@@ -92,7 +94,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!ticket) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "TICKET_NOT_FOUND_OR_NOT_ACTIVE" },
         { status: 404 }
       );
@@ -107,7 +109,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (existingResale) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "TICKET_ALREADY_IN_RESALE" },
         { status: 400 }
       );
@@ -120,7 +122,7 @@ export async function POST(req: NextRequest) {
         (event as { resaleMode?: string }).resaleMode ?? "ALWAYS";
 
       if (resaleMode === "DISABLED") {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "RESALE_DISABLED_FOR_EVENT" },
           { status: 400 }
         );
@@ -141,7 +143,7 @@ export async function POST(req: NextRequest) {
           });
 
         if (!soldOut) {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "RESALE_ONLY_AFTER_SOLD_OUT" },
             { status: 400 }
           );
@@ -163,7 +165,7 @@ export async function POST(req: NextRequest) {
     // (Opcional) Se no futuro adicionares um estado específico no TicketStatus
     // para bilhetes em revenda (ex.: RESALE_LISTED), podes atualizar aqui o ticket.
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         resaleId: resale.id,
@@ -173,9 +175,10 @@ export async function POST(req: NextRequest) {
     );
   } catch (error) {
     console.error("Error in /api/tickets/resale/list:", error);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

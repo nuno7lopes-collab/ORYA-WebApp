@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // DLQ: listar via GET /api/internal/outbox/dlq; replay via POST /api/internal/outbox/replay.
 
@@ -10,9 +12,9 @@ function parseLimit(value: string | null) {
   return Math.min(100, Math.floor(parsed));
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const eventType = req.nextUrl.searchParams.get("eventType")?.trim() || null;
@@ -33,7 +35,7 @@ export async function GET(req: NextRequest) {
 
   const nextBefore = items.length ? items[items.length - 1].createdAt.toISOString() : null;
 
-  return NextResponse.json({
+  return jsonWrap({
     ok: true,
     items: items.map((evt) => ({
       eventId: evt.eventId,
@@ -47,3 +49,4 @@ export async function GET(req: NextRequest) {
     nextBefore,
   });
 }
+export const GET = withApiEnvelope(_GET);

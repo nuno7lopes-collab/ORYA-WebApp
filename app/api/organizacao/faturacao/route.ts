@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 import { PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(_req: NextRequest) {
+async function _GET(_req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const memberships = await prisma.organizationMember.findMany({
     where: { userId: data.user.id, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
     select: { organizationId: true },
   });
   const organizationIds = memberships.map((m) => m.organizationId);
-  if (organizationIds.length === 0) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (organizationIds.length === 0) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const events = await prisma.event.findMany({
     where: { organizationId: { in: organizationIds } },
@@ -96,7 +98,7 @@ export async function GET(_req: NextRequest) {
   const refundsCents = 0;
   const disputesCents = 0;
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       summary: { ...grandTotal, refundsCents, disputesCents },
@@ -105,3 +107,4 @@ export async function GET(_req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

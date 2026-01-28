@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -13,19 +15,19 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const body = await req.json().catch(() => null);
     const organizationId = parseOrganizationId(body?.organizationId);
     if (!organizationId) {
-      return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
 
     if (!membership) {
-      return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
     }
 
     if (membership.role === "OWNER") {
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
         },
       });
       if (otherOwners === 0) {
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             error: "És o último Owner desta organização. Transfere a propriedade antes de sair.",
@@ -54,9 +56,10 @@ export async function POST(req: NextRequest) {
       await revokeGroupMemberForOrg({ organizationId, userId: user.id, client: tx });
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[organização/organizations/leave]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -12,6 +13,7 @@ import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflic
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createHardBlock, deleteHardBlock, updateHardBlock } from "@/domain/hardBlocks/commands";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const BUFFER_MINUTES = 5; // tempo mínimo entre registos para evitar sobreposição acidental
@@ -190,17 +192,17 @@ const getRequestMeta = (req: NextRequest) => {
   return { ip, userAgent };
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const check = await ensureOrganization(req);
   if ("error" in check) {
-    return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
+    return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
   const { organization } = check;
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : Number.NaN;
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
 
   const event = await prisma.event.findFirst({
@@ -208,7 +210,7 @@ export async function GET(req: NextRequest) {
     select: { id: true, timezone: true, startsAt: true, endsAt: true },
   });
   if (!event) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const [blocks, availabilities, matches] = await Promise.all([
@@ -373,7 +375,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       blocks,
@@ -389,15 +391,15 @@ export async function GET(req: NextRequest) {
   );
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const check = await ensureOrganization(req);
   if ("error" in check) {
-    return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
+    return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
   const { organization } = check;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const type = typeof body.type === "string" ? body.type : null;
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
@@ -405,13 +407,13 @@ export async function POST(req: NextRequest) {
   const endAt = parseDate(body.endAt);
 
   if (type !== "block" && type !== "availability") {
-    return NextResponse.json({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
   }
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
   if (!startAt || !endAt || endAt <= startAt) {
-    return NextResponse.json({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
   }
 
   // Confirm event belongs to organization
@@ -420,7 +422,7 @@ export async function POST(req: NextRequest) {
     select: { id: true, templateType: true },
   });
   if (!event) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   if (type === "block") {
@@ -434,7 +436,7 @@ export async function POST(req: NextRequest) {
         where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true, padelClubId: true },
       });
-      if (!court) return NextResponse.json({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
+      if (!court) return jsonWrap({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
     }
 
     const overlappingBlocks = await prisma.padelCourtBlock.findFirst({
@@ -447,7 +449,7 @@ export async function POST(req: NextRequest) {
       },
     });
     if (overlappingBlocks && overlapsWithBuffer(startAt, endAt, overlappingBlocks.startAt, overlappingBlocks.endAt)) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Já existe um bloqueio que colide neste intervalo. Ajusta horários ou court." },
         { status: 409 },
       );
@@ -463,7 +465,7 @@ export async function POST(req: NextRequest) {
         endsAt: endAt,
       });
     } catch {
-      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+      return jsonWrap(agendaConflictResponse(), { status: 503 });
     }
 
     const candidate: AgendaCandidate = {
@@ -474,13 +476,13 @@ export async function POST(req: NextRequest) {
     };
     const decision = evaluateCandidate({ candidate, existing: existingCandidates });
     if (!decision.allowed) {
-      return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+      return jsonWrap(agendaConflictResponse(decision), { status: 409 });
     }
 
     const lockKey = `padel_block_${event.id}_${courtId ?? "any"}`;
     const lock = await acquireLock(lockKey);
     if (!lock) {
-      return NextResponse.json({ ok: false, error: "LOCKED" }, { status: 423 });
+      return jsonWrap({ ok: false, error: "LOCKED" }, { status: 423 });
     }
     try {
       const created = await createHardBlock({
@@ -498,7 +500,7 @@ export async function POST(req: NextRequest) {
       });
       if (!created.ok) {
         const status = created.error === "EVENT_NOT_FOUND" ? 404 : 400;
-        return NextResponse.json({ ok: false, error: created.error }, { status });
+        return jsonWrap({ ok: false, error: created.error }, { status });
       }
       const block = created.data.block;
       await recordOrganizationAuditSafe({
@@ -517,7 +519,7 @@ export async function POST(req: NextRequest) {
         ...getRequestMeta(req),
       });
 
-      return NextResponse.json({ ok: true, block }, { status: 201 });
+      return jsonWrap({ ok: true, block }, { status: 201 });
     } finally {
       await releaseLock(lockKey);
     }
@@ -535,7 +537,7 @@ export async function POST(req: NextRequest) {
       where: { id: playerProfileId, organizationId: organization.id },
       select: { id: true },
     });
-    if (!profile) return NextResponse.json({ ok: false, error: "PLAYER_NOT_FOUND" }, { status: 404 });
+    if (!profile) return jsonWrap({ ok: false, error: "PLAYER_NOT_FOUND" }, { status: 404 });
   }
 
   const emailToCheck = typeof body.playerEmail === "string" ? body.playerEmail.trim().toLowerCase() : null;
@@ -554,7 +556,7 @@ export async function POST(req: NextRequest) {
       overlappingAvailability &&
       overlapsWithBuffer(startAt, endAt, overlappingAvailability.startAt, overlappingAvailability.endAt)
     ) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Já existe indisponibilidade para este jogador neste intervalo." },
         { status: 409 },
       );
@@ -588,23 +590,23 @@ export async function POST(req: NextRequest) {
     ...getRequestMeta(req),
   });
 
-  return NextResponse.json({ ok: true, availability }, { status: 201 });
+  return jsonWrap({ ok: true, availability }, { status: 201 });
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const check = await ensureOrganization(req);
   if ("error" in check) {
-    return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
+    return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
   const { organization } = check;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const type = typeof body.type === "string" ? body.type : null;
   const id = typeof body.id === "number" ? body.id : Number(body.id);
   if (!type || !Number.isFinite(id)) {
-    return NextResponse.json({ ok: false, error: "TYPE_AND_ID_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "TYPE_AND_ID_REQUIRED" }, { status: 400 });
   }
 
   if (type === "block") {
@@ -619,15 +621,15 @@ export async function PATCH(req: NextRequest) {
       where: { id: id as number, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, courtId: true, updatedAt: true },
     });
-    if (!block) return NextResponse.json({ ok: false, error: "BLOCK_NOT_FOUND" }, { status: 404 });
+    if (!block) return jsonWrap({ ok: false, error: "BLOCK_NOT_FOUND" }, { status: 404 });
     const versionRaw = typeof body.version === "string" ? body.version : null;
     if (versionRaw) {
       const clientVersion = new Date(versionRaw);
       if (Number.isNaN(clientVersion.getTime())) {
-        return NextResponse.json({ ok: false, error: "INVALID_VERSION" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_VERSION" }, { status: 400 });
       }
       if (Math.abs(block.updatedAt.getTime() - clientVersion.getTime()) > 1000) {
-        return NextResponse.json({ ok: false, error: "STALE_VERSION" }, { status: 409 });
+        return jsonWrap({ ok: false, error: "STALE_VERSION" }, { status: 409 });
       }
     }
 
@@ -636,14 +638,14 @@ export async function PATCH(req: NextRequest) {
         where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true },
       });
-      if (!court) return NextResponse.json({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
+      if (!court) return jsonWrap({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
     }
 
     if ((startAt && !endAt) || (!startAt && endAt)) {
-      return NextResponse.json({ ok: false, error: "BOTH_DATES_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BOTH_DATES_REQUIRED" }, { status: 400 });
     }
     if (startAt && endAt && endAt <= startAt) {
-      return NextResponse.json({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
     }
 
     // Se alterar datas/court, valida sobreposição
@@ -659,7 +661,7 @@ export async function PATCH(req: NextRequest) {
         },
       });
       if (overlapping && overlapsWithBuffer(startAt, endAt, overlapping.startAt, overlapping.endAt)) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Colisão com outro bloqueio. Ajusta horários ou court." },
           { status: 409 },
         );
@@ -679,7 +681,7 @@ export async function PATCH(req: NextRequest) {
         excludeBlockId: block.id,
       });
     } catch {
-      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+      return jsonWrap(agendaConflictResponse(), { status: 503 });
     }
 
     const candidate: AgendaCandidate = {
@@ -690,13 +692,13 @@ export async function PATCH(req: NextRequest) {
     };
     const decision = evaluateCandidate({ candidate, existing: existingCandidates });
     if (!decision.allowed) {
-      return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+      return jsonWrap(agendaConflictResponse(decision), { status: 409 });
     }
 
     const lockKey = `padel_block_${block.eventId}_${typeof courtId === "number" ? courtId : block.courtId ?? "any"}`;
     const lock = await acquireLock(lockKey);
     if (!lock) {
-      return NextResponse.json({ ok: false, error: "LOCKED" }, { status: 423 });
+      return jsonWrap({ ok: false, error: "LOCKED" }, { status: 423 });
     }
     let updated: typeof block | null = null;
     try {
@@ -715,7 +717,7 @@ export async function PATCH(req: NextRequest) {
       });
       if (!res.ok) {
         const status = res.error === "NOT_FOUND" ? 404 : 400;
-        return NextResponse.json({ ok: false, error: res.error }, { status });
+        return jsonWrap({ ok: false, error: res.error }, { status });
       }
       updated = res.data.block;
     } finally {
@@ -741,7 +743,7 @@ export async function PATCH(req: NextRequest) {
       },
       ...getRequestMeta(req),
     });
-    return NextResponse.json({ ok: true, block: updated ?? block }, { status: 200 });
+    return jsonWrap({ ok: true, block: updated ?? block }, { status: 200 });
   }
 
   if (type === "availability") {
@@ -758,15 +760,15 @@ export async function PATCH(req: NextRequest) {
       where: { id: id as number, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, playerProfileId: true, playerEmail: true, updatedAt: true },
     });
-    if (!availability) return NextResponse.json({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
+    if (!availability) return jsonWrap({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
     const versionRaw = typeof body.version === "string" ? body.version : null;
     if (versionRaw) {
       const clientVersion = new Date(versionRaw);
       if (Number.isNaN(clientVersion.getTime())) {
-        return NextResponse.json({ ok: false, error: "INVALID_VERSION" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_VERSION" }, { status: 400 });
       }
       if (Math.abs(availability.updatedAt.getTime() - clientVersion.getTime()) > 1000) {
-        return NextResponse.json({ ok: false, error: "STALE_VERSION" }, { status: 409 });
+        return jsonWrap({ ok: false, error: "STALE_VERSION" }, { status: 409 });
       }
     }
 
@@ -775,14 +777,14 @@ export async function PATCH(req: NextRequest) {
         where: { id: playerProfileId, organizationId: organization.id },
         select: { id: true },
       });
-      if (!profile) return NextResponse.json({ ok: false, error: "PLAYER_NOT_FOUND" }, { status: 404 });
+      if (!profile) return jsonWrap({ ok: false, error: "PLAYER_NOT_FOUND" }, { status: 404 });
     }
 
     if ((startAt && !endAt) || (!startAt && endAt)) {
-      return NextResponse.json({ ok: false, error: "BOTH_DATES_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BOTH_DATES_REQUIRED" }, { status: 400 });
     }
     if (startAt && endAt && endAt <= startAt) {
-      return NextResponse.json({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
     }
 
     const emailToCheck = typeof body.playerEmail === "string" ? body.playerEmail.trim().toLowerCase() : availability.playerEmail;
@@ -800,7 +802,7 @@ export async function PATCH(req: NextRequest) {
         },
       });
       if (overlapping && overlapsWithBuffer(startAt, endAt, overlapping.startAt, overlapping.endAt)) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Já existe indisponibilidade para este jogador neste intervalo." },
           { status: 409 },
         );
@@ -842,7 +844,7 @@ export async function PATCH(req: NextRequest) {
       },
       ...getRequestMeta(req),
     });
-    return NextResponse.json({ ok: true, availability: updated }, { status: 200 });
+    return jsonWrap({ ok: true, availability: updated }, { status: 200 });
   }
 
   if (type === "match") {
@@ -873,27 +875,27 @@ export async function PATCH(req: NextRequest) {
         score: true,
       },
     });
-    if (!match) return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+    if (!match) return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
     if (match.status === "IN_PROGRESS" || match.status === "DONE") {
-      return NextResponse.json({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
     }
 
     const versionRaw = typeof body.version === "string" ? body.version : null;
     if (versionRaw) {
       const clientVersion = new Date(versionRaw);
       if (Number.isNaN(clientVersion.getTime())) {
-        return NextResponse.json({ ok: false, error: "INVALID_VERSION" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_VERSION" }, { status: 400 });
       }
       if (Math.abs(match.updatedAt.getTime() - clientVersion.getTime()) > 1000) {
-        return NextResponse.json({ ok: false, error: "STALE_VERSION" }, { status: 409 });
+        return jsonWrap({ ok: false, error: "STALE_VERSION" }, { status: 409 });
       }
     }
 
     if ((plannedStartAt && !plannedEndAt && !durationMinutes) || (plannedEndAt && !plannedStartAt)) {
-      return NextResponse.json({ ok: false, error: "BOTH_DATES_OR_DURATION_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BOTH_DATES_OR_DURATION_REQUIRED" }, { status: 400 });
     }
     if (plannedStartAt && plannedEndAt && plannedEndAt <= plannedStartAt) {
-      return NextResponse.json({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
     }
 
     if (courtId) {
@@ -901,7 +903,7 @@ export async function PATCH(req: NextRequest) {
         where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true },
       });
-      if (!court) return NextResponse.json({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
+      if (!court) return jsonWrap({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
     }
 
     // Validar colisão com outros matches no mesmo court (só se tivermos courtId)
@@ -913,12 +915,12 @@ export async function PATCH(req: NextRequest) {
         : null);
 
     if (!desiredStart || !desiredEnd) {
-      return NextResponse.json(agendaConflictResponse(), { status: 409 });
+      return jsonWrap(agendaConflictResponse(), { status: 409 });
     }
 
     const targetCourtId = courtId ?? match.courtId ?? null;
     if (!targetCourtId) {
-      return NextResponse.json(agendaConflictResponse(), { status: 409 });
+      return jsonWrap(agendaConflictResponse(), { status: 409 });
     }
 
     let existingCandidates: AgendaCandidate[] | null = null;
@@ -932,7 +934,7 @@ export async function PATCH(req: NextRequest) {
         excludeMatchId: match.id,
       });
     } catch {
-      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+      return jsonWrap(agendaConflictResponse(), { status: 503 });
     }
 
     const candidate: AgendaCandidate = {
@@ -943,7 +945,7 @@ export async function PATCH(req: NextRequest) {
     };
     const decision = evaluateCandidate({ candidate, existing: existingCandidates });
     if (!decision.allowed) {
-      return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+      return jsonWrap(agendaConflictResponse(decision), { status: 409 });
     }
 
     if (desiredStart && desiredEnd && (courtId || match.courtId)) {
@@ -968,7 +970,7 @@ export async function PATCH(req: NextRequest) {
         const otherStart = overlappingMatch.plannedStartAt || overlappingMatch.startTime;
         const otherEnd = overlappingMatch.plannedEndAt || overlappingMatch.startTime;
         if (otherStart && otherEnd && overlapsWithBuffer(desiredStart, desiredEnd, otherStart, otherEnd)) {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "Conflito com outro jogo neste court." },
             { status: 409 },
           );
@@ -988,7 +990,7 @@ export async function PATCH(req: NextRequest) {
         overlappingBlock &&
         overlapsWithBuffer(desiredStart, desiredEnd, overlappingBlock.startAt, overlappingBlock.endAt)
       ) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Conflito com um bloqueio neste court." },
           { status: 409 },
         );
@@ -1027,7 +1029,7 @@ export async function PATCH(req: NextRequest) {
         const otherStart = overlappingPlayerMatch.plannedStartAt || overlappingPlayerMatch.startTime;
         const otherEnd = overlappingPlayerMatch.plannedEndAt || overlappingPlayerMatch.startTime;
         if (otherStart && otherEnd && overlapsWithBuffer(desiredStart, desiredEnd, otherStart, otherEnd)) {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "Jogador/dupla já tem jogo neste horário." },
             { status: 409 },
           );
@@ -1038,7 +1040,7 @@ export async function PATCH(req: NextRequest) {
     const lockKey = `padel_match_${match.eventId}_${targetCourtId ?? "any"}`;
     const lock = await acquireLock(lockKey);
     if (!lock) {
-      return NextResponse.json({ ok: false, error: "LOCKED" }, { status: 423 });
+      return jsonWrap({ ok: false, error: "LOCKED" }, { status: 423 });
     }
     const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
     const delayStatusRaw = typeof score.delayStatus === "string" ? score.delayStatus : null;
@@ -1071,7 +1073,7 @@ export async function PATCH(req: NextRequest) {
       });
       if (!res.ok) {
         const status = res.error === "MATCH_NOT_FOUND" ? 404 : 400;
-        return NextResponse.json({ ok: false, error: res.error }, { status });
+        return jsonWrap({ ok: false, error: res.error }, { status });
       }
       updated = {
         id: res.data.match.id,
@@ -1130,16 +1132,16 @@ export async function PATCH(req: NextRequest) {
         });
       }
     }
-    return NextResponse.json({ ok: true, match: updated ?? null }, { status: 200 });
+    return jsonWrap({ ok: true, match: updated ?? null }, { status: 200 });
   }
 
-  return NextResponse.json({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
+  return jsonWrap({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const check = await ensureOrganization(req);
   if ("error" in check) {
-    return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
+    return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
   const { organization } = check;
 
@@ -1147,7 +1149,7 @@ export async function DELETE(req: NextRequest) {
   const idParam = req.nextUrl.searchParams.get("id");
   const id = idParam ? Number(idParam) : NaN;
   if (!typeParam || !Number.isFinite(id)) {
-    return NextResponse.json({ ok: false, error: "TYPE_AND_ID_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "TYPE_AND_ID_REQUIRED" }, { status: 400 });
   }
 
   if (typeParam === "block") {
@@ -1155,7 +1157,7 @@ export async function DELETE(req: NextRequest) {
       where: { id, organizationId: organization.id },
       select: { id: true },
     });
-    if (!exists) return NextResponse.json({ ok: false, error: "BLOCK_NOT_FOUND" }, { status: 404 });
+    if (!exists) return jsonWrap({ ok: false, error: "BLOCK_NOT_FOUND" }, { status: 404 });
     const deleted = await deleteHardBlock({
       hardBlockId: id,
       organizationId: organization.id,
@@ -1164,7 +1166,7 @@ export async function DELETE(req: NextRequest) {
     });
     if (!deleted.ok) {
       const status = deleted.error === "NOT_FOUND" ? 404 : 400;
-      return NextResponse.json({ ok: false, error: deleted.error }, { status });
+      return jsonWrap({ ok: false, error: deleted.error }, { status });
     }
     await recordOrganizationAuditSafe({
       organizationId: organization.id,
@@ -1173,7 +1175,7 @@ export async function DELETE(req: NextRequest) {
       metadata: { blockId: id },
       ...getRequestMeta(req),
     });
-    return NextResponse.json({ ok: true, deleted: true }, { status: 200 });
+    return jsonWrap({ ok: true, deleted: true }, { status: 200 });
   }
 
   if (typeParam === "availability") {
@@ -1181,7 +1183,7 @@ export async function DELETE(req: NextRequest) {
       where: { id, organizationId: organization.id },
       select: { id: true },
     });
-    if (!exists) return NextResponse.json({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
+    if (!exists) return jsonWrap({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
     await prisma.padelAvailability.delete({ where: { id } });
     await recordOrganizationAuditSafe({
       organizationId: organization.id,
@@ -1190,10 +1192,10 @@ export async function DELETE(req: NextRequest) {
       metadata: { availabilityId: id },
       ...getRequestMeta(req),
     });
-    return NextResponse.json({ ok: true, deleted: true }, { status: 200 });
+    return jsonWrap({ ok: true, deleted: true }, { status: 200 });
   }
 
-  return NextResponse.json({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
+  return jsonWrap({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
 }
 async function acquireLock(key: string, ttlSeconds = LOCK_TTL_SECONDS) {
   const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
@@ -1221,3 +1223,7 @@ async function acquireLock(key: string, ttlSeconds = LOCK_TTL_SECONDS) {
 async function releaseLock(key: string) {
   await prisma.lock.delete({ where: { key } }).catch(() => null);
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

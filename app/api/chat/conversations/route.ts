@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/auth/rateLimit";
@@ -8,6 +9,7 @@ import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { publishChatEvent } from "@/lib/chat/redis";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseLimit(value: string | null) {
   const raw = Number(value ?? "30");
@@ -31,10 +33,10 @@ function resolveTitleFallback(
   return other.fullName?.trim() || (other.username ? `@${other.username}` : "Conversa");
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
       identifier: user.id,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
       );
@@ -181,23 +183,23 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("GET /api/chat/conversations error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar conversas." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar conversas." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -209,7 +211,7 @@ export async function POST(req: NextRequest) {
       identifier: user.id,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
       );
@@ -235,7 +237,7 @@ export async function POST(req: NextRequest) {
 
     if (isDirect) {
       if (!userId || userId === user.id) {
-        return NextResponse.json({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
       }
 
       const block = await prisma.chatUserBlock.findFirst({
@@ -247,7 +249,7 @@ export async function POST(req: NextRequest) {
         },
       });
       if (block) {
-        return NextResponse.json({ ok: false, error: "CHAT_BLOCKED" }, { status: 403 });
+        return jsonWrap({ ok: false, error: "CHAT_BLOCKED" }, { status: 403 });
       }
 
       const existing = await prisma.chatConversation.findFirst({
@@ -265,7 +267,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (existing && existing.members.length === 2) {
-        return NextResponse.json({ ok: true, conversation: existing });
+        return jsonWrap({ ok: true, conversation: existing });
       }
 
       const memberships = await prisma.organizationMember.findMany({
@@ -273,7 +275,7 @@ export async function POST(req: NextRequest) {
         select: { userId: true },
       });
       if (memberships.length !== 2) {
-        return NextResponse.json({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
       }
 
       const conversation = await prisma.chatConversation.create({
@@ -305,17 +307,17 @@ export async function POST(req: NextRequest) {
 
       console.log("[chat] conversa direta criada", { conversationId: conversation.id, actor: user.id });
 
-      return NextResponse.json({ ok: true, conversation }, { status: 201 });
+      return jsonWrap({ ok: true, conversation }, { status: 201 });
     }
 
     if (isGroup) {
       if (title.length < 2) {
-        return NextResponse.json({ ok: false, error: "INVALID_TITLE" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_TITLE" }, { status: 400 });
       }
 
       const uniqueMembers = Array.from(new Set([user.id, ...memberIds]));
       if (uniqueMembers.length < 2) {
-        return NextResponse.json({ ok: false, error: "INVALID_MEMBERS" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_MEMBERS" }, { status: 400 });
       }
 
       const memberships = await prisma.organizationMember.findMany({
@@ -324,7 +326,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (memberships.length !== uniqueMembers.length) {
-        return NextResponse.json({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
       }
 
       const conversation = await prisma.chatConversation.create({
@@ -358,17 +360,17 @@ export async function POST(req: NextRequest) {
 
       console.log("[chat] conversa de grupo criada", { conversationId: conversation.id, actor: user.id });
 
-      return NextResponse.json({ ok: true, conversation }, { status: 201 });
+      return jsonWrap({ ok: true, conversation }, { status: 201 });
     }
 
     if (isChannel) {
       if (title.length < 2) {
-        return NextResponse.json({ ok: false, error: "INVALID_TITLE" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_TITLE" }, { status: 400 });
       }
 
       const uniqueMembers = Array.from(new Set([user.id, ...memberIds]));
       if (uniqueMembers.length < 1) {
-        return NextResponse.json({ ok: false, error: "INVALID_MEMBERS" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_MEMBERS" }, { status: 400 });
       }
 
       const memberships = await prisma.organizationMember.findMany({
@@ -377,7 +379,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (memberships.length !== uniqueMembers.length) {
-        return NextResponse.json({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
       }
 
       const conversation = await prisma.chatConversation.create({
@@ -411,18 +413,20 @@ export async function POST(req: NextRequest) {
 
       console.log("[chat] canal criado", { conversationId: conversation.id, actor: user.id });
 
-      return NextResponse.json({ ok: true, conversation }, { status: 201 });
+      return jsonWrap({ ok: true, conversation }, { status: 201 });
     }
 
-    return NextResponse.json({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("POST /api/chat/conversations error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar conversa." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar conversa." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

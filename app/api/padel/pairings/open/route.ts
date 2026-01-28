@@ -1,6 +1,8 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   Gender,
   PadelEligibilityType,
@@ -66,27 +68,27 @@ async function ensurePlayerProfile(params: { organizationId: number; userId: str
 }
 
 // Permite um parceiro juntar-se a um pairing com mode LOOKING_FOR_PARTNER / isPublicOpen sem token.
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const pairingId = typeof body?.pairingId === "number" ? body.pairingId : Number(body?.pairingId);
   if (!Number.isFinite(pairingId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
     include: { slots: true, event: { select: { organizationId: true } }, registration: { select: { status: true } } },
   });
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   const organizationId = pairing.event?.organizationId ?? null;
   if (!organizationId) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const [event, windowConfig] = await Promise.all([
@@ -100,7 +102,7 @@ export async function POST(req: NextRequest) {
     }),
   ]);
   if (!event) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const advanced = (windowConfig?.advancedSettings || {}) as {
     registrationStartsAt?: string | null;
@@ -123,16 +125,16 @@ export async function POST(req: NextRequest) {
     competitionState: advanced.competitionState ?? null,
   });
   if (!registrationCheck.ok) {
-    return NextResponse.json({ ok: false, error: registrationCheck.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });
   }
   if (pairing.player2UserId) {
-    return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
   if (
     pairing.pairingJoinMode !== "LOOKING_FOR_PARTNER" &&
     !pairing.isPublicOpen
   ) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   // Guard: utilizador já tem pairing ativo no torneio?
@@ -154,7 +156,7 @@ export async function POST(req: NextRequest) {
     select: { id: true },
   });
   if (existingActive) {
-    return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
   }
 
   const limitCheck = await prisma.$transaction((tx) =>
@@ -167,7 +169,7 @@ export async function POST(req: NextRequest) {
     }),
   );
   if (!limitCheck.ok) {
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
@@ -184,7 +186,7 @@ export async function POST(req: NextRequest) {
     }),
   );
   if (!playerCapacity.ok) {
-    return NextResponse.json({ ok: false, error: playerCapacity.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: playerCapacity.code }, { status: 409 });
   }
 
   const [captainProfile, partnerProfile] = await Promise.all([
@@ -209,7 +211,7 @@ export async function POST(req: NextRequest) {
     email: user.email ?? null,
   });
   if (!isPadelOnboardingComplete(missing)) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing },
       { status: 409 },
     );
@@ -224,7 +226,7 @@ export async function POST(req: NextRequest) {
     partnerProfile?.gender as Gender | null,
   );
   if (!eligibility.ok) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: eligibility.code },
       { status: eligibility.code === "GENDER_REQUIRED_FOR_TOURNAMENT" ? 403 : 409 },
     );
@@ -246,17 +248,17 @@ export async function POST(req: NextRequest) {
   });
   if (!categoryAccess.ok) {
     if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
         { status: 409 },
       );
     }
-    return NextResponse.json({ ok: false, error: categoryAccess.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: categoryAccess.code }, { status: 409 });
   }
 
   const pendingSlot = pairing.slots.find((s) => s.slotStatus === "PENDING");
   if (!pendingSlot) {
-    return NextResponse.json({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
   }
   if (
     pairing.payment_mode === PadelPaymentMode.SPLIT &&
@@ -264,19 +266,19 @@ export async function POST(req: NextRequest) {
     pairing.deadlineAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
   }
 
   if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-    return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
+    return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
   }
   if (pairing.payment_mode === PadelPaymentMode.FULL) {
     const captainSlot = pairing.slots.find((s) => s.slot_role === "CAPTAIN");
     if (!captainSlot || captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+      return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
     }
     if (pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+      return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
     }
   }
 
@@ -352,9 +354,10 @@ export async function POST(req: NextRequest) {
         slotRole: slot_role,
       })),
     };
-    return NextResponse.json({ ok: true, pairing: pairingPayload }, { status: 200 });
+    return jsonWrap({ ok: true, pairing: pairingPayload }, { status: 200 });
   } catch (err) {
     console.error("[padel/pairings][open][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

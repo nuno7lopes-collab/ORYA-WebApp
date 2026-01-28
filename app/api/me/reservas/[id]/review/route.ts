@@ -1,21 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseId(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolved = await params;
   const bookingId = parseId(resolved.id);
   if (!bookingId) {
-    return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "ID inválido." }, { status: 400 });
   }
 
   try {
@@ -26,7 +28,7 @@ export async function POST(
     const comment = typeof payload?.comment === "string" ? payload.comment.trim() : "";
 
     if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
-      return NextResponse.json({ ok: false, error: "Rating inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Rating inválido." }, { status: 400 });
     }
 
     const booking = await prisma.booking.findUnique({
@@ -41,13 +43,13 @@ export async function POST(
     });
 
     if (!booking) {
-      return NextResponse.json({ ok: false, error: "Reserva não encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Reserva não encontrada." }, { status: 404 });
     }
     if (booking.userId !== user.id) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     if (booking.status !== "COMPLETED") {
-      return NextResponse.json({ ok: false, error: "Reserva ainda não concluída." }, { status: 409 });
+      return jsonWrap({ ok: false, error: "Reserva ainda não concluída." }, { status: 409 });
     }
 
     const existing = await prisma.serviceReview.findFirst({
@@ -55,7 +57,7 @@ export async function POST(
       select: { id: true },
     });
     if (existing) {
-      return NextResponse.json({ ok: false, error: "Review já submetida." }, { status: 409 });
+      return jsonWrap({ ok: false, error: "Review já submetida." }, { status: 409 });
     }
 
     const review = await prisma.serviceReview.create({
@@ -70,12 +72,13 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ ok: true, review });
+    return jsonWrap({ ok: true, review });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/me/reservas/[id]/review error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao guardar review." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao guardar review." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

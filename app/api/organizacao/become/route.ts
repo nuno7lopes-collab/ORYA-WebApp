@@ -1,11 +1,13 @@
 
 
 // app/api/organizacao/become/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   DEFAULT_PRIMARY_MODULE,
   getDefaultOrganizationModules,
@@ -32,7 +34,7 @@ function sanitizeString(value: unknown) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export async function GET() {
+async function _GET() {
   try {
     const user = await requireUser();
 
@@ -40,7 +42,7 @@ export async function GET() {
       where: { id: user.id },
     });
   if (!profile) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Perfil não encontrado." },
       { status: 400 },
     );
@@ -57,7 +59,7 @@ export async function GET() {
         })
       : [];
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         organization: fallbackOrganization
@@ -82,20 +84,20 @@ export async function GET() {
     );
   } catch (err) {
     if (err instanceof AuthRequiredError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não autenticado." },
         { status: 401 },
       );
     }
     console.error("GET /api/organizacao/become error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro interno ao obter organização." },
       { status: 500 },
     );
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const user = await requireUser();
 
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Perfil não encontrado." },
         { status: 400 },
       );
@@ -150,7 +152,7 @@ export async function POST(req: NextRequest) {
       return `https://${trimmed}`;
     })();
     if (publicWebsite && !isValidWebsite(publicWebsite)) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Website inválido. Usa um URL válido (ex: https://orya.pt)." },
         { status: 400 },
       );
@@ -164,7 +166,7 @@ export async function POST(req: NextRequest) {
       : null;
 
     if (primaryModuleProvided && !primaryModule) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS." },
         { status: 400 },
       );
@@ -172,7 +174,7 @@ export async function POST(req: NextRequest) {
 
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "modules inválido. Usa uma lista de módulos válidos." },
         { status: 400 },
       );
@@ -185,7 +187,7 @@ export async function POST(req: NextRequest) {
     if (currentOrganization) {
       const isOwner = membership?.role === "OWNER";
       if (!isOwner) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Apenas o Owner pode alterar esta organização." },
           { status: 403 },
         );
@@ -206,7 +208,7 @@ export async function POST(req: NextRequest) {
       : { ok: false as const, error: "Escolhe um username ORYA para a organização." };
 
     if (!validatedUsername.ok) {
-      return NextResponse.json({ ok: false, error: validatedUsername.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: validatedUsername.error }, { status: 400 });
     }
 
     const username = validatedUsername.username;
@@ -322,7 +324,7 @@ export async function POST(req: NextRequest) {
           })
         ).map((module) => module.moduleKey);
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         organization: {
@@ -346,26 +348,26 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     if (err instanceof AuthRequiredError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não autenticado." },
         { status: 401 },
       );
     }
     if (err instanceof UsernameTakenError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
         { status: 409 },
       );
     }
     console.error("POST /api/organizacao/become error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro interno ao enviar candidatura de organização." },
       { status: 500 },
     );
   }
 }
 
-export async function DELETE(_req: NextRequest) {
+async function _DELETE(_req: NextRequest) {
   try {
     const user = await requireUser();
 
@@ -381,18 +383,21 @@ export async function DELETE(_req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     if (err instanceof AuthRequiredError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não autenticado." },
         { status: 401 },
       );
     }
     console.error("DELETE /api/organizacao/become error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro interno ao cancelar candidatura." },
       { status: 500 },
     );
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const DELETE = withApiEnvelope(_DELETE);

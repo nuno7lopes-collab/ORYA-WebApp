@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -15,7 +17,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const url = new URL(req.url);
@@ -48,9 +50,10 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
-    return NextResponse.json({ ok: true, organizationId: organization.id, items }, { status: 200 });
+    return jsonWrap({ ok: true, organizationId: organization.id, items }, { status: 200 });
   } catch (err) {
     console.error("[organização/audit][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

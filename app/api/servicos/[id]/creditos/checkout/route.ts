@@ -13,6 +13,7 @@ import { computeCombinedFees } from "@/lib/fees";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type CheckoutError =
   | "SERVICO_INVALIDO"
@@ -31,7 +32,7 @@ const ERROR_MAP: Record<CheckoutError, { status: number; message: string }> = {
   CURRENCY_NOT_SUPPORTED: { status: 400, message: "Moeda não suportada." },
 };
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -287,3 +288,4 @@ export async function POST(
     return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
+export const POST = withApiEnvelope(_POST);

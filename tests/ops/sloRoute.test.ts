@@ -31,7 +31,7 @@ describe("ops slo route", () => {
     const res = await GET(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.outbox).toBeDefined();
-    expect(body.eventLog).toBeDefined();
+    expect(body.result.outbox).toBeDefined();
+    expect(body.result.eventLog).toBeDefined();
   });
 });

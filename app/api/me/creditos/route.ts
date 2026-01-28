@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(_req: NextRequest) {
+async function _GET(_req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -35,12 +37,13 @@ export async function GET(_req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/me/creditos error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar créditos." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar créditos." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

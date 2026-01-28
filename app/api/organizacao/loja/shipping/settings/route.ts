@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreShippingMode } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -48,10 +50,10 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -59,10 +61,10 @@ export async function GET(req: NextRequest) {
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       settings: {
         freeShippingThresholdCents: context.store.freeShippingThresholdCents,
@@ -71,17 +73,17 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/loja/shipping/settings error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar settings." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar settings." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -89,13 +91,13 @@ export async function PATCH(req: NextRequest) {
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateSettingsSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -108,12 +110,14 @@ export async function PATCH(req: NextRequest) {
       select: { freeShippingThresholdCents: true, shippingMode: true },
     });
 
-    return NextResponse.json({ ok: true, settings: updated });
+    return jsonWrap({ ok: true, settings: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/organizacao/loja/shipping/settings error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar settings." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar settings." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

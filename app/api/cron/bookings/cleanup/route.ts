@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const HOLD_MINUTES = 10;
 const COMPLETION_GRACE_HOURS = 2;
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 
     const cutoff = new Date(Date.now() - HOLD_MINUTES * 60 * 1000);
@@ -118,13 +120,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       cancelled: bookingIds.length,
       completed,
     });
   } catch (err) {
     console.error("[CRON BOOKINGS CLEANUP]", err);
-    return NextResponse.json({ ok: false, error: "Internal cleanup error" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Internal cleanup error" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

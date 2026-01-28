@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -69,10 +71,10 @@ async function ensureBundle(storeId: number, bundleId: number) {
   return { ok: true as const, bundle };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -80,18 +82,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
     }
 
     const bundle = await ensureBundle(context.store.id, bundleId.id);
     if (!bundle.ok) {
-      return NextResponse.json({ ok: false, error: bundle.error }, { status: 404 });
+      return jsonWrap({ ok: false, error: bundle.error }, { status: 404 });
     }
 
     const items = await prisma.storeBundleItem.findMany({
@@ -107,20 +109,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/loja/bundles/[id]/items error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar items." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar items." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -128,28 +130,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
     }
 
     const bundle = await ensureBundle(context.store.id, bundleId.id);
     if (!bundle.ok) {
-      return NextResponse.json({ ok: false, error: bundle.error }, { status: 404 });
+      return jsonWrap({ ok: false, error: bundle.error }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createItemSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -158,7 +160,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       select: { id: true },
     });
     if (!product) {
-      return NextResponse.json({ ok: false, error: "Produto invalido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Produto invalido." }, { status: 400 });
     }
 
     if (payload.variantId) {
@@ -167,7 +169,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         select: { id: true },
       });
       if (!variant) {
-        return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Variante invalida." }, { status: 400 });
       }
     }
 
@@ -188,12 +190,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
 
-    return NextResponse.json({ ok: true, item: created }, { status: 201 });
+    return jsonWrap({ ok: true, item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/loja/bundles/[id]/items error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar item." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar item." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

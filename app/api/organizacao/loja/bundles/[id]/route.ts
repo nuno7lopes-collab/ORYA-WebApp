@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,6 +10,7 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreBundlePricingMode, StoreBundleStatus } from "@prisma/client";
 import { z } from "zod";
 import { computeBundleTotals } from "@/lib/store/bundles";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -92,10 +94,10 @@ async function loadBundlePricing(storeId: number, bundleId: number) {
   return { itemCount: validItems.length, baseCents };
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -103,30 +105,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateBundleSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const existing = await prisma.storeBundle.findFirst({
       where: { id: bundleId.id, storeId: context.store.id },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Bundle nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Bundle nao encontrado." }, { status: 404 });
     }
 
     const payload = parsed.data;
@@ -145,14 +147,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (payload.slug) {
       const slug = slugify(payload.slug.trim());
       if (!slug) {
-        return NextResponse.json({ ok: false, error: "Slug invalido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Slug invalido." }, { status: 400 });
       }
       const existingSlug = await prisma.storeBundle.findFirst({
         where: { storeId: context.store.id, slug, id: { not: bundleId.id } },
         select: { id: true },
       });
       if (existingSlug) {
-        return NextResponse.json({ ok: false, error: "Slug ja existe." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Slug ja existe." }, { status: 409 });
       }
       data.slug = slug;
     }
@@ -174,7 +176,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       (nextPricingMode === StoreBundlePricingMode.PERCENT_DISCOUNT &&
         (nextPercentOff === null || nextPercentOff === undefined))
     ) {
-      return NextResponse.json({ ok: false, error: "Pricing invalido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Pricing invalido." }, { status: 400 });
     }
 
     if (nextPricingMode === StoreBundlePricingMode.FIXED) {
@@ -188,7 +190,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const nextVisible = data.isVisible ?? existing.isVisible;
     const pricingSnapshot = await loadBundlePricing(context.store.id, bundleId.id);
     if ((nextStatus === StoreBundleStatus.ACTIVE || nextVisible) && pricingSnapshot.itemCount < 2) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Adiciona pelo menos 2 produtos ao bundle antes de ativar ou mostrar na loja.",
@@ -204,7 +206,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         baseCents: pricingSnapshot.baseCents,
       });
       if (pricingSnapshot.baseCents <= 0 || totals.totalCents >= pricingSnapshot.baseCents) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "O preco do bundle tem de ser inferior ao total dos itens." },
           { status: 409 },
         );
@@ -227,20 +229,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     });
 
-    return NextResponse.json({ ok: true, item: updated });
+    return jsonWrap({ ok: true, item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/organizacao/loja/bundles/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar bundle." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar bundle." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -248,17 +250,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
     }
 
     const existing = await prisma.storeBundle.findFirst({
@@ -266,17 +268,19 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Bundle nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Bundle nao encontrado." }, { status: 404 });
     }
 
     await prisma.storeBundle.delete({ where: { id: bundleId.id } });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/organizacao/loja/bundles/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover bundle." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover bundle." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

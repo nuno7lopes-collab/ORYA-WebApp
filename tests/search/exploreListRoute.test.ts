@@ -66,8 +66,8 @@ describe("explorar list route", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.items).toHaveLength(1);
-    expect(body.items[0]).toMatchObject({
+    expect(body.result.items).toHaveLength(1);
+    expect(body.result.items[0]).toMatchObject({
       id: 1,
       title: "Evento 1",
       isGratis: false,

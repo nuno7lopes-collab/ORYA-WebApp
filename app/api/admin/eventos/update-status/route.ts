@@ -1,6 +1,7 @@
 // app/api/admin/eventos/update-status/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import type { EventStatus } from "@prisma/client";
@@ -8,6 +9,7 @@ import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * 6.14 – Update de estado de evento (admin)
@@ -23,11 +25,11 @@ import { getClientIp } from "@/lib/auth/requestValidation";
  *  - Só utilizadores com role "admin" podem chamar.
  *  - É possível identificar evento por eventId OU por slug.
  */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
     const ip = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
       | null;
 
     if (!body || typeof body !== "object") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_BODY" },
         { status: 400 }
       );
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
     const { eventId, slug, status } = body;
 
     if (!status || typeof status !== "string") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "MISSING_STATUS" },
         { status: 400 }
       );
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!whereClause) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "MISSING_EVENT_IDENTIFIER" },
         { status: 400 }
       );
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest) {
         },
       });
       if (!existing) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "EVENT_NOT_FOUND" },
           { status: 404 }
         );
@@ -168,7 +170,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           event: updated,
@@ -183,7 +185,7 @@ export async function POST(req: NextRequest) {
         "code" in err &&
         (err as { code: string }).code === "P2025"
       ) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "EVENT_NOT_FOUND" },
           { status: 404 }
         );
@@ -193,16 +195,17 @@ export async function POST(req: NextRequest) {
         "[admin/eventos/update-status] Error updating event status:",
         err
       );
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INTERNAL_ERROR" },
         { status: 500 }
       );
     }
   } catch (err) {
     console.error("[admin/eventos/update-status] Unexpected error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

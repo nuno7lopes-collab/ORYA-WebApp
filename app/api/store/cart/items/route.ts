@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -6,6 +7,7 @@ import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { StoreStockPolicy } from "@prisma/client";
 import { validateStorePersonalization } from "@/lib/store/personalization";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -76,26 +78,26 @@ async function resolveCart(params: {
   return { ok: true as const, cart, created: true };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return NextResponse.json({ ok: false, error: storeParsed.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
     const store = await resolveStore(storeParsed.storeId);
     if (!store.ok) {
-      return NextResponse.json({ ok: false, error: store.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: store.error }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = addItemSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -118,10 +120,10 @@ export async function POST(req: NextRequest) {
       },
     });
     if (!product) {
-      return NextResponse.json({ ok: false, error: "Produto indisponivel." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Produto indisponivel." }, { status: 404 });
     }
     if (product.currency !== store.store.currency) {
-      return NextResponse.json({ ok: false, error: "Moeda invalida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Moeda invalida." }, { status: 400 });
     }
 
     let variantPriceCents: number | null = null;
@@ -132,7 +134,7 @@ export async function POST(req: NextRequest) {
         select: { id: true, priceCents: true, stockQty: true },
       });
       if (!variant) {
-        return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Variante invalida." }, { status: 400 });
       }
       variantPriceCents = variant.priceCents ?? null;
       variantStockQty = variant.stockQty ?? null;
@@ -143,7 +145,7 @@ export async function POST(req: NextRequest) {
       personalization: payload.personalization,
     });
     if (!personalizationDelta.ok) {
-      return NextResponse.json({ ok: false, error: personalizationDelta.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: personalizationDelta.error }, { status: 400 });
     }
 
     const basePrice = variantPriceCents ?? product.priceCents;
@@ -170,7 +172,7 @@ export async function POST(req: NextRequest) {
         .reduce((sum, item) => sum + item.quantity, 0);
       const nextQty = existingQty + quantity;
       if (nextQty > available) {
-        return NextResponse.json({ ok: false, error: "Stock insuficiente." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Stock insuficiente." }, { status: 409 });
       }
     }
 
@@ -220,7 +222,7 @@ export async function POST(req: NextRequest) {
           },
         });
 
-    const response = NextResponse.json({ ok: true, item: result });
+    const response = jsonWrap({ ok: true, item: result });
     if (!userId && (!cookieSession || resolved.created)) {
       response.cookies.set(CART_SESSION_COOKIE, sessionId, {
         httpOnly: true,
@@ -233,6 +235,7 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (err) {
     console.error("POST /api/store/cart/items error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao adicionar item." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao adicionar item." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

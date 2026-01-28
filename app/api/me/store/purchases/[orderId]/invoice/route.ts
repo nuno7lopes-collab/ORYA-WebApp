@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus } from "@prisma/client";
 import { buildStoreInvoicePdf } from "@/lib/store/invoice";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function resolveOrderId(params: { orderId: string }) {
   const orderId = Number(params.orderId);
@@ -18,10 +20,10 @@ function resolveOrderId(params: { orderId: string }) {
 }
 
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -31,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     const resolvedParams = await params;
     const resolved = resolveOrderId(resolvedParams);
     if (!resolved.ok) {
-      return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: resolved.error }, { status: 400 });
     }
 
     const order = await prisma.storeOrder.findFirst({
@@ -94,7 +96,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     });
 
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Fatura indisponivel." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Fatura indisponivel." }, { status: 404 });
     }
 
     const productIds = Array.from(
@@ -155,9 +157,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/purchases/[orderId]/invoice error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao gerar fatura." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao gerar fatura." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

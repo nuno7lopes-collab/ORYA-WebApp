@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function getStoreContext(userId: string) {
   const store = await prisma.store.findFirst({
@@ -18,10 +20,10 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const statusRaw = req.nextUrl.searchParams.get("status");
@@ -79,7 +81,7 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       items,
       summary: {
@@ -90,9 +92,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/orders error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar encomendas." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar encomendas." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

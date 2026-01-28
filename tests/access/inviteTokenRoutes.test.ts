@@ -46,7 +46,7 @@ describe("invite token routes access", () => {
     });
     const res = await publicInviteToken(req, { params: Promise.resolve({ slug: "slug" }) });
     const body = await res.json();
-    expect(body.allow).toBe(false);
+    expect(body.result.allow).toBe(false);
   });
 
   it("bloqueia emissão org quando access engine nega", async () => {

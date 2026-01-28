@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -7,6 +8,7 @@ import { StoreStockPolicy } from "@prisma/client";
 import { validateStorePersonalization } from "@/lib/store/personalization";
 import { z } from "zod";
 import { computeBundleTotals } from "@/lib/store/bundles";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -75,26 +77,26 @@ async function resolveCart(params: {
   return { ok: true as const, cart, created: true };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return NextResponse.json({ ok: false, error: storeParsed.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
     const store = await resolveStore(storeParsed.storeId);
     if (!store.ok) {
-      return NextResponse.json({ ok: false, error: store.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: store.error }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = addBundleSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -138,28 +140,28 @@ export async function POST(req: NextRequest) {
     });
 
     if (!bundle || !bundle.items.length) {
-      return NextResponse.json({ ok: false, error: "Bundle indisponivel." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Bundle indisponivel." }, { status: 404 });
     }
     if (bundle.items.length < 2) {
-      return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 409 });
+      return jsonWrap({ ok: false, error: "Bundle invalido." }, { status: 409 });
     }
 
     for (const item of bundle.items) {
       if (item.product.status !== "ACTIVE" || !item.product.isVisible) {
-        return NextResponse.json({ ok: false, error: "Bundle indisponivel." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Bundle indisponivel." }, { status: 409 });
       }
       if (item.product.currency !== store.store.currency) {
-        return NextResponse.json({ ok: false, error: "Moeda invalida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Moeda invalida." }, { status: 400 });
       }
       if (item.variant && !item.variant.isActive) {
-        return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Variante invalida." }, { status: 400 });
       }
       const personalization = await validateStorePersonalization({
         productId: item.productId,
         personalization: {},
       });
       if (!personalization.ok) {
-        return NextResponse.json({ ok: false, error: "Bundle requer personalizacao." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Bundle requer personalizacao." }, { status: 409 });
       }
     }
 
@@ -174,7 +176,7 @@ export async function POST(req: NextRequest) {
       baseCents,
     });
     if (baseCents <= 0 || totals.totalCents >= baseCents) {
-      return NextResponse.json({ ok: false, error: "Bundle invalido." }, { status: 409 });
+      return jsonWrap({ ok: false, error: "Bundle invalido." }, { status: 409 });
     }
 
     const supabase = await createSupabaseServer();
@@ -211,7 +213,7 @@ export async function POST(req: NextRequest) {
         .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
       const available = item.variantId ? item.variant?.stockQty ?? 0 : item.product.stockQty ?? 0;
       if (existingQty + requiredQty > available) {
-        return NextResponse.json({ ok: false, error: "Stock insuficiente." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Stock insuficiente." }, { status: 409 });
       }
     }
 
@@ -235,7 +237,7 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    const response = NextResponse.json({ ok: true, bundleKey });
+    const response = jsonWrap({ ok: true, bundleKey });
     if (!userId && (!cookieSession || resolved.created)) {
       response.cookies.set(CART_SESSION_COOKIE, sessionId, {
         httpOnly: true,
@@ -248,6 +250,7 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (err) {
     console.error("POST /api/store/cart/bundles error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao adicionar bundle." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao adicionar bundle." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB
 const UPLOAD_WINDOW_MS = 5 * 60 * 1000; // 5 minutos
@@ -75,7 +76,7 @@ function isRateLimited(ip: string) {
   return hits.length > MAX_UPLOADS_PER_WINDOW;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     await requireUser(); // só utilizadores autenticados podem fazer upload
 
@@ -225,3 +226,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -33,6 +33,6 @@ describe("internal audit route", () => {
     const res = await GET(req);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.data.items).toHaveLength(1);
+    expect(body.result.items).toHaveLength(1);
   });
 });

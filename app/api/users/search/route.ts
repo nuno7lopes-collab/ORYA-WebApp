@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getUserFollowingSet, getUserFollowRequestSet } from "@/domain/social/follows";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
   const limitParam = req.nextUrl.searchParams.get("limit");
   const limitRaw = limitParam ? Number(limitParam) : 8;
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 12) : 8;
   if (q.length < 1) {
-    return NextResponse.json({ ok: true, results: [] }, { status: 200 });
+    return jsonWrap({ ok: true, results: [] }, { status: 200 });
   }
 
   const normalized = q.startsWith("@") ? q.slice(1) : q;
@@ -74,7 +76,7 @@ export async function GET(req: NextRequest) {
       ordered = [...followed, ...rest];
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         results: ordered,
@@ -83,6 +85,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[users/search]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

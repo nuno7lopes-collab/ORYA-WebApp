@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Aggregate = {
   grossCents: number;
@@ -13,7 +15,7 @@ type Aggregate = {
   tickets: number;
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -22,7 +24,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -43,7 +45,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const events = await prisma.event.findMany({
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
     const eventIds = events.map((event) => event.id);
 
     if (!eventIds.length) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           summary: {
@@ -197,9 +199,10 @@ export async function GET(req: NextRequest) {
       },
     );
 
-    return NextResponse.json({ ok: true, summary, events: eventRows }, { status: 200 });
+    return jsonWrap({ ok: true, summary, events: eventRows }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/finance/reconciliation]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

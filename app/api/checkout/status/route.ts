@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { CheckoutStatus, deriveCheckoutStatusFromPayment } from "@/domain/finance/status";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Status = CheckoutStatus;
 
@@ -13,7 +15,7 @@ function cleanParam(v: string | null) {
   return s ? s : null;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const url = new URL(req.url);
   const purchaseId = cleanParam(url.searchParams.get("purchaseId"));
   const paymentIntentIdRaw = cleanParam(url.searchParams.get("paymentIntentId"));
@@ -22,7 +24,7 @@ export async function GET(req: NextRequest) {
     paymentIntentIdRaw === FREE_PLACEHOLDER_INTENT_ID ? null : paymentIntentIdRaw;
 
   if (!purchaseId && !paymentIntentId) {
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         status: "FAILED" as Status,
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
         const nextAction =
           status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
         const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: true,
             status,
@@ -95,7 +97,7 @@ export async function GET(req: NextRequest) {
         const nextAction =
           status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
         const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: true,
             status,
@@ -150,7 +152,7 @@ export async function GET(req: NextRequest) {
             : mappedOp === "REQUIRES_ACTION"
               ? "PAY_NOW"
               : "NONE";
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: true,
             status: mappedOp,
@@ -195,7 +197,7 @@ export async function GET(req: NextRequest) {
     if (paymentEvent) {
       // PaymentEvent é apenas telemetria; não inferimos estado final daqui.
       const status: Status = "PROCESSING";
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           status,
@@ -214,7 +216,7 @@ export async function GET(req: NextRequest) {
     // -------------------------
     // 3) Nada encontrado ainda
     // -------------------------
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         status: "PENDING" as Status,
@@ -230,7 +232,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[checkout/status] erro inesperado", err);
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         status: "FAILED" as Status,
@@ -243,3 +245,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

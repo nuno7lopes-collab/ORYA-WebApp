@@ -1,6 +1,7 @@
 
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrgTransferEnabled, getPlatformFees } from "@/lib/platformSettings";
@@ -14,6 +15,7 @@ import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   DEFAULT_PRIMARY_MODULE,
   parsePrimaryModule,
@@ -89,12 +91,12 @@ function buildOrganizationPayload(
   };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const { data: { user }, error } = await supabase.auth.getUser();
     if (!user || error) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Não autenticado.",
@@ -109,7 +111,7 @@ export async function GET(req: NextRequest) {
       where: { id: user.id },
     });
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Perfil não encontrado.",
@@ -198,7 +200,7 @@ export async function GET(req: NextRequest) {
           : "NO_STRIPE"
       : "NO_STRIPE";
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         profile: profilePayload,
@@ -217,7 +219,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("GET /api/organizacao/me error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         error: "Erro interno.",
@@ -229,7 +231,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -238,12 +240,12 @@ export async function PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (!user || error) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
 
     const body = await req.json().catch(() => null);
     if (!body) {
-      return NextResponse.json({ ok: false, error: "Payload inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Payload inválido." }, { status: 400 });
     }
 
     const {
@@ -299,7 +301,7 @@ export async function PATCH(req: NextRequest) {
       ? parsePrimaryModule(primaryModuleRaw)
       : null;
     if (primaryModuleProvided && !primaryModule) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS." },
         { status: 400 },
       );
@@ -315,7 +317,7 @@ export async function PATCH(req: NextRequest) {
       reservationAssignmentMode &&
       !["PROFESSIONAL", "RESOURCE"].includes(reservationAssignmentMode)
     ) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "reservationAssignmentMode inválido. Usa PROFESSIONAL ou RESOURCE." },
         { status: 400 },
       );
@@ -323,7 +325,7 @@ export async function PATCH(req: NextRequest) {
 
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "modules inválido. Usa uma lista de módulos válidos." },
         { status: 400 },
       );
@@ -333,7 +335,7 @@ export async function PATCH(req: NextRequest) {
     if (typeof contactPhone === "string" && contactPhone.trim()) {
       const phoneRaw = contactPhone.trim();
       if (!isValidPhone(phoneRaw)) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Telefone inválido. Usa um número real (podes incluir indicativo, ex.: +351...)." },
           { status: 400 },
         );
@@ -353,17 +355,17 @@ export async function PATCH(req: NextRequest) {
     });
 
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Ainda não és organização." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Ainda não és organização." }, { status: 403 });
     }
     if (!membership || !["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role)) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Apenas Owner ou Admin podem alterar estas definições." },
         { status: 403 },
       );
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const isOwner = membership.role === "OWNER";
@@ -391,7 +393,7 @@ export async function PATCH(req: NextRequest) {
       ]);
       const disallowed = Object.keys(body).filter((key) => !adminAllowed.has(key));
       if (disallowed.length > 0) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Admins apenas podem alterar dados operacionais." },
           { status: 403 },
         );
@@ -406,7 +408,7 @@ export async function PATCH(req: NextRequest) {
       const email = alertsEmail.trim();
       const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
       if (!emailRegex.test(email)) {
-        return NextResponse.json({ ok: false, error: "Email de alertas inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Email de alertas inválido." }, { status: 400 });
       }
     }
 
@@ -453,7 +455,7 @@ export async function PATCH(req: NextRequest) {
       } else {
         const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
         if (!isValidWebsite(normalized)) {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "Website inválido. Usa um URL válido (ex: https://orya.pt)." },
             { status: 400 },
           );
@@ -465,14 +467,14 @@ export async function PATCH(req: NextRequest) {
     if (typeof publicInstagram === "string") {
       const normalized = normalizeSocialLink(publicInstagram, "instagram");
       if (normalized.error) {
-        return NextResponse.json({ ok: false, error: normalized.error }, { status: 400 });
+        return jsonWrap({ ok: false, error: normalized.error }, { status: 400 });
       }
       organizationUpdates.publicInstagram = normalized.value;
     }
     if (typeof publicYoutube === "string") {
       const normalized = normalizeSocialLink(publicYoutube, "youtube");
       if (normalized.error) {
-        return NextResponse.json({ ok: false, error: normalized.error }, { status: 400 });
+        return jsonWrap({ ok: false, error: normalized.error }, { status: 400 });
       }
       organizationUpdates.publicYoutube = normalized.value;
     }
@@ -488,7 +490,7 @@ export async function PATCH(req: NextRequest) {
       } else {
         const sanitizedLayout = sanitizePublicProfileLayout(publicProfileLayout);
         if (!sanitizedLayout) {
-          return NextResponse.json({ ok: false, error: "Layout do perfil inválido." }, { status: 400 });
+          return jsonWrap({ ok: false, error: "Layout do perfil inválido." }, { status: 400 });
         }
         organizationUpdates.publicProfileLayout = mergeLayoutWithDefaults(sanitizedLayout);
       }
@@ -540,7 +542,7 @@ export async function PATCH(req: NextRequest) {
       const kind = organizationKind.toUpperCase();
       const allowed = ["CLUBE_PADEL", "RESTAURANTE", "EMPRESA_EVENTOS", "ASSOCIACAO", "PESSOA_SINGULAR"];
       if (!allowed.includes(kind)) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "organizationKind inválido. Usa CLUBE_PADEL, RESTAURANTE, EMPRESA_EVENTOS, ASSOCIACAO ou PESSOA_SINGULAR." },
           { status: 400 },
         );
@@ -669,7 +671,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         organization: buildOrganizationPayload(finalOrganization, nextModules),
@@ -678,6 +680,8 @@ export async function PATCH(req: NextRequest) {
     );
   } catch (err) {
     console.error("PATCH /api/organizacao/me error:", err);
-    return NextResponse.json({ ok: false, error: "Erro interno." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro interno." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

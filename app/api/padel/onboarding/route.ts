@@ -1,10 +1,12 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Gender, PadelPreferredSide } from "@prisma/client";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   normalizeAndValidateUsername,
   setUsernameForOwner,
@@ -20,7 +22,7 @@ const normalizePhone = (value: string | null | undefined) => {
   return null;
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -28,7 +30,7 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
   const [profile, fallbackPadel] = await Promise.all([
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
     email: user.email ?? null,
   });
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       profile: {
@@ -101,7 +103,7 @@ type PadelOnboardingBody = {
   clubName?: string | null;
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -110,12 +112,12 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const body = (await req.json().catch(() => null)) as PadelOnboardingBody | null;
     if (!body) {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const existingProfile = await prisma.profile.findUnique({
@@ -132,7 +134,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!existingProfile) {
-      return NextResponse.json({ ok: false, error: "PROFILE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "PROFILE_NOT_FOUND" }, { status: 404 });
     }
 
     const rawFullName = body.fullName ?? existingProfile.fullName ?? "";
@@ -149,12 +151,12 @@ export async function POST(req: NextRequest) {
         : existingProfile.contactPhone ?? null;
 
     if (body.contactPhone !== undefined && normalizedPhone === null) {
-      return NextResponse.json({ ok: false, error: "INVALID_PHONE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_PHONE" }, { status: 400 });
     }
 
     const usernameValidation = normalizeAndValidateUsername(usernameInput);
     if (!usernameValidation.ok) {
-      return NextResponse.json({ ok: false, error: usernameValidation.error, code: "USERNAME_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: usernameValidation.error, code: "USERNAME_INVALID" }, { status: 400 });
     }
 
     const usernameNormalized = usernameValidation.username;
@@ -177,7 +179,7 @@ export async function POST(req: NextRequest) {
       } else if (normalized === "ESQUERDA" || normalized === "DIREITA" || normalized === "QUALQUER") {
         preferredSide = normalized as PadelPreferredSide;
       } else {
-        return NextResponse.json({ ok: false, error: "INVALID_PREFERRED_SIDE" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_PREFERRED_SIDE" }, { status: 400 });
       }
     } else if (preferredSideInput === null) {
       preferredSide = null;
@@ -263,7 +265,7 @@ export async function POST(req: NextRequest) {
       email: user.email ?? null,
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         profile: {
@@ -284,12 +286,14 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     if (err instanceof UsernameTakenError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Este username já está a ser utilizado.", code: "USERNAME_TAKEN" },
         { status: 409 },
       );
     }
     console.error("[padel/onboarding] erro", err);
-    return NextResponse.json({ ok: false, error: "Erro inesperado." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro inesperado." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

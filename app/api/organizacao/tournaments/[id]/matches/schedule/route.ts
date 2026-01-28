@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { canReschedule } from "@/domain/tournaments/schedulePolicy";
 import { readNumericParam } from "@/lib/routeParams";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -35,18 +37,18 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
 
 type ScheduleItem = { matchId: number; courtId?: number | null; startAt?: string | null };
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const tournamentId = readNumericParam(resolved?.id, req, "tournaments");
-  if (tournamentId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (tournamentId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
   const items: ScheduleItem[] = Array.isArray(body?.items) ? body.items : [];
-  if (!items.length) return NextResponse.json({ ok: false, error: "EMPTY_PAYLOAD" }, { status: 400 });
+  if (!items.length) return jsonWrap({ ok: false, error: "EMPTY_PAYLOAD" }, { status: 400 });
 
   // Confirm organization access using first match -> stage -> tournament -> event
   const firstMatch = await prisma.tournamentMatch.findUnique({
@@ -54,11 +56,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: { stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } } },
   });
   if (!firstMatch || firstMatch.stage.tournamentId !== tournamentId) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
   const authorized = await ensureOrganizationAccess(data.user.id, firstMatch.stage.tournament.eventId);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const changes: Array<{ matchId: number; before: any; after: any }> = [];
 
@@ -109,10 +111,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   } catch (err) {
     if (err instanceof Error && err.message === "START_AT_IN_PAST_OR_LOCKED") {
-      return NextResponse.json({ ok: false, error: "START_AT_IN_PAST_OR_LOCKED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "START_AT_IN_PAST_OR_LOCKED" }, { status: 400 });
     }
     throw err;
   }
 
-  return NextResponse.json({ ok: true, updated: updatedIds.length, changes }, { status: 200 });
+  return jsonWrap({ ok: true, updated: updatedIds.length, changes }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

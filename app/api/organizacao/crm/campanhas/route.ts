@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,10 +8,11 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { campaignChannelsToList, normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { CrmCampaignChannel, CrmCampaignStatus, OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -22,14 +24,14 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const campaigns = await prisma.crmCampaign.findMany({
@@ -64,17 +66,17 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/crm/campanhas error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar campanhas." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar campanhas." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -86,14 +88,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -107,7 +109,7 @@ export async function POST(req: NextRequest) {
 
     const name = typeof payload?.name === "string" ? payload.name.trim() : "";
     if (name.length < 2) {
-      return NextResponse.json({ ok: false, error: "Nome inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Nome inválido." }, { status: 400 });
     }
 
     const description = typeof payload?.description === "string" ? payload.description.trim() : null;
@@ -129,11 +131,11 @@ export async function POST(req: NextRequest) {
     if (typeof scheduledAtRaw === "string" && scheduledAtRaw.trim()) {
       const parsed = new Date(scheduledAtRaw);
       if (Number.isNaN(parsed.getTime())) {
-        return NextResponse.json({ ok: false, error: "Data invalida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Data invalida." }, { status: 400 });
       }
       scheduledAt = parsed;
     } else if (scheduledAtRaw !== null && scheduledAtRaw !== undefined && scheduledAtRaw !== "") {
-      return NextResponse.json({ ok: false, error: "Data invalida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Data invalida." }, { status: 400 });
     }
 
     if (segmentId) {
@@ -142,7 +144,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!segment) {
-        return NextResponse.json({ ok: false, error: "Segmento inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Segmento inválido." }, { status: 400 });
       }
     }
 
@@ -169,12 +171,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, campaign });
+    return jsonWrap({ ok: true, campaign });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("POST /api/organizacao/crm/campanhas error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar campanha." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar campanha." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

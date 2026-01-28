@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -6,10 +7,11 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, PendingPayoutStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const PAGE_SIZE = 50;
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -18,7 +20,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -27,7 +29,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -39,11 +41,11 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     if (organization.orgType === "PLATFORM" || !organization.stripeAccountId) {
-      return NextResponse.json({ ok: true, items: [], pagination: { nextCursor: null, hasMore: false } });
+      return jsonWrap({ ok: true, items: [], pagination: { nextCursor: null, hasMore: false } });
     }
 
     const url = new URL(req.url);
@@ -163,12 +165,13 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       { ok: true, items: enriched, pagination: { nextCursor, hasMore } },
       { status: 200 },
     );
   } catch (err) {
     console.error("[organizacao/payouts/list]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

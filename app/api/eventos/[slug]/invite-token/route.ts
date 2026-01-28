@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/utils/email";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { assertInviteTokenValid, hashInviteToken } from "@/lib/invites/inviteTokens";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const limiter = await rateLimit(req, { windowMs: 5 * 60 * 1000, max: 10, keyPrefix: "invite_token" });
   if (!limiter.allowed) {
-    return NextResponse.json({ ok: false, allow: false }, { status: 429 });
+    return jsonWrap({ ok: false, allow: false }, { status: 429 });
   }
 
   const resolved = await params;
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       : null;
 
   if (!inviteToken || !emailNormalized) {
-    return NextResponse.json({ ok: true, allow: false });
+    return jsonWrap({ ok: true, allow: false });
   }
 
   const event = await prisma.event.findUnique({
@@ -34,12 +36,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     select: { id: true },
   });
   if (!event) {
-    return NextResponse.json({ ok: true, allow: false });
+    return jsonWrap({ ok: true, allow: false });
   }
 
   const accessDecision = await evaluateEventAccess({ eventId: event.id, intent: "INVITE_TOKEN" });
   if (!accessDecision.allowed) {
-    return NextResponse.json({ ok: true, allow: false });
+    return jsonWrap({ ok: true, allow: false });
   }
 
   const tokenHash = hashInviteToken(inviteToken);
@@ -64,8 +66,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   });
 
   if (!ok) {
-    return NextResponse.json({ ok: true, allow: false });
+    return jsonWrap({ ok: true, allow: false });
   }
 
-  return NextResponse.json({ ok: true, allow: true, expiresAt: tokenRow!.expiresAt });
+  return jsonWrap({ ok: true, allow: true, expiresAt: tokenRow!.expiresAt });
 }
+export const POST = withApiEnvelope(_POST);

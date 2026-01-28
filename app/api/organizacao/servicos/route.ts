@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,6 +10,7 @@ import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -23,7 +25,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -33,7 +35,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Perfil não encontrado." },
         { status: 403 }
       );
@@ -46,11 +48,11 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const items = await prisma.service.findMany({
@@ -78,20 +80,20 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/servicos error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro ao carregar serviços." },
       { status: 500 }
     );
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Perfil não encontrado." },
         { status: 403 }
       );
@@ -114,18 +116,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const writeAccess = ensureOrganizationWriteAccess(organization, {
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return NextResponse.json({ ok: false, error: writeAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: writeAccess.error }, { status: 403 });
     }
 
     await ensureDefaultPolicies(prisma, organization.id);
@@ -144,10 +146,10 @@ export async function POST(req: NextRequest) {
 
     const allowedDurations = new Set([30, 60, 90, 120]);
     if (!title || !Number.isFinite(durationMinutes) || !allowedDurations.has(durationMinutes)) {
-      return NextResponse.json({ ok: false, error: "Duração inválida (30/60/90/120 min)." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Duração inválida (30/60/90/120 min)." }, { status: 400 });
     }
     if (!Number.isFinite(unitPriceCents) || unitPriceCents < 0) {
-      return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados inválidos." }, { status: 400 });
     }
 
     let policyId: number | null = null;
@@ -157,7 +159,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!policy) {
-        return NextResponse.json({ ok: false, error: "Política inválida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Política inválida." }, { status: 400 });
       }
       policyId = policy.id;
     } else {
@@ -169,7 +171,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!["FIXED", "CHOOSE_AT_BOOKING"].includes(locationModeRaw)) {
-      return NextResponse.json({ ok: false, error: "Localização inválida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Localização inválida." }, { status: 400 });
     }
 
     const service = await prisma.service.create({
@@ -209,15 +211,17 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
-    return NextResponse.json({ ok: true, service }, { status: 201 });
+    return jsonWrap({ ok: true, service }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/servicos error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro ao criar serviço." },
       { status: 500 }
     );
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

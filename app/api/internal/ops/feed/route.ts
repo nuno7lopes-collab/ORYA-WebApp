@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseLimit(value: string | null) {
   const raw = Number(value ?? "100");
@@ -9,11 +11,11 @@ function parseLimit(value: string | null) {
   return Math.min(Math.max(raw, 1), 200);
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           requestId: ctx.requestId,
@@ -50,7 +52,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         requestId: ctx.requestId,
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("GET /api/internal/ops/feed error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         requestId: ctx.requestId,
@@ -73,3 +75,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

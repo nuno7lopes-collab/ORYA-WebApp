@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -12,6 +13,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { InvoicingMode, OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function requireOrgAccess(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -33,9 +35,9 @@ async function requireOrgAccess(req: NextRequest) {
   return { ok: true as const, user, organization, membership };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const access = await requireOrgAccess(req);
-  if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  if (!access.ok) return jsonWrap({ ok: false, error: access.error }, { status: access.status });
 
   const permission = await ensureMemberModuleAccess({
     organizationId: access.organization.id,
@@ -47,14 +49,14 @@ export async function GET(req: NextRequest) {
   });
 
   if (!permission.ok) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const settings = await prisma.organizationSettings.findUnique({
     where: { organizationId: access.organization.id },
   });
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       settings: settings
@@ -70,9 +72,9 @@ export async function GET(req: NextRequest) {
   );
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const access = await requireOrgAccess(req);
-  if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  if (!access.ok) return jsonWrap({ ok: false, error: access.error }, { status: access.status });
 
   const permission = await ensureMemberModuleAccess({
     organizationId: access.organization.id,
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest) {
     required: "EDIT",
   });
   if (!permission.ok) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => null);
@@ -91,16 +93,16 @@ export async function POST(req: NextRequest) {
   const acknowledged = body?.acknowledged === true;
 
   if (!invoicingMode || !(invoicingMode in InvoicingMode)) {
-    return NextResponse.json({ ok: false, error: "INVOICING_MODE_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVOICING_MODE_REQUIRED" }, { status: 400 });
   }
 
   if (!acknowledged) {
-    return NextResponse.json({ ok: false, error: "INVOICING_ACK_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVOICING_ACK_REQUIRED" }, { status: 400 });
   }
 
   const emailNormalized = normalizeEmail(access.user.email);
   if (!emailNormalized) {
-    return NextResponse.json({ ok: false, error: "EMAIL_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EMAIL_REQUIRED" }, { status: 400 });
   }
 
   const now = new Date();
@@ -163,7 +165,7 @@ export async function POST(req: NextRequest) {
     return settings;
   });
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       settings: {
@@ -176,3 +178,5 @@ export async function POST(req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

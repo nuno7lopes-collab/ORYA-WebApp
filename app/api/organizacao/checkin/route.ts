@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -8,6 +9,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { ensureGroupMemberCheckinAccess } from "@/lib/organizationMemberAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   getCheckinResultFromExisting,
   getEntitlementEffectiveStatus,
@@ -67,11 +69,11 @@ async function ensureOrganization(userId: string, eventId: number) {
   return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return jsonWrap({ error: "Not authenticated" }, { status: 401 });
   }
   const userId = data.user.id;
 
@@ -81,12 +83,12 @@ export async function POST(req: NextRequest) {
   const eventId = Number(body?.eventId);
 
   if (!qrToken || !deviceId || !Number.isFinite(eventId)) {
-    return NextResponse.json({ error: "INVALID_INPUT" }, { status: 400 });
+    return jsonWrap({ error: "INVALID_INPUT" }, { status: 400 });
   }
 
   const access = await ensureOrganization(userId, eventId);
   if (!access.ok) {
-    return NextResponse.json({ error: access.reason }, { status: access.reason === "EVENT_NOT_FOUND" ? 404 : 403 });
+    return jsonWrap({ error: access.reason }, { status: access.reason === "EVENT_NOT_FOUND" ? 404 : 403 });
   }
 
   const tokenHash = hashToken(qrToken);
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!tokenRow || !tokenRow.entitlement) {
-    return NextResponse.json({ code: CheckinResultCode.INVALID }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
   const ent = tokenRow.entitlement;
@@ -106,30 +108,30 @@ export async function POST(req: NextRequest) {
   });
   const orgId = event?.organizationId ?? null;
   if (!orgId) {
-    return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
   }
   const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
   if (isOutsideWindow(window)) {
-    return NextResponse.json({ code: CheckinResultCode.OUTSIDE_WINDOW }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.OUTSIDE_WINDOW }, { status: 200 });
   }
 
   if (!ent.eventId || ent.eventId !== eventId) {
-    return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
   }
 
   const now = new Date();
   if (tokenRow.expiresAt && tokenRow.expiresAt < now) {
-    return NextResponse.json({ code: CheckinResultCode.INVALID }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
   const policyResolution = await resolvePolicyForCheckin(eventId, ent.policyVersionApplied);
   if (!policyResolution.ok) {
-    return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
   }
   if (policyResolution.policy) {
     const method = resolveCheckinMethodForEntitlement(ent.type);
     if (!method || !policyResolution.policy.checkinMethods.includes(method)) {
-      return NextResponse.json({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+      return jsonWrap({ code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
     }
   }
 
@@ -139,10 +141,10 @@ export async function POST(req: NextRequest) {
     checkins: ent.checkins,
   });
   if (effectiveStatus === "SUSPENDED") {
-    return NextResponse.json({ code: CheckinResultCode.SUSPENDED }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.SUSPENDED }, { status: 200 });
   }
   if (effectiveStatus === "REVOKED") {
-    return NextResponse.json({ code: CheckinResultCode.REVOKED }, { status: 200 });
+    return jsonWrap({ code: CheckinResultCode.REVOKED }, { status: 200 });
   }
 
   const idempotencyKey = `${eventId}:${ent.id}:${deviceId}`;
@@ -236,13 +238,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ code: result }, { status: 200 });
+    return jsonWrap({ code: result }, { status: 200 });
   } catch (err: any) {
     if (err?.code === "P2002") {
       // unique constraint hit
-      return NextResponse.json({ code: CheckinResultCode.ALREADY_USED }, { status: 200 });
+      return jsonWrap({ code: CheckinResultCode.ALREADY_USED }, { status: 200 });
     }
     console.error("[organização/checkin] error", err);
-    return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

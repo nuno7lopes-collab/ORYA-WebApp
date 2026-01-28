@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { Prisma, EventStatus, EventType, TicketStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Fase 6.13 – Listar eventos (admin)
 // GET /api/admin/eventos/list
 // Permite ao admin pesquisar eventos globalmente por título/slug/organizacao
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const { searchParams } = new URL(req.url);
@@ -122,12 +124,13 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       { ok: true, items, pagination: { nextCursor, hasMore } },
       { status: 200 },
     );
   } catch (error) {
     console.error("[admin eventos list] erro inesperado:", error);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

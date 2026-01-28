@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,6 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const VIEW_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -14,14 +16,14 @@ const VIEW_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -31,12 +33,12 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const url = new URL(req.url);
@@ -55,12 +57,13 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/avaliacoes error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar avaliações." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar avaliações." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
 import { updateTournament } from "@/domain/tournaments/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type ParticipantInput = {
   id?: number;
@@ -94,29 +96,29 @@ function normalizeParticipants(items: ParticipantInput[], bracketSize?: number |
   return normalized;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const id = Number(resolved?.id);
-  if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isFinite(id)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (authError || !authData?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
     select: { id: true, eventId: true, config: true },
   });
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const authorized = await ensureOrganizationAccess(authData.user.id, tournament.eventId);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const config = (tournament.config as Record<string, unknown> | null) ?? {};
   const manualParticipants = Array.isArray(config.manualParticipants) ? config.manualParticipants : [];
   const bracketSize = Number.isFinite((config as any).bracketSize) ? Number((config as any).bracketSize) : null;
 
-  const res = NextResponse.json(
+  const res = jsonWrap(
     {
       ok: true,
       participants: manualParticipants,
@@ -128,25 +130,25 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return res;
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const id = Number(resolved?.id);
-  if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isFinite(id)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (authError || !authData?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
     select: { id: true, eventId: true, config: true },
   });
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const authorized = await ensureOrganizationAccess(authData.user.id, tournament.eventId, {
     requireVerifiedEmail: true,
   });
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const participants = Array.isArray(body?.participants) ? (body.participants as ParticipantInput[]) : [];
@@ -154,7 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const rawBracketSize = body?.bracketSize;
   const bracketSize = Number.isFinite(rawBracketSize) ? Number(rawBracketSize) : null;
   if (bracketSize !== null && !isPowerOfTwo(bracketSize)) {
-    return NextResponse.json({ ok: false, error: "INVALID_BRACKET_SIZE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_BRACKET_SIZE" }, { status: 400 });
   }
   const normalized = normalizeParticipants(participants, bracketSize ?? undefined);
 
@@ -172,12 +174,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!result.ok) {
     if (result.error === "EVENT_NOT_PADEL") {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
     }
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
-  const res = NextResponse.json(
+  const res = jsonWrap(
     {
       ok: true,
       participants: normalized,
@@ -188,3 +190,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   res.headers.set("Cache-Control", "no-store");
   return res;
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

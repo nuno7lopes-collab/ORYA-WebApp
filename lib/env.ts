@@ -13,6 +13,23 @@ const required = [
 
 type EnvKey = (typeof required)[number];
 
+const isTestRuntime =
+  process.env.NODE_ENV === "test" ||
+  process.env.ORIGINAL_NODE_ENV === "test" ||
+  process.env.VITEST === "true" ||
+  typeof process.env.VITEST_WORKER_ID === "string";
+
+const testFallbacks: Partial<Record<EnvKey, string>> = {
+  SUPABASE_URL: "http://127.0.0.1:54321",
+  SUPABASE_ANON_KEY: "test-anon-key",
+  SUPABASE_SERVICE_ROLE: "test-service-role-key",
+  DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable",
+  STRIPE_SECRET_KEY: "sk_test_orya",
+  STRIPE_WEBHOOK_SECRET: "whsec_test_orya",
+  QR_SECRET_KEY: "test-qr-secret",
+  RESEND_API_KEY: "test-resend-key",
+};
+
 function getEnv(key: EnvKey, fallbackKeys: string[] = []): string {
   const value = process.env[key];
   if (value) return value;
@@ -20,6 +37,11 @@ function getEnv(key: EnvKey, fallbackKeys: string[] = []): string {
   for (const fallbackKey of fallbackKeys) {
     const fallbackValue = process.env[fallbackKey];
     if (fallbackValue) return fallbackValue;
+  }
+
+  if (isTestRuntime) {
+    const fallback = testFallbacks[key];
+    if (fallback) return fallback;
   }
 
   if (fallbackKeys.length > 0) {

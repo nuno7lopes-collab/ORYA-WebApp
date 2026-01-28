@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseDate(value: unknown): Date | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
@@ -12,10 +14,10 @@ function parseDate(value: unknown): Date | null {
   return null;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
     const metadata = payload?.metadata && typeof payload.metadata === "object" ? payload.metadata : {};
 
     if (!organizationId || !userId || !type || !sourceType) {
-      return NextResponse.json({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
     }
 
     const result = await ingestCrmInteraction({
@@ -68,9 +70,10 @@ export async function POST(req: NextRequest) {
       contactPhone: typeof payload?.contactPhone === "string" ? payload.contactPhone.trim() : null,
     });
 
-    return NextResponse.json({ ok: true, deduped: result.deduped, customerId: result.customerId });
+    return jsonWrap({ ok: true, deduped: result.deduped, customerId: result.customerId });
   } catch (err) {
     console.error("POST /api/internal/crm/ingest error:", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { backfillPadelRegistrationOutbox } from "@/domain/padelRegistrationBackfill";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const payload = (await req.json().catch(() => null)) as { limit?: unknown; before?: unknown } | null;
@@ -16,10 +18,11 @@ export async function POST(req: NextRequest) {
     before,
   });
 
-  return NextResponse.json({
+  return jsonWrap({
     ok: true,
     scanned: result.scanned,
     emitted: result.emitted,
     nextBefore: result.nextBefore?.toISOString() ?? null,
   });
 }
+export const POST = withApiEnvelope(_POST);

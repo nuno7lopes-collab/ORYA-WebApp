@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function resolveOrderId(params: { orderId: string }) {
   const orderId = Number(params.orderId);
@@ -13,10 +15,10 @@ function resolveOrderId(params: { orderId: string }) {
   return { ok: true as const, orderId };
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -25,7 +27,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     const resolvedParams = await params;
     const resolved = resolveOrderId(resolvedParams);
     if (!resolved.ok) {
-      return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: resolved.error }, { status: 400 });
     }
 
     const email = user.email ?? null;
@@ -41,11 +43,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     });
 
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
     if (!order.paymentIntentId) {
-      return NextResponse.json({ ok: false, error: "Recibo indisponivel." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Recibo indisponivel." }, { status: 400 });
     }
 
     const intent = await retrievePaymentIntent(order.paymentIntentId, { expand: ["latest_charge"] });
@@ -58,15 +60,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
     }
 
     if (!receiptUrl) {
-      return NextResponse.json({ ok: false, error: "Recibo indisponivel." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Recibo indisponivel." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, url: receiptUrl });
+    return jsonWrap({ ok: true, url: receiptUrl });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/purchases/[orderId]/receipt error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao obter recibo." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao obter recibo." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

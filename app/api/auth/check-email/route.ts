@@ -1,21 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { isAppRequest, isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * Endpoint simples para verificar se um email está bloqueado por conta PENDING_DELETE.
  * GET /api/auth/check-email?email=...
  */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const email = req.nextUrl.searchParams.get("email");
     if (!email || !email.includes("@")) {
-      return NextResponse.json({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
     }
     const normalized = email.trim().toLowerCase();
 
@@ -26,14 +28,14 @@ export async function GET(req: NextRequest) {
       identifier: normalized,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
       );
     }
     const allowDetails = isAppRequest(req);
     if (!allowDetails) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           blocked: false,
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
         })
       : null;
     if (pending) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           blocked: true,
@@ -65,9 +67,10 @@ export async function GET(req: NextRequest) {
         { status: 200 },
       );
     }
-    return NextResponse.json({ ok: true, blocked: false }, { status: 200 });
+    return jsonWrap({ ok: true, blocked: false }, { status: 200 });
   } catch (err) {
     console.error("[auth/check-email] erro", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

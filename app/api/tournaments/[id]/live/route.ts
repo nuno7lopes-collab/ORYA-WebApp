@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { readPathParam } from "@/lib/routeParams";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const slug = readPathParam(resolved?.id, req, "tournaments");
-  if (!slug) return NextResponse.json({ ok: false, error: "INVALID_SLUG" }, { status: 400 });
+  if (!slug) return jsonWrap({ ok: false, error: "INVALID_SLUG" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: authData } = await supabase.auth.getUser();
@@ -19,10 +21,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     where: { slug },
     select: { id: true, title: true, startsAt: true, endsAt: true, status: true, tournament: { select: { id: true, format: true, generationSeed: true, tieBreakRules: true } } },
   });
-  if (!event?.tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!event?.tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const structure = await getTournamentStructure(event.tournament.id);
-  if (!structure) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!structure) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   let userPairingId: number | null = null;
   if (userId) {
@@ -82,7 +84,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           .sort((a, b) => (a.startAt && b.startAt ? new Date(b.startAt).getTime() - new Date(a.startAt).getTime() : 0))[0] ?? null
       : null;
 
-  const res = NextResponse.json(
+  const res = jsonWrap(
     {
       ok: true,
       event: { id: event.id, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, status: event.status },
@@ -100,3 +102,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   res.headers.set("Cache-Control", "public, max-age=10");
   return res;
 }
+export const GET = withApiEnvelope(_GET);

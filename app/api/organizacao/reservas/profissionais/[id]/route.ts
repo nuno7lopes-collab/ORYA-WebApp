@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,6 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const VIEW_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -25,14 +27,14 @@ function parseId(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function PATCH(
+async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolved = await params;
   const professionalId = parseId(resolved.id);
   if (!professionalId) {
-    return NextResponse.json({ ok: false, error: "Profissional inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Profissional inválido." }, { status: 400 });
   }
 
   try {
@@ -41,7 +43,7 @@ export async function PATCH(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -51,13 +53,13 @@ export async function PATCH(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const professional = await prisma.reservationProfessional.findFirst({
@@ -66,7 +68,7 @@ export async function PATCH(
     });
 
     if (!professional) {
-      return NextResponse.json({ ok: false, error: "Profissional não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Profissional não encontrado." }, { status: 404 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -77,11 +79,11 @@ export async function PATCH(
 
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
     if (isStaff && professional.userId !== profile.id) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     if (!isStaff && !EDIT_ROLES.includes(membership.role)) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const data: Record<string, unknown> = {};
@@ -91,7 +93,7 @@ export async function PATCH(
     if (!isStaff && priorityRaw !== null) data.priority = priorityRaw;
 
     if (Object.keys(data).length === 0) {
-      return NextResponse.json({ ok: false, error: "Nada para atualizar." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Nada para atualizar." }, { status: 400 });
     }
 
     const updated = await prisma.reservationProfessional.update({
@@ -107,24 +109,24 @@ export async function PATCH(
       },
     });
 
-    return NextResponse.json({ ok: true, professional: updated });
+    return jsonWrap({ ok: true, professional: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/organizacao/reservas/profissionais/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar profissional." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar profissional." }, { status: 500 });
   }
 }
 
-export async function DELETE(
+async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolved = await params;
   const professionalId = parseId(resolved.id);
   if (!professionalId) {
-    return NextResponse.json({ ok: false, error: "Profissional inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Profissional inválido." }, { status: 400 });
   }
 
   try {
@@ -133,7 +135,7 @@ export async function DELETE(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -143,13 +145,13 @@ export async function DELETE(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const professional = await prisma.reservationProfessional.findFirst({
@@ -158,17 +160,19 @@ export async function DELETE(
     });
 
     if (!professional) {
-      return NextResponse.json({ ok: false, error: "Profissional não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Profissional não encontrado." }, { status: 404 });
     }
 
     await prisma.reservationProfessional.delete({ where: { id: professional.id } });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/organizacao/reservas/profissionais/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover profissional." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover profissional." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

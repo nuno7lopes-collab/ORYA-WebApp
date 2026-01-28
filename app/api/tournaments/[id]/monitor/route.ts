@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { readNumericParam } from "@/lib/routeParams";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const id = readNumericParam(resolved?.id, req, "tournaments");
-  if (id === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (id === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const data = await getTournamentStructure(id);
-  if (!data) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!data) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const tieBreakRules: TieBreakRule[] = Array.isArray(data.tieBreakRules)
     ? (data.tieBreakRules as TieBreakRule[])
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       })),
   }));
 
-  const res = NextResponse.json(
+  const res = jsonWrap(
     {
       ok: true,
       tournament: {
@@ -62,3 +64,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   res.headers.set("Cache-Control", "public, max-age=10");
   return res;
 }
+export const GET = withApiEnvelope(_GET);

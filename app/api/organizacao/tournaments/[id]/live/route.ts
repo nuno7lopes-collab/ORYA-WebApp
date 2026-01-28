@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
@@ -6,6 +7,7 @@ import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournam
 import { computeLiveWarnings } from "@/domain/tournaments/liveWarnings";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -29,20 +31,20 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   return access.ok;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const id = Number(resolved?.id);
-  if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isFinite(id)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (authError || !authData?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const tournament = await getTournamentStructure(id);
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const authorized = await ensureOrganizationAccess(authData.user.id, tournament.event.id);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const tieBreakRules: TieBreakRule[] = Array.isArray(tournament.tieBreakRules)
     ? (tournament.tieBreakRules as TieBreakRule[])
@@ -102,7 +104,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     startThresholdMinutes: 60,
   });
 
-  const res = NextResponse.json(
+  const res = jsonWrap(
     {
       ok: true,
       tournament: {
@@ -118,3 +120,4 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   res.headers.set("Cache-Control", "no-store");
   return res;
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,22 +1,24 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Toggle public/open slot (MVP): capitão ou staff OWNER/ADMIN
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const pairingId = readNumericParam(resolved?.id, req, "pairings");
-  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (pairingId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const isPublicOpen = Boolean(body?.isPublicOpen);
@@ -25,7 +27,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     where: { id: pairingId },
     include: { slots: true, event: { select: { organizationId: true } } },
   });
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const isCaptain = pairing.createdByUserId === user.id;
   let isStaff = false;
@@ -37,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const pendingSlot = pairing.slots.find((s) => s.slotStatus === "PENDING");
@@ -57,9 +59,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
       include: { slots: true },
     });
-    return NextResponse.json({ ok: true, pairing: updated }, { status: 200 });
+    return jsonWrap({ ok: true, pairing: updated }, { status: 200 });
   } catch (err) {
     console.error("[padel/pairings][public][PATCH]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);

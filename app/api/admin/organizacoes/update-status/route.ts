@@ -1,6 +1,7 @@
 // app/api/admin/organizacoes/update-status/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
@@ -8,6 +9,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordSearchIndexOrgStatusOutbox } from "@/domain/searchIndex/outbox";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Tipos de estados permitidos para organizações (ajusta se o enum tiver outros valores)
 const ALLOWED_STATUSES = ["PENDING", "ACTIVE", "SUSPENDED"] as const;
@@ -19,11 +21,11 @@ type UpdateOrganizationStatusBody = {
   newStatus?: string;
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
     const ip = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
       | null;
 
     if (!body || typeof body !== "object") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_BODY" },
         { status: 400 },
       );
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
       newStatus === undefined ||
       typeof newStatus !== "string"
     ) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "MISSING_FIELDS" },
         { status: 400 },
       );
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
     const normalizedStatus = newStatus.trim().toUpperCase() as AllowedStatus;
 
     if (!ALLOWED_STATUSES.includes(normalizedStatus)) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_STATUS" },
         { status: 400 },
       );
@@ -70,7 +72,7 @@ export async function POST(req: NextRequest) {
       Number.isNaN(organizationIdNumber) ||
       organizationIdNumber <= 0
     ) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_ORGANIZATION_ID" },
         { status: 400 },
       );
@@ -86,7 +88,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "ORGANIZATION_NOT_FOUND" },
         { status: 404 },
       );
@@ -94,7 +96,7 @@ export async function POST(req: NextRequest) {
 
     // Se o estado já está igual, devolvemos ok mas sem fazer update
     if (organization.status === normalizedStatus) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           organization: {
@@ -187,7 +189,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         organization: {
@@ -202,9 +204,10 @@ export async function POST(req: NextRequest) {
     );
   } catch (error) {
     console.error("[ADMIN][ORGANIZADORES][UPDATE-STATUS]", error);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 },
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,11 +1,13 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   isValidPointsTable,
   isValidTieBreakRules,
@@ -15,39 +17,39 @@ import {
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const items = await prisma.padelRuleSet.findMany({
     where: { organizationId: organization.id },
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const organizationIdParam = body.organizationId ?? resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const parsedOrgId = parseOrganizationId(organizationIdParam);
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const tieBreakRulesRaw = body.tieBreakRules as unknown;
@@ -67,13 +69,13 @@ export async function POST(req: NextRequest) {
   const year = typeof body.year === "number" ? body.year : null;
   const id = typeof body.id === "number" ? body.id : null;
 
-  if (!name) return NextResponse.json({ ok: false, error: "NAME_REQUIRED" }, { status: 400 });
+  if (!name) return jsonWrap({ ok: false, error: "NAME_REQUIRED" }, { status: 400 });
 
   if (!isValidTieBreakRules(tieBreakRulesRaw)) {
-    return NextResponse.json({ ok: false, error: "INVALID_TIE_BREAK_RULES" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_TIE_BREAK_RULES" }, { status: 400 });
   }
   if (!isValidPointsTable(pointsTableRaw)) {
-    return NextResponse.json({ ok: false, error: "INVALID_POINTS_TABLE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_POINTS_TABLE" }, { status: 400 });
   }
 
   const tieBreakRules = tieBreakRulesRaw as PadelTieBreakRule[];
@@ -105,9 +107,11 @@ export async function POST(req: NextRequest) {
           },
         });
 
-    return NextResponse.json({ ok: true, ruleSet }, { status: id ? 200 : 201 });
+    return jsonWrap({ ok: true, ruleSet }, { status: id ? 200 : 201 });
   } catch (err) {
     console.error("[padel/rulesets][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

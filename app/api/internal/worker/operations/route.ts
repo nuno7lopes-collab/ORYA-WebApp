@@ -16,6 +16,7 @@ import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
 import { markSaleDisputed } from "@/domain/finance/disputes";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   sendPurchaseConfirmationEmail,
   sendEntitlementDeliveredEmail,
@@ -254,7 +255,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (LEGACY_OPERATIONS_DISABLED) {
     return NextResponse.json(
       { ok: false, error: "LEGACY_OPERATIONS_DISABLED" },
@@ -1149,3 +1150,4 @@ async function processApplyPromoRedemption(op: OperationRecord) {
     guestEmail,
   });
 }
+export const POST = withApiEnvelope(_POST);

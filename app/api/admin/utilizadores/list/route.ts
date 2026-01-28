@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     // 2) Ler query params
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       total,
       limit,
@@ -73,9 +75,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[admin/utilizadores/list] Erro a carregar utilizadores:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 },
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

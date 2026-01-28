@@ -2,14 +2,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, PendingPayoutStatus, TicketStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -18,7 +20,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -27,7 +29,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -39,7 +41,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const ticketsAgg = await prisma.ticket.aggregate({
@@ -109,7 +111,7 @@ export async function GET(req: NextRequest) {
       actionRequired: Boolean(actionRequired),
     };
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         ticketsSold,
@@ -124,6 +126,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/payouts/summary][GET] erro", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

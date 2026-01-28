@@ -1,24 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { Prisma } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const resolved = await params;
     const payoutId = Number(resolved.id);
     if (!Number.isFinite(payoutId)) {
-      return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
     }
 
     const payout = await prisma.pendingPayout.findUnique({ where: { id: payoutId } });
     if (!payout) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
     const organization = payout.recipientConnectAccountId
@@ -98,7 +100,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       actor: row.actor_user_id ? actorById.get(row.actor_user_id) ?? null : null,
     }));
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         payout,
@@ -110,6 +112,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     );
   } catch (err) {
     console.error("[admin/payouts/detail]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

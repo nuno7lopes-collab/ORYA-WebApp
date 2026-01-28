@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreShippingMode } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const updateMethodSchema = z.object({
   name: z.string().trim().min(1, "Nome obrigatorio.").max(120).optional(),
@@ -38,10 +40,10 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -49,13 +51,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ meth
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
-      return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: methodId.error }, { status: 400 });
     }
 
     const method = await prisma.storeShippingMethod.findFirst({
@@ -74,23 +76,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ meth
       },
     });
     if (!method) {
-      return NextResponse.json({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, item: method });
+    return jsonWrap({ ok: true, item: method });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/shipping/methods/[methodId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar metodo." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar metodo." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -98,13 +100,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ me
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
-      return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: methodId.error }, { status: 400 });
     }
 
     const existing = await prisma.storeShippingMethod.findFirst({
@@ -118,20 +120,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ me
     });
 
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateMethodSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
     const nextEtaMin = payload.etaMinDays === undefined ? existing.etaMinDays : payload.etaMinDays;
     const nextEtaMax = payload.etaMaxDays === undefined ? existing.etaMaxDays : payload.etaMaxDays;
     if (nextEtaMin !== null && nextEtaMax !== null && nextEtaMin > nextEtaMax) {
-      return NextResponse.json({ ok: false, error: "ETA invalida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "ETA invalida." }, { status: 400 });
     }
 
     const data: {
@@ -196,20 +198,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ me
       });
     });
 
-    return NextResponse.json({ ok: true, item: updated });
+    return jsonWrap({ ok: true, item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/me/store/shipping/methods/[methodId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar metodo." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar metodo." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -217,13 +219,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ m
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
-      return NextResponse.json({ ok: false, error: methodId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: methodId.error }, { status: 400 });
     }
 
     const existing = await prisma.storeShippingMethod.findFirst({
@@ -231,17 +233,20 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ m
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
     }
 
     await prisma.storeShippingMethod.delete({ where: { id: existing.id } });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/me/store/shipping/methods/[methodId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover metodo." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover metodo." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

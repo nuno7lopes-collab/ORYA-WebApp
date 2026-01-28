@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +8,7 @@ import { decideCancellation } from "@/lib/bookingCancellation";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { cancelBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computeCancellationRefundFromSnapshot,
   getSnapshotCancellationWindowMinutes,
@@ -24,7 +26,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -32,7 +34,7 @@ export async function POST(
   const bookingId = parseId(resolved.id);
   const ctx = getRequestContext(req);
   const errorWithCtx = (status: number, error: string, errorCode = error, details?: Record<string, unknown>) =>
-    NextResponse.json(
+    jsonWrap(
       {
         ok: false,
         error,
@@ -179,7 +181,7 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       booking: {
         id: result.booking.id,
@@ -196,3 +198,4 @@ export async function POST(
     return errorWithCtx(500, "Erro ao cancelar reserva.", "BOOKING_CANCEL_FAILED");
   }
 }
+export const POST = withApiEnvelope(_POST);

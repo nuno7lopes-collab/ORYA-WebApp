@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
@@ -9,6 +10,7 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { OrganizationMemberRole, OrganizationModule, OrganizationPermissionLevel } from "@prisma/client";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ACCESS_LEVELS = ["NONE", "VIEW", "EDIT"] as const;
 
@@ -26,7 +28,7 @@ function resolveIp(req: NextRequest) {
   return null;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -35,7 +37,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const organizationId =
@@ -43,13 +45,13 @@ export async function GET(req: NextRequest) {
       resolveOrganizationIdFromRequest(req);
 
     if (!organizationId) {
-      return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
 
     if (!callerMembership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -61,12 +63,12 @@ export async function GET(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const permissionModel = getPermissionModel();
     if (!permissionModel?.findMany) {
-      return NextResponse.json({ ok: true, items: [], organizationId }, { status: 200 });
+      return jsonWrap({ ok: true, items: [], organizationId }, { status: 200 });
     }
 
     const items = await permissionModel.findMany({
@@ -82,14 +84,14 @@ export async function GET(req: NextRequest) {
       orderBy: [{ userId: "asc" }, { moduleKey: "asc" }],
     });
 
-    return NextResponse.json({ ok: true, items, organizationId }, { status: 200 });
+    return jsonWrap({ ok: true, items, organizationId }, { status: 200 });
   } catch (err) {
     console.error("[organização/members/permissions][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -98,7 +100,7 @@ export async function PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const body = await req.json().catch(() => null);
@@ -108,16 +110,16 @@ export async function PATCH(req: NextRequest) {
     const accessLevelRaw = body?.accessLevel ?? null;
 
     if (!organizationId || !targetUserId || !moduleKey) {
-      return NextResponse.json({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
     }
 
     if (!Object.values(OrganizationModule).includes(moduleKey as OrganizationModule)) {
-      return NextResponse.json({ ok: false, error: "INVALID_MODULE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_MODULE" }, { status: 400 });
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
 
@@ -125,12 +127,12 @@ export async function PATCH(req: NextRequest) {
       where: { organizationId_userId: { organizationId, userId: targetUserId } },
     });
     if (!targetMembership) {
-      return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 404 });
     }
 
     const manageAllowed = canManageMembers(callerRole, targetMembership.role, targetMembership.role);
     if (!manageAllowed) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const shouldClear = accessLevelRaw === null || accessLevelRaw === "DEFAULT";
@@ -139,7 +141,7 @@ export async function PATCH(req: NextRequest) {
 
     const permissionModel = getPermissionModel();
     if (!permissionModel) {
-      return NextResponse.json({ ok: false, error: "RBAC_NOT_READY" }, { status: 503 });
+      return jsonWrap({ ok: false, error: "RBAC_NOT_READY" }, { status: 503 });
     }
 
     if (shouldClear) {
@@ -204,11 +206,11 @@ export async function PATCH(req: NextRequest) {
         );
       });
 
-      return NextResponse.json({ ok: true }, { status: 200 });
+      return jsonWrap({ ok: true }, { status: 200 });
     }
 
     if (!ACCESS_LEVELS.includes(accessLevelRaw)) {
-      return NextResponse.json({ ok: false, error: "INVALID_ACCESS_LEVEL" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_ACCESS_LEVEL" }, { status: 400 });
     }
 
     const accessLevel = accessLevelRaw as AccessLevel;
@@ -287,9 +289,11 @@ export async function PATCH(req: NextRequest) {
       );
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[organização/members/permissions][PATCH]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

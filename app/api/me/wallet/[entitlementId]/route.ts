@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
@@ -7,6 +8,7 @@ import crypto from "crypto";
 import { normalizeEmail } from "@/lib/utils/email";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -14,16 +16,16 @@ function hashToken(token: string) {
 
 type Params = { entitlementId: string };
 
-export async function GET(_: Request, context: { params: Params | Promise<Params> }) {
+async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   const { entitlementId } = await context.params;
   if (!entitlementId || typeof entitlementId !== "string") {
-    return NextResponse.json({ error: "INVALID_ENTITLEMENT_ID" }, { status: 400 });
+    return jsonWrap({ error: "INVALID_ENTITLEMENT_ID" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return jsonWrap({ error: "Not authenticated" }, { status: 401 });
   }
   const userId = data.user.id;
 
@@ -32,7 +34,7 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
   });
 
   if (!ent) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return jsonWrap({ error: "Not found" }, { status: 404 });
   }
 
   const profile = await prisma.profile.findUnique({
@@ -54,7 +56,7 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
       (identityIds.length > 0 && ent.ownerIdentityId && identityIds.includes(ent.ownerIdentityId)) ||
       (normalizedEmail ? ent.ownerKey === `email:${normalizedEmail}` : false);
     if (!isOwner) {
-      return NextResponse.json({ error: "FORBIDDEN_WALLET_ACCESS" }, { status: 403 });
+      return jsonWrap({ error: "FORBIDDEN_WALLET_ACCESS" }, { status: 403 });
     }
   }
 
@@ -220,7 +222,7 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     }
   }
 
-  return NextResponse.json({
+  return jsonWrap({
     entitlementId: ent.id,
     type: ent.type,
     scope: { eventId: ent.eventId, tournamentId: ent.tournamentId, seasonId: ent.seasonId },
@@ -250,3 +252,4 @@ export async function GET(_: Request, context: { params: Params | Promise<Params
     },
   });
 }
+export const GET = withApiEnvelope(_GET);

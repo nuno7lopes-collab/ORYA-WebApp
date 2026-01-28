@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * Endpoint interno para inspecionar a timeline de checkout.
  * Uso: /api/internal/checkout/timeline?purchaseId=... ou ?paymentIntentId=...
  */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const url = new URL(req.url);
@@ -17,7 +19,7 @@ export async function GET(req: NextRequest) {
   const paymentIntentId = (url.searchParams.get("paymentIntentId") || "").trim();
 
   if (!purchaseId && !paymentIntentId) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Missing purchaseId or paymentIntentId" },
       { status: 400 },
     );
@@ -83,7 +85,7 @@ export async function GET(req: NextRequest) {
       })
     : null;
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       purchaseId: resolvedPurchaseId,
@@ -100,3 +102,4 @@ export async function GET(req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

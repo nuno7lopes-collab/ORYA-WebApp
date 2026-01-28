@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
@@ -11,12 +12,13 @@ import { rateLimit } from "@/lib/auth/rateLimit";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const limiter = await rateLimit(req, { windowMs: 5 * 60 * 1000, max: 10, keyPrefix: "invite_token_issue" });
     if (!limiter.allowed) {
-      return NextResponse.json({ ok: false, error: "RATE_LIMITED" }, { status: 429 });
+      return jsonWrap({ ok: false, error: "RATE_LIMITED" }, { status: 429 });
     }
 
     const supabase = await createSupabaseServer();
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
-      return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
 
     const event = await prisma.event.findUnique({
@@ -36,10 +38,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
     if (!event) {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
     if (!event.organizationId) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -49,13 +51,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     if (event.organization) {
       const emailGate = ensureOrganizationEmailVerified(event.organization);
       if (!emailGate.ok) {
-        return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+        return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
       }
     }
 
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const emailRaw = typeof body?.email === "string" ? body.email.trim() : "";
     const emailNormalized = normalizeEmail(emailRaw);
     if (!emailNormalized) {
-      return NextResponse.json({ ok: false, error: "INVITE_EMAIL_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVITE_EMAIL_INVALID" }, { status: 400 });
     }
 
     const ticketTypeId =
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         select: { id: true, eventId: true },
       });
       if (!ticketType || ticketType.eventId !== eventId) {
-        return NextResponse.json({ ok: false, error: "INVITE_TICKET_TYPE_INVALID" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVITE_TICKET_TYPE_INVALID" }, { status: 400 });
       }
     }
 
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!accessDecision.allowed) {
       const reason = accessDecision.reasonCode;
       const status = reason === "INVITE_TOKEN_TTL_REQUIRED" ? 400 : 409;
-      return NextResponse.json({ ok: false, error: reason }, { status });
+      return jsonWrap({ ok: false, error: reason }, { status });
     }
 
     const issued = await prisma.$transaction(async (tx) => {
@@ -136,19 +138,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return created;
     });
 
-    return NextResponse.json({ ok: true, token: issued.token, expiresAt: issued.expiresAt });
+    return jsonWrap({ ok: true, token: issued.token, expiresAt: issued.expiresAt });
   } catch (err: any) {
     const message = typeof err?.message === "string" ? err.message : "";
     if (message === "INVITE_TOKEN_NOT_ALLOWED") {
-      return NextResponse.json({ ok: false, error: "INVITE_TOKEN_NOT_ALLOWED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "INVITE_TOKEN_NOT_ALLOWED" }, { status: 409 });
     }
     if (message === "INVITE_TOKEN_TTL_REQUIRED") {
-      return NextResponse.json({ ok: false, error: "INVITE_TOKEN_TTL_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVITE_TOKEN_TTL_REQUIRED" }, { status: 400 });
     }
     if (message === "INVITE_IDENTITY_MATCH_UNSUPPORTED") {
-      return NextResponse.json({ ok: false, error: "INVITE_IDENTITY_MATCH_UNSUPPORTED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "INVITE_IDENTITY_MATCH_UNSUPPORTED" }, { status: 409 });
     }
     console.error("[organizacao/eventos/invite-token][POST]", err);
-    return NextResponse.json({ ok: false, error: "UNKNOWN_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "UNKNOWN_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

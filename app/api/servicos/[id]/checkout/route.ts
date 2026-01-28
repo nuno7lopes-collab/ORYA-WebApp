@@ -16,11 +16,12 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const HOLD_MINUTES = 10;
 const ORYA_CARD_FEE_BPS = 100;
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -339,3 +340,4 @@ export async function POST(
     return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
+export const POST = withApiEnvelope(_POST);

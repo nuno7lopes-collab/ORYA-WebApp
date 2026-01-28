@@ -45,7 +45,7 @@ describe("me notifications routes", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(body.items).toHaveLength(1);
+    expect(body.result.items).toHaveLength(1);
   });
 
   it("marca read via helper canónico", async () => {

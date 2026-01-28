@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +8,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreProductStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -26,10 +28,10 @@ type PreviewProduct = {
   imageUrl: string | null;
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -42,12 +44,12 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissoes." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissoes." }, { status: 403 });
     }
 
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return NextResponse.json({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
     }
 
     const store = await prisma.store.findFirst({
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!store) {
-      return NextResponse.json({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
     }
 
     const [totalCount, publicCount, draftCount, publicItems, draftItems] = await Promise.all([
@@ -124,7 +126,7 @@ export async function GET(req: NextRequest) {
       imageUrl: product.images[0]?.url ?? null,
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       store,
       counts: {
@@ -137,9 +139,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/loja/preview error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,21 +1,23 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { buildPadelAnalytics } from "@/domain/padel/analytics";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({
@@ -35,14 +37,14 @@ export async function GET(req: NextRequest) {
     },
   });
   if (!event?.organizationId) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const matches = await prisma.padelMatch.findMany({
     where: { eventId },
@@ -131,7 +133,7 @@ export async function GET(req: NextRequest) {
     })),
   });
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       ...analytics,
@@ -139,3 +141,4 @@ export async function GET(req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { OrgType, PendingPayoutStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type VerifyPlatformEmailBody = {
   organizationId?: number | string;
@@ -16,21 +18,21 @@ function parseOrganizationId(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = (await req.json().catch(() => null)) as VerifyPlatformEmailBody | null;
     if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const organizationId = parseOrganizationId(body.organizationId);
     if (!organizationId) {
-      return NextResponse.json({ ok: false, error: "INVALID_FIELDS" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_FIELDS" }, { status: 400 });
     }
 
     const organization = await prisma.organization.findUnique({
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "ORGANIZATION_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "ORGANIZATION_NOT_FOUND" }, { status: 404 });
     }
 
     const alreadyVerified =
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       organization: {
         id: updated.id,
@@ -115,6 +117,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("[/api/admin/organizacoes/verify-platform-email] Erro inesperado:", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

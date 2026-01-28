@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
@@ -21,7 +23,7 @@ function parseDate(value: unknown) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -30,14 +32,14 @@ export async function GET(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const forms = await prisma.organizationForm.findMany({
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         items: forms.map((form) => ({
@@ -68,11 +70,11 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/inscricoes][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -81,15 +83,15 @@ export async function POST(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const titleRaw = (body as Record<string, unknown>).title;
@@ -110,7 +112,7 @@ export async function POST(req: NextRequest) {
     const endAt = parseDate(endAtRaw);
 
     if (!title) {
-      return NextResponse.json({ ok: false, error: "Indica um título para o formulário." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Indica um título para o formulário." }, { status: 400 });
     }
 
     const form = await prisma.$transaction(async (tx) => {
@@ -151,7 +153,7 @@ export async function POST(req: NextRequest) {
       return created;
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         form: {
@@ -165,6 +167,8 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/inscricoes][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

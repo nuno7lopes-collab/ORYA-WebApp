@@ -1,24 +1,26 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, padel_format } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
@@ -29,13 +31,13 @@ export async function POST(req: NextRequest) {
       : padel_format.TODOS_CONTRA_TODOS;
   const allowIncomplete = body.allowIncomplete === true;
 
-  if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: { id: true, organizationId: true },
   });
-  if (!event || !event.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event || !event.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const resolvedCategoryId = Number.isFinite(categoryId) ? categoryId : null;
   if (resolvedCategoryId) {
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     if (!link) {
-      return NextResponse.json({ ok: false, error: "CATEGORY_NOT_AVAILABLE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "CATEGORY_NOT_AVAILABLE" }, { status: 400 });
     }
   }
   const matchCategoryFilter = resolvedCategoryId ? { categoryId: resolvedCategoryId } : {};
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest) {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   const phaseNormalized = phase === "KNOCKOUT" ? "KNOCKOUT" : "GROUPS";
   const isGroupsFormat = format === "GRUPOS_ELIMINATORIAS";
   const existingPolicy = isGroupsFormat ? "error" : "replace";
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
 
   if (isGroupsFormat && phaseNormalized === "KNOCKOUT" && allowIncomplete) {
     if (membership?.role && !["OWNER", "CO_OWNER"].includes(membership.role)) {
-      return NextResponse.json({ ok: false, error: "OVERRIDE_NOT_ALLOWED" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "OVERRIDE_NOT_ALLOWED" }, { status: 403 });
     }
   }
 
@@ -78,11 +80,11 @@ export async function POST(req: NextRequest) {
   });
 
   if (!result.ok) {
-    return NextResponse.json({ ok: false, error: result.error ?? "GENERATION_FAILED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: result.error ?? "GENERATION_FAILED" }, { status: 400 });
   }
 
   if (isGroupsFormat && phaseNormalized !== "KNOCKOUT") {
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         stage: "GROUPS",
@@ -98,7 +100,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (isGroupsFormat && phaseNormalized === "KNOCKOUT") {
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         stage: "KNOCKOUT",
@@ -118,5 +120,6 @@ export async function POST(req: NextRequest) {
     orderBy: [{ startTime: "asc" }, { id: "asc" }],
   });
 
-  return NextResponse.json({ ok: true, matches }, { status: 200 });
+  return jsonWrap({ ok: true, matches }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

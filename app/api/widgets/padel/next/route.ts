@@ -1,16 +1,18 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const slug = req.nextUrl.searchParams.get("slug");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
   if (!eventId && !slug) {
-    return NextResponse.json({ ok: false, error: "EVENT_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_REQUIRED" }, { status: 400 });
   }
 
   const rateLimited = await enforcePublicRateLimit(req, {
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
       padelTournamentConfig: { select: { advancedSettings: true } },
     },
   });
-  if (!event) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
@@ -43,7 +45,7 @@ export async function GET(req: NextRequest) {
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
     competitionState === "PUBLIC";
   if (!isPublicEvent) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const matches = await prisma.padelMatch.findMany({
@@ -78,8 +80,9 @@ export async function GET(req: NextRequest) {
     status: m.status,
   }));
 
-  return NextResponse.json(
+  return jsonWrap(
     { ok: true, event: { id: event.id, title: event.title, timezone: event.timezone }, items },
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

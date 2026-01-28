@@ -65,6 +65,7 @@ vi.mock("@/lib/reservas/access", () => ({
 
 vi.mock("@/lib/http/requestContext", () => ({
   getRequestContext: () => ({ requestId: "req_test", correlationId: "corr_test" }),
+  buildResponseHeaders: (_ctx: any, existing?: HeadersInit) => new Headers(existing),
 }));
 
 vi.mock("@/lib/organizationAudit", () => ({

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
 
-export async function POST(_req: NextRequest) {
-  return NextResponse.json(
+async function _POST(_req: NextRequest) {
+  return jsonWrap(
     {
       ok: false,
       error: "BOOKING_CONFIRM_DEPRECATED",
@@ -12,3 +14,4 @@ export async function POST(_req: NextRequest) {
     { status: 410 },
   );
 }
+export const POST = withApiEnvelope(_POST);

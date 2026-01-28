@@ -31,8 +31,8 @@ describe("apple-token endpoint", () => {
 
     expect(res.status).toBe(200);
     expect(json.ok).toBe(true);
-    expect(typeof json.token).toBe("string");
-    expect(json.token.split(".").length).toBe(3);
+    expect(typeof json.result.token).toBe("string");
+    expect(json.result.token.split(".").length).toBe(3);
   });
 
   it("dev sem credenciais devolve fallback", async () => {
@@ -44,8 +44,8 @@ describe("apple-token endpoint", () => {
     const res = await GET(new Request("http://localhost/api/maps/apple-token"));
     const json = await res.json();
     expect(res.status).toBe(200);
-    expect(json.ok).toBe(false);
-    expect(json.provider).toBe("osm");
+    expect(json.ok).toBe(true);
+    expect(json.result.provider).toBe("osm");
   });
 
   it("prod sem credenciais falha", async () => {

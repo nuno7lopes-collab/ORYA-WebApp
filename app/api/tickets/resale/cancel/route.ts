@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus, ResaleStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * F5-8 – Cancelar revenda
  * Body esperado: { resaleId: string }
  */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     // 1. Auth – garantir utilizador autenticado
     const supabase = await createSupabaseServer();
@@ -21,7 +23,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "UNAUTHENTICATED" },
         { status: 401 }
       );
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
     const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
     const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
     if (!isAdmin) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "FORBIDDEN" },
         { status: 403 },
       );
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
       | null;
 
     if (!body || typeof body !== "object" || !body.resaleId) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_BODY" },
         { status: 400 }
       );
@@ -62,28 +64,28 @@ export async function POST(req: NextRequest) {
     });
 
     if (!resale) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RESALE_NOT_FOUND" },
         { status: 404 }
       );
     }
 
     if (resale.sellerUserId !== userId) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "NOT_RESALE_OWNER" },
         { status: 403 }
       );
     }
 
     if (resale.status !== ResaleStatus.LISTED) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RESALE_NOT_LISTED" },
         { status: 400 }
       );
     }
 
     if (!resale.ticket) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "TICKET_NOT_FOUND_FOR_RESALE" },
         { status: 404 }
       );
@@ -111,12 +113,13 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (error) {
     console.error("Error in /api/tickets/resale/cancel:", error);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

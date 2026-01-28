@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { cookies } from "next/headers";
 import { isSameOrigin } from "@/lib/auth/requestValidation";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Utilitário para limpar cookies locais (incluindo os sb- do Supabase) quando ficam corrompidos.
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isSameOrigin(req)) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const store = await cookies();
@@ -25,9 +27,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, cleared: all.map((c) => c.name) });
+    return jsonWrap({ ok: true, cleared: all.map((c) => c.name) });
   } catch (err) {
     console.error("[api/auth/clear] erro inesperado:", err);
-    return NextResponse.json({ ok: false, error: "CLEAR_FAILED" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "CLEAR_FAILED" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

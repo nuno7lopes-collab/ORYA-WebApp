@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import type { Prisma } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 200;
@@ -13,11 +15,11 @@ function parsePositiveInt(raw: string | null, fallback: number) {
   return Math.floor(num);
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const url = new URL(req.url);
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
       });
       filteredUserIds = profiles.map((p) => p.id);
       if (filteredUserIds.length === 0) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: true, tickets: [], page, pageSize, total: 0 },
           { status: 200 },
         );
@@ -152,12 +154,13 @@ export async function GET(req: NextRequest) {
       })(),
     }));
 
-    return NextResponse.json(
+    return jsonWrap(
       { ok: true, tickets: payload, page, pageSize, total },
       { status: 200 },
     );
   } catch (err) {
     console.error("[admin/tickets/list]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

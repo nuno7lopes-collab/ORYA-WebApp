@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { ConsentStatus, ConsentType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CONSENT_TYPES = [ConsentType.MARKETING, ConsentType.CONTACT_EMAIL, ConsentType.CONTACT_SMS] as const;
 
@@ -10,7 +12,7 @@ function isValidConsentType(value: unknown): value is ConsentType {
   return typeof value === "string" && CONSENT_TYPES.includes(value as ConsentType);
 }
 
-export async function GET(_req: NextRequest) {
+async function _GET(_req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -34,7 +36,7 @@ export async function GET(_req: NextRequest) {
     );
 
     if (orgIds.length === 0) {
-      return NextResponse.json({ ok: true, items: [] });
+      return jsonWrap({ ok: true, items: [] });
     }
 
     const organizations = await prisma.organization.findMany({
@@ -74,17 +76,17 @@ export async function GET(_req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/me/consents error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar consentimentos." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar consentimentos." }, { status: 500 });
   }
 }
 
-export async function PUT(req: NextRequest) {
+async function _PUT(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -103,7 +105,7 @@ export async function PUT(req: NextRequest) {
     const granted = typeof payload?.granted === "boolean" ? payload.granted : null;
 
     if (!organizationId || !consentType || granted === null) {
-      return NextResponse.json({ ok: false, error: "Payload inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Payload inválido." }, { status: 400 });
     }
 
     const [crmCustomer, existingConsent] = await Promise.all([
@@ -118,7 +120,7 @@ export async function PUT(req: NextRequest) {
     ]);
 
     if (!crmCustomer && !existingConsent) {
-      return NextResponse.json({ ok: false, error: "Organização não autorizada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Organização não autorizada." }, { status: 403 });
     }
 
     const status = granted ? ConsentStatus.GRANTED : ConsentStatus.REVOKED;
@@ -190,12 +192,14 @@ export async function PUT(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, consent });
+    return jsonWrap({ ok: true, consent });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("PUT /api/me/consents error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao guardar consentimento." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao guardar consentimento." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PUT = withApiEnvelope(_PUT);

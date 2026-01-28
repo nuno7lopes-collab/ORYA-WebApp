@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
@@ -6,6 +7,7 @@ import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { EntitlementStatus, EntitlementType, Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { normalizeEmail } from "@/lib/utils/email";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const MAX_PAGE = 50;
 
@@ -33,12 +35,12 @@ function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const { data, error } = await supabase.auth.getUser();
     if (error || !data?.user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return jsonWrap({ error: "Not authenticated" }, { status: 401 });
     }
 
     const userId = data.user.id;
@@ -210,12 +212,13 @@ export async function GET(req: NextRequest) {
       }),
     );
 
-    return NextResponse.json({
+    return jsonWrap({
       items: responseItems,
       nextCursor,
     });
   } catch (err: any) {
     console.error("[api/me/wallet] erro", err);
-    return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,13 +1,15 @@
 // app/api/admin/refunds/retry/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = (await req.json().catch(() => null)) as { operationId?: number | string } | null;
@@ -19,7 +21,7 @@ export async function POST(req: NextRequest) {
           : NaN;
 
     if (!Number.isFinite(operationId)) {
-      return NextResponse.json({ ok: false, error: "INVALID_OPERATION" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_OPERATION" }, { status: 400 });
     }
 
     const op = await prisma.operation.findUnique({
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest) {
       select: { id: true, operationType: true },
     });
     if (!op || op.operationType !== "PROCESS_REFUND_SINGLE") {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
     await prisma.operation.update({
@@ -41,9 +43,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[admin/refunds/retry]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

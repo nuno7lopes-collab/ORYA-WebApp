@@ -1,24 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const receiptSchema = z.object({
   orderNumber: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
 });
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = receiptSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -31,11 +33,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
     if (!order.paymentIntentId) {
-      return NextResponse.json({ ok: false, error: "Recibo indisponivel." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Recibo indisponivel." }, { status: 400 });
     }
 
     const intent = await retrievePaymentIntent(order.paymentIntentId, { expand: ["latest_charge"] });
@@ -48,12 +50,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (!receiptUrl) {
-      return NextResponse.json({ ok: false, error: "Recibo indisponivel." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Recibo indisponivel." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, url: receiptUrl });
+    return jsonWrap({ ok: true, url: receiptUrl });
   } catch (err) {
     console.error("POST /api/store/orders/receipt error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao obter recibo." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao obter recibo." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

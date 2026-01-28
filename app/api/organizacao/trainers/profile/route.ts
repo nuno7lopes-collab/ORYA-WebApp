@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole, NotificationType, TrainerProfileReviewStatus } from "@prisma/client";
@@ -6,6 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { createNotification } from "@/lib/notifications";
 import { normalizeProfileCoverUrl } from "@/lib/profileMedia";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -35,7 +37,7 @@ const parseSpecialties = (value: unknown) => {
   return [] as string[];
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -44,7 +46,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const url = new URL(req.url);
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const profile = await prisma.trainerProfile.findUnique({
@@ -67,7 +69,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         profile,
@@ -79,11 +81,11 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organizacao/trainers/profile][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -92,7 +94,7 @@ export async function PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const body = await req.json().catch(() => null);
@@ -104,11 +106,11 @@ export async function PATCH(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     if (membership.role !== OrganizationMemberRole.TRAINER) {
-      return NextResponse.json({ ok: false, error: "ONLY_TRAINER_CAN_EDIT" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "ONLY_TRAINER_CAN_EDIT" }, { status: 403 });
     }
 
     const title = typeof body?.title === "string" ? body.title.trim() : "";
@@ -123,10 +125,10 @@ export async function PATCH(req: NextRequest) {
     const requestReview = body?.requestReview === true;
 
     if (title.length > MAX_TITLE) {
-      return NextResponse.json({ ok: false, error: "TITULO_DEMASIADO_LONGO" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "TITULO_DEMASIADO_LONGO" }, { status: 400 });
     }
     if (bio.length > MAX_BIO) {
-      return NextResponse.json({ ok: false, error: "BIO_DEMASIADO_LONGA" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BIO_DEMASIADO_LONGA" }, { status: 400 });
     }
 
     const specialties = parseSpecialties(body?.specialties);
@@ -181,9 +183,11 @@ export async function PATCH(req: NextRequest) {
       }).catch((err) => console.warn("[trainer][review-request] notification fail", err));
     }
 
-    return NextResponse.json({ ok: true, profile }, { status: 200 });
+    return jsonWrap({ ok: true, profile }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/trainers/profile][PATCH]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

@@ -1,13 +1,15 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const eventId = req.nextUrl.searchParams.get("eventId");
   const slug = req.nextUrl.searchParams.get("slug");
   if (!eventId && !slug) {
-    return NextResponse.json({ ok: false, error: "EVENT_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_REQUIRED" }, { status: 400 });
   }
 
   const baseUrl = getAppBaseUrl();
@@ -26,8 +28,9 @@ export async function GET(req: NextRequest) {
   });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data?.ok) {
-    return NextResponse.json({ ok: false, error: data?.error || "CALENDAR_ERROR" }, { status: 400 });
+    return jsonWrap({ ok: false, error: data?.error || "CALENDAR_ERROR" }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true, event: data.event, days: data.days ?? [] }, { status: 200 });
+  return jsonWrap({ ok: true, event: data.event, days: data.days ?? [] }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import type { CheckoutStatus } from "@/domain/finance/status";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type PurchaseStatus = "PAID" | "PROCESSING" | "REFUNDED" | "DISPUTED" | "FAILED";
 
@@ -21,11 +23,11 @@ function mapCheckoutStatus(status: CheckoutStatus): PurchaseStatus {
   }
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
   const userId = data.user.id;
 
@@ -151,5 +153,6 @@ export async function GET(req: NextRequest) {
       ? items.filter((i) => i.status === statusFilter)
       : items;
 
-  return NextResponse.json({ ok: true, items: filtered, nextCursor }, { status: 200 });
+  return jsonWrap({ ok: true, items: filtered, nextCursor }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);

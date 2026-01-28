@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
@@ -6,6 +7,7 @@ import { OrganizationMemberRole, SourceType, TournamentMatchStatus } from "@pris
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function getOrganizationRole(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
@@ -29,31 +31,31 @@ async function getOrganizationRole(userId: string, eventId: number) {
   return member?.role ?? null;
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
   const resolved = await params;
   const tournamentId = Number(resolved?.id);
   const matchId = Number(resolved?.matchId);
   if (!Number.isFinite(tournamentId) || !Number.isFinite(matchId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const match = await prisma.tournamentMatch.findUnique({
     where: { id: matchId },
     include: { stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } } },
   });
   if (!match || match.stage.tournamentId !== tournamentId) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
   const event = await prisma.event.findUnique({
     where: { id: match.stage.tournament.eventId },
     select: { organizationId: true },
   });
   if (!event?.organizationId) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const organizationRole = await getOrganizationRole(data.user.id, match.stage.tournament.eventId);
@@ -64,14 +66,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     OrganizationMemberRole.STAFF,
   ];
   if (!organizationRole || !liveOperatorRoles.includes(organizationRole)) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
   const isAdmin =
     organizationRole === OrganizationMemberRole.OWNER ||
     organizationRole === OrganizationMemberRole.CO_OWNER ||
     organizationRole === OrganizationMemberRole.ADMIN;
   if (match.status === "DISPUTED" && !isAdmin) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -118,27 +120,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return outbox;
     });
 
-    return NextResponse.json({ ok: true, queued: true, eventId: outbox.eventId }, { status: 202 });
+    return jsonWrap({ ok: true, queued: true, eventId: outbox.eventId }, { status: 202 });
   } catch (err) {
     if (err instanceof Error && err.message === "MATCH_CONFLICT") {
-      return NextResponse.json({ ok: false, error: "MATCH_CONFLICT", code: "VERSION_CONFLICT" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "MATCH_CONFLICT", code: "VERSION_CONFLICT" }, { status: 409 });
     }
     if (
       err instanceof Error &&
       ["INVALID_SCORE", "INVALID_LIMIT", "LIMIT_EXCEEDED", "TIE_NOT_ALLOWED", "NO_WINNER"].includes(err.message)
     ) {
-      return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+      return jsonWrap({ ok: false, error: err.message }, { status: 400 });
     }
     if (err instanceof Error && err.message === "MATCH_LOCKED") {
-      return NextResponse.json({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
     }
     if (err instanceof Error && err.message === "MISSING_VERSION") {
-      return NextResponse.json({ ok: false, error: "MISSING_VERSION" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "MISSING_VERSION" }, { status: 400 });
     }
     if (err instanceof Error && err.message === "MATCH_NOT_FOUND") {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
     console.error("[match_result] erro", err);
-    return NextResponse.json({ ok: false, error: "UPDATE_FAILED" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "UPDATE_FAILED" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

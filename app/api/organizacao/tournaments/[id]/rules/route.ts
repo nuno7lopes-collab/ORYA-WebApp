@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
 import { updateTournament } from "@/domain/tournaments/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -40,27 +42,27 @@ function normalizeLimit(value: unknown) {
   return Math.min(rounded, 99);
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const tournamentId = Number(resolved?.id);
   if (!Number.isFinite(tournamentId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData?.user) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: { id: true, eventId: true, config: true },
   });
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const authorized = await ensureOrganizationAccess(authData.user.id, tournament.eventId);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const defaultLimit = normalizeLimit(body?.defaultLimit);
@@ -92,12 +94,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!result.ok) {
     if (result.error === "EVENT_NOT_PADEL") {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
     }
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
-  const res = NextResponse.json(
+  const res = jsonWrap(
     {
       ok: true,
       goalLimits: {
@@ -110,3 +112,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   res.headers.set("Cache-Control", "no-store");
   return res;
 }
+export const POST = withApiEnvelope(_POST);

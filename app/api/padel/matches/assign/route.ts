@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -17,22 +19,22 @@ const parseOptionalId = (value: unknown) => {
   return Math.floor(parsed);
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const matchId = parseOptionalId(body.matchId ?? body.id);
-  if (!matchId) return NextResponse.json({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
+  if (!matchId) return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   const pairingAId = parseOptionalId(body.pairingAId ?? null);
   const pairingBId = parseOptionalId(body.pairingBId ?? null);
   if (pairingAId && pairingBId && pairingAId === pairingBId) {
-    return NextResponse.json({ ok: false, error: "DUPLICATE_PAIRING" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "DUPLICATE_PAIRING" }, { status: 400 });
   }
 
   const match = await prisma.padelMatch.findUnique({
@@ -48,20 +50,20 @@ export async function POST(req: NextRequest) {
     },
   });
   if (!match || !match.event?.organizationId) {
-    return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
   if (match.roundType !== "KNOCKOUT") {
-    return NextResponse.json({ ok: false, error: "MATCH_NOT_KNOCKOUT" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "MATCH_NOT_KNOCKOUT" }, { status: 409 });
   }
   if (match.status !== padel_match_status.PENDING) {
-    return NextResponse.json({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const matchCategoryFilter = match.categoryId ? { categoryId: match.categoryId } : {};
   const started = await prisma.padelMatch.findFirst({
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest) {
     select: { id: true },
   });
   if (started) {
-    return NextResponse.json({ ok: false, error: "KO_LOCKED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "KO_LOCKED" }, { status: 409 });
   }
 
   const pairingIds = [pairingAId, pairingBId].filter(Boolean) as number[];
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
       select: { id: true, categoryId: true, pairingStatus: true, registration: { select: { status: true } } },
     });
     if (pairings.length !== pairingIds.length) {
-      return NextResponse.json({ ok: false, error: "PAIRING_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "PAIRING_NOT_FOUND" }, { status: 404 });
     }
     const invalid = pairings.find(
       (p) =>
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
         p.registration?.status !== "CONFIRMED",
     );
     if (invalid) {
-      return NextResponse.json({ ok: false, error: "PAIRING_INVALID" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "PAIRING_INVALID" }, { status: 409 });
     }
 
     const conflict = await prisma.padelMatch.findFirst({
@@ -108,7 +110,7 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     if (conflict) {
-      return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ASSIGNED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "PAIRING_ALREADY_ASSIGNED" }, { status: 409 });
     }
   }
 
@@ -159,5 +161,6 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ ok: true, match: updated }, { status: 200 });
+  return jsonWrap({ ok: true, match: updated }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

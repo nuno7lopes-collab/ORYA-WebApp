@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +8,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -26,7 +28,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function DELETE(
+async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; availabilityId: string }> },
 ) {
@@ -34,7 +36,7 @@ export async function DELETE(
   const serviceId = parseId(resolved.id);
   const overrideId = parseId(resolved.availabilityId);
   if (!serviceId || !overrideId) {
-    return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Dados inválidos." }, { status: 400 });
   }
 
   try {
@@ -43,7 +45,7 @@ export async function DELETE(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -53,13 +55,13 @@ export async function DELETE(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const service = await prisma.service.findFirst({
@@ -67,7 +69,7 @@ export async function DELETE(
       select: { id: true },
     });
     if (!service) {
-      return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
     }
 
     const override = await prisma.availabilityOverride.findFirst({
@@ -75,19 +77,19 @@ export async function DELETE(
       select: { id: true, date: true, kind: true, scopeType: true, scopeId: true },
     });
     if (!override) {
-      return NextResponse.json({ ok: false, error: "Override não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Override não encontrado." }, { status: 404 });
     }
 
     if (membership.role === OrganizationMemberRole.STAFF) {
       if (override.scopeType === "ORGANIZATION" || override.scopeType === "RESOURCE") {
-        return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+        return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
       }
       const professional = await prisma.reservationProfessional.findFirst({
         where: { id: override.scopeId, organizationId: organization.id, userId: profile.id },
         select: { id: true },
       });
       if (!professional) {
-        return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+        return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
       }
     }
 
@@ -103,12 +105,13 @@ export async function DELETE(
       userAgent,
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/organizacao/servicos/[id]/disponibilidade/[availabilityId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover override." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover override." }, { status: 500 });
   }
 }
+export const DELETE = withApiEnvelope(_DELETE);

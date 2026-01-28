@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
@@ -8,6 +9,7 @@ import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
 
@@ -66,10 +68,10 @@ function decodeCursor(raw: string | null) {
   }
 }
 
-export async function GET(req: NextRequest, context: { params: { conversationId: string; messageId: string } }) {
+async function _GET(req: NextRequest, context: { params: { conversationId: string; messageId: string } }) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest, context: { params: { conversationId:
       identifier: user.id,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
       );
@@ -101,7 +103,7 @@ export async function GET(req: NextRequest, context: { params: { conversationId:
     });
 
     if (!membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const root = await prisma.chatConversationMessage.findFirst({
@@ -119,7 +121,7 @@ export async function GET(req: NextRequest, context: { params: { conversationId:
     });
 
     if (!root) {
-      return NextResponse.json({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
     }
 
     const where = cursor
@@ -158,7 +160,7 @@ export async function GET(req: NextRequest, context: { params: { conversationId:
     const nextCursor = replies.length === limit ? encodeCursor(replies[replies.length - 1]) : null;
     const [resolvedRoot] = await resolveAttachmentUrls([root]);
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       root: resolvedRoot,
       items,
@@ -166,12 +168,13 @@ export async function GET(req: NextRequest, context: { params: { conversationId:
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("GET /api/chat/conversations/[id]/threads/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar thread." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar thread." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

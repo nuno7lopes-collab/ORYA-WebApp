@@ -2,19 +2,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { LoyaltyEntryType, LoyaltyProgramStatus, LoyaltySourceType, Prisma } from "@prisma/client";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type ExpireRow = {
   user_id: string;
   to_expire: number;
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 
     const now = new Date();
@@ -102,12 +104,13 @@ export async function POST(req: NextRequest) {
 
     console.info("[loyalty][expire] cron", { programs: programs.length, expiredEntries, expiredUsers });
 
-    return NextResponse.json(
+    return jsonWrap(
       { ok: true, programs: programs.length, expiredEntries, expiredUsers },
       { status: 200 },
     );
   } catch (err) {
     console.error("[loyalty][expire] cron error", err);
-    return NextResponse.json({ ok: false, error: "Internal error" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

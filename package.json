@@ -8,7 +8,7 @@
     "reset": "scripts/reset-dev-servers.sh",
     "reset:hard": "scripts/reset-dev-servers.sh --aggressive --full --no-exclude",
     "delete": "prisma db execute --file scripts/db/cleanup-app_v3.sql",
-    "build": "next build",
+    "build": "ORIGINAL_NODE_ENV=$NODE_ENV next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",

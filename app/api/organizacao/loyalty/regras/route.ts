@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,10 +8,11 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { LoyaltyRuleTrigger, OrganizationMemberRole } from "@prisma/client";
 import { validateLoyaltyRuleLimits } from "@/lib/loyalty/guardrails";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -22,14 +24,14 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const program = await prisma.loyaltyProgram.findUnique({
@@ -44,17 +46,17 @@ export async function GET(req: NextRequest) {
         })
       : [];
 
-    return NextResponse.json({ ok: true, items: rules });
+    return jsonWrap({ ok: true, items: rules });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/loyalty/regras error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar regras." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar regras." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -66,14 +68,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const program = await prisma.loyaltyProgram.findUnique({
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!program) {
-      return NextResponse.json({ ok: false, error: "Programa não configurado." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Programa não configurado." }, { status: 400 });
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest) {
     const rawPoints = typeof payload?.points === "number" && Number.isFinite(payload.points) ? payload.points : null;
     const points = rawPoints !== null ? Math.floor(rawPoints) : null;
     if (!trigger || points === null || points < 1) {
-      return NextResponse.json({ ok: false, error: "Trigger ou pontos inválidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Trigger ou pontos inválidos." }, { status: 400 });
     }
 
     const maxPointsPerDayRaw =
@@ -116,7 +118,7 @@ export async function POST(req: NextRequest) {
         ? payload.maxPointsPerUser
         : null;
     if ((maxPointsPerDayRaw ?? 0) < 0 || (maxPointsPerUserRaw ?? 0) < 0) {
-      return NextResponse.json({ ok: false, error: "Limites inválidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Limites inválidos." }, { status: 400 });
     }
     const maxPointsPerDay =
       maxPointsPerDayRaw !== null && maxPointsPerDayRaw >= 1 ? Math.floor(maxPointsPerDayRaw) : null;
@@ -127,7 +129,7 @@ export async function POST(req: NextRequest) {
 
     const guardrails = validateLoyaltyRuleLimits({ points, maxPointsPerDay, maxPointsPerUser });
     if (!guardrails.ok) {
-      return NextResponse.json({ ok: false, error: guardrails.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: guardrails.error }, { status: 400 });
     }
 
     const rule = await prisma.loyaltyRule.create({
@@ -143,12 +145,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, rule });
+    return jsonWrap({ ok: true, rule });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("POST /api/organizacao/loyalty/regras error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar regra." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar regra." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

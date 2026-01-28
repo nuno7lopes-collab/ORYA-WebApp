@@ -1,6 +1,8 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   Gender,
   PadelEligibilityType,
@@ -68,10 +70,10 @@ async function ensurePlayerProfile(params: { organizationId: number; userId: str
 }
 
 // Claim endpoint para convites (Padel v2).
-export async function GET(_: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+async function _GET(_: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const resolved = await params;
   const token = resolved?.token;
-  if (!token) return NextResponse.json({ ok: false, error: "INVALID_TOKEN" }, { status: 400 });
+  if (!token) return jsonWrap({ ok: false, error: "INVALID_TOKEN" }, { status: 400 });
 
   const pairing = await prisma.padelPairing.findFirst({
     where: { partnerInviteToken: token },
@@ -101,10 +103,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ token:
     },
   });
 
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   if (pairing.player2UserId) {
-    return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
 
   const [event, windowConfig] = await Promise.all([
@@ -118,7 +120,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ token:
     }),
   ]);
   if (!event) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const advanced = (windowConfig?.advancedSettings || {}) as {
     registrationStartsAt?: string | null;
@@ -141,19 +143,19 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ token:
     competitionState: advanced.competitionState ?? null,
   });
   if (!registrationCheck.ok) {
-    return NextResponse.json({ ok: false, error: registrationCheck.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });
   }
 
   const pendingSlot = pairing.slots.find((s) => s.slotStatus === "PENDING");
   if (!pendingSlot) {
-    return NextResponse.json({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
   }
   if (
     pairing.partnerLinkExpiresAt &&
     pairing.partnerLinkExpiresAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return NextResponse.json({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
   }
 
   const ticketTypes = await prisma.ticketType.findMany({
@@ -181,37 +183,37 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ token:
       slotRole: slot_role,
     })),
   };
-  return NextResponse.json(
+  return jsonWrap(
     { ok: true, pairing: pairingPayload, ticketTypes, organizationId: pairing.organizationId, status: "PREVIEW_ONLY", padelEvent },
     { status: 200 },
   );
 }
 
-export async function POST(_: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+async function _POST(_: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const resolved = await params;
   const token = resolved?.token;
-  if (!token) return NextResponse.json({ ok: false, error: "INVALID_TOKEN" }, { status: 400 });
+  if (!token) return jsonWrap({ ok: false, error: "INVALID_TOKEN" }, { status: 400 });
 
   const pairing = await prisma.padelPairing.findFirst({
     where: { partnerInviteToken: token },
     include: { slots: true, registration: { select: { status: true } } },
   });
 
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   const isInactiveRegistration =
     pairing.registration?.status ? INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status) : false;
   if (isInactiveRegistration || pairing.pairingStatus === "CANCELLED") {
-    return NextResponse.json({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
   }
   if (pairing.player2UserId) {
-    return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
 
   const [event, windowConfig] = await Promise.all([
@@ -225,7 +227,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     }),
   ]);
   if (!event) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const advanced = (windowConfig?.advancedSettings || {}) as {
     registrationStartsAt?: string | null;
@@ -248,32 +250,32 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     competitionState: advanced.competitionState ?? null,
   });
   if (!registrationCheck.ok) {
-    return NextResponse.json({ ok: false, error: registrationCheck.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });
   }
 
   const pendingSlot = pairing.slots.find((s) => s.slotStatus === "PENDING");
   if (!pendingSlot) {
-    return NextResponse.json({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
   }
   if (
     pairing.partnerLinkExpiresAt &&
     pairing.partnerLinkExpiresAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return NextResponse.json({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
   }
 
   // SPLIT sem pagamento do parceiro: devolve ação para checkout
   if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-    return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
+    return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
   }
   if (pairing.payment_mode === PadelPaymentMode.FULL) {
     const captainSlot = pairing.slots.find((s) => s.slot_role === "CAPTAIN");
     if (!captainSlot || captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+      return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
     }
     if (pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-      return NextResponse.json({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
+      return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
     }
   }
   if (
@@ -282,7 +284,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     pairing.deadlineAt.getTime() < Date.now() &&
     pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
   ) {
-    return NextResponse.json({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 410 });
   }
 
   // Guard: utilizador já tem pairing ativo no torneio?
@@ -304,7 +306,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     select: { id: true },
   });
   if (existingActive) {
-    return NextResponse.json({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
   }
 
   const limitCheck = await prisma.$transaction((tx) =>
@@ -317,7 +319,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     }),
   );
   if (!limitCheck.ok) {
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
@@ -334,7 +336,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     }),
   );
   if (!playerCapacity.ok) {
-    return NextResponse.json({ ok: false, error: playerCapacity.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: playerCapacity.code }, { status: 409 });
   }
 
   const eligibilityConfig = await prisma.padelTournamentConfig.findUnique({
@@ -364,7 +366,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     email: user.email ?? null,
   });
   if (!isPadelOnboardingComplete(missing)) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing },
       { status: 409 },
     );
@@ -376,7 +378,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
     partnerProfile?.gender as Gender | null,
   );
   if (!eligibility.ok) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: eligibility.code },
       { status: eligibility.code === "GENDER_REQUIRED_FOR_TOURNAMENT" ? 403 : 409 },
     );
@@ -398,12 +400,12 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
   });
   if (!categoryAccess.ok) {
     if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
         { status: 409 },
       );
     }
-    return NextResponse.json({ ok: false, error: categoryAccess.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: categoryAccess.code }, { status: 409 });
   }
 
   try {
@@ -491,12 +493,14 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ token
         slotRole: slot_role,
       })),
     };
-    return NextResponse.json({ ok: true, pairing: pairingPayload }, { status: 200 });
+    return jsonWrap({ ok: true, pairing: pairingPayload }, { status: 200 });
   } catch (err) {
     if (err instanceof Error && err.message === "TICKET_ALREADY_CLAIMED") {
-      return NextResponse.json({ ok: false, error: "TICKET_ALREADY_CLAIMED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "TICKET_ALREADY_CLAIMED" }, { status: 409 });
     }
     console.error("[padel/pairings][claim][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

@@ -2,17 +2,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { queueTournamentEve } from "@/domain/notifications/tournament";
 import { shouldNotify } from "@/lib/notifications";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 const REMINDER_HOURS = 24;
 const WINDOW_MINUTES = 60;
 const MAX_EVENTS = 50;
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const now = new Date();
@@ -61,8 +63,9 @@ export async function POST(req: NextRequest) {
     notified += allowed.length;
   }
 
-  return NextResponse.json(
+  return jsonWrap(
     { ok: true, windowStart, windowEnd, events: events.length, notified, skipped },
     { status: 200 },
   );
 }
+export const POST = withApiEnvelope(_POST);

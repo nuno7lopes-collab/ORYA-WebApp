@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { getPlatformAndStripeFees } from "@/lib/platformSettings";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET() {
+async function _GET() {
   try {
     const { orya, stripe } = await getPlatformAndStripeFees();
-    return NextResponse.json({ ok: true, orya, stripe }, { status: 200 });
+    return jsonWrap({ ok: true, orya, stripe }, { status: 200 });
   } catch (err) {
     console.error("[platform/fees] unexpected error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

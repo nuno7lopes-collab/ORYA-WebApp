@@ -2,6 +2,7 @@
 // @deprecated Slice 5 cleanup: legacy summaries endpoint (v7 uses ledger).
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { Prisma, SaleSummaryStatus, OrganizationModule } from "@prisma/client";
@@ -9,6 +10,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 const LEGACY_STATS_DISABLED = true;
 
 function parseRangeParams(url: URL) {
@@ -63,9 +65,9 @@ function formatDayKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   if (LEGACY_STATS_DISABLED) {
-    return NextResponse.json({ ok: false, error: "LEGACY_STATS_DISABLED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "LEGACY_STATS_DISABLED" }, { status: 410 });
   }
   try {
     const supabase = await createSupabaseServer();
@@ -82,7 +84,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!user) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "UNAUTHENTICATED" },
         { status: 401 }
       );
@@ -112,7 +114,7 @@ export async function GET(req: NextRequest) {
     if (eventIdParam) {
       const parsed = Number(eventIdParam);
       if (Number.isNaN(parsed)) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "INVALID_EVENT_ID" },
           { status: 400 }
         );
@@ -127,7 +129,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -139,7 +141,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     // 2) Preferir fonte de verdade: legacy summaries (desativado no v7)
@@ -249,7 +251,7 @@ export async function GET(req: NextRequest) {
       a.date.localeCompare(b.date)
     );
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         range: {
@@ -268,9 +270,10 @@ export async function GET(req: NextRequest) {
       "[organização/time-series] Erro interno ao gerar série temporal:",
       error
     );
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

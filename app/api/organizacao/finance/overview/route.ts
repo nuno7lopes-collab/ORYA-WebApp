@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -8,6 +9,7 @@ import { getStripeBaseFees } from "@/lib/platformSettings";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import { OrganizationModule, PendingPayoutStatus, SaleSummaryStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Aggregate = {
   grossCents: number;
@@ -16,7 +18,7 @@ type Aggregate = {
   tickets: number;
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -25,7 +27,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const url = new URL(req.url);
@@ -51,7 +53,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -63,7 +65,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const events = await prisma.event.findMany({
@@ -84,7 +86,7 @@ export async function GET(req: NextRequest) {
     const eventIds = events.map((e) => e.id);
 
     if (!eventIds.length) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: true,
           totals: { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0, eventsWithSales: 0 },
@@ -155,7 +157,7 @@ export async function GET(req: NextRequest) {
 
     const purchaseIds = summaries.map((s) => s.purchaseId).filter((p): p is string => Boolean(p));
     if (summaries.length && purchaseIds.length !== summaries.length) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "FINANCE_STATUS_INCOMPLETE",
@@ -173,7 +175,7 @@ export async function GET(req: NextRequest) {
     for (const summary of summaries) {
       const resolved = summary.purchaseId ? statusMap.get(summary.purchaseId) : null;
       if (!resolved || resolved.status !== "PAID") {
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             error: "FINANCE_STATUS_INCOMPLETE",
@@ -303,7 +305,7 @@ export async function GET(req: NextRequest) {
       actionRequired: Boolean(actionRequired),
     };
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         totals: { ...totals, eventsWithSales },
@@ -331,6 +333,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/finance/overview]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

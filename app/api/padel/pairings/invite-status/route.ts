@@ -1,10 +1,12 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { normalizeEmail } from "@/lib/utils/email";
 import { normalizePhone } from "@/lib/phone";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   Gender,
   PadelEligibilityType,
@@ -70,17 +72,17 @@ function levelLabel(minLevel?: string | null, maxLevel?: string | null) {
   return "Nível livre";
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const pairingIdRaw = req.nextUrl.searchParams.get("pairingId");
   const pairingId = Number(pairingIdRaw);
   if (!pairingIdRaw || !Number.isFinite(pairingId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_PAIRING_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_PAIRING_ID" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
   const userId = data.user.id;
   const normalizedEmail = normalizeEmail(data.user.email ?? null);
@@ -122,7 +124,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   if (!pairing) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
   const [tournamentConfig, category] = await Promise.all([
@@ -156,7 +158,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (!userSlot) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const viewerRole =
@@ -517,7 +519,7 @@ export async function GET(req: NextRequest) {
     statusHint = blockingDetails?.message ?? "A dupla não cumpre os requisitos.";
   }
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       pairingId: pairing.id,
@@ -591,3 +593,4 @@ export async function GET(req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

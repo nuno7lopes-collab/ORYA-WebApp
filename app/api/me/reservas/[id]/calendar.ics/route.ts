@@ -3,13 +3,14 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { buildIcsEvent } from "@/lib/calendar/ics";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseId(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function GET(
+async function _GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -75,3 +76,4 @@ export async function GET(
     return new Response("Erro ao gerar calendário", { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

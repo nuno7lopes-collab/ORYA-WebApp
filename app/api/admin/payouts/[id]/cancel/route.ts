@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { logPendingPayoutAudit } from "@/lib/payments/payoutAdmin";
 import { PendingPayoutStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminUser();
   if (!auth.ok) {
-    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+    return jsonWrap({ ok: false, error: auth.error }, { status: auth.status });
   }
 
   const resolved = await params;
   const payoutId = Number(resolved.id);
   if (!Number.isFinite(payoutId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const body = (await req.json().catch(() => null)) as { reason?: string } | null;
@@ -21,11 +23,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const payout = await prisma.pendingPayout.findUnique({ where: { id: payoutId } });
   if (!payout) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
   if (payout.status === PendingPayoutStatus.RELEASED) {
-    return NextResponse.json({ ok: false, error: "ALREADY_RELEASED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "ALREADY_RELEASED" }, { status: 409 });
   }
 
   const updated = await prisma.pendingPayout.update({
@@ -40,5 +42,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     metadata: { reason },
   });
 
-  return NextResponse.json({ ok: true, payout: updated }, { status: 200 });
+  return jsonWrap({ ok: true, payout: updated }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { isOrganizationFollowed } from "@/domain/social/follows";
@@ -8,6 +9,7 @@ import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournam
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
 import { getWinnerSideFromScore, type MatchScorePayload } from "@/domain/tournaments/matchRules";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computePadelStandingsByGroup,
   normalizePadelPointsTable,
@@ -65,10 +67,10 @@ function resolvePadelRoundNumber(label: string | null) {
   return Number.isFinite(value) ? value : null;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const resolved = await params;
   const slug = resolved?.slug;
-  if (!slug) return NextResponse.json({ ok: false, error: "INVALID_SLUG" }, { status: 400 });
+  if (!slug) return jsonWrap({ ok: false, error: "INVALID_SLUG" }, { status: 400 });
 
   try {
     let event = await prisma.event.findUnique({
@@ -171,7 +173,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         });
       }
     }
-    if (!event) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    if (!event) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const supabase = await createSupabaseServer();
   const { data: authData } = await supabase.auth.getUser();
@@ -766,7 +768,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     organizationFollowed = await isOrganizationFollowed(userId, event.organization.id);
   }
 
-    const res = NextResponse.json(
+    const res = jsonWrap(
       {
         ok: true,
         event: {
@@ -835,6 +837,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     return res;
   } catch (err) {
     console.error("[livehub] error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

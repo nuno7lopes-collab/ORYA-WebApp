@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreShippingMode } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const updateSettingsSchema = z.object({
   freeShippingThresholdCents: z.number().int().nonnegative().optional().nullable(),
@@ -24,10 +26,10 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET() {
+async function _GET() {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -35,10 +37,10 @@ export async function GET() {
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       settings: {
         freeShippingThresholdCents: context.store.freeShippingThresholdCents,
@@ -47,17 +49,17 @@ export async function GET() {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/shipping/settings error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar settings." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar settings." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: Request) {
+async function _PATCH(req: Request) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -65,13 +67,13 @@ export async function PATCH(req: Request) {
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateSettingsSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -84,12 +86,14 @@ export async function PATCH(req: Request) {
       select: { freeShippingThresholdCents: true, shippingMode: true },
     });
 
-    return NextResponse.json({ ok: true, settings: updated });
+    return jsonWrap({ ok: true, settings: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/me/store/shipping/settings error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar settings." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar settings." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

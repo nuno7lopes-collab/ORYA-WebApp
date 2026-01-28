@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreShippingMode } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -63,10 +65,10 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -74,13 +76,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ zone
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
-      return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: zoneId.error }, { status: 400 });
     }
 
     const zone = await prisma.storeShippingZone.findFirst({
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ zone
       select: { id: true },
     });
     if (!zone) {
-      return NextResponse.json({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
     }
 
     const items = await prisma.storeShippingMethod.findMany({
@@ -108,20 +110,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ zone
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/loja/shipping/zones/[zoneId]/methods error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar metodos." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar metodos." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -129,13 +131,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ zon
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
-      return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: zoneId.error }, { status: 400 });
     }
 
     const zone = await prisma.storeShippingZone.findFirst({
@@ -143,20 +145,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ zon
       select: { id: true },
     });
     if (!zone) {
-      return NextResponse.json({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createMethodSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
     const etaMinDays = payload.etaMinDays ?? null;
     const etaMaxDays = payload.etaMaxDays ?? null;
     if (etaMinDays !== null && etaMaxDays !== null && etaMinDays > etaMaxDays) {
-      return NextResponse.json({ ok: false, error: "ETA invalida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "ETA invalida." }, { status: 400 });
     }
 
     const created = await prisma.$transaction(async (tx) => {
@@ -193,12 +195,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ zon
       });
     });
 
-    return NextResponse.json({ ok: true, item: created }, { status: 201 });
+    return jsonWrap({ ok: true, item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/loja/shipping/zones/[zoneId]/methods error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar metodo." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar metodo." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

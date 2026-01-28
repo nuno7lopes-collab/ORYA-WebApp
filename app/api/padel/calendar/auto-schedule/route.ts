@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -11,6 +12,7 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const DEFAULT_DURATION_MINUTES = 60;
@@ -82,19 +84,19 @@ function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflict
   };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const check = await ensureOrganization(req);
   if ("error" in check) {
-    return NextResponse.json({ ok: false, error: check.error }, { status: check.status });
+    return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
   const { organization } = check;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
   const dryRun = body.dryRun === true;
   const startFromNow = body.startFromNow === true;
@@ -119,7 +121,7 @@ export async function POST(req: NextRequest) {
     },
   });
   if (!event) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const advanced = (event.padelTournamentConfig?.advancedSettings || {}) as {
@@ -151,10 +153,10 @@ export async function POST(req: NextRequest) {
       : rawWindowStart
     : null;
   if (!windowStart || !windowEnd) {
-    return NextResponse.json({ ok: false, error: "EVENT_WINDOW_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_WINDOW_REQUIRED" }, { status: 400 });
   }
   if (windowEnd <= windowStart) {
-    return NextResponse.json({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
   }
 
   const durationFromBody = parseNumber(body.durationMinutes);
@@ -236,7 +238,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (courts.length === 0) {
-    return NextResponse.json({ ok: false, error: "NO_COURTS_CONFIGURED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_COURTS_CONFIGURED" }, { status: 400 });
   }
 
   {
@@ -269,7 +271,7 @@ export async function POST(req: NextRequest) {
       const foundIds = new Set(unscheduledMatchesRaw.map((m) => m.id));
       const missing = targetMatchIds.filter((id) => !foundIds.has(id));
       if (missing.length > 0) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "MATCH_NOT_AVAILABLE", missing },
           { status: 409 },
         );
@@ -277,7 +279,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (unscheduledMatchesRaw.length === 0) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: true, scheduledCount: 0, skippedCount: 0, skipped: [] },
         { status: 200 },
       );
@@ -550,7 +552,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (missingExisting) {
-      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+      return jsonWrap(agendaConflictResponse(), { status: 503 });
     }
 
     const sortedUpdates = [...scheduledUpdates].sort((a, b) => {
@@ -563,7 +565,7 @@ export async function POST(req: NextRequest) {
     for (const update of sortedUpdates) {
       const bucket = existingByCourt.get(update.courtId);
       if (!bucket) {
-        return NextResponse.json(agendaConflictResponse(), { status: 503 });
+        return jsonWrap(agendaConflictResponse(), { status: 503 });
       }
       const candidate: AgendaCandidate = {
         type: "MATCH_SLOT",
@@ -573,7 +575,7 @@ export async function POST(req: NextRequest) {
       };
       const decision = evaluateCandidate({ candidate, existing: bucket });
       if (!decision.allowed) {
-        return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+        return jsonWrap(agendaConflictResponse(decision), { status: 409 });
       }
       bucket.push(candidate);
     }
@@ -628,7 +630,7 @@ export async function POST(req: NextRequest) {
       outboxEventId = outbox.eventId;
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         scheduledCount: scheduledUpdates.length,
@@ -652,3 +654,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

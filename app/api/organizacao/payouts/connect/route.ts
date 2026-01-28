@@ -2,8 +2,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   createAccountLink,
   createStripeAccount,
@@ -13,7 +15,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgOwner } from "@/lib/organizationPermissions";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -22,7 +24,7 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não autenticado." },
         { status: 401 },
       );
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Perfil não encontrado." },
         { status: 404 },
       );
@@ -46,14 +48,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "APENAS_OWNER" },
         { status: 403 },
       );
     }
 
     if (organization.status !== "ACTIVE") {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Conta de organização ainda não está ativa.",
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (organization.orgType === "PLATFORM") {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "PLATFORM_ACCOUNT",
@@ -112,7 +114,7 @@ export async function POST(req: NextRequest) {
       type: "account_onboarding",
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         url: link.url,
@@ -122,9 +124,10 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização][payouts][connect] erro:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro ao gerar onboarding Stripe." },
       { status: 500 },
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const resolved = await params;
   const entryId = readNumericParam(resolved?.id, req, "inscricoes");
-  if (entryId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (entryId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const entry = await prisma.tournamentEntry.findFirst({
     where: { id: entryId, OR: [{ userId: user.id }, { ownerUserId: user.id }] },
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     },
   });
 
-  if (!entry) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!entry) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const pairing = entry.pairing;
   const lifecycleStatus = pairing
@@ -51,7 +53,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     pairing?.slots?.find((s) => s.slot_role === "PARTNER" && s.profileId !== entry.userId) ||
     pairing?.slots?.find((s) => s.slot_role === "CAPTAIN" && s.profileId !== entry.userId);
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       entry: {
@@ -78,3 +80,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

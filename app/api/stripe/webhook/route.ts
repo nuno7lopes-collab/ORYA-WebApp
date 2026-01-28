@@ -9,6 +9,7 @@ import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   EntitlementStatus,
   EntitlementType,
@@ -139,7 +140,7 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
       eventId: event.id,
       eventType: event.type,
     });
-    return { ok: false, reason: "ORG_NOT_RESOLVED" };
+    return { ok: false, reason: "ORG_NOT_RESOLVED" } as const;
   }
   const sourceType = typeof metadata.sourceType === "string" && metadata.sourceType.trim() !== "" ? metadata.sourceType : null;
   const sourceId = typeof metadata.sourceId === "string" && metadata.sourceId.trim() !== "" ? metadata.sourceId : null;
@@ -182,7 +183,7 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
   });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (LEGACY_FULFILLMENT_DISABLED) {
     return NextResponse.json(
       { ok: false, error: "LEGACY_FULFILLMENT_DISABLED" },
@@ -217,7 +218,10 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    await recordStripeWebhookOutbox(event);
+    const outbox = await recordStripeWebhookOutbox(event);
+    if (!outbox.ok) {
+      return new Response("Organization not resolved", { status: 400 });
+    }
   } catch (err) {
     console.error("[Webhook] Error processing event:", err);
     // devolvemos 200 na mesma para o Stripe não re-tentar para sempre
@@ -2243,3 +2247,4 @@ async function handlePadelSplitRefund(
     }
   });
 }
+export const POST = withApiEnvelope(_POST);

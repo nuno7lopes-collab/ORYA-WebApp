@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(
+async function _GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const resolved = await params;
   const serviceId = Number(resolved.id);
   if (!Number.isFinite(serviceId)) {
-    return NextResponse.json({ ok: false, error: "Serviço inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
   }
 
   try {
@@ -75,7 +77,7 @@ export async function GET(
     });
 
     if (!service) {
-      return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
     }
 
     if (service.unitPriceCents > 0) {
@@ -89,7 +91,7 @@ export async function GET(
         requireStripe: !isPlatformOrg,
       });
       if (!gate.ok) {
-        return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+        return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
       }
     }
 
@@ -115,7 +117,7 @@ export async function GET(
       ...publicOrganization
     } = service.organization;
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       service: {
         ...service,
@@ -137,6 +139,7 @@ export async function GET(
     });
   } catch (err) {
     console.error("GET /api/servicos/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar serviço." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar serviço." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

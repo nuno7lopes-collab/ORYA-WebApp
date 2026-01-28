@@ -1,19 +1,21 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { NotificationType } from "@prisma/client";
 import { getUserFollowingSet } from "@/domain/social/follows";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Lista notificações com badge de não lidas; só o próprio utilizador pode ver
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   let ctx = getRequestContext(req);
   try {
     const user = await requireUser();
 
     const requestedUserId = req.nextUrl.searchParams.get("userId");
     if (requestedUserId && requestedUserId !== user.id) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, code: "FORBIDDEN", message: "Não podes ver notificações de outro utilizador." },
         { status: 403 },
       );
@@ -83,7 +85,7 @@ export async function GET(req: NextRequest) {
     }
     const unreadCount = await prisma.notification.count({ where: unreadCountWhere });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       unreadCount,
       notifications: items,
@@ -91,7 +93,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof AuthRequiredError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, code: "UNAUTHENTICATED", message: "Sessão em falta" },
         { status: err.status ?? 401 },
       );
@@ -103,18 +105,18 @@ export async function GET(req: NextRequest) {
       correlationId: ctx.correlationId,
       orgId: ctx.orgId,
     });
-    return NextResponse.json({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
     const body = await req.json().catch(() => ({}));
     const { notificationId } = body as { notificationId?: string };
     if (!notificationId) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, code: "INVALID_PAYLOAD", message: "notificationId é obrigatório" },
         { status: 400 },
       );
@@ -125,16 +127,16 @@ export async function DELETE(req: NextRequest) {
     });
 
     if (result.count === 0) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, code: "NOT_FOUND", message: "Notificação não existe" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (err instanceof AuthRequiredError) {
-      return NextResponse.json({ ok: false, code: "UNAUTHENTICATED" }, { status: err.status ?? 401 });
+      return jsonWrap({ ok: false, code: "UNAUTHENTICATED" }, { status: err.status ?? 401 });
     }
     console.error("[notifications][DELETE] erro inesperado", {
       err,
@@ -142,6 +144,8 @@ export async function DELETE(req: NextRequest) {
       correlationId: ctx.correlationId,
       orgId: ctx.orgId,
     });
-    return NextResponse.json({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const DELETE = withApiEnvelope(_DELETE);

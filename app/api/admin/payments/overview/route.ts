@@ -1,11 +1,13 @@
 // app/api/admin/payments/overview/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import type { Prisma, PaymentMode } from "@prisma/client";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Aggregate = {
   grossCents: number;
@@ -25,11 +27,11 @@ const emptyAgg: Aggregate = {
   tickets: 0,
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const url = new URL(req.url);
@@ -63,7 +65,7 @@ export async function GET(req: NextRequest) {
       });
       purchaseIds = events.map((e) => e.purchaseId).filter(Boolean) as string[];
       if (purchaseIds.length === 0) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: true, totals: emptyAgg, byOrganization: [], period: { from: fromDate, to: toDate } },
           { status: 200 },
         );
@@ -160,7 +162,7 @@ export async function GET(req: NextRequest) {
       events: entry.events.size,
     }));
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         totals,
@@ -171,6 +173,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[admin/payments/overview]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

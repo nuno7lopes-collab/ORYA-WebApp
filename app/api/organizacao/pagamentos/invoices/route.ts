@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { OrganizationMemberRole, SaleSummaryStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -14,7 +16,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const url = new URL(req.url);
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION" }, { status: 400 });
     }
     const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
       OrganizationMemberRole.OWNER,
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
       OrganizationMemberRole.ADMIN,
     ];
     if (!ROLE_ALLOWLIST.includes(membership.role)) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const from = url.searchParams.get("from");
@@ -71,9 +73,10 @@ export async function GET(req: NextRequest) {
       { grossCents: 0, discountCents: 0, platformFeeCents: 0, netCents: 0, tickets: 0 },
     );
 
-    return NextResponse.json({ ok: true, items: sales, summary }, { status: 200 });
+    return jsonWrap({ ok: true, items: sales, summary }, { status: 200 });
   } catch (err) {
     console.error("[api/organizacao/pagamentos/invoices]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

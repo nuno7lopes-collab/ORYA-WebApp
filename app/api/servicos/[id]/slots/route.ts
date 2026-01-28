@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const SLOT_STEP_MINUTES = 15;
 
@@ -34,14 +36,14 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
-export async function GET(
+async function _GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolved = await params;
   const serviceId = Number(resolved.id);
   if (!Number.isFinite(serviceId)) {
-    return NextResponse.json({ ok: false, error: "Serviço inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
   }
 
   try {
@@ -81,7 +83,7 @@ export async function GET(
     });
 
     if (!service) {
-      return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
     }
 
     const assignmentConfig = resolveServiceAssignmentMode({
@@ -100,7 +102,7 @@ export async function GET(
         requireStripe: !isPlatformOrg,
       });
       if (!gate.ok) {
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             error: "PAYMENTS_NOT_READY",
@@ -116,7 +118,7 @@ export async function GET(
     const timezone = service.organization?.timezone || "Europe/Lisbon";
     const dayParam = parseDayParam(req.nextUrl.searchParams.get("day"));
     if (!dayParam) {
-      return NextResponse.json({ ok: false, error: "Dia inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dia inválido." }, { status: 400 });
     }
 
     const rangeStart = makeUtcDateFromLocal({ ...dayParam, hour: 0, minute: 0 }, timezone);
@@ -137,7 +139,7 @@ export async function GET(
     const partySize = parsePositiveInt(req.nextUrl.searchParams.get("partySize"));
 
     if (!assignmentConfig.isCourtService && partySize) {
-      return NextResponse.json(getResourceModeBlockedPayload(), { status: 409 });
+      return jsonWrap(getResourceModeBlockedPayload(), { status: 409 });
     }
 
     let scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
@@ -145,10 +147,10 @@ export async function GET(
 
     if (assignmentMode === "RESOURCE") {
       if (!partySize) {
-        return NextResponse.json({ ok: false, error: "Capacidade obrigatória." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Capacidade obrigatória." }, { status: 400 });
       }
       if (allowedResourceIds && allowedResourceIds.length === 0) {
-        return NextResponse.json({ ok: true, items: [] });
+        return jsonWrap({ ok: true, items: [] });
       }
       const resources = await prisma.reservationResource.findMany({
         where: {
@@ -162,24 +164,24 @@ export async function GET(
       });
       scopeIds = resources.map((resource) => resource.id);
       if (scopeIds.length === 0) {
-        return NextResponse.json({ ok: true, items: [] });
+        return jsonWrap({ ok: true, items: [] });
       }
     } else {
       if (professionalId) {
         if (allowedProfessionalIds && !allowedProfessionalIds.includes(professionalId)) {
-          return NextResponse.json({ ok: false, error: "Profissional inválido." }, { status: 404 });
+          return jsonWrap({ ok: false, error: "Profissional inválido." }, { status: 404 });
         }
         const professional = await prisma.reservationProfessional.findFirst({
           where: { id: professionalId, organizationId: service.organizationId, isActive: true },
           select: { id: true },
         });
         if (!professional) {
-          return NextResponse.json({ ok: false, error: "Profissional inválido." }, { status: 404 });
+          return jsonWrap({ ok: false, error: "Profissional inválido." }, { status: 404 });
         }
         scopeIds = [professional.id];
       } else {
         if (allowedProfessionalIds && allowedProfessionalIds.length === 0) {
-          return NextResponse.json({ ok: true, items: [] });
+          return jsonWrap({ ok: true, items: [] });
         }
         const professionals = await prisma.reservationProfessional.findMany({
           where: {
@@ -195,7 +197,7 @@ export async function GET(
     }
 
     if (scopeIds.length === 0) {
-      return NextResponse.json({ ok: true, items: [] });
+      return jsonWrap({ ok: true, items: [] });
     }
 
     const shouldUseOrgOnly = false;
@@ -285,9 +287,10 @@ export async function GET(
         status: "OPEN",
       }));
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     console.error("GET /api/servicos/[id]/slots error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar horários." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar horários." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

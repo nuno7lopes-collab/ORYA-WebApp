@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/utils/email";
 import { validateUsername } from "@/lib/username";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -34,25 +36,25 @@ function normalizeIdentifier(raw: string): CheckResult {
   return { ok: true, normalized: validation.normalized, type: "username" };
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   try {
     const resolved = await params;
     const slug = resolved.slug;
     if (!slug) {
-      return NextResponse.json({ ok: false, error: "SLUG_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "SLUG_REQUIRED" }, { status: 400 });
     }
 
     let body: { identifier?: string; scope?: string } | null = null;
     try {
       body = (await req.json()) as { identifier?: string; scope?: string };
     } catch {
-      return NextResponse.json({ ok: false, error: "BODY_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BODY_INVALID" }, { status: 400 });
     }
 
     const identifier = typeof body?.identifier === "string" ? body.identifier : "";
     const normalized = normalizeIdentifier(identifier);
     if (!normalized.ok) {
-      return NextResponse.json({ ok: false, error: normalized.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: normalized.error }, { status: 400 });
     }
     const scopeRaw = typeof body?.scope === "string" ? body.scope.trim().toUpperCase() : "";
     const scope = scopeRaw === "PARTICIPANT" ? "PARTICIPANT" : "PUBLIC";
@@ -62,7 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       select: { id: true },
     });
     if (!event) {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
     const invite = await prisma.eventInvite.findFirst({
@@ -70,7 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       select: { id: true },
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       invited: Boolean(invite),
       type: normalized.type,
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     });
   } catch (err) {
     console.error("[eventos/invites/check]", err);
-    return NextResponse.json({ ok: false, error: "Erro ao validar convite." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao validar convite." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -6,6 +7,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const resolveOrganizationId = (req: NextRequest) => {
   const organizationId = resolveOrganizationIdFromRequest(req);
@@ -38,17 +40,17 @@ async function requireOrganization(req: NextRequest) {
   return { organization, profile, membership };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const ctx = await requireOrganization(req);
     if ("error" in ctx) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return NextResponse.json({ ok: false, error: ctx.error }, { status });
+      return jsonWrap({ ok: false, error: ctx.error }, { status });
     }
     const emailGate = ensureOrganizationEmailVerified(ctx.organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: ctx.organization.id,
@@ -59,7 +61,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const promoRepo = (prisma as unknown as {
@@ -68,7 +70,7 @@ export async function GET(req: NextRequest) {
       };
     }).promoCode;
     if (!promoRepo) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Promo codes indisponíveis nesta instância do Prisma." },
         { status: 500 },
       );
@@ -182,7 +184,7 @@ export async function GET(req: NextRequest) {
       });
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       viewerRole: ctx.membership.role,
       promoCodes: promoCodes.map((p) => ({
@@ -225,21 +227,21 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[organização/promo][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const ctx = await requireOrganization(req);
     if ("error" in ctx) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return NextResponse.json({ ok: false, error: ctx.error }, { status });
+      return jsonWrap({ ok: false, error: ctx.error }, { status });
     }
     const emailGate = ensureOrganizationEmailVerified(ctx.organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: ctx.organization.id,
@@ -250,12 +252,12 @@ export async function POST(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     if (!body) {
-      return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
     }
     const promoRepo = (prisma as unknown as {
       promoCode?: {
@@ -264,7 +266,7 @@ export async function POST(req: NextRequest) {
       };
     }).promoCode;
     if (!promoRepo) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Promo codes indisponíveis nesta instância do Prisma." },
         { status: 500 },
       );
@@ -308,14 +310,14 @@ export async function POST(req: NextRequest) {
         ? `AUTO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
         : cleanCode;
     if (!finalCode) {
-      return NextResponse.json({ ok: false, error: "Código em falta." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Código em falta." }, { status: 400 });
     }
     if (type !== "PERCENTAGE" && type !== "FIXED") {
-      return NextResponse.json({ ok: false, error: "Tipo inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Tipo inválido." }, { status: 400 });
     }
     const cleanValue = Number(value);
     if (!Number.isFinite(cleanValue) || cleanValue <= 0) {
-      return NextResponse.json({ ok: false, error: "Valor inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Valor inválido." }, { status: 400 });
     }
 
     let targetEventId: number | null = null;
@@ -325,7 +327,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!exists) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Evento inválido ou não pertence ao organização." },
           { status: 400 },
         );
@@ -346,7 +348,7 @@ export async function POST(req: NextRequest) {
         select: { role: true },
       });
       if (!promoterMember || promoterMember.role !== "PROMOTER") {
-        return NextResponse.json({ ok: false, error: "Promoter inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Promoter inválido." }, { status: 400 });
       }
       resolvedPromoterId = promoterUserId;
     }
@@ -370,24 +372,24 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, promoCode: created }, { status: 200 });
+    return jsonWrap({ ok: true, promoCode: created }, { status: 200 });
   } catch (err) {
     console.error("[organização/promo][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     const ctx = await requireOrganization(req);
     if ("error" in ctx) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return NextResponse.json({ ok: false, error: ctx.error }, { status });
+      return jsonWrap({ ok: false, error: ctx.error }, { status });
     }
     const emailGate = ensureOrganizationEmailVerified(ctx.organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: ctx.organization.id,
@@ -398,12 +400,12 @@ export async function PATCH(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body.id !== "number") {
-      return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
     }
 
     const promoRepo = (prisma as unknown as {
@@ -413,7 +415,7 @@ export async function PATCH(req: NextRequest) {
       };
     }).promoCode;
     if (!promoRepo) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Promo codes indisponíveis nesta instância do Prisma." },
         { status: 500 },
       );
@@ -421,12 +423,12 @@ export async function PATCH(req: NextRequest) {
 
     const promo = await promoRepo.findUnique({ where: { id: body.id } });
     if (!promo) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
     // garantir que pertence ao organization (ou global)
     if (promo.organizationId && promo.organizationId !== ctx.organization.id) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     if (!promo.organizationId && promo.eventId) {
       const evt = await prisma.event.findFirst({
@@ -434,13 +436,13 @@ export async function PATCH(req: NextRequest) {
         select: { id: true },
       });
       if (!evt) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "FORBIDDEN" },
           { status: 403 },
         );
       }
     } else if (!promo.organizationId && !promo.eventId) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const {
@@ -486,7 +488,7 @@ export async function PATCH(req: NextRequest) {
         select: { id: true },
       });
       if (!exists) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Evento inválido ou não pertence ao organização." },
           { status: 400 },
         );
@@ -528,7 +530,7 @@ export async function PATCH(req: NextRequest) {
         select: { role: true },
       });
       if (!promoterMember || promoterMember.role !== "PROMOTER") {
-        return NextResponse.json({ ok: false, error: "Promoter inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Promoter inválido." }, { status: 400 });
       }
       dataUpdate.promoterUserId = promoterUserId;
     }
@@ -539,20 +541,20 @@ export async function PATCH(req: NextRequest) {
       data: dataUpdate,
     });
 
-    return NextResponse.json({ ok: true, promoCode: updated }, { status: 200 });
+    return jsonWrap({ ok: true, promoCode: updated }, { status: 200 });
   } catch (err) {
     console.error("[organização/promo][PATCH]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   try {
     const ctx = await requireOrganization(req);
     if ("error" in ctx) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return NextResponse.json({ ok: false, error: ctx.error }, { status });
+      return jsonWrap({ ok: false, error: ctx.error }, { status });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: ctx.organization.id,
@@ -563,19 +565,19 @@ export async function DELETE(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const body = await req.json().catch(() => null);
     if (!body || typeof body.id !== "number") {
-      return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
     }
 
     const promo = await prisma.promoCode.findUnique({ where: { id: body.id } });
     if (!promo) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
     if (promo.organizationId && promo.organizationId !== ctx.organization.id) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     if (!promo.organizationId && promo.eventId) {
       const evt = await prisma.event.findFirst({
@@ -583,18 +585,22 @@ export async function DELETE(req: NextRequest) {
         select: { id: true },
       });
       if (!evt) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     } else if (!promo.organizationId && !promo.eventId) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     await prisma.promoCode.delete({
       where: { id: promo.id },
     });
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[organização/promo][DELETE]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

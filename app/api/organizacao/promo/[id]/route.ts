@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationModule, SaleSummaryStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const resolveOrganizationId = (req: NextRequest) => {
   const organizationId = resolveOrganizationIdFromRequest(req);
@@ -49,7 +51,7 @@ async function requireOrganization(req: NextRequest) {
   return { organization, profile, membership };
 }
 
-export async function GET(
+async function _GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -58,13 +60,13 @@ export async function GET(
     if ("error" in ctx) {
       const status =
         ctx.error === "UNAUTHENTICATED" ? 401 : ctx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return NextResponse.json({ ok: false, error: ctx.error }, { status });
+      return jsonWrap({ ok: false, error: ctx.error }, { status });
     }
 
     const { id } = await params;
     const promoId = Number(id);
     if (!Number.isFinite(promoId)) {
-      return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
     }
 
     const organizationEvents = await prisma.event.findMany({
@@ -84,18 +86,18 @@ export async function GET(
     });
 
     if (!promo) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
     if (promo.organizationId && promo.organizationId !== ctx.organization.id) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     if (!promo.organizationId && promo.eventId) {
       if (!eventIds.includes(promo.eventId)) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     } else if (!promo.organizationId && !promo.eventId) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const purchaseIds = Array.from(
@@ -218,7 +220,7 @@ export async function GET(
       .sort((a, b) => b.uses - a.uses)
       .slice(0, 5);
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         promo: {
@@ -256,6 +258,7 @@ export async function GET(
     );
   } catch (err) {
     console.error("[organização/promo/:id][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,10 +1,12 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { Prisma } from "@prisma/client";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_LIMIT = 12;
 
@@ -14,7 +16,7 @@ function clampLimit(raw: string | null) {
   return Math.min(Math.max(1, Math.floor(parsed)), 30);
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const rateLimited = await enforcePublicRateLimit(req, {
       keyPrefix: "padel_public_clubs",
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         items: clubs.map((club) => ({
@@ -108,6 +110,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[padel/public/clubs] error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

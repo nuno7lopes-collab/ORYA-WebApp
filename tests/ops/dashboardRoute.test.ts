@@ -28,7 +28,7 @@ describe("ops dashboard route", () => {
     const res = await GET(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.health.ok).toBe(true);
-    expect(body.slo.outbox).toBeDefined();
+    expect(body.result.health.ok).toBe(true);
+    expect(body.result.slo.outbox).toBeDefined();
   });
 });

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_PAGE_SIZE = 12;
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const cursor = searchParams.get("cursor");
   const limitParam = searchParams.get("limit");
@@ -90,7 +92,7 @@ export async function GET(req: NextRequest) {
 
     const cursorId = cursor ? Number(cursor) : null;
     if (cursor && Number.isNaN(cursorId)) {
-      return NextResponse.json(
+      return jsonWrap(
         { items: [], pagination: { nextCursor: null, hasMore: false } },
         { status: 400 },
       );
@@ -193,7 +195,7 @@ export async function GET(req: NextRequest) {
     nextCursor = null;
   }
 
-  return NextResponse.json({
+  return jsonWrap({
     events: items,
     pagination: {
       nextCursor,
@@ -201,3 +203,4 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+export const GET = withApiEnvelope(_GET);

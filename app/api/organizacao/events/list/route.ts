@@ -1,5 +1,6 @@
 // app/api/organizacao/events/list/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -9,8 +10,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 100), 500);
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -49,7 +51,7 @@ export async function GET(req: NextRequest) {
       profile.onboardingDone ||
       (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
     if (!hasUserOnboarding) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -84,7 +86,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -284,7 +286,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         items,
@@ -293,10 +295,10 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/events/list error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         error: "Erro interno ao carregar eventos do organização.",
@@ -305,3 +307,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,15 +1,17 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { generateQR } from "@/lib/qr";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Params = { token: string };
 
-export async function GET(req: NextRequest, context: { params: Params | Promise<Params> }) {
+async function _GET(req: NextRequest, context: { params: Params | Promise<Params> }) {
   const { token } = await context.params;
   const trimmed = typeof token === "string" ? token.trim() : "";
   if (!trimmed) {
-    return NextResponse.json({ error: "INVALID_TOKEN" }, { status: 400 });
+    return jsonWrap({ error: "INVALID_TOKEN" }, { status: 400 });
   }
 
   const theme = req.nextUrl.searchParams.get("theme") === "dark" ? "dark" : "light";
@@ -20,7 +22,7 @@ export async function GET(req: NextRequest, context: { params: Params | Promise<
   );
   const base64 = dataUrl.split(",")[1];
   if (!base64) {
-    return NextResponse.json({ error: "QR_GENERATION_FAILED" }, { status: 500 });
+    return jsonWrap({ error: "QR_GENERATION_FAILED" }, { status: 500 });
   }
 
   const buffer = Buffer.from(base64, "base64");
@@ -33,3 +35,4 @@ export async function GET(req: NextRequest, context: { params: Params | Promise<
     },
   });
 }
+export const GET = withApiEnvelope(_GET);

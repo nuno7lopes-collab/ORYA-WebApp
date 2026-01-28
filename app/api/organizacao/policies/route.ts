@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, OrganizationPolicyType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -22,7 +24,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -42,11 +44,11 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     await ensureDefaultPolicies(prisma, organization.id);
@@ -63,17 +65,17 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/policies error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar políticas." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar políticas." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -110,7 +112,7 @@ export async function POST(req: NextRequest) {
           : null;
 
     if (!name) {
-      return NextResponse.json({ ok: false, error: "Nome é obrigatório." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Nome é obrigatório." }, { status: 400 });
     }
 
     const policy = await prisma.organizationPolicy.create({
@@ -143,12 +145,14 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
-    return NextResponse.json({ ok: true, policy }, { status: 201 });
+    return jsonWrap({ ok: true, policy }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/policies error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar política." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar política." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

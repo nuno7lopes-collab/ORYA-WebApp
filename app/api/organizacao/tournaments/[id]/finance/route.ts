@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { readNumericParam } from "@/lib/routeParams";
 import { PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({ where: { id: eventId }, select: { organizationId: true } });
@@ -24,23 +26,23 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   return { ok: access.ok };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const tournamentId = readNumericParam(resolved?.id, req, "tournaments");
-  if (tournamentId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (tournamentId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: { eventId: true },
   });
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const access = await ensureOrganizationAccess(data.user.id, tournament.eventId);
-  if (!access.ok) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const sales = await prisma.saleSummary.groupBy({
     by: ["eventId"],
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const refundsCents = 0;
   const disputesCents = 0;
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       summary: {
@@ -108,3 +110,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationFormSubmissionStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const SUBMISSION_STATUSES: OrganizationFormSubmissionStatus[] = [
   "SUBMITTED",
@@ -25,7 +27,7 @@ async function ensureInscricoesEnabled(organization: {
   return Boolean(enabled);
 }
 
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -34,17 +36,17 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
 
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return NextResponse.json({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
     }
 
     const form = await prisma.organizationForm.findFirst({
@@ -52,7 +54,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       select: { id: true },
     });
     if (!form) {
-      return NextResponse.json({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
     }
 
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -87,7 +89,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       statusCounts[group.status] = group._count._all;
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         totalCount,
@@ -108,6 +110,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     );
   } catch (err) {
     console.error("[organização/inscricoes][GET:summary]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

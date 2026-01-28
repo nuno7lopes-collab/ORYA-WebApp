@@ -1,21 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { checkUsernameAvailability } from "@/lib/globalUsernames";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const username = req.nextUrl.searchParams.get("username");
     if (!username) {
-      return NextResponse.json({ ok: false, error: "username é obrigatório" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "username é obrigatório" }, { status: 400 });
     }
 
     const result = await checkUsernameAvailability(username);
     if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: result.error }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, available: result.available, username: result.username }, { status: 200 });
+    return jsonWrap({ ok: true, available: result.available, username: result.username }, { status: 200 });
   } catch (err) {
     console.error("[api/username/check][GET]", err);
-    return NextResponse.json({ ok: false, error: "Erro ao verificar username" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao verificar username" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -49,7 +49,7 @@ describe("POST /api/me/push-tokens", () => {
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(body.id).toBe("tok_1");
+    expect(body.result.id).toBe("tok_1");
     expect(upsertMock).toHaveBeenCalled();
   });
 

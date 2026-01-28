@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type PurgeMode = "ALL" | "KEEP_PROFILES";
 type PurgePayload = {
@@ -13,23 +15,23 @@ const CONFIRM_ALL = "APAGAR TUDO";
 const CONFIRM_KEEP = "APAGAR DADOS";
 const ALWAYS_EXCLUDED_TABLES = ["_prisma_migrations"];
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = (await req.json().catch(() => null)) as PurgePayload | null;
     const mode = body?.mode;
     if (mode !== "ALL" && mode !== "KEEP_PROFILES") {
-      return NextResponse.json({ ok: false, error: "Modo inv\u00e1lido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Modo inv\u00e1lido." }, { status: 400 });
     }
 
     const expectedConfirm = mode === "ALL" ? CONFIRM_ALL : CONFIRM_KEEP;
     const confirm = typeof body?.confirm === "string" ? body.confirm.trim().toUpperCase() : "";
     if (confirm !== expectedConfirm) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: `Confirma\u00e7\u00e3o inv\u00e1lida. Escreve exatamente: ${expectedConfirm}.` },
         { status: 400 },
       );
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
       adminUserId: admin.userId,
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         mode,
@@ -84,6 +86,7 @@ export async function POST(req: Request) {
     );
   } catch (error) {
     console.error("[admin/data/purge] error:", error);
-    return NextResponse.json({ ok: false, error: "Erro inesperado." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro inesperado." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
@@ -26,23 +28,23 @@ const isParticipant = (match: {
   return inA || inB;
 };
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const matchId = Number(resolved?.id);
   if (!Number.isFinite(matchId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const reason = normalizeReason(body?.reason);
   if (!reason || reason.length < 5) {
-    return NextResponse.json({ ok: false, error: "INVALID_REASON" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_REASON" }, { status: 400 });
   }
 
   const match = await prisma.padelMatch.findUnique({
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
   if (!match || !match.event?.organizationId) {
-    return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
 
   const participant = isParticipant(match, user.id);
@@ -63,16 +65,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       organizationId: match.event.organizationId,
       roles: ROLE_ALLOWLIST,
     });
-    if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   if (match.status !== padel_match_status.DONE) {
-    return NextResponse.json({ ok: false, error: "MATCH_NOT_DONE" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "MATCH_NOT_DONE" }, { status: 409 });
   }
 
   const score = asScoreObject(match.score);
   if (score.disputeStatus === "OPEN") {
-    return NextResponse.json({ ok: false, error: "DISPUTE_ALREADY_OPEN" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "DISPUTE_ALREADY_OPEN" }, { status: 409 });
   }
 
   const nowIso = new Date().toISOString();
@@ -108,42 +110,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
 
-  return NextResponse.json({ ok: true, match: updated }, { status: 200 });
+  return jsonWrap({ ok: true, match: updated }, { status: 200 });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const matchId = Number(resolved?.id);
   if (!Number.isFinite(matchId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const match = await prisma.padelMatch.findUnique({
     where: { id: matchId },
     include: { event: { select: { id: true, organizationId: true } } },
   });
   if (!match || !match.event?.organizationId) {
-    return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   if (!adminRoles.has(membership.role)) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const score = asScoreObject(match.score);
   if (score.disputeStatus !== "OPEN") {
-    return NextResponse.json({ ok: false, error: "DISPUTE_NOT_OPEN" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "DISPUTE_NOT_OPEN" }, { status: 409 });
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -179,5 +181,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     },
   });
 
-  return NextResponse.json({ ok: true, match: updated }, { status: 200 });
+  return jsonWrap({ ok: true, match: updated }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
@@ -7,11 +8,12 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, TournamentFormat } from "@prisma/client";
 import { updateTournament } from "@/domain/tournaments/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
   const tournamentId = readNumericParam(params?.id, req, "tournaments");
   if (tournamentId === null) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
@@ -26,13 +28,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       event: { select: { id: true, organizationId: true, title: true, startsAt: true, endsAt: true } },
     },
   });
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const { membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: tournament.event.organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const access = await ensureMemberModuleAccess({
     organizationId: tournament.event.organizationId,
@@ -42,15 +44,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     moduleKey: OrganizationModule.TORNEIOS,
     required: "VIEW",
   });
-  if (!access.ok) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  return NextResponse.json({ ok: true, tournament }, { status: 200 });
+  return jsonWrap({ ok: true, tournament }, { status: 200 });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const tournamentId = readNumericParam(params?.id, req, "tournaments");
   if (tournamentId === null) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
 
@@ -60,13 +62,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     where: { id: tournamentId },
     select: { id: true, event: { select: { organizationId: true } } },
   });
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   const { membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: tournament.event.organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const access = await ensureMemberModuleAccess({
     organizationId: tournament.event.organizationId,
@@ -76,7 +78,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     moduleKey: OrganizationModule.TORNEIOS,
     required: "EDIT",
   });
-  if (!access.ok) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const format = body?.format as TournamentFormat | undefined;
   const bracketSize = Number.isFinite(body?.bracketSize) ? Number(body.bracketSize) : null;
@@ -94,10 +96,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
   if (!result.ok) {
     if (result.error === "EVENT_NOT_PADEL") {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
     }
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return jsonWrap({ ok: true }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

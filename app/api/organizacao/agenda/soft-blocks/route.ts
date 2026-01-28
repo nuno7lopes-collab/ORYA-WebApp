@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
@@ -9,6 +10,7 @@ import { SoftBlockScope } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createSoftBlock, deleteSoftBlock, updateSoftBlock } from "@/domain/softBlocks/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] as const;
 
@@ -245,7 +247,7 @@ async function loadSoftBlockExistingCandidates(params: {
   return candidates;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
 
@@ -255,29 +257,29 @@ export async function POST(req: NextRequest) {
     roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
   const reservasAccess = await ensureReservasModuleAccess(organization);
   if (!reservasAccess.ok) {
-    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const startsAt = parseDate(body.startsAt);
   const endsAt = parseDate(body.endsAt);
   if (!startsAt || !endsAt) {
-    return NextResponse.json({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
   }
   if (endsAt <= startsAt) {
-    return NextResponse.json({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
   }
 
   const scopeType = parseScopeType(body.scopeType);
   const scopeId = parseScopeId(body.scopeId);
   if (scopeType !== SoftBlockScope.ORGANIZATION && !scopeId) {
-    return NextResponse.json({ ok: false, error: "SCOPE_ID_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "SCOPE_ID_REQUIRED" }, { status: 400 });
   }
 
   let existing: AgendaCandidate[] | null = null;
@@ -290,10 +292,10 @@ export async function POST(req: NextRequest) {
       endsAt,
     });
   } catch {
-    return NextResponse.json(agendaConflictResponse(), { status: 503 });
+    return jsonWrap(agendaConflictResponse(), { status: 503 });
   }
   if (!existing) {
-    return NextResponse.json(agendaConflictResponse(), { status: 503 });
+    return jsonWrap(agendaConflictResponse(), { status: 503 });
   }
 
   const candidate: AgendaCandidate = {
@@ -304,7 +306,7 @@ export async function POST(req: NextRequest) {
   };
   const decision = evaluateCandidate({ candidate, existing });
   if (!decision.allowed) {
-    return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+    return jsonWrap(agendaConflictResponse(decision), { status: 409 });
   }
 
   const reason = typeof body.reason === "string" ? body.reason.trim() || null : null;
@@ -320,13 +322,13 @@ export async function POST(req: NextRequest) {
 
   if (!result.ok) {
     const status = result.error === "SCOPE_NOT_FOUND" ? 404 : 400;
-    return NextResponse.json({ ok: false, error: result.error }, { status });
+    return jsonWrap({ ok: false, error: result.error }, { status });
   }
 
-  return NextResponse.json({ ok: true, softBlockId: result.data.softBlockId }, { status: 201 });
+  return jsonWrap({ ok: true, softBlockId: result.data.softBlockId }, { status: 201 });
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
 
@@ -336,23 +338,23 @@ export async function PATCH(req: NextRequest) {
     roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
   const reservasAccess = await ensureReservasModuleAccess(organization);
   if (!reservasAccess.ok) {
-    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const id = parseScopeId(body.id);
-  if (!id) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!id) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const startsAtInput = body.startsAt !== undefined ? parseDate(body.startsAt) : null;
   const endsAtInput = body.endsAt !== undefined ? parseDate(body.endsAt) : null;
   if ((startsAtInput && !endsAtInput) || (!startsAtInput && endsAtInput)) {
-    return NextResponse.json({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
   }
 
   const scopeTypeInput = body.scopeType ? parseScopeType(body.scopeType) : null;
@@ -363,19 +365,19 @@ export async function PATCH(req: NextRequest) {
     select: { id: true, startsAt: true, endsAt: true, scopeType: true, scopeId: true },
   });
   if (!existingBlock) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
   const nextStartsAt = startsAtInput ?? existingBlock.startsAt;
   const nextEndsAt = endsAtInput ?? existingBlock.endsAt;
   if (nextEndsAt <= nextStartsAt) {
-    return NextResponse.json({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
   }
 
   const nextScopeType = scopeTypeInput ?? existingBlock.scopeType;
   const nextScopeId = scopeIdInput ?? existingBlock.scopeId;
   if (nextScopeType !== SoftBlockScope.ORGANIZATION && !nextScopeId) {
-    return NextResponse.json({ ok: false, error: "SCOPE_ID_REQUIRED" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "SCOPE_ID_REQUIRED" }, { status: 400 });
   }
 
   let existing: AgendaCandidate[] | null = null;
@@ -389,10 +391,10 @@ export async function PATCH(req: NextRequest) {
       excludeSoftBlockId: id,
     });
   } catch {
-    return NextResponse.json(agendaConflictResponse(), { status: 503 });
+    return jsonWrap(agendaConflictResponse(), { status: 503 });
   }
   if (!existing) {
-    return NextResponse.json(agendaConflictResponse(), { status: 503 });
+    return jsonWrap(agendaConflictResponse(), { status: 503 });
   }
 
   const candidate: AgendaCandidate = {
@@ -403,7 +405,7 @@ export async function PATCH(req: NextRequest) {
   };
   const decision = evaluateCandidate({ candidate, existing });
   if (!decision.allowed) {
-    return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+    return jsonWrap(agendaConflictResponse(decision), { status: 409 });
   }
 
   const reason = typeof body.reason === "string" ? body.reason.trim() || null : undefined;
@@ -420,13 +422,13 @@ export async function PATCH(req: NextRequest) {
 
   if (!result.ok) {
     const status = result.error === "NOT_FOUND" ? 404 : result.error === "SCOPE_NOT_FOUND" ? 404 : 400;
-    return NextResponse.json({ ok: false, error: result.error }, { status });
+    return jsonWrap({ ok: false, error: result.error }, { status });
   }
 
-  return NextResponse.json({ ok: true, softBlockId: result.data.softBlockId }, { status: 200 });
+  return jsonWrap({ ok: true, softBlockId: result.data.softBlockId }, { status: 200 });
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
 
@@ -436,18 +438,18 @@ export async function DELETE(req: NextRequest) {
     roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
   const reservasAccess = await ensureReservasModuleAccess(organization);
   if (!reservasAccess.ok) {
-    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const id = parseScopeId(body.id);
-  if (!id) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!id) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const result = await deleteSoftBlock({
     softBlockId: id,
@@ -457,8 +459,11 @@ export async function DELETE(req: NextRequest) {
 
   if (!result.ok) {
     const status = result.error === "NOT_FOUND" ? 404 : 400;
-    return NextResponse.json({ ok: false, error: result.error }, { status });
+    return jsonWrap({ ok: false, error: result.error }, { status });
   }
 
-  return NextResponse.json({ ok: true, softBlockId: result.data.softBlockId }, { status: 200 });
+  return jsonWrap({ ok: true, softBlockId: result.data.softBlockId }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

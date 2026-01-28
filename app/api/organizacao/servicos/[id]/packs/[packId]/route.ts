@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -27,7 +29,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function PATCH(
+async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; packId: string }> },
 ) {
@@ -35,7 +37,7 @@ export async function PATCH(
   const serviceId = parseId(resolved.id);
   const packId = parseId(resolved.packId);
   if (!serviceId || !packId) {
-    return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Dados inválidos." }, { status: 400 });
   }
 
   try {
@@ -44,7 +46,7 @@ export async function PATCH(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -54,17 +56,17 @@ export async function PATCH(
     });
 
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
     const writeAccess = ensureOrganizationWriteAccess(organization, {
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return NextResponse.json({ ok: false, error: writeAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: writeAccess.error }, { status: 403 });
     }
 
     const pack = await prisma.servicePack.findFirst({
@@ -72,7 +74,7 @@ export async function PATCH(
       select: { id: true, packPriceCents: true, isActive: true },
     });
     if (!pack) {
-      return NextResponse.json({ ok: false, error: "Pack não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Pack não encontrado." }, { status: 404 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -80,14 +82,14 @@ export async function PATCH(
     if (Number.isFinite(Number(payload?.quantity))) {
       const quantity = Math.floor(Number(payload.quantity));
       if (quantity <= 0) {
-        return NextResponse.json({ ok: false, error: "Quantidade inválida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Quantidade inválida." }, { status: 400 });
       }
       updates.quantity = quantity;
     }
     if (Number.isFinite(Number(payload?.packPriceCents ?? payload?.packPrice))) {
       const packPriceCents = Math.round(Number(payload.packPriceCents ?? payload.packPrice));
       if (packPriceCents <= 0) {
-        return NextResponse.json({ ok: false, error: "Preço inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Preço inválido." }, { status: 400 });
       }
       updates.packPriceCents = packPriceCents;
     }
@@ -99,7 +101,7 @@ export async function PATCH(
     if (typeof payload?.isActive === "boolean") updates.isActive = payload.isActive;
 
     if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ ok: false, error: "Sem alterações." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Sem alterações." }, { status: 400 });
     }
 
     const updated = await prisma.servicePack.update({
@@ -117,17 +119,17 @@ export async function PATCH(
       userAgent,
     });
 
-    return NextResponse.json({ ok: true, pack: updated });
+    return jsonWrap({ ok: true, pack: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/organizacao/servicos/[id]/packs/[packId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar pack." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar pack." }, { status: 500 });
   }
 }
 
-export async function DELETE(
+async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; packId: string }> },
 ) {
@@ -135,7 +137,7 @@ export async function DELETE(
   const serviceId = parseId(resolved.id);
   const packId = parseId(resolved.packId);
   if (!serviceId || !packId) {
-    return NextResponse.json({ ok: false, error: "Dados inválidos." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Dados inválidos." }, { status: 400 });
   }
 
   try {
@@ -144,7 +146,7 @@ export async function DELETE(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -154,11 +156,11 @@ export async function DELETE(
     });
 
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
     }
 
     const pack = await prisma.servicePack.findFirst({
@@ -166,7 +168,7 @@ export async function DELETE(
       select: { id: true },
     });
     if (!pack) {
-      return NextResponse.json({ ok: false, error: "Pack não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Pack não encontrado." }, { status: 404 });
     }
 
     await prisma.servicePack.update({
@@ -184,12 +186,14 @@ export async function DELETE(
       userAgent,
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/organizacao/servicos/[id]/packs/[packId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover pack." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover pack." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

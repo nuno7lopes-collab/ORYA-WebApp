@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const UNDO_WINDOW_MS = 60 * 1000;
 
@@ -29,24 +31,24 @@ async function getOrganizationRole(userId: string, eventId: number) {
   return member?.role ?? null;
 }
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
+async function _POST(_req: NextRequest, { params }: { params: Promise<{ id: string; matchId: string }> }) {
   const resolved = await params;
   const tournamentId = Number(resolved?.id);
   const matchId = Number(resolved?.matchId);
   if (!Number.isFinite(tournamentId) || !Number.isFinite(matchId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const match = await prisma.tournamentMatch.findUnique({
     where: { id: matchId },
     include: { stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } } },
   });
   if (!match || match.stage.tournamentId !== tournamentId) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
   const organizationRole = await getOrganizationRole(data.user.id, match.stage.tournament.eventId);
@@ -57,7 +59,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     OrganizationMemberRole.STAFF,
   ];
   if (!organizationRole || !liveOperatorRoles.includes(organizationRole)) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const recentLogs = await prisma.tournamentAuditLog.findMany({
@@ -72,17 +74,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
 
   if (!target) {
-    return NextResponse.json({ ok: false, error: "UNDO_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "UNDO_NOT_FOUND" }, { status: 404 });
   }
 
   if (Date.now() - target.createdAt.getTime() > UNDO_WINDOW_MS) {
-    return NextResponse.json({ ok: false, error: "UNDO_EXPIRED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "UNDO_EXPIRED" }, { status: 409 });
   }
 
   const before = target.payloadBefore as Record<string, unknown> | null;
   const after = target.payloadAfter as Record<string, unknown> | null;
   if (!before || typeof before !== "object") {
-    return NextResponse.json({ ok: false, error: "UNDO_INVALID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "UNDO_INVALID" }, { status: 400 });
   }
 
   const nextMatchId = typeof after?.nextMatchId === "number" ? after.nextMatchId : null;
@@ -131,5 +133,6 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return res;
   });
 
-  return NextResponse.json({ ok: true, match: updated }, { status: 200 });
+  return jsonWrap({ ok: true, match: updated }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

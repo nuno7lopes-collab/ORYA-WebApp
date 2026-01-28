@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,6 +10,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { padel_format, EventTemplateType, EventPublicAccessMode, EventParticipantAccessMode, OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const slugify = (value: string) =>
   value
@@ -42,13 +44,13 @@ type MixPayload = {
   locationCity?: string;
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const body = (await req.json().catch(() => null)) as MixPayload | null;
     if (!body) {
-      return NextResponse.json({ ok: false, error: "BODY_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BODY_INVALID" }, { status: 400 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -68,17 +70,17 @@ export async function POST(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const title = body.title?.trim() || "Mix rápido";
     const startsAtRaw = body.startsAt ? new Date(body.startsAt) : null;
     if (!startsAtRaw || Number.isNaN(startsAtRaw.getTime())) {
-      return NextResponse.json({ ok: false, error: "START_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "START_REQUIRED" }, { status: 400 });
     }
 
     const durationMinutes = Math.min(300, Math.max(60, Math.round(Number(body.durationMinutes ?? 180))));
@@ -169,12 +171,13 @@ export async function POST(req: NextRequest) {
       }),
     ]);
 
-    return NextResponse.json({ ok: true, eventId: event.id, slug: event.slug }, { status: 200 });
+    return jsonWrap({ ok: true, eventId: event.id, slug: event.slug }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("[padel/mix/create]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

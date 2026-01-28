@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getUserFollowingSet } from "@/domain/social/follows";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
 
 const clampLimit = (value: number) => Math.min(Math.max(value, 1), 12);
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 8);
   const limit = clampLimit(Number.isFinite(limitRaw) ? limitRaw : 8);
 
@@ -18,7 +20,7 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
   const profile = await prisma.profile.findUnique({
@@ -102,5 +104,6 @@ export async function GET(req: NextRequest) {
     isFollowing: false,
   }));
 
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);

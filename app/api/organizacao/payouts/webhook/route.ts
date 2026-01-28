@@ -5,11 +5,12 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { constructStripeWebhookEvent } from "@/domain/finance/gateway/stripeGateway";
 import { prisma } from "@/lib/prisma";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const webhookSecret =
   process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const sig = req.headers.get("stripe-signature");
 
   if (!sig) {
@@ -46,10 +47,18 @@ export async function POST(req: NextRequest) {
         const chargesEnabled = Boolean(account.charges_enabled);
         const payoutsEnabled = Boolean(account.payouts_enabled);
 
-        await prisma.organization.updateMany({
+        const organization = await prisma.organization.findFirst({
           where: organizationIdNumber
             ? { id: organizationIdNumber }
             : { stripeAccountId: account.id },
+          select: { id: true },
+        });
+        if (!organization) {
+          return new Response("Organization not resolved", { status: 400 });
+        }
+
+        await prisma.organization.update({
+          where: { id: organization.id },
           data: {
             stripeChargesEnabled: chargesEnabled,
             stripePayoutsEnabled: payoutsEnabled,
@@ -58,7 +67,7 @@ export async function POST(req: NextRequest) {
         });
 
         console.log("[Stripe Connect Webhook] account.updated sync", {
-          organizationId: organizationIdNumber,
+          organizationId: organization.id,
           accountId: account.id,
           chargesEnabled,
           payoutsEnabled,
@@ -79,3 +88,4 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ received: true });
 }
+export const POST = withApiEnvelope(_POST);

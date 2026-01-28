@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const lookupSchema = z.object({
   email: z.string().email().trim(),
@@ -18,21 +20,21 @@ function parseStoreId(req: NextRequest) {
   return { ok: true as const, storeId };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return NextResponse.json({ ok: false, error: storeParsed.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = lookupSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
     const grants = await prisma.storeDigitalGrant.findMany({
@@ -125,9 +127,10 @@ export async function POST(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ ok: true, grants: items });
+    return jsonWrap({ ok: true, grants: items });
   } catch (err) {
     console.error("POST /api/store/digital/lookup error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar downloads." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar downloads." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -19,12 +19,23 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 // Pool e adapter para usar o client engine ("library") com Postgres
+function resolvePgSsl(url: string) {
+  if (process.env.NODE_ENV === "production") return undefined;
+  try {
+    const parsed = new URL(url);
+    const sslMode = parsed.searchParams.get("sslmode");
+    const host = parsed.hostname;
+    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    if (sslMode === "disable" || isLocalHost) return false;
+  } catch {
+    // fall through to non-production default
+  }
+  return { rejectUnauthorized: false };
+}
+
 const pool = new Pool({
   connectionString: env.dbUrl,
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? undefined
-      : { rejectUnauthorized: false },
+  ssl: resolvePgSsl(env.dbUrl),
 });
 
 const adapter = new PrismaPg(pool);

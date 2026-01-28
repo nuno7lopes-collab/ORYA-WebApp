@@ -1,5 +1,6 @@
 // app/api/profiles/save-basic/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
@@ -7,6 +8,7 @@ import { setUsernameForOwner, UsernameTakenError, normalizeAndValidateUsername }
 import { getNotificationPrefs } from "@/lib/notifications";
 import { normalizeProfileAvatarUrl, normalizeProfileCoverUrl } from "@/lib/profileMedia";
 import { INTEREST_MAX_SELECTION, normalizeInterestSelection } from "@/lib/interests";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 interface SaveBasicBody {
   fullName?: string;
@@ -24,7 +26,7 @@ interface SaveBasicBody {
   followingCount?: number; // ignored for now (future-proof)
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
 
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não autenticado." },
         { status: 401 }
       );
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => null)) as SaveBasicBody | null;
 
     if (!body || typeof body !== "object") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Body inválido." },
         { status: 400 }
       );
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
         if (parsed && parsed.isPossible()) {
           normalizedPhone = parsed.number; // E.164
         } else {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "Telefone inválido." },
             { status: 400 },
           );
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest) {
     const validatedUsername = normalizeAndValidateUsername(username);
 
     if (!fullName || !validatedUsername.ok) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -190,7 +192,7 @@ export async function POST(req: NextRequest) {
       allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
     };
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         profile: safeProfile,
@@ -199,7 +201,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     if (err instanceof UsernameTakenError) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Este username já está a ser utilizado.",
@@ -209,7 +211,7 @@ export async function POST(req: NextRequest) {
       );
     }
     console.error("POST /api/profiles/save-basic error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         error: "Erro inesperado ao guardar perfil.",
@@ -218,3 +220,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

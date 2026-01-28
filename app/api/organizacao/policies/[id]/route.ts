@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +8,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, OrganizationPolicyType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -26,11 +28,11 @@ function parsePolicyId(raw: string) {
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const policyId = parsePolicyId(resolved.id);
   if (!policyId) {
-    return NextResponse.json({ ok: false, error: "Política inválida." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Política inválida." }, { status: 400 });
   }
 
   try {
@@ -39,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -48,11 +50,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       roles: [...ROLE_ALLOWLIST],
     });
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const existing = await prisma.organizationPolicy.findFirst({
@@ -60,7 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Política não encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Política não encontrada." }, { status: 404 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -79,7 +81,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ ok: false, error: "Sem alterações." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Sem alterações." }, { status: 400 });
     }
 
     const policy = await prisma.organizationPolicy.update({
@@ -106,21 +108,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       userAgent,
     });
 
-    return NextResponse.json({ ok: true, policy });
+    return jsonWrap({ ok: true, policy });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/organizacao/policies/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar política." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar política." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const policyId = parsePolicyId(resolved.id);
   if (!policyId) {
-    return NextResponse.json({ ok: false, error: "Política inválida." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Política inválida." }, { status: 400 });
   }
 
   try {
@@ -129,7 +131,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -138,11 +140,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       roles: [...ROLE_ALLOWLIST],
     });
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
 
     const policy = await prisma.organizationPolicy.findFirst({
@@ -154,15 +156,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       },
     });
     if (!policy) {
-      return NextResponse.json({ ok: false, error: "Política não encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Política não encontrada." }, { status: 404 });
     }
 
     if (policy.policyType !== OrganizationPolicyType.CUSTOM) {
-      return NextResponse.json({ ok: false, error: "Só podes apagar políticas personalizadas." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Só podes apagar políticas personalizadas." }, { status: 400 });
     }
 
     if (policy._count.bookingPolicyRefs > 0 || policy._count.services > 0) {
-      return NextResponse.json({ ok: false, error: "Política em uso." }, { status: 409 });
+      return jsonWrap({ ok: false, error: "Política em uso." }, { status: 409 });
     }
 
     await prisma.organizationPolicy.delete({ where: { id: policy.id } });
@@ -180,12 +182,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       userAgent,
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/organizacao/policies/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover política." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover política." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

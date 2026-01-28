@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { LoyaltyEntryType, LoyaltySourceType, Prisma } from "@prisma/client";
-import crypto from "crypto";
 import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organizationModules";
 import { recordLoyaltyLedgerOutbox } from "@/domain/loyaltyOutbox";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(_req: NextRequest, context: { params: { rewardId: string } }) {
+async function _POST(_req: NextRequest, context: { params: { rewardId: string } }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -27,15 +28,15 @@ export async function POST(_req: NextRequest, context: { params: { rewardId: str
     });
 
     if (!reward || !reward.isActive) {
-      return NextResponse.json({ ok: false, error: "Recompensa indisponível." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Recompensa indisponível." }, { status: 404 });
     }
 
     if (reward.pointsCost <= 0) {
-      return NextResponse.json({ ok: false, error: "Recompensa inválida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Recompensa inválida." }, { status: 400 });
     }
 
     if (reward.program.status !== "ACTIVE") {
-      return NextResponse.json({ ok: false, error: "Programa inativo." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Programa inativo." }, { status: 400 });
     }
 
     const { activeModules } = await getOrganizationActiveModules(
@@ -43,7 +44,7 @@ export async function POST(_req: NextRequest, context: { params: { rewardId: str
       reward.program.organization?.primaryModule ?? null,
     );
     if (!hasAnyActiveModule(activeModules, ["CRM"])) {
-      return NextResponse.json({ ok: false, error: "Programa indisponível." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Programa indisponível." }, { status: 403 });
     }
 
     const lockKey = `${reward.programId}:${user.id}`;
@@ -82,7 +83,7 @@ export async function POST(_req: NextRequest, context: { params: { rewardId: str
           sourceType: LoyaltySourceType.REWARD,
           sourceId: reward.id,
           rewardId: reward.id,
-          dedupeKey: `redeem:${reward.id}:${user.id}:${crypto.randomUUID()}`,
+          dedupeKey: `redeem:${reward.id}:${user.id}`,
           note: `Resgate: ${reward.name}`,
         },
       });
@@ -91,7 +92,7 @@ export async function POST(_req: NextRequest, context: { params: { rewardId: str
       return { balanceAfter };
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       reward: {
         id: reward.id,
@@ -104,16 +105,17 @@ export async function POST(_req: NextRequest, context: { params: { rewardId: str
   } catch (err) {
     if (err instanceof Error) {
       if (err.message === "OUT_OF_STOCK") {
-        return NextResponse.json({ ok: false, error: "Sem stock." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Sem stock." }, { status: 409 });
       }
       if (err.message === "INSUFFICIENT_POINTS") {
-        return NextResponse.json({ ok: false, error: "Pontos insuficientes." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Pontos insuficientes." }, { status: 400 });
       }
     }
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("POST /api/me/loyalty/recompensas/[rewardId]/resgatar error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao resgatar recompensa." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao resgatar recompensa." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

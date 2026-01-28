@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const updateItemSchema = z
   .object({
@@ -45,13 +47,13 @@ async function ensureBundle(storeId: number, bundleId: number) {
   return { ok: true as const, bundle };
 }
 
-export async function PATCH(
+async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> },
 ) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -59,33 +61,33 @@ export async function PATCH(
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
     }
 
     const itemId = parseId(resolvedParams.itemId);
     if (!itemId.ok) {
-      return NextResponse.json({ ok: false, error: itemId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: itemId.error }, { status: 400 });
     }
 
     const bundle = await ensureBundle(context.store.id, bundleId.id);
     if (!bundle.ok) {
-      return NextResponse.json({ ok: false, error: bundle.error }, { status: 404 });
+      return jsonWrap({ ok: false, error: bundle.error }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateItemSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const existing = await prisma.storeBundleItem.findFirst({
@@ -93,7 +95,7 @@ export async function PATCH(
       select: { id: true, productId: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Item nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Item nao encontrado." }, { status: 404 });
     }
 
     const payload = parsed.data;
@@ -105,7 +107,7 @@ export async function PATCH(
         select: { id: true },
       });
       if (!product) {
-        return NextResponse.json({ ok: false, error: "Produto invalido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Produto invalido." }, { status: 400 });
       }
     }
 
@@ -116,7 +118,7 @@ export async function PATCH(
           select: { id: true },
         });
         if (!variant) {
-          return NextResponse.json({ ok: false, error: "Variante invalida." }, { status: 400 });
+          return jsonWrap({ ok: false, error: "Variante invalida." }, { status: 400 });
         }
       }
     }
@@ -138,23 +140,23 @@ export async function PATCH(
       },
     });
 
-    return NextResponse.json({ ok: true, item: updated });
+    return jsonWrap({ ok: true, item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/me/store/bundles/[id]/items/[itemId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar item." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar item." }, { status: 500 });
   }
 }
 
-export async function DELETE(
+async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> },
 ) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -162,27 +164,27 @@ export async function DELETE(
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return NextResponse.json({ ok: false, error: bundleId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
     }
 
     const itemId = parseId(resolvedParams.itemId);
     if (!itemId.ok) {
-      return NextResponse.json({ ok: false, error: itemId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: itemId.error }, { status: 400 });
     }
 
     const bundle = await ensureBundle(context.store.id, bundleId.id);
     if (!bundle.ok) {
-      return NextResponse.json({ ok: false, error: bundle.error }, { status: 404 });
+      return jsonWrap({ ok: false, error: bundle.error }, { status: 404 });
     }
 
     const existing = await prisma.storeBundleItem.findFirst({
@@ -190,17 +192,19 @@ export async function DELETE(
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Item nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Item nao encontrado." }, { status: 404 });
     }
 
     await prisma.storeBundleItem.delete({ where: { id: itemId.id } });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/me/store/bundles/[id]/items/[itemId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover item." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover item." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

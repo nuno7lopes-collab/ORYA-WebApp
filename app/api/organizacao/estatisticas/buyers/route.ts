@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, TicketStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -15,19 +17,19 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const url = new URL(req.url);
     const eventIdParam = url.searchParams.get("eventId");
 
     if (!eventIdParam) {
-      return NextResponse.json({ ok: false, error: "MISSING_EVENT_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "MISSING_EVENT_ID" }, { status: 400 });
     }
 
     const eventId = Number(eventIdParam);
     if (!Number.isFinite(eventId)) {
-      return NextResponse.json({ ok: false, error: "INVALID_EVENT_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_EVENT_ID" }, { status: 400 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     const event = await prisma.event.findFirst({
@@ -57,7 +59,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!event) {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
     const tickets = await prisma.ticket.findMany({
@@ -115,9 +117,10 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ ok: true, eventId: event.id, items }, { status: 200 });
+    return jsonWrap({ ok: true, eventId: event.id, items }, { status: 200 });
   } catch (err) {
     console.error("[organização/buyers] erro inesperado", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,53 +1,55 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { readNumericParam } from "@/lib/routeParams";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
-  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, { roles: readRoles });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
-  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const staff = await prisma.padelClubStaff.findMany({
     where: { padelClubId: club.id, deletedAt: null },
     orderBy: [{ createdAt: "desc" }],
   });
 
-  return NextResponse.json({ ok: true, items: staff }, { status: 200 });
+  return jsonWrap({ ok: true, items: staff }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
-  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
-  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const staffId = typeof body.id === "number" ? body.id : null;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -57,10 +59,10 @@ export async function POST(req: NextRequest) {
   const padelRole = typeof body.padelRole === "string" ? body.padelRole.trim() : role;
 
   if (!email && !userId) {
-    return NextResponse.json({ ok: false, error: "Indica o email ou userId do staff." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Indica o email ou userId do staff." }, { status: 400 });
   }
   if (!padelRole) {
-    return NextResponse.json({ ok: false, error: "Define um papel específico para Padel." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Define um papel específico para Padel." }, { status: 400 });
   }
 
   try {
@@ -105,42 +107,45 @@ export async function POST(req: NextRequest) {
       staff = await prisma.padelClubStaff.create({ data });
     }
 
-    return NextResponse.json({ ok: true, staff }, { status: staffId ? 200 : 201 });
+    return jsonWrap({ ok: true, staff }, { status: staffId ? 200 : 201 });
   } catch (err) {
     console.error("[padel/clubs/staff] error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
 // Soft delete staff member
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
-  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
-  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const url = new URL(req.url);
   const staffId = url.searchParams.get("staffId");
   const staffIdNum = staffId ? Number(staffId) : NaN;
-  if (!Number.isFinite(staffIdNum)) return NextResponse.json({ ok: false, error: "INVALID_STAFF" }, { status: 400 });
+  if (!Number.isFinite(staffIdNum)) return jsonWrap({ ok: false, error: "INVALID_STAFF" }, { status: 400 });
 
   const staff = await prisma.padelClubStaff.findFirst({
     where: { id: staffIdNum, padelClubId: clubId, deletedAt: null },
   });
-  if (!staff) return NextResponse.json({ ok: false, error: "STAFF_NOT_FOUND" }, { status: 404 });
+  if (!staff) return jsonWrap({ ok: false, error: "STAFF_NOT_FOUND" }, { status: 404 });
 
   await prisma.padelClubStaff.update({
     where: { id: staffIdNum },
     data: { isActive: false, deletedAt: new Date() },
   });
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return jsonWrap({ ok: true }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const DELETE = withApiEnvelope(_DELETE);

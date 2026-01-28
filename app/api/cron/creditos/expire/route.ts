@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 
     const now = new Date();
@@ -47,9 +49,10 @@ export async function GET(req: NextRequest) {
       expiredCount += 1;
     }
 
-    return NextResponse.json({ ok: true, expiredCount });
+    return jsonWrap({ ok: true, expiredCount });
   } catch (err) {
     console.error("[CRON CREDITS EXPIRE]", err);
-    return NextResponse.json({ ok: false, error: "Internal expire error" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Internal expire error" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

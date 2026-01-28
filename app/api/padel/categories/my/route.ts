@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   buildPadelCategoryKey,
   buildPadelDefaultCategories,
@@ -13,7 +15,7 @@ import {
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
     }
 
     const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
@@ -77,22 +79,22 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items: sortPadelCategories(categories) });
+    return jsonWrap({ ok: true, items: sortPadelCategories(categories) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("[padel/categories/my] error", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar categorias." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar categorias." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+    if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization } = await getActiveOrganizationForUser(user.id, {
@@ -100,12 +102,12 @@ export async function POST(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
     }
 
     const label = typeof body.label === "string" ? body.label.trim() : "";
     if (!label) {
-      return NextResponse.json({ ok: false, error: "LABEL_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "LABEL_REQUIRED" }, { status: 400 });
     }
 
     const genderRestriction = typeof body.genderRestriction === "string" ? body.genderRestriction.trim() : null;
@@ -139,26 +141,26 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, item: category }, { status: 201 });
+    return jsonWrap({ ok: true, item: category }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("[padel/categories/my][POST] error", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar categoria." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar categoria." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+    if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
     const categoryId = typeof body.id === "number" ? body.id : Number(body.id);
     if (!Number.isFinite(categoryId)) {
-      return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -167,7 +169,7 @@ export async function PATCH(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
     }
 
     const existing = await prisma.padelCategory.findFirst({
@@ -175,7 +177,7 @@ export async function PATCH(req: NextRequest) {
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
     const updates: Record<string, unknown> = {};
@@ -209,17 +211,17 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, item: updated }, { status: 200 });
+    return jsonWrap({ ok: true, item: updated }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("[padel/categories/my][PATCH] error", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar categoria." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar categoria." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -229,7 +231,7 @@ export async function DELETE(req: NextRequest) {
       const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
       const bodyId = typeof body?.id === "number" ? body.id : Number(body?.id);
       if (!Number.isFinite(bodyId)) {
-        return NextResponse.json({ ok: false, error: "ID inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "ID inválido." }, { status: 400 });
       }
       categoryId = bodyId;
     }
@@ -240,7 +242,7 @@ export async function DELETE(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
     }
 
     const existing = await prisma.padelCategory.findFirst({
@@ -261,15 +263,15 @@ export async function DELETE(req: NextRequest) {
       },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Categoria não encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Categoria não encontrada." }, { status: 404 });
     }
     if (existing.isDefault) {
-      return NextResponse.json({ ok: false, error: "Não podes apagar uma categoria base." }, { status: 409 });
+      return jsonWrap({ ok: false, error: "Não podes apagar uma categoria base." }, { status: 409 });
     }
 
     const usageCount = Object.values(existing._count).reduce((sum, value) => sum + value, 0);
     if (usageCount > 0) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Categoria em uso. Remove-a dos torneios ou desativa em vez de apagar." },
         { status: 409 },
       );
@@ -277,12 +279,16 @@ export async function DELETE(req: NextRequest) {
 
     await prisma.padelCategory.delete({ where: { id: categoryId } });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("[padel/categories/my][DELETE] error", err);
-    return NextResponse.json({ ok: false, error: "Erro ao apagar categoria." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao apagar categoria." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

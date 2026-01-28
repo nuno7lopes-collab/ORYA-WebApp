@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,12 +8,13 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
 import { resolveSegmentUserIds } from "@/lib/crm/segmentQuery";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const MAX_SAMPLE = 50;
 
-export async function GET(req: NextRequest, context: { params: Promise<{ segmentId: string }> }) {
+async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -24,14 +26,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ segment
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const resolvedParams = await context.params;
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ segment
     });
 
     if (!segment) {
-      return NextResponse.json({ ok: false, error: "Segmento não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Segmento não encontrado." }, { status: 404 });
     }
 
     const resolved = await resolveSegmentUserIds({
@@ -90,12 +92,13 @@ export async function GET(req: NextRequest, context: { params: Promise<{ segment
       tags: item.tags,
     }));
 
-    return NextResponse.json({ ok: true, segment: { id: segment.id, name: segment.name }, total: resolved.total, items: mapped });
+    return jsonWrap({ ok: true, segment: { id: segment.id, name: segment.name }, total: resolved.total, items: mapped });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/crm/segmentos/[segmentId]/preview error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao pré-visualizar segmento." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao pré-visualizar segmento." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

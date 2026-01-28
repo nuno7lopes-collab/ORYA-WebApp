@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,8 +7,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const q = (url.searchParams.get("q") ?? "").trim();
@@ -20,7 +22,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 401 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const venues = await prisma.event.findMany({
@@ -72,12 +74,13 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    return NextResponse.json({ ok: true, items: Array.from(unique.values()) });
+    return jsonWrap({ ok: true, items: Array.from(unique.values()) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/venues/recent error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar locais recentes." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar locais recentes." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

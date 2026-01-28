@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrganizationFollowingSet } from "@/domain/social/follows";
 import { listPublicDiscoverIndex } from "@/domain/search/publicDiscover";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   PublicEventCard,
   PublicEventCardWithPrice,
@@ -27,7 +29,7 @@ function clampTake(value: number | null): number {
   return Math.min(Math.max(value, 1), 50);
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const typeParam = searchParams.get("type"); // event | all
@@ -195,7 +197,7 @@ export async function GET(req: NextRequest) {
 
     const items: ExploreItem[] = filtered.map(({ _priceFromCents, ...rest }) => rest);
 
-    return NextResponse.json<ExploreResponse>({
+    return jsonWrap({
       items,
       pagination: {
         nextCursor,
@@ -205,7 +207,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("[api/explorar/list] erro:", error);
     // Em caso de erro, devolve lista vazia mas não rebenta o frontend
-    return NextResponse.json<ExploreResponse & { error?: string }>(
+    return jsonWrap(
       {
         items: [],
         pagination: { nextCursor: null, hasMore: false },
@@ -215,3 +217,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { OrganizationFormFieldType } from "@prisma/client";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
@@ -43,7 +45,7 @@ function parseOptions(value: unknown) {
   return cleaned.length > 0 ? cleaned : null;
 }
 
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -52,20 +54,20 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return NextResponse.json({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
     }
 
     const form = await prisma.organizationForm.findFirst({
@@ -77,10 +79,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     });
 
     if (!form) {
-      return NextResponse.json({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         form: {
@@ -112,11 +114,11 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     );
   } catch (err) {
     console.error("[organização/inscricoes][GET:id]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -125,25 +127,25 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return NextResponse.json({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
     }
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const titleRaw = (body as Record<string, unknown>).title;
@@ -159,7 +161,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     if (typeof titleRaw === "string") {
       const title = titleRaw.trim();
       if (!title) {
-        return NextResponse.json({ ok: false, error: "Título obrigatório." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Título obrigatório." }, { status: 400 });
       }
       updates.title = title;
     }
@@ -169,7 +171,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     if (typeof statusRaw === "string") {
       const status = statusRaw.trim().toUpperCase();
       if (!FORM_STATUSES.has(status)) {
-        return NextResponse.json({ ok: false, error: "Estado inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Estado inválido." }, { status: 400 });
       }
       updates.status = status;
     }
@@ -201,7 +203,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 
     if (fieldsProvided) {
       if (!Array.isArray(fieldsRaw)) {
-        return NextResponse.json({ ok: false, error: "Campos inválidos." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Campos inválidos." }, { status: 400 });
       }
       fieldsRaw.forEach((entry, index) => {
         if (!entry || typeof entry !== "object") {
@@ -233,7 +235,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       });
 
       if (parsedFields.length === 0) {
-        return NextResponse.json({ ok: false, error: "Adiciona pelo menos um campo." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Adiciona pelo menos um campo." }, { status: 400 });
       }
     }
 
@@ -242,14 +244,14 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
     }
     if (fieldsProvided) {
       const submissionsCount = await prisma.organizationFormSubmission.count({
         where: { formId },
       });
       if (submissionsCount > 0) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Não podes alterar campos quando já existem respostas." },
           { status: 409 },
         );
@@ -280,14 +282,14 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       }
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[organização/inscricoes][PATCH:id]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -296,16 +298,16 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return NextResponse.json({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return NextResponse.json({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
     }
 
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return NextResponse.json({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
     }
 
     const existing = await prisma.organizationForm.findFirst({
@@ -313,10 +315,10 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
       include: { _count: { select: { submissions: true } } },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
     }
     if (existing._count.submissions > 0) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não é possível apagar um formulário com respostas." },
         { status: 409 },
       );
@@ -324,9 +326,12 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
 
     await prisma.organizationForm.delete({ where: { id: formId } });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("[organização/inscricoes][DELETE:id]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

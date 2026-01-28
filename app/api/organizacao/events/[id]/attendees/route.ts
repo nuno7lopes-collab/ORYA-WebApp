@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { EntitlementStatus, OrganizationMemberRole } from "@prisma/client";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const MAX_PAGE = 100;
 
@@ -82,22 +84,22 @@ async function ensureOrganization(userId: string, eventId: number) {
   return { ok: true as const, isAdmin };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return jsonWrap({ error: "Not authenticated" }, { status: 401 });
   }
   const userId = data.user.id;
   const resolved = await params;
   const eventId = Number(resolved.id);
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ error: "INVALID_EVENT" }, { status: 400 });
+    return jsonWrap({ error: "INVALID_EVENT" }, { status: 400 });
   }
 
   const access = await ensureOrganization(userId, eventId);
   if (!access.ok) {
-    return NextResponse.json({ error: access.error }, { status: access.status });
+    return jsonWrap({ error: access.error }, { status: access.status });
   }
   const event = await prisma.event.findUnique({
     where: { id: eventId },
@@ -251,5 +253,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     };
   });
 
-  return NextResponse.json({ items, nextCursor });
+  return jsonWrap({ items, nextCursor });
 }
+export const GET = withApiEnvelope(_GET);

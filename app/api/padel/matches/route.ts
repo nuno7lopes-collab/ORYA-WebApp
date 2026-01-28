@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, padel_match_status, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -11,11 +12,12 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel/score";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -23,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
-  if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
 
   const event = await prisma.event.findUnique({
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
       padelTournamentConfig: { select: { advancedSettings: true } },
     },
   });
-  if (!event?.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const rateLimited = await enforcePublicRateLimit(req, {
     keyPrefix: "padel_matches",
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
     competitionState === "PUBLIC";
 
   if (!user && !isPublicEvent) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
   if (user && !isPublicEvent) {
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
       organizationId: event.organizationId,
       roles: ROLE_ALLOWLIST,
     });
-    if (!organization) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const matches = await prisma.padelMatch.findMany({
@@ -81,19 +83,19 @@ export async function GET(req: NextRequest) {
     ],
   });
 
-  return NextResponse.json({ ok: true, items: matches }, { status: 200 });
+  return jsonWrap({ ok: true, items: matches }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const matchId = typeof body.id === "number" ? body.id : Number(body.id);
   const statusRaw =
@@ -115,29 +117,29 @@ export async function POST(req: NextRequest) {
         ? Number(body.courtNumber)
         : undefined;
 
-  if (!Number.isFinite(matchId)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isFinite(matchId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   if (startAtRaw && Number.isNaN(startAtRaw.getTime())) {
-    return NextResponse.json({ ok: false, error: "INVALID_START_AT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_START_AT" }, { status: 400 });
   }
 
   const match = await prisma.padelMatch.findUnique({
     where: { id: matchId },
     include: { event: { select: { organizationId: true } } },
   });
-  if (!match || !match.event?.organizationId) return NextResponse.json({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+  if (!match || !match.event?.organizationId) return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) {
-    return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   }
 
   const isAdmin = adminRoles.has(membership.role);
 
   if (scoreRaw && !isValidScore(scoreRaw)) {
-    return NextResponse.json({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
   }
 
   const scoreObj = scoreRaw && typeof scoreRaw === "object" ? (scoreRaw as Record<string, unknown>) : null;
@@ -146,7 +148,7 @@ export async function POST(req: NextRequest) {
   const existingScore =
     match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
   if (existingScore.disputeStatus === "OPEN" && !isAdmin) {
-    return NextResponse.json({ ok: false, error: "MATCH_DISPUTED" }, { status: 423 });
+    return jsonWrap({ ok: false, error: "MATCH_DISPUTED" }, { status: 423 });
   }
   const mergedScore =
     scoreObj && typeof scoreObj === "object"
@@ -180,7 +182,7 @@ export async function POST(req: NextRequest) {
   const stats = resolvePadelMatchStats(rawSets, mergedScore, shouldApplyScoreRules ? scoreRules ?? undefined : undefined);
 
   if (Array.isArray(rawSets) && rawSets.length > 0 && nextStatus === "DONE" && !stats) {
-    return NextResponse.json({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
   }
 
   let winnerPairingId: number | null = null;
@@ -196,7 +198,7 @@ export async function POST(req: NextRequest) {
     if (!match.pairingAId && match.pairingBId) winnerPairingId = match.pairingBId;
   }
   if (shouldSetWinner && !winnerPairingId) {
-    return NextResponse.json({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
   }
 
   const scoreValue = (scoreObj ? mergedScore : existingScore) as Prisma.InputJsonValue;
@@ -276,5 +278,7 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ ok: true, match: updated, outboxEventId }, { status: 200 });
+  return jsonWrap({ ok: true, match: updated, outboxEventId }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

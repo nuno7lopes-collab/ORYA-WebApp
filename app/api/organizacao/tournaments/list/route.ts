@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
@@ -6,8 +7,9 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
 
@@ -17,7 +19,7 @@ export async function GET(req: NextRequest) {
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   if (!organization || !membership) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const access = await ensureMemberModuleAccess({
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
     required: "VIEW",
   });
   if (!access.ok) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const url = new URL(req.url);
@@ -47,5 +49,6 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ ok: true, tournaments }, { status: 200 });
+  return jsonWrap({ ok: true, tournaments }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);

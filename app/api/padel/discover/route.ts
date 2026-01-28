@@ -1,11 +1,13 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma, padel_format, PadelEligibilityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_LIMIT = 12;
 const SUPPORTED_FORMATS = new Set<padel_format>([
@@ -63,7 +65,7 @@ function buildDateFilter(dateParam: string | null, dayParam: string | null) {
   return dateParam === "upcoming" ? { gte: new Date() } : null;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const rateLimited = await enforcePublicRateLimit(req, {
       keyPrefix: "padel_discover",
@@ -228,7 +230,7 @@ export async function GET(req: NextRequest) {
 
     const items = filtered.map(({ _priceFromCents, isGratis: _isGratis, ...rest }) => rest);
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         items,
@@ -238,6 +240,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[padel/discover] error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

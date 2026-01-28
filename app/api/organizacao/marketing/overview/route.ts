@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -6,8 +7,9 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { OrganizationModule, SaleSummaryStatus, TicketStatus } from "@prisma/client";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -16,7 +18,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const orgParam = resolveOrganizationIdFromRequest(req);
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     const now = new Date();
@@ -295,7 +297,7 @@ export async function GET(req: NextRequest) {
       });
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         totalTickets,
@@ -321,6 +323,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/marketing/overview]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -58,3 +58,28 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## API response envelope (Blueprint v9)
+
+JSON routes must return a single envelope:
+
+- Success: `{ ok: true, result }`
+- Error: `{ ok: false, error: { errorCode, message, retryable?, details? } }`
+
+Use `jsonWrap` from `lib/api/wrapResponse.ts` in JSON routes. It preserves `Response`/`NextResponse` (streams, files, webhooks) and avoids double-wrapping.
+
+### Special routes (not wrapped)
+
+The following routes return raw/stream/file responses and must **not** be wrapped automatically:
+
+- SSE: `app/api/padel/live/route.ts`
+- Uploads/formData: `app/api/upload/route.ts`
+- ICS/downloads: `app/api/me/reservas/[id]/calendar.ics/route.ts`
+- Webhooks (raw body): `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`, `app/api/organizacao/payouts/webhook/route.ts`
+- Binary assets: `app/api/me/store/products/[id]/digital-assets/route.ts`, `app/api/organizacao/loja/products/[id]/digital-assets/route.ts`
+- Imports: `app/api/organizacao/padel/imports/inscritos/route.ts`
+- Internal ops (raw/outbox): `app/api/internal/worker/operations/route.ts`
+
+### Webhooks fail-closed
+
+Inbound webhooks must resolve `organizationId`. If they cannot, they must return a 4xx response and **must not** write side-effects.

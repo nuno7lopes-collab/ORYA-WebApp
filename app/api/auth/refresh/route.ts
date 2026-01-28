@@ -3,17 +3,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * Sincroniza a sessão do supabase (tokens vindos do browser) para cookies HttpOnly.
  * Espera body JSON com { access_token, refresh_token }.
  */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -25,7 +27,7 @@ export async function POST(req: NextRequest) {
     const refresh_token = body?.refresh_token ?? null;
 
     if (!access_token || !refresh_token) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "MISSING_TOKENS" },
         { status: 400 },
       );
@@ -38,18 +40,19 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error("[auth/refresh] setSession error:", error);
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: error.message },
         { status: 400 },
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     console.error("[auth/refresh] unexpected error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "SERVER_ERROR" },
       { status: 500 },
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

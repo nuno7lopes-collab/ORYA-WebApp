@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreOrderStatus, StoreShipmentStatus } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -68,10 +70,10 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -79,13 +81,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ord
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const orderId = parseId(resolvedParams.orderId);
     if (!orderId.ok) {
-      return NextResponse.json({ ok: false, error: orderId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: orderId.error }, { status: 400 });
     }
 
     const order = await prisma.storeOrder.findFirst({
@@ -93,13 +95,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ord
       select: { id: true, status: true },
     });
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createShipmentSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -142,12 +144,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ord
       return shipment;
     });
 
-    return NextResponse.json({ ok: true, shipment: created }, { status: 201 });
+    return jsonWrap({ ok: true, shipment: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/loja/orders/[orderId]/shipments error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar envio." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar envio." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

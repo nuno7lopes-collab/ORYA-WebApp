@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -9,6 +10,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { LedgerEntryType, OrganizationModule } from "@prisma/client";
 import { toCsv } from "@/lib/exports/csv";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseRange(req: NextRequest) {
   const from = req.nextUrl.searchParams.get("from");
@@ -20,22 +22,22 @@ function parseRange(req: NextRequest) {
   return { fromDate, toDate };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const range = parseRange(req);
-  if (!range) return NextResponse.json({ ok: false, error: "INVALID_RANGE" }, { status: 400 });
+  if (!range) return jsonWrap({ ok: false, error: "INVALID_RANGE" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser();
-  if (error || !user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
   });
-  if (!organization || !membership) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const access = await ensureMemberModuleAccess({
     organizationId: organization.id,
@@ -45,7 +47,7 @@ export async function GET(req: NextRequest) {
     moduleKey: OrganizationModule.FINANCEIRO,
     required: "VIEW",
   });
-  if (!access.ok) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const entries = await prisma.ledgerEntry.findMany({
     where: {
@@ -91,3 +93,4 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+export const GET = withApiEnvelope(_GET);

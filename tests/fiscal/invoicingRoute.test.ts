@@ -84,7 +84,7 @@ describe("finance invoicing route", () => {
     const res = await POST(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
+    expect(body.result.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
     expect(recordOutboxEvent).toHaveBeenCalledTimes(1);
     expect(appendEventLog).toHaveBeenCalledTimes(1);
   });
@@ -106,6 +106,6 @@ describe("finance invoicing route", () => {
     const res = await GET(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
+    expect(body.result.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
   });
 });

@@ -1,9 +1,11 @@
 // app/api/organizacao/events/update/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   TicketTypeStatus,
   Prisma,
@@ -31,6 +33,23 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
 import { shouldEmitSearchIndexUpdate } from "@/domain/searchIndex/triggers";
+
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = canonicalize(obj[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+};
+
+const hashPayload = (payload: Record<string, unknown>) =>
+  crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
 
 type TicketTypeUpdate = {
   id: number;
@@ -136,7 +155,7 @@ async function generateUniqueSlug(baseSlug: string, eventId?: number) {
   return `${baseSlug}-${maxSuffix + 1}`;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -145,12 +164,12 @@ export async function POST(req: NextRequest) {
     try {
       body = (await req.json()) as UpdateEventBody;
     } catch {
-      return NextResponse.json({ ok: false, error: "Body inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Body inválido." }, { status: 400 });
     }
 
     const eventId = Number(body?.eventId);
     if (!eventId || Number.isNaN(eventId)) {
-      return NextResponse.json({ ok: false, error: "eventId é obrigatório." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "eventId é obrigatório." }, { status: 400 });
     }
 
     // Autorização: perfil + membership no organization do evento
@@ -298,7 +317,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     if (!profile) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Perfil não encontrado. Completa o onboarding de utilizador." },
         { status: 400 },
       );
@@ -307,7 +326,7 @@ export async function POST(req: NextRequest) {
       profile.onboardingDone ||
       (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
     if (!hasUserOnboarding) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -320,7 +339,7 @@ export async function POST(req: NextRequest) {
     event = eventResult;
 
     if (!event) {
-      return NextResponse.json({ ok: false, error: "Evento não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Evento não encontrado." }, { status: 404 });
     }
 
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
@@ -328,12 +347,12 @@ export async function POST(req: NextRequest) {
     let membership: { role: OrganizationMemberRole; rolePack: OrganizationRolePack | null } | null = null;
     if (event.organizationId == null) {
       if (!isAdmin) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     } else {
       membership = await resolveGroupMemberForOrg({ organizationId: event.organizationId, userId: user.id });
       if (!membership) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
       const access = await ensureMemberModuleAccess({
         organizationId: event.organizationId,
@@ -344,14 +363,14 @@ export async function POST(req: NextRequest) {
         required: "EDIT",
       });
       if (!access.ok) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     }
 
     if (event.organization) {
       const emailGate = ensureOrganizationEmailVerified(event.organization);
       if (!emailGate.ok) {
-        return NextResponse.json({ ok: false, error: emailGate.error }, { status: 403 });
+        return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
       }
     }
 
@@ -361,10 +380,10 @@ export async function POST(req: NextRequest) {
       } catch (err: any) {
         const message = typeof err?.message === "string" ? err.message : "";
         if (message.startsWith("ACCESS_POLICY_LOCKED")) {
-          return NextResponse.json({ ok: false, error: "ACCESS_POLICY_LOCKED" }, { status: 409 });
+          return jsonWrap({ ok: false, error: "ACCESS_POLICY_LOCKED" }, { status: 409 });
         }
         if (message === "INVITE_TOKEN_TTL_REQUIRED") {
-          return NextResponse.json(
+          return jsonWrap(
             { ok: false, error: "INVITE_TOKEN_TTL_REQUIRED" },
             { status: 400 },
           );
@@ -378,7 +397,7 @@ export async function POST(req: NextRequest) {
     );
     const hasNewTicketsPayload = Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
     if (hasNonEurTickets && hasNewTicketsPayload) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "CURRENCY_NOT_SUPPORTED" },
         { status: 400 },
       );
@@ -392,7 +411,7 @@ export async function POST(req: NextRequest) {
       const hasRegistrations = (event._count?.tickets ?? 0) > 0 || (event._count?.reservations ?? 0) > 0;
       const hasPayments = hasSoldTickets;
       if (hasRegistrations || hasPayments) {
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             code: "EVENT_HAS_ATTENDEES",
@@ -417,7 +436,7 @@ export async function POST(req: NextRequest) {
     if (slugSource !== undefined) {
       const baseSlug = slugify(typeof slugSource === "string" ? slugSource : "");
       if (!baseSlug) {
-        return NextResponse.json({ ok: false, error: "Slug inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Slug inválido." }, { status: 400 });
       }
       const nextSlug = await generateUniqueSlug(baseSlug, eventId);
       if (nextSlug !== event.slug) {
@@ -428,14 +447,14 @@ export async function POST(req: NextRequest) {
     if (body.startsAt) {
       const d = new Date(body.startsAt);
       if (Number.isNaN(d.getTime())) {
-        return NextResponse.json({ ok: false, error: "startsAt inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "startsAt inválido." }, { status: 400 });
       }
       dataUpdate.startsAt = d;
     }
     if (body.endsAt) {
       const d = new Date(body.endsAt);
       if (Number.isNaN(d.getTime())) {
-        return NextResponse.json({ ok: false, error: "endsAt inválido." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "endsAt inválido." }, { status: 400 });
       }
       dataUpdate.endsAt = d;
     }
@@ -578,7 +597,7 @@ export async function POST(req: NextRequest) {
         requireStripe: payoutMode === PayoutMode.ORGANIZATION && organization?.orgType !== "PLATFORM",
       });
       if (!gate.ok) {
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             code: "PAYMENTS_NOT_READY",
@@ -667,11 +686,11 @@ export async function POST(req: NextRequest) {
     const nextPricingMode = (dataUpdate.pricingMode ?? event.pricingMode ?? EventPricingMode.STANDARD) as EventPricingMode;
     const guard = validateZeroPriceGuard({ pricingMode: nextPricingMode, ticketPrices });
     if (!guard.ok) {
-      return NextResponse.json({ ok: false, error: guard.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: guard.error }, { status: 400 });
     }
 
     if (!hasDataUpdate && !hasTicketStatusUpdates && !hasNewTickets) {
-      return NextResponse.json({ ok: false, error: "Nada para atualizar." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Nada para atualizar." }, { status: 400 });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -720,7 +739,14 @@ export async function POST(req: NextRequest) {
             eventId: eventLogId,
             organizationId: event.organizationId,
             eventType: "event.updated",
-            idempotencyKey: `event.updated:${eventId}:${Date.now()}`,
+            idempotencyKey: `event.updated:${eventId}:${hashPayload({
+              eventId,
+              title: nextTitle,
+              startsAt: nextStartsAt,
+              endsAt: nextEndsAt,
+              status: nextStatus,
+              organizationId: event.organizationId,
+            })}`,
             actorUserId: user.id,
             sourceType: SourceType.EVENT,
             sourceId: String(eventId),
@@ -765,18 +791,18 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("POST /api/organizacao/events/update error:", err);
     const message = err instanceof Error ? err.message : "";
     if (message === "UNAUTHENTICATED") {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     if (message === "INVALID_PADEL_CATEGORY_LINK") {
-      return NextResponse.json({ ok: false, error: "Categoria Padel inválida para este evento." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Categoria Padel inválida para este evento." }, { status: 400 });
     }
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       const code = err.code;
@@ -786,9 +812,9 @@ export async function POST(req: NextRequest) {
         code === "P2022" && column
           ? `Erro de base de dados ao atualizar evento (coluna em falta: ${column}).`
           : "Erro de base de dados ao atualizar evento.";
-      return NextResponse.json({ ok: false, error, code }, { status: 400 });
+      return jsonWrap({ ok: false, error, code }, { status: 400 });
     }
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         error: "Erro interno ao atualizar evento.",
@@ -797,3 +823,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

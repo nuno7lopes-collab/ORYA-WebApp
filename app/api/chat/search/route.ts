@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseLimit(value: string | null) {
   const raw = Number(value ?? "20");
@@ -14,10 +16,10 @@ function parseLimit(value: string | null) {
   return Math.min(Math.max(raw, 1), 50);
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
       identifier: user.id,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
       );
@@ -37,7 +39,7 @@ export async function GET(req: NextRequest) {
 
     const query = req.nextUrl.searchParams.get("query")?.trim() ?? "";
     if (!query) {
-      return NextResponse.json({ ok: true, items: [] });
+      return jsonWrap({ ok: true, items: [] });
     }
 
     const conversationId = req.nextUrl.searchParams.get("conversationId")?.trim() ?? null;
@@ -85,15 +87,16 @@ export async function GET(req: NextRequest) {
       rank: Number(row.rank ?? 0),
     }));
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("GET /api/chat/search error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao pesquisar mensagens." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao pesquisar mensagens." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

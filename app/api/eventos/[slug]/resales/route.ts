@@ -1,7 +1,9 @@
 // app/api/eventos/[slug]/resales/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ResaleStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * F5-9 – Listar revendas disponíveis por evento
@@ -30,7 +32,7 @@ import { ResaleStatus } from "@prisma/client";
 
 type RouteParams = { slug?: string };
 
-export async function GET(
+async function _GET(
   _req: NextRequest,
   context: { params: RouteParams | Promise<RouteParams> },
 ) {
@@ -39,7 +41,7 @@ export async function GET(
     const slug = resolved?.slug;
 
     if (!slug || typeof slug !== "string") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "MISSING_OR_INVALID_SLUG" },
         { status: 400 }
       );
@@ -55,7 +57,7 @@ export async function GET(
     });
 
     if (!event) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "EVENT_NOT_FOUND" },
         { status: 404 }
       );
@@ -125,7 +127,7 @@ export async function GET(
       ticketTypeName: r.ticket?.ticketType?.name ?? null,
     }));
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         eventId: event.id,
@@ -136,9 +138,10 @@ export async function GET(
     );
   } catch (error) {
     console.error("Error in GET /api/eventos/[slug]/resales:", error);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

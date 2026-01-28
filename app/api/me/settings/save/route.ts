@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { INTEREST_MAX_SELECTION, normalizeInterestSelection } from "@/lib/interests";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Body = {
   visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
@@ -17,7 +19,7 @@ type Body = {
   hardDelete?: boolean;
 };
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -26,14 +28,14 @@ export async function PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
 
     let body: Body;
     try {
       body = (await req.json()) as Body;
     } catch {
-      return NextResponse.json({ ok: false, error: "Body inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Body inválido." }, { status: 400 });
     }
 
     const visibility = body.visibility;
@@ -42,7 +44,7 @@ export async function PATCH(req: NextRequest) {
       ? normalizeInterestSelection(body.favouriteCategories, INTEREST_MAX_SELECTION)
       : undefined;
     if (visibility && visibility !== "PUBLIC" && visibility !== "PRIVATE" && visibility !== "FOLLOWERS") {
-      return NextResponse.json({ ok: false, error: "Visibilidade inválida." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Visibilidade inválida." }, { status: 400 });
     }
 
     const dataToUpdate: Record<string, unknown> = {};
@@ -83,7 +85,7 @@ export async function PATCH(req: NextRequest) {
           },
         });
       }
-      return NextResponse.json({ ok: true, deleted: true });
+      return jsonWrap({ ok: true, deleted: true });
     }
 
     const profile = await prisma.profile.upsert({
@@ -124,7 +126,7 @@ export async function PATCH(req: NextRequest) {
 
     const notificationPrefs = await getNotificationPrefs(user.id).catch(() => null);
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       profile: {
         visibility: profile.visibility,
@@ -139,6 +141,7 @@ export async function PATCH(req: NextRequest) {
     });
   } catch (err) {
     console.error("[settings/save] erro:", err);
-    return NextResponse.json({ ok: false, error: "Erro a guardar definições." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro a guardar definições." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);

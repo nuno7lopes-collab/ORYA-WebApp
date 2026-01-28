@@ -2,11 +2,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { sendCrmCampaign } from "@/lib/crm/campaignSend";
 import { CrmCampaignStatus } from "@prisma/client";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
@@ -17,10 +19,10 @@ function parseLimit(value: string | null) {
   return Math.min(Math.floor(parsed), MAX_LIMIT);
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
 
     const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
@@ -85,9 +87,10 @@ export async function POST(req: NextRequest) {
     const sent = results.filter((item) => item.ok).length;
     console.info("[crm][campanhas] cron", { processed: results.length, sent });
 
-    return NextResponse.json({ ok: true, processed: results.length, sent, results }, { status: 200 });
+    return jsonWrap({ ok: true, processed: results.length, sent, results }, { status: 200 });
   } catch (err) {
     console.error("[crm][campanhas] cron error", err);
-    return NextResponse.json({ ok: false, error: "Internal error" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

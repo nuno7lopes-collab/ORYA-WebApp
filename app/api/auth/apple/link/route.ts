@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { linkAppleIdentity } from "@/domain/apple/linkIdentity";
 import { verifyAppleIdToken } from "@/lib/apple/signin";
 import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationIdForUser } from "@/lib/organizationContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type AppleLinkBody = { idToken?: string | null };
 
@@ -22,11 +24,11 @@ function extractAppleIdentityFromSupabaseUser(user: { identities?: Array<any> })
   return providerUserId ? { providerUserId, email } : null;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
   const body = (await req.json().catch(() => null)) as AppleLinkBody | null;
@@ -45,14 +47,14 @@ export async function POST(req: NextRequest) {
       ? extractAppleIdentityFromSupabaseUser(adminUser.data.user)
       : null;
     if (!appleIdentity) {
-      return NextResponse.json({ ok: false, error: "APPLE_IDENTITY_MISSING" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "APPLE_IDENTITY_MISSING" }, { status: 400 });
     }
     providerUserId = appleIdentity.providerUserId;
     email = appleIdentity.email;
   }
 
   if (!providerUserId) {
-    return NextResponse.json({ ok: false, error: "APPLE_IDENTITY_INVALID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "APPLE_IDENTITY_INVALID" }, { status: 400 });
   }
 
   const orgId = await getActiveOrganizationIdForUser(data.user.id);
@@ -65,12 +67,13 @@ export async function POST(req: NextRequest) {
       organizationId: orgId,
       correlationId: `apple:${providerUserId}`,
     });
-    return NextResponse.json({ ok: true, identityId: identity.id });
+    return jsonWrap({ ok: true, identityId: identity.id });
   } catch (err) {
     if (err instanceof Error && err.message === "APPLE_IDENTITY_ALREADY_LINKED") {
-      return NextResponse.json({ ok: false, error: "ALREADY_LINKED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "ALREADY_LINKED" }, { status: 409 });
     }
     console.error("[auth/apple/link] error:", err);
-    return NextResponse.json({ ok: false, error: "SERVER_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "SERVER_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

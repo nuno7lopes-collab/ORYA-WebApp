@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
@@ -10,8 +11,9 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { isOrgOwner } from "@/lib/organizationPermissions";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -20,7 +22,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -29,11 +31,11 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
-      return NextResponse.json({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
     }
 
     if (organization.orgType === "PLATFORM") {
-      return NextResponse.json({
+      return jsonWrap({
         ok: true,
         status: "PLATFORM",
         charges_enabled: false,
@@ -44,7 +46,7 @@ export async function GET(req: NextRequest) {
 
     if (!organization.stripeAccountId) {
       console.log("[stripe][status] no account", { organizationId: organization.id });
-      return NextResponse.json({
+      return jsonWrap({
         ok: true,
         status: "NOT_CONNECTED",
         charges_enabled: false,
@@ -104,7 +106,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       status,
       charges_enabled,
@@ -114,6 +116,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[stripe][status] error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

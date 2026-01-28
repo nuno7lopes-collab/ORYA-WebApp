@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { prisma } from "@/lib/prisma";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = (await req.json().catch(() => null)) as { paymentIntentId?: string } | null;
     const paymentIntentId =
       typeof body?.paymentIntentId === "string" ? body.paymentIntentId.trim() : "";
     if (!paymentIntentId) {
-      return NextResponse.json({ ok: false, error: "INVALID_PAYMENT_INTENT_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_PAYMENT_INTENT_ID" }, { status: 400 });
     }
 
     const sale = await prisma.saleSummary.findFirst({
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest) {
       select: { eventId: true, purchaseId: true, paymentIntentId: true },
     });
     if (!sale) {
-      return NextResponse.json({ ok: false, error: "SALE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "SALE_NOT_FOUND" }, { status: 404 });
     }
 
     const purchaseId = sale.purchaseId ?? sale.paymentIntentId ?? paymentIntentId;
@@ -65,9 +67,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, queued: true, purchaseId }, { status: 200 });
+    return jsonWrap({ ok: true, queued: true, purchaseId }, { status: 200 });
   } catch (err) {
     console.error("[admin/payments/refund]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

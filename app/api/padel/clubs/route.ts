@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { PORTUGAL_CITIES } from "@/config/cities";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -44,20 +46,20 @@ async function generateUniqueSlug(base: string, organizationId: number, excludeI
   }
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: readRoles,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
   const items = await prisma.padelClub.findMany({
@@ -69,19 +71,19 @@ export async function GET(req: NextRequest) {
     orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
   });
 
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const organizationIdParam = body.organizationId ?? resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const parsedOrgId = parseOrganizationId(organizationIdParam);
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: writeRoles,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const id = typeof body.id === "number" ? body.id : null;
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -156,7 +158,7 @@ export async function POST(req: NextRequest) {
       })
     : null;
   if (id && !existing) {
-    return NextResponse.json({ ok: false, error: "Clube não encontrado." }, { status: 404 });
+    return jsonWrap({ ok: false, error: "Clube não encontrado." }, { status: 404 });
   }
 
   const existingKind = existing?.kind ? String(existing.kind).toUpperCase() : null;
@@ -179,33 +181,33 @@ export async function POST(req: NextRequest) {
     typeof longitudeRaw === "number" && Number.isFinite(longitudeRaw) ? longitudeRaw : existing?.longitude ?? null;
 
   if (!resolvedName || resolvedName.length < 3) {
-    return NextResponse.json({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });
   }
 
   if (resolvedCity && !PORTUGAL_CITIES.includes(resolvedCity as (typeof PORTUGAL_CITIES)[number])) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
       { status: 400 },
     );
   }
 
   if (!isPartner && !resolvedCity.trim()) {
-    return NextResponse.json({ ok: false, error: "Cidade obrigatória para clube principal." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Cidade obrigatória para clube principal." }, { status: 400 });
   }
   if (!isPartner && !resolvedAddress.trim()) {
-    return NextResponse.json({ ok: false, error: "Morada obrigatória para clube principal." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Morada obrigatória para clube principal." }, { status: 400 });
   }
   if (!isPartner && locationSource !== "OSM") {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Morada normalizada obrigatória. Usa a pesquisa para confirmar." },
       { status: 400 },
     );
   }
   if (!isPartner && !locationProviderId) {
-    return NextResponse.json({ ok: false, error: "Seleciona uma morada normalizada antes de guardar." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Seleciona uma morada normalizada antes de guardar." }, { status: 400 });
   }
   if (isPartner && sourceClubIdRaw && !Number.isFinite(sourceClubIdRaw)) {
-    return NextResponse.json({ ok: false, error: "Clube parceiro inválido." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Clube parceiro inválido." }, { status: 400 });
   }
 
   const courtsCount = courtsCountRaw && Number.isFinite(courtsCountRaw)
@@ -222,7 +224,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!source) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Clube parceiro indisponível ou inexistente." },
           { status: 400 },
         );
@@ -299,12 +301,12 @@ export async function POST(req: NextRequest) {
       return saved;
     });
 
-    return NextResponse.json({ ok: true, club }, { status: id ? 200 : 201 });
+    return jsonWrap({ ok: true, club }, { status: id ? 200 : 201 });
   } catch (err) {
     console.error("[padel/clubs] error", err);
     const code = (err as { code?: string })?.code;
     if (code === "P2002") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Já existe um clube com este slug/nome. Escolhe outro." },
         { status: 409 },
       );
@@ -314,35 +316,35 @@ export async function POST(req: NextRequest) {
         ? "Clube não encontrado."
         : "Erro ao gravar clube.";
     const status = msg === "Clube não encontrado." ? 404 : 500;
-    return NextResponse.json({ ok: false, error: msg }, { status });
+    return jsonWrap({ ok: false, error: msg }, { status });
   }
 }
 
 // Soft delete club (marks isActive=false, deletedAt now)
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const url = new URL(req.url);
   const idParam = url.searchParams.get("id");
   const clubId = idParam ? Number(idParam) : NaN;
   const orgId = resolveOrganizationIdFromParams(url.searchParams);
 
-  if (!Number.isFinite(clubId)) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (!Number.isFinite(clubId)) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: orgId ?? undefined,
     roles: writeRoles,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const club = await prisma.padelClub.findFirst({
     where: { id: clubId, organizationId: organization.id, deletedAt: null },
   });
-  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   const tournamentRefs = await prisma.padelTournamentConfig.count({
     where: {
@@ -351,7 +353,7 @@ export async function DELETE(req: NextRequest) {
     },
   });
   if (tournamentRefs > 0) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Não podes apagar um clube associado a torneios. Remove-o dessas provas primeiro." },
       { status: 400 },
     );
@@ -363,5 +365,8 @@ export async function DELETE(req: NextRequest) {
     await tx.padelClub.delete({ where: { id: clubId } });
   });
 
-  return NextResponse.json({ ok: true, deleted: true }, { status: 200 });
+  return jsonWrap({ ok: true, deleted: true }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const DELETE = withApiEnvelope(_DELETE);

@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { randomUUID } from "crypto";
@@ -8,18 +9,19 @@ import { clampDeadlineHours, computePartnerLinkExpiresAt, computeSplitDeadlineAt
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Regenera token de convite para um pairing (v2). Apenas capitão ou staff OWNER/ADMIN.
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const pairingId = readNumericParam(resolved?.id, req, "pairings");
-  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (pairingId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const expiresMinutesRaw = typeof body?.expiresMinutes === "number" ? body.expiresMinutes : null;
@@ -38,9 +40,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       slots: true,
     },
   });
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.player2UserId) {
-    return NextResponse.json({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
   if (!pairing.partnerInviteToken) {
     // se não existe, seguimos para criar mesmo assim
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const now = new Date();
@@ -69,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     clampDeadlineHours(pairing.event?.padelTournamentConfig?.splitDeadlineHours ?? undefined),
   );
   if (pairing.payment_mode === "SPLIT" && deadlineAt.getTime() <= now.getTime()) {
-    return NextResponse.json({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
   }
 
   const partnerSlot = pairing.slots.find((slot) => slot.slot_role === "PARTNER");
@@ -108,5 +110,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
-  return NextResponse.json({ ok: true, invite: updated }, { status: 200 });
+  return jsonWrap({ ok: true, invite: updated }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

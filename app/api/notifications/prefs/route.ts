@@ -1,25 +1,27 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET() {
+async function _GET() {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const prefs = await getNotificationPrefs(user.id);
-  return NextResponse.json({ ok: true, prefs });
+  return jsonWrap({ ok: true, prefs });
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = await req.json().catch(() => null);
   const updates: Record<string, boolean> = {};
@@ -41,5 +43,7 @@ export async function POST(req: Request) {
     create: { userId: user.id, ...updates },
   });
 
-  return NextResponse.json({ ok: true });
+  return jsonWrap({ ok: true });
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

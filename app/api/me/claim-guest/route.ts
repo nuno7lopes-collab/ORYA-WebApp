@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/utils/email";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return jsonWrap({ error: "Not authenticated" }, { status: 401 });
   }
 
   const user = data.user;
   const verified = Boolean((user as any)?.email_confirmed_at || (user as any)?.emailConfirmedAt);
   if (!verified) {
-    return NextResponse.json({ error: "EMAIL_NOT_VERIFIED" }, { status: 403 });
+    return jsonWrap({ error: "EMAIL_NOT_VERIFIED" }, { status: 403 });
   }
 
   const body = (await req.json().catch(() => null)) as { purchaseId?: string } | null;
@@ -23,7 +25,7 @@ export async function POST(req: NextRequest) {
   const emailNormalized = normEmail || user.email?.toLowerCase() || null;
 
   if (!emailNormalized) {
-    return NextResponse.json({ ok: true, enqueued: false, reason: "NO_EMAIL" });
+    return jsonWrap({ ok: true, enqueued: false, reason: "NO_EMAIL" });
   }
 
   // Garantir identidade de email para ligar claims a ownerIdentityId
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
         userEmail: user.email,
       },
     });
-    return NextResponse.json({ ok: true, enqueued: true, purchaseId: purchaseIdFromBody });
+    return jsonWrap({ ok: true, enqueued: true, purchaseId: purchaseIdFromBody });
   }
 
   // Caso geral: encontrar purchases guest por ownerIdentityId do email ou ownerKey=email:<email>
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!purchases.length) {
-    return NextResponse.json({ ok: true, enqueued: false, reason: "NO_GUEST_ENTITLEMENTS" });
+    return jsonWrap({ ok: true, enqueued: false, reason: "NO_GUEST_ENTITLEMENTS" });
   }
 
   await Promise.all(
@@ -84,5 +86,6 @@ export async function POST(req: NextRequest) {
       ),
   );
 
-  return NextResponse.json({ ok: true, enqueued: true, purchases: purchases.map((p) => p.purchaseId) });
+  return jsonWrap({ ok: true, enqueued: true, purchases: purchases.map((p) => p.purchaseId) });
 }
+export const POST = withApiEnvelope(_POST);

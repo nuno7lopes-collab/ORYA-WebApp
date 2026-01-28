@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { replayOutboxEvents } from "@/lib/ops/outboxReplay";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseRequestId(req: NextRequest) {
   return req.headers.get("Idempotency-Key") || req.headers.get("X-Request-Id");
@@ -18,9 +20,9 @@ function parseEventIds(payload: unknown) {
   return [];
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const requestId = parseRequestId(req);
@@ -28,7 +30,8 @@ export async function POST(req: NextRequest) {
   const eventIds = parseEventIds(payload);
   const result = await replayOutboxEvents({ eventIds, requestId });
   if (!result.ok) {
-    return NextResponse.json(result, { status: result.error === "LIMIT_EXCEEDED" ? 400 : 400 });
+    return jsonWrap(result, { status: result.error === "LIMIT_EXCEEDED" ? 400 : 400 });
   }
-  return NextResponse.json(result, { status: 200 });
+  return jsonWrap(result, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

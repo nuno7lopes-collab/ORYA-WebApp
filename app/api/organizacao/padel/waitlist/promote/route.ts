@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { promoteNextPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -57,19 +59,19 @@ async function ensurePadelPlayerProfile(params: { organizationId: number; userId
   });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const eventId = typeof body?.eventId === "number" ? body.eventId : Number(body?.eventId);
   const categoryIdRaw = typeof body?.categoryId === "number" ? body.categoryId : Number(body?.categoryId);
   const categoryId = Number.isFinite(categoryIdRaw) ? Number(categoryIdRaw) : null;
-  if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const authorized = await ensureOrganizationAccess(data.user.id, eventId);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const [event, config] = await Promise.all([
     prisma.event.findUnique({ where: { id: eventId }, select: { startsAt: true, status: true } }),
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
     }),
   ]);
   if (!event || !config) {
-    return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const advanced = (config.advancedSettings || {}) as {
@@ -90,7 +92,7 @@ export async function POST(req: NextRequest) {
     competitionState?: string | null;
   };
   if (advanced.waitlistEnabled !== true) {
-    return NextResponse.json({ ok: false, error: "WAITLIST_DISABLED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "WAITLIST_DISABLED" }, { status: 409 });
   }
   const registrationStartsAt =
     advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
@@ -112,7 +114,7 @@ export async function POST(req: NextRequest) {
     competitionState: advanced.competitionState ?? null,
   });
   if (!registrationCheck.ok) {
-    return NextResponse.json({ ok: false, error: registrationCheck.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });
   }
 
   const result = await prisma.$transaction((tx) =>
@@ -127,9 +129,10 @@ export async function POST(req: NextRequest) {
   );
 
   if (!result.ok) {
-    return NextResponse.json({ ok: false, error: result.code }, { status: 409 });
+    return jsonWrap({ ok: false, error: result.code }, { status: 409 });
   }
 
   await ensurePadelPlayerProfile({ organizationId: result.organizationId, userId: result.userId });
-  return NextResponse.json({ ok: true, entryId: result.entryId, pairingId: result.pairingId }, { status: 200 });
+  return jsonWrap({ ok: true, entryId: result.entryId, pairingId: result.pairingId }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

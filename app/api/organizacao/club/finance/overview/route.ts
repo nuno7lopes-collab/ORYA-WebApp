@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -15,14 +17,14 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil nao encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil nao encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissoes." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissoes." }, { status: 403 });
     }
 
     const bookings = await prisma.booking.findMany({
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
     const now = new Date();
     const upcomingCount = bookings.filter((booking) => new Date(booking.startsAt) >= now).length;
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       bookings: {
         confirmedRevenueCents,
@@ -86,9 +88,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/club/finance/overview error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar caixa." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar caixa." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

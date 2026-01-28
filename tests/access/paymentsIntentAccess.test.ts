@@ -41,7 +41,7 @@ describe("payments intent access gate", () => {
     });
     const res = await POST(req);
     const body = await res.json();
-    expect(body.code).toBe("LEGACY_INTENT_DISABLED");
+    expect(body.error.errorCode).toBe("LEGACY_INTENT_DISABLED");
     expect(evaluateEventAccess).not.toHaveBeenCalled();
   });
 
@@ -70,7 +70,7 @@ describe("payments intent access gate", () => {
     });
     const res = await POST(req);
     const body = await res.json();
-    expect(body.code).toBe("INVITE_ONLY");
+    expect(body.error.errorCode).toBe("INVITE_ONLY");
     expect(evaluateEventAccess).toHaveBeenCalled();
   });
 });

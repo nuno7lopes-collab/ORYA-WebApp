@@ -2,7 +2,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   PadelPairingStatus,
   PadelRegistrationStatus,
@@ -13,9 +15,9 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 // Expira pairings SPLIT com locked_until ultrapassado: cancela slots e liberta tickets sem refunds automáticos.
 // Pode ser executado via cron. Não expõe dados sensíveis, mas requer permissão server-side.
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
   const now = new Date();
   await expireHolds(prisma, now);
@@ -89,5 +91,6 @@ export async function POST(req: NextRequest) {
     processed += 1;
   }
 
-  return NextResponse.json({ ok: true, processed, now: now.toISOString() });
+  return jsonWrap({ ok: true, processed, now: now.toISOString() });
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   OrganizationMemberRole,
   PadelPairingPaymentStatus,
@@ -48,7 +49,7 @@ const buildSummary = (totalRows: number, validRows: number, errors: PadelImportE
   errorCount: errors.length,
 });
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -615,3 +616,4 @@ export async function POST(req: NextRequest) {
     { status: 200 },
   );
 }
+export const POST = withApiEnvelope(_POST);

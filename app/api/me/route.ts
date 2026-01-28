@@ -1,7 +1,9 @@
 // app/api/me/route.ts
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // Tipagem simples devolvida ao frontend
 interface SupabaseUser {
@@ -14,7 +16,7 @@ interface AuthErrorLike {
   name?: string;
 }
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   try {
     const ctx = getRequestContext(req);
     const supabase = await createSupabaseServer();
@@ -32,7 +34,7 @@ const isAuthMissing =
   err?.name === "AuthSessionMissingError";
 
       if (isAuthMissing) {
-        return NextResponse.json(
+        return jsonWrap(
           { success: false, error: "Precisas de iniciar sessão." },
           { status: 401 },
         );
@@ -45,7 +47,7 @@ const isAuthMissing =
         correlationId: ctx.correlationId,
         orgId: ctx.orgId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { success: false, error: "Erro ao obter sessão." },
         { status: 500 },
       );
@@ -53,7 +55,7 @@ const isAuthMissing =
 
     // 🔹 Caso sem user (sem sessão válida)
     if (!user) {
-      return NextResponse.json(
+      return jsonWrap(
         { success: false, error: "Precisas de iniciar sessão." },
         { status: 401 },
       );
@@ -81,7 +83,7 @@ const isAuthMissing =
       });
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       success: true,
       user: safeUser,
       profile: profile ?? null,
@@ -94,9 +96,10 @@ const isAuthMissing =
       correlationId: ctx.correlationId,
       orgId: ctx.orgId,
     });
-    return NextResponse.json(
+    return jsonWrap(
       { success: false, error: "Erro ao carregar o perfil." },
       { status: 500 },
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

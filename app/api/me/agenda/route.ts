@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type AgendaItem = {
   id: string;
@@ -60,7 +62,7 @@ const participationPriority: Record<string, number> = {
   RESERVA: 3,
 };
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -69,7 +71,7 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const { start, end } = buildRange(req);
@@ -339,7 +341,7 @@ export async function GET(req: NextRequest) {
 
     items.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         range: { start: start.toISOString(), end: end.toISOString() },
@@ -349,6 +351,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[me/agenda][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

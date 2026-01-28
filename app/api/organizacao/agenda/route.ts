@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
@@ -7,19 +8,20 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationModule } from "@prisma/client";
 import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const url = new URL(req.url);
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
   if (!fromParam || !toParam) {
-    return NextResponse.json({ ok: false, error: "MISSING_RANGE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "MISSING_RANGE" }, { status: 400 });
   }
 
   const from = new Date(fromParam);
   const to = new Date(toParam);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-    return NextResponse.json({ ok: false, error: "INVALID_RANGE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_RANGE" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
@@ -31,12 +33,12 @@ export async function GET(req: NextRequest) {
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   if (!organization || !membership) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const reservasAccess = await ensureReservasModuleAccess(organization);
   if (!reservasAccess.ok) {
-    return NextResponse.json({ ok: false, error: reservasAccess.error }, { status: 403 });
+    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
   }
 
   const tournamentsAccess = await ensureMemberModuleAccess({
@@ -56,9 +58,10 @@ export async function GET(req: NextRequest) {
     required: "VIEW",
   });
   if (!tournamentsAccess.ok && !eventsAccess.ok) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const items = await getAgendaItemsForOrganization({ organizationId: organization.id, from, to });
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);

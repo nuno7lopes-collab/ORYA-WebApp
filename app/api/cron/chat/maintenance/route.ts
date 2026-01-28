@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 
     const now = new Date();
@@ -166,13 +168,14 @@ export async function GET(req: NextRequest) {
       await prisma.chatReadState.deleteMany({ where: { threadId: { in: expiredIds } } });
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       notifiedThreads: threadIds.length,
       expiredThreads: expiredIds.length,
     });
   } catch (err) {
     console.error("[CRON CHAT MAINTENANCE]", err);
-    return NextResponse.json({ ok: false, error: "Internal chat maintenance error" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Internal chat maintenance error" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

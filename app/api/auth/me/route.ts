@@ -1,11 +1,13 @@
 // app/api/auth/me/route.ts
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import type { User } from "@supabase/supabase-js";
 import { setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { normalizeProfileAvatarUrl } from "@/lib/profileMedia";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type SupabaseUserMetadata = {
   full_name?: string;
@@ -46,7 +48,7 @@ type ApiAuthMeResponse = {
   needsEmailConfirmation?: boolean;
 };
 
-export async function GET() {
+async function _GET() {
   try {
     const supabase = await createSupabaseServer();
 
@@ -57,7 +59,7 @@ export async function GET() {
 
     if (error || !user) {
       // Sessão ausente ou inválida → 401 limpo (evita spam de logs)
-      return NextResponse.json<ApiAuthMeResponse>(
+      return jsonWrap(
         { user: null, profile: null },
         { status: 401 },
       );
@@ -176,7 +178,7 @@ export async function GET() {
 
     // Se email não está confirmado, força o frontend a continuar em modo "verify"
     if (!emailConfirmed) {
-      return NextResponse.json<ApiAuthMeResponse>(
+      return jsonWrap(
         {
           user: {
             id: user.id,
@@ -190,7 +192,7 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json<ApiAuthMeResponse>(
+    return jsonWrap(
       {
         user: {
           id: user.id,
@@ -203,9 +205,10 @@ export async function GET() {
     );
   } catch (err) {
     console.error("GET /api/auth/me error:", err);
-    return NextResponse.json<ApiAuthMeResponse>(
+    return jsonWrap(
       { user: null, profile: null },
       { status: 500 }
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

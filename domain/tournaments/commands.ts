@@ -5,6 +5,24 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 import type { Prisma, TournamentFormat } from "@prisma/client";
 import { EventTemplateType, SourceType } from "@prisma/client";
 
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = canonicalize(obj[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+function hashPayload(payload: Record<string, unknown>) {
+  return crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
+}
+
 export async function createTournamentForEvent(input: {
   eventId: number;
   format: TournamentFormat;
@@ -93,7 +111,7 @@ export async function updateTournament(input: {
         eventId: eventIdLog,
         organizationId: tournament.event.organizationId,
         eventType: "tournament.updated",
-        idempotencyKey: `tournament.updated:${tournamentId}:${Date.now()}`,
+        idempotencyKey: `tournament.updated:${tournamentId}:${hashPayload({ tournamentId, data })}`,
         actorUserId,
         sourceType: SourceType.TOURNAMENT,
         sourceId: String(tournament.id),
@@ -132,7 +150,7 @@ export async function requestTournamentGeneration(input: {
         eventId: eventIdLog,
         organizationId,
         eventType: "tournament.generate_requested",
-        idempotencyKey: `tournament.generate:${tournamentId}:${Date.now()}`,
+        idempotencyKey: `tournament.generate:${tournamentId}:${hashPayload({ tournamentId, eventId, payload })}`,
         actorUserId,
         sourceType: SourceType.TOURNAMENT,
         sourceId: String(tournamentId),

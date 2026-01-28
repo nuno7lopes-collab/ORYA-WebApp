@@ -1,6 +1,8 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   PadelPairingPaymentStatus,
   PadelPairingStatus,
@@ -18,16 +20,16 @@ import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 // Cancela pairing Padel v2 (MVP: estados DB; refund efetivo fica para o checkout/refund handler).
 // Regras: capitão (created_by_user_id) ou staff OWNER/ADMIN do organization.
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const pairingId = readNumericParam(resolved?.id, req, "pairings");
-  if (pairingId === null) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (pairingId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
@@ -36,10 +38,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       slots: true,
     },
   });
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   if (pairing.pairingStatus === PadelPairingStatus.CANCELLED) {
-    return NextResponse.json({ ok: true, pairing }, { status: 200 });
+    return jsonWrap({ ok: true, pairing }, { status: 200 });
   }
 
   // Capitão (created_by_user_id) ou staff OWNER/ADMIN
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const partnerSlot = pairing.slots.find((slot) => slot.slot_role === "PARTNER");
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     pairing.payment_mode === "SPLIT" &&
     partnerSlot?.paymentStatus === PadelPairingPaymentStatus.PAID
   ) {
-    return NextResponse.json({ ok: false, error: "PARTNER_LOCKED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "PARTNER_LOCKED" }, { status: 409 });
   }
 
   try {
@@ -161,9 +163,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
 
     // Nota: refund efetivo deve ser tratado no fluxo de checkout/refund (Stripe) posterior.
-    return NextResponse.json({ ok: true, pairing: updated }, { status: 200 });
+    return jsonWrap({ ok: true, pairing: updated }, { status: 200 });
   } catch (err) {
     console.error("[padel/pairings][cancel][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

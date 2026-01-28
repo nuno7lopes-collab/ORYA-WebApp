@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { logAccountEvent } from "@/lib/accountEvents";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(_req: NextRequest) {
+async function _POST(_req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -12,7 +14,7 @@ export async function POST(_req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const profile = await prisma.profile.findUnique({
@@ -20,16 +22,16 @@ export async function POST(_req: NextRequest) {
       select: { status: true, deletionScheduledFor: true },
     });
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
 
     if (profile.status !== "PENDING_DELETE") {
-      return NextResponse.json({ ok: false, error: "NOT_PENDING_DELETE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "NOT_PENDING_DELETE" }, { status: 400 });
     }
 
     const now = new Date();
     if (profile.deletionScheduledFor && profile.deletionScheduledFor <= now) {
-      return NextResponse.json({ ok: false, error: "DELETION_LOCKED" }, { status: 409 });
+      return jsonWrap({ ok: false, error: "DELETION_LOCKED" }, { status: 409 });
     }
 
     await prisma.profile.update({
@@ -47,9 +49,10 @@ export async function POST(_req: NextRequest) {
       type: "account_delete_cancelled",
     });
 
-    return NextResponse.json({ ok: true, status: "ACTIVE" }, { status: 200 });
+    return jsonWrap({ ok: true, status: "ACTIVE" }, { status: 200 });
   } catch (err) {
     console.error("[settings/delete/cancel] erro:", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

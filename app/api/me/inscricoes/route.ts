@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET() {
+async function _GET() {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -12,7 +14,7 @@ export async function GET() {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
   const entries = await prisma.tournamentEntry.findMany({
@@ -110,5 +112,6 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
+export const GET = withApiEnvelope(_GET);

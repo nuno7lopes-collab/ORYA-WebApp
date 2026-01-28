@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { prisma } from "@/lib/prisma";
 import { computeStoreShippingQuote } from "@/lib/store/shipping";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseStoreId(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("storeId");
@@ -12,15 +14,15 @@ function parseStoreId(req: NextRequest) {
   return { ok: true as const, storeId };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return NextResponse.json({ ok: false, error: storeParsed.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
     const store = await prisma.store.findFirst({
@@ -28,13 +30,13 @@ export async function GET(req: NextRequest) {
       select: { id: true, status: true, showOnProfile: true, catalogLocked: true },
     });
     if (!store) {
-      return NextResponse.json({ ok: false, error: "Store nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Store nao encontrada." }, { status: 404 });
     }
     if (!isStorePublic(store)) {
-      return NextResponse.json({ ok: false, error: "Loja fechada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja fechada." }, { status: 403 });
     }
     if (store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const country = req.nextUrl.searchParams.get("country") ?? "";
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
     const methodIdRaw = req.nextUrl.searchParams.get("methodId");
     const methodId = methodIdRaw ? Number(methodIdRaw) : null;
     if (!Number.isFinite(subtotalCents) || subtotalCents < 0) {
-      return NextResponse.json({ ok: false, error: "Subtotal invalido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Subtotal invalido." }, { status: 400 });
     }
 
     const quote = await computeStoreShippingQuote({
@@ -53,12 +55,13 @@ export async function GET(req: NextRequest) {
     });
 
     if (!quote.ok) {
-      return NextResponse.json({ ok: false, error: quote.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: quote.error }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, quote: quote.quote });
+    return jsonWrap({ ok: true, quote: quote.quote });
   } catch (err) {
     console.error("GET /api/store/shipping/quote error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao calcular portes." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao calcular portes." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

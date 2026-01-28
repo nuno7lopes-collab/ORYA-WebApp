@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { OrgType, Prisma } from "@prisma/client";
 import { findNextSlot } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_PAGE_SIZE = 12;
 const LOOKAHEAD_DAYS = 21;
@@ -56,7 +58,7 @@ function buildAvailabilityRange(dateParam: string | null, dayParam: string | nul
   return null;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get("q")?.trim() || "";
@@ -328,7 +330,7 @@ export async function GET(req: NextRequest) {
 
     const items = range ? mapped.filter((item) => item.nextAvailability) : mapped;
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       items,
       pagination: {
@@ -344,9 +346,10 @@ export async function GET(req: NextRequest) {
           ? err.message
           : String(err)
         : undefined;
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro ao carregar serviços.", ...(debug ? { debug } : {}) },
       { status: 500 },
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,6 +1,8 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
@@ -15,18 +17,18 @@ import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 // Regulariza uma dupla cancelada por falha de pagamento (SPLIT).
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const pairingId = readNumericParam(resolved?.id, req, "pairings");
   if (pairingId === null) {
-    return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
@@ -42,9 +44,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     },
   });
-  if (!pairing) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.payment_mode !== PadelPaymentMode.SPLIT) {
-    return NextResponse.json({ ok: false, error: "NOT_SPLIT_MODE" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NOT_SPLIT_MODE" }, { status: 400 });
   }
 
   const isCaptain = pairing.createdByUserId === user.id;
@@ -57,16 +59,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     isStaff = Boolean(membership && ["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role));
   }
   if (!isCaptain && !isStaff) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const isInactiveRegistration =
     pairing.registration?.status ? INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status) : false;
   if (pairing.pairingStatus !== "CANCELLED" || !isInactiveRegistration) {
-    return NextResponse.json({ ok: false, error: "PAIRING_NOT_CANCELLED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "PAIRING_NOT_CANCELLED" }, { status: 409 });
   }
   if (!["FAILED", "EXPIRED"].includes(pairing.guaranteeStatus)) {
-    return NextResponse.json({ ok: false, error: "REGULARIZE_NOT_ALLOWED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "REGULARIZE_NOT_ALLOWED" }, { status: 409 });
   }
 
   const now = new Date();
@@ -76,12 +78,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     clampDeadlineHours(pairing.event?.padelTournamentConfig?.splitDeadlineHours ?? undefined),
   );
   if (deadlineAt.getTime() <= now.getTime()) {
-    return NextResponse.json({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "SPLIT_DEADLINE_PASSED" }, { status: 409 });
   }
 
   const partnerSlot = pairing.slots.find((slot) => slot.slot_role === "PARTNER");
   if (!partnerSlot) {
-    return NextResponse.json({ ok: false, error: "NO_PARTNER_SLOT" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_PARTNER_SLOT" }, { status: 400 });
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -117,5 +119,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   const lifecycleStatus = mapRegistrationToPairingLifecycle(PadelRegistrationStatus.PENDING_PAYMENT, pairing.payment_mode);
-  return NextResponse.json({ ok: true, pairing: { ...updated, lifecycleStatus } }, { status: 200 });
+  return jsonWrap({ ok: true, pairing: { ...updated, lifecycleStatus } }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

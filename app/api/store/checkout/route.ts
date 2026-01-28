@@ -20,6 +20,7 @@ import { computeBundleTotals } from "@/lib/store/bundles";
 import { computePromoDiscountCents } from "@/lib/promoMath";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -83,7 +84,7 @@ function buildOrderNumber(storeId: number) {
   return `ORD-${storeId}-${stamp}-${rand}`;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
     respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
@@ -886,3 +887,4 @@ export async function POST(req: NextRequest) {
     return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
+export const POST = withApiEnvelope(_POST);

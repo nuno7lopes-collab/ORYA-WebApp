@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getConfirmedPairings } from "@/domain/tournaments/generation";
 import { prisma } from "@/lib/prisma";
@@ -7,6 +8,7 @@ import { TournamentFormat, OrganizationModule } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { requestTournamentGeneration } from "@/domain/tournaments/commands";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function isOrganizationUser(userId: string, organizationId: number) {
   const organization = await prisma.organization.findUnique({
@@ -40,27 +42,27 @@ async function isOrganizationUser(userId: string, organizationId: number) {
   return access.ok;
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const id = Number(resolved?.id);
-  if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isFinite(id)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
     include: { event: { select: { organizationId: true } } },
   });
-  if (!tournament) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
   if (!tournament.event.organizationId) {
-    return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 400 });
   }
 
   const authorized = await isOrganizationUser(data.user.id, tournament.event.organizationId);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const format = (body?.format as TournamentFormat | undefined) ?? tournament.format;
@@ -90,7 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     preserveOrder = true;
     const targetSize = bracketSize ?? configBracketSize ?? null;
     if (targetSize && manualIds.length > targetSize) {
-      return NextResponse.json({ ok: false, error: "BRACKET_TOO_SMALL" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BRACKET_TOO_SMALL" }, { status: 400 });
     }
     if (targetSize) {
       const slots = Array.from({ length: targetSize }, () => null as number | null);
@@ -119,7 +121,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
   if (source === "manual" && manualIds.length === 0) {
-    return NextResponse.json({ ok: false, error: "NO_PARTICIPANTS" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_PARTICIPANTS" }, { status: 400 });
   }
 
   await requestTournamentGeneration({
@@ -140,5 +142,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
 
-  return NextResponse.json({ ok: true, queued: true }, { status: 202 });
+  return jsonWrap({ ok: true, queued: true }, { status: 202 });
 }
+export const POST = withApiEnvelope(_POST);

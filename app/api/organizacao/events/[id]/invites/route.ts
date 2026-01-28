@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { validateUsername } from "@/lib/username";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -114,19 +116,19 @@ async function ensureInviteAccess(
   return { ok: true as const, isAdmin: false };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
-      return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
 
     const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+      return jsonWrap({ ok: false, error: access.error }, { status: access.status });
     }
 
     const scope = normalizeScope(req.nextUrl.searchParams.get("scope"));
@@ -146,7 +148,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       items: invites.map((invite) => ({
         id: invite.id,
@@ -159,33 +161,33 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("[organização/eventos/invites][GET]", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar convites." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar convites." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
-      return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
 
     const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+      return jsonWrap({ ok: false, error: access.error }, { status: access.status });
     }
 
     let body: { identifier?: string; identifiers?: string[]; scope?: string } | null = null;
     try {
       body = (await req.json()) as { identifier?: string; identifiers?: string[]; scope?: string };
     } catch {
-      return NextResponse.json({ ok: false, error: "BODY_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BODY_INVALID" }, { status: 400 });
     }
 
     const scope = normalizeScope(body?.scope) ?? "PUBLIC";
@@ -202,7 +204,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .filter(Boolean);
 
     if (cleaned.length === 0) {
-      return NextResponse.json({ ok: false, error: "IDENTIFIER_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "IDENTIFIER_REQUIRED" }, { status: 400 });
     }
 
     const normalizedEntries: {
@@ -231,11 +233,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (errors.length > 0) {
-      return NextResponse.json({ ok: false, error: errors[0] }, { status: 400 });
+      return jsonWrap({ ok: false, error: errors[0] }, { status: 400 });
     }
 
     if (normalizedEntries.length === 0) {
-      return NextResponse.json({ ok: false, error: errors[0] ?? "IDENTIFIER_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: errors[0] ?? "IDENTIFIER_INVALID" }, { status: 400 });
     }
 
     await prisma.eventInvite.createMany({
@@ -249,41 +251,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       skipDuplicates: true,
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("[organização/eventos/invites][POST]", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar convite." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar convite." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
-      return NextResponse.json({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
     }
 
     const access = await ensureInviteAccess(user.id, eventId);
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+      return jsonWrap({ ok: false, error: access.error }, { status: access.status });
     }
 
     let body: { inviteId?: number } | null = null;
     try {
       body = (await req.json()) as { inviteId?: number };
     } catch {
-      return NextResponse.json({ ok: false, error: "BODY_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "BODY_INVALID" }, { status: 400 });
     }
 
     const inviteId = Number(body?.inviteId);
     if (!Number.isFinite(inviteId)) {
-      return NextResponse.json({ ok: false, error: "INVITE_ID_INVALID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVITE_ID_INVALID" }, { status: 400 });
     }
 
     const invite = await prisma.eventInvite.findUnique({
@@ -291,17 +293,20 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       select: { eventId: true },
     });
     if (!invite || invite.eventId !== eventId) {
-      return NextResponse.json({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
     }
 
     await prisma.eventInvite.delete({ where: { id: inviteId } });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("[organização/eventos/invites][DELETE]", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover convite." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover convite." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const DELETE = withApiEnvelope(_DELETE);

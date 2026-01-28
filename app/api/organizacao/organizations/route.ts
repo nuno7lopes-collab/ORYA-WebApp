@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { OrganizationStatus, OrganizationMemberRole } from "@prisma/client";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { requireUser } from "@/lib/auth/requireUser";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   DEFAULT_PRIMARY_MODULE,
   getDefaultOrganizationModules,
@@ -12,7 +14,7 @@ import {
 import { isValidWebsite } from "@/lib/validation/organization";
 import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
-export async function GET() {
+async function _GET() {
   try {
     const user = await requireUser();
 
@@ -66,26 +68,26 @@ export async function GET() {
         },
       }));
 
-    return NextResponse.json({ ok: true, items }, { status: 200 });
+    return jsonWrap({ ok: true, items }, { status: 200 });
   } catch (err: unknown) {
     if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Base de dados sem tabela organization_members. Corre as migrations." },
         { status: 500 },
       );
     }
     console.error("[organização/organizations][GET]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const user = await requireUser();
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const { businessName, publicName, entityType, city, username } = body as Record<string, unknown>;
@@ -111,14 +113,14 @@ export async function POST(req: NextRequest) {
       return `https://${trimmed}`;
     })();
     if (publicWebsite && !isValidWebsite(publicWebsite)) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Website inválido. Usa um URL válido (ex: https://orya.pt)." },
         { status: 400 },
       );
     }
 
     if (typeof username !== "string") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Escolhe um username para a organização." },
         { status: 400 },
       );
@@ -133,7 +135,7 @@ export async function POST(req: NextRequest) {
       : null;
 
     if (primaryModuleProvided && !primaryModule) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS." },
         { status: 400 },
       );
@@ -141,21 +143,21 @@ export async function POST(req: NextRequest) {
 
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "modules inválido. Usa uma lista de módulos válidos." },
         { status: 400 },
       );
     }
 
     if (!validatedUsername.ok) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: validatedUsername.error },
         { status: 400 },
       );
     }
 
     if (!bName) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Indica o nome da tua organização.",
@@ -215,7 +217,7 @@ export async function POST(req: NextRequest) {
       return created;
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         organization: {
@@ -236,24 +238,26 @@ export async function POST(req: NextRequest) {
     );
   } catch (err: unknown) {
     if (err instanceof UsernameTakenError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
         { status: 409 },
       );
     }
     if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2002") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
         { status: 409 },
       );
     }
     if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Base de dados sem tabela organization_members. Corre as migrations." },
         { status: 500 },
       );
     }
     console.error("[organização/organizations][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

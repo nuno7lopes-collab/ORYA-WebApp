@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const updateZoneSchema = z.object({
   name: z.string().trim().min(1, "Nome obrigatorio.").max(120).optional(),
@@ -39,10 +41,10 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -50,13 +52,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ zone
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
-      return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: zoneId.error }, { status: 400 });
     }
 
     const item = await prisma.storeShippingZone.findFirst({
@@ -65,23 +67,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ zone
     });
 
     if (!item) {
-      return NextResponse.json({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, item });
+    return jsonWrap({ ok: true, item });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/shipping/zones/[zoneId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar zona." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar zona." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -89,13 +91,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ zo
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
-      return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: zoneId.error }, { status: 400 });
     }
 
     const existing = await prisma.storeShippingZone.findFirst({
@@ -103,13 +105,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ zo
       select: { id: true, countries: true, isActive: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateZoneSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -125,7 +127,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ zo
 
     if (payload.countries !== undefined) {
       if (nextCountries.length === 0) {
-        return NextResponse.json({ ok: false, error: "Paises invalidos." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Paises invalidos." }, { status: 400 });
       }
       data.countries = nextCountries;
     }
@@ -145,7 +147,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ zo
         select: { id: true },
       });
       if (overlapping.length > 0) {
-        return NextResponse.json({ ok: false, error: "Pais ja associado a outra zona ativa." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Pais ja associado a outra zona ativa." }, { status: 409 });
       }
     }
 
@@ -155,20 +157,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ zo
       select: { id: true, name: true, countries: true, isActive: true },
     });
 
-    return NextResponse.json({ ok: true, item: updated });
+    return jsonWrap({ ok: true, item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/me/store/shipping/zones/[zoneId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar zona." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar zona." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -176,13 +178,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ z
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
-      return NextResponse.json({ ok: false, error: zoneId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: zoneId.error }, { status: 400 });
     }
 
     const existing = await prisma.storeShippingZone.findFirst({
@@ -190,17 +192,20 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ z
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
     }
 
     await prisma.storeShippingZone.delete({ where: { id: existing.id } });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("DELETE /api/me/store/shipping/zones/[zoneId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover zona." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover zona." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

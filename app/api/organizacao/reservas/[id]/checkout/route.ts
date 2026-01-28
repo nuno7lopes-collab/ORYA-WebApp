@@ -17,6 +17,7 @@ import { OrganizationMemberRole, PaymentStatus, ProcessorFeesStatus, SourceType 
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const HOLD_MINUTES = 10;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -26,7 +27,7 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -329,3 +330,4 @@ export async function POST(
     return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
+export const POST = withApiEnvelope(_POST);

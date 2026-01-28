@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const user = await requireUser();
 
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     const nextCursor = notifications.length > 0 ? notifications[notifications.length - 1].id : null;
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       unreadCount,
       items: notifications,
@@ -37,13 +39,14 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof AuthRequiredError) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, code: "UNAUTHENTICATED", message: "Sessão em falta" },
         { status: err.status ?? 401 },
       );
     }
 
     console.error("[me][notifications][GET] erro inesperado", err);
-    return NextResponse.json({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

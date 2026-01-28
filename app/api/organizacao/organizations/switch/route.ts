@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { OrganizationStatus } from "@prisma/client";
 import { setActiveOrganizationForUser } from "@/lib/organizationContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const COOKIE_NAME = "orya_organization";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 dias
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -17,12 +19,12 @@ export async function POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const { organizationId } = body as {
@@ -30,7 +32,7 @@ export async function POST(req: NextRequest) {
     };
     const resolvedId = parseOrganizationId(organizationId);
     if (!resolvedId) {
-      return NextResponse.json({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
     }
 
     const organization = await prisma.organization.findUnique({
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
       select: { id: true, status: true },
     });
     if (!organization || ![OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED].includes(organization.status)) {
-      return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
     }
 
     // Guardar cookie com org atual + atualizar lastUsedAt
@@ -60,10 +62,10 @@ export async function POST(req: NextRequest) {
       userAgent: req.headers.get("user-agent"),
     });
     if (!result.ok) {
-      return NextResponse.json({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
     }
 
-    const res = NextResponse.json({
+    const res = jsonWrap({
       ok: true,
       organizationId: resolvedId,
       role: result.membership.role,
@@ -77,12 +79,13 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (err: unknown) {
     if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Base de dados sem tabela organization_members. Corre as migrations." },
         { status: 500 },
       );
     }
     console.error("[organização/organizations/switch][POST]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

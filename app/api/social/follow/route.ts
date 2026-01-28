@@ -1,23 +1,25 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { notifyNewFollower } from "@/domain/notifications/producer";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as { targetUserId?: string } | null;
   const targetUserId = body?.targetUserId?.trim();
   if (!targetUserId || targetUserId === user.id) {
-    return NextResponse.json({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
   }
 
   const targetProfile = await prisma.profile.findUnique({
@@ -25,7 +27,7 @@ export async function POST(req: NextRequest) {
     select: { id: true, visibility: true, isDeleted: true },
   });
   if (!targetProfile || targetProfile.isDeleted) {
-    return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
   const requiresApproval = targetProfile.visibility === "PRIVATE";
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     if (existingFollow) {
-      return NextResponse.json({ ok: true, status: "FOLLOWING" }, { status: 200 });
+      return jsonWrap({ ok: true, status: "FOLLOWING" }, { status: 200 });
     }
 
     const existingRequest = await prisma.follow_requests.findFirst({
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, status: "REQUESTED" }, { status: 200 });
+    return jsonWrap({ ok: true, status: "REQUESTED" }, { status: 200 });
   }
 
   await prisma.follows.upsert({
@@ -84,5 +86,6 @@ export async function POST(req: NextRequest) {
 
   await notifyNewFollower({ targetUserId, followerUserId: user.id });
 
-  return NextResponse.json({ ok: true, status: "FOLLOWING" }, { status: 200 });
+  return jsonWrap({ ok: true, status: "FOLLOWING" }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

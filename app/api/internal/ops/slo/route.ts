@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getOpsSlo } from "@/domain/ops/slo";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const slo = await getOpsSlo();
-  return NextResponse.json(slo);
+  return jsonWrap(slo);
 }
+export const GET = withApiEnvelope(_GET);

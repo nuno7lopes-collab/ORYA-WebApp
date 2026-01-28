@@ -9,6 +9,23 @@ export type HardBlockResult<T> = { ok: true; data: T } | { ok: false; error: str
 
 const OUTBOX_EVENT_TYPE = "AGENDA_ITEM_UPSERT_REQUESTED" as const;
 
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = canonicalize(obj[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+};
+
+const hashPayload = (payload: Record<string, unknown>) =>
+  crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
+
 const buildTitle = (label?: string | null) => {
   const trimmed = typeof label === "string" ? label.trim() : "";
   return trimmed || "Bloqueio";
@@ -165,7 +182,7 @@ export async function updateHardBlock(input: {
         eventId: eventLogId,
         organizationId,
         eventType: "hard_block.updated",
-        idempotencyKey: `hard_block.updated:${updated.id}:${Date.now()}`,
+        idempotencyKey: `hard_block.updated:${updated.id}:${hashPayload(updated)}`,
         actorUserId,
         sourceType: SourceType.HARD_BLOCK,
         sourceId: String(updated.id),
@@ -233,7 +250,7 @@ export async function deleteHardBlock(input: {
         eventId: eventLogId,
         organizationId,
         eventType: "hard_block.deleted",
-        idempotencyKey: `hard_block.deleted:${existing.id}:${Date.now()}`,
+        idempotencyKey: `hard_block.deleted:${existing.id}:${hashPayload(existing)}`,
         actorUserId,
         sourceType: SourceType.HARD_BLOCK,
         sourceId: String(existing.id),
@@ -301,7 +318,7 @@ export async function deleteHardBlocksByEvent(input: {
         eventId: eventLogId,
         organizationId,
         eventType: "hard_block.deleted",
-        idempotencyKey: `hard_block.deleted:${block.id}:${Date.now()}`,
+        idempotencyKey: `hard_block.deleted:${block.id}:${hashPayload(block)}`,
         actorUserId,
         sourceType: SourceType.HARD_BLOCK,
         sourceId: String(block.id),

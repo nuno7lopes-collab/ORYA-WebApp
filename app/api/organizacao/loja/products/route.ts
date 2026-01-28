@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreProductStatus, StoreStockPolicy } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -71,10 +73,10 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, organization, store };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -82,7 +84,7 @@ export async function GET(req: NextRequest) {
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const items = await prisma.storeProduct.findMany({
@@ -107,20 +109,20 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/loja/products error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar produtos." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar produtos." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -128,17 +130,17 @@ export async function POST(req: NextRequest) {
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     if (context.store.catalogLocked) {
-      return NextResponse.json({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createProductSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -146,7 +148,7 @@ export async function POST(req: NextRequest) {
     const rawSlug = payload.slug?.trim();
     const slug = rawSlug ? slugify(rawSlug) : slugify(name);
     if (!slug) {
-      return NextResponse.json({ ok: false, error: "Slug invalido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Slug invalido." }, { status: 400 });
     }
 
     if (payload.categoryId) {
@@ -155,7 +157,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!category) {
-        return NextResponse.json({ ok: false, error: "Categoria invalida." }, { status: 400 });
+        return jsonWrap({ ok: false, error: "Categoria invalida." }, { status: 400 });
       }
     }
 
@@ -197,12 +199,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, item: created }, { status: 201 });
+    return jsonWrap({ ok: true, item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/loja/products error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar produto." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar produto." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

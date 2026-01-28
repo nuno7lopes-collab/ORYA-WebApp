@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     if (!process.env.ORYA_CRON_SECRET) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           requestId: ctx.requestId,
@@ -18,7 +20,7 @@ export async function GET(req: NextRequest) {
       );
     }
     if (!requireInternalSecret(req)) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           requestId: ctx.requestId,
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         requestId: ctx.requestId,
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("GET /api/internal/audit error:", err);
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: false,
         requestId: ctx.requestId,
@@ -71,3 +73,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

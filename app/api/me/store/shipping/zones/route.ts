@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const createZoneSchema = z.object({
   name: z.string().trim().min(1, "Nome obrigatorio.").max(120),
@@ -31,10 +33,10 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET() {
+async function _GET() {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -42,7 +44,7 @@ export async function GET() {
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const items = await prisma.storeShippingZone.findMany({
@@ -56,20 +58,20 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/shipping/zones error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar zonas." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar zonas." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -77,19 +79,19 @@ export async function POST(req: NextRequest) {
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createZoneSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
     const countries = normalizeCountries(payload.countries);
     if (countries.length === 0) {
-      return NextResponse.json({ ok: false, error: "Paises invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Paises invalidos." }, { status: 400 });
     }
 
     if (payload.isActive ?? true) {
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (overlapping.length > 0) {
-        return NextResponse.json({ ok: false, error: "Pais ja associado a outra zona ativa." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Pais ja associado a outra zona ativa." }, { status: 409 });
       }
     }
 
@@ -121,12 +123,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, item: created }, { status: 201 });
+    return jsonWrap({ ok: true, item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("POST /api/me/store/shipping/zones error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar zona." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar zona." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

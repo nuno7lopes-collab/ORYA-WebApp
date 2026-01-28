@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const events = await prisma.$queryRaw<{ id: number }[]>(Prisma.sql`
@@ -82,7 +84,7 @@ export async function GET(req: NextRequest) {
       WHERE app_v3.chat_members.banned_at IS NULL
     `);
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       events: events.length,
       bookings: bookings.length,
@@ -92,6 +94,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[CHAT BACKFILL]", err);
-    return NextResponse.json({ ok: false, error: "Backfill failed" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Backfill failed" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

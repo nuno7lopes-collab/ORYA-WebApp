@@ -2,10 +2,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { CheckinResultCode } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   getCheckinResultFromExisting,
   getEntitlementEffectiveStatus,
@@ -32,9 +34,9 @@ function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const body = (await req.json().catch(() => null)) as Body | null;
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
       : null;
 
   if (!qrPayload || !Number.isFinite(eventId)) {
-    return NextResponse.json({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
   }
 
   const tokenHash = hashToken(qrPayload);
@@ -69,12 +71,12 @@ export async function POST(req: NextRequest) {
   });
 
   if (!tokenRow?.entitlement) {
-    return NextResponse.json({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
   }
 
   const ent = tokenRow.entitlement;
   if (!ent.eventId || ent.eventId !== eventId) {
-    return NextResponse.json({ allow: false, reasonCode: "NOT_ALLOWED" }, { status: 200 });
+    return jsonWrap({ allow: false, reasonCode: "NOT_ALLOWED" }, { status: 200 });
   }
 
   const event = await prisma.event.findUnique({
@@ -83,16 +85,16 @@ export async function POST(req: NextRequest) {
   });
   const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
   if (isOutsideWindow(window)) {
-    return NextResponse.json({ allow: false, reasonCode: "OUTSIDE_WINDOW" }, { status: 200 });
+    return jsonWrap({ allow: false, reasonCode: "OUTSIDE_WINDOW" }, { status: 200 });
   }
 
   if (tokenRow.expiresAt && tokenRow.expiresAt < new Date()) {
-    return NextResponse.json({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
   }
 
   const policyResolution = await resolvePolicyForCheckin(eventId, ent.policyVersionApplied);
   if (!policyResolution.ok) {
-    return NextResponse.json(
+    return jsonWrap(
       { allow: false, reasonCode: "NOT_ALLOWED", policyVersionApplied: ent.policyVersionApplied ?? null },
       { status: 200 },
     );
@@ -100,7 +102,7 @@ export async function POST(req: NextRequest) {
   if (policyResolution.policy) {
     const method = resolveCheckinMethodForEntitlement(ent.type);
     if (!method || !policyResolution.policy.checkinMethods.includes(method)) {
-      return NextResponse.json(
+      return jsonWrap(
         { allow: false, reasonCode: "NOT_ALLOWED", policyVersionApplied: ent.policyVersionApplied ?? null },
         { status: 200 },
       );
@@ -112,13 +114,13 @@ export async function POST(req: NextRequest) {
     checkins: ent.checkins,
   });
   if (effectiveStatus === "SUSPENDED") {
-    return NextResponse.json(
+    return jsonWrap(
       { allow: false, reasonCode: "SUSPENDED", policyVersionApplied: ent.policyVersionApplied ?? null },
       { status: 200 },
     );
   }
   if (effectiveStatus === "REVOKED") {
-    return NextResponse.json(
+    return jsonWrap(
       { allow: false, reasonCode: "REVOKED", policyVersionApplied: ent.policyVersionApplied ?? null },
       { status: 200 },
     );
@@ -128,7 +130,7 @@ export async function POST(req: NextRequest) {
   if (alreadyConsumed) {
     const existing = ent.checkins?.[0] ?? null;
     const duplicate = getCheckinResultFromExisting(existing) ?? CheckinResultCode.ALREADY_USED;
-    return NextResponse.json(
+    return jsonWrap(
       {
         allow: false,
         reasonCode: duplicate,
@@ -184,7 +186,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         allow: true,
         entitlementId: ent.id,
@@ -195,12 +197,13 @@ export async function POST(req: NextRequest) {
     );
   } catch (err: any) {
     if (err?.code === "P2002") {
-      return NextResponse.json(
+      return jsonWrap(
         { allow: false, reasonCode: "ALREADY_USED", policyVersionApplied: ent.policyVersionApplied ?? null },
         { status: 200 },
       );
     }
     console.error("[internal/checkin/consume] error", err);
-    return NextResponse.json({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
   }
 }
+export const POST = withApiEnvelope(_POST);

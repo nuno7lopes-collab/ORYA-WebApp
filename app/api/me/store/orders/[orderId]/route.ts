@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const updateOrderSchema = z
   .object({
@@ -34,10 +36,10 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -45,13 +47,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const orderId = parseId(resolvedParams.orderId);
     if (!orderId.ok) {
-      return NextResponse.json({ ok: false, error: orderId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: orderId.error }, { status: 400 });
     }
 
     const order = await prisma.storeOrder.findFirst({
@@ -118,23 +120,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orde
     });
 
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, order });
+    return jsonWrap({ ok: true, order });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store/orders/[orderId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar encomenda." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar encomenda." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -142,19 +144,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ or
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const resolvedParams = await params;
     const orderId = parseId(resolvedParams.orderId);
     if (!orderId.ok) {
-      return NextResponse.json({ ok: false, error: orderId.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: orderId.error }, { status: 400 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateOrderSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const existing = await prisma.storeOrder.findFirst({
@@ -162,7 +164,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ or
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
     const payload = parsed.data;
@@ -181,12 +183,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ or
       },
     });
 
-    return NextResponse.json({ ok: true, order: updated });
+    return jsonWrap({ ok: true, order: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/me/store/orders/[orderId] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar encomenda." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar encomenda." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

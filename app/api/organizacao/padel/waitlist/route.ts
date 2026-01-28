@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureGroupMemberRole } from "@/lib/organizationGroupAccess";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -25,18 +27,18 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   return access.ok;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   const categoryIdParam = req.nextUrl.searchParams.get("categoryId");
   const categoryId = categoryIdParam ? Number(categoryIdParam) : null;
-  if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const authorized = await ensureOrganizationAccess(data.user.id, eventId);
-  if (!authorized) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const items = await prisma.padelWaitlistEntry.findMany({
     where: {
@@ -50,7 +52,7 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       items: items.map((item) => ({
@@ -74,3 +76,4 @@ export async function GET(req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

@@ -39,9 +39,23 @@ function buildClientFingerprint(input: unknown) {
   try {
     return JSON.stringify(input);
   } catch {
-    // Fallback muito raro (ex.: objeto circular) — usamos um valor que força refresh.
-    return `fp_${Date.now()}`;
+    // Fallback raro (ex.: objeto circular) — valor determinístico.
+    return "fp_invalid";
   }
+}
+
+function hashString(input: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function buildDeterministicIdemKey(fingerprint: string | null | undefined) {
+  if (!fingerprint || !fingerprint.trim()) return null;
+  return `idem_${hashString(fingerprint)}`;
 }
 
 async function checkUsernameAvailabilityRemote(
@@ -158,7 +172,6 @@ export default function Step2Pagamento() {
   const [purchaseMode, setPurchaseMode] = useState<"auth" | "guest">("guest");
   const [authInfo, setAuthInfo] = useState<string | null>(null);
   const [guestErrors, setGuestErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
-  const persistedIdemKeyRef = useRef<string | null>(null);
 
   // 👤 Guest form state
   const [guestName, setGuestName] = useState("");
@@ -174,7 +187,6 @@ export default function Step2Pagamento() {
   const [paymentMethod, setPaymentMethod] = useState<"mbway" | "card">("mbway");
   const lastIntentKeyRef = useRef<string | null>(null);
   const inFlightIntentRef = useRef<string | null>(null);
-  const ensuredIdemKeyRef = useRef(false);
   const lastClearedFingerprintRef = useRef<string | null>(null);
   const idempotencyMismatchCountRef = useRef(0);
   const loadErrorCountRef = useRef(0);
@@ -259,38 +271,6 @@ export default function Step2Pagamento() {
     Boolean((additionalForRules as Record<string, unknown>)?.requiresAuth) ||
     isGratisScenario ||
     scenario === "GROUP_SPLIT";
-
-  useEffect(() => {
-    if (!safeDados) return;
-    if (ensuredIdemKeyRef.current) return;
-
-    const additional =
-      safeDados.additional && typeof safeDados.additional === "object"
-        ? (safeDados.additional as Record<string, unknown>)
-        : {};
-
-    const existing =
-      typeof additional.idempotencyKey === "string" && additional.idempotencyKey.trim()
-        ? additional.idempotencyKey.trim()
-        : null;
-
-    if (!existing) {
-      ensuredIdemKeyRef.current = true;
-      try {
-        atualizarDados({
-          additional: {
-            ...(safeDados?.additional ?? {}),
-            idempotencyKey: crypto.randomUUID(),
-          },
-        });
-      } catch {
-        // Se por algum motivo falhar (ambiente sem crypto), não bloqueamos o checkout
-      }
-      return;
-    }
-
-    ensuredIdemKeyRef.current = true;
-  }, [safeDados, atualizarDados]);
 
   useEffect(() => {
     if (!promoCode.trim()) {
@@ -439,21 +419,10 @@ export default function Step2Pagamento() {
     const resolvedPaymentMethod =
       paymentMethod === "card" ? "card" : "mbway";
 
-    // IdempotencyKey estável: reutiliza a existente; se não houver, gera apenas uma vez
-    let idemKey: string | undefined =
-      (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey as string | undefined;
-    if (!idemKey || !idemKey.trim()) {
-      if (!persistedIdemKeyRef.current) {
-        try {
-          persistedIdemKeyRef.current = crypto.randomUUID();
-        } catch {
-          persistedIdemKeyRef.current = `idem-${Date.now()}`;
-        }
-      }
-      idemKey = persistedIdemKeyRef.current ?? undefined;
-    } else {
-      persistedIdemKeyRef.current = idemKey;
-    }
+    const idemKey =
+      typeof (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey === "string"
+        ? (safeDados?.additional as Record<string, unknown>).idempotencyKey.trim()
+        : undefined;
     const purchaseId = undefined;
 
     return {
@@ -473,41 +442,6 @@ export default function Step2Pagamento() {
       inviteToken: typeof inviteToken === "string" && inviteToken.trim() ? inviteToken.trim() : undefined,
     };
   }, [safeDados, promoCode, requiresAuth, paymentMethod, pairingId, pairingSlotId, pairingTicketTypeId, inviteToken]);
-
-  // Garante idempotencyKey persistida no contexto para estabilizar intentKey e evitar re-renders infinitos
-  useEffect(() => {
-    if (!safeDados) return;
-    const additionalObj =
-      safeDados.additional && typeof safeDados.additional === "object"
-        ? (safeDados.additional as Record<string, unknown>)
-        : {};
-    const existing =
-      typeof additionalObj.idempotencyKey === "string" && additionalObj.idempotencyKey.trim()
-        ? additionalObj.idempotencyKey.trim()
-        : null;
-
-    if (existing) {
-      persistedIdemKeyRef.current = existing;
-      return;
-    }
-
-    let newKey = persistedIdemKeyRef.current;
-    if (!newKey) {
-      try {
-        newKey = crypto.randomUUID();
-      } catch {
-        newKey = `idem-${Date.now()}`;
-      }
-      persistedIdemKeyRef.current = newKey;
-    }
-
-    atualizarDados({
-      additional: {
-        ...(safeDados.additional as Record<string, unknown> | undefined),
-        idempotencyKey: newKey,
-      },
-    });
-  }, [safeDados, atualizarDados]);
 
   useEffect(() => {
     // Se não houver dados de checkout, mandamos de volta
@@ -573,10 +507,12 @@ export default function Step2Pagamento() {
         ? String((additionalObj as any).clientFingerprint)
         : null;
 
-    const currentIdempotencyKey =
+    const existingIdempotencyKey =
       (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey ??
       (payload as any)?.idempotencyKey ??
       null;
+    const stableIdempotencyKey = buildDeterministicIdemKey(clientFingerprint);
+    const currentIdempotencyKey = existingIdempotencyKey ?? stableIdempotencyKey ?? null;
 
     const existingIntentFingerprint =
       typeof (additionalObj as any).intentFingerprint === "string"
@@ -605,12 +541,7 @@ export default function Step2Pagamento() {
       lastIntentKeyRef.current = null;
       inFlightIntentRef.current = null;
 
-      let nextIdemKey: string | undefined;
-      try {
-        nextIdemKey = crypto.randomUUID();
-      } catch {
-        nextIdemKey = undefined;
-      }
+      const nextIdemKey = buildDeterministicIdemKey(clientFingerprint);
 
       atualizarDados({
         additional: {
@@ -623,7 +554,7 @@ export default function Step2Pagamento() {
           clientFingerprint,
           // intentFingerprint é do BE (hash). Ao mudar seleção, limpamos.
           intentFingerprint: undefined,
-          idempotencyKey: nextIdemKey ?? (additionalObj as any).idempotencyKey,
+          idempotencyKey: nextIdemKey ?? undefined,
         },
       });
 
@@ -706,10 +637,7 @@ export default function Step2Pagamento() {
           payload,
         );
 
-        const idem =
-          (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey ??
-          (payload as any)?.idempotencyKey ??
-          null;
+        const idem = currentIdempotencyKey;
 
         let attempt = 0;
         // Não enviamos purchaseId; o backend calcula anchors determinísticas. idempotencyKey segue para evitar PI terminal.
@@ -808,12 +736,7 @@ export default function Step2Pagamento() {
             lastIntentKeyRef.current = null;
             inFlightIntentRef.current = null;
 
-            let nextIdemKey: string | undefined;
-            try {
-              nextIdemKey = crypto.randomUUID();
-            } catch {
-              nextIdemKey = undefined;
-            }
+            const nextIdemKey = buildDeterministicIdemKey(clientFingerprint);
 
             try {
               atualizarDados({
@@ -825,7 +748,7 @@ export default function Step2Pagamento() {
                   appliedPromoLabel: undefined,
                   clientFingerprint,
                   intentFingerprint: undefined,
-                  idempotencyKey: nextIdemKey,
+                  idempotencyKey: nextIdemKey ?? undefined,
                 },
               });
             } catch {}
@@ -1312,12 +1235,11 @@ export default function Step2Pagamento() {
     inFlightIntentRef.current = null;
     setGuestSubmitVersion((v) => v + 1);
 
-    let nextIdemKey: string | undefined;
-    try {
-      nextIdemKey = crypto.randomUUID();
-    } catch {
-      nextIdemKey = undefined;
-    }
+    const fingerprintFromState =
+      typeof (safeDados?.additional as Record<string, unknown> | undefined)?.clientFingerprint === "string"
+        ? String((safeDados?.additional as Record<string, unknown>).clientFingerprint)
+        : null;
+    const nextIdemKey = buildDeterministicIdemKey(fingerprintFromState);
 
     atualizarDados({
       additional: {
@@ -1327,7 +1249,7 @@ export default function Step2Pagamento() {
         freeCheckout: undefined,
         appliedPromoLabel: safeDados?.additional?.appliedPromoLabel,
         intentFingerprint: undefined,
-        idempotencyKey: nextIdemKey ?? (safeDados?.additional as any)?.idempotencyKey,
+        idempotencyKey: nextIdemKey ?? undefined,
       },
     });
   };
@@ -1391,7 +1313,7 @@ export default function Step2Pagamento() {
         appliedPromoLabel: undefined,
         clientFingerprint: undefined,
         intentFingerprint: undefined,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: undefined,
       },
     });
 
@@ -1427,7 +1349,7 @@ export default function Step2Pagamento() {
           appliedPromoLabel: undefined,
           clientFingerprint: undefined,
           intentFingerprint: undefined,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: undefined,
         },
       });
     } catch {}
@@ -1565,8 +1487,8 @@ export default function Step2Pagamento() {
                         paymentIntentId: undefined,
                         freeCheckout: undefined,
                         appliedPromoLabel: undefined,
-                        intentFingerprint: crypto.randomUUID(),
-                        idempotencyKey: crypto.randomUUID(),
+                        intentFingerprint: undefined,
+                        idempotencyKey: undefined,
                       },
                     });
                       } catch {}

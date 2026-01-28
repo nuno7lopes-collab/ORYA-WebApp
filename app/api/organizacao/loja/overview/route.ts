@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +8,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreProductStatus } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -43,10 +45,10 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   return { ok: true as const, store };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return NextResponse.json({ ok: false, error: context.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
     }
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -112,7 +114,7 @@ export async function GET(req: NextRequest) {
       imageUrl: product.images[0]?.url ?? null,
     }));
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       products: mappedProducts,
       orders,
@@ -125,9 +127,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/loja/overview error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar resumo." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar resumo." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

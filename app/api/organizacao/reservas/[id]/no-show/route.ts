@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -10,6 +11,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole } from "@prisma/client";
 import { markNoShowBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computeNoShowRefundFromSnapshot,
   parseBookingConfirmationSnapshot,
@@ -34,7 +36,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -42,7 +44,7 @@ export async function POST(
   const bookingId = parseId(resolved.id);
   const ctx = getRequestContext(req);
   const errorWithCtx = (status: number, error: string, errorCode = error, details?: Record<string, unknown>) =>
-    NextResponse.json(
+    jsonWrap(
       {
         ok: false,
         error,
@@ -63,7 +65,7 @@ export async function POST(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -73,14 +75,14 @@ export async function POST(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json(reservasAccess, { status: 403 });
+      return jsonWrap(reservasAccess, { status: 403 });
     }
 
     const { ip, userAgent } = getRequestMeta(req);
@@ -215,7 +217,7 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       booking: result.booking,
       snapshotTimezone: result.snapshotTimezone,
@@ -228,3 +230,4 @@ export async function POST(
     return errorWithCtx(500, "Erro ao atualizar reserva.", "BOOKING_NO_SHOW_FAILED");
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -68,20 +70,20 @@ async function resolveCart(params: {
   return { ok: true as const, cart, created: true };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return NextResponse.json({ ok: false, error: storeParsed.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
     const store = await resolveStore(storeParsed.storeId);
     if (!store.ok) {
-      return NextResponse.json({ ok: false, error: store.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: store.error }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -276,7 +278,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const response = NextResponse.json({
+    const response = jsonWrap({
       ok: true,
       cart: {
         id: resolved.cart.id,
@@ -299,6 +301,7 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (err) {
     console.error("GET /api/store/cart error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar carrinho." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar carrinho." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

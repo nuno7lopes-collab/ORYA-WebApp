@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { logAccountEvent } from "@/lib/accountEvents";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST() {
+async function _POST() {
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -12,7 +14,7 @@ export async function POST() {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
 
     // Verificar se o utilizador é owner único de alguma organização
@@ -37,7 +39,7 @@ export async function POST() {
     }
 
     if (blockedOrgs.length > 0) {
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error:
@@ -69,7 +71,7 @@ export async function POST() {
 
     await supabase.auth.signOut();
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       status: "PENDING_DELETE",
       scheduledFor: scheduled.toISOString(),
@@ -77,7 +79,7 @@ export async function POST() {
     });
   } catch (err) {
     console.error("[settings/delete] erro:", err);
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         status: "ERROR",
@@ -87,3 +89,4 @@ export async function POST() {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

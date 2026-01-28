@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computePadelStandingsByGroup,
   normalizePadelPointsTable,
@@ -94,7 +95,7 @@ async function buildPayload(eventId: number, categoryId?: number | null) {
   };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
   if (!Number.isFinite(eventId)) {
@@ -164,3 +165,4 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+export const GET = withApiEnvelope(_GET);

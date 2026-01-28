@@ -2,8 +2,10 @@
 
 // app/api/cron/reservations/cleanup/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * ⚠️ IMPORTANT
@@ -18,10 +20,10 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
  *   ORYA_CRON_SECRET="your-secret"
  */
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!requireInternalSecret(req)) {
-      return NextResponse.json({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 
     const now = new Date();
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       expiredUpdated: expired.count,
       expiredDeleted: oldExpired.count,
@@ -55,9 +57,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[CRON CLEANUP ERROR]", err);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Internal cleanup error" },
       { status: 500 }
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

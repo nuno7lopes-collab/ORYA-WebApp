@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,12 +7,13 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
 const MAX_TAGS = 20;
 
-export async function PUT(req: NextRequest, context: { params: Promise<{ customerId: string }> }) {
+async function _PUT(req: NextRequest, context: { params: Promise<{ customerId: string }> }) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -23,14 +25,14 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ custome
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const payload = (await req.json().catch(() => null)) as { tags?: unknown } | null;
@@ -51,15 +53,16 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ custome
     });
 
     if (updated.count === 0) {
-      return NextResponse.json({ ok: false, error: "Cliente não encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Cliente não encontrado." }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, tags: uniqueTags });
+    return jsonWrap({ ok: true, tags: uniqueTags });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("PUT /api/organizacao/crm/clientes/[customerId]/tags error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar tags." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar tags." }, { status: 500 });
   }
 }
+export const PUT = withApiEnvelope(_PUT);

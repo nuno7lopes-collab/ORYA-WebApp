@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { Prisma, OrganizationFormSubmissionStatus } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COUNTED_STATUSES: OrganizationFormSubmissionStatus[] = [
@@ -27,12 +29,12 @@ function parseCheckbox(value: unknown) {
   return false;
 }
 
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return NextResponse.json({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
     }
 
     const supabase = await createSupabaseServer();
@@ -42,12 +44,12 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const answersRaw = (body as Record<string, unknown>).answers;
     if (!answersRaw || typeof answersRaw !== "object") {
-      return NextResponse.json({ ok: false, error: "Respostas inválidas." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Respostas inválidas." }, { status: 400 });
     }
 
     const form = await prisma.organizationForm.findUnique({
@@ -59,28 +61,28 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     });
 
     if (!form || form.organization.status !== "ACTIVE") {
-      return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Formulário não disponível." }, { status: 404 });
     }
 
     const isPublic = form.status !== "ARCHIVED";
     if (!isPublic) {
-      return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Formulário não disponível." }, { status: 404 });
     }
     if (form.status !== "PUBLISHED") {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Formulário ainda não está publicado." },
         { status: 403 },
       );
     }
     const now = new Date();
     if (form.startAt && now < form.startAt) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Este formulário ainda não abriu." },
         { status: 409 },
       );
     }
     if (form.endAt && now > form.endAt) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Este formulário já fechou." },
         { status: 409 },
       );
@@ -91,7 +93,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       select: { organizationId: true },
     });
     if (!moduleEnabled) {
-      return NextResponse.json({ ok: false, error: "Formulário não disponível." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Formulário não disponível." }, { status: 404 });
     }
 
     const normalizedAnswers: Record<string, unknown> = {};
@@ -107,18 +109,18 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         case "TEXT":
         case "TEXTAREA": {
           if (field.required && !trimmedString) {
-            return NextResponse.json({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
+            return jsonWrap({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
           }
           if (trimmedString) normalizedAnswers[key] = trimmedString;
           break;
         }
         case "EMAIL": {
           if (field.required && !trimmedString) {
-            return NextResponse.json({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
+            return jsonWrap({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
           }
           if (trimmedString) {
             if (!EMAIL_REGEX.test(trimmedString)) {
-              return NextResponse.json({ ok: false, error: `Email inválido em "${field.label}".` }, { status: 400 });
+              return jsonWrap({ ok: false, error: `Email inválido em "${field.label}".` }, { status: 400 });
             }
             normalizedAnswers[key] = trimmedString;
             emailAnswer = trimmedString;
@@ -127,11 +129,11 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         }
         case "PHONE": {
           if (field.required && !trimmedString) {
-            return NextResponse.json({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
+            return jsonWrap({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
           }
           if (trimmedString) {
             if (!isValidPhone(trimmedString)) {
-              return NextResponse.json({ ok: false, error: `Telefone inválido em "${field.label}".` }, { status: 400 });
+              return jsonWrap({ ok: false, error: `Telefone inválido em "${field.label}".` }, { status: 400 });
             }
             normalizedAnswers[key] = normalizePhone(trimmedString) || trimmedString;
           }
@@ -140,13 +142,13 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         case "NUMBER": {
           if (raw === null || raw === undefined || raw === "") {
             if (field.required) {
-              return NextResponse.json({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
+              return jsonWrap({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
             }
             break;
           }
           const value = typeof raw === "number" ? raw : Number(String(raw).replace(",", "."));
           if (!Number.isFinite(value)) {
-            return NextResponse.json({ ok: false, error: `Número inválido em "${field.label}".` }, { status: 400 });
+            return jsonWrap({ ok: false, error: `Número inválido em "${field.label}".` }, { status: 400 });
           }
           normalizedAnswers[key] = value;
           break;
@@ -154,13 +156,13 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         case "DATE": {
           if (!trimmedString) {
             if (field.required) {
-              return NextResponse.json({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
+              return jsonWrap({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
             }
             break;
           }
           const parsed = parseDateValue(trimmedString);
           if (!parsed) {
-            return NextResponse.json({ ok: false, error: `Data inválida em "${field.label}".` }, { status: 400 });
+            return jsonWrap({ ok: false, error: `Data inválida em "${field.label}".` }, { status: 400 });
           }
           normalizedAnswers[key] = parsed;
           break;
@@ -169,12 +171,12 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
           const options = Array.isArray(field.options) ? field.options.map((o) => String(o)) : [];
           if (!trimmedString) {
             if (field.required) {
-              return NextResponse.json({ ok: false, error: `Escolhe uma opção em "${field.label}".` }, { status: 400 });
+              return jsonWrap({ ok: false, error: `Escolhe uma opção em "${field.label}".` }, { status: 400 });
             }
             break;
           }
           if (options.length > 0 && !options.includes(trimmedString)) {
-            return NextResponse.json({ ok: false, error: `Opção inválida em "${field.label}".` }, { status: 400 });
+            return jsonWrap({ ok: false, error: `Opção inválida em "${field.label}".` }, { status: 400 });
           }
           normalizedAnswers[key] = trimmedString;
           break;
@@ -182,7 +184,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         case "CHECKBOX": {
           const checked = parseCheckbox(raw);
           if (field.required && !checked) {
-            return NextResponse.json({ ok: false, error: `Confirma "${field.label}".` }, { status: 400 });
+            return jsonWrap({ ok: false, error: `Confirma "${field.label}".` }, { status: 400 });
           }
           normalizedAnswers[key] = checked;
           break;
@@ -199,7 +201,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
 
     if (!user) {
       if (!guestEmail || !EMAIL_REGEX.test(guestEmail)) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Indica um email válido para completar a resposta." },
           { status: 400 },
         );
@@ -212,7 +214,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         select: { id: true },
       });
       if (existing) {
-        return NextResponse.json({ ok: false, error: "Já enviaste uma resposta neste formulário." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Já enviaste uma resposta neste formulário." }, { status: 409 });
       }
     } else if (guestEmail) {
       const existing = await prisma.organizationFormSubmission.findFirst({
@@ -220,7 +222,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         select: { id: true },
       });
       if (existing) {
-        return NextResponse.json({ ok: false, error: "Este email já respondeu a este formulário." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Este email já respondeu a este formulário." }, { status: 409 });
       }
     }
 
@@ -233,7 +235,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         if (form.waitlistEnabled) {
           status = "WAITLISTED";
         } else {
-          return NextResponse.json({ ok: false, error: "Formulário sem vagas disponíveis." }, { status: 409 });
+          return jsonWrap({ ok: false, error: "Formulário sem vagas disponíveis." }, { status: 409 });
         }
       }
     }
@@ -248,12 +250,13 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       },
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       { ok: true, status: submission.status, submissionId: submission.id },
       { status: 201 },
     );
   } catch (err) {
     console.error("[inscricoes][submit]", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

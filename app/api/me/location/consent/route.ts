@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
 import crypto from "crypto";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CONSENT_VALUES = new Set(["PENDING", "GRANTED", "DENIED"]);
 const GRANULARITY_VALUES = new Set(["PRECISE", "COARSE"]);
@@ -13,27 +15,27 @@ type Body = {
   preferredGranularity?: string | null;
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const { data, error } = await supabase.auth.getUser();
     if (error || !data?.user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return jsonWrap({ error: "Not authenticated" }, { status: 401 });
     }
 
     const body = (await req.json().catch(() => null)) as Body | null;
     if (!body?.consent) {
-      return NextResponse.json({ error: "Invalid consent" }, { status: 400 });
+      return jsonWrap({ error: "Invalid consent" }, { status: 400 });
     }
 
     const consent = String(body.consent).toUpperCase();
     if (!CONSENT_VALUES.has(consent)) {
-      return NextResponse.json({ error: "Invalid consent" }, { status: 400 });
+      return jsonWrap({ error: "Invalid consent" }, { status: 400 });
     }
 
     const preferredRaw = body.preferredGranularity ? String(body.preferredGranularity).toUpperCase() : null;
     if (preferredRaw && !GRANULARITY_VALUES.has(preferredRaw)) {
-      return NextResponse.json({ error: "Invalid granularity" }, { status: 400 });
+      return jsonWrap({ error: "Invalid granularity" }, { status: 400 });
     }
 
     const userId = data.user.id;
@@ -82,9 +84,10 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     console.error("[me/location/consent] error", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    return jsonWrap({ error: "Internal error" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

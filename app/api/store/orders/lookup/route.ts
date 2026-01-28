@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
@@ -7,6 +8,7 @@ import { buildStoreOrderTimeline } from "@/lib/store/orderTimeline";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import type { CheckoutStatus } from "@/domain/finance/status";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const lookupSchema = z.object({
   orderNumber: z.string().trim().min(3).max(120),
@@ -54,16 +56,16 @@ function mapCheckoutStatus(status: CheckoutStatus) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = lookupSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -152,7 +154,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!order) {
-      return NextResponse.json({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
     const productIds = Array.from(
@@ -227,7 +229,7 @@ export async function POST(req: NextRequest) {
       })),
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       order: {
         id: order.id,
@@ -291,6 +293,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("POST /api/store/orders/lookup error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao procurar encomenda." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao procurar encomenda." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

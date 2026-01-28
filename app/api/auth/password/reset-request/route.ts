@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -42,10 +44,10 @@ function buildEmailHtml(link: string) {
   `;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const ctx = getRequestContext(req);
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest) {
     const rawEmail = body?.email?.toLowerCase().trim() ?? "";
 
     if (!rawEmail || !EMAIL_REGEX.test(rawEmail)) {
-      return NextResponse.json({ ok: false, error: "Email inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Email inválido." }, { status: 400 });
     }
 
     const limiter = await rateLimit(req, {
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
       identifier: rawEmail,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
       );
@@ -87,14 +89,14 @@ export async function POST(req: NextRequest) {
       const code = (error as { code?: string }).code;
       if (code === "user_not_found") {
         // Não revelar existência de contas
-        return NextResponse.json({ ok: true });
+        return jsonWrap({ ok: true });
       }
       console.error("[password/reset-request] generateLink error", {
         error,
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não foi possível gerar o link de recuperação. Tenta mais tarde." },
         { status: 500 },
       );
@@ -106,7 +108,7 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não foi possível gerar o link de recuperação. Tenta mais tarde." },
         { status: 500 },
       );
@@ -140,13 +142,13 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não conseguimos enviar o email agora. Tenta novamente em breve." },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     const ctx = getRequestContext(req);
     console.error("[password/reset-request] error:", {
@@ -154,9 +156,10 @@ export async function POST(req: NextRequest) {
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro inesperado ao pedir recuperação." },
       { status: 500 },
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

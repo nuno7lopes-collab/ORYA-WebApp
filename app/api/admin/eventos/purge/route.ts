@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
@@ -9,22 +10,23 @@ import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/financ
 import { deleteHardBlocksByEvent } from "@/domain/hardBlocks/commands";
 import { deleteMatchSlotsByEvent } from "@/domain/padel/matchSlots/commands";
 import { SourceType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type PurgePayload = {
   eventId?: number;
 };
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return NextResponse.json({ ok: false, error: admin.error }, { status: admin.status });
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
     }
 
     const body = (await req.json().catch(() => null)) as PurgePayload | null;
     const eventId = Number(body?.eventId);
     if (!Number.isFinite(eventId)) {
-      return NextResponse.json({ ok: false, error: "INVALID_EVENT_ID" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_EVENT_ID" }, { status: 400 });
     }
 
     const event = await prisma.event.findUnique({
@@ -32,7 +34,7 @@ export async function POST(req: Request) {
       select: { id: true, title: true, slug: true, organizationId: true },
     });
     if (!event) {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
     const [tickets, pairings, promoCodes, saleSummaries, tournaments, entitlements] = await Promise.all([
@@ -230,9 +232,10 @@ export async function POST(req: Request) {
       await tx.event.delete({ where: { id: eventId } });
     });
 
-    return NextResponse.json({ ok: true, eventId, title: event.title, slug: event.slug }, { status: 200 });
+    return jsonWrap({ ok: true, eventId, title: event.title, slug: event.slug }, { status: 200 });
   } catch (error) {
     console.error("[admin/eventos/purge] error:", error);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

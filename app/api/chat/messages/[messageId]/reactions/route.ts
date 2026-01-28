@@ -1,22 +1,24 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { publishChatEvent } from "@/lib/chat/redis";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseEmoji(value: unknown) {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, 16);
 }
 
-export async function POST(req: NextRequest, context: { params: { messageId: string } }) {
+async function _POST(req: NextRequest, context: { params: { messageId: string } }) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -25,7 +27,7 @@ export async function POST(req: NextRequest, context: { params: { messageId: str
     const emoji = parseEmoji(payload?.emoji);
 
     if (!emoji) {
-      return NextResponse.json({ ok: false, error: "INVALID_EMOJI" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_EMOJI" }, { status: 400 });
     }
 
     const message = await prisma.chatConversationMessage.findFirst({
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest, context: { params: { messageId: str
     });
 
     if (!message) {
-      return NextResponse.json({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
     }
 
     const existing = await prisma.chatMessageReaction.findFirst({
@@ -62,7 +64,7 @@ export async function POST(req: NextRequest, context: { params: { messageId: str
         messageId,
         reactions,
       });
-      return NextResponse.json({ ok: true });
+      return jsonWrap({ ok: true });
     }
 
     await prisma.chatMessageReaction.deleteMany({
@@ -93,23 +95,23 @@ export async function POST(req: NextRequest, context: { params: { messageId: str
       reactions,
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("POST /api/chat/messages/[id]/reactions error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao reagir." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao reagir." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, context: { params: { messageId: string } }) {
+async function _DELETE(req: NextRequest, context: { params: { messageId: string } }) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -118,7 +120,7 @@ export async function DELETE(req: NextRequest, context: { params: { messageId: s
     const emoji = parseEmoji(payload?.emoji);
 
     if (!emoji) {
-      return NextResponse.json({ ok: false, error: "INVALID_EMOJI" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_EMOJI" }, { status: 400 });
     }
 
     const message = await prisma.chatConversationMessage.findFirst({
@@ -130,7 +132,7 @@ export async function DELETE(req: NextRequest, context: { params: { messageId: s
     });
 
     if (!message) {
-      return NextResponse.json({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
     }
 
     await prisma.chatMessageReaction.delete({
@@ -151,15 +153,17 @@ export async function DELETE(req: NextRequest, context: { params: { messageId: s
       reactions,
     });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("DELETE /api/chat/messages/[id]/reactions error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover reacao." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao remover reacao." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);
+export const DELETE = withApiEnvelope(_DELETE);

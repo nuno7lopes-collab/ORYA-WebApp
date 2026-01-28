@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
@@ -8,6 +9,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const downloadSchema = z.object({
   grantId: z.number().int().positive(),
@@ -73,21 +75,21 @@ async function issueSignedUrl(params: { grantId: number; assetId: number; produc
   };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const tokenRaw = req.nextUrl.searchParams.get("token");
     const token = tokenRaw?.trim();
     if (!token) {
-      return NextResponse.json({ ok: false, error: "Token invalido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Token invalido." }, { status: 400 });
     }
 
     const assetParsed = parseAssetId(req.nextUrl.searchParams.get("assetId"));
     if (!assetParsed.ok) {
-      return NextResponse.json({ ok: false, error: assetParsed.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: assetParsed.error }, { status: 400 });
     }
 
     const grant = await prisma.storeDigitalGrant.findUnique({
@@ -101,11 +103,11 @@ export async function GET(req: NextRequest) {
     });
 
     if (!grant) {
-      return NextResponse.json({ ok: false, error: "Download nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Download nao encontrado." }, { status: 404 });
     }
 
     if (grant.expiresAt && grant.expiresAt.getTime() < Date.now()) {
-      return NextResponse.json({ ok: false, error: "Download expirado." }, { status: 410 });
+      return jsonWrap({ ok: false, error: "Download expirado." }, { status: 410 });
     }
 
     const issued = await issueSignedUrl({
@@ -121,20 +123,20 @@ export async function GET(req: NextRequest) {
           : issued.error === "Limite de downloads atingido."
             ? 409
             : 400;
-      return NextResponse.json({ ok: false, error: issued.error }, { status });
+      return jsonWrap({ ok: false, error: issued.error }, { status });
     }
 
-    return NextResponse.json({ ok: true, ...issued });
+    return jsonWrap({ ok: true, ...issued });
   } catch (err) {
     console.error("GET /api/store/digital/download error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao gerar download." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao gerar download." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -143,7 +145,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null);
     const parsed = downloadSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const grant = await prisma.storeDigitalGrant.findFirst({
@@ -156,11 +158,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (!grant) {
-      return NextResponse.json({ ok: false, error: "Download nao encontrado." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Download nao encontrado." }, { status: 404 });
     }
 
     if (grant.expiresAt && grant.expiresAt.getTime() < Date.now()) {
-      return NextResponse.json({ ok: false, error: "Download expirado." }, { status: 410 });
+      return jsonWrap({ ok: false, error: "Download expirado." }, { status: 410 });
     }
 
     const issued = await issueSignedUrl({
@@ -176,15 +178,17 @@ export async function POST(req: NextRequest) {
           : issued.error === "Limite de downloads atingido."
             ? 409
             : 400;
-      return NextResponse.json({ ok: false, error: issued.error }, { status });
+      return jsonWrap({ ok: false, error: issued.error }, { status });
     }
 
-    return NextResponse.json({ ok: true, ...issued });
+    return jsonWrap({ ok: true, ...issued });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
     console.error("POST /api/store/digital/download error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao gerar download." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao gerar download." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,6 +9,7 @@ import { refundPurchase } from "@/lib/refunds/refundService";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { OrganizationModule, RefundReason } from "@prisma/client";
 import { mapV7StatusToLegacy } from "@/lib/entitlements/status";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ALLOWED_REASONS: RefundReason[] = ["CANCELLED", "DELETED", "DATE_CHANGED"];
 
@@ -23,14 +25,14 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolved = await params;
   const eventId = Number(resolved.id);
   if (!Number.isFinite(eventId)) {
-    return NextResponse.json({ ok: false, error: "EVENT_INVALID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "EVENT_INVALID" }, { status: 400 });
   }
 
   try {
@@ -42,7 +44,7 @@ export async function POST(
       select: { id: true, organizationId: true, title: true },
     });
     if (!event?.organizationId) {
-      return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
@@ -50,7 +52,7 @@ export async function POST(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const access = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -61,13 +63,13 @@ export async function POST(
       required: "EDIT",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const payload = await req.json().catch(() => ({}));
     const purchaseId = typeof payload?.purchaseId === "string" ? payload.purchaseId.trim() : "";
     if (!purchaseId) {
-      return NextResponse.json({ ok: false, error: "PURCHASE_ID_REQUIRED" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "PURCHASE_ID_REQUIRED" }, { status: 400 });
     }
 
     const saleSummary = await prisma.saleSummary.findUnique({
@@ -75,7 +77,7 @@ export async function POST(
       select: { paymentIntentId: true, eventId: true },
     });
     if (!saleSummary || saleSummary.eventId !== eventId) {
-      return NextResponse.json({ ok: false, error: "PURCHASE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "PURCHASE_NOT_FOUND" }, { status: 404 });
     }
 
     const reason = parseReason(payload?.reason);
@@ -95,7 +97,7 @@ export async function POST(
     });
 
     if (!refund) {
-      return NextResponse.json({ ok: false, error: "REFUND_FAILED" }, { status: 502 });
+      return jsonWrap({ ok: false, error: "REFUND_FAILED" }, { status: 502 });
     }
 
     await prisma.entitlement.updateMany({
@@ -116,16 +118,17 @@ export async function POST(
       userAgent,
     });
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       refundId: refund.id,
       refundedAt: refund.refundedAt,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/events/[id]/refund error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao reembolsar compra." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao reembolsar compra." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

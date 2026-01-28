@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreAddressType } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type PrefillResponse = {
   ok: boolean;
@@ -39,15 +41,15 @@ function parseStoreId(req: NextRequest) {
   return { ok: true as const, storeId };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json<PrefillResponse>({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return NextResponse.json<PrefillResponse>({ ok: false, error: storeParsed.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
     const store = await prisma.store.findFirst({
@@ -55,14 +57,14 @@ export async function GET(req: NextRequest) {
       select: { id: true },
     });
     if (!store) {
-      return NextResponse.json<PrefillResponse>({ ok: false, error: "Store nao encontrada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Store nao encontrada." }, { status: 404 });
     }
 
     const supabase = await createSupabaseServer();
     const { data } = await supabase.auth.getUser();
     const user = data?.user;
     if (!user) {
-      return NextResponse.json<PrefillResponse>({ ok: false });
+      return jsonWrap({ ok: false });
     }
 
     const [profile, lastOrder] = await Promise.all([
@@ -106,7 +108,7 @@ export async function GET(req: NextRequest) {
       phone: profile?.contactPhone ?? lastOrder?.customerPhone ?? null,
     };
 
-    return NextResponse.json<PrefillResponse>({
+    return jsonWrap({
       ok: true,
       customer,
       shippingAddress,
@@ -114,6 +116,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("GET /api/store/checkout/prefill error:", err);
-    return NextResponse.json<PrefillResponse>({ ok: false, error: "Erro ao carregar prefill." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar prefill." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

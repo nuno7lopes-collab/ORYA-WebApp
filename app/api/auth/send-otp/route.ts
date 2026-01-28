@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
@@ -7,6 +8,7 @@ import { normalizeAndValidateUsername, checkUsernameAvailability } from "@/lib/g
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -43,10 +45,10 @@ function buildEmailHtml(code: string) {
   `;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const ctx = getRequestContext(req);
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
     const rawFullName = body?.fullName ?? "";
 
     if (!rawEmail || !EMAIL_REGEX.test(rawEmail)) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Email inválido." },
         { status: 400 },
       );
@@ -73,14 +75,14 @@ export async function POST(req: NextRequest) {
       identifier: rawEmail,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
       );
     }
 
     if (password !== null && password !== undefined && password.length < 6) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "A password deve ter pelo menos 6 caracteres." },
         { status: 400 },
       );
@@ -89,14 +91,14 @@ export async function POST(req: NextRequest) {
     if (rawUsername) {
       const usernameValidation = normalizeAndValidateUsername(rawUsername);
       if (!usernameValidation.ok) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: usernameValidation.error, code: "USERNAME_INVALID" },
           { status: 400 },
         );
       }
       const availability = await checkUsernameAvailability(usernameValidation.username);
       if (availability.ok && availability.available === false) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
           { status: 409 },
         );
@@ -131,7 +133,7 @@ export async function POST(req: NextRequest) {
           ? (error as { code?: string }).code
           : undefined;
       if (errorCode === "email_exists") {
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             error: "Este email já tem conta. Inicia sessão ou usa o Google.",
@@ -145,7 +147,7 @@ export async function POST(req: NextRequest) {
           typeof error === "object" && error && "reasons" in error
             ? (error as { reasons?: string[] }).reasons
             : undefined;
-        return NextResponse.json(
+        return jsonWrap(
           {
             ok: false,
             error: "A password não foi aceite pelo sistema de autenticação.",
@@ -160,7 +162,7 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
               error: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
@@ -176,7 +178,7 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "Não foi possível gerar o código. Tenta novamente." },
         { status: 500 },
       );
@@ -196,7 +198,7 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         {
           ok: false,
           error: "Não foi possível enviar o código. Tenta novamente dentro de alguns minutos.",
@@ -205,7 +207,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     const ctx = getRequestContext(req);
     console.error("[send-otp] error:", {
@@ -213,9 +215,10 @@ export async function POST(req: NextRequest) {
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "Erro inesperado ao enviar código." },
       { status: 500 },
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

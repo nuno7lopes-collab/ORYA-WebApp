@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOwnerType, StoreStatus } from "@prisma/client";
 import { z } from "zod";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function normalizeStore(store: {
   id: number;
@@ -33,10 +35,10 @@ const updateStoreSchema = z.object({
   showOnProfile: z.boolean().optional(),
 });
 
-export async function GET() {
+async function _GET() {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -55,20 +57,20 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json({ ok: true, store: store ? normalizeStore(store) : null });
+    return jsonWrap({ ok: true, store: store ? normalizeStore(store) : null });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/me/store error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
   }
 }
 
-export async function POST() {
+async function _POST() {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -88,7 +90,7 @@ export async function POST() {
     });
 
     if (existing) {
-      return NextResponse.json({ ok: true, store: normalizeStore(existing) });
+      return jsonWrap({ ok: true, store: normalizeStore(existing) });
     }
 
     const created = await prisma.store.create({
@@ -112,20 +114,20 @@ export async function POST() {
       },
     });
 
-    return NextResponse.json({ ok: true, store: normalizeStore(created) }, { status: 201 });
+    return jsonWrap({ ok: true, store: normalizeStore(created) }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/me/store error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar loja." }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
-      return NextResponse.json({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();
@@ -136,13 +138,13 @@ export async function PATCH(req: NextRequest) {
       select: { id: true },
     });
     if (!store) {
-      return NextResponse.json({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
+      return jsonWrap({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateStoreSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
     }
 
     const payload = parsed.data;
@@ -165,12 +167,15 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, store: normalizeStore(updated) });
+    return jsonWrap({ ok: true, store: normalizeStore(updated) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("PATCH /api/me/store error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar loja." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao atualizar loja." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);

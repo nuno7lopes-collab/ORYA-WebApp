@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -10,6 +11,7 @@ import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatPollingOnly, isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { publishChatEvent, isChatRedisAvailable, isChatUserOnline } from "@/lib/chat/redis";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   CHAT_MAX_ATTACHMENT_BYTES,
   CHAT_MAX_ATTACHMENTS,
@@ -126,10 +128,10 @@ async function resolveMessageAttachments<T extends { attachments: any[] }>(messa
   return { ...message, attachments: resolved };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -141,7 +143,7 @@ export async function POST(req: NextRequest) {
       identifier: user.id,
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
       );
@@ -173,22 +175,22 @@ export async function POST(req: NextRequest) {
       payload?.metadata && typeof payload.metadata === "object" ? (payload.metadata as Prisma.InputJsonValue) : undefined;
 
     if (!conversationId || !clientMessageId) {
-      return NextResponse.json({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
     }
 
     const bodyRaw = typeof payload?.body === "string" ? payload.body.trim() : "";
     const body = bodyRaw.length > 0 ? bodyRaw : null;
     if (body && body.length > CHAT_MESSAGE_MAX_LENGTH) {
-      return NextResponse.json({ ok: false, error: "MESSAGE_TOO_LONG" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "MESSAGE_TOO_LONG" }, { status: 400 });
     }
 
     const attachmentResult = normalizeAttachments(payload?.attachments);
     if (!attachmentResult.ok) {
-      return NextResponse.json({ ok: false, error: attachmentResult.error }, { status: 400 });
+      return jsonWrap({ ok: false, error: attachmentResult.error }, { status: 400 });
     }
 
     if (!body && attachmentResult.items.length === 0) {
-      return NextResponse.json({ ok: false, error: "EMPTY_MESSAGE" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "EMPTY_MESSAGE" }, { status: 400 });
     }
 
     const member = await prisma.chatConversationMember.findFirst({
@@ -201,7 +203,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!member?.conversation) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     if (replyToId) {
@@ -210,7 +212,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!replyExists) {
-        return NextResponse.json({ ok: false, error: "INVALID_REPLY" }, { status: 400 });
+        return jsonWrap({ ok: false, error: "INVALID_REPLY" }, { status: 400 });
       }
     }
 
@@ -293,7 +295,7 @@ export async function POST(req: NextRequest) {
             include: messageInclude,
           });
           if (!message) {
-            return NextResponse.json({ ok: false, error: "DUPLICATE_MESSAGE" }, { status: 409 });
+            return jsonWrap({ ok: false, error: "DUPLICATE_MESSAGE" }, { status: 409 });
           }
         } else {
           throw err;
@@ -302,7 +304,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!message) {
-      return NextResponse.json({ ok: false, error: "MESSAGE_NOT_CREATED" }, { status: 500 });
+      return jsonWrap({ ok: false, error: "MESSAGE_NOT_CREATED" }, { status: 500 });
     }
 
     const messageWithUrls = await resolveMessageAttachments(message);
@@ -327,7 +329,7 @@ export async function POST(req: NextRequest) {
       buildPreview(message.body ?? null) || (message.attachments.length ? "Anexo" : "");
 
     if (isChatPollingOnly()) {
-      return NextResponse.json({ ok: true, message: messageWithUrls });
+      return jsonWrap({ ok: true, message: messageWithUrls });
     }
 
     if (!isChatRedisAvailable()) {
@@ -352,15 +354,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, message: messageWithUrls });
+    return jsonWrap({ ok: true, message: messageWithUrls });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("POST /api/chat/messages error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao enviar mensagem." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao enviar mensagem." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

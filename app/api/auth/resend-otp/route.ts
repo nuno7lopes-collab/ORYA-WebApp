@@ -1,6 +1,7 @@
 
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { resend } from "@/lib/resend";
 import { env } from "@/lib/env";
@@ -8,18 +9,19 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ error: "FORBIDDEN" }, { status: 403 });
     }
 
     const ctx = getRequestContext(req);
     const { email } = await req.json();
 
     if (!email) {
-      return NextResponse.json(
+      return jsonWrap(
         { error: "Email em falta." },
         { status: 400 }
       );
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
       identifier: String(email),
     });
     if (!limiter.allowed) {
-      return NextResponse.json(
+      return jsonWrap(
         { error: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
       );
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
           ? (error as { code?: string }).code
           : undefined;
       if (errorCode === "email_exists") {
-        return NextResponse.json(
+        return jsonWrap(
           { error: "Email já registado. Usa login ou Google.", code: "email_exists" },
           { status: 409 },
         );
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { error: "Não foi possível reenviar o código. Tenta mais tarde." },
         { status: 500 }
       );
@@ -77,7 +79,7 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { error: "Não foi possível gerar o código. Tenta mais tarde." },
         { status: 500 },
       );
@@ -130,13 +132,13 @@ export async function POST(req: NextRequest) {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
-      return NextResponse.json(
+      return jsonWrap(
         { error: "Não foi possível reenviar o código. Tenta mais tarde." },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({ success: true });
+    return jsonWrap({ success: true });
   } catch (err) {
     const ctx = getRequestContext(req);
     console.error("Erro em /api/auth/resend-otp:", {
@@ -144,9 +146,10 @@ export async function POST(req: NextRequest) {
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });
-    return NextResponse.json(
+    return jsonWrap(
       { error: "Erro interno." },
       { status: 500 }
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

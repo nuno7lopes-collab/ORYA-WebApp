@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationMemberRole } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -15,14 +17,14 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
       roles: [...ROLE_ALLOWLIST],
     });
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const clubs = await prisma.padelClub.findMany({
@@ -56,12 +58,13 @@ export async function GET(req: NextRequest) {
       clubName: clubMap.get(court.padelClubId) ?? null,
     }));
 
-    return NextResponse.json({ ok: true, items }, { status: 200 });
+    return jsonWrap({ ok: true, items }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/padel/courts error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar courts." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar courts." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);

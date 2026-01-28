@@ -1,15 +1,17 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest, context: { params: { messageId: string } }) {
+async function _POST(req: NextRequest, context: { params: { messageId: string } }) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest, context: { params: { messageId: str
     });
 
     if (!message) {
-      return NextResponse.json({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
     }
 
     const payload = (await req.json().catch(() => null)) as { reason?: unknown; metadata?: unknown } | null;
@@ -45,15 +47,16 @@ export async function POST(req: NextRequest, context: { params: { messageId: str
 
     console.log("[chat] mensagem reportada", { messageId, reporterId: user.id });
 
-    return NextResponse.json({ ok: true });
+    return jsonWrap({ ok: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("POST /api/chat/messages/[id]/report error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao reportar mensagem." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao reportar mensagem." }, { status: 500 });
   }
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -26,7 +28,7 @@ function parseLimit(value: string | null) {
   return Math.min(Math.max(raw, 1), 200);
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
       select: { moduleKey: true },
     });
     if (!moduleEnabled) {
-      return NextResponse.json({ ok: false, error: "Chat interno desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Chat interno desativado." }, { status: 403 });
     }
 
     const params = req.nextUrl.searchParams;
@@ -86,17 +88,17 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items: channels });
+    return jsonWrap({ ok: true, items: channels });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/chat/canais error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar canais." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar canais." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -108,7 +110,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
@@ -116,7 +118,7 @@ export async function POST(req: NextRequest) {
       select: { moduleKey: true },
     });
     if (!moduleEnabled) {
-      return NextResponse.json({ ok: false, error: "Chat interno desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Chat interno desativado." }, { status: 403 });
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -128,7 +130,7 @@ export async function POST(req: NextRequest) {
     const description = typeof payload?.description === "string" ? payload.description.trim() : null;
 
     if (name.length < 2) {
-      return NextResponse.json({ ok: false, error: "Nome do canal inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Nome do canal inválido." }, { status: 400 });
     }
 
     let channel;
@@ -151,17 +153,19 @@ export async function POST(req: NextRequest) {
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        return NextResponse.json({ ok: false, error: "Canal já existe." }, { status: 409 });
+        return jsonWrap({ ok: false, error: "Canal já existe." }, { status: 409 });
       }
       throw err;
     }
 
-    return NextResponse.json({ ok: true, channel });
+    return jsonWrap({ ok: true, channel });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("POST /api/organizacao/chat/canais error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar canal." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar canal." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

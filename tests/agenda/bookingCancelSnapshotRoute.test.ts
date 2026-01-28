@@ -47,6 +47,12 @@ vi.mock("@/lib/security", () => ({
 
 vi.mock("@/lib/http/requestContext", () => ({
   getRequestContext: () => ({ requestId: "req_test", correlationId: "corr_test" }),
+  buildResponseHeaders: (_ctx: any, existing?: HeadersInit) => {
+    const headers = new Headers(existing);
+    headers.set("x-request-id", "req_test");
+    headers.set("x-correlation-id", "corr_test");
+    return headers;
+  },
 }));
 
 vi.mock("@/lib/organizationAudit", () => ({
@@ -175,9 +181,9 @@ describe("booking cancel snapshot route", () => {
 
     expect(res.status).toBe(409);
     const json = await res.json();
-    expect(json.errorCode).toBe("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
-    expect(json.requestId).toBe("req_test");
-    expect(json.correlationId).toBe("corr_test");
+    expect(json.error.errorCode).toBe("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
+    expect(res.headers.get("x-request-id")).toBe("req_test");
+    expect(res.headers.get("x-correlation-id")).toBe("corr_test");
     expect(refundBookingPaymentMock).not.toHaveBeenCalled();
   });
 });

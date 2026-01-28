@@ -1,30 +1,32 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { readNumericParam } from "@/lib/routeParams";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
-  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, { roles: readRoles });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
-  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
   if (club.kind === "PARTNER") {
-    return NextResponse.json({ ok: false, error: "CLUB_READ_ONLY" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "CLUB_READ_ONLY" }, { status: 403 });
   }
 
   const courts = await prisma.padelClubCourt.findMany({
@@ -32,27 +34,27 @@ export async function GET(req: NextRequest) {
     orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
   });
 
-  return NextResponse.json({ ok: true, items: courts }, { status: 200 });
+  return jsonWrap({ ok: true, items: courts }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
-  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
-  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
   if (club.kind === "PARTNER") {
-    return NextResponse.json({ ok: false, error: "CLUB_READ_ONLY" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "CLUB_READ_ONLY" }, { status: 403 });
   }
 
   const courtId = typeof body.id === "number" ? body.id : null;
@@ -96,38 +98,41 @@ export async function POST(req: NextRequest) {
         })
       : await prisma.padelClubCourt.create({ data });
 
-    return NextResponse.json({ ok: true, court }, { status: courtId ? 200 : 201 });
+    return jsonWrap({ ok: true, court }, { status: courtId ? 200 : 201 });
   } catch (err) {
     console.error("[padel/clubs/courts] error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 
 // Hard delete court
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
-  if (clubId === null) return NextResponse.json({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const url = new URL(req.url);
   const courtIdParam = url.searchParams.get("courtId");
   const courtId = courtIdParam ? Number(courtIdParam) : NaN;
-  if (!Number.isFinite(courtId)) return NextResponse.json({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+  if (!Number.isFinite(courtId)) return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
-  if (!club) return NextResponse.json({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+  if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   try {
     const deleted = await prisma.padelClubCourt.delete({ where: { id: courtId, padelClubId: club.id } });
-    return NextResponse.json({ ok: true, court: deleted }, { status: 200 });
+    return jsonWrap({ ok: true, court: deleted }, { status: 200 });
   } catch (err) {
     console.error("[padel/clubs/courts/delete] error", err);
-    return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const DELETE = withApiEnvelope(_DELETE);

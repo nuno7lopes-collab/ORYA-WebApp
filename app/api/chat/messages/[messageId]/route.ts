@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
@@ -8,6 +9,7 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
 import { OrganizationMemberRole } from "@prisma/client";
 import { publishChatEvent } from "@/lib/chat/redis";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function isAdminRole(role: OrganizationMemberRole) {
   return (
@@ -17,10 +19,10 @@ function isAdminRole(role: OrganizationMemberRole) {
   );
 }
 
-export async function PATCH(req: NextRequest, context: { params: { messageId: string } }) {
+async function _PATCH(req: NextRequest, context: { params: { messageId: string } }) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization } = await requireChatContext(req);
@@ -29,7 +31,7 @@ export async function PATCH(req: NextRequest, context: { params: { messageId: st
     const payload = (await req.json().catch(() => null)) as { body?: unknown } | null;
     const body = typeof payload?.body === "string" ? payload.body.trim() : "";
     if (!body || body.length > CHAT_MESSAGE_MAX_LENGTH) {
-      return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
     const message = await prisma.chatConversationMessage.findFirst({
@@ -43,7 +45,7 @@ export async function PATCH(req: NextRequest, context: { params: { messageId: st
     });
 
     if (!message) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const updated = await prisma.chatConversationMessage.update({
@@ -76,23 +78,23 @@ export async function PATCH(req: NextRequest, context: { params: { messageId: st
       message: updated,
     });
 
-    return NextResponse.json({ ok: true, message: updated });
+    return jsonWrap({ ok: true, message: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("PATCH /api/chat/messages/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao editar mensagem." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao editar mensagem." }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, context: { params: { messageId: string } }) {
+async function _DELETE(req: NextRequest, context: { params: { messageId: string } }) {
   try {
     if (!isChatV2Enabled()) {
-      return NextResponse.json({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
     const { user, organization, membership } = await requireChatContext(req);
@@ -108,12 +110,12 @@ export async function DELETE(req: NextRequest, context: { params: { messageId: s
     });
 
     if (!message) {
-      return NextResponse.json({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
+      return jsonWrap({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
     }
 
     const canDelete = message.senderId === user.id || (membership?.role && isAdminRole(membership.role));
     if (!canDelete) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const updated = await prisma.chatConversationMessage.update({
@@ -176,15 +178,17 @@ export async function DELETE(req: NextRequest, context: { params: { messageId: s
 
     await publishChatEvent(eventPayload);
 
-    return NextResponse.json({ ok: true, deletedAt: updated.deletedAt });
+    return jsonWrap({ ok: true, deletedAt: updated.deletedAt });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
-      return NextResponse.json({ ok: false, error: err.code }, { status: err.status });
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
     console.error("DELETE /api/chat/messages/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao apagar mensagem." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao apagar mensagem." }, { status: 500 });
   }
 }
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

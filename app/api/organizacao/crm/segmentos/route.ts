@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,10 +8,11 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
 import { normalizeSegmentDefinition } from "@/lib/crm/segments";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -22,14 +24,14 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const segments = await prisma.crmSegment.findMany({
@@ -48,17 +50,17 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items: segments });
+    return jsonWrap({ ok: true, items: segments });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/organizacao/crm/segmentos error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar segmentos." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar segmentos." }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -70,14 +72,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return NextResponse.json({ ok: false, error: crmAccess.error }, { status: 403 });
+      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     const name = typeof payload?.name === "string" ? payload.name.trim() : "";
     if (name.length < 2) {
-      return NextResponse.json({ ok: false, error: "Nome inválido." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Nome inválido." }, { status: 400 });
     }
 
     const description = typeof payload?.description === "string" ? payload.description.trim() : null;
@@ -114,12 +116,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, segment });
+    return jsonWrap({ ok: true, segment });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("POST /api/organizacao/crm/segmentos error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar segmento." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao criar segmento." }, { status: 500 });
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

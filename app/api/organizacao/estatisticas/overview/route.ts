@@ -2,6 +2,7 @@
 // @deprecated Slice 5 cleanup: legacy summaries endpoint (v7 uses ledger).
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { EventStatus, OrganizationModule, Prisma, SaleSummaryStatus } from "@prisma/client";
@@ -9,6 +10,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 const LEGACY_STATS_DISABLED = true;
 
 /**
@@ -26,9 +28,9 @@ const LEGACY_STATS_DISABLED = true;
  *  - activeEventsCount: nº de eventos publicados do organização (no geral)
  */
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   if (LEGACY_STATS_DISABLED) {
-    return NextResponse.json({ ok: false, error: "LEGACY_STATS_DISABLED" }, { status: 410 });
+    return jsonWrap({ ok: false, error: "LEGACY_STATS_DISABLED" }, { status: 410 });
   }
   try {
     const supabase = await createSupabaseServer();
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!user) {
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "UNAUTHENTICATED" },
         { status: 401 },
       );
@@ -73,7 +75,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -85,7 +87,7 @@ export async function GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return NextResponse.json({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     // Cálculo do intervalo temporal
@@ -179,7 +181,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json(
+    return jsonWrap(
       {
         ok: true,
         range,
@@ -196,9 +198,10 @@ export async function GET(req: NextRequest) {
     );
   } catch (error) {
     console.error("[organização/overview] Erro inesperado:", error);
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 },
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

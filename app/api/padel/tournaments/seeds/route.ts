@@ -1,41 +1,43 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
-  if (!Number.isFinite(eventId)) return NextResponse.json({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: { id: true, organizationId: true, padelTournamentConfig: { select: { advancedSettings: true } } },
   });
-  if (!event?.organizationId) return NextResponse.json({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return NextResponse.json({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
-  if (!event.padelTournamentConfig) return NextResponse.json({ ok: false, error: "NO_TOURNAMENT" }, { status: 404 });
+  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!event.padelTournamentConfig) return jsonWrap({ ok: false, error: "NO_TOURNAMENT" }, { status: 404 });
 
   const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
   const pairings = await prisma.padelPairing.findMany({
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (pairings.length === 0) {
-    return NextResponse.json({ ok: false, error: "NO_PAIRINGS" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "NO_PAIRINGS" }, { status: 400 });
   }
 
   const playerIds = Array.from(
@@ -121,7 +123,7 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json(
+  return jsonWrap(
     {
       ok: true,
       pairings: pairings.length,
@@ -130,3 +132,4 @@ export async function POST(req: NextRequest) {
     { status: 200 },
   );
 }
+export const POST = withApiEnvelope(_POST);

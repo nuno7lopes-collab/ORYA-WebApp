@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function isUnconfirmedError(err: unknown) {
   if (!err) return false;
@@ -23,9 +25,9 @@ function normalizeIdentifier(raw: string) {
   return trimmed;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!isSameOriginOrApp(req)) {
-    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   const ctx = getRequestContext(req);
@@ -43,14 +45,14 @@ export async function POST(req: NextRequest) {
     identifier,
   });
   if (!limiter.allowed) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "RATE_LIMITED" },
       { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
     );
   }
 
   if (!identifier || !password) {
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "MISSING_CREDENTIALS" },
       { status: 400 }
     );
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
       if (!profile) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "INVALID_CREDENTIALS" },
           { status: 401 }
         );
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
         profile.id
       );
       if (error || !data?.user?.email) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "INVALID_CREDENTIALS" },
           { status: 401 }
         );
@@ -89,18 +91,18 @@ export async function POST(req: NextRequest) {
 
     if (error || !data?.session) {
       if (isUnconfirmedError(error)) {
-        return NextResponse.json(
+        return jsonWrap(
           { ok: false, error: "EMAIL_NOT_CONFIRMED" },
           { status: 401 }
         );
       }
-      return NextResponse.json(
+      return jsonWrap(
         { ok: false, error: "INVALID_CREDENTIALS" },
         { status: 401 }
       );
     }
 
-    return NextResponse.json({
+    return jsonWrap({
       ok: true,
       session: {
         access_token: data.session.access_token,
@@ -114,9 +116,10 @@ export async function POST(req: NextRequest) {
       correlationId: ctx.correlationId,
       orgId: ctx.orgId,
     });
-    return NextResponse.json(
+    return jsonWrap(
       { ok: false, error: "SERVER_ERROR" },
       { status: 500 }
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

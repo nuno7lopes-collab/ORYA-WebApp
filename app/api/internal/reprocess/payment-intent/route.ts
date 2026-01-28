@@ -2,18 +2,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
   const body = (await req.json().catch(() => null)) as { paymentIntentId?: string } | null;
   const paymentIntentId = typeof body?.paymentIntentId === "string" ? body.paymentIntentId.trim() : "";
   if (!paymentIntentId) {
-    return NextResponse.json({ ok: false, error: "INVALID_PAYMENT_INTENT_ID" }, { status: 400 });
+    return jsonWrap({ ok: false, error: "INVALID_PAYMENT_INTENT_ID" }, { status: 400 });
   }
 
   const dedupe = paymentIntentId;
@@ -24,5 +26,6 @@ export async function POST(req: NextRequest) {
     payload: { paymentIntentId },
   });
 
-  return NextResponse.json({ ok: true, requeued: true, operationType: "FULFILL_PAYMENT", dedupeKey: dedupe }, { status: 200 });
+  return jsonWrap({ ok: true, requeued: true, operationType: "FULFILL_PAYMENT", dedupeKey: dedupe }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);
