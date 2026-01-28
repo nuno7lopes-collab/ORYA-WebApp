@@ -19,6 +19,10 @@ Data: 2026-01-28
 - Frontend API usage: docs/v9_inventory_frontend_api_usage.md
 - Paridade: docs/v9_parity_report.md
 
+## API → Frontend mapping
+- CSV: docs/v9_api_frontend_mapping.csv
+- Report: docs/v9_api_frontend_mapping_report.md
+
 ## Endpoints removidos
 - /api/public/events/[eventId]/calendar.ics — removido em 2026-01-28 (legacy 410 sem uso).
 - /api/public/v1/agenda — removido em 2026-01-28 (legacy 410 sem uso).
@@ -38,7 +42,7 @@ Data: 2026-01-28
 
 ## Evidência de testes/CI
 - Log completo: docs/v9_close_ci_log.txt
-- Comandos executados: `npm run db:preflight`, `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, `npm run gate:api-contract`, `npm run gate:parity`, `npm run gate:todo`.
+- Comandos executados: `npm run db:preflight`, `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, `npm run gate:api-contract`, `npm run gate:internal-secret`, `npm run gate:p0-errors`, `npm run gate:parity`, `npm run gate:todo`, `npx vitest run tests/access tests/ops`.
 
 ## Deploy (passos + envs)
 ### Variáveis obrigatórias (server)

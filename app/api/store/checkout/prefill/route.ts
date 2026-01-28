@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -64,7 +64,7 @@ async function _GET(req: NextRequest) {
     const { data } = await supabase.auth.getUser();
     const user = data?.user;
     if (!user) {
-      return jsonWrap({ ok: false });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const [profile, lastOrder] = await Promise.all([

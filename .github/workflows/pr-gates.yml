@@ -48,6 +48,12 @@ jobs:
       - name: API contract gate
         run: npm run gate:api-contract
 
+      - name: Internal secret gate
+        run: npm run gate:internal-secret
+
+      - name: P0 error envelope gate
+        run: npm run gate:p0-errors
+
       - name: Parity gate
         run: |
           npm run v9:inventory

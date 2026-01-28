@@ -225,7 +225,7 @@ async function _POST(req: NextRequest) {
     return respondPlainText(ctx, "WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 
-  return jsonWrap({ ok: true, received: true }, { status: 200, req });
+  return jsonWrap({ ok: true, received: true }, { status: 200, ctx });
 }
 
 export async function handleStripeEvent(event: Stripe.Event) {

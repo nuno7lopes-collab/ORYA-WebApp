@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildResponseHeaders } from "@/lib/http/requestContext";
+import { buildResponseHeaders, getRequestContext } from "@/lib/http/requestContext";
 import { respondPlainText } from "@/lib/http/envelope";
 
 describe("response headers", () => {
@@ -11,6 +11,38 @@ describe("response headers", () => {
     expect(headers.get("x-correlation-id")).toBe("corr_456");
     expect(headers.get("x-orya-correlation-id")).toBe("corr_456");
     expect(headers.get("x-org-id")).toBe("42");
+  });
+
+  it("getRequestContext prefers x-orya-* headers over x-*", () => {
+    const headers = new Headers({
+      "x-request-id": "req_fallback",
+      "x-orya-request-id": "req_primary",
+      "x-correlation-id": "corr_fallback",
+      "x-orya-correlation-id": "corr_primary",
+      "x-org-id": "7",
+    });
+    const ctx = getRequestContext({ headers });
+
+    expect(ctx.requestId).toBe("req_primary");
+    expect(ctx.correlationId).toBe("corr_primary");
+    expect(ctx.orgId).toBe(7);
+  });
+
+  it("getRequestContext falls back to x-request-id when x-orya-request-id is missing", () => {
+    const headers = new Headers({
+      "x-request-id": "req_only",
+    });
+    const ctx = getRequestContext({ headers });
+
+    expect(ctx.requestId).toBe("req_only");
+    expect(ctx.correlationId).toBe("req_only");
+  });
+
+  it("getRequestContext prefers explicit orgId option over header", () => {
+    const headers = new Headers({ "x-org-id": "5" });
+    const ctx = getRequestContext({ headers }, { orgId: 12 });
+
+    expect(ctx.orgId).toBe(12);
   });
 
   it("respondPlainText preserves custom Content-Type and adds canonical headers", () => {
