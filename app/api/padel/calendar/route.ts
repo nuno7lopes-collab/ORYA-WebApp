@@ -1052,7 +1052,7 @@ export async function PATCH(req: NextRequest) {
         }
       : score;
 
-    const durationMinutes = desiredEnd
+    const computedDurationMinutes = desiredEnd
       ? Math.round((desiredEnd.getTime() - (desiredStart?.getTime() ?? desiredEnd.getTime())) / 60000)
       : null;
     let updated: { id: number; plannedStartAt: Date | null; plannedEndAt: Date | null; plannedDurationMinutes: number | null; courtId: number | null } | null = null;
@@ -1065,7 +1065,7 @@ export async function PATCH(req: NextRequest) {
         schedule: {
           ...(typeof courtId !== "undefined" ? { courtId: Number.isFinite(courtId) ? courtId : null } : {}),
           ...(plannedStartAt ? { plannedStartAt } : {}),
-          ...(desiredEnd ? { plannedEndAt: desiredEnd, plannedDurationMinutes: durationMinutes } : {}),
+          ...(desiredEnd ? { plannedEndAt: desiredEnd, plannedDurationMinutes: computedDurationMinutes } : {}),
         },
         data: shouldMarkRescheduled ? { score: nextScore } : undefined,
       });

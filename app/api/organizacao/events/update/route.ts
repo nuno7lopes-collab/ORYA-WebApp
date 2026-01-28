@@ -376,8 +376,8 @@ export async function POST(req: NextRequest) {
     const hasNonEurTickets = event.ticketTypes.some(
       (t) => t.currency && t.currency.toUpperCase() !== "EUR",
     );
-    const hasNewTickets = Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
-    if (hasNonEurTickets && hasNewTickets) {
+    const hasNewTicketsPayload = Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
+    if (hasNonEurTickets && hasNewTicketsPayload) {
       return NextResponse.json(
         { ok: false, error: "CURRENCY_NOT_SUPPORTED" },
         { status: 400 },

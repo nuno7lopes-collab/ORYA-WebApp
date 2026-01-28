@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 type RequestWithHeaders = Pick<Request, "headers"> | Pick<NextRequest, "headers">;
 
-type RequestContext = {
+export type RequestContext = {
   requestId: string;
   correlationId: string;
   orgId: number | null;
@@ -32,4 +32,14 @@ export function getRequestContext(
     correlationId,
     orgId: orgId ?? null,
   };
+}
+
+export function buildResponseHeaders(ctx: RequestContext, existing?: HeadersInit) {
+  const headers = new Headers(existing);
+  headers.set("x-request-id", ctx.requestId);
+  headers.set("x-correlation-id", ctx.correlationId);
+  if (ctx.orgId !== null) {
+    headers.set("x-org-id", String(ctx.orgId));
+  }
+  return headers;
 }

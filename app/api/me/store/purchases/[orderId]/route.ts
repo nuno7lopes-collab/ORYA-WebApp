@@ -211,8 +211,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ord
 
     const paidEvent = paymentEvents.find((event) => event.status === "OK");
     const statusMap = await resolvePaymentStatusMap(order.purchaseId ? [order.purchaseId] : []);
-    const resolved = order.purchaseId ? statusMap.get(order.purchaseId) : null;
-    const paymentStatus = resolved ? mapCheckoutStatus(resolved.status) : "PROCESSING";
+    const resolvedStatus = order.purchaseId ? statusMap.get(order.purchaseId) : null;
+    const paymentStatus = resolvedStatus ? mapCheckoutStatus(resolvedStatus.status) : "PROCESSING";
 
     const shippingAddress = order.addresses.find((address) => address.addressType === StoreAddressType.SHIPPING);
     const billingAddress = order.addresses.find((address) => address.addressType === StoreAddressType.BILLING);
