@@ -88,7 +88,7 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 
 ### Scope exato (paths + UI)
 - `app/api/**`
-- `middleware.ts`
+- `proxy.ts`
 - `lib/observability/**`, `lib/utils/**`, `lib/validation/**`
 - UI: `app/components/checkout/**`, `app/organizacao/**`, `app/admin/**`
 
@@ -151,7 +151,7 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 
 ### Riscos/Drifts conhecidos + mitigacao
 - Drift entre rotas antigas/novas → aplicar helper canonico.
-- Erros silenciosos sem requestId → padronizar middleware.
+- Erros silenciosos sem requestId → padronizar proxy.
 
 ### Guardrails (rg/tests/CI)
 - `rg -n "NextResponse.json\(\{ ok: false" app/api -S` (verificar shape)

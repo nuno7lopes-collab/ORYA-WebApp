@@ -1,6 +1,6 @@
 # V9 Inventory — API Routes
 
-Total: 447
+Total: 438
 
 | Route | File | Methods | Type | Auth | Payloads | Status codes | Runtime | Cache | Envelope | Legacy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -385,24 +385,15 @@ Total: 447
 | /api/platform/fees | app/api/platform/fees/route.ts | GET | public | none detected | none detected | 200, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/profiles/check-username | app/api/profiles/check-username/route.ts | POST | public | none detected | json | 400, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/profiles/save-basic | app/api/profiles/save-basic/route.ts | POST | public | user | json | 200, 400, 401, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/events/[eventId]/calendar.ics | app/api/public/events/[eventId]/calendar.ics/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
-| /api/public/v1/agenda | app/api/public/v1/agenda/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
-| /api/public/v1/analytics | app/api/public/v1/analytics/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
-| /api/public/v1/discover | app/api/public/v1/discover/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
-| /api/public/v1/events | app/api/public/v1/events/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
-| /api/public/v1/search | app/api/public/v1/search/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
-| /api/public/v1/tournaments | app/api/public/v1/tournaments/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
 | /api/qr/[token] | app/api/qr/[token]/route.ts | GET | public | none detected | query | 200, 400, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id] | app/api/servicos/[id]/route.ts | GET | public | none detected | none detected | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/calendario | app/api/servicos/[id]/calendario/route.ts | GET | public | none detected | query | 400, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/checkout | app/api/servicos/[id]/checkout/route.ts | POST | public | user | json | unknown | nodejs/default/default | default | withApiEnvelope | - |
-| /api/servicos/[id]/confirmar | app/api/servicos/[id]/confirmar/route.ts | POST | public | none detected | none detected | 410 | nodejs/default/default | default | withApiEnvelope | 410/GONE |
 | /api/servicos/[id]/creditos | app/api/servicos/[id]/creditos/route.ts | GET | public | user | none detected | 400, 401, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/creditos/checkout | app/api/servicos/[id]/creditos/checkout/route.ts | POST | public | user | json | 400, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/disponibilidade | app/api/servicos/[id]/disponibilidade/route.ts | GET | public | none detected | query | 400, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/reservar | app/api/servicos/[id]/reservar/route.ts | POST | public | user | json | 400, 401, 404, 409, 429, 500, 503 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/slots | app/api/servicos/[id]/slots/route.ts | GET | public | none detected | query | 400, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/servicos/checkout/status | app/api/servicos/checkout/status/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | 410/GONE |
 | /api/servicos/list | app/api/servicos/list/route.ts | GET | public | none detected | query | 500 | default/default/default | default | withApiEnvelope | - |
 | /api/social/follow | app/api/social/follow/route.ts | POST | public | user | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/social/follow-organization | app/api/social/follow-organization/route.ts | POST | public | user | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |

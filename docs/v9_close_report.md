@@ -20,22 +20,25 @@ Data: 2026-01-28
 - Paridade: docs/v9_parity_report.md
 
 ## Endpoints removidos
-- Nenhum endpoint removido nesta fase.
+- /api/public/events/[eventId]/calendar.ics — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/public/v1/agenda — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/public/v1/analytics — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/public/v1/discover — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/public/v1/events — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/public/v1/search — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/public/v1/tournaments — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/servicos/[id]/confirmar — removido em 2026-01-28 (legacy 410 sem uso).
+- /api/servicos/checkout/status — removido em 2026-01-28 (legacy 410 sem uso).
 
 ## Endpoints mantidos por compatibilidade (410) + plano de remoção
-- /api/public/events/[eventId]/calendar.ics — remoção alvo: 2026-03-31 (substituir por endpoints públicos atuais).
-- /api/public/v1/agenda — remoção alvo: 2026-03-31.
-- /api/public/v1/analytics — remoção alvo: 2026-03-31.
-- /api/public/v1/discover — remoção alvo: 2026-03-31.
-- /api/public/v1/events — remoção alvo: 2026-03-31.
-- /api/public/v1/search — remoção alvo: 2026-03-31.
-- /api/public/v1/tournaments — remoção alvo: 2026-03-31.
-- /api/servicos/[id]/confirmar — remoção alvo: 2026-03-31.
-- /api/servicos/checkout/status — remoção alvo: 2026-03-31.
+- Nenhum endpoint 410 mantido.
+
+## Notas finais
+- Migração Next.js: `middleware.ts` → `proxy.ts` (headers requestId/correlationId preservados; warning removido no build).
 
 ## Evidência de testes/CI
 - Log completo: docs/v9_close_ci_log.txt
-- Comandos executados: `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, `npm run gate:api-contract`, `npm run gate:parity`, `npm run gate:todo`.
+- Comandos executados: `npm run db:preflight`, `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, `npm run gate:api-contract`, `npm run gate:parity`, `npm run gate:todo`.
 
 ## Deploy (passos + envs)
 ### Variáveis obrigatórias (server)

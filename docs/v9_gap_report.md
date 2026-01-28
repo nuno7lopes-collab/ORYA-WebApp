@@ -11,7 +11,7 @@ Estado: **SEM GAPS** (backlog v9 concluído)
 ## D0–D9 — verificação por domínio
 ### D0 API pública (fora de scope v1–v3)
 - Estado: DONE
-- Evidência: `domain/publicApi/auth.ts`, `app/api/public/v1/*` (410), exports `app/api/organizacao/finance/exports/*`.
+- Evidência: `domain/publicApi/auth.ts`, exports `app/api/organizacao/finance/exports/*` (API pública v1 removida em 2026-01-28).
 
 ### D1 Evento base obrigatório para torneios
 - Estado: DONE

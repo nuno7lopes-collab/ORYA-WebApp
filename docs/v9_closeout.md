@@ -20,8 +20,8 @@
 
 ## Backlog D0–D9 (estado final v9)
 ### D0 API pública (fora de scope v1–v3)
-- Estado: DONE — API pública desativada (410) e contratos internos/exports ativos.
-- Evidência: `domain/publicApi/auth.ts`, `app/api/public/v1/*`, `app/api/organizacao/finance/exports/*`.
+- Estado: DONE — API pública v1 removida em 2026-01-28; contratos internos/exports ativos.
+- Evidência: `domain/publicApi/auth.ts`, `app/api/organizacao/finance/exports/*`.
 
 ### D1 Evento base obrigatório para torneios
 - Estado: DONE — Torneio/Padel ancorado em Event.

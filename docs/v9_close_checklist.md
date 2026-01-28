@@ -76,7 +76,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L87: - Establish baseline de observabilidade.
 - [N/A] L89: ### Scope exato (paths + UI)
 - [TODO] L90: - `app/api/**`
-- [TODO] L91: - `middleware.ts`
+- [TODO] L91: - `proxy.ts`
 - [TODO] L92: - `lib/observability/**`, `lib/utils/**`, `lib/validation/**`
 - [TODO] L93: - UI: `app/components/checkout/**`, `app/organizacao/**`, `app/admin/**`
 - [N/A] L95: ### SSOT / Invariantes do blueprint
@@ -128,7 +128,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L150: - Em producao, falhas recuperaveis nao ficam sem nextAction.
 - [N/A] L152: ### Riscos/Drifts conhecidos + mitigacao
 - [TODO] L153: - Drift entre rotas antigas/novas → aplicar helper canonico.
-- [TODO] L154: - Erros silenciosos sem requestId → padronizar middleware.
+- [TODO] L154: - Erros silenciosos sem requestId → padronizar proxy.
 - [N/A] L156: ### Guardrails (rg/tests/CI)
 - [TODO] L157: - `rg -n "NextResponse.json\(\{ ok: false" app/api -S` (verificar shape)
 - [TODO] L158: - `npx vitest run tests/access tests/ops`
@@ -639,7 +639,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L20: - Headers sempre devolvidos: `x-orya-request-id`, `x-orya-correlation-id` (e espelho `x-request-id`, `x-correlation-id`).
 - [TODO] L21: - `correlationId` em operacoes async/outbox (C-G5/C-G7) e logado em erros; `requestId` sempre presente em logs.
 - [N/A] L23: **Referencias de codigo**
-- [TODO] L24: - `middleware.ts` (geracao requestId)
+- [TODO] L24: - `proxy.ts` (geracao requestId)
 - [TODO] L25: - `lib/http/headers.ts`
 - [TODO] L26: - `lib/http/requestContext.ts`
 - [TODO] L27: - `lib/http/envelope.ts`

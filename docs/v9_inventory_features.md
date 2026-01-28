@@ -374,12 +374,11 @@ Pages (1):
 
 ## tickets
 
-API routes (7):
+API routes (6):
 - /api/eventos/[slug]/invite-token
 - /api/eventos/[slug]/invites/check
 - /api/eventos/[slug]/resales
 - /api/eventos/list
-- /api/public/v1/events
 - /api/tickets/resale/cancel
 - /api/tickets/resale/list
 
@@ -601,7 +600,7 @@ Pages (18):
 
 ## reservas
 
-API routes (28):
+API routes (26):
 - /api/me/reservas
 - /api/me/reservas/[id]
 - /api/me/reservas/[id]/calendar.ics
@@ -622,13 +621,11 @@ API routes (28):
 - /api/servicos/[id]
 - /api/servicos/[id]/calendario
 - /api/servicos/[id]/checkout
-- /api/servicos/[id]/confirmar
 - /api/servicos/[id]/creditos
 - /api/servicos/[id]/creditos/checkout
 - /api/servicos/[id]/disponibilidade
 - /api/servicos/[id]/reservar
 - /api/servicos/[id]/slots
-- /api/servicos/checkout/status
 - /api/servicos/list
 
 Pages (14):

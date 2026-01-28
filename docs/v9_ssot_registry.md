@@ -21,7 +21,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `correlationId` em operacoes async/outbox (C-G5/C-G7) e logado em erros; `requestId` sempre presente em logs.
 
 **Referencias de codigo**
-- `middleware.ts` (geracao requestId)
+- `proxy.ts` (geracao requestId)
 - `lib/http/headers.ts`
 - `lib/http/requestContext.ts`
 - `lib/http/envelope.ts`

@@ -181,7 +181,7 @@ Provas / Gates
 ### D11.2 — SearchIndex coverage expansion (DONE, audited)
 - Triggers V1: event create/update/cancel/isDeleted; ticketType updates; admin purge; org status ACTIVE/INACTIVE.
 - Dedupe por lastEventId; quando evento não existe → visibilidade HIDDEN (fail closed).
-- /api/public/v1/events e /api/public/v1/tournaments mantêm 410 (PUBLIC_API_GONE) até read‑model dedicado.
+- /api/public/v1/events e /api/public/v1/tournaments removidos em 2026-01-28 (legacy 410 desativado).
 - Gates: db:gates:offline; vitest tests/searchIndex tests/search tests/publicApi tests/outbox tests/ops; RG SearchIndexItem/Outbox/EventLog writes=0 fora dos canónicos.
 - TicketType pricing/visibility writes ⇒ MUST call domain/searchIndex/triggers.ts
 - soldQuantity updates ⇒ OUT_OF_SCOPE (no search impact)
@@ -225,4 +225,4 @@ Nota SSOT D7 (v9): separar enums.
 - Anti-drift (sempre corre): rg -n "EventLog\\.(create|createMany)|eventLog\\.(create|createMany)" app/api/organizacao/events -S = 0; rg -n "OutboxEvent\\.create|outboxEvent\\.create" app/api/organizacao/events -S = 0; rg -n "\\bEvent\\.isFree\\b|\\bisFree\\b" app -S = 0.
 
 ### Nota — Ambiente local (não bloqueante)
-- Warning Next.js: "middleware" deprecated → migrar para "proxy" (deixar ticket/nota; não bloqueia runtime local).
+- Warning Next.js: "middleware" deprecated → migrado para "proxy" em 2026-01-28 (warning removido).
