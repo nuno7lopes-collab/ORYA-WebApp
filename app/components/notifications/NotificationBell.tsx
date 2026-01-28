@@ -127,7 +127,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition sm:h-10 sm:w-10"
         aria-label="Notificações"
       >
         <BellIcon className="h-4 w-4 text-amber-100" />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout } from "./contextoCheckout";
 import { formatEuro } from "@/lib/money";
@@ -12,7 +12,9 @@ const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 function normalizeCheckoutStatus(raw: unknown): "PROCESSING" | "PAID" | "FAILED" {
   const v = typeof raw === "string" ? raw.trim().toUpperCase() : "";
   if (["PAID", "OK", "SUCCEEDED", "SUCCESS", "COMPLETED", "CONFIRMED"].includes(v)) return "PAID";
-  if (["FAILED", "ERROR", "CANCELED", "CANCELLED", "REQUIRES_PAYMENT_METHOD"].includes(v)) return "FAILED";
+  if (["FAILED", "ERROR", "CANCELED", "CANCELLED", "REQUIRES_PAYMENT_METHOD", "REFUNDED", "DISPUTED"].includes(v)) {
+    return "FAILED";
+  }
   return "PROCESSING";
 }
 
@@ -187,6 +189,8 @@ export default function Step3Sucesso() {
   const initialStatus: "PROCESSING" | "PAID" | "FAILED" =
     isGratisScenario ? "PAID" : purchaseId ? "PROCESSING" : "PROCESSING";
   const [status, setStatus] = useState<"PROCESSING" | "PAID" | "FAILED">(initialStatus);
+  const pollAttemptRef = useRef(0);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isGratisScenario) setStatus("PAID");
@@ -196,10 +200,20 @@ export default function Step3Sucesso() {
     if (!purchaseId || isGratisScenario) return;
 
     let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | null = null;
+    pollAttemptRef.current = 0;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      const steps = [1500, 2500, 4000, 6000, 8000, 12000, 15000];
+      const idx = Math.min(pollAttemptRef.current, steps.length - 1);
+      const delay = steps[idx];
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = setTimeout(poll, delay);
+    };
 
     const poll = async () => {
       try {
+        pollAttemptRef.current += 1;
         const url = new URL("/api/checkout/status", window.location.origin);
         url.searchParams.set("purchaseId", purchaseId);
         if (paymentIntentId && paymentIntentId !== purchaseId) {
@@ -208,12 +222,21 @@ export default function Step3Sucesso() {
         const res = await fetch(url.toString(), { cache: "no-store" });
         const data = await res.json().catch(() => null);
         const mapped = normalizeCheckoutStatus(data?.status);
+        const final =
+          typeof data?.final === "boolean" ? data.final : mapped === "PAID" || mapped === "FAILED";
+        const apiErrorMessage =
+          typeof data?.errorMessage === "string"
+            ? data.errorMessage
+            : typeof data?.message === "string"
+              ? data.message
+              : typeof data?.error === "string"
+                ? data.error
+                : null;
         if (cancelled) return;
 
         if (mapped === "PAID") {
           setStatus("PAID");
           setStatusError(null);
-          if (interval) clearInterval(interval);
           // revalidate once more after confirmed
           try {
             await fetch("/api/me/wallet", { method: "GET", cache: "no-store" });
@@ -221,29 +244,31 @@ export default function Step3Sucesso() {
           return;
         }
 
-        if (mapped === "FAILED") {
+        if (mapped === "FAILED" || final) {
           setStatus("FAILED");
-          setStatusError(typeof data?.error === "string" ? data.error : null);
-          if (interval) clearInterval(interval);
+          setStatusError(apiErrorMessage);
           return;
         }
 
         setStatus("PROCESSING");
         setStatusError(null);
+        scheduleNext();
       } catch (err) {
         console.warn("[Step3Sucesso] Poll status falhou", err);
-        if (!cancelled) setStatusError(null);
+        if (!cancelled) {
+          setStatusError(null);
+          scheduleNext();
+        }
       }
     };
 
     poll();
-    interval = setInterval(poll, 3000);
 
     return () => {
       cancelled = true;
-      if (interval) clearInterval(interval);
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
     };
-  }, [purchaseId, isGratisScenario]);
+  }, [purchaseId, isGratisScenario, paymentIntentId]);
 
   if (!dados) {
     return (

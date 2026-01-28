@@ -316,7 +316,7 @@ export default function SettingsPage() {
     } finally {
       setLogoutLoading(false);
       router.refresh();
-      router.push("/");
+      router.push("/login?logout=1");
     }
   }
 

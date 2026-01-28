@@ -387,7 +387,7 @@ export default function OrganizationTopBar({
 
     const handleScroll = () => {
       const currentY = getScrollY();
-      const atTop = currentY < 12;
+      const atTop = currentY < 24;
       setIsAtTop((prev) => (prev === atTop ? prev : atTop));
 
       const prevY = lastScrollYRef.current;
@@ -395,9 +395,9 @@ export default function OrganizationTopBar({
       if (atTop) {
         setIsVisible(true);
       } else {
-        if (currentY > prevY + 12) {
+        if (currentY > prevY + 24) {
           setIsVisible(false);
-        } else if (currentY < prevY - 12) {
+        } else if (currentY < prevY - 24) {
           setIsVisible(true);
         }
       }
@@ -467,6 +467,7 @@ export default function OrganizationTopBar({
   const signOut = async () => {
     try {
       await supabaseBrowser.auth.signOut();
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     } catch (err) {
       console.error("Erro no signOut", err);
     } finally {
@@ -475,7 +476,7 @@ export default function OrganizationTopBar({
       } catch {
         /* ignore */
       }
-      router.push("/login");
+      router.push("/login?logout=1");
     }
   };
 
@@ -503,7 +504,7 @@ export default function OrganizationTopBar({
           <div className="flex min-w-0 items-center gap-2">
             <Link
               href="/organizacao?tab=overview"
-              className="group flex h-9 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/85 shadow-[0_12px_38px_rgba(0,0,0,0.3)] transition hover:bg-white/10"
+              className="group flex h-11 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/85 shadow-[0_12px_38px_rgba(0,0,0,0.3)] transition hover:bg-white/10"
             >
               {currentApp.moduleKey ? (
                 <span
@@ -568,7 +569,7 @@ export default function OrganizationTopBar({
           <NotificationBell organizationId={activeOrg?.id ?? null} />
 
           <details ref={orgMenuRef} className={cn("relative", openMenu === "org" && "z-50")} onToggle={handleMenuToggle("org")}>
-            <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/80 shadow-[0_12px_38px_rgba(0,0,0,0.3)] flex h-9 items-center">
+            <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/80 shadow-[0_12px_38px_rgba(0,0,0,0.3)] flex h-11 items-center">
               <div className="flex items-center gap-2">
                 <Avatar
                   src={orgAvatar}
@@ -576,10 +577,15 @@ export default function OrganizationTopBar({
                   className="h-7 w-7 rounded-full border border-white/10"
                   textClassName="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80"
                 />
-                <span className="hidden max-w-[140px] truncate text-sm font-semibold text-white md:inline">
-                  {orgDisplay}
-                </span>
-                <span className="text-white/50 hidden md:inline">▾</span>
+                <div className="flex min-w-0 flex-col leading-tight">
+                  <span className="text-[9px] uppercase tracking-[0.22em] text-white/50 md:hidden">
+                    Organização:
+                  </span>
+                  <span className="max-w-[140px] truncate text-[12px] font-semibold text-white md:text-sm">
+                    {orgDisplay}
+                  </span>
+                </div>
+                <span className="text-white/50" aria-hidden="true">▾</span>
               </div>
             </summary>
             <div className="absolute right-0 mt-2 w-64 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl">
@@ -630,7 +636,7 @@ export default function OrganizationTopBar({
           </details>
 
           <details ref={userMenuRef} className={cn("relative", openMenu === "user" && "z-50")} onToggle={handleMenuToggle("user")}>
-            <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-white/5 px-2.5 text-sm text-white/80 shadow-[0_12px_38px_rgba(0,0,0,0.3)] flex h-9 items-center">
+            <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-white/5 px-2.5 text-sm text-white/80 shadow-[0_12px_38px_rgba(0,0,0,0.3)] flex h-11 items-center">
               <div className="flex items-center gap-2">
                 {roleBadge && (
                   <span className="hidden lg:inline-flex">
@@ -644,7 +650,7 @@ export default function OrganizationTopBar({
                   textClassName="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80"
                 />
                 <span className="hidden text-[12px] text-white/70 md:inline">{userLabel}</span>
-                <span className="text-white/50 hidden md:inline">▾</span>
+                <span className="text-white/50" aria-hidden="true">▾</span>
               </div>
             </summary>
             <div className="absolute right-0 mt-2 w-56 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl">

@@ -99,7 +99,15 @@ export default function OrganizationDashboardShell({
   const isChatRoute = pathname?.startsWith("/organizacao/chat");
   const emailGateActive = Boolean(emailVerification && !emailVerification.isVerified);
   const [emailGateDismissed, setEmailGateDismissed] = useState(false);
+  const [emailGateToast, setEmailGateToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [emailResending, setEmailResending] = useState(false);
   const showEmailGate = emailGateActive && !emailGateDismissed && !isSettingsRoute;
+
+  useEffect(() => {
+    if (!emailGateToast) return;
+    const timer = setTimeout(() => setEmailGateToast(null), 4200);
+    return () => clearTimeout(timer);
+  }, [emailGateToast]);
 
   useEffect(() => {
     if (!emailGateActive || isSettingsRoute) return;
@@ -114,6 +122,10 @@ export default function OrganizationDashboardShell({
         );
         if (isMounted && verified) {
           setEmailGateDismissed(true);
+          setEmailGateToast({
+            tone: "success",
+            message: "Email verificado. O painel foi desbloqueado.",
+          });
           router.refresh();
           if (interval) {
             clearInterval(interval);
@@ -134,9 +146,63 @@ export default function OrganizationDashboardShell({
     };
   }, [emailGateActive, isSettingsRoute, router]);
 
+  const handleResendVerification = async () => {
+    if (!activeOrg?.id) {
+      setEmailGateToast({ tone: "error", message: "Seleciona uma organização primeiro." });
+      return;
+    }
+    const email = emailVerification?.email?.trim() ?? "";
+    if (!email) {
+      setEmailGateToast({ tone: "error", message: "Define um email oficial antes de reenviar." });
+      return;
+    }
+    if (emailResending) return;
+    setEmailResending(true);
+    try {
+      const res = await fetch("/api/organizacao/organizations/settings/official-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId: activeOrg.id, email }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || "Não foi possível reenviar o email.");
+      }
+      if (json?.status === "VERIFIED") {
+        setEmailGateDismissed(true);
+        setEmailGateToast({ tone: "success", message: "Email já verificado. Painel desbloqueado." });
+        router.refresh();
+        return;
+      }
+      setEmailGateToast({
+        tone: "success",
+        message: "Email de verificação reenviado. Confirma a caixa de entrada.",
+      });
+    } catch (err) {
+      setEmailGateToast({
+        tone: "error",
+        message: err instanceof Error ? err.message : "Não foi possível reenviar o email.",
+      });
+    } finally {
+      setEmailResending(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen w-full min-w-0 flex-col text-white">
       <OrganizationTopBar activeOrg={activeOrg} orgOptions={orgOptions} user={user} role={role} />
+      {emailGateToast ? (
+        <div
+          className={cn(
+            "fixed right-4 top-[calc(var(--org-topbar-height)+12px)] z-[60] rounded-2xl border px-4 py-3 text-[12px] shadow-[0_16px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl",
+            emailGateToast.tone === "success"
+              ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-50"
+              : "border-rose-400/40 bg-rose-500/15 text-rose-100",
+          )}
+        >
+          {emailGateToast.message}
+        </div>
+      ) : null}
       <main
         className={cn(
           "relative z-0 min-h-0 w-full flex-1 pb-0 pt-[var(--org-topbar-height)]",
@@ -174,7 +240,8 @@ export default function OrganizationDashboardShell({
               <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/80">Email oficial obrigatório</p>
               <h2 className="mt-3 text-xl font-semibold">Confirma o email da organização</h2>
               <p className="mt-2 text-sm text-amber-100/80">
-                Para desbloquear o painel, confirma o email oficial nas definições.
+                Para desbloquear pagamentos, convites e checkout, precisamos confirmar o email oficial.
+                Enviamos um link de verificação para a caixa de entrada da organização.
               </p>
               {emailVerification?.email && (
                 <p className="mt-2 text-[12px] text-amber-100/70">Email atual: {emailVerification.email}</p>
@@ -186,6 +253,14 @@ export default function OrganizationDashboardShell({
                 >
                   Ir para definições
                 </Link>
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={!emailVerification?.email || emailResending}
+                  className="inline-flex items-center rounded-full border border-amber-200/40 bg-white/5 px-4 py-2 text-[12px] font-semibold text-amber-50/90 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {emailResending ? "A reenviar…" : "Reenviar verificação"}
+                </button>
               </div>
             </div>
           ) : (

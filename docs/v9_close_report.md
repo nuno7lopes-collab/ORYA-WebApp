@@ -87,3 +87,12 @@ Data: 2026-01-28
 - [x] CI verde (lint + typecheck + tests + build + gates).
 - [x] docs/v9_close_report.md completo com evidência.
 - [x] Repo sem legacy exposto e sem dívidas óbvias.
+
+## Atualizações pós-close (2026-01-28)
+- Gates revalidados: `gate:internal-secret`, `gate:api-contract`, `gate:p0-errors`, `gate:parity`, `gate:todo` (OK).
+- Testes revalidados: `npx vitest run tests/access tests/ops` + `npx vitest run tests/rbac tests/access` (OK).
+- UI/UX polido: topbar hide-on-scroll menos agressivo, tap targets >= 44px em menus/notifications, org switcher com rótulo “Organização”, CRM subnav com scroll horizontal em mobile.
+- Gate email oficial: CTA “Reenviar verificação” + toast de sucesso/erro + desbloqueio imediato ao verificar.
+- Logout: confirmação na página `/login?logout=1`.
+- Checkout pós-pagamento: polling com backoff + leitura de `final` + mensagens mais claras.
+- Stripe webhook: logs com requestId/correlationId + aviso de evento deduped.

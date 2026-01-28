@@ -188,13 +188,14 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
+  const logCtx = { requestId: ctx.requestId, correlationId: ctx.correlationId };
   if (!webhookSecret) {
-    console.error("[Webhook] Missing STRIPE webhook secret");
+    console.error("[Webhook] Missing STRIPE webhook secret", logCtx);
     return respondPlainText(ctx, "Webhook secret not configured", { status: 500 });
   }
   const sig = req.headers.get("stripe-signature");
   if (!sig) {
-    console.error("[Webhook] Missing signature header");
+    console.error("[Webhook] Missing signature header", logCtx);
     return respondPlainText(ctx, "Missing signature", { status: 400 });
   }
 
@@ -206,13 +207,14 @@ async function _POST(req: NextRequest) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown signature validation error";
-    console.error("[Webhook] Invalid signature:", message);
+    console.error("[Webhook] Invalid signature:", message, logCtx);
     return respondPlainText(ctx, "Invalid signature", { status: 400 });
   }
 
   console.log("[Webhook] Event recebido:", {
     id: event.id,
     type: event.type,
+    ...logCtx,
   });
 
   try {
@@ -220,8 +222,15 @@ async function _POST(req: NextRequest) {
     if (!outbox.ok) {
       return respondPlainText(ctx, "ORG_NOT_RESOLVED", { status: 422 });
     }
+    if (outbox.deduped) {
+      console.warn("[Webhook] Duplicate event ignored", {
+        id: event.id,
+        type: event.type,
+        ...logCtx,
+      });
+    }
   } catch (err) {
-    console.error("[Webhook] Error processing event:", err);
+    console.error("[Webhook] Error processing event:", err, logCtx);
     return respondPlainText(ctx, "WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 

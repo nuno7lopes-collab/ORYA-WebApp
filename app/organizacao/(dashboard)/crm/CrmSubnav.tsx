@@ -22,11 +22,11 @@ export default function CrmSubnav({ variant = "default", className }: CrmSubnavP
   const isTopbar = variant === "topbar";
   const wrapperClass = cn(
     isTopbar
-      ? "inline-flex w-fit max-w-full rounded-full border border-white/12 bg-white/5 px-1 py-1 text-[12px] shadow-[0_10px_32px_rgba(0,0,0,0.35)] overflow-visible"
+      ? "relative w-full max-w-full rounded-full border border-white/12 bg-white/5 px-1 py-1 text-[12px] shadow-[0_10px_32px_rgba(0,0,0,0.35)] overflow-hidden"
       : "rounded-2xl border border-white/10 bg-white/5 px-2 py-2 shadow-[0_16px_50px_rgba(0,0,0,0.35)]",
     className,
   );
-  const listClass = cn("flex flex-wrap items-center", isTopbar ? "gap-1" : "gap-2");
+  const listClass = cn("flex items-center", isTopbar ? "flex-nowrap gap-1" : "flex-wrap gap-2");
   const linkBase = isTopbar
     ? "inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-semibold transition whitespace-nowrap"
     : "inline-flex items-center rounded-full px-4 py-2 text-[12px] font-semibold transition";
@@ -37,25 +37,35 @@ export default function CrmSubnav({ variant = "default", className }: CrmSubnavP
     ? "text-white/70 hover:bg-white/10"
     : "border border-white/15 bg-white/5 text-white/70 hover:bg-white/10";
 
+  const content = (
+    <div className={listClass}>
+      {CRM_NAV.map((item) => {
+        const isActive = pathname?.startsWith(item.href);
+        return (
+          <Link
+            key={item.id}
+            href={item.href}
+            className={cn(
+              linkBase,
+              isActive ? linkActive : linkInactive,
+            )}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className={wrapperClass}>
-      <div className={listClass}>
-        {CRM_NAV.map((item) => {
-          const isActive = pathname?.startsWith(item.href);
-          return (
-            <Link
-              key={item.id}
-              href={item.href}
-              className={cn(
-                linkBase,
-                isActive ? linkActive : linkInactive,
-              )}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </div>
+      {isTopbar ? (
+        <div className="orya-scrollbar-hide flex max-w-full overflow-x-auto overflow-y-visible touch-pan-x">
+          {content}
+        </div>
+      ) : (
+        content
+      )}
     </div>
   );
 }

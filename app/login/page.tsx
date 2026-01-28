@@ -10,6 +10,8 @@ function LoginContent() {
   const { openModal, isOpen } = useAuthModal();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const logoutFlag =
+    searchParams.get("logout") === "1" || searchParams.get("loggedOut") === "1";
   const redirectTo = sanitizeRedirectPath(
     searchParams.get("redirectTo") ??
       searchParams.get("redirect") ??
@@ -90,6 +92,11 @@ function LoginContent() {
     <main className="min-h-screen flex items-center justify-center px-4 text-white bg-[radial-gradient(circle_at_top,#1d2335,#0a0b12_55%,#05060a_100%)]">
       <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-2xl shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
         <PendingDeleteBanner />
+        {logoutFlag && (
+          <div className="mb-4 rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-[12px] text-emerald-100">
+            Sessão terminada com sucesso.
+          </div>
+        )}
         <div className="mx-auto mb-4 h-10 w-10 rounded-full border border-white/20 bg-white/10 grid place-items-center">
           <div className="h-3 w-3 rounded-full bg-white/70 animate-pulse" />
         </div>

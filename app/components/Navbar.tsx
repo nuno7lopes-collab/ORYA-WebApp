@@ -181,7 +181,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
 
     const handleScroll = () => {
       const currentY = window.scrollY || 0;
-      const atTop = currentY < 12;
+      const atTop = currentY < 24;
       setIsAtTop((prev) => (prev === atTop ? prev : atTop));
 
       const prevY = lastScrollYRef.current;
@@ -191,9 +191,9 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
         setIsVisible(true);
       } else {
         // A descer esconde, a subir mostra
-        if (currentY > prevY + 12) {
+        if (currentY > prevY + 24) {
           setIsVisible(false);
-        } else if (currentY < prevY - 12) {
+        } else if (currentY < prevY - 24) {
           setIsVisible(true);
         }
       }
@@ -293,7 +293,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
       console.warn("[navbar] signOut falhou", err);
     } finally {
       setIsProfileMenuOpen(false);
-      router.push("/");
+      router.push("/login?logout=1");
       router.refresh();
     }
   };
@@ -657,7 +657,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                 }
                 router.push("/social?tab=notifications");
               }}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition"
+              className="relative flex h-11 w-11 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition sm:h-10 sm:w-10"
               aria-label="Notificações"
             >
               <BellIcon className="h-4 w-4 text-amber-100" />

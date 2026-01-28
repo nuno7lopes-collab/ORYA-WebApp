@@ -198,8 +198,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `lib/organizationRbac.ts`
 - `lib/organizationContext.ts`
 
-**Status**: TODO
-**DONE (data/commit/nota)**: —
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-28 — Guardrails RBAC/Org context sem bypass + testes `vitest` em `tests/rbac`/`tests/access` + `tests/ops/rbacGuardrails`.
 
 ---
 

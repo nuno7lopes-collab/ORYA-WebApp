@@ -80,7 +80,7 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
     } catch (err) {
       console.warn("[admin] logout falhou", err);
     } finally {
-      window.location.href = "/login";
+      window.location.href = "/login?logout=1";
     }
   }, [loggingOut]);
 

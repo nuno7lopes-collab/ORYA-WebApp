@@ -647,8 +647,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L29: - `app/api/**` (uso do envelope)
 - [TODO] L30: - `domain/outbox/**`, `domain/eventLog/**` (correlationId)
 - [TODO] L31: - `lib/security.ts` (auth fail-closed)
-- [TODO] L33: **Status**: TODO (implementacao em curso)
-- [N/A] L34: **DONE (data/commit/nota)**: —
+- [DONE] L33: **Status**: DONE
+- [N/A] L34: **DONE (data/commit/nota)**: 2026-01-28 — Envelope/headers canonicos + gates/tests + auditoria de auth/legacy (v9 close).
 - [N/A] L36: **CI gates**
 - [TODO] L37: - PR #1: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/1
 - [TODO] L38: - Branch: `chore/seed-gates`
@@ -782,8 +782,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L197: **Referencias de codigo**
 - [TODO] L198: - `lib/organizationRbac.ts`
 - [TODO] L199: - `lib/organizationContext.ts`
-- [TODO] L201: **Status**: TODO
-- [N/A] L202: **DONE (data/commit/nota)**: —
+- [DONE] L201: **Status**: DONE
+- [N/A] L202: **DONE (data/commit/nota)**: 2026-01-28 — Guardrails RBAC/Org context sem bypass + testes `vitest` em `tests/rbac`/`tests/access` + `tests/ops/rbacGuardrails`.
 - [N/A] L204: ---
 - [N/A] L206: ## Bloco 6 — Eventos
 - [N/A] L207: **SSOTs canonicos**
