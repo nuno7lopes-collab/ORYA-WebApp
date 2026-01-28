@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import { useSearchParams } from "next/navigation";
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import { cn } from "@/lib/utils";
 import {
@@ -35,6 +36,9 @@ type FinanceResponse = {
 };
 
 export default function ClubeCaixaPage() {
+  const searchParams = useSearchParams();
+  const organizationIdParam = searchParams?.get("organizationId") ?? null;
+  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const { data } = useSWR<FinanceResponse>("/api/organizacao/club/finance/overview", fetcher);
 
   const bookings = data?.bookings;
@@ -44,7 +48,12 @@ export default function ClubeCaixaPage() {
 
   return (
     <div className="space-y-6">
-      <ObjectiveSubnav objective="manage" activeId="caixa" mode="page" />
+      <ObjectiveSubnav
+        objective="manage"
+        activeId="caixa"
+        mode="page"
+        organizationId={organizationId && Number.isFinite(organizationId) ? organizationId : null}
+      />
 
       <div>
         <p className={DASHBOARD_LABEL}>Clube</p>

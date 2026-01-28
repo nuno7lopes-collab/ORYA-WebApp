@@ -280,8 +280,9 @@ export default function OrganizationTopBar({
     ? MODULE_ICON_GRADIENTS[currentApp.moduleKey] ?? "from-white/15 via-white/5 to-white/10"
     : null;
 
+  const orgMeUrl = activeOrg?.id ? `/api/organizacao/me?organizationId=${activeOrg.id}` : null;
   const { data: orgData, error: orgDataError, mutate: mutateOrgData } = useSWR<OrganizationMeResponse>(
-    activeOrg ? "/api/organizacao/me" : null,
+    orgMeUrl,
     fetcher,
   );
   const moduleOverrides = useMemo(() => {
@@ -536,6 +537,7 @@ export default function OrganizationTopBar({
                 focusSectionId={subnavFocusId ?? undefined}
                 primaryModule={objectiveModules.primary}
                 modules={objectiveModulesWithAccess}
+                organizationId={activeOrg?.id ?? null}
                 mode="dashboard"
                 variant="topbar"
                 className="w-full max-w-full"

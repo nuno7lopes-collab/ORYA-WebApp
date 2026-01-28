@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = { params: Promise<{ id: string }>; searchParams?: { organizationId?: string } };
 
 async function fetchFinance(tournamentId: number, cookieHeader: string | null) {
   const baseUrl = getAppBaseUrl();
@@ -16,10 +16,12 @@ async function fetchFinance(tournamentId: number, cookieHeader: string | null) {
   return res.json();
 }
 
-export default async function TournamentFinancePage({ params }: PageProps) {
+export default async function TournamentFinancePage({ params, searchParams }: PageProps) {
   const resolved = await params;
   const tournamentId = Number(resolved.id);
   if (!Number.isFinite(tournamentId)) notFound();
+  const organizationIdParam = searchParams?.organizationId ?? null;
+  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
@@ -45,7 +47,11 @@ export default async function TournamentFinancePage({ params }: PageProps) {
 
   return (
     <div className="space-y-4">
-      <ObjectiveSubnav objective="analyze" activeId="financas" />
+      <ObjectiveSubnav
+        objective="analyze"
+        activeId="financas"
+        organizationId={organizationId && Number.isFinite(organizationId) ? organizationId : null}
+      />
       <div className="space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4">
         <div className="flex items-center justify-between">
         <div>

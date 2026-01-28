@@ -1,12 +1,21 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import { DASHBOARD_CARD, DASHBOARD_LABEL, DASHBOARD_MUTED, DASHBOARD_TITLE } from "@/app/organizacao/dashboardUi";
 
 export default function ClubMembrosPage() {
+  const searchParams = useSearchParams();
+  const organizationIdParam = searchParams?.get("organizationId") ?? null;
+  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   return (
     <div className="space-y-6">
-      <ObjectiveSubnav objective="manage" activeId="membros" mode="page" />
+      <ObjectiveSubnav
+        objective="manage"
+        activeId="membros"
+        mode="page"
+        organizationId={organizationId && Number.isFinite(organizationId) ? organizationId : null}
+      />
 
       <div>
         <p className={DASHBOARD_LABEL}>Clube</p>

@@ -113,9 +113,11 @@ export default function OrganizationDashboardShell({
     if (!emailGateActive || isSettingsRoute) return;
     let isMounted = true;
     let interval: ReturnType<typeof setInterval> | null = null;
+    const orgMeUrl = activeOrg?.id ? `/api/organizacao/me?organizationId=${activeOrg.id}` : null;
     const checkEmailVerification = async () => {
       try {
-        const res = await fetch("/api/organizacao/me", { cache: "no-store" });
+        if (!orgMeUrl) return;
+        const res = await fetch(orgMeUrl, { cache: "no-store" });
         const json = await res.json().catch(() => null);
         const verified = Boolean(
           json?.organization?.officialEmail && json?.organization?.officialEmailVerifiedAt,
