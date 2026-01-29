@@ -26,6 +26,7 @@ vi.mock("@/lib/prisma", () => {
     create: vi.fn().mockResolvedValue({ id: "evt_log_1" }),
   };
   const outboxEvent = {
+    findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ id: "outbox_1" }),
   };
   const payment = {

@@ -346,7 +346,18 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               )}
             </div>
             <div className="space-y-2 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-white/3 to-transparent p-4 text-[12px] text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-              <p>Email oficial para faturação e alertas.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Estado</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] ${officialEmailBadgeClass}`}>
+                  {officialEmailStatusLabel}
+                </span>
+              </div>
+              <p>Email oficial para faturação, payouts e alertas operacionais.</p>
+              {!isOfficialEmailVerified && officialEmailNormalized && (
+                <p className="text-[11px] text-amber-200">
+                  Se não receberes o email em 2–3 minutos, verifica o spam e reenviar.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"

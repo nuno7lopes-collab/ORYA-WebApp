@@ -13,5 +13,10 @@ Objetivo: ponto unico para runbooks operacionais.
 - `docs/runbooks/ops-endpoints.md`
 - `docs/runbooks/cron-coverage.md`
 - `docs/runbooks/operability-checklist.md`
+- `docs/runbooks/payments-refunds.md`
+- `docs/runbooks/checkin.md`
+- `docs/runbooks/reservas.md`
+- `docs/runbooks/notifications.md`
+- `docs/runbooks/metrics-alerts.md`
 
 Nota: alguns runbooks podem estar em PRs separados; manter este indice atualizado quando houver merge.

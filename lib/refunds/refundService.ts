@@ -5,6 +5,8 @@ import { logFinanceError } from "@/lib/observability/finance";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { SourceType } from "@prisma/client";
+import { logWarn } from "@/lib/observability/logger";
+import { appendRefundLedgerEntries } from "@/domain/finance/ledgerAdjustments";
 
 // Idempotent refund executor (base-only) anchored by refundKey(purchaseId).
 export async function refundPurchase(params: {
@@ -56,7 +58,7 @@ export async function refundPurchase(params: {
     },
   });
   if (!saleSummary) {
-    console.warn("[refund] saleSummary not found for purchase", purchaseId);
+    logWarn("refund.sale_summary_missing", { purchaseId });
     return null;
   }
 
@@ -106,6 +108,7 @@ export async function refundPurchase(params: {
     const outbox = await recordOutboxEvent(
       {
         eventType: "refund.created",
+        dedupeKey,
         payload: {
           refundId: refund.id,
           purchaseId,
@@ -135,6 +138,13 @@ export async function refundPurchase(params: {
       },
       tx,
     );
+
+    await appendRefundLedgerEntries({
+      paymentId: purchaseId,
+      causationId: dedupeKey,
+      correlationId: purchaseId,
+      tx,
+    });
 
     return refund;
   });

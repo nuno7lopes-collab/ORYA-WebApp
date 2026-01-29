@@ -17,7 +17,9 @@ import {
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import {
   blockPendingPayout,
@@ -160,6 +162,7 @@ async function publishPaymentStatusChanged(params: {
       {
         eventId: eventLogId,
         eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED, stripeEventId),
         payload,
         causationId: stripeEventId,
         correlationId: paymentId,
@@ -432,10 +435,12 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
     case "payment_intent.succeeded": {
       const intent = event.data.object as Stripe.PaymentIntent;
       if (intent.id === "FREE_CHECKOUT") {
-        console.log("[Webhook] payment_intent.succeeded ignorado (FREE_CHECKOUT placeholder)");
+        logInfo("finance.webhook.payment_intent_succeeded_ignored", {
+          reason: "FREE_CHECKOUT_PLACEHOLDER",
+        });
         break;
       }
-      console.log("[Webhook] payment_intent.succeeded", {
+      logInfo("finance.webhook.payment_intent_succeeded", {
         id: intent.id,
         amount: intent.amount,
         currency: intent.currency,
@@ -460,7 +465,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
       if (pendingMeta) {
         await createPendingPayout(pendingMeta);
       } else if (intent.metadata?.recipientConnectAccountId) {
-        console.warn("[Webhook] PendingPayout metadata em falta", {
+        logWarn("finance.webhook.pending_payout_metadata_missing", {
           paymentIntentId: intent.id,
           purchaseId: purchaseAnchor,
         });
@@ -531,7 +536,10 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
             },
           });
         } else {
-          console.warn("[Webhook] Falha ao registar PaymentEvent ingest-only", logErr);
+          logError("finance.webhook.payment_event_ingest_failed", logErr, {
+            paymentIntentId: intent.id,
+            stripeEventId: event.id,
+          });
         }
       }
 
@@ -597,7 +605,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
 
     case "charge.refunded": {
       const charge = event.data.object as Stripe.Charge;
-      console.log("[Webhook] charge.refunded", {
+      logInfo("finance.webhook.charge_refunded", {
         id: charge.id,
         payment_intent: charge.payment_intent,
       });
@@ -669,12 +677,26 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
           await unblockPendingPayout(paymentIntentId);
         }
       }
+      const disputeEventType =
+        dispute.status === "won" ? "dispute.won" : dispute.status === "lost" ? "dispute.lost" : null;
+      if (disputeEventType) {
+        await enqueueOperation({
+          operationType: "PROCESS_STRIPE_EVENT",
+          dedupeKey: event.id,
+          correlations: { stripeEventId: event.id, paymentIntentId },
+          payload: {
+            stripeEventType: disputeEventType,
+            stripeEventId: event.id,
+            stripeEventObject: dispute,
+          },
+        });
+      }
       break;
     }
 
     default: {
       // outros eventos, por agora, podem ser ignorados
-      console.log("[Webhook] Evento ignorado:", event.type);
+      logInfo("finance.webhook.event_ignored", { eventType: event.type });
       break;
     }
   }
@@ -1342,6 +1364,6 @@ async function notifyOrganizationOwners(input: { organizationId: number; eventId
       ),
     );
   } catch (err) {
-    console.warn("[notification][free_checkout] falhou", err);
+    logError("finance.free_checkout.notification_failed", err);
   }
 }

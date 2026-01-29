@@ -42,3 +42,10 @@ curl -s -X POST \
 ## Notas
 - Todos os endpoints de cron devem falhar sem `X-ORYA-CRON-SECRET`.
 - Evitar chamar cron contra producao a partir de ambiente local.
+
+## Execucao externa (prod)
+- Usar scheduler (ex.: CloudWatch/EventBridge) com:
+  - Method: GET/POST conforme tabela
+  - Header: `X-ORYA-CRON-SECRET: <secret>`
+  - Timeout >= 30s para jobs pesados (ex.: payouts, CRM)
+- Validar sucesso via `/api/internal/ops/health` e logs de cron.

@@ -15,10 +15,12 @@ curl -i -sS https://<base>/api/... | rg -i "x-orya-request-id|x-orya-correlation
 - Procurar primeiro por `requestId`.
 - Se nao houver, procurar por `correlationId`.
 - Em caso de fluxo async/outbox, `correlationId` costuma ser `purchaseId`.
+ - Para ops/worker: procurar por `operationId`, `eventId` (outbox) e `paymentId`.
 
 Sugestoes (ajustar ao log backend):
 - "requestId=<id>" ou "requestId": "<id>"
 - "correlationId=<id>" ou "correlationId": "<id>"
+- "operationId=<id>" ou "eventId=<id>"
 
 ## 3) Classificar o erro
 - **Erro transitorio** (timeouts/rede/5xx): pode ser replay seguro.
@@ -31,6 +33,8 @@ Sugestoes (ajustar ao log backend):
   - `POST /api/internal/reprocess/purchase` com `{ "purchaseId": "pur_..." }`
   - `POST /api/internal/reprocess/stripe-event` com `{ "stripeEventId": "evt_..." }`
   - `POST /api/internal/reconcile` com `{ "minutes": 15 }` (requeue stuck ops)
+  - `GET /api/internal/outbox/dlq` + `POST /api/internal/outbox/replay` para eventos em DLQ.
+  - `POST /api/internal/ops/outbox/replay` para replay em lote com idempotency key.
 
 Exemplo curl (reprocess purchase):
 ```bash
@@ -46,6 +50,10 @@ curl -sS -X POST \
 - [ ] causa raiz identificada
 - [ ] replay/rollback executado (se aplicavel)
 - [ ] verificacao pos-acao (read-models, ops feed, UI)
+
+## 6) Verificacoes rapidas (ops endpoints)
+- `GET /api/internal/ops/health` para sinais vermelhos (DB + contagens de outbox/ops).
+- `GET /api/internal/ops/slo` para backlog e DLQ.
 
 Notas
 - Nunca editar rows de ledger/outbox manualmente.

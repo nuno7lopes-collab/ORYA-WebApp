@@ -4,6 +4,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -27,8 +28,6 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-
-  // Nota: sem RBAC forte (exemplo). Para produção, colocar auth/admin.
 
   try {
     const sale = await prisma.saleSummary.findUnique({
@@ -58,7 +57,7 @@ export async function POST(req: NextRequest) {
     });
     return respondOk(ctx, { queued: true }, { status: 200 });
   } catch (err) {
-    console.error("[admin/dispute] erro", err);
+    logError("admin.payments.dispute_failed", err);
     return respondError(
       ctx,
       { errorCode: "FAILED", message: "Falha ao processar disputa.", retryable: true },

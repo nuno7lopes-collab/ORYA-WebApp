@@ -22,6 +22,7 @@ Rearmar eventos em DLQ (outbox) de forma segura, garantindo que replays sao idem
 1. Listar DLQ (opcionalmente filtrar por `eventType`).
 2. Confirmar que o evento esta em DLQ (`deadLetteredAt` definido) e nao publicado.
 3. Validar causa raiz (ex.: dependencia externa, schema, secret) antes de rearmar.
+4. Capturar `requestId/correlationId` para logs e auditoria.
 
 ### Listar DLQ
 ```bash
@@ -59,9 +60,9 @@ curl -s -X POST \
 - Voltar a listar DLQ e confirmar que os `eventId` rearmados desapareceram da lista.
 - Monitorizar logs do worker/outbox para confirmacao de publicacao.
 - Se necessario, acompanhar o impacto via event logs ou auditoria.
+- Consultar `/api/internal/ops/health` e `/api/internal/ops/slo` para verificar backlog.
 
 ## Notas de seguranca
 - Nunca rearmar eventos sem corrigir a causa raiz.
 - Replays sao idempotentes, mas so para consumidores que respeitam `eventId`/`idempotencyKey`.
 - Se um evento ja tiver `publishedAt`, o replay deve ser ignorado (endpoint retorna erro).
-

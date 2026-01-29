@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { ProcessorFeesStatus } from "@prisma/client";
 import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger";
+import { logError } from "@/lib/observability/logger";
 
 type SweepResult = {
   scanned: number;
@@ -33,13 +34,14 @@ export async function sweepPendingProcessorFees(limit = 50): Promise<SweepResult
   let skippedNoFee = 0;
 
   for (const payment of pending) {
+    let intentId: string | null = null;
     try {
       const paymentEvent = await prisma.paymentEvent.findFirst({
         where: { purchaseId: payment.id, stripePaymentIntentId: { not: null } },
         orderBy: { updatedAt: "desc" },
         select: { stripePaymentIntentId: true, stripeEventId: true },
       });
-      const intentId = paymentEvent?.stripePaymentIntentId ?? null;
+      intentId = paymentEvent?.stripePaymentIntentId ?? null;
       if (!intentId) {
         skippedNoIntent += 1;
         continue;
@@ -60,7 +62,10 @@ export async function sweepPendingProcessorFees(limit = 50): Promise<SweepResult
       });
       if (result.status !== "SKIPPED") reconciled += 1;
     } catch (err) {
-      console.warn("[sweepPendingProcessorFees] erro ao reconciliar", err);
+      logError("finance.reconciliation_sweep.failed", err, {
+        paymentIntentId: intentId,
+        paymentId: payment.id,
+      });
     }
   }
 

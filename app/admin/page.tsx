@@ -133,8 +133,18 @@ export default async function AdminDashboardPage() {
     },
   });
 
-  const [usersCount, organizationsCount, eventsCount, ticketsCount, revenueAgg, recentEvents, recentTickets, recentPaymentEvents, payoutCounts] =
-    await Promise.all([
+  const [
+    usersCount,
+    organizationsCount,
+    eventsCount,
+    ticketsCount,
+    revenueAgg,
+    recentEvents,
+    recentTickets,
+    recentPaymentEvents,
+    payoutCounts,
+    recentOpsFeed,
+  ] = await Promise.all([
       prisma.profile.count(),
       prisma.organization.count(),
       prisma.event.count(),
@@ -176,6 +186,19 @@ export default async function AdminDashboardPage() {
         by: ["status"],
         _count: { _all: true },
       }),
+      prisma.activityFeedItem.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          eventType: true,
+          organizationId: true,
+          sourceType: true,
+          sourceId: true,
+          correlationId: true,
+          createdAt: true,
+        },
+      }),
     ]);
 
   const totalRevenueCents = revenueAgg._sum.totalCents ?? 0;
@@ -206,6 +229,39 @@ export default async function AdminDashboardPage() {
           <StatCard label="Eventos" value={eventsCount} helper="Eventos registados." tone="indigo" />
           <StatCard label="Volume total" value={formatCurrencyFromCents(totalRevenueCents)} helper="Receita processada." tone="amber" />
         </div>
+
+        <SectionCard title="Ops feed (atividade operacional)">
+          {recentOpsFeed.length === 0 ? (
+            <p className="text-sm text-white/60">Sem atividade registada nas últimas horas.</p>
+          ) : (
+            <div className="space-y-3">
+              {recentOpsFeed.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-white/90">
+                      <Badge tone="neutral">{item.eventType}</Badge>
+                      <span className="text-white/70">Org #{item.organizationId}</span>
+                      {item.sourceType && item.sourceId && (
+                        <span className="text-white/60">
+                          {item.sourceType} • {item.sourceId}
+                        </span>
+                      )}
+                    </div>
+                    {item.correlationId && (
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        Correlation: {item.correlationId}
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-xs text-white/50">{formatDateTime(item.createdAt)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_1.6fr]">
           <SectionCard title="Payouts e bloqueios">

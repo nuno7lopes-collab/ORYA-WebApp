@@ -98,6 +98,7 @@ vi.mock("@/lib/prisma", () => {
     create: vi.fn(({ data }: any) => data),
   };
   const outboxEvent = {
+    findUnique: vi.fn(() => null),
     create: vi.fn(({ data }: any) => data),
   };
   const prisma = {

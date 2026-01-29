@@ -44,11 +44,30 @@ vi.mock("@/lib/prisma", () => {
   const saleSummary = {
     findUnique: vi.fn(() => saleSummaryState),
   };
+  const payment = {
+    findUnique: vi.fn(() => ({
+      id: "order_1",
+      sourceType: "TICKET_ORDER",
+      sourceId: "order_1",
+      processorFeesActual: 50,
+      pricingSnapshotJson: { currency: "EUR", gross: 1000, platformFee: 100 },
+    })),
+  };
+  const ledgerEntry = {
+    findMany: vi.fn(() => [
+      { entryType: "GROSS", amount: 1000 },
+      { entryType: "PLATFORM_FEE", amount: -100 },
+      { entryType: "PROCESSOR_FEES_FINAL", amount: -50 },
+    ]),
+    createMany: vi.fn(() => ({ count: 3 })),
+  };
   const prisma = {
     refund,
     event,
     organization,
     saleSummary,
+    payment,
+    ledgerEntry,
     $transaction: async (fn: any) => fn(prisma),
   };
   return { prisma };

@@ -10,6 +10,7 @@ import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/
 import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
+import { appendChargebackLedgerEntries, appendDisputeFeeReversal } from "@/domain/finance/ledgerAdjustments";
 import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType } from "@prisma/client";
 import { EntitlementV7Status, mapV7StatusToLegacy } from "@/lib/entitlements/status";
 import { FulfillPayload } from "@/lib/operations/types";
@@ -40,6 +41,7 @@ import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger
 import { handleStripeWebhook } from "@/domain/finance/webhook";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { handleFinanceOutboxEvent } from "@/domain/finance/outbox";
@@ -56,6 +58,7 @@ import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
@@ -148,6 +151,7 @@ async function publishPaymentStatusChanged(params: {
       {
         eventId: eventLogId,
         eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED, params.causationId),
         payload,
         causationId: params.causationId,
         correlationId: params.paymentId,
@@ -306,7 +310,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
         break;
       }
       default: {
-        console.warn("[SEND_EMAIL_OUTBOX] TemplateKey sem sender mapeado", templateKey);
+        logWarn("worker.send_email_outbox.sender_missing", { templateKey });
       }
     }
 
@@ -400,17 +404,17 @@ export async function runOperationsBatch() {
   try {
     await publishOutboxBatch();
   } catch (err) {
-    console.warn("[runOperationsBatch] publishOutboxBatch falhou", err);
+    logError("worker.publish_outbox_batch_failed", err);
   }
   try {
     await consumeOpsFeedBatch();
   } catch (err) {
-    console.warn("[runOperationsBatch] consumeOpsFeedBatch falhou", err);
+    logError("worker.consume_ops_feed_failed", err);
   }
   try {
     await sweepPendingProcessorFees();
   } catch (err) {
-    console.warn("[runOperationsBatch] sweepPendingProcessorFees falhou", err);
+    logError("worker.sweep_processor_fees_failed", err);
   }
   return results;
 }
@@ -441,11 +445,12 @@ async function processOperation(op: OperationRecord) {
     case "OUTBOX_EVENT": {
       const payload = op.payload ?? {};
       const eventType = typeof payload.eventType === "string" ? payload.eventType : null;
+      const outboxEventId = typeof payload.eventId === "string" ? payload.eventId : null;
       const eventPayload =
         payload.payload && typeof payload.payload === "object"
           ? (payload.payload as Record<string, unknown>)
           : {};
-      console.info("[outbox.consume]", {
+      logInfo("outbox.consume", {
         eventId: typeof payload.eventId === "string" ? payload.eventId : null,
         eventType,
         correlationId: typeof payload.correlationId === "string" ? payload.correlationId : null,
@@ -457,34 +462,69 @@ async function processOperation(op: OperationRecord) {
       });
       if (!eventType) throw new Error("OUTBOX_EVENT_MISSING_TYPE");
       if (eventType.startsWith("payment.")) {
-        return handleFinanceOutboxEvent({
+        const result = await handleFinanceOutboxEvent({
           eventType,
           payload: eventPayload as any,
         });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (eventType.startsWith("PADREG_")) {
-        return handlePadelRegistrationOutboxEvent({
+        const result = await handlePadelRegistrationOutboxEvent({
           eventType,
           payload: eventPayload as any,
         });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (eventType.startsWith("LOYALTY_")) {
-        return handleLoyaltyOutboxEvent({
+        const result = await handleLoyaltyOutboxEvent({
           eventType,
           payload: eventPayload as any,
         });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (eventType.startsWith("TOURNAMENT_")) {
-        return handleTournamentOutboxEvent({
+        const result = await handleTournamentOutboxEvent({
           eventType,
           payload: eventPayload as any,
         });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (eventType.startsWith("PADEL_")) {
-        return handlePadelOutboxEvent({
+        const result = await handlePadelOutboxEvent({
           eventType,
           payload: eventPayload as any,
         });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (
         eventType.startsWith("event.") ||
@@ -493,23 +533,57 @@ async function processOperation(op: OperationRecord) {
       ) {
         const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
         if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
-        return consumeAgendaMaterializationEvent(eventId);
+        const result = await consumeAgendaMaterializationEvent(eventId);
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (eventType === "AGENDA_ITEM_UPSERT_REQUESTED") {
         const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
         if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
-        return consumeAgendaMaterializationEvent(eventId);
+        const result = await consumeAgendaMaterializationEvent(eventId);
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (eventType.startsWith("search.index.")) {
-        return handleSearchIndexOutboxEvent({
+        const result = await handleSearchIndexOutboxEvent({
           eventType,
           payload: eventPayload as any,
         });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
       }
       if (eventType.startsWith("organization.owner_transfer.")) {
-        return handleOwnerTransferOutboxEvent({
+        const result = await handleOwnerTransferOutboxEvent({
           eventType,
           payload: eventPayload as any,
+        });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
+      }
+      if (outboxEventId) {
+        await prisma.outboxEvent.update({
+          where: { eventId: outboxEventId },
+          data: { publishedAt: new Date(), nextAttemptAt: null },
         });
       }
       return { ok: true };
@@ -583,7 +657,7 @@ async function processStripeEvent(op: OperationRecord) {
         }
       }
     } catch (err) {
-      console.warn("[processStripeEvent] reconcile fees falhou", err);
+      logError("worker.process_stripe_event.reconcile_failed", err);
     }
     try {
       const handled = await performPaymentFulfillment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
@@ -617,7 +691,12 @@ async function processStripeEvent(op: OperationRecord) {
     const charge = await retrieveCharge(chargeId);
     return handleRefund(charge as Stripe.Charge, { stripeEventId: op.stripeEventId ?? null });
   }
-  if (eventType === "dispute.created" || eventType === "dispute.won" || eventType === "dispute.lost" || eventType === "charge.dispute.created") {
+  if (
+    eventType === "dispute.created" ||
+    eventType === "dispute.won" ||
+    eventType === "dispute.lost" ||
+    eventType === "charge.dispute.created"
+  ) {
     const stripeEventObject =
       typeof payload.stripeEventObject === "object" && payload.stripeEventObject
         ? (payload.stripeEventObject as Record<string, any>)
@@ -629,13 +708,48 @@ async function processStripeEvent(op: OperationRecord) {
       stripeEventObject.metadata && typeof stripeEventObject.metadata === "object"
         ? (stripeEventObject.metadata as Record<string, string | undefined>)
         : null;
-    return handleStripeWebhook({
+    const result = await handleStripeWebhook({
       id: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? "unknown",
       type: eventType as any,
       data: { object: { id: objectId, metadata } },
     });
+    const paymentId = result.paymentId ?? null;
+    if (paymentId && (eventType === "dispute.lost" || eventType === "dispute.won")) {
+      const disputeFeeCents = extractDisputeFeeCents(stripeEventObject);
+      if (eventType === "dispute.lost") {
+        await appendChargebackLedgerEntries({
+          paymentId,
+          causationId: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? op.id,
+          correlationId: paymentId,
+          disputeFeeCents,
+        });
+      } else if (eventType === "dispute.won") {
+        await appendDisputeFeeReversal({
+          paymentId,
+          causationId: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? op.id,
+          correlationId: paymentId,
+          disputeFeeCents,
+        });
+      }
+    }
+    return result;
   }
   throw new Error(`Unsupported stripeEventType=${eventType ?? "unknown"}`);
+}
+
+function extractDisputeFeeCents(stripeEventObject: Record<string, any> | null) {
+  if (!stripeEventObject) return null;
+  const balanceTransactions = stripeEventObject.balance_transactions;
+  const first =
+    Array.isArray(balanceTransactions) && balanceTransactions.length > 0
+      ? balanceTransactions[0]
+      : balanceTransactions;
+  if (first && typeof first === "object" && "fee" in first) {
+    const fee = Number((first as { fee?: number }).fee);
+    return Number.isFinite(fee) ? Math.abs(fee) : null;
+  }
+  const feeRaw = Number(stripeEventObject.fee);
+  return Number.isFinite(feeRaw) ? Math.abs(feeRaw) : null;
 }
 
 async function processFulfillPayment(op: OperationRecord) {
@@ -955,7 +1069,12 @@ async function processUpsertLedger(op: OperationRecord) {
 
   // Marcar PaymentEvent como OK (free flow)
   await paymentEventRepo(prisma).updateMany({
-    where: { stripePaymentIntentId: purchaseId },
+    where: {
+      OR: [
+        { stripePaymentIntentId: purchaseId },
+        { purchaseId },
+      ],
+    },
     data: {
       status: "OK",
       source: PaymentEventSource.API,
@@ -1032,6 +1151,97 @@ async function processRefundSingle(op: OperationRecord) {
     causationId: op.id,
     source: "operations.refund",
   });
+
+  await maybeSendRefundEmail({
+    purchaseId,
+    eventId,
+    reason,
+    amountRefundedBaseCents: res.baseAmountCents ?? null,
+  });
+}
+
+async function resolveRefundRecipientEmail(purchaseId: string) {
+  const ticket = await prisma.ticket.findFirst({
+    where: { purchaseId },
+    select: {
+      ownerUserId: true,
+      guestLink: { select: { guestEmail: true } },
+    },
+  });
+
+  const guestEmail = normalizeEmail(ticket?.guestLink?.guestEmail ?? null);
+  if (guestEmail) return guestEmail;
+
+  if (ticket?.ownerUserId) {
+    const user = await supabaseAdmin.auth.admin.getUserById(ticket.ownerUserId);
+    const email = normalizeEmail(user.data?.user?.email ?? null);
+    if (email) return email;
+  }
+
+  return null;
+}
+
+async function maybeSendRefundEmail(params: {
+  purchaseId: string;
+  eventId: number;
+  reason: RefundReason;
+  amountRefundedBaseCents?: number | null;
+}) {
+  const recipient = await resolveRefundRecipientEmail(params.purchaseId);
+  if (!recipient) return;
+
+  const event = await prisma.event.findUnique({
+    where: { id: params.eventId },
+    select: { title: true, slug: true },
+  });
+  const eventTitle = event?.title ?? "Evento ORYA";
+  const baseUrl = getAppBaseUrl();
+  const ticketUrl = `${baseUrl}/me/carteira?section=wallet`;
+  const dedupeKey = `${params.purchaseId}:REFUND:${recipient}`;
+
+  await prisma.emailOutbox.upsert({
+    where: { dedupeKey },
+    update: {},
+    create: {
+      templateKey: "REFUND",
+      recipient,
+      purchaseId: params.purchaseId,
+      dedupeKey,
+      status: "PENDING",
+      payload: {
+        eventTitle,
+        eventSlug: event?.slug ?? null,
+        amountRefundedBaseCents: params.amountRefundedBaseCents ?? null,
+        reason: params.reason,
+        ticketUrl,
+      },
+    },
+  });
+
+  try {
+    await sendRefundEmail({
+      to: recipient,
+      eventTitle,
+      amountRefundedBaseCents: params.amountRefundedBaseCents ?? null,
+      reason: params.reason,
+      ticketUrl,
+    });
+
+    await prisma.emailOutbox.update({
+      where: { dedupeKey },
+      data: { status: "SENT", sentAt: new Date(), errorCode: null },
+    });
+  } catch (err: any) {
+    await prisma.emailOutbox.update({
+      where: { dedupeKey },
+      data: {
+        status: "FAILED",
+        failedAt: new Date(),
+        errorCode: err?.message ?? "SEND_FAILED",
+      },
+    });
+    logError("refund.email_send_failed", err, { purchaseId: params.purchaseId });
+  }
 }
 
 async function processMarkDispute(op: OperationRecord) {
@@ -1208,7 +1418,7 @@ async function processSendNotificationPurchase(op: OperationRecord) {
       payload: { purchaseId, eventId },
     });
   } catch (err) {
-    console.warn("[SEND_NOTIFICATION_PURCHASE] falhou", err);
+    logError("worker.send_notification_purchase_failed", err);
     throw err;
   }
 }

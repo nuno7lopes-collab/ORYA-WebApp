@@ -38,6 +38,7 @@ import {
 } from "@/domain/finance/gateway/stripeGateway";
 import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 import { computeCombinedFees } from "@/lib/fees";
@@ -47,7 +48,9 @@ import { checkoutMetadataSchema, normalizeItemsForMetadata, parseCheckoutItems }
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendRefundLedgerEntries } from "@/domain/finance/ledgerAdjustments";
 import { consumeStripeWebhookEvent } from "@/domain/finance/outbox";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
@@ -63,6 +66,13 @@ import {
 const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const STRIPE_OUTBOX_TYPE = "payment.webhook.received";
+
+const logWebhookInfo = (message: string, context?: Record<string, unknown>) =>
+  logInfo("stripe.webhook", { message, ...(context ?? {}) });
+const logWebhookWarn = (message: string, context?: Record<string, unknown>) =>
+  logWarn("stripe.webhook", { message, ...(context ?? {}) });
+const logWebhookError = (message: string, err: unknown, context?: Record<string, unknown>) =>
+  logError("stripe.webhook", err, { message, ...(context ?? {}) });
 
 type StripeMetadata = Record<string, string | undefined>;
 
@@ -141,7 +151,7 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
     event.id;
   const organizationId = await resolveOrganizationIdFromStripeEvent(event);
   if (!organizationId) {
-    console.warn("[Webhook] organizationId em falta, a ignorar outbox", {
+    logWebhookWarn("organization_id_missing", {
       eventId: event.id,
       eventType: event.type,
     });
@@ -174,11 +184,13 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
       tx,
     );
     if (!log) return { ok: true, deduped: true };
+    const safeStripeEvent = JSON.parse(JSON.stringify(event));
     await recordOutboxEvent(
       {
         eventId: eventLogId,
         eventType: STRIPE_OUTBOX_TYPE,
-        payload: { stripeEventId: event.id, stripeEventType: event.type },
+        dedupeKey: makeOutboxDedupeKey(STRIPE_OUTBOX_TYPE, event.id),
+        payload: { stripeEvent: safeStripeEvent, stripeEventId: event.id, stripeEventType: event.type },
         causationId: event.id,
         correlationId: correlationId ?? null,
       },
@@ -192,12 +204,12 @@ async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const logCtx = { requestId: ctx.requestId, correlationId: ctx.correlationId };
   if (!webhookSecret) {
-    console.error("[Webhook] Missing STRIPE webhook secret", logCtx);
+    logWebhookError("missing_webhook_secret", new Error("STRIPE_WEBHOOK_SECRET_MISSING"), logCtx);
     return respondPlainText(ctx, "Webhook secret not configured", { status: 500 });
   }
   const sig = req.headers.get("stripe-signature");
   if (!sig) {
-    console.error("[Webhook] Missing signature header", logCtx);
+    logWebhookError("missing_signature_header", new Error("STRIPE_SIGNATURE_MISSING"), logCtx);
     return respondPlainText(ctx, "Missing signature", { status: 400 });
   }
 
@@ -209,11 +221,11 @@ async function _POST(req: NextRequest) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown signature validation error";
-    console.error("[Webhook] Invalid signature:", message, logCtx);
+    logWebhookError("invalid_signature", new Error(message), logCtx);
     return respondPlainText(ctx, "Invalid signature", { status: 400 });
   }
 
-  console.log("[Webhook] Event recebido:", {
+  logWebhookInfo("event_received", {
     id: event.id,
     type: event.type,
     ...logCtx,
@@ -225,14 +237,14 @@ async function _POST(req: NextRequest) {
       return respondPlainText(ctx, "ORG_NOT_RESOLVED", { status: 422 });
     }
     if (outbox.deduped) {
-      console.warn("[Webhook] Duplicate event ignored", {
+      logWebhookWarn("duplicate_event_ignored", {
         id: event.id,
         type: event.type,
         ...logCtx,
       });
     }
   } catch (err) {
-    console.error("[Webhook] Error processing event:", err, logCtx);
+    logWebhookError("processing_failed", err, logCtx);
     return respondPlainText(ctx, "WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 
@@ -308,7 +320,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         };
       }
     } catch (err) {
-      console.warn("[fulfillPayment] breakdown inválido no metadata", err);
+      logWebhookWarn("fulfill_payment.breakdown_invalid", { error: err });
     }
   }
 
@@ -327,7 +339,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     const buyerUserId = typeof meta.buyerUserId === "string" ? meta.buyerUserId : null;
 
     if (!resaleId || !ticketId || !buyerUserId) {
-      console.error("[fulfillPayment][RESALE] Metadata incompleta", { resaleId, ticketId, buyerUserId, intentId: intent.id });
+      logWebhookError(
+        "fulfill_payment.resale_metadata_incomplete",
+        new Error("RESALE_METADATA_INCOMPLETE"),
+        { resaleId, ticketId, buyerUserId, intentId: intent.id },
+      );
       return;
     }
 
@@ -339,13 +355,13 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         });
 
         if (!resale || !resale.ticket) {
-          console.error("[fulfillPayment][RESALE] Revenda não encontrada", { resaleId });
+          logWebhookWarn("fulfill_payment.resale_not_found", { resaleId });
           return;
         }
 
         // Idempotência: se já não estiver LISTED, não repetimos a operação
         if (resale.status !== "LISTED") {
-          console.log("[fulfillPayment][RESALE] Revenda já processada ou num estado inválido", {
+          logWebhookInfo("fulfill_payment.resale_already_processed", {
             resaleId,
             status: resale.status,
           });
@@ -401,9 +417,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         });
       });
 
-      console.log("[fulfillPayment][RESALE] processada com sucesso", { resaleId, ticketId, buyerUserId });
+      logWebhookInfo("fulfill_payment.resale_completed", { resaleId, ticketId, buyerUserId });
     } catch (err) {
-      console.error("[fulfillPayment][RESALE] erro", err);
+      logWebhookError("fulfill_payment.resale_failed", err, { resaleId, ticketId, buyerUserId });
     }
 
     return;
@@ -459,7 +475,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       ? meta.purchaseId.trim()
       : null;
 
-  console.log("[fulfillPayment] Início", {
+  logWebhookInfo("fulfill_payment.start", {
     intentId: intent.id,
     stripeEventId,
     userId,
@@ -469,10 +485,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
 
   // Segurança extra: só processamos intents que vieram da nossa app
   if (!userId && !guestEmail) {
-    console.warn(
-      "[fulfillPayment] payment_intent sem userId nem guestEmail em metadata, a ignorar",
-      intent.id
-    );
+    logWebhookWarn("fulfill_payment.metadata_missing_owner", { intentId: intent.id });
     return;
   }
 
@@ -490,7 +503,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         }));
       }
     } catch (err) {
-      console.error("[Webhook] Failed to parse metadata.items:", err);
+      logWebhookError("fulfill_payment.parse_items_failed", err);
     }
   };
 
@@ -506,11 +519,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   }
 
   if (items.length === 0) {
-    console.warn("[fulfillPayment] No items in metadata", meta);
+    logWebhookWarn("fulfill_payment.no_items_metadata", { meta });
     return;
   }
 
-  console.log("[fulfillPayment] Itens depois do parse:", items);
+  logWebhookInfo("fulfill_payment.items_parsed", { items });
 
   // --------- EVENTO ---------
   let eventRecord: EventWithTickets | null = null;
@@ -533,11 +546,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   }
 
   if (!eventRecord) {
-    console.warn("[fulfillPayment] Event not found via metadata:", meta);
+    logWebhookWarn("fulfill_payment.event_not_found", { meta });
     return;
   }
 
-  console.log("[fulfillPayment] Event encontrado:", {
+  logWebhookInfo("fulfill_payment.event_resolved", {
     eventId: eventRecord.id,
     title: eventRecord.title,
   });
@@ -601,7 +614,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   });
 
   if (!metadataValidation.success) {
-    console.warn("[fulfillPayment] INVALID_METADATA", {
+    logWebhookWarn("fulfill_payment.invalid_metadata", {
       intentId: intent.id,
       purchaseId,
       errors: metadataValidation.error.flatten(),
@@ -691,7 +704,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   });
 
   if (already && !process.env.ENABLE_WORKER_PAYMENTS) {
-    console.log("[fulfillPayment] INTENT JÁ PROCESSADO — evitando duplicação:", intent.id);
+    logWebhookInfo("fulfill_payment.intent_already_processed", { intentId: intent.id });
     try {
       await paymentEventRepo(prisma).updateMany({
         where: { stripePaymentIntentId: intent.id },
@@ -709,7 +722,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         },
       });
     } catch (logErr) {
-      console.warn("[fulfillPayment] Falha ao marcar paymentEvent como OK num retry", logErr);
+      logWebhookError("fulfill_payment.payment_event_retry_mark_failed", logErr, {
+        intentId: intent.id,
+      });
     }
     return;
   }
@@ -762,7 +777,9 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       });
     }
   } catch (logErr) {
-    console.warn("[fulfillPayment] Não foi possível registar paymentEvent", logErr);
+    logWebhookError("fulfill_payment.payment_event_register_failed", logErr, {
+      intentId: intent.id,
+    });
   }
 
   // --------- PREPARAR CRIAÇÃO DE BILHETES + STOCK ---------
@@ -788,7 +805,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
 
     const drift = Math.abs(expectedTotal - intent.amount_received);
     if (drift > 2) {
-      console.warn("[fulfillPayment] Divergência entre breakdown.totalCents e amount_received", {
+      logWebhookWarn("fulfill_payment.breakdown_drift", {
         intentId: intent.id,
         breakdownTotal: parsedBreakdown.totalCents,
         recalculatedTotal: expectedTotal,
@@ -808,7 +825,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       if (balanceTx?.fee != null) stripeFeeCents = balanceTx.fee;
     }
   } catch (err) {
-    console.warn("[fulfillPayment] Não foi possível obter balance_transaction; a usar estimativa", err);
+    logWebhookWarn("fulfill_payment.balance_transaction_unavailable", { error: err });
   }
 
   await prisma.$transaction(async (tx) => {
@@ -931,7 +948,10 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
           });
         }
       } catch (err) {
-        console.warn("[fulfillPayment] Falha ao persistir saleSummary/saleLines", err);
+        logWebhookError("fulfill_payment.persist_sales_failed", err, {
+          intentId: intent.id,
+          purchaseId: purchaseAnchor ?? null,
+        });
       }
     }
 
@@ -981,7 +1001,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
                 "code" in err &&
                 (err as { code: string }).code === "P2002";
               if (!isUnique) throw err;
-              console.warn("[fulfillPayment] promoRedemption unique conflict ignorado", {
+              logWebhookWarn("fulfill_payment.promo_redemption_unique_conflict", {
                 promoCodeId,
                 purchaseId: purchaseAnchor ?? null,
                 userId: ownerUserId ?? null,
@@ -989,21 +1009,24 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
               });
             }
         } else {
-          console.warn("[fulfillPayment] promoRedemption não criada por limite atingido", {
+          logWebhookWarn("fulfill_payment.promo_redemption_limit_reached", {
             promoCodeId,
             totalUses,
             userUses,
           });
         }
       } catch (err) {
-        console.warn("[fulfillPayment] Não foi possível registar promo redemption (tx)", err);
+        logWebhookError("fulfill_payment.promo_redemption_register_failed", err, {
+          promoCodeId,
+          purchaseId: purchaseAnchor ?? null,
+        });
       }
     }
 
     for (const item of items) {
       const ticketType = eventRecord.ticketTypes.find((t) => t.id === item.ticketTypeId);
       if (!ticketType) {
-        console.warn("[fulfillPayment] TicketType not found:", item.ticketTypeId);
+        logWebhookWarn("fulfill_payment.ticket_type_not_found", { ticketTypeId: item.ticketTypeId });
         continue;
       }
 
@@ -1016,7 +1039,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       ) {
         const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
         if (remaining <= 0 || qty > remaining) {
-          console.warn("[fulfillPayment] Insufficient stock for:", {
+          logWebhookWarn("fulfill_payment.insufficient_stock", {
             ticketTypeId: ticketType.id,
             remaining,
             requested: qty,
@@ -1150,11 +1173,11 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   });
 
   if (createdTicketsCount === 0) {
-    console.warn("[fulfillPayment] No valid items to process");
+    logWebhookWarn("fulfill_payment.no_valid_items", { intentId: intent.id });
     return;
   }
 
-  console.log("[fulfillPayment] OK, items processados:", {
+  logWebhookInfo("fulfill_payment.completed", {
     intentId: intent.id,
     userId,
     items,
@@ -1188,12 +1211,15 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         ticketsCount: createdTicketsCount,
         ticketUrl: userId ? `${baseUrl}/me/carteira?section=wallet` : `${baseUrl}/`,
       });
-      console.log("[fulfillPayment] Email de confirmação enviado para", targetEmail);
+      logWebhookInfo("fulfill_payment.confirmation_email_sent", { targetEmail });
     } catch (emailErr) {
-      console.error("[fulfillPayment] Falha ao enviar email de confirmação", emailErr);
+      logWebhookError("fulfill_payment.confirmation_email_failed", emailErr, {
+        targetEmail,
+        intentId: intent.id,
+      });
     }
   } else {
-    console.warn("[fulfillPayment] Email do comprador não encontrado para envio de recibo");
+    logWebhookWarn("fulfill_payment.buyer_email_missing", { intentId: intent.id });
   }
 
   return;
@@ -1203,12 +1229,12 @@ async function fetchUserEmail(userId: string) {
   try {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
     if (error) {
-      console.warn("[fetchUserEmail] erro ao obter user", error);
+      logWebhookError("fetch_user_email.failed", error, { userId });
       return null;
     }
     return data.user?.email ?? null;
   } catch (err) {
-    console.warn("[fetchUserEmail] erro inesperado", err);
+    logWebhookError("fetch_user_email.unexpected", err, { userId });
     return null;
   }
 }
@@ -1231,7 +1257,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
       : null;
 
   if (!Number.isFinite(pairingId) || !Number.isFinite(slotId) || !Number.isFinite(ticketTypeId) || !Number.isFinite(eventId)) {
-    console.warn("[handlePadelSplitPayment] metadata incompleta", meta);
+    logWebhookWarn("padel_split.metadata_incomplete", { meta });
     return;
   }
 
@@ -1240,7 +1266,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
     select: { id: true, price: true, currency: true, soldQuantity: true, totalQuantity: true, eventId: true },
   });
   if (!ticketType || ticketType.eventId !== eventId) {
-    console.warn("[handlePadelSplitPayment] ticketType inválido", { ticketTypeId, eventId });
+    logWebhookWarn("padel_split.ticket_type_invalid", { ticketTypeId, eventId });
     return;
   }
 
@@ -1256,7 +1282,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
     },
   });
   if (!event) {
-    console.warn("[handlePadelSplitPayment] evento inválido", { eventId });
+    logWebhookWarn("padel_split.event_invalid", { eventId });
     return;
   }
 
@@ -1271,7 +1297,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
       if (balanceTx?.fee != null) stripeFeeForIntentValue = balanceTx.fee;
     }
   } catch (err) {
-    console.warn("[handlePadelSplitPayment] Não foi possível obter balance_transaction; a usar estimativa", err);
+    logWebhookWarn("padel_split.balance_transaction_unavailable", { error: err, intentId: intent.id });
   }
   if (!stripeFeeForIntentValue) {
     const stripeBaseFees = await getStripeBaseFees();
@@ -1284,7 +1310,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
   if (ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
     const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
     if (remaining < 1) {
-      console.warn("[handlePadelSplitPayment] stock insuficiente", {
+      logWebhookWarn("padel_split.stock_insufficient", {
         ticketTypeId,
         remaining,
         pairingId,
@@ -1593,7 +1619,7 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent, stripeEventId?: 
   const meta = (intent.metadata ?? {}) as Record<string, string>;
   const pairingId = Number(meta.pairingId);
   if (!Number.isFinite(pairingId)) {
-    console.warn("[handleSecondCharge] pairingId ausente no metadata", meta);
+    logWebhookWarn("padel_second_charge.pairing_id_missing", { meta });
     return;
   }
   const now = new Date();
@@ -1737,7 +1763,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
       : null;
 
   if (!Number.isFinite(pairingId) || !Number.isFinite(ticketTypeId) || !Number.isFinite(eventId)) {
-    console.warn("[handlePadelFullPayment] metadata incompleta", meta);
+    logWebhookWarn("padel_full.metadata_incomplete", { meta });
     return;
   }
 
@@ -1746,14 +1772,14 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
     select: { id: true, price: true, currency: true, soldQuantity: true, totalQuantity: true, eventId: true },
   });
   if (!ticketType || ticketType.eventId !== eventId) {
-    console.warn("[handlePadelFullPayment] ticketType inválido", { ticketTypeId, eventId });
+    logWebhookWarn("padel_full.ticket_type_invalid", { ticketTypeId, eventId });
     return;
   }
 
   if (ticketType.totalQuantity !== null && ticketType.totalQuantity !== undefined) {
     const remaining = ticketType.totalQuantity - ticketType.soldQuantity;
     if (remaining < 2) {
-      console.warn("[handlePadelFullPayment] stock insuficiente", {
+      logWebhookWarn("padel_full.stock_insufficient", {
         ticketTypeId,
         remaining,
         pairingId,
@@ -1843,11 +1869,11 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
     },
   });
   if (!event) {
-    console.warn("[handlePadelFullPayment] evento inválido", { eventId });
+    logWebhookWarn("padel_full.event_invalid", { eventId });
     return;
   }
   if (!event.organizationId) {
-    console.warn("[handlePadelFullPayment] evento sem organizationId", { eventId });
+    logWebhookWarn("padel_full.event_missing_org", { eventId });
     return;
   }
   const eventOrganizationId = event.organizationId;
@@ -2146,6 +2172,7 @@ async function publishPaymentRefunded(params: {
       {
         eventId: eventLogId,
         eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED, idempotencyKey),
         payload,
         causationId: idempotencyKey,
         correlationId: params.paymentId,
@@ -2162,7 +2189,7 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
       : charge.payment_intent?.id;
 
   if (!paymentIntentId) {
-    console.warn("[handleRefund] charge.refunded sem payment_intent");
+    logWebhookWarn("handle_refund.payment_intent_missing", { chargeId: charge.id });
     return;
   }
 
@@ -2183,7 +2210,7 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
   });
 
   if (!tickets.length) {
-    console.warn("[handleRefund] Nenhum ticket associado ao payment_intent", paymentIntentId);
+    logWebhookWarn("handle_refund.no_tickets_for_payment_intent", { paymentIntentId });
     return;
   }
 
@@ -2262,7 +2289,19 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
     source: "stripe.webhook",
   });
 
-  console.log("[handleRefund] Tickets marcados como REFUNDED", {
+  const ledgerPaymentId = saleSummary?.purchaseId ?? paymentId ?? null;
+  if (ledgerPaymentId) {
+    const baseCausationId = saleSummary?.purchaseId
+      ? `refund:TICKET_ORDER:${saleSummary.purchaseId}`
+      : `refund:${paymentIntentId}`;
+    await appendRefundLedgerEntries({
+      paymentId: ledgerPaymentId,
+      causationId: baseCausationId,
+      correlationId: ledgerPaymentId,
+    });
+  }
+
+  logWebhookInfo("handle_refund.tickets_refunded", {
     paymentIntentId,
     ticketCount: tickets.length,
   });

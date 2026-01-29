@@ -19,6 +19,10 @@ curl -s \
   - `ok=false`
   - `db.ok=false`
   - `db.latencyMs` muito alto (definir threshold por ambiente)
+  - `outbox.pendingCount` muito alto
+  - `outbox.deadLetteredLast24h > 0`
+  - `operations.failedCount` ou `operations.deadLetterCount` acima do normal
+  - `payments.errorEventsLast24h` crescente
 
 ### SLO
 - `GET /api/internal/ops/slo`
