@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 function parseLimit(value: string | null) {
   const raw = Number(value ?? "100");
@@ -63,7 +64,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("GET /api/internal/ops/feed error:", err);
+    logError("internal.ops.feed_error", err, { requestId: ctx.requestId });
     return jsonWrap(
       {
         ok: false,

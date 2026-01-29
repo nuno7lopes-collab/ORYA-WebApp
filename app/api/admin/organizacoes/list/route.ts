@@ -3,6 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
+import { logError } from "@/lib/observability/logger";
 
 const MAX_LIMIT = 200;
 
@@ -76,7 +77,7 @@ async function _GET(req: NextRequest) {
 
     return jsonWrap({ ok: true, organizations: normalized });
   } catch (err) {
-    console.error("[admin][organizacoes][list] error:", err);
+    logError("admin.organizacoes.list_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

@@ -85,13 +85,14 @@ export async function createHardBlock(input: {
 
     const eventLogId = crypto.randomUUID();
     const title = buildTitle(block.label ?? null);
+    const idempotencyKey = `hard_block.created:${block.id}`;
 
     await appendEventLog(
       {
         eventId: eventLogId,
         organizationId,
         eventType: "hard_block.created",
-        idempotencyKey: `hard_block.created:${block.id}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.HARD_BLOCK,
         sourceId: String(block.id),
@@ -118,6 +119,7 @@ export async function createHardBlock(input: {
       {
         eventId: eventLogId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: idempotencyKey,
         payload: {
           eventId: eventLogId,
           sourceType: SourceType.HARD_BLOCK,
@@ -214,13 +216,14 @@ export async function updateHardBlock(input: {
 
     const eventLogId = crypto.randomUUID();
     const title = buildTitle(updated.label ?? null);
+    const idempotencyKey = `hard_block.updated:${updated.id}:${hashPayload(updated)}`;
 
     await appendEventLog(
       {
         eventId: eventLogId,
         organizationId,
         eventType: "hard_block.updated",
-        idempotencyKey: `hard_block.updated:${updated.id}:${hashPayload(updated)}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.HARD_BLOCK,
         sourceId: String(updated.id),
@@ -247,6 +250,7 @@ export async function updateHardBlock(input: {
       {
         eventId: eventLogId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: idempotencyKey,
         payload: {
           eventId: eventLogId,
           sourceType: SourceType.HARD_BLOCK,
@@ -282,13 +286,14 @@ export async function deleteHardBlock(input: {
 
     const eventLogId = crypto.randomUUID();
     const title = buildTitle(existing.label ?? null);
+    const idempotencyKey = `hard_block.deleted:${existing.id}:${hashPayload(existing)}`;
 
     await appendEventLog(
       {
         eventId: eventLogId,
         organizationId,
         eventType: "hard_block.deleted",
-        idempotencyKey: `hard_block.deleted:${existing.id}:${hashPayload(existing)}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.HARD_BLOCK,
         sourceId: String(existing.id),
@@ -315,6 +320,7 @@ export async function deleteHardBlock(input: {
       {
         eventId: eventLogId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: idempotencyKey,
         payload: {
           eventId: eventLogId,
           sourceType: SourceType.HARD_BLOCK,
@@ -350,13 +356,14 @@ export async function deleteHardBlocksByEvent(input: {
   for (const block of blocks) {
     const eventLogId = crypto.randomUUID();
     const title = buildTitle(block.label ?? null);
+    const idempotencyKey = `hard_block.deleted:${block.id}:${hashPayload(block)}`;
 
     await appendEventLog(
       {
         eventId: eventLogId,
         organizationId,
         eventType: "hard_block.deleted",
-        idempotencyKey: `hard_block.deleted:${block.id}:${hashPayload(block)}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.HARD_BLOCK,
         sourceId: String(block.id),
@@ -383,6 +390,7 @@ export async function deleteHardBlocksByEvent(input: {
       {
         eventId: eventLogId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: idempotencyKey,
         payload: {
           eventId: eventLogId,
           sourceType: SourceType.HARD_BLOCK,

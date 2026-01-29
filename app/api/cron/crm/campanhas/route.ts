@@ -9,6 +9,7 @@ import { sendCrmCampaign } from "@/lib/crm/campaignSend";
 import { CrmCampaignStatus } from "@prisma/client";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError, logInfo } from "@/lib/observability/logger";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
@@ -85,11 +86,11 @@ async function _POST(req: NextRequest) {
     }
 
     const sent = results.filter((item) => item.ok).length;
-    console.info("[crm][campanhas] cron", { processed: results.length, sent });
+    logInfo("cron.crm.campanhas", { processed: results.length, sent });
 
     return jsonWrap({ ok: true, processed: results.length, sent, results }, { status: 200 });
   } catch (err) {
-    console.error("[crm][campanhas] cron error", err);
+    logError("cron.crm.campanhas_error", err);
     return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }

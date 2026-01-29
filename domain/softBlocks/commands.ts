@@ -134,13 +134,14 @@ export async function createSoftBlock(input: {
 
     const eventId = crypto.randomUUID();
     const title = buildTitle(reason);
+    const idempotencyKey = `soft_block.created:${softBlock.id}`;
 
     await appendEventLog(
       {
         eventId,
         organizationId,
         eventType: "soft_block.created",
-        idempotencyKey: `soft_block.created:${softBlock.id}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.SOFT_BLOCK,
         sourceId: String(softBlock.id),
@@ -164,6 +165,7 @@ export async function createSoftBlock(input: {
       {
         eventId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: idempotencyKey,
         payload: {
           eventId,
           sourceType: SourceType.SOFT_BLOCK,
@@ -276,6 +278,7 @@ export async function updateSoftBlock(input: {
       {
         eventId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: idempotencyKey,
         payload: {
           eventId,
           sourceType: SourceType.SOFT_BLOCK,
@@ -351,6 +354,7 @@ export async function deleteSoftBlock(input: {
       {
         eventId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: idempotencyKey,
         payload: {
           eventId,
           sourceType: SourceType.SOFT_BLOCK,

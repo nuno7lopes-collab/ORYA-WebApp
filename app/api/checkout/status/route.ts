@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { CheckoutStatus, deriveCheckoutStatusFromPayment } from "@/domain/finance/status";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 type Status = CheckoutStatus;
 
@@ -231,7 +232,7 @@ export async function GET(req: NextRequest) {
       { status: 200, headers: NO_STORE_HEADERS },
     );
   } catch (err) {
-    console.error("[checkout/status] erro inesperado", err);
+    logError("checkout.status.unexpected_error", err, { requestId: ctx.requestId });
     return respondError(
       ctx,
       {

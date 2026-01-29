@@ -44,6 +44,8 @@
     "@hookform/resolvers": "^5.2.2",
     "@prisma/adapter-pg": "^7.0.0",
     "@prisma/client": "^7.2.0",
+    "@sentry/browser": "^9.47.1",
+    "@sentry/node": "^9.47.1",
     "@stripe/react-stripe-js": "^5.4.0",
     "@stripe/stripe-js": "^8.5.2",
     "@supabase/auth-helpers-nextjs": "^0.10.0",

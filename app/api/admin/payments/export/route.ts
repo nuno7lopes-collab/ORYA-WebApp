@@ -4,6 +4,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma, PaymentMode } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 const MAX_EXPORT = 5000;
 
@@ -96,7 +97,7 @@ async function _GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("[admin/payments/export]", err);
+    logError("admin.payments.export_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

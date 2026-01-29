@@ -1,5 +1,6 @@
 export const runtime = "nodejs";
 
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, Prisma, SourceType } from "@prisma/client";
@@ -19,6 +20,23 @@ const DEFAULT_DURATION_MINUTES = 60;
 const DEFAULT_SLOT_MINUTES = 15;
 const DEFAULT_BUFFER_MINUTES = 5;
 const DEFAULT_REST_MINUTES = 10;
+
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = canonicalize(obj[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+};
+
+const hashPayload = (payload: Record<string, unknown>) =>
+  crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
 
 const parseDate = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -601,9 +619,20 @@ async function _POST(req: NextRequest) {
           requestMeta: getRequestMeta(req),
         } as Prisma.InputJsonValue;
 
+        const dedupeSnapshot = {
+          eventId: event.id,
+          scheduledUpdates: payload.scheduledUpdates,
+          skipped,
+          matchIds: targetMatchIds ?? null,
+          priority,
+          minRestMinutes,
+        } as Record<string, unknown>;
+        const dedupeKey = `padel_auto_schedule:${event.id}:${hashPayload(dedupeSnapshot)}`;
+
         const outbox = await recordOutboxEvent(
           {
             eventType: "PADEL_AUTO_SCHEDULE_REQUESTED",
+            dedupeKey,
             payload,
           },
           tx,

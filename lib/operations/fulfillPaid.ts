@@ -9,6 +9,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
+import { logError } from "@/lib/observability/logger";
 
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
@@ -364,7 +365,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         payload: { purchaseId, email: ownerEmail, userId: ownerUserId ?? null },
       });
     } catch (err) {
-      console.warn("[fulfillPaidIntent] Falha ao enfileirar email de recibo", err);
+      logError("fulfill_paid.enqueue_receipt_failed", err, { purchaseId });
     }
   }
 
@@ -377,7 +378,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         payload: { purchaseId, userId: ownerUserId, eventId },
       });
     } catch (err) {
-      console.warn("[fulfillPaidIntent] Falha ao enfileirar notificação de compra", err);
+      logError("fulfill_paid.enqueue_notification_failed", err, { purchaseId });
     }
   }
 
@@ -390,7 +391,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         payload: { purchaseId, paymentIntentId: intent.id, promoCodeId, userId: ownerUserId, guestEmail: ownerEmail },
       });
     } catch (err) {
-      console.warn("[fulfillPaidIntent] Falha ao enfileirar APPLY_PROMO_REDEMPTION", err);
+      logError("fulfill_paid.enqueue_apply_promo_failed", err, { purchaseId });
     }
   }
 
@@ -413,7 +414,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
         },
       });
     } catch (err) {
-      console.warn("[fulfillPaidIntent] Falha ao criar interação CRM", err);
+      logError("fulfill_paid.crm_interaction_failed", err, { purchaseId });
     }
   }
 

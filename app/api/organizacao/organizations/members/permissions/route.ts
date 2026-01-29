@@ -227,6 +227,7 @@ export async function PATCH(req: NextRequest) {
         const outbox = await recordOutboxEvent(
           {
             eventType: "organization.permission.cleared",
+            dedupeKey: `org.permission.cleared:${organizationId}:${targetUserId}:${moduleKey}`,
             payload: {
               organizationId,
               targetUserId,
@@ -308,6 +309,7 @@ export async function PATCH(req: NextRequest) {
       const outbox = await recordOutboxEvent(
         {
           eventType: "organization.permission.updated",
+          dedupeKey: `org.permission.updated:${organizationId}:${targetUserId}:${moduleKey}:${accessLevel}`,
           payload: {
             organizationId,
             targetUserId,

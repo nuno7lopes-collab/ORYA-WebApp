@@ -19,6 +19,7 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { logError } from "@/lib/observability/logger";
 
 type Body = {
   qrPayload?: string;
@@ -215,7 +216,7 @@ export async function POST(req: NextRequest) {
         policyVersionApplied: ent.policyVersionApplied ?? null,
       });
     }
-    console.error("[internal/checkin/consume] error", err);
+    logError("internal.checkin.consume_error", err, { requestId: ctx.requestId });
     return respondError(
       ctx,
       { errorCode: "CHECKIN_FAILED", message: "Erro ao consumir check-in.", retryable: true },

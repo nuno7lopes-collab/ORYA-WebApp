@@ -13,6 +13,7 @@ import {
 import crypto from "crypto";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { checkoutKey } from "@/lib/stripe/idempotency";
+import { logError } from "@/lib/observability/logger";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
@@ -359,7 +360,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
         },
       });
     } catch (err) {
-      console.warn("[fulfillPadelFull] Falha ao criar interação CRM", err);
+      logError("fulfill_padel_full.crm_interaction_failed", err, { pairingId });
     }
   }
 

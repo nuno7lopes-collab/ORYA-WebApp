@@ -6,6 +6,7 @@ import { logAccountEvent } from "@/lib/accountEvents";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { logError } from "@/lib/observability/logger";
 
 type Action = "ban" | "unban" | "hard_delete";
 
@@ -49,7 +50,7 @@ async function _POST(req: NextRequest) {
       action = (form.get("action") as Action | null) ?? undefined;
     }
   } catch (err) {
-    console.error("[admin/utilizadores/manage] parse error", err);
+    logError("admin.utilizadores.manage_parse_failed", err);
     return jsonWrap({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
   }
 
@@ -119,7 +120,7 @@ async function _POST(req: NextRequest) {
       { status: 400 },
     );
   } catch (err) {
-    console.error("[admin/utilizadores/manage] action error:", err);
+    logError("admin.utilizadores.manage_action_failed", err);
     return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 },

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     return respondOk(ctx, { retried: true }, { status: 200 });
   } catch (err) {
-    console.error("[admin/refunds/retry]", err);
+    logError("admin.refunds.retry_failed", err);
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

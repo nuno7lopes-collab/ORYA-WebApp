@@ -7,6 +7,7 @@ import { enqueueOperation } from "@/lib/operations/enqueue";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { logWarn } from "@/lib/observability/logger";
 
 const DEFAULT_STUCK_MINUTES = 15;
 
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
     if (hasSummary) continue;
     const dedupe = ev.stripePaymentIntentId ?? ev.purchaseId ?? null;
     if (!dedupe) {
-      console.warn("[internal/reconcile] missing dedupe key for stuck payment event", {
+      logWarn("internal.reconcile.missing_dedupe", {
         paymentIntentId: ev.stripePaymentIntentId ?? null,
         purchaseId: ev.purchaseId ?? null,
       });

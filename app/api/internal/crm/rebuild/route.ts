@@ -4,6 +4,7 @@ import { rebuildCrmCustomers } from "@/lib/crm/rebuild";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { parseOrganizationId, requireOrganizationIdFromPayload } from "@/lib/organizationId";
+import { logError } from "@/lib/observability/logger";
 
 async function _POST(req: NextRequest) {
   try {
@@ -38,7 +39,7 @@ async function _POST(req: NextRequest) {
       ...result,
     });
   } catch (err) {
-    console.error("POST /api/internal/crm/rebuild error:", err);
+    logError("internal.crm.rebuild_error", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

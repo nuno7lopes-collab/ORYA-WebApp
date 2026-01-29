@@ -6,6 +6,7 @@ import { refundKey } from "@/lib/stripe/idempotency";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     return respondOk(ctx, { queued: true, purchaseId }, { status: 200 });
   } catch (err) {
-    console.error("[admin/payments/refund]", err);
+    logError("admin.payments.refund_failed", err);
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

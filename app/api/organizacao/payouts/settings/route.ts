@@ -10,6 +10,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 function isValidFeeMode(value: string | null | undefined): value is FeeMode {
   if (!value) return false;
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[organização/payouts/settings][POST] erro", err);
+    logError("payouts.settings.error", err, { requestId: ctx.requestId });
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

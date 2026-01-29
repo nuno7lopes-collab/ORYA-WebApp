@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { logError } from "@/lib/observability/logger";
 
 export type OperationStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "DEAD_LETTER";
 
@@ -91,9 +92,9 @@ export async function enqueueOperation(params: EnqueueParams) {
         await insert();
         return;
       } catch (healErr) {
-        console.error("[operations][enqueue] heal OperationStatus failed", { dedupeKey, healErr });
+        logError("operations.enqueue.heal_failed", healErr, { dedupeKey });
       }
     }
-    console.error("[operations][enqueue] failed", { operationType, dedupeKey, err });
+    logError("operations.enqueue.failed", err, { operationType, dedupeKey });
   }
 }

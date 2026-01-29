@@ -11,6 +11,7 @@ Keep secrets out of git. Use single-line base64 for Apple keys.
 - RESEND_FROM_EMAIL (recommended)
 - APP_BASE_URL / NEXT_PUBLIC_BASE_URL (recommended, used by checkout flows)
 - ORYA_CRON_SECRET (required for /api/internal + /api/cron)
+- SENTRY_DSN (error tracking)
 
 ## Supabase
 Required:
@@ -85,3 +86,7 @@ Optional:
 ## Local dev / CI
 - Use `.env` or `.env.local` locally.
 - CI can use dummy values for non-prod gates (do not use real secrets).
+
+## Client (optional)
+- NEXT_PUBLIC_SENTRY_DSN (error tracking in browser)
+- NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE

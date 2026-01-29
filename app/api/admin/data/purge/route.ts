@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError, logWarn } from "@/lib/observability/logger";
 
 type PurgeMode = "ALL" | "KEEP_PROFILES";
 type PurgePayload = {
@@ -68,7 +69,7 @@ async function _POST(req: Request) {
       await prisma.$executeRawUnsafe('TRUNCATE TABLE "auth"."users" RESTART IDENTITY CASCADE;');
     }
 
-    console.warn("[admin/data/purge] completed", {
+    logWarn("admin.data_purge.completed", {
       mode,
       tableCount: tableNames.length,
       keepProfiles: mode === "KEEP_PROFILES",
@@ -85,7 +86,7 @@ async function _POST(req: Request) {
       { status: 200 },
     );
   } catch (error) {
-    console.error("[admin/data/purge] error:", error);
+    logError("admin.data_purge.failed", error);
     return jsonWrap({ ok: false, error: "Erro inesperado." }, { status: 500 });
   }
 }

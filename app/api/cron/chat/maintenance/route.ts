@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 async function _GET(req: NextRequest) {
   try {
@@ -174,7 +175,7 @@ async function _GET(req: NextRequest) {
       expiredThreads: expiredIds.length,
     });
   } catch (err) {
-    console.error("[CRON CHAT MAINTENANCE]", err);
+    logError("cron.chat.maintenance_error", err);
     return jsonWrap({ ok: false, error: "Internal chat maintenance error" }, { status: 500 });
   }
 }

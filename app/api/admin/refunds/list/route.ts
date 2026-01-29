@@ -5,6 +5,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import type { Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 const PAGE_SIZE = 50;
 
@@ -119,7 +120,7 @@ export async function GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[admin/refunds/list]", err);
+    logError("admin.refunds.list_failed", err);
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

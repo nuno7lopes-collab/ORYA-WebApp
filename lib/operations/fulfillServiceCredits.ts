@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { retrieveCharge } from "@/domain/finance/gateway/stripeGateway";
 import { getStripeBaseFees } from "@/lib/platformSettings";
 import { addCredits } from "@/lib/reservas/credits";
+import { logError } from "@/lib/observability/logger";
 
 function parseNumber(value: unknown) {
   const parsed = Number(value);
@@ -66,7 +67,7 @@ export async function fulfillServiceCreditPurchaseIntent(intent: Stripe.PaymentI
       }
     }
   } catch (err) {
-    console.warn("[fulfillServiceCredits] falha ao ler balance_transaction", err);
+    logError("fulfill_service_credits.balance_transaction_failed", err, { paymentIntentId });
   }
 
   const amountCents = intent.amount_received ?? intent.amount ?? 0;

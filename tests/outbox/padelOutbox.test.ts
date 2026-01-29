@@ -25,6 +25,7 @@ vi.mock("@/lib/prisma", () => {
     findUnique: vi.fn(() => matchState),
   };
   const outboxEvent = {
+    findUnique: vi.fn(() => null),
     create: vi.fn(({ data }: any) => ({
       ...data,
       eventId: data.eventId ?? "evt-1",

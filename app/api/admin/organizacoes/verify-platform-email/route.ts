@@ -8,6 +8,7 @@ import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { OrgType, PendingPayoutStatus } from "@prisma/client";
+import { logError } from "@/lib/observability/logger";
 
 type VerifyPlatformEmailBody = {
   organizationId?: number | string;
@@ -132,10 +133,9 @@ export async function POST(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[/api/admin/organizacoes/verify-platform-email] Erro inesperado:", {
+    logError("admin.organizacoes.verify_platform_email_failed", err, {
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
-      err,
     });
     return fail(ctx, 500, "INTERNAL_ERROR");
   }

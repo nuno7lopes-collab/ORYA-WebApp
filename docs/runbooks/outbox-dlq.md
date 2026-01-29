@@ -6,6 +6,7 @@ para identificar causa e reprocessar sem quebrar idempotencia.
 ## Como identificar (deadLetteredAt)
 - Sinal: `deadLetteredAt` preenchido e `publishedAt == null`.
 - Campos uteis: `eventId`, `eventType`, `attempts`, `correlationId`, `createdAt`.
+- Chaves de idempotencia: `dedupeKey` usa formato canonico `eventType:causationId`.
 - Onde ver:
   - Endpoint interno: `GET /api/internal/outbox/dlq`
   - Logs do worker: `domain/outbox/publisher.ts` emite `[outbox] dead-letter`.
@@ -38,9 +39,14 @@ curl -s -X POST \
 
 Checklist antes do replay:
 - [ ] Causa raiz identificada e corrigida
-- [ ] Consumer idempotente (dedupe por `eventId`/`dedupeKey`)
+- [ ] Consumer idempotente (dedupe por `dedupeKey=eventType:causationId`)
 - [ ] Nao ha side-effects irreversiveis sem idempotencia
 - [ ] Confirmar que `publishedAt == null`
+
+## Crash recovery (claims "presos")
+- Sinal: `claimedAt` muito antigo e `publishedAt == null`.
+- Mecanismo: o publisher re-clama eventos com `claimedAt` antigo (stale) automaticamente.
+- Acao: garantir que o worker esta a correr; nao mexer manualmente em `claimedAt`.
 
 ## O que NAO fazer
 - NAO editar rows do outbox/ledger manualmente.

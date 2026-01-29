@@ -2057,9 +2057,12 @@ model Operation {
 model OutboxEvent {
   eventId        String   @id @db.Uuid @map("event_id")
   eventType      String   @map("event_type")
+  dedupeKey      String   @unique(map: "outbox_events_dedupe_key_unique") @map("dedupe_key") @db.Text
   payload        Json     @default("{}")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   publishedAt    DateTime? @map("published_at") @db.Timestamptz(6)
+  claimedAt      DateTime? @map("claimed_at") @db.Timestamptz(6)
+  processingToken String?  @map("processing_token") @db.Uuid
   attempts       Int      @default(0)
   nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(6)
   causationId    String?  @map("causation_id")
@@ -2068,6 +2071,7 @@ model OutboxEvent {
 
   @@index([publishedAt, nextAttemptAt], map: "outbox_events_publish_idx")
   @@index([deadLetteredAt], map: "outbox_events_dead_letter_idx")
+  @@index([claimedAt], map: "outbox_events_claimed_idx")
   @@map("outbox_events")
   @@schema("app_v3")
 }

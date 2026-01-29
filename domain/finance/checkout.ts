@@ -6,9 +6,11 @@ import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { consumeInviteToken } from "@/lib/invites/inviteTokens";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { FeeMode, LedgerEntryType, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
+import { logWarn } from "@/lib/observability/logger";
 
 export type CreateCheckoutInput = {
   sourceType: SourceType;
@@ -516,7 +518,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
     });
     if (existingById) {
       if (existingById.idempotencyKey !== input.idempotencyKey) {
-        console.warn("[finance/checkout] paymentId already exists with different idempotencyKey", {
+        logWarn("finance.checkout.payment_id_mismatch", {
           paymentId: desiredPaymentId,
           existingIdempotencyKey: existingById.idempotencyKey,
           incomingIdempotencyKey: input.idempotencyKey,
@@ -544,7 +546,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
   });
   if (existing) {
     if (desiredPaymentId && desiredPaymentId !== existing.id) {
-      console.warn("[finance/checkout] idempotencyKey resolved to different paymentId", {
+      logWarn("finance.checkout.idempotency_mismatch", {
         desiredPaymentId,
         resolvedPaymentId: existing.id,
         idempotencyKey: input.idempotencyKey,
@@ -704,6 +706,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
         {
           eventId: eventLogId,
           eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_CREATED,
+          dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_CREATED, input.idempotencyKey),
           payload,
           causationId: input.idempotencyKey,
           correlationId: paymentId,

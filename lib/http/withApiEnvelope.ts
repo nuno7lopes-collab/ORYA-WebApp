@@ -1,5 +1,6 @@
 import { buildResponseHeaders, getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondLegacy } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 const JSON_CONTENT_TYPE = "application/json";
 const DOWNLOAD_CONTENT_TYPES = [
@@ -243,6 +244,17 @@ export function withApiEnvelope<Req extends Request, Args extends any[]>(
       }
       return respondLegacy(ctx, result);
     } catch (err) {
+      logError(
+        "api",
+        err,
+        {
+          requestId: ctx.requestId,
+          correlationId: ctx.correlationId,
+          path: "url" in req ? (req as Request).url : undefined,
+          method: (req as Request).method,
+        },
+        { fallbackToRequestContext: false },
+      );
       return respondError(
         ctx,
         {

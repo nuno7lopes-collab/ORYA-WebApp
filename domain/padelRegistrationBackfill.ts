@@ -29,6 +29,7 @@ export async function backfillPadelRegistrationOutbox(params?: { limit?: number;
     if (!statusChangedExists) {
       await recordOutboxEvent({
         eventType: "PADREG_STATUS_CHANGED",
+        dedupeKey: `padelreg:${reg.id}:status:${reg.status}`,
         payload: {
           registrationId: reg.id,
           from: null,
@@ -51,6 +52,7 @@ export async function backfillPadelRegistrationOutbox(params?: { limit?: number;
       if (!expiredExists) {
         await recordOutboxEvent({
           eventType: "PADREG_EXPIRED",
+          dedupeKey: `padelreg:${reg.id}:expired`,
           payload: {
             registrationId: reg.id,
             reason: "BACKFILL",

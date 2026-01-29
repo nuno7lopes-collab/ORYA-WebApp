@@ -8,6 +8,7 @@ import { getStripeBaseFees } from "@/lib/platformSettings";
 import type { Prisma, PaymentMode } from "@prisma/client";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 type Aggregate = {
   grossCents: number;
@@ -172,7 +173,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[admin/payments/overview]", err);
+    logError("admin.payments.overview_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

@@ -12,6 +12,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError, logInfo } from "@/lib/observability/logger";
 
 export async function GET(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!organization.stripeAccountId) {
-      console.log("[stripe][status] no account", { organizationId: organization.id });
+      logInfo("stripe.status.no_account", { requestId: ctx.requestId, organizationId: organization.id });
       return respondOk(ctx, {
         status: "NOT_CONNECTED",
         charges_enabled: false,
@@ -82,7 +83,8 @@ export async function GET(req: NextRequest) {
         ? "CONNECTED"
         : "INCOMPLETE";
 
-    console.log("[stripe][status] refreshed", {
+    logInfo("stripe.status.refreshed", {
+      requestId: ctx.requestId,
       organizationId: organization.id,
       accountId: account.id,
       charges_enabled,
@@ -121,7 +123,7 @@ export async function GET(req: NextRequest) {
       accountId: account.id,
     });
   } catch (err) {
-    console.error("[stripe][status] error", err);
+    logError("stripe.status.error", err, { requestId: ctx.requestId });
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

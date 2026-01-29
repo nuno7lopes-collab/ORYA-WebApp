@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { LedgerEntryType, ProcessorFeesStatus, Prisma } from "@prisma/client";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 
 export type ReconcilePaymentFeesInput = {
@@ -116,6 +117,7 @@ export async function reconcilePaymentFees(
           {
             eventId: eventLogId,
             eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+            dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED, input.causationId),
             payload,
             causationId: input.causationId,
             correlationId: payment.id,
@@ -180,6 +182,7 @@ export async function reconcilePaymentFees(
             {
               eventId: eventLogId,
               eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+              dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED, input.causationId),
               payload,
               causationId: input.causationId,
               correlationId: payment.id,
@@ -232,6 +235,7 @@ export async function reconcilePaymentFees(
         {
           eventId: eventLogId,
           eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED,
+          dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_FEES_RECONCILED, input.causationId),
           payload,
           causationId: input.causationId,
           correlationId: payment.id,

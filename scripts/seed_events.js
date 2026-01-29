@@ -44,6 +44,11 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+// Dev-only: allow self-signed certs for local/preview DBs.
+if (process.env.NODE_ENV !== "production") {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === "production" ? undefined : { rejectUnauthorized: false },
@@ -99,6 +104,11 @@ async function main() {
   const organizationExisting = await prisma.organization.findFirst({
     where: { username: organizationUsername },
   });
+  if (!organizationExisting) {
+    await prisma.$executeRawUnsafe(
+      "SELECT setval(pg_get_serial_sequence('app_v3.organizations','id'), (SELECT COALESCE(MAX(id),1) FROM app_v3.organizations))",
+    );
+  }
   const organization =
     organizationExisting ??
     (await prisma.organization.create({
@@ -109,6 +119,7 @@ async function main() {
         city: "Lisboa",
         status: "ACTIVE",
         primaryModule: "EVENTOS",
+        group: { create: {} },
       },
     }));
 

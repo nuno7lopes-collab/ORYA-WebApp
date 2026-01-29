@@ -133,6 +133,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const outbox = await recordOutboxEvent(
         {
           eventType: "event.invite_token.created",
+          dedupeKey: `event.invite_token.created:${created.inviteTokenId}`,
           payload: {
             inviteTokenId: created.inviteTokenId,
             eventId,

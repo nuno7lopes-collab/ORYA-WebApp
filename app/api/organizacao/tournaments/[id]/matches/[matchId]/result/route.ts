@@ -90,6 +90,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       const outbox = await recordOutboxEvent(
         {
           eventType: "TOURNAMENT_MATCH_RESULT_REQUESTED",
+          dedupeKey: `tournament_match_result:${matchId}:${nextStatus ?? "UNKNOWN"}:${winnerPairingId ?? "none"}:${expectedUpdatedAt ?? "none"}:${force === true ? "force" : "normal"}`,
           payload: {
             matchId,
             score,

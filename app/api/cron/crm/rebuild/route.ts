@@ -6,6 +6,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { rebuildCrmCustomers } from "@/lib/crm/rebuild";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logInfo } from "@/lib/observability/logger";
 
 function parseOrganizationId(value: string | null): number | null {
   if (!value) return null;
@@ -20,7 +21,7 @@ async function _POST(req: NextRequest) {
 
   const orgParam = parseOrganizationId(req.nextUrl.searchParams.get("organizationId"));
   const result = await rebuildCrmCustomers({ organizationId: orgParam ?? null });
-  console.info("[crm][rebuild]", { organizationId: orgParam ?? null, ...result });
+  logInfo("cron.crm.rebuild", { organizationId: orgParam ?? null, ...result });
   return jsonWrap({ ok: true, ...result }, { status: 200 });
 }
 export const POST = withApiEnvelope(_POST);

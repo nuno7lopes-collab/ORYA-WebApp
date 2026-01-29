@@ -729,19 +729,21 @@ export async function POST(req: NextRequest) {
         const nextStatus =
           typeof dataUpdate.status === "string" ? dataUpdate.status : (event.status as string);
 
+        const idempotencyKey = `event.updated:${eventId}:${hashPayload({
+          eventId,
+          title: nextTitle,
+          startsAt: nextStartsAt,
+          endsAt: nextEndsAt,
+          status: nextStatus,
+          organizationId: event.organizationId,
+        })}`;
+
         await appendEventLog(
           {
             eventId: eventLogId,
             organizationId: event.organizationId,
             eventType: "event.updated",
-            idempotencyKey: `event.updated:${eventId}:${hashPayload({
-              eventId,
-              title: nextTitle,
-              startsAt: nextStartsAt,
-              endsAt: nextEndsAt,
-              status: nextStatus,
-              organizationId: event.organizationId,
-            })}`,
+            idempotencyKey,
             actorUserId: user.id,
             sourceType: SourceType.EVENT,
             sourceId: String(eventId),
@@ -761,6 +763,7 @@ export async function POST(req: NextRequest) {
           {
             eventId: eventLogId,
             eventType: "event.updated",
+            dedupeKey: idempotencyKey,
             payload: {
               eventId,
               title: nextTitle,

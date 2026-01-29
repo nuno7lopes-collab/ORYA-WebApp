@@ -55,12 +55,13 @@ export async function createTournamentForEvent(input: {
     });
 
     const eventIdLog = crypto.randomUUID();
+    const idempotencyKey = `tournament.created:${eventId}`;
     await appendEventLog(
       {
         eventId: eventIdLog,
         organizationId,
         eventType: "tournament.created",
-        idempotencyKey: `tournament.created:${eventId}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.TOURNAMENT,
         sourceId: String(tournament.id),
@@ -73,6 +74,7 @@ export async function createTournamentForEvent(input: {
       {
         eventId: eventIdLog,
         eventType: "tournament.created",
+        dedupeKey: idempotencyKey,
         payload: { tournamentId: tournament.id, eventId } as Prisma.InputJsonValue,
         correlationId: correlationId ?? null,
       },
@@ -123,12 +125,13 @@ export async function updateTournament(input: {
     });
 
     const eventIdLog = crypto.randomUUID();
+    const idempotencyKey = `tournament.updated:${tournamentId}:${hashPayload({ tournamentId, data })}`;
     await appendEventLog(
       {
         eventId: eventIdLog,
         organizationId,
         eventType: "tournament.updated",
-        idempotencyKey: `tournament.updated:${tournamentId}:${hashPayload({ tournamentId, data })}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.TOURNAMENT,
         sourceId: String(tournament.id),
@@ -141,6 +144,7 @@ export async function updateTournament(input: {
       {
         eventId: eventIdLog,
         eventType: "tournament.updated",
+        dedupeKey: idempotencyKey,
         payload: { tournamentId: tournament.id, eventId: tournament.eventId } as Prisma.InputJsonValue,
         correlationId: correlationId ?? null,
       },
@@ -162,12 +166,13 @@ export async function requestTournamentGeneration(input: {
   const { organizationId, tournamentId, eventId, payload, actorUserId, correlationId } = input;
   return prisma.$transaction(async (tx) => {
     const eventIdLog = crypto.randomUUID();
+    const idempotencyKey = `tournament.generate:${tournamentId}:${hashPayload({ tournamentId, eventId, payload })}`;
     await appendEventLog(
       {
         eventId: eventIdLog,
         organizationId,
         eventType: "tournament.generate_requested",
-        idempotencyKey: `tournament.generate:${tournamentId}:${hashPayload({ tournamentId, eventId, payload })}`,
+        idempotencyKey,
         actorUserId,
         sourceType: SourceType.TOURNAMENT,
         sourceId: String(tournamentId),
@@ -180,6 +185,7 @@ export async function requestTournamentGeneration(input: {
       {
         eventId: eventIdLog,
         eventType: "TOURNAMENT_GENERATE",
+        dedupeKey: idempotencyKey,
         payload: payload as Prisma.InputJsonValue,
         correlationId: correlationId ?? null,
       },

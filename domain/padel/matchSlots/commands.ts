@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 
 export type MatchSlotResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -53,6 +54,33 @@ const computeScheduleSnapshot = (match: {
     status: scheduled ? "ACTIVE" : "DELETED",
   };
 };
+
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = canonicalize(obj[key]);
+        return acc;
+      }, {});
+  }
+  if (value instanceof Date) return value.toISOString();
+  return value;
+};
+
+const hashPayload = (payload: Record<string, unknown>) =>
+  crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
+
+const buildMatchSlotDedupeKey = (params: {
+  matchId: number;
+  status: string | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  courtId: number | null;
+}) =>
+  `match_slot:${params.matchId}:${params.status ?? "UNKNOWN"}:${params.startsAt ? params.startsAt.toISOString() : "none"}:${params.endsAt ? params.endsAt.toISOString() : "none"}:${params.courtId ?? "none"}`;
 
 const pickValue = <T>(next: T | undefined, fallback: T) => (next === undefined ? fallback : next);
 
@@ -223,10 +251,19 @@ export async function applyMatchSlotUpdate(input: {
       tx,
     );
 
+    const outboxCausationId = buildMatchSlotDedupeKey({
+      matchId: updated.id,
+      status: resolvedSnapshot.status,
+      startsAt: resolvedSnapshot.startsAt,
+      endsAt: resolvedSnapshot.endsAt,
+      courtId: resolvedSnapshot.courtId,
+    });
+
     await recordOutboxEvent(
       {
         eventId: eventLogId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: makeOutboxDedupeKey(OUTBOX_EVENT_TYPE, outboxCausationId),
         payload: {
           eventId: eventLogId,
           sourceType: SourceType.MATCH,
@@ -241,18 +278,25 @@ export async function applyMatchSlotUpdate(input: {
           causationId: causationId ?? null,
         },
         correlationId: correlationId ?? null,
-        causationId: causationId ?? null,
+        causationId: outboxCausationId,
       },
       tx,
     );
 
     if (input.emitOutbox) {
+      const payload =
+        input.emitOutbox.payload && typeof input.emitOutbox.payload === "object"
+          ? (input.emitOutbox.payload as Record<string, unknown>)
+          : { value: input.emitOutbox.payload };
+      const outboxCausationId = hashPayload(payload);
+      const dedupeKey = makeOutboxDedupeKey(input.emitOutbox.eventType, outboxCausationId);
       await recordOutboxEvent(
         {
           eventType: input.emitOutbox.eventType,
+          dedupeKey,
           payload: input.emitOutbox.payload,
+          causationId: outboxCausationId,
           correlationId: correlationId ?? null,
-          causationId: causationId ?? null,
         },
         tx,
       );
@@ -340,10 +384,19 @@ export async function createMatchSlot(input: {
       tx,
     );
 
+    const outboxCausationId = buildMatchSlotDedupeKey({
+      matchId: created.id,
+      status: scheduleSnapshot.status,
+      startsAt: scheduleSnapshot.startsAt,
+      endsAt: scheduleSnapshot.endsAt,
+      courtId: scheduleSnapshot.courtId,
+    });
+
     await recordOutboxEvent(
       {
         eventId: eventLogId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: makeOutboxDedupeKey(OUTBOX_EVENT_TYPE, outboxCausationId),
         payload: {
           eventId: eventLogId,
           sourceType: SourceType.MATCH,
@@ -358,7 +411,7 @@ export async function createMatchSlot(input: {
           causationId: causationId ?? null,
         },
         correlationId: correlationId ?? null,
-        causationId: causationId ?? null,
+        causationId: outboxCausationId,
       },
       tx,
     );
@@ -441,10 +494,19 @@ export async function deleteMatchSlot(input: {
       tx,
     );
 
+    const outboxCausationId = buildMatchSlotDedupeKey({
+      matchId: existing.id,
+      status: "DELETED",
+      startsAt: scheduleSnapshot.startsAt,
+      endsAt: scheduleSnapshot.endsAt,
+      courtId: scheduleSnapshot.courtId,
+    });
+
     await recordOutboxEvent(
       {
         eventId: eventLogId,
         eventType: OUTBOX_EVENT_TYPE,
+        dedupeKey: makeOutboxDedupeKey(OUTBOX_EVENT_TYPE, outboxCausationId),
         payload: {
           eventId: eventLogId,
           sourceType: SourceType.MATCH,
@@ -459,7 +521,7 @@ export async function deleteMatchSlot(input: {
           causationId: causationId ?? null,
         },
         correlationId: correlationId ?? null,
-        causationId: causationId ?? null,
+        causationId: outboxCausationId,
       },
       tx,
     );
@@ -527,10 +589,19 @@ export async function deleteMatchSlotsByEvent(input: {
         tx,
       );
 
+      const outboxCausationId = buildMatchSlotDedupeKey({
+        matchId: match.id,
+        status: "DELETED",
+        startsAt: scheduleSnapshot.startsAt,
+        endsAt: scheduleSnapshot.endsAt,
+        courtId: scheduleSnapshot.courtId,
+      });
+
       await recordOutboxEvent(
         {
           eventId: eventLogId,
           eventType: OUTBOX_EVENT_TYPE,
+          dedupeKey: makeOutboxDedupeKey(OUTBOX_EVENT_TYPE, outboxCausationId),
           payload: {
             eventId: eventLogId,
             sourceType: SourceType.MATCH,
@@ -545,7 +616,7 @@ export async function deleteMatchSlotsByEvent(input: {
             causationId: causationId ?? null,
           },
           correlationId: correlationId ?? null,
-          causationId: causationId ?? null,
+          causationId: outboxCausationId,
         },
         tx,
       );

@@ -9,6 +9,7 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { PendingPayoutStatus, Prisma, NotificationType } from "@prisma/client";
 import { logFinanceError } from "@/lib/observability/finance";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { logWarn } from "@/lib/observability/logger";
 
 type ReleaseResult = {
   id: number;
@@ -194,18 +195,18 @@ async function monitorActionRequired(now: Date) {
             ticketUrl: `${baseUrl}${ACTION_REQUIRED_CTA_URL}`,
           });
         } catch (err) {
-          console.warn("[payouts][action_required] email failed", {
+          logWarn("payouts.action_required.email_failed", {
             payoutId: payout.id,
             organizationId: organization.id,
-            err,
+            error: err,
           });
         }
       }
     } catch (err) {
-      console.warn("[payouts][action_required] notify failed", {
+      logWarn("payouts.action_required.notify_failed", {
         payoutId: payout.id,
         organizationId: organization.id,
-        err,
+        error: err,
       });
     }
   }
@@ -283,7 +284,7 @@ export async function releaseSinglePayout(payoutId: number, options?: { force?: 
           blockedReason: "ACTION_REQUIRED:CONNECT_ONBOARDING_INCOMPLETE",
         },
       });
-      console.warn("[payouts][release] connected account not ready", {
+      logWarn("payouts.release.account_not_ready", {
         payoutId: payout.id,
         accountId: payout.recipientConnectAccountId,
       });
@@ -336,7 +337,7 @@ export async function releaseSinglePayout(payoutId: number, options?: { force?: 
         blockedReason: reason.slice(0, 180),
       },
     });
-    console.warn("[payouts][release] transfer failed, retry scheduled", {
+    logWarn("payouts.release.transfer_failed_retry", {
       payoutId: payout.id,
       retryMinutes,
       reason,
@@ -402,7 +403,7 @@ export async function releaseDuePayouts(limit = 25): Promise<ReleaseResult[]> {
             blockedReason: "ACTION_REQUIRED:CONNECT_ONBOARDING_INCOMPLETE",
           },
         });
-        console.warn("[payouts][release] connected account not ready", {
+        logWarn("payouts.release.account_not_ready", {
           payoutId: payout.id,
           accountId: payout.recipientConnectAccountId,
         });
@@ -456,7 +457,7 @@ export async function releaseDuePayouts(limit = 25): Promise<ReleaseResult[]> {
           blockedReason: reason.slice(0, 180),
         },
       });
-      console.warn("[payouts][release] transfer failed, retry scheduled", {
+      logWarn("payouts.release.transfer_failed_retry", {
         payoutId: payout.id,
         retryMinutes,
         reason,

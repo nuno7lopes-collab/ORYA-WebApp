@@ -9,6 +9,7 @@ import { RecoveryRedirector } from "./components/RecoveryRedirector";
 import { BackgroundShell } from "./components/BackgroundShell";
 import { AuthLinkInterceptor } from "./components/autenticação/AuthLinkInterceptor";
 import { ThemeRuntime } from "./components/ThemeRuntime";
+import { ClientSentryInit } from "./components/ClientSentryInit";
 
 export const metadata: Metadata = {
   title: "ORYA",
@@ -46,6 +47,7 @@ export default async function RootLayout({
       <body className="antialiased min-h-screen flex flex-col font-sans">
         <BackgroundShell>
           <ThemeRuntime />
+          <ClientSentryInit />
           <AuthModalProvider>
             <AuthLinkInterceptor />
             {!isAdminHost && <Navbar />}

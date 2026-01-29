@@ -8,6 +8,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { logError } from "@/lib/observability/logger";
 import { recordSearchIndexOrgStatusOutbox } from "@/domain/searchIndex/outbox";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -203,7 +204,7 @@ async function _POST(req: NextRequest) {
       { status: 200 },
     );
   } catch (error) {
-    console.error("[ADMIN][ORGANIZADORES][UPDATE-STATUS]", error);
+    logError("admin.organizacoes.update_status_failed", error);
     return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 },

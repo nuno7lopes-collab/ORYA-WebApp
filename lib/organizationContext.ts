@@ -318,9 +318,11 @@ export async function setActiveOrganizationForUser(params: {
       data: { activeOrganizationId: organizationId },
     });
 
+    const dedupeKey = `org.context.changed:${userId}:${fromOrgId ?? "NONE"}:${organizationId}`;
     const outbox = await recordOutboxEvent(
       {
         eventType: "org.context.changed",
+        dedupeKey,
         payload: {
           userId,
           fromOrganizationId: fromOrgId,

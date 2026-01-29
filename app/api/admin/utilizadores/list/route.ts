@@ -4,6 +4,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 async function _GET(req: NextRequest) {
   try {
@@ -74,7 +75,7 @@ async function _GET(req: NextRequest) {
       items,
     });
   } catch (err) {
-    console.error("[admin/utilizadores/list] Erro a carregar utilizadores:", err);
+    logError("admin.utilizadores.list_failed", err);
     return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 },

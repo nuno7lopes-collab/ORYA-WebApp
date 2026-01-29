@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import type { Prisma } from "@prisma/client";
 import { SourceType } from "@prisma/client";
@@ -24,6 +25,24 @@ const DEFAULT_CANCELLED_EVENT = "booking.cancelled";
 const DEFAULT_NO_SHOW_EVENT = "booking.no_show";
 
 const OUTBOX_EVENT_TYPE = "AGENDA_ITEM_UPSERT_REQUESTED" as const;
+
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = canonicalize(obj[key]);
+        return acc;
+      }, {});
+  }
+  if (value instanceof Date) return value.toISOString();
+  return value;
+};
+
+const hashPayload = (payload: Record<string, unknown>) =>
+  crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
 
 const computeEndsAt = (startsAt: Date | null, durationMinutes: number | null) => {
   if (!startsAt || !(startsAt instanceof Date) || Number.isNaN(startsAt.getTime())) return null;
@@ -82,6 +101,9 @@ async function recordBookingEvent(params: {
   correlationId?: string | null;
   payload: Record<string, unknown>;
 }) {
+  const payloadHash = hashPayload(params.payload);
+  const causationId = `booking:${params.eventType}:${params.payload.sourceId ?? "unknown"}:${payloadHash}`;
+  const dedupeKey = makeOutboxDedupeKey(OUTBOX_EVENT_TYPE, causationId);
   await appendEventLog(
     {
       eventId: params.eventId,
@@ -100,12 +122,14 @@ async function recordBookingEvent(params: {
     {
       eventId: params.eventId,
       eventType: OUTBOX_EVENT_TYPE,
+      dedupeKey,
       payload: {
         eventId: params.eventId,
         sourceType: SourceType.BOOKING,
         sourceId: String(params.payload.sourceId ?? ""),
         organizationId: params.organizationId,
       } as Prisma.InputJsonValue,
+      causationId,
       correlationId: params.correlationId ?? null,
     },
     params.tx,

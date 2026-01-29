@@ -7,6 +7,9 @@ import { prisma } from "@/lib/prisma";
 
 let ledgerState: any = null;
 let outboxEvents: any[] = [];
+let operations: any[] = [];
+let currentNow = new Date();
+const lockedIds = new Set<string>();
 
 vi.mock("@/domain/outbox/producer", () => ({
   recordOutboxEvent: vi.fn(async (payload: any) => payload),
@@ -27,19 +30,14 @@ vi.mock("@/lib/prisma", () => {
     }),
   };
   const operation = {
-    upsert: vi.fn(() => ({ id: 1 })),
+    findUnique: vi.fn(({ where }: any) => operations.find((op) => op.dedupeKey === where.dedupeKey) ?? null),
+    create: vi.fn(({ data }: any) => {
+      const record = { ...data, id: operations.length + 1, updatedAt: currentNow };
+      operations.push(record);
+      return record;
+    }),
   };
   const outboxEvent = {
-    findMany: vi.fn(({ take }: any) => {
-      const now = new Date();
-      const pending = outboxEvents.filter(
-        (evt) =>
-          !evt.publishedAt &&
-          !evt.deadLetteredAt &&
-          (!evt.nextAttemptAt || evt.nextAttemptAt <= now),
-      );
-      return pending.slice(0, take ?? pending.length);
-    }),
     update: vi.fn(({ where, data }: any) => {
       const event = outboxEvents.find((evt) => evt.eventId === where.eventId);
       if (event) Object.assign(event, data);
@@ -50,7 +48,31 @@ vi.mock("@/lib/prisma", () => {
     loyaltyLedger,
     outboxEvent,
     operation,
-    $transaction: async (fn: any) => fn(prisma),
+    $transaction: async (fn: any) => {
+      const txLocks = new Set<string>();
+      const tx = {
+        ...prisma,
+        $queryRaw: vi.fn(() => {
+          const pending = outboxEvents.filter(
+            (evt) =>
+              !evt.publishedAt &&
+              !evt.deadLetteredAt &&
+              (!evt.nextAttemptAt || evt.nextAttemptAt <= currentNow) &&
+              !lockedIds.has(evt.eventId),
+          );
+          if (!pending.length) return [];
+          const event = pending[0];
+          lockedIds.add(event.eventId);
+          txLocks.add(event.eventId);
+          return [event];
+        }),
+      };
+      try {
+        return await fn(tx);
+      } finally {
+        for (const id of txLocks) lockedIds.delete(id);
+      }
+    },
   };
   return { prisma };
 });
@@ -78,12 +100,15 @@ describe("loyalty outbox consumer", () => {
       reward: null,
     };
     outboxEvents = [];
+    operations = [];
+    currentNow = new Date("2024-01-01T00:00:00Z");
+    lockedIds.clear();
     prismaMock.loyaltyLedger.findUnique.mockClear();
     enqueueMock.mockClear();
     recordOutboxMock.mockClear();
-    prismaMock.outboxEvent.findMany.mockClear();
     prismaMock.outboxEvent.update.mockClear();
-    prismaMock.operation.upsert.mockReset();
+    prismaMock.operation.findUnique.mockClear();
+    prismaMock.operation.create.mockClear();
   });
 
   it("enfileira notificação para earned", async () => {
@@ -152,17 +177,14 @@ describe("loyalty outbox consumer", () => {
         eventId: "evt-2",
         eventType: "loyalty.earned",
         payload: {},
-        attempts: OUTBOX_MAX_ATTEMPTS - 1,
+        attempts: OUTBOX_MAX_ATTEMPTS,
         publishedAt: null,
         nextAttemptAt: null,
         deadLetteredAt: null,
       },
     ];
-    prismaMock.operation.upsert.mockImplementationOnce(() => {
-      throw new Error("boom");
-    });
-
     const now = new Date("2024-01-01T00:00:00Z");
+    currentNow = now;
     await publishOutboxBatch({ now });
     expect(outboxEvents[0].deadLetteredAt).toEqual(now);
     expect(outboxEvents[0].nextAttemptAt).toBeNull();

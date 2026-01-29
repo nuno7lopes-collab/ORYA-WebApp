@@ -164,7 +164,7 @@ function isAllowedAdminIp(ip: string, hostname: string) {
   return false;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const requestContext = resolveRequestContext(req);
   const requestHeaders = new Headers(req.headers);
   applyRequestContextHeaders(requestHeaders, requestContext);
@@ -274,6 +274,8 @@ export async function middleware(req: NextRequest) {
 
   return res;
 }
+
+export default proxy;
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],

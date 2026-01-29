@@ -412,6 +412,7 @@ export async function POST(req: NextRequest) {
       const outbox = await recordOutboxEvent(
         {
           eventType: "organization.invite.created",
+          dedupeKey: `org.invite.created:${organizationId}:${created.id}`,
           payload: {
             inviteId: created.id,
             organizationId,
@@ -799,6 +800,7 @@ export async function PATCH(req: NextRequest) {
       const outbox = await recordOutboxEvent(
         {
           eventType: "organization.invite.updated",
+          dedupeKey: `org.invite.updated:${updatedInvite.id}:${auditAction}`,
           payload: {
             inviteId: updatedInvite.id,
             organizationId,

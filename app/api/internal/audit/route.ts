@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -61,7 +62,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("GET /api/internal/audit error:", err);
+    logError("internal.audit.error", err, { requestId: ctx.requestId });
     return jsonWrap(
       {
         ok: false,

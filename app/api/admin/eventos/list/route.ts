@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { Prisma, EventStatus, EventType, TicketStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 // Fase 6.13 – Listar eventos (admin)
 // GET /api/admin/eventos/list
@@ -129,7 +130,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (error) {
-    console.error("[admin eventos list] erro inesperado:", error);
+    logError("admin.eventos.list_failed", error);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

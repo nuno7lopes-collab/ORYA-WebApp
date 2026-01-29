@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { PadelMatch, Prisma, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -22,6 +23,27 @@ const DEFAULT_UPDATED_EVENT = "PADEL_MATCH_UPDATED";
 const DEFAULT_CREATED_EVENT = "PADEL_MATCH_GENERATED";
 const DEFAULT_DELETED_EVENT = "PADEL_MATCH_DELETED";
 
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.keys(obj)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = canonicalize(obj[key]);
+        return acc;
+      }, {});
+  }
+  if (value instanceof Date) return value.toISOString();
+  return value;
+};
+
+const hashPayload = (payload: Record<string, unknown>) =>
+  crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
+
+const buildMatchDedupeKey = (eventType: string, payload: Record<string, unknown>) =>
+  `padel_match:${eventType}:${payload.matchId ?? "unknown"}:${hashPayload(payload)}`;
+
 async function withTx<T>(
   tx: Prisma.TransactionClient | undefined,
   fn: (client: Prisma.TransactionClient) => Promise<T>,
@@ -40,9 +62,11 @@ async function recordMatchEvent(params: {
   payload: Record<string, unknown>;
 }) {
   const payload = params.payload as Prisma.InputJsonValue;
+  const dedupeKey = buildMatchDedupeKey(params.outboxEventType, params.payload);
   const outbox = await recordOutboxEvent(
     {
       eventType: params.outboxEventType,
+      dedupeKey,
       payload,
     },
     params.tx,

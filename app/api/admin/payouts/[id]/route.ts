@@ -4,6 +4,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
@@ -126,7 +127,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       { status: 200 },
     );
   } catch (err) {
-    console.error("[admin/payouts/detail]", err);
+    logError("admin.payouts.detail_failed", err);
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

@@ -5,6 +5,7 @@ import { PendingPayoutStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 const PAGE_SIZE = 50;
 
@@ -145,7 +146,7 @@ export async function GET(req: NextRequest) {
 
     return respondOk(ctx, { items: enriched, pagination: { nextCursor, hasMore } }, { status: 200 });
   } catch (err) {
-    console.error("[admin/payouts/list]", err);
+    logError("admin.payouts.list_failed", err);
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

@@ -14,6 +14,7 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[organização][payouts][connect] erro:", err);
+    logError("payouts.connect.error", err, { requestId: ctx.requestId });
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro ao gerar onboarding Stripe.", retryable: true },

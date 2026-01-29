@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { TicketStatus, type Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 200;
@@ -161,7 +162,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[admin/tickets/list]", err);
+    logError("admin.tickets.list_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

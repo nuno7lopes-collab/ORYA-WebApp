@@ -23,6 +23,7 @@ export async function recordSearchIndexOutbox(
   return recordOutboxEvent(
     {
       eventType: "search.index.upsert.requested",
+      dedupeKey: `search.index.upsert:${input.sourceType}:${input.sourceId}:${input.eventLogId}`,
       payload: {
         eventId: input.eventLogId,
         organizationId: input.organizationId,
@@ -43,6 +44,7 @@ export async function recordSearchIndexOrgStatusOutbox(
   return recordOutboxEvent(
     {
       eventType: "search.index.org_status_changed",
+      dedupeKey: `search.index.org_status_changed:${input.organizationId}:${input.status}:${input.eventLogId}`,
       payload: {
         eventId: input.eventLogId,
         organizationId: input.organizationId,

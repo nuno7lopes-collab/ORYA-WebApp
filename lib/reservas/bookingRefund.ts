@@ -117,6 +117,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
       const outbox = await recordOutboxEvent(
         {
           eventType: "refund.created",
+          dedupeKey: idempotencyKey,
           payload: {
             bookingId: params.bookingId,
             paymentIntentId: params.paymentIntentId,

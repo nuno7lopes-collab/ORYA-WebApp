@@ -8,15 +8,18 @@ import crypto from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type Stripe from "stripe";
 import { createPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { computeFeePolicyVersion, createCheckout } from "@/domain/finance/checkout";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import {
   EntitlementStatus,
   EntitlementType,
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelRegistrationStatus,
+  ProcessorFeesStatus,
   Prisma,
   SourceType,
 } from "@prisma/client";
@@ -38,6 +41,7 @@ import {
 } from "@/lib/checkoutSchemas";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { sanitizeUsername } from "@/lib/username";
@@ -144,7 +148,9 @@ async function recordFreeCheckoutOutbox(params: {
       {
         eventId: eventLogId,
         eventType: FREE_CHECKOUT_OUTBOX_TYPE,
+        dedupeKey: makeOutboxDedupeKey(FREE_CHECKOUT_OUTBOX_TYPE, idempotencyKey),
         payload,
+        causationId: idempotencyKey,
         correlationId: purchaseId,
       },
       tx,
@@ -242,7 +248,7 @@ async function hasExistingFreeEntryForUser(params: { eventId: number; userId: st
 
 async function _POST(req: NextRequest) {
   if (process.env.NODE_ENV === "development") {
-    console.info("[payments/intent] buildFingerprint=", INTENT_BUILD_FINGERPRINT);
+    logInfo("payments.intent.build_fingerprint", { fingerprint: INTENT_BUILD_FINGERPRINT });
   }
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
@@ -858,7 +864,7 @@ async function _POST(req: NextRequest) {
     if (promoCodeInput) {
       try {
         await validatePromo({ code: promoCodeInput });
-        console.info("[analytics] promo_applied", {
+        logInfo("payments.intent.promo_applied", {
           code: promoCodeInput,
           eventId: event.id,
           userId,
@@ -1431,7 +1437,7 @@ async function _POST(req: NextRequest) {
     // Se o frontend enviou fingerprint/purchaseId, podem estar desatualizados.
     // Em vez de bloquear (409 + loop no FE), registamos e seguimos sempre com a SSOT do servidor.
     if (intentFingerprintFromBody && intentFingerprintFromBody !== intentFingerprint) {
-      console.warn("[payments/intent] client intentFingerprint desatualizado", {
+      logWarn("payments.intent.client_fingerprint_stale", {
         provided: intentFingerprintFromBody,
         expected: intentFingerprint,
         purchaseId: computedPurchaseId,
@@ -1439,7 +1445,7 @@ async function _POST(req: NextRequest) {
     }
 
     if (purchaseIdFromBody && purchaseIdFromBody !== computedPurchaseId) {
-      console.warn("[payments/intent] client purchaseId desatualizado", {
+      logWarn("payments.intent.client_purchase_id_stale", {
         provided: purchaseIdFromBody,
         expected: computedPurchaseId,
         intentFingerprint,
@@ -1453,6 +1459,54 @@ async function _POST(req: NextRequest) {
     const clientIdempotencyKey = idempotencyKey;
     const checkoutIdempotencyKey = checkoutKey(purchaseId);
     const effectiveDedupeKey = checkoutIdempotencyKey;
+
+    const feePolicyVersion = computeFeePolicyVersion({
+      feeMode: pricing.feeMode,
+      feeBps: pricing.feeBpsApplied,
+      feeFixed: pricing.feeFixedApplied,
+    });
+
+    await createCheckout({
+      sourceType: SourceType.TICKET_ORDER,
+      sourceId: String(event.id),
+      idempotencyKey: checkoutIdempotencyKey,
+      paymentId: purchaseId,
+      buyerIdentityRef: ownerResolved.ownerIdentityId ?? null,
+      inviteToken,
+      resolvedSnapshot: {
+        organizationId: eventOrganizationId,
+        buyerIdentityId: ownerResolved.ownerIdentityId ?? null,
+        eventId: event.id,
+        ticketTypeIds: lines.map((line) => line.ticketTypeId),
+        snapshot: {
+          currency: currency.toUpperCase(),
+          gross: totalAmountInCents,
+          discounts: pricing.discountCents,
+          taxes: 0,
+          platformFee: platformFeeTotalCents,
+          total: totalAmountInCents,
+          netToOrgPending: Math.max(0, totalAmountInCents - platformFeeTotalCents),
+          processorFeesStatus: ProcessorFeesStatus.PENDING,
+          processorFeesActual: null,
+          feeMode: pricing.feeMode,
+          feeBps: pricing.feeBpsApplied,
+          feeFixed: pricing.feeFixedApplied,
+          feePolicyVersion,
+          promoPolicyVersion: null,
+          sourceType: SourceType.TICKET_ORDER,
+          sourceId: String(event.id),
+          lineItems: lines.map((line) => ({
+            quantity: line.quantity,
+            unitPriceCents: line.unitPriceCents,
+            totalAmountCents: line.lineTotalCents,
+            currency: line.currency,
+            ticketTypeId: line.ticketTypeId,
+            sourceLineId: String(line.ticketTypeId),
+          })),
+        },
+      },
+      skipAccessChecks: true,
+    });
 
     // Idempotência API: se houver payment_event com dedupeKey=checkoutKey e PI não terminal, devolve. Terminal → ignora e cria novo.
     if (checkoutIdempotencyKey) {
@@ -1507,7 +1561,7 @@ async function _POST(req: NextRequest) {
           }
           // terminal → segue para criar PI novo
         } catch (e) {
-          console.warn("[payments/intent] idempotency retrieve PI falhou", e);
+          logError("payments.intent.idempotency_retrieve_failed", e);
         }
       }
     }
@@ -1538,7 +1592,9 @@ async function _POST(req: NextRequest) {
     });
 
     if (!metadataValidation.success) {
-      console.warn("[payments/intent] Metadata inválida", metadataValidation.error.format());
+      logWarn("payments.intent.invalid_metadata", {
+        errors: metadataValidation.error.format(),
+      });
       return intentError("INVALID_METADATA", "Metadata inválida para checkout.", {
         httpStatus: 400,
         status: "FAILED",
@@ -1922,7 +1978,7 @@ async function _POST(req: NextRequest) {
         if (isIdem) {
           attempts += 1;
           attemptKey = `${stripeIdempotencyKey}:idem:${attempts}`;
-          console.warn("[payments/intent] Stripe idempotency mismatch, a recalcular com nova key", {
+          logWarn("payments.intent.stripe_idempotency_mismatch", {
             purchaseId,
             intentFingerprint,
             attemptKey,

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { logWarn } from "@/lib/observability/logger";
 
 type ApplyPromoPayload = {
   purchaseId?: string | null;
@@ -90,7 +91,7 @@ export async function applyPromoRedemptionOperation(payload: ApplyPromoPayload) 
       if (!isUnique) {
         throw err;
       }
-      console.warn("[applyPromoRedemption] unique conflict ignorado (idempotente)", {
+      logWarn("apply_promo_redemption.unique_conflict", {
         promoCodeId,
         purchaseId,
         userId,

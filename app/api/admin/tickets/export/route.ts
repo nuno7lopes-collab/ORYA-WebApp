@@ -6,6 +6,7 @@ import { TicketStatus, type Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { respondPlainText } from "@/lib/http/envelope";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { logError } from "@/lib/observability/logger";
 
 const MAX_EXPORT = 5000;
 
@@ -169,7 +170,7 @@ async function _GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("[admin/tickets/export]", err);
+    logError("admin.tickets.export_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

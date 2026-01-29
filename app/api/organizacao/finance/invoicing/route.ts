@@ -184,6 +184,7 @@ export async function POST(req: NextRequest) {
     const outbox = await recordOutboxEvent(
       {
         eventType: "org.invoicing_config.updated",
+        dedupeKey: `org.invoicing_config.updated:${access.organization.id}:${invoicingMode}`,
         payload: {
           organizationId: access.organization.id,
           invoicingMode,

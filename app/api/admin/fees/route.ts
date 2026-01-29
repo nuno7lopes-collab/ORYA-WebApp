@@ -3,6 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getPlatformAndStripeFees, setPlatformFees, setStripeBaseFees } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 async function _GET(_req: NextRequest) {
   try {
@@ -22,7 +23,7 @@ async function _GET(_req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[admin/fees] unexpected error", err);
+    logError("admin.fees.get_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
@@ -83,7 +84,7 @@ async function _POST(req: NextRequest) {
 
     return jsonWrap({ ok: true, orya, stripe }, { status: 200 });
   } catch (err) {
-    console.error("[admin/fees] unexpected error on POST", err);
+    logError("admin.fees.post_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireOrganizationIdFromPayload } from "@/lib/organizationId";
+import { logError } from "@/lib/observability/logger";
 
 function parseDate(value: unknown): Date | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
@@ -89,7 +90,7 @@ async function _POST(req: NextRequest) {
 
     return jsonWrap({ ok: true, deduped: result.deduped, customerId: result.customerId });
   } catch (err) {
-    console.error("POST /api/internal/crm/ingest error:", err);
+    logError("internal.crm.ingest_error", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

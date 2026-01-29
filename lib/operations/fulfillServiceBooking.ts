@@ -7,6 +7,7 @@ import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { CrmInteractionSource, CrmInteractionType, type Prisma } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { logError } from "@/lib/observability/logger";
 import {
   BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
   buildBookingConfirmationSnapshot,
@@ -187,7 +188,7 @@ export async function fulfillServiceBookingIntent(
       }
     }
   } catch (err) {
-    console.warn("[fulfillServiceBooking] falha ao ler balance_transaction", err);
+    logError("fulfill_service_booking.balance_transaction_failed", err, { paymentIntentId });
   }
 
   const amountCents = intent.amount_received ?? intent.amount ?? 0;
@@ -540,7 +541,7 @@ export async function fulfillServiceBookingIntent(
         metadata: { bookingId: crmPayload.bookingId },
       });
     } catch (err) {
-      console.warn("[fulfillServiceBooking] Falha ao criar interação CRM", err);
+      logError("fulfill_service_booking.crm_interaction_failed", err, { bookingId: crmPayload.bookingId });
     }
   }
 

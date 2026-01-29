@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError, logWarn } from "@/lib/observability/logger";
 
 async function _POST(req: NextRequest) {
   try {
@@ -62,16 +63,16 @@ async function _POST(req: NextRequest) {
         try {
           await supabaseAdmin.auth.admin.deleteUser(profile.id);
         } catch (authErr) {
-          console.warn("[purge-pending] falha a remover no auth", authErr);
+          logWarn("admin.users.purge_pending_auth_remove_failed", { error: authErr, userId: profile.id });
         }
       } catch (userErr) {
-        console.error("[purge-pending] erro ao anonimizar user", { id: profile.id, userErr });
+        logError("admin.users.purge_pending_anonymize_failed", userErr, { userId: profile.id });
       }
     }
 
     return jsonWrap({ ok: true, processed: pending.length }, { status: 200 });
   } catch (err) {
-    console.error("[admin/users/purge-pending]", err);
+    logError("admin.users.purge_pending_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

@@ -705,6 +705,7 @@ export async function POST(req: NextRequest) {
           {
             eventId: eventIdLog,
             eventType: "event.created",
+            dedupeKey: `event.created:${created.id}`,
             payload: {
               eventId: created.id,
               title: created.title,

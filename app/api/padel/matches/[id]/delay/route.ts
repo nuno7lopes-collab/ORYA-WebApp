@@ -81,6 +81,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const outbox = await recordOutboxEvent(
       {
         eventType: "PADEL_MATCH_DELAY_REQUESTED",
+        dedupeKey: `padel_match_delay:${match.id}:${clearSchedule ? "clear" : "keep"}:${autoReschedule ? "auto" : "manual"}:${windowStartOverride ? windowStartOverride.toISOString() : "none"}:${windowEndOverride ? windowEndOverride.toISOString() : "none"}`,
         payload: {
           matchId: match.id,
           eventId: match.event.id,

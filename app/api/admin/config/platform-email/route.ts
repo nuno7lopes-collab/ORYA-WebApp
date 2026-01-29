@@ -4,6 +4,7 @@ import { getPlatformOfficialEmail, setPlatformOfficialEmail } from "@/lib/platfo
 import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 function fail(
   ctx: ReturnType<typeof getRequestContext>,
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     const email = await getPlatformOfficialEmail();
     return respondOk(ctx, { email }, { status: 200 });
   } catch (err) {
-    console.error("[/api/admin/config/platform-email] GET error", err);
+    logError("admin.config.platform_email_get_failed", err);
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof Error && err.message === "INVALID_EMAIL") {
       return fail(ctx, 400, "INVALID_EMAIL");
     }
-    console.error("[/api/admin/config/platform-email] POST error", err);
+    logError("admin.config.platform_email_post_failed", err);
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }

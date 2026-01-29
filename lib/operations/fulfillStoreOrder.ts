@@ -6,6 +6,7 @@ import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { sendStoreOrderConfirmationEmail } from "@/lib/emailSender";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
+import { logError, logWarn } from "@/lib/observability/logger";
 
 function parseId(value: unknown) {
   const parsed = Number(value);
@@ -50,7 +51,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
           metadata: { orderId: order.id, storeId: order.storeId },
         });
       } catch (err) {
-        console.warn("[fulfillStoreOrder] Falha ao criar interação CRM", err);
+        logError("fulfill_store_order.crm_interaction_failed", err, { orderId: order.id });
       }
     }
     return true;
@@ -114,7 +115,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
           data: { stockQty: { decrement: line.quantity } },
         });
         if (updated.count === 0) {
-          console.warn("[fulfillStoreOrder] Stock insuficiente para variante", {
+          logWarn("fulfill_store_order.stock_insufficient_variant", {
             orderId: order.id,
             productId: line.productId,
             variantId: line.variantId,
@@ -138,7 +139,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
         data: { stockQty: { decrement: line.quantity } },
       });
       if (updated.count === 0) {
-        console.warn("[fulfillStoreOrder] Stock insuficiente para produto", {
+        logWarn("fulfill_store_order.stock_insufficient_product", {
           orderId: order.id,
           productId: line.productId,
         });
@@ -176,7 +177,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
         metadata: { orderId: order.id, storeId: order.storeId },
       });
     } catch (err) {
-      console.warn("[fulfillStoreOrder] Falha ao criar interação CRM", err);
+      logError("fulfill_store_order.crm_interaction_failed", err, { orderId: order.id });
     }
   }
 
@@ -194,7 +195,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
         guestEmail: order.customerEmail ?? null,
       });
     } catch (err) {
-      console.warn("[fulfillStoreOrder] Falha ao aplicar promo redemption", err);
+      logError("fulfill_store_order.apply_promo_failed", err, { orderId: order.id });
     }
   }
 
@@ -263,7 +264,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
         });
       }
     } catch (err) {
-      console.warn("[fulfillStoreOrder] Falha ao enviar email de compra", err);
+      logError("fulfill_store_order.email_failed", err, { orderId: order.id });
     }
   }
 

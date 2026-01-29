@@ -6,6 +6,7 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { OrgType, PendingPayoutStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 type UpdatePaymentsModeBody = {
   organizationId?: number | string;
@@ -100,7 +101,7 @@ async function _POST(req: NextRequest) {
       cancelledPayouts,
     });
   } catch (err) {
-    console.error("[/api/admin/organizacoes/update-payments-mode] Erro inesperado:", err);
+    logError("admin.organizacoes.update_payments_mode_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

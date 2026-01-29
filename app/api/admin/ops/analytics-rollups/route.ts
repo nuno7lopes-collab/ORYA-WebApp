@@ -7,6 +7,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import { getLatestBucketDate, runAnalyticsRollupJob } from "@/domain/analytics/rollup";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 type RollupPayload = {
   organizationId?: number;
@@ -75,7 +76,7 @@ async function _GET(req: NextRequest) {
     const latest = await getLatestBucketDate(orgId);
     return jsonWrap({ ok: true, latestBucketDate: latest ? toIsoDate(latest) : null });
   } catch (err) {
-    console.error("[admin][ops][analytics-rollups][GET] error:", err);
+    logError("admin.ops.analytics_rollups_get_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
@@ -127,7 +128,7 @@ async function _POST(req: NextRequest) {
       ...rest,
     });
   } catch (err) {
-    console.error("[admin][ops][analytics-rollups][POST] error:", err);
+    logError("admin.ops.analytics_rollups_post_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

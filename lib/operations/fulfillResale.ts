@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { PaymentEventSource } from "@prisma/client";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
+import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 
 type IntentLike = {
   id: string;
@@ -34,12 +35,12 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
       });
 
       if (!resale || !resale.ticket) {
-        console.error("[fulfillResale] Revenda não encontrada", { resaleId });
+        logWarn("fulfill_resale.not_found", { resaleId });
         throw new Error("RESALE_NOT_FOUND");
       }
 
       if (resale.status !== "LISTED") {
-        console.log("[fulfillResale] Revenda já processada ou inválida", { resaleId, status: resale.status });
+        logInfo("fulfill_resale.already_processed", { resaleId, status: resale.status });
         return;
       }
 
@@ -92,9 +93,9 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
       });
     });
 
-    console.log("[fulfillResale] processada com sucesso", { resaleId, ticketId, buyerUserId });
+    logInfo("fulfill_resale.completed", { resaleId, ticketId, buyerUserId });
   } catch (err) {
-    console.error("[fulfillResale] erro", err);
+    logError("fulfill_resale.failed", err, { resaleId });
   }
 
   return true;

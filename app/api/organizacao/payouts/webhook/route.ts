@@ -7,6 +7,7 @@ import { constructStripeWebhookEvent } from "@/domain/finance/gateway/stripeGate
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk, respondPlainText } from "@/lib/http/envelope";
+import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 
 const webhookSecret =
   process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!webhookSecret) {
-    console.error("[Stripe Connect Webhook] Missing webhook secret env");
+    logError("stripe.connect.webhook.missing_secret", null, { requestId: ctx.requestId });
     return respondPlainText(ctx, "Server misconfigured", { status: 500 });
   }
 
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown signature validation error";
-    console.error("[Stripe Connect Webhook] Invalid signature:", message);
+    logWarn("stripe.connect.webhook.invalid_signature", { requestId: ctx.requestId, message });
     return respondPlainText(ctx, "Invalid signature", { status: 400 });
   }
 
@@ -60,7 +61,8 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        console.log("[Stripe Connect Webhook] account.updated sync", {
+        logInfo("stripe.connect.webhook.account_updated", {
+          requestId: ctx.requestId,
           organizationId: organizationIdNumber,
           accountId: account.id,
           chargesEnabled,
@@ -70,14 +72,14 @@ export async function POST(req: NextRequest) {
       }
 
       default:
-        console.log(
-          "[Stripe Connect Webhook] Event ignorado:",
-          event.type,
-        );
+        logInfo("stripe.connect.webhook.event_ignored", {
+          requestId: ctx.requestId,
+          eventType: event.type,
+        });
         break;
     }
   } catch (err) {
-    console.error("[Stripe Connect Webhook] Error processing event:", err);
+    logError("stripe.connect.webhook.processing_failed", err, { requestId: ctx.requestId });
   }
 
   return respondOk(ctx, { received: true }, { status: 200 });

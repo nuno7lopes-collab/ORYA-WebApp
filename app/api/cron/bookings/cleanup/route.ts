@@ -7,6 +7,7 @@ import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError, logWarn } from "@/lib/observability/logger";
 
 const HOLD_MINUTES = 10;
 const COMPLETION_GRACE_HOURS = 2;
@@ -116,7 +117,7 @@ async function _GET(req: NextRequest) {
           metadata: { bookingId: booking.id, serviceId: booking.serviceId },
         });
       } catch (err) {
-        console.warn("[cron][bookings] falha ao criar interacao CRM", err);
+        logWarn("cron.bookings.crm_interaction_failed", { error: String(err) });
       }
     }
 
@@ -126,7 +127,7 @@ async function _GET(req: NextRequest) {
       completed,
     });
   } catch (err) {
-    console.error("[CRON BOOKINGS CLEANUP]", err);
+    logError("cron.bookings.cleanup_error", err);
     return jsonWrap({ ok: false, error: "Internal cleanup error" }, { status: 500 });
   }
 }

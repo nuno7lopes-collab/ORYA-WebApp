@@ -6,6 +6,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 /**
  * ⚠️ IMPORTANT
@@ -56,7 +57,7 @@ async function _GET(req: NextRequest) {
       timestamp: now.toISOString(),
     });
   } catch (err) {
-    console.error("[CRON CLEANUP ERROR]", err);
+    logError("cron.reservations.cleanup_error", err);
     return jsonWrap(
       { ok: false, error: "Internal cleanup error" },
       { status: 500 }

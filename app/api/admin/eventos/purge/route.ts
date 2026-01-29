@@ -10,6 +10,7 @@ import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/financ
 import { deleteHardBlocksByEvent } from "@/domain/hardBlocks/commands";
 import { deleteMatchSlotsByEvent } from "@/domain/padel/matchSlots/commands";
 import { SourceType, type Prisma } from "@prisma/client";
+import { logError } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type PurgePayload = {
@@ -108,6 +109,7 @@ async function _POST(req: Request) {
         {
           eventId: eventLogId,
           eventType: "event.cancelled",
+          dedupeKey: `event.cancelled:${eventId}`,
           payload: {
             eventId,
             title: event.title,
@@ -236,7 +238,7 @@ async function _POST(req: Request) {
 
     return jsonWrap({ ok: true, eventId, title: event.title, slug: event.slug }, { status: 200 });
   } catch (error) {
-    console.error("[admin/eventos/purge] error:", error);
+    logError("admin.eventos.purge_failed", error);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

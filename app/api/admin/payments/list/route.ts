@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import type { Prisma, PaymentMode } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 const PAGE_SIZE = 50;
 
@@ -110,7 +111,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[admin/payments/list]", err);
+    logError("admin.payments.list_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

@@ -10,6 +10,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, PendingPayoutStatus, TicketStatus } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { logError } from "@/lib/observability/logger";
 
 export async function GET(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -138,7 +139,7 @@ export async function GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[organização/payouts/summary][GET] erro", err);
+    logError("payouts.summary.error", err, { requestId: ctx.requestId });
     return respondError(
       ctx,
       { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },

@@ -244,6 +244,7 @@ export async function transitionPadelRegistrationStatus(
     await recordOutboxEvent(
       {
         eventType: "PADREG_STATUS_CHANGED",
+        dedupeKey: `padelreg:${registration.id}:status:${fromStatus ?? "NONE"}:${status}`,
         payload: {
           registrationId: registration.id,
           from: fromStatus,
@@ -261,6 +262,7 @@ export async function transitionPadelRegistrationStatus(
     await recordOutboxEvent(
       {
         eventType: "PADREG_SPLIT_SECOND_CHARGE_DUE",
+        dedupeKey: `padelreg:${registration.id}:split_second_charge_due`,
         payload: {
           registrationId: registration.id,
           reason: params.reason ?? null,
@@ -293,6 +295,7 @@ export async function transitionPadelRegistrationStatus(
     await recordOutboxEvent(
       {
         eventType: "PADREG_EXPIRED",
+        dedupeKey: `padelreg:${registration.id}:expired`,
         payload: {
           registrationId: registration.id,
           reason: params.reason ?? null,

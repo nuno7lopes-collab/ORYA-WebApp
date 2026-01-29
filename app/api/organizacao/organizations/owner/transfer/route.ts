@@ -141,6 +141,7 @@ export async function POST(req: NextRequest) {
         const outbox = await recordOutboxEvent(
           {
             eventType: "organization.owner_transfer.requested",
+            dedupeKey: `owner_transfer.requested:${created.id}`,
             payload: {
               transferId: created.id,
               organizationId,

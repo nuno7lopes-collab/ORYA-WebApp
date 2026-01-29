@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
         const outbox = await recordOutboxEvent(
           {
             eventType: "organization.owner_transfer.expired",
+            dedupeKey: `owner_transfer.expired:${transfer.id}`,
             payload: {
               transferId: transfer.id,
               organizationId: transfer.organizationId,
@@ -173,6 +174,7 @@ export async function POST(req: NextRequest) {
         const outbox = await recordOutboxEvent(
           {
             eventType: "organization.owner_transfer.cancelled",
+            dedupeKey: `owner_transfer.cancelled:${transfer.id}`,
             payload: {
               transferId: transfer.id,
               organizationId: transfer.organizationId,
@@ -236,6 +238,7 @@ export async function POST(req: NextRequest) {
       const outbox = await recordOutboxEvent(
         {
           eventType: "organization.owner_transfer.confirmed",
+          dedupeKey: `owner_transfer.confirmed:${transfer.id}`,
           payload: {
             transferId: transfer.id,
             organizationId: transfer.organizationId,

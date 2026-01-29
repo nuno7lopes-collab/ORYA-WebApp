@@ -13,6 +13,7 @@ import {
 import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { PaymentEventSource, PaymentStatus, type SourceType } from "@prisma/client";
+import { logError } from "@/lib/observability/logger";
 
 const TERMINAL_INTENT_STATUSES = new Set([
   "succeeded",
@@ -115,10 +116,9 @@ export async function ensurePaymentIntent(
     try {
       existingIntent = await retrievePaymentIntent(existingEvent.stripePaymentIntentId);
     } catch (err) {
-      console.warn(
-        "[finance/paymentIntent] failed to retrieve existing PaymentIntent",
-        err,
-      );
+      logError("finance.payment_intent.retrieve_failed", err, {
+        paymentIntentId: existingEvent.stripePaymentIntentId,
+      });
       throw new Error("PAYMENT_INTENT_RETRIEVE_FAILED");
     }
     if (typeof existingIntent.amount === "number" && existingIntent.amount !== expectedAmount) {

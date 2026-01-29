@@ -27,6 +27,7 @@ export async function recordLoyaltyLedgerOutbox(
     {
       eventId: `loyalty:${entry.id}:${eventType}`,
       eventType,
+      dedupeKey: `loyalty:${entry.id}:${eventType}`,
       payload: { ledgerId: entry.id },
       correlationId: entry.sourceId ?? null,
     },

@@ -18,6 +18,7 @@ import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
+import { logError } from "@/lib/observability/logger";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 
 type IntentLike = {
@@ -461,7 +462,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
         },
       });
     } catch (err) {
-      console.warn("[fulfillPadelSplit] Falha ao criar interação CRM", err);
+      logError("fulfill_padel_split.crm_interaction_failed", err, { pairingId });
     }
   }
 

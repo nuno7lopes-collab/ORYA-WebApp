@@ -4,6 +4,7 @@ import { PaymentStatus } from "@prisma/client";
 import { applyPaymentStatusToEntitlements } from "@/domain/finance/fulfillment";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 
 export type StripeDisputeEvent = {
@@ -88,6 +89,7 @@ export async function handleStripeWebhook(event: StripeDisputeEvent): Promise<{
       {
         eventId: eventLogId,
         eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED, event.id),
         payload,
         causationId: event.id,
         correlationId: paymentId,

@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 async function _GET(req: NextRequest) {
   try {
@@ -93,7 +94,7 @@ async function _GET(req: NextRequest) {
       bookingMembers: Number(bookingMemberInsert),
     });
   } catch (err) {
-    console.error("[CHAT BACKFILL]", err);
+    logError("internal.chat.backfill_error", err);
     return jsonWrap({ ok: false, error: "Backfill failed" }, { status: 500 });
   }
 }

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { LoyaltyEntryType, LoyaltyProgramStatus, LoyaltySourceType, Prisma } from "@prisma/client";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError, logInfo } from "@/lib/observability/logger";
 
 type ExpireRow = {
   user_id: string;
@@ -102,14 +103,18 @@ async function _POST(req: NextRequest) {
       expiredUsers += result.users;
     }
 
-    console.info("[loyalty][expire] cron", { programs: programs.length, expiredEntries, expiredUsers });
+    logInfo("cron.loyalty.expire", {
+      programs: programs.length,
+      expiredEntries,
+      expiredUsers,
+    });
 
     return jsonWrap(
       { ok: true, programs: programs.length, expiredEntries, expiredUsers },
       { status: 200 },
     );
   } catch (err) {
-    console.error("[loyalty][expire] cron error", err);
+    logError("cron.loyalty.expire_error", err);
     return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }

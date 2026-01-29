@@ -7,6 +7,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 type RefreshPayload = {
   organizationId?: number;
@@ -84,7 +85,7 @@ async function _POST(req: NextRequest) {
       accountId: account.id,
     });
   } catch (err) {
-    console.error("[admin][organizacoes][refresh-payments-status] error:", err);
+    logError("admin.organizacoes.refresh_payments_failed", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

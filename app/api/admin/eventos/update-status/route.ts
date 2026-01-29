@@ -8,6 +8,7 @@ import type { EventStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { logError } from "@/lib/observability/logger";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -191,17 +192,14 @@ async function _POST(req: NextRequest) {
         );
       }
 
-      console.error(
-        "[admin/eventos/update-status] Error updating event status:",
-        err
-      );
+      logError("admin.eventos.update_status_failed", err);
       return jsonWrap(
         { ok: false, error: "INTERNAL_ERROR" },
         { status: 500 }
       );
     }
   } catch (err) {
-    console.error("[admin/eventos/update-status] Unexpected error:", err);
+    logError("admin.eventos.update_status_unexpected", err);
     return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }
