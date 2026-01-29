@@ -1,12 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -28,7 +29,23 @@ function parseLimit(value: string | null) {
   return Math.min(Math.max(raw, 1), 200);
 }
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -40,7 +57,20 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_CHAT_CHANNELS" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
 
     const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
@@ -48,7 +78,7 @@ async function _GET(req: NextRequest) {
       select: { moduleKey: true },
     });
     if (!moduleEnabled) {
-      return jsonWrap({ ok: false, error: "Chat interno desativado." }, { status: 403 });
+      return fail(403, "Chat interno desativado.");
     }
 
     const params = req.nextUrl.searchParams;
@@ -88,17 +118,33 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, items: channels });
+    return respondOk(ctx, { items: channels });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
     console.error("GET /api/organizacao/chat/canais error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar canais." }, { status: 500 });
+    return fail(500, "Erro ao carregar canais.");
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -110,7 +156,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
 
     const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
@@ -118,7 +164,7 @@ async function _POST(req: NextRequest) {
       select: { moduleKey: true },
     });
     if (!moduleEnabled) {
-      return jsonWrap({ ok: false, error: "Chat interno desativado." }, { status: 403 });
+      return fail(403, "Chat interno desativado.");
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -130,7 +176,7 @@ async function _POST(req: NextRequest) {
     const description = typeof payload?.description === "string" ? payload.description.trim() : null;
 
     if (name.length < 2) {
-      return jsonWrap({ ok: false, error: "Nome do canal inválido." }, { status: 400 });
+      return fail(400, "Nome do canal inválido.");
     }
 
     let channel;
@@ -153,19 +199,29 @@ async function _POST(req: NextRequest) {
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        return jsonWrap({ ok: false, error: "Canal já existe." }, { status: 409 });
+        return fail(409, "Canal já existe.");
       }
       throw err;
     }
 
-    return jsonWrap({ ok: true, channel });
+    return respondOk(ctx, { channel });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
     console.error("POST /api/organizacao/chat/canais error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar canal." }, { status: 500 });
+    return fail(500, "Erro ao criar canal.");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

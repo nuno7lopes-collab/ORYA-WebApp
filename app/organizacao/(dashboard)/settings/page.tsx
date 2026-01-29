@@ -9,6 +9,7 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { CTA_DANGER, CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 import { cn } from "@/lib/utils";
 
 type OrganizationMeResponse = {
@@ -80,7 +81,6 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
 
   const organization = data?.organization ?? null;
   const profile = data?.profile ?? null;
-  const contactEmailFromAccount = data?.contactEmail ?? null;
   const redirectTo = "/organizacao/settings";
 
   const [address, setAddress] = useState("");
@@ -102,9 +102,9 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     if (!organization) return;
     setAddress((organization as { address?: string | null }).address ?? "");
     setShowAddressPublicly((organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false);
-    setOfficialEmail((organization as { officialEmail?: string | null })?.officialEmail ?? contactEmailFromAccount ?? "");
+    setOfficialEmail((organization as { officialEmail?: string | null })?.officialEmail ?? "");
     if (profile?.contactPhone) setContactPhone(profile.contactPhone);
-  }, [organization, profile, contactEmailFromAccount]);
+  }, [organization, profile]);
 
   const hasOrganization = useMemo(() => organization && data?.ok, [organization, data]);
   const membershipRole = data?.membershipRole ?? null;
@@ -114,15 +114,17 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const canEditOperational = isOwner || isCoOwner || isAdmin;
   const canViewSensitive = isOwner || isCoOwner;
   const dangerReady = dangerConfirm.trim().toUpperCase() === "APAGAR";
-  const officialEmailVerifiedAt = organization?.officialEmailVerifiedAt ? new Date(organization.officialEmailVerifiedAt) : null;
-  const officialEmailStatusLabel = officialEmailVerifiedAt
-    ? `Verificado ${officialEmailVerifiedAt.toLocaleDateString()}`
-    : organization?.officialEmail
+  const officialEmailNormalized = normalizeOfficialEmail(organization?.officialEmail ?? null);
+  const isOfficialEmailVerified = Boolean(officialEmailNormalized && organization?.officialEmailVerifiedAt);
+  const officialEmailVerifiedAtDate = organization?.officialEmailVerifiedAt ? new Date(organization.officialEmailVerifiedAt) : null;
+  const officialEmailStatusLabel = isOfficialEmailVerified && officialEmailVerifiedAtDate
+    ? `Verificado ${officialEmailVerifiedAtDate.toLocaleDateString()}`
+    : officialEmailNormalized
       ? "A aguardar verificação"
       : "Por definir";
-  const officialEmailBadgeClass = officialEmailVerifiedAt
+  const officialEmailBadgeClass = isOfficialEmailVerified
     ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
-    : organization?.officialEmail
+    : officialEmailNormalized
       ? "border-amber-300/50 bg-amber-500/10 text-amber-50"
       : "border-white/20 bg-white/5 text-white/70";
 
@@ -175,7 +177,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setOfficialEmailMessage("Apenas o Owner pode alterar este email.");
       return;
     }
-    if (!officialEmail.trim()) {
+    const normalizedEmail = normalizeOfficialEmail(officialEmail);
+    if (!normalizedEmail) {
       setOfficialEmailMessage("Indica um email oficial válido.");
       return;
     }
@@ -186,23 +189,27 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       const res = await fetch("/api/organizacao/organizations/settings/official-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: organization.id, email: officialEmail.trim() }),
+        body: JSON.stringify({ organizationId: organization.id, email: normalizedEmail }),
       });
       const json = await res.json().catch(() => null);
-      if (json?.ok) {
-        const alreadyVerified = json?.status === "VERIFIED";
-        setOfficialEmailMessage(
-          alreadyVerified
-            ? "Este email já está verificado."
-            : "Pedido enviado. Verifica a caixa de email para confirmar.",
-        );
-        await mutate();
-      } else if (json?.error === "EMAIL_ALREADY_VERIFIED") {
-        setOfficialEmailMessage("Este email já está verificado.");
-        await mutate();
-      } else if (!res.ok || json?.ok === false) {
-        setOfficialEmailMessage(json?.error || "Não foi possível iniciar a verificação.");
+      if (!res.ok || json?.ok === false) {
+        if (json?.error === "EMAIL_ALREADY_VERIFIED" || json?.errorCode === "EMAIL_ALREADY_VERIFIED") {
+          setOfficialEmailMessage("Este email já está verificado.");
+          await mutate();
+        } else {
+          setOfficialEmailMessage(
+            json?.message || json?.error || json?.errorCode || "Não foi possível iniciar a verificação.",
+          );
+        }
+        return;
       }
+      const status = json?.data?.status ?? json?.status;
+      setOfficialEmailMessage(
+        status === "VERIFIED"
+          ? "Este email já está verificado."
+          : "Pedido enviado. Verifica a caixa de email para confirmar.",
+      );
+      await mutate();
     } catch (err) {
       console.error("[organização/settings] official-email", err);
       setOfficialEmailMessage("Erro inesperado ao enviar pedido.");
@@ -332,7 +339,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 }`}
                 placeholder="equipa@organização.pt"
               />
-              {!officialEmailVerifiedAt && organization?.officialEmail && (
+              {!isOfficialEmailVerified && officialEmailNormalized && (
                 <p className="text-[11px] text-amber-200">
                   Aguardamos confirmação. Reenvia se precisares de novo token.
                 </p>
@@ -347,11 +354,11 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   disabled={!isOwner || officialEmailSaving}
                   className={`${CTA_PRIMARY} disabled:opacity-60 shadow-[0_10px_30px_rgba(0,0,0,0.45)]`}
                 >
-                  {officialEmailSaving ? "A enviar…" : officialEmailVerifiedAt ? "Revalidar email" : "Enviar verificação"}
+                  {officialEmailSaving ? "A enviar…" : isOfficialEmailVerified ? "Revalidar email" : "Enviar verificação"}
                 </button>
               </div>
               {officialEmailMessage && <p className="text-[11px] text-white">{officialEmailMessage}</p>}
-              {(!organization?.officialEmail || !officialEmailVerifiedAt) && (
+              {(!officialEmailNormalized || !isOfficialEmailVerified) && (
                 <p className="text-[11px] text-amber-200">Sem email oficial verificado.</p>
               )}
             </div>

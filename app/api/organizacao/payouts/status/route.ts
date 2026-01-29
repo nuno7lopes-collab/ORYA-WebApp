@@ -1,19 +1,20 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { ensureOrgOwner } from "@/lib/organizationPermissions";
+import { isOrgOwner } from "@/lib/organizationPermissions";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -22,23 +23,28 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return respondError(
+        ctx,
+        { errorCode: "UNAUTHENTICATED", message: "Sessão inválida.", retryable: false },
+        { status: 401 },
+      );
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      includeOrganizationFields: "settings",
     });
 
-    const ownerCheck = membership ? ensureOrgOwner(membership.role) : { ok: false as const };
-    if (!organization || !membership || !ownerCheck.ok) {
-      return jsonWrap({ ok: false, error: "APENAS_OWNER" }, { status: 403 });
+    if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
+      return respondError(
+        ctx,
+        { errorCode: "APENAS_OWNER", message: "Apenas owner.", retryable: false },
+        { status: 403 },
+      );
     }
 
     if (organization.orgType === "PLATFORM") {
-      return jsonWrap({
-        ok: true,
+      return respondOk(ctx, {
         status: "PLATFORM",
         charges_enabled: false,
         payouts_enabled: false,
@@ -48,8 +54,7 @@ async function _GET(req: NextRequest) {
 
     if (!organization.stripeAccountId) {
       console.log("[stripe][status] no account", { organizationId: organization.id });
-      return jsonWrap({
-        ok: true,
+      return respondOk(ctx, {
         status: "NOT_CONNECTED",
         charges_enabled: false,
         payouts_enabled: false,
@@ -108,8 +113,7 @@ async function _GET(req: NextRequest) {
       );
     }
 
-    return jsonWrap({
-      ok: true,
+    return respondOk(ctx, {
       status,
       charges_enabled,
       payouts_enabled,
@@ -118,7 +122,10 @@ async function _GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[stripe][status] error", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const GET = withApiEnvelope(_GET);

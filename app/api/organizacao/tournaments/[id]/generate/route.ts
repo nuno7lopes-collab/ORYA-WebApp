@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getConfirmedPairings } from "@/domain/tournaments/generation";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +7,8 @@ import { TournamentFormat, OrganizationModule } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { requestTournamentGeneration } from "@/domain/tournaments/commands";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 async function isOrganizationUser(userId: string, organizationId: number) {
   const organization = await prisma.organization.findUnique({
@@ -16,8 +16,8 @@ async function isOrganizationUser(userId: string, organizationId: number) {
     select: { officialEmail: true, officialEmailVerifiedAt: true },
   });
   if (!organization) return false;
-  const emailGate = ensureOrganizationEmailVerified(organization);
-  if (!emailGate.ok) return false;
+  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TOURNAMENTS_GENERATE" });
+  if (!emailGate.ok) return { ...emailGate, status: 403 };
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { onboardingDone: true, fullName: true, username: true },
@@ -43,26 +43,51 @@ async function isOrganizationUser(userId: string, organizationId: number) {
 }
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const resolved = await params;
   const id = Number(resolved?.id);
-  if (!Number.isFinite(id)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isFinite(id)) return fail(400, "INVALID_ID");
 
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return fail(401, "UNAUTHENTICATED");
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
     include: { event: { select: { organizationId: true } } },
   });
-  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return fail(404, "NOT_FOUND");
 
   if (!tournament.event.organizationId) {
-    return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 400 });
+    return fail(400, "NO_ORGANIZATION");
   }
 
   const authorized = await isOrganizationUser(data.user.id, tournament.event.organizationId);
-  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (authorized !== true) {
+    if (authorized && typeof authorized === "object" && "error" in authorized) {
+      return respondError(
+        ctx,
+        {
+          errorCode: authorized.error ?? "FORBIDDEN",
+          message: authorized.message ?? authorized.error ?? "Sem permissões.",
+          retryable: false,
+          details: authorized,
+        },
+        { status: authorized.status ?? 403 },
+      );
+    }
+    return fail(403, "FORBIDDEN");
+  }
 
   const body = await req.json().catch(() => ({}));
   const format = (body?.format as TournamentFormat | undefined) ?? tournament.format;
@@ -92,7 +117,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     preserveOrder = true;
     const targetSize = bracketSize ?? configBracketSize ?? null;
     if (targetSize && manualIds.length > targetSize) {
-      return jsonWrap({ ok: false, error: "BRACKET_TOO_SMALL" }, { status: 400 });
+      return fail(400, "BRACKET_TOO_SMALL");
     }
     if (targetSize) {
       const slots = Array.from({ length: targetSize }, () => null as number | null);
@@ -121,7 +146,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
   }
   if (source === "manual" && manualIds.length === 0) {
-    return jsonWrap({ ok: false, error: "NO_PARTICIPANTS" }, { status: 400 });
+    return fail(400, "NO_PARTICIPANTS");
   }
 
   await requestTournamentGeneration({
@@ -142,6 +167,18 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     },
   });
 
-  return jsonWrap({ ok: true, queued: true }, { status: 202 });
+  return respondOk(ctx, { queued: true }, { status: 202 });
 }
-export const POST = withApiEnvelope(_POST);
+export const POST = _POST;
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

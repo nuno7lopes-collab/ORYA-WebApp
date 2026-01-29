@@ -1,8 +1,15 @@
 // Proxy (Next.js) para manter a sessão do Supabase fresca e aplicar regras base de segurança.
 // Inclui redirects canónicos/HTTPS, proteção de admin e headers de cache para rotas sensíveis.
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import {
+  CORRELATION_ID_HEADER,
+  ORYA_CORRELATION_ID_HEADER,
+  ORYA_REQUEST_ID_HEADER,
+  REQUEST_ID_HEADER,
+} from "@/lib/http/headers";
 
 const ADMIN_HOSTS = (process.env.ADMIN_HOSTS ?? "")
   .split(",")
@@ -98,6 +105,30 @@ function getForwardedProto(req: NextRequest) {
   return raw.split(",")[0]?.trim().toLowerCase() ?? "";
 }
 
+function normalizeHeaderValue(value: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function resolveRequestContext(req: NextRequest) {
+  const requestId =
+    normalizeHeaderValue(req.headers.get(REQUEST_ID_HEADER)) ??
+    normalizeHeaderValue(req.headers.get(ORYA_REQUEST_ID_HEADER)) ??
+    crypto.randomUUID();
+  const correlationId =
+    normalizeHeaderValue(req.headers.get(CORRELATION_ID_HEADER)) ??
+    normalizeHeaderValue(req.headers.get(ORYA_CORRELATION_ID_HEADER)) ??
+    requestId;
+  return { requestId, correlationId };
+}
+
+function applyRequestContextHeaders(headers: Headers, ctx: { requestId: string; correlationId: string }) {
+  headers.set(REQUEST_ID_HEADER, ctx.requestId);
+  headers.set(ORYA_REQUEST_ID_HEADER, ctx.requestId);
+  headers.set(CORRELATION_ID_HEADER, ctx.correlationId);
+  headers.set(ORYA_CORRELATION_ID_HEADER, ctx.correlationId);
+}
+
 function isSensitivePath(pathname: string) {
   if (!pathname) return false;
   for (const prefix of SENSITIVE_PATH_PREFIXES) {
@@ -133,38 +164,10 @@ function isAllowedAdminIp(ip: string, hostname: string) {
   return false;
 }
 
-function resolveRequestIds(req: NextRequest) {
-  const requestId =
-    req.headers.get("x-orya-request-id") ??
-    req.headers.get("x-request-id") ??
-    crypto.randomUUID();
-  const correlationId =
-    req.headers.get("x-orya-correlation-id") ??
-    req.headers.get("x-correlation-id") ??
-    requestId;
-  return { requestId, correlationId };
-}
-
-function buildRequestHeaders(req: NextRequest, requestId: string, correlationId: string) {
-  const headers = new Headers(req.headers);
-  headers.set("x-orya-request-id", requestId);
-  headers.set("x-orya-correlation-id", correlationId);
-  headers.set("x-request-id", requestId);
-  headers.set("x-correlation-id", correlationId);
-  return headers;
-}
-
-function attachResponseHeaders(res: NextResponse, requestId: string, correlationId: string) {
-  res.headers.set("x-orya-request-id", requestId);
-  res.headers.set("x-orya-correlation-id", correlationId);
-  res.headers.set("x-request-id", requestId);
-  res.headers.set("x-correlation-id", correlationId);
-  return res;
-}
-
-export async function proxy(req: NextRequest) {
-  const { requestId, correlationId } = resolveRequestIds(req);
-  const requestHeaders = buildRequestHeaders(req, requestId, correlationId);
+export async function middleware(req: NextRequest) {
+  const requestContext = resolveRequestContext(req);
+  const requestHeaders = new Headers(req.headers);
+  applyRequestContextHeaders(requestHeaders, requestContext);
 
   const hostname = getHostname(req);
   const adminHost =
@@ -189,7 +192,9 @@ export async function proxy(req: NextRequest) {
     const redirectHost = shouldRedirectCanonical ? CANONICAL_HOST : hostname;
     const redirectProtocol = shouldForceHttps ? "https" : CANONICAL_PROTOCOL || "https";
     const redirectUrl = buildRedirectUrl(req, redirectProtocol, redirectHost);
-    return attachResponseHeaders(NextResponse.redirect(redirectUrl, 301), requestId, correlationId);
+    const res = NextResponse.redirect(redirectUrl, 301);
+    applyRequestContextHeaders(res.headers, requestContext);
+    return res;
   }
 
   const url = req.nextUrl.clone();
@@ -205,10 +210,14 @@ export async function proxy(req: NextRequest) {
 
   const enforceAdminHost = IS_PROD || ADMIN_HOSTS.length > 0;
   if (isAdminRequest && !adminHost && enforceAdminHost) {
-    return attachResponseHeaders(new NextResponse(null, { status: 404 }), requestId, correlationId);
+    const res = new NextResponse(null, { status: 404 });
+    applyRequestContextHeaders(res.headers, requestContext);
+    return res;
   }
   if (isAdminRequest && adminHost && !isAllowedAdminIp(getClientIp(req), hostname)) {
-    return attachResponseHeaders(new NextResponse(null, { status: 403 }), requestId, correlationId);
+    const res = new NextResponse(null, { status: 403 });
+    applyRequestContextHeaders(res.headers, requestContext);
+    return res;
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -217,8 +226,7 @@ export async function proxy(req: NextRequest) {
   const res = shouldRewriteRoot
     ? NextResponse.rewrite(url, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
-
-  attachResponseHeaders(res, requestId, correlationId);
+  applyRequestContextHeaders(res.headers, requestContext);
 
   const sensitivePath = isSensitivePath(pathname);
   if (sensitivePath) {

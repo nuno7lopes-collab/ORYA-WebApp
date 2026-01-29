@@ -1,26 +1,43 @@
-# Official Email Policy (Org)
+# Official Email — Política Canónica
 
-## SSOT
-- Organization.officialEmail + Organization.officialEmailVerifiedAt sao a verdade do estado.
-- PlatformSetting key `platform.officialEmail` guarda o email oficial da plataforma.
+Data: 27 Jan 2026
 
-## Normalizacao
-- `normalizeOfficialEmail(input)` = NFKC + trim + lowercase.
-- Guardar sempre normalizado.
+## Normalização (canónica)
+- `trim()` + `NFKC` + `lowercase`.
+- Guardado em `Organization.officialEmail` **já normalizado** (não existe `officialEmailNormalized`).
+- Não aplicamos punycode/IDN nesta iteração; se surgirem domínios unicode reais, adicionar conversão para ASCII antes de guardar.
 
-## Validacao
-- Email deve passar regex basico (formato local@dominio).
+## Verificação
+- Email está verificado se **`officialEmail` normalizado** existe **e** `officialEmailVerifiedAt` != null.
+- Alterar `officialEmail` limpa automaticamente `officialEmailVerifiedAt`.
+- Método atual: **EMAIL_TOKEN** (link com token).
+- Audit log guarda apenas **email mascarado** e `verifiedDomain` (sem payload sensível).
+- Se já verificado, endpoints devem responder `200 ok` com `status:"VERIFIED"` (sem erro legacy).
 
-## Verificacao
-- Alterar officialEmail limpa officialEmailVerifiedAt.
-- Endpoints de request/confirm devolvem estado estavel (ex.: `status: "VERIFIED"` quando ja verificado).
+## Gates (regra única)
+- Se ação exige email verificado:
+  - Sem `officialEmail` → `OFFICIAL_EMAIL_REQUIRED`.
+  - Com `officialEmail` mas sem `officialEmailVerifiedAt` → `OFFICIAL_EMAIL_NOT_VERIFIED`.
 
-## Enforcement
-- Acoes org-scoped de escrita exigem `officialEmailVerifiedAt` (fail-closed).
+### Payload canónico (erro)
+```json
+{
+  "ok": false,
+  "requestId": "<uuid>",
+  "correlationId": "<uuid>",
+  "error": "OFFICIAL_EMAIL_NOT_VERIFIED",
+  "message": "Email oficial por verificar para esta ação.",
+  "email": "foo@bar.com",
+  "verifyUrl": "/organizacao/settings?tab=official-email",
+  "nextStepUrl": "/organizacao/settings?tab=official-email",
+  "reasonCode": "CREATE_SERVICE"
+}
+```
 
 ## Observabilidade
-- requestId/correlationId sempre presentes em respostas de verificacao.
+- `requestId` e `correlationId` obrigatorios em payload + headers (`x-orya-request-id`, `x-orya-correlation-id`).
+- `correlationId` presente em mutações com side-effects (request/confirm/resend/verify).
 
-## Platform email
-- Getter canonico: `getPlatformOfficialEmail()` (DB -> env -> fallback).
-- Default final: `admin@orya.pt` com warning.
+## Notas de cache/UI
+- Após pedir verificação ou confirmar email, UI deve `mutate()`/`router.refresh()`.
+- Shell do dashboard usa `/api/organizacao/me` para revalidar estado.

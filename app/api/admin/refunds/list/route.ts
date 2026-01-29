@@ -1,18 +1,23 @@
 // app/api/admin/refunds/list/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import type { Prisma } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const PAGE_SIZE = 50;
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
+      return respondError(
+        ctx,
+        { errorCode: admin.error, message: admin.error, retryable: false },
+        { status: admin.status },
+      );
     }
 
     const url = new URL(req.url);
@@ -108,17 +113,17 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return jsonWrap(
-      {
-        ok: true,
-        items,
-        pagination: { nextCursor, hasMore },
-      },
+    return respondOk(
+      ctx,
+      { items, pagination: { nextCursor, hasMore } },
       { status: 200 },
     );
   } catch (err) {
     console.error("[admin/refunds/list]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const GET = withApiEnvelope(_GET);

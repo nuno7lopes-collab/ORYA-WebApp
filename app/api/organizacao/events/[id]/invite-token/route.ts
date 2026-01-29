@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
@@ -12,13 +11,30 @@ import { rateLimit } from "@/lib/auth/rateLimit";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   try {
     const limiter = await rateLimit(req, { windowMs: 5 * 60 * 1000, max: 10, keyPrefix: "invite_token_issue" });
     if (!limiter.allowed) {
-      return jsonWrap({ ok: false, error: "RATE_LIMITED" }, { status: 429 });
+      return fail(429, "RATE_LIMITED");
     }
 
     const supabase = await createSupabaseServer();
@@ -26,7 +42,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
-      return jsonWrap({ ok: false, error: "EVENT_ID_INVALID" }, { status: 400 });
+      return fail(400, "EVENT_ID_INVALID");
     }
 
     const event = await prisma.event.findUnique({
@@ -38,10 +54,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       },
     });
     if (!event) {
-      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return fail(404, "EVENT_NOT_FOUND");
     }
     if (event.organizationId == null) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
     const organizationId = event.organizationId;
 
@@ -52,13 +68,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       required: "EDIT",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
 
     if (event.organization) {
-      const emailGate = ensureOrganizationEmailVerified(event.organization);
+      const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_INVITE_TOKEN" });
       if (!emailGate.ok) {
-        return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+        return respondError(
+          ctx,
+          {
+            errorCode: emailGate.error ?? "FORBIDDEN",
+            message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+            retryable: false,
+            details: emailGate,
+          },
+          { status: 403 },
+        );
       }
     }
 
@@ -70,7 +95,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const emailRaw = typeof body?.email === "string" ? body.email.trim() : "";
     const emailNormalized = normalizeEmail(emailRaw);
     if (!emailNormalized) {
-      return jsonWrap({ ok: false, error: "INVITE_EMAIL_INVALID" }, { status: 400 });
+      return fail(400, "INVITE_EMAIL_INVALID");
     }
 
     const ticketTypeId =
@@ -84,7 +109,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         select: { id: true, eventId: true },
       });
       if (!ticketType || ticketType.eventId !== eventId) {
-        return jsonWrap({ ok: false, error: "INVITE_TICKET_TYPE_INVALID" }, { status: 400 });
+        return fail(400, "INVITE_TICKET_TYPE_INVALID");
       }
     }
 
@@ -92,7 +117,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (!accessDecision.allowed) {
       const reason = accessDecision.reasonCode;
       const status = reason === "INVITE_TOKEN_TTL_REQUIRED" ? 400 : 409;
-      return jsonWrap({ ok: false, error: reason }, { status });
+      return fail(status, reason);
     }
 
     const issued = await prisma.$transaction(async (tx) => {
@@ -139,20 +164,32 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       return created;
     });
 
-    return jsonWrap({ ok: true, token: issued.token, expiresAt: issued.expiresAt });
+    return respondOk(ctx, { token: issued.token, expiresAt: issued.expiresAt });
   } catch (err: any) {
     const message = typeof err?.message === "string" ? err.message : "";
     if (message === "INVITE_TOKEN_NOT_ALLOWED") {
-      return jsonWrap({ ok: false, error: "INVITE_TOKEN_NOT_ALLOWED" }, { status: 409 });
+      return fail(409, "INVITE_TOKEN_NOT_ALLOWED");
     }
     if (message === "INVITE_TOKEN_TTL_REQUIRED") {
-      return jsonWrap({ ok: false, error: "INVITE_TOKEN_TTL_REQUIRED" }, { status: 400 });
+      return fail(400, "INVITE_TOKEN_TTL_REQUIRED");
     }
     if (message === "INVITE_IDENTITY_MATCH_UNSUPPORTED") {
-      return jsonWrap({ ok: false, error: "INVITE_IDENTITY_MATCH_UNSUPPORTED" }, { status: 409 });
+      return fail(409, "INVITE_IDENTITY_MATCH_UNSUPPORTED");
     }
     console.error("[organizacao/eventos/invite-token][POST]", err);
-    return jsonWrap({ ok: false, error: "UNKNOWN_ERROR" }, { status: 500 });
+    return fail(500, "UNKNOWN_ERROR");
   }
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  if (status === 429) return "RATE_LIMITED";
+  return "INTERNAL_ERROR";
+}

@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -11,6 +10,8 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -25,7 +26,29 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -35,10 +58,7 @@ async function _GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return jsonWrap(
-        { ok: false, error: "Perfil não encontrado." },
-        { status: 403 }
-      );
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -48,11 +68,11 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return fail(403, reservasAccess.error);
     }
 
     const items = await prisma.service.findMany({
@@ -80,20 +100,28 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("GET /api/organizacao/servicos error:", err);
-    return jsonWrap(
-      { ok: false, error: "Erro ao carregar serviços." },
-      { status: 500 }
-    );
+    return fail(500, "Erro ao carregar serviços.");
   }
 }
 
 async function _POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -103,10 +131,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return jsonWrap(
-        { ok: false, error: "Perfil não encontrado." },
-        { status: 403 }
-      );
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -116,18 +141,18 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return fail(403, reservasAccess.error);
     }
 
     const writeAccess = ensureOrganizationWriteAccess(organization, {
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return jsonWrap({ ok: false, error: writeAccess.error }, { status: 403 });
+      return fail(403, writeAccess.error);
     }
 
     await ensureDefaultPolicies(prisma, organization.id);
@@ -146,10 +171,10 @@ async function _POST(req: NextRequest) {
 
     const allowedDurations = new Set([30, 60, 90, 120]);
     if (!title || !Number.isFinite(durationMinutes) || !allowedDurations.has(durationMinutes)) {
-      return jsonWrap({ ok: false, error: "Duração inválida (30/60/90/120 min)." }, { status: 400 });
+      return fail(400, "Duração inválida (30/60/90/120 min).");
     }
     if (!Number.isFinite(unitPriceCents) || unitPriceCents < 0) {
-      return jsonWrap({ ok: false, error: "Dados inválidos." }, { status: 400 });
+      return fail(400, "Dados inválidos.");
     }
 
     let policyId: number | null = null;
@@ -159,7 +184,7 @@ async function _POST(req: NextRequest) {
         select: { id: true },
       });
       if (!policy) {
-        return jsonWrap({ ok: false, error: "Política inválida." }, { status: 400 });
+        return fail(400, "Política inválida.");
       }
       policyId = policy.id;
     } else {
@@ -171,7 +196,7 @@ async function _POST(req: NextRequest) {
     }
 
     if (!["FIXED", "CHOOSE_AT_BOOKING"].includes(locationModeRaw)) {
-      return jsonWrap({ ok: false, error: "Localização inválida." }, { status: 400 });
+      return fail(400, "Localização inválida.");
     }
 
     const service = await prisma.service.create({
@@ -211,16 +236,13 @@ async function _POST(req: NextRequest) {
       userAgent,
     });
 
-    return jsonWrap({ ok: true, service }, { status: 201 });
+    return respondOk(ctx, { service }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("POST /api/organizacao/servicos error:", err);
-    return jsonWrap(
-      { ok: false, error: "Erro ao criar serviço." },
-      { status: 500 }
-    );
+    return fail(500, "Erro ao criar serviço.");
   }
 }
 export const GET = withApiEnvelope(_GET);

@@ -21,7 +21,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `correlationId` em operacoes async/outbox (C-G5/C-G7) e logado em erros; `requestId` sempre presente em logs.
 
 **Referencias de codigo**
-- `proxy.ts` (geracao requestId)
+- `middleware.ts` (geracao requestId)
 - `lib/http/headers.ts`
 - `lib/http/requestContext.ts`
 - `lib/http/envelope.ts`
@@ -30,14 +30,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `domain/outbox/**`, `domain/eventLog/**` (correlationId)
 - `lib/security.ts` (auth fail-closed)
 
-**Status**: DONE
-**DONE (data/commit/nota)**: 2026-01-28 — Envelope/headers canonicos + gates/tests + auditoria de auth/legacy (v9 close).
-
-**CI gates**
-- PR #1: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/1
-- Branch: `chore/seed-gates`
-- Merge commit (developer): f4d2a6a
-- Required check: `gates`
+**Status**: TODO (implementacao em curso)
+**DONE (data/commit/nota)**: —
 
 ---
 
@@ -75,11 +69,6 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `lib/checkoutSchemas.ts`
 - `lib/stripe/idempotency.ts`
 
-**PR/merge metadata (PR1)**
-- PR #2: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/2
-- Branch: `block1/payments-checkout-ledger-outbox`
-- Merge commit (developer): 67b8b45
-
 **Status**: DONE
 **DONE (data/commit/nota)**: 2026-01-27 — Block 1: canonical PI + idempotency + refunds/disputes status sync + guardrails/tests.
 
@@ -104,8 +93,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `app/api/internal/outbox/replay/route.ts`
 - `app/api/internal/outbox/dlq/route.ts`
 
-**Status**: DONE
-**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/8 — merge aabb7b5c7f0fbc492f9f17c057a78342cbc30d25 — claim/lock winner-only + gates ops/outbox.
+**Status**: TODO
+**DONE (data/commit/nota)**: —
 
 ---
 
@@ -151,7 +140,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `tests/access/officialEmailOrgWriteGuardrails.test.ts`
 
 **Status**: DONE
-**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/13 — merge 2b1728efda31f4432b228cce2f6b6267c9fdc720
+**DONE (data/commit/nota)**: 2026-01-27 — Bloco 3 (PR2/PR3)
 
 ---
 
@@ -178,8 +167,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `domain/opsFeed/**`
 - `domain/eventLog/**`
 
-**Status**: DONE
-**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/14 — merge 658da4ff7af2f375588d475993f0d216d94d2024
+**Status**: TODO
+**DONE (data/commit/nota)**: —
 
 ---
 
@@ -198,8 +187,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `lib/organizationRbac.ts`
 - `lib/organizationContext.ts`
 
-**Status**: DONE
-**DONE (data/commit/nota)**: 2026-01-28 — Guardrails RBAC/Org context sem bypass + testes `vitest` em `tests/rbac`/`tests/access` + `tests/ops/rbacGuardrails`.
+**Status**: TODO
+**DONE (data/commit/nota)**: —
 
 ---
 
@@ -256,11 +245,6 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
   - `app/api/me/reservas/route.ts`
 
 **Status**: IN PROGRESS (PR1+PR2 done: snapshot SSOT + cancel/refund/no-show por snapshot)
-**PR2 metadata**
-- PR: #3 https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/3
-- Branch: `chat3/block7-pr2-snapshot`
-- Commits: `18e3f71` (code), `487e11c` (metadata), `7532de4` (PR link), `f9aec4a` (commit list), `e4aead2` (guardrail fix), `01e66f1` (ci retrigger)
-- Gates/tests: `npm run db:gates:offline` PASS (local), `npx vitest run tests/agenda` PASS (local)
 
 ---
 
@@ -300,9 +284,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Secret unico para rotas internas/cron.
 
-**Status**: DONE
-**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/7 — merge b1136f5a0166a3cc7e50e5bcdca875d47890acc5 — helper canónico.
-**DONE (data/commit/nota)**: 2026-01-27 — PR https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/12 — merge d574ae20ce1fba019b19ce08b6c9efbacea484fc — envelope ops feed/audit.
+**Status**: TODO
 
 ---
 

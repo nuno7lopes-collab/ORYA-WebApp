@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -18,7 +17,8 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const resolveIp = (req: NextRequest) => {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -136,7 +136,29 @@ async function sendInviteEmail(invite: {
   }
 }
 
-async function _GET(req: NextRequest) {
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -145,7 +167,7 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const profile = await prisma.profile.findUnique({
@@ -168,7 +190,7 @@ async function _GET(req: NextRequest) {
       }
     }
     if (!organizationId) {
-      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+      return fail(400, "INVALID_ORGANIZATION_ID");
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
@@ -206,7 +228,7 @@ async function _GET(req: NextRequest) {
         },
       });
       if (!inviteForUser) {
-        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return fail(403, "FORBIDDEN");
       }
     }
 
@@ -245,10 +267,7 @@ async function _GET(req: NextRequest) {
     });
 
     const viewer = { id: user.id, username: viewerUsername, email: viewerEmail };
-    return jsonWrap(
-      {
-        ok: true,
-        viewerRole: membership?.role ?? null,
+    return respondOk(ctx, { viewerRole: membership?.role ?? null,
         organizationId,
         items: invites.map((inv) => serializeInvite(inv, viewer)),
       },
@@ -256,11 +275,22 @@ async function _GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/members/invites][GET]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -269,7 +299,7 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const body = await req.json().catch(() => null);
@@ -278,31 +308,31 @@ async function _POST(req: NextRequest) {
     const roleRaw = typeof body?.role === "string" ? body.role.toUpperCase() : null;
 
     if (!organizationId || !identifier || !roleRaw) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return fail(400, "INVALID_PAYLOAD");
     }
 
     if (!Object.values(OrganizationMemberRole).includes(roleRaw as OrganizationMemberRole)) {
-      return jsonWrap({ ok: false, error: "INVALID_ROLE" }, { status: 400 });
+      return fail(400, "INVALID_ROLE");
     }
     if (roleRaw === "VIEWER") {
-      return jsonWrap({ ok: false, error: "ROLE_NOT_ALLOWED" }, { status: 400 });
+      return fail(400, "ROLE_NOT_ALLOWED");
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     const manageAllowed = canManageMembers(membership?.role ?? null, null, roleRaw as OrganizationMemberRole);
     if (!membership || !manageAllowed) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
     if (roleRaw === "OWNER" && !hasOrgOwnerAccess(membership.role)) {
-      return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_SET_OWNER" }, { status: 403 });
+      return fail(403, "ONLY_OWNER_CAN_SET_OWNER");
     }
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { officialEmail: true, officialEmailVerifiedAt: true },
     });
-    const emailGate = ensureOrganizationEmailVerified(organization ?? {});
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBER_INVITES" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const resolved = await resolveUserIdentifier(identifier);
@@ -318,10 +348,7 @@ async function _POST(req: NextRequest) {
         where: { organizationId_userId: { organizationId, userId: targetUserId } },
       });
       if (existingMember) {
-        return jsonWrap(
-          { ok: false, error: "Utilizador já é membro desta organização." },
-          { status: 400 },
-        );
+        return fail(400, "Utilizador já é membro desta organização.");
       }
     }
 
@@ -455,14 +482,25 @@ async function _POST(req: NextRequest) {
       },
     );
 
-    return jsonWrap({ ok: true, invite: serializeInvite(invite, viewer) }, { status: 201 });
+    return respondOk(ctx, { invite: serializeInvite(invite, viewer) }, { status: 201 });
   } catch (err) {
     console.error("[organização/members/invites][POST]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
 
-async function _PATCH(req: NextRequest) {
+export async function PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -471,7 +509,7 @@ async function _PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const body = await req.json().catch(() => null);
@@ -481,15 +519,15 @@ async function _PATCH(req: NextRequest) {
     const action = typeof body?.action === "string" ? body.action.toUpperCase() : null;
 
     if (!action) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return fail(400, "INVALID_PAYLOAD");
     }
 
     if (!inviteId && !tokenFromBody) {
-      return jsonWrap({ ok: false, error: "NEED_INVITE_ID_OR_TOKEN" }, { status: 400 });
+      return fail(400, "NEED_INVITE_ID_OR_TOKEN");
     }
 
     if (!organizationId && action !== "ACCEPT" && action !== "DECLINE") {
-      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+      return fail(400, "INVALID_ORGANIZATION_ID");
     }
 
     const invite = await prisma.organizationMemberInvite.findFirst({
@@ -513,7 +551,7 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (!invite) {
-      return jsonWrap({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
+      return fail(404, "INVITE_NOT_FOUND");
     }
 
     if (!organizationId) {
@@ -536,9 +574,9 @@ async function _PATCH(req: NextRequest) {
       where: { id: organizationId },
       select: { officialEmail: true, officialEmailVerifiedAt: true },
     });
-    const emailGate = ensureOrganizationEmailVerified(organization ?? {});
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBER_INVITES" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const viewerProfile = await prisma.profile.findUnique({
@@ -805,7 +843,7 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (!updated) {
-      return jsonWrap({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
+      return fail(404, "INVITE_NOT_FOUND");
     }
 
     if (action === "ACCEPT") {
@@ -827,35 +865,29 @@ async function _PATCH(req: NextRequest) {
       );
     }
 
-    return jsonWrap({ ok: true, invite: serializeInvite(updated, viewer) }, { status: 200 });
+    return respondOk(ctx, { invite: serializeInvite(updated, viewer) }, { status: 200 });
   } catch (err: unknown) {
     if (err instanceof Error && err.message === "LAST_OWNER_BLOCK") {
-      return jsonWrap(
-        { ok: false, error: "Não podes remover o último Owner. Adiciona outro Owner antes." },
-        { status: 400 },
-      );
+      return fail(400, "Não podes remover o último Owner. Adiciona outro Owner antes.");
     }
     if (err instanceof Error) {
       if (err.message === "FORBIDDEN") {
-        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return fail(403, "FORBIDDEN");
       }
       if (err.message === "ONLY_OWNER_CAN_SET_OWNER" || err.message === "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE") {
-        return jsonWrap({ ok: false, error: err.message }, { status: 403 });
+        return fail(403, err.message);
       }
       if (err.message === "INVITE_NOT_FOUND") {
-        return jsonWrap({ ok: false, error: "INVITE_NOT_FOUND" }, { status: 404 });
+        return fail(404, "INVITE_NOT_FOUND");
       }
       if (err.message === "INVITE_NOT_PENDING" || err.message === "INVITE_EXPIRED") {
-        return jsonWrap({ ok: false, error: err.message }, { status: 400 });
+        return fail(400, err.message);
       }
       if (err.message === "UNKNOWN_ACTION") {
-        return jsonWrap({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
+        return fail(400, "UNKNOWN_ACTION");
       }
     }
     console.error("[organização/members/invites][PATCH]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);
-export const PATCH = withApiEnvelope(_PATCH);

@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,6 +8,8 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole, StoreProductStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -28,10 +29,32 @@ type PreviewProduct = {
   imageUrl: string | null;
 };
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -44,12 +67,12 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissoes." }, { status: 403 });
+      return fail(403, "Sem permissoes.");
     }
 
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return fail(403, lojaAccess.error);
     }
 
     const store = await prisma.store.findFirst({
@@ -58,7 +81,7 @@ async function _GET(req: NextRequest) {
     });
 
     if (!store) {
-      return jsonWrap({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
+      return fail(404, "Loja ainda nao criada.");
     }
 
     const [totalCount, publicCount, draftCount, publicItems, draftItems] = await Promise.all([
@@ -126,9 +149,7 @@ async function _GET(req: NextRequest) {
       imageUrl: product.images[0]?.url ?? null,
     });
 
-    return jsonWrap({
-      ok: true,
-      store,
+    return respondOk(ctx, {store,
       counts: {
         total: totalCount,
         public: publicCount,
@@ -139,10 +160,10 @@ async function _GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("GET /api/organizacao/loja/preview error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
+    return fail(500, "Erro ao carregar loja.");
   }
 }
 export const GET = withApiEnvelope(_GET);

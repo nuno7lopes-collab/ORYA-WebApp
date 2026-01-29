@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole } from "@prisma/client";
@@ -9,7 +8,8 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureGroupMemberForOrg, resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const resolveIp = (req: NextRequest) => {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -17,7 +17,29 @@ const resolveIp = (req: NextRequest) => {
   return null;
 };
 
-async function _GET(req: NextRequest) {
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -26,7 +48,7 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const url = new URL(req.url);
@@ -47,7 +69,7 @@ async function _GET(req: NextRequest) {
     }
 
     if (!organizationId) {
-      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+      return fail(400, "INVALID_ORGANIZATION_ID");
     }
 
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
@@ -55,7 +77,7 @@ async function _GET(req: NextRequest) {
     // Qualquer membro pode consultar; ações ficam restritas por role
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
 
     const members = await prisma.organizationMember.findMany({
@@ -89,17 +111,27 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return jsonWrap(
-      { ok: true, items, viewerRole: callerMembership.role, organizationId },
+    return respondOk(ctx, { items, viewerRole: callerMembership.role, organizationId },
       { status: 200 },
     );
   } catch (err) {
     console.error("[organização/members][GET]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
 
-async function _PATCH(req: NextRequest) {
+export async function PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -108,7 +140,7 @@ async function _PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const body = await req.json().catch(() => null);
@@ -117,27 +149,27 @@ async function _PATCH(req: NextRequest) {
     const role = typeof body?.role === "string" ? body.role.toUpperCase() : null;
 
     if (!organizationId || !targetUserId || !role) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return fail(400, "INVALID_PAYLOAD");
     }
     if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) {
-      return jsonWrap({ ok: false, error: "INVALID_ROLE" }, { status: 400 });
+      return fail(400, "INVALID_ROLE");
     }
     if (role === "VIEWER") {
-      return jsonWrap({ ok: false, error: "ROLE_NOT_ALLOWED" }, { status: 400 });
+      return fail(400, "ROLE_NOT_ALLOWED");
     }
 
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { officialEmail: true, officialEmailVerifiedAt: true },
     });
-    const emailGate = ensureOrganizationEmailVerified(organization ?? {});
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBERS" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
 
@@ -145,17 +177,17 @@ async function _PATCH(req: NextRequest) {
       where: { organizationId_userId: { organizationId, userId: targetUserId } },
     });
     if (!targetMembership) {
-      return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 404 });
+      return fail(404, "NOT_MEMBER");
     }
 
     const manageAllowed = canManageMembers(callerRole, targetMembership.role, role as OrganizationMemberRole);
     if (!manageAllowed) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
 
     const ownerAllowed = callerRole === "OWNER";
     if (role === "OWNER" && !ownerAllowed) {
-      return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_SET_OWNER" }, { status: 403 });
+      return fail(403, "ONLY_OWNER_CAN_SET_OWNER");
     }
 
     if (targetMembership.role === "OWNER" && role !== "OWNER") {
@@ -167,10 +199,7 @@ async function _PATCH(req: NextRequest) {
         },
       });
       if (otherOwners === 0) {
-        return jsonWrap(
-          { ok: false, error: "Não podes remover o último Owner." },
-          { status: 400 },
-        );
+        return fail(400, "Não podes remover o último Owner.");
       }
     }
 
@@ -188,7 +217,7 @@ async function _PATCH(req: NextRequest) {
         toUserId: targetUserId,
         metadata: { via: "members.patch" },
       });
-      return jsonWrap({ ok: true }, { status: 200 });
+      return respondOk(ctx, {}, { status: 200 });
     }
 
     // Bloqueia que o único owner se despromova a si próprio
@@ -197,10 +226,7 @@ async function _PATCH(req: NextRequest) {
         where: { organizationId, role: "OWNER", userId: { not: user.id } },
       });
       if (otherOwners === 0) {
-        return jsonWrap(
-          { ok: false, error: "Garante outro Owner antes de descer o teu papel." },
-          { status: 400 },
-        );
+        return fail(400, "Garante outro Owner antes de descer o teu papel.");
       }
     }
 
@@ -290,14 +316,25 @@ async function _PATCH(req: NextRequest) {
       userAgent: req.headers.get("user-agent"),
     });
 
-    return jsonWrap({ ok: true }, { status: 200 });
+    return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("[organização/members][PATCH]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
 
-async function _DELETE(req: NextRequest) {
+export async function DELETE(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -306,7 +343,7 @@ async function _DELETE(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const url = new URL(req.url);
@@ -314,21 +351,21 @@ async function _DELETE(req: NextRequest) {
     const targetUserId = url.searchParams.get("userId");
 
     if (!organizationId || !targetUserId) {
-      return jsonWrap({ ok: false, error: "INVALID_PARAMS" }, { status: 400 });
+      return fail(400, "INVALID_PARAMS");
     }
 
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { officialEmail: true, officialEmailVerifiedAt: true },
     });
-    const emailGate = ensureOrganizationEmailVerified(organization ?? {});
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBERS" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
 
@@ -336,18 +373,18 @@ async function _DELETE(req: NextRequest) {
       where: { organizationId_userId: { organizationId, userId: targetUserId } },
     });
     if (!targetMembership) {
-      return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 404 });
+      return fail(404, "NOT_MEMBER");
     }
 
     const manageAllowed = canManageMembers(callerRole, targetMembership.role, targetMembership.role);
     if (!manageAllowed) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
 
     if (targetMembership.role === "OWNER") {
       const ownerAllowed = callerRole === "OWNER";
       if (!ownerAllowed) {
-        return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_REMOVE_OWNER" }, { status: 403 });
+        return fail(403, "ONLY_OWNER_CAN_REMOVE_OWNER");
       }
 
       const otherOwners = await prisma.organizationMember.count({
@@ -358,10 +395,7 @@ async function _DELETE(req: NextRequest) {
         },
       });
       if (otherOwners === 0) {
-        return jsonWrap(
-          { ok: false, error: "Não podes remover o último Owner." },
-          { status: 400 },
-        );
+        return fail(400, "Não podes remover o último Owner.");
       }
     }
 
@@ -402,12 +436,9 @@ async function _DELETE(req: NextRequest) {
       userAgent: req.headers.get("user-agent"),
     });
 
-    return jsonWrap({ ok: true }, { status: 200 });
+    return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("[organização/members][DELETE]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const PATCH = withApiEnvelope(_PATCH);
-export const DELETE = withApiEnvelope(_DELETE);

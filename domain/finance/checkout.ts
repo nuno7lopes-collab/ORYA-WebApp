@@ -142,9 +142,10 @@ async function resolveBookingSnapshot(sourceId: string): Promise<ResolvedSnapsho
     organizationFeeMode: booking.organization.feeMode ?? null,
     organizationPlatformFeeBps: booking.organization.platformFeeBps ?? null,
     organizationPlatformFeeFixedCents: booking.organization.platformFeeFixedCents ?? null,
-    platformDefaultFeeMode: FeeMode.ADDED,
+    platformDefaultFeeMode: FeeMode.INCLUDED,
     platformDefaultFeeBps: platformFees.feeBps,
     platformDefaultFeeFixedCents: platformFees.feeFixedCents,
+    isPlatformOrg: booking.organization.orgType === "PLATFORM",
   });
 
   const feePolicyVersion = hashFeePolicyVersion({
@@ -153,7 +154,7 @@ async function resolveBookingSnapshot(sourceId: string): Promise<ResolvedSnapsho
     feeFixed: pricing.feeFixedApplied,
   });
 
-  const gross = pricing.subtotalCents;
+  const gross = pricing.totalCents;
   const discounts = pricing.discountCents;
   const taxes = 0;
   const total = pricing.totalCents;
@@ -218,9 +219,10 @@ async function resolveStoreOrderSnapshot(sourceId: string): Promise<ResolvedSnap
     organizationFeeMode: order.store.organization.feeMode ?? null,
     organizationPlatformFeeBps: order.store.organization.platformFeeBps ?? null,
     organizationPlatformFeeFixedCents: order.store.organization.platformFeeFixedCents ?? null,
-    platformDefaultFeeMode: FeeMode.ADDED,
+    platformDefaultFeeMode: FeeMode.INCLUDED,
     platformDefaultFeeBps: platformFees.feeBps,
     platformDefaultFeeFixedCents: platformFees.feeFixedCents,
+    isPlatformOrg: order.store.organization.orgType === "PLATFORM",
   });
 
   const feePolicyVersion = hashFeePolicyVersion({
@@ -229,7 +231,7 @@ async function resolveStoreOrderSnapshot(sourceId: string): Promise<ResolvedSnap
     feeFixed: pricing.feeFixedApplied,
   });
 
-  const gross = pricing.subtotalCents;
+  const gross = pricing.totalCents;
   const discounts = pricing.discountCents;
   const taxes = 0;
   const total = pricing.totalCents;
@@ -285,16 +287,19 @@ async function resolveTicketOrderSnapshot(sourceId: string): Promise<ResolvedSna
     throw new Error("ORGANIZATION_NOT_FOUND");
   }
 
-  const gross = order.lines.reduce((sum, line) => sum + Math.max(0, line.totalAmount), 0);
+  const baseSubtotal = order.lines.reduce(
+    (sum, line) => sum + Math.max(0, line.totalAmount),
+    0,
+  );
   const discounts = 0;
   const taxes = 0;
 
   const platformFees = await getPlatformFees();
-  const pricing = computePricing(gross, discounts, {
+  const pricing = computePricing(baseSubtotal, discounts, {
     organizationFeeMode: organization.feeMode ?? null,
     organizationPlatformFeeBps: organization.platformFeeBps ?? null,
     organizationPlatformFeeFixedCents: organization.platformFeeFixedCents ?? null,
-    platformDefaultFeeMode: FeeMode.ADDED,
+    platformDefaultFeeMode: FeeMode.INCLUDED,
     platformDefaultFeeBps: platformFees.feeBps,
     platformDefaultFeeFixedCents: platformFees.feeFixedCents,
     isPlatformOrg: organization.orgType === "PLATFORM",
@@ -306,6 +311,7 @@ async function resolveTicketOrderSnapshot(sourceId: string): Promise<ResolvedSna
     feeFixed: pricing.feeFixedApplied,
   });
 
+  const gross = pricing.totalCents;
   const netToOrgPending = Math.max(0, gross - pricing.platformFeeCents);
 
   const ticketTypeIds = order.lines.map((line) => line.ticketTypeId);
@@ -363,16 +369,19 @@ async function resolvePadelRegistrationSnapshot(sourceId: string): Promise<Resol
     throw new Error("ORGANIZATION_NOT_FOUND");
   }
 
-  const gross = registration.lines.reduce((sum, line) => sum + Math.max(0, line.totalAmount), 0);
+  const baseSubtotal = registration.lines.reduce(
+    (sum, line) => sum + Math.max(0, line.totalAmount),
+    0,
+  );
   const discounts = 0;
   const taxes = 0;
 
   const platformFees = await getPlatformFees();
-  const pricing = computePricing(gross, discounts, {
+  const pricing = computePricing(baseSubtotal, discounts, {
     organizationFeeMode: organization.feeMode ?? null,
     organizationPlatformFeeBps: organization.platformFeeBps ?? null,
     organizationPlatformFeeFixedCents: organization.platformFeeFixedCents ?? null,
-    platformDefaultFeeMode: FeeMode.ADDED,
+    platformDefaultFeeMode: FeeMode.INCLUDED,
     platformDefaultFeeBps: platformFees.feeBps,
     platformDefaultFeeFixedCents: platformFees.feeFixedCents,
     isPlatformOrg: organization.orgType === "PLATFORM",
@@ -384,6 +393,7 @@ async function resolvePadelRegistrationSnapshot(sourceId: string): Promise<Resol
     feeFixed: pricing.feeFixedApplied,
   });
 
+  const gross = pricing.totalCents;
   const netToOrgPending = Math.max(0, gross - pricing.platformFeeCents);
 
   return {
@@ -545,7 +555,8 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
       paymentId: existing.id,
       status: existing.status,
       clientSecret: null,
-      pricingSnapshotHash: existing.pricingSnapshotHash ?? input.pricingSnapshotHash ?? null,
+      pricingSnapshotHash:
+        existing.pricingSnapshotHash ?? input.pricingSnapshotHash ?? null,
     };
   }
 
@@ -651,29 +662,12 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
       },
     });
 
-    const grossEntry = {
-      paymentId,
-      entryType: LedgerEntryType.GROSS,
-      amount: pricingSnapshot.gross,
-      currency: pricingSnapshot.currency,
-      sourceType: pricingSnapshot.sourceType,
-      sourceId: pricingSnapshot.sourceId,
-      causationId: `${input.idempotencyKey}:gross`,
-      correlationId: input.idempotencyKey,
-    };
-    const platformFeeEntry = {
-      paymentId,
-      entryType: LedgerEntryType.PLATFORM_FEE,
-      amount: -Math.abs(pricingSnapshot.platformFee),
-      currency: pricingSnapshot.currency,
-      sourceType: pricingSnapshot.sourceType,
-      sourceId: pricingSnapshot.sourceId,
-      causationId: `${input.idempotencyKey}:platform_fee`,
-      correlationId: input.idempotencyKey,
-    };
-
     await tx.ledgerEntry.createMany({
-      data: [grossEntry, platformFeeEntry],
+      data: buildLedgerEntries({
+        paymentId,
+        snapshot: pricingSnapshot,
+        idempotencyKey: input.idempotencyKey,
+      }),
     });
 
     const eventLogId = crypto.randomUUID();

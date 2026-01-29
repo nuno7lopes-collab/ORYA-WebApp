@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +6,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreBundlePricingMode, StoreBundleStatus } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const updateBundleSchema = z
   .object({
@@ -51,10 +52,32 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -62,30 +85,30 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     if (context.store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return fail(403, "Catalogo bloqueado.");
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
+      return fail(400, bundleId.error);
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateBundleSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const existing = await prisma.storeBundle.findFirst({
       where: { id: bundleId.id, storeId: context.store.id },
     });
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Bundle nao encontrado." }, { status: 404 });
+      return fail(404, "Bundle nao encontrado.");
     }
 
     const payload = parsed.data;
@@ -104,14 +127,14 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (payload.slug) {
       const slug = slugify(payload.slug.trim());
       if (!slug) {
-        return jsonWrap({ ok: false, error: "Slug invalido." }, { status: 400 });
+        return fail(400, "Slug invalido.");
       }
       const existingSlug = await prisma.storeBundle.findFirst({
         where: { storeId: context.store.id, slug, id: { not: bundleId.id } },
         select: { id: true },
       });
       if (existingSlug) {
-        return jsonWrap({ ok: false, error: "Slug ja existe." }, { status: 409 });
+        return fail(409, "Slug ja existe.");
       }
       data.slug = slug;
     }
@@ -133,7 +156,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       (nextPricingMode === StoreBundlePricingMode.PERCENT_DISCOUNT &&
         (nextPercentOff === null || nextPercentOff === undefined))
     ) {
-      return jsonWrap({ ok: false, error: "Pricing invalido." }, { status: 400 });
+      return fail(400, "Pricing invalido.");
     }
 
     if (nextPricingMode === StoreBundlePricingMode.FIXED) {
@@ -159,20 +182,31 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       },
     });
 
-    return jsonWrap({ ok: true, item: updated });
+    return respondOk(ctx, { item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("PATCH /api/me/store/bundles/[id] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar bundle." }, { status: 500 });
+    return fail(500, "Erro ao atualizar bundle.");
   }
 }
 
 async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -180,17 +214,17 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     if (context.store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return fail(403, "Catalogo bloqueado.");
     }
 
     const resolvedParams = await params;
     const bundleId = parseId(resolvedParams.id);
     if (!bundleId.ok) {
-      return jsonWrap({ ok: false, error: bundleId.error }, { status: 400 });
+      return fail(400, bundleId.error);
     }
 
     const existing = await prisma.storeBundle.findFirst({
@@ -198,18 +232,18 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
       select: { id: true },
     });
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Bundle nao encontrado." }, { status: 404 });
+      return fail(404, "Bundle nao encontrado.");
     }
 
     await prisma.storeBundle.delete({ where: { id: bundleId.id } });
 
-    return jsonWrap({ ok: true });
+    return respondOk(ctx, {});
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("DELETE /api/me/store/bundles/[id] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao remover bundle." }, { status: 500 });
+    return fail(500, "Erro ao remover bundle.");
   }
 }
 export const PATCH = withApiEnvelope(_PATCH);

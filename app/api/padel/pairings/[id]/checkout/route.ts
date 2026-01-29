@@ -1,8 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { NextRequest } from "next/server";
 import {
   Gender,
   PadelEligibilityType,
@@ -19,23 +17,28 @@ import { readNumericParam } from "@/lib/routeParams";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
-async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
+    respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
   const resolved = await params;
   const pairingId = readNumericParam(resolved?.id, req, "pairings");
-  if (pairingId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (pairingId === null) return fail("INVALID_ID", "ID inválido.", 400);
 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return fail("UNAUTHENTICATED", "Sessão inválida.", 401);
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const ticketTypeId = body && typeof body.ticketTypeId === "number" ? body.ticketTypeId : null;
   const inviteToken = typeof body?.inviteToken === "string" ? body.inviteToken : null;
-  if (!ticketTypeId) return jsonWrap({ ok: false, error: "MISSING_TICKET_TYPE" }, { status: 400 });
+  if (!ticketTypeId) return fail("MISSING_TICKET_TYPE", "Ticket type obrigatório.", 400);
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
@@ -44,12 +47,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       event: { select: { organizationId: true, slug: true, id: true } },
     },
   });
-  if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!pairing) return fail("NOT_FOUND", "Pairing não encontrado.", 404);
   if (inviteToken && pairing.partnerInviteToken && pairing.partnerInviteToken !== inviteToken) {
-    return jsonWrap({ ok: false, error: "INVALID_TOKEN" }, { status: 403 });
+    return fail("INVALID_TOKEN", "Token inválido.", 403);
   }
   if (pairing.pairingStatus === "CANCELLED") {
-    return jsonWrap({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
+    return fail("PAIRING_CANCELLED", "Pairing cancelado.", 400);
   }
 
   const [profile] = await Promise.all([
@@ -71,10 +74,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     email: user.email ?? null,
   });
   if (!isPadelOnboardingComplete(missing)) {
-    return jsonWrap(
-      { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing },
-      { status: 409 },
-    );
+    return fail("PADEL_ONBOARDING_REQUIRED", "Onboarding Padel em falta.", 409, false, { missing });
   }
 
   const pending =
@@ -83,21 +83,21 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       : null;
   if (pairing.payment_mode === PadelPaymentMode.SPLIT) {
     if (!pending) {
-      return jsonWrap({ ok: false, error: "NO_PENDING_SLOT" }, { status: 400 });
+      return fail("NO_PENDING_SLOT", "Slot pendente em falta.", 400);
     }
     if (pending.paymentStatus === PadelPairingPaymentStatus.PAID) {
-      return jsonWrap({ ok: false, error: "SLOT_ALREADY_PAID" }, { status: 400 });
+      return fail("SLOT_ALREADY_PAID", "Slot já pago.", 400);
     }
   }
   if (pairing.payment_mode === PadelPaymentMode.SPLIT && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
-    return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 409 });
+    return fail("PAIRING_EXPIRED", "Pairing expirado.", 410);
   }
 
   // Apenas capitão pode iniciar checkout se for "assume resto"; parceiro também pode iniciar, mas validamos que não há ticket já atribuído
   const isCaptain = pairing.createdByUserId === user.id;
   const isPendingOwner = !pending?.profileId || pending.profileId === user.id;
   if (!isCaptain && !isPendingOwner) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return fail("FORBIDDEN", "Sem permissões.", 403);
   }
 
   const ticketType = await prisma.ticketType.findUnique({
@@ -111,10 +111,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     },
   });
   if (!ticketType || ticketType.eventId !== pairing.eventId) {
-    return jsonWrap({ ok: false, error: "INVALID_TICKET_TYPE" }, { status: 400 });
+    return fail("INVALID_TICKET_TYPE", "Ticket type inválido.", 400);
   }
   if (pairing.categoryId && ticketType.padelEventCategoryLink?.padelCategoryId !== pairing.categoryId) {
-    return jsonWrap({ ok: false, error: "TICKET_CATEGORY_MISMATCH" }, { status: 409 });
+    return fail("TICKET_CATEGORY_MISMATCH", "Categoria de ticket inválida.", 409);
   }
 
   // Elegibilidade: garantir que capitão + parceiro (quando definido) respeitam regras
@@ -134,9 +134,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     partnerProfile?.gender as Gender | null,
   );
   if (!eligibility.ok) {
-    return jsonWrap(
-      { ok: false, error: eligibility.code },
-      { status: eligibility.code === "GENDER_REQUIRED_FOR_TOURNAMENT" ? 403 : 409 },
+    return fail(
+      eligibility.code,
+      "Elegibilidade inválida.",
+      eligibility.code === "GENDER_REQUIRED_FOR_TOURNAMENT" ? 403 : 409,
     );
   }
 
@@ -156,12 +157,15 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   });
   if (!categoryAccess.ok) {
     if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
-      return jsonWrap(
-        { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
-        { status: 409 },
+      return fail(
+        "PADEL_ONBOARDING_REQUIRED",
+        "Onboarding Padel em falta.",
+        409,
+        false,
+        { missing: categoryAccess.missing },
       );
     }
-    return jsonWrap({ ok: false, error: categoryAccess.code }, { status: 409 });
+    return fail(categoryAccess.code, "Categoria inválida.", 409);
   }
 
   // Não permitir checkout se utilizador já tiver pairing ativo no torneio
@@ -183,7 +187,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     select: { id: true },
   });
   if (existingActive) {
-    return jsonWrap({ ok: false, error: "PAIRING_ALREADY_ACTIVE" }, { status: 409 });
+    return fail("PAIRING_ALREADY_ACTIVE", "Já existe pairing ativo.", 409);
   }
 
   const limitCheck = await prisma.$transaction((tx) =>
@@ -196,12 +200,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }),
   );
   if (!limitCheck.ok) {
-    return jsonWrap(
-      {
-        ok: false,
-        error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
-      },
-      { status: 409 },
+    return fail(
+      limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
+      "Limite de categorias atingido.",
+      409,
     );
   }
 
@@ -213,12 +215,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }),
   );
   if (!playerCapacity.ok) {
-    return jsonWrap({ ok: false, error: playerCapacity.code }, { status: 409 });
+    return fail(playerCapacity.code, "Capacidade excedida.", 409);
   }
 
   const currency = ticketType.currency || "EUR";
   if (currency.toUpperCase() !== "EUR") {
-    return jsonWrap({ ok: false, error: "CURRENCY_NOT_SUPPORTED" }, { status: 400 });
+    return fail("CURRENCY_NOT_SUPPORTED", "Moeda não suportada.", 400);
   }
   const paymentScenario = pairing.payment_mode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT";
   const items = [
@@ -233,7 +235,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   let baseUrl = env.appBaseUrl;
   if (!baseUrl) {
     console.error("[padel/pairings][checkout] APP_BASE_URL/NEXT_PUBLIC_BASE_URL em falta");
-    return jsonWrap({ ok: false, error: "APP_BASE_URL_NOT_CONFIGURED" }, { status: 500 });
+    return fail("APP_BASE_URL_NOT_CONFIGURED", "Base URL não configurada.", 500, true);
   }
   if (!/^https?:\/\//i.test(baseUrl)) {
     baseUrl = `https://${baseUrl}`;
@@ -259,9 +261,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok) {
       console.error("[padel/pairings][checkout] intent error", { status: res.status, data });
-      return jsonWrap(
-        { ok: false, error: data?.error ?? "INTENT_CREATION_FAILED", code: data?.code ?? null },
-        { status: res.status },
+      return fail(
+        data?.errorCode ?? data?.error ?? "INTENT_CREATION_FAILED",
+        data?.message ?? "Falha ao criar intent.",
+        res.status,
+        false,
+        { upstreamCode: data?.code ?? null },
       );
     }
 
@@ -273,20 +278,15 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       });
     }
 
-    return jsonWrap(
-      {
-        ok: true,
-        clientSecret: data.clientSecret,
-        paymentIntentId: data.paymentIntentId,
-        purchaseId: data.purchaseId,
-        paymentScenario,
-        breakdown: data.breakdown ?? null,
-      },
-      { status: 200 },
-    );
+    return respondOk(ctx, {
+      clientSecret: data.clientSecret,
+      paymentIntentId: data.paymentIntentId,
+      purchaseId: data.purchaseId,
+      paymentScenario,
+      breakdown: data.breakdown ?? null,
+    });
   } catch (err) {
     console.error("[padel/pairings][checkout][POST]", err);
-    return jsonWrap({ ok: false, error: "INTENT_ERROR" }, { status: 500 });
+    return fail("INTENT_ERROR", "Erro ao iniciar checkout.", 500, true);
   }
 }
-export const POST = withApiEnvelope(_POST);

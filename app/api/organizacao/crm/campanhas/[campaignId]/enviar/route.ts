@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -7,11 +6,29 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { sendCrmCampaign } from "@/lib/crm/campaignSend";
 import { OrganizationMemberRole } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-async function _POST(req: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
+export async function POST(req: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -23,14 +40,27 @@ async function _POST(req: NextRequest, context: { params: Promise<{ campaignId: 
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissoes." }, { status: 403 });
+      return fail(403, "Sem permissoes.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "CRM_CAMPAIGN_SEND" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     const crmAccess = await ensureCrmModuleAccess(organization, undefined, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(403, crmAccess.error);
     }
 
     const resolvedParams = await context.params;
@@ -40,21 +70,31 @@ async function _POST(req: NextRequest, context: { params: Promise<{ campaignId: 
     });
 
     if (!result.ok) {
-      return jsonWrap({ ok: false, error: result.message }, { status: result.status });
+      return fail(result.status, result.message);
     }
 
-    return jsonWrap({
-      ok: true,
+    return respondOk(ctx, {
       sentCount: result.sentCount,
       failedCount: result.failedCount,
       totalEligible: result.totalEligible,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
     console.error("POST /api/organizacao/crm/campanhas/[campaignId]/enviar error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao enviar campanha." }, { status: 500 });
+    return fail(500, "Erro ao enviar campanha.");
   }
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,11 +7,31 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { LoyaltyRewardType, OrganizationMemberRole } from "@prisma/client";
 import { validateLoyaltyRewardLimits } from "@/lib/loyalty/guardrails";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-async function _GET(req: NextRequest) {
+function fail(
+  ctx: ReturnType<typeof getRequestContext>,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+  details?: Record<string, unknown>,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(
+    ctx,
+    { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -24,14 +43,14 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "Sem permissões.");
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(ctx, 403, crmAccess.error);
     }
 
     const program = await prisma.loyaltyProgram.findUnique({
@@ -46,17 +65,18 @@ async function _GET(req: NextRequest) {
         })
       : [];
 
-    return jsonWrap({ ok: true, items: rewards });
+    return respondOk(ctx, { items: rewards });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
     console.error("GET /api/organizacao/loyalty/recompensas error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar recompensas." }, { status: 500 });
+    return fail(ctx, 500, "Erro ao carregar recompensas.");
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -68,14 +88,27 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "Sem permissões.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "LOYALTY_REWARDS" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(ctx, 403, crmAccess.error);
     }
 
     const program = await prisma.loyaltyProgram.findUnique({
@@ -84,7 +117,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!program) {
-      return jsonWrap({ ok: false, error: "Programa não configurado." }, { status: 400 });
+      return fail(ctx, 400, "Programa não configurado.");
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -106,16 +139,16 @@ async function _POST(req: NextRequest) {
     const pointsCost = rawPointsCost !== null ? Math.floor(rawPointsCost) : null;
 
     if (!type || pointsCost === null || pointsCost < 1) {
-      return jsonWrap({ ok: false, error: "Tipo ou custo inválido." }, { status: 400 });
+      return fail(ctx, 400, "Tipo ou custo inválido.");
     }
     const guardrails = validateLoyaltyRewardLimits({ pointsCost });
     if (!guardrails.ok) {
-      return jsonWrap({ ok: false, error: guardrails.error }, { status: 400 });
+      return fail(ctx, 400, guardrails.error);
     }
 
     const stockRaw = typeof payload?.stock === "number" && Number.isFinite(payload.stock) ? payload.stock : null;
     if (stockRaw !== null && stockRaw < 0) {
-      return jsonWrap({ ok: false, error: "Stock inválido." }, { status: 400 });
+      return fail(ctx, 400, "Stock inválido.");
     }
     const stock = stockRaw !== null ? Math.floor(stockRaw) : null;
     const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : true;
@@ -133,14 +166,24 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, reward });
+    return respondOk(ctx, { reward });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
     console.error("POST /api/organizacao/loyalty/recompensas error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar recompensa." }, { status: 500 });
+    return fail(ctx, 500, "Erro ao criar recompensa.");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

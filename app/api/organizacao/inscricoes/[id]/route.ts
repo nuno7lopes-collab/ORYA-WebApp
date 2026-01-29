@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { OrganizationFormFieldType } from "@prisma/client";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
@@ -45,7 +45,25 @@ function parseOptions(value: unknown) {
   return cleaned.length > 0 ? cleaned : null;
 }
 
-async function _GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+function fail(
+  ctx: ReturnType<typeof getRequestContext>,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+  details?: Record<string, unknown>,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(
+    ctx,
+    { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -54,20 +72,29 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return fail(ctx, 403, "Sem organização ativa.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization);
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "INSCRICOES" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return fail(ctx, 403, "Módulo de formulários desativado.");
     }
 
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return fail(ctx, 400, "FORM_ID_INVALIDO");
     }
 
     const form = await prisma.organizationForm.findFirst({
@@ -79,12 +106,12 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
     });
 
     if (!form) {
-      return jsonWrap({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+      return fail(ctx, 404, "FORMULARIO_NAO_ENCONTRADO");
     }
 
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         form: {
           id: form.id,
           title: form.title,
@@ -114,11 +141,12 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
     );
   } catch (err) {
     console.error("[organização/inscricoes][GET:id]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
 
-async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -127,25 +155,34 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return fail(ctx, 403, "Sem organização ativa.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization);
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "INSCRICOES" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return fail(ctx, 403, "Módulo de formulários desativado.");
     }
 
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return fail(ctx, 400, "FORM_ID_INVALIDO");
     }
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
-      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return fail(ctx, 400, "INVALID_BODY");
     }
 
     const titleRaw = (body as Record<string, unknown>).title;
@@ -161,7 +198,7 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
     if (typeof titleRaw === "string") {
       const title = titleRaw.trim();
       if (!title) {
-        return jsonWrap({ ok: false, error: "Título obrigatório." }, { status: 400 });
+        return fail(ctx, 400, "Título obrigatório.");
       }
       updates.title = title;
     }
@@ -171,7 +208,7 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
     if (typeof statusRaw === "string") {
       const status = statusRaw.trim().toUpperCase();
       if (!FORM_STATUSES.has(status)) {
-        return jsonWrap({ ok: false, error: "Estado inválido." }, { status: 400 });
+        return fail(ctx, 400, "Estado inválido.");
       }
       updates.status = status;
     }
@@ -203,7 +240,7 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
 
     if (fieldsProvided) {
       if (!Array.isArray(fieldsRaw)) {
-        return jsonWrap({ ok: false, error: "Campos inválidos." }, { status: 400 });
+        return fail(ctx, 400, "Campos inválidos.");
       }
       fieldsRaw.forEach((entry, index) => {
         if (!entry || typeof entry !== "object") {
@@ -235,7 +272,7 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
       });
 
       if (parsedFields.length === 0) {
-        return jsonWrap({ ok: false, error: "Adiciona pelo menos um campo." }, { status: 400 });
+        return fail(ctx, 400, "Adiciona pelo menos um campo.");
       }
     }
 
@@ -244,17 +281,14 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
       select: { id: true },
     });
     if (!existing) {
-      return jsonWrap({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+      return fail(ctx, 404, "FORMULARIO_NAO_ENCONTRADO");
     }
     if (fieldsProvided) {
       const submissionsCount = await prisma.organizationFormSubmission.count({
         where: { formId },
       });
       if (submissionsCount > 0) {
-        return jsonWrap(
-          { ok: false, error: "Não podes alterar campos quando já existem respostas." },
-          { status: 409 },
-        );
+        return fail(ctx, 409, "Não podes alterar campos quando já existem respostas.");
       }
     }
 
@@ -282,14 +316,15 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
       }
     });
 
-    return jsonWrap({ ok: true }, { status: 200 });
+    return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("[organização/inscricoes][PATCH:id]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
 
-async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -298,16 +333,16 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
     if (!organization) {
-      return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
+      return fail(ctx, 403, "Sem organização ativa.");
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return fail(ctx, 403, "Módulo de formulários desativado.");
     }
 
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
-      return jsonWrap({ ok: false, error: "FORM_ID_INVALIDO" }, { status: 400 });
+      return fail(ctx, 400, "FORM_ID_INVALIDO");
     }
 
     const existing = await prisma.organizationForm.findFirst({
@@ -315,23 +350,29 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
       include: { _count: { select: { submissions: true } } },
     });
     if (!existing) {
-      return jsonWrap({ ok: false, error: "FORMULARIO_NAO_ENCONTRADO" }, { status: 404 });
+      return fail(ctx, 404, "FORMULARIO_NAO_ENCONTRADO");
     }
     if (existing._count.submissions > 0) {
-      return jsonWrap(
-        { ok: false, error: "Não é possível apagar um formulário com respostas." },
-        { status: 409 },
-      );
+      return fail(ctx, 409, "Não é possível apagar um formulário com respostas.");
     }
 
     await prisma.organizationForm.delete({ where: { id: formId } });
 
-    return jsonWrap({ ok: true }, { status: 200 });
+    return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("[organização/inscricoes][DELETE:id]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const PATCH = withApiEnvelope(_PATCH);
-export const DELETE = withApiEnvelope(_DELETE);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

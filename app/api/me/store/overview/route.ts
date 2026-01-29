@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreProductStatus } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 async function getStoreContext(userId: string) {
   const store = await prisma.store.findFirst({
@@ -20,10 +20,28 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
-async function _GET() {
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = false,
+  ) =>
+    respondError(ctx, { errorCode, message, retryable }, { status });
+
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -31,7 +49,7 @@ async function _GET() {
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error ?? "Sem permissões.");
     }
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -89,8 +107,7 @@ async function _GET() {
       imageUrl: product.images[0]?.url ?? null,
     }));
 
-    return jsonWrap({
-      ok: true,
+    return respondOk(ctx, {
       products: mappedProducts,
       orders,
       summary: {
@@ -102,10 +119,9 @@ async function _GET() {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("GET /api/me/store/overview error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar resumo." }, { status: 500 });
+    return fail(500, "Erro ao carregar resumo.", "INTERNAL_ERROR", true);
   }
 }
-export const GET = withApiEnvelope(_GET);

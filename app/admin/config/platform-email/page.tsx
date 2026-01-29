@@ -1,62 +1,126 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import useSWR from "swr";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
+import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 
-type ApiResponse =
+type PlatformEmailResponse =
   | {
       ok: true;
-      email: string;
-      source?: string;
+      email?: string;
+      data?: { email?: string };
       requestId?: string;
       correlationId?: string;
     }
   | {
       ok: false;
       error?: string;
+      errorCode?: string;
+      message?: string;
       requestId?: string;
       correlationId?: string;
     };
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<ApiResponse>);
-
-function normalizeOfficialEmail(value: string) {
-  return value.normalize("NFKC").trim().toLowerCase();
+function extractRequestInfo(res: Response, json: PlatformEmailResponse | null) {
+  const requestId =
+    json?.requestId ??
+    res.headers.get("x-orya-request-id") ??
+    res.headers.get("x-request-id") ??
+    null;
+  const correlationId =
+    json?.correlationId ??
+    res.headers.get("x-orya-correlation-id") ??
+    res.headers.get("x-correlation-id") ??
+    null;
+  return { requestId, correlationId };
 }
 
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-export default function AdminPlatformEmailPage() {
-  const { data, isLoading, mutate } = useSWR<ApiResponse>("/api/admin/config/platform-email", fetcher, {
-    revalidateOnFocus: false,
-  });
-
-  const [email, setEmail] = useState("");
+export default function PlatformEmailConfigPage() {
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  const currentEmail = data && data.ok ? data.email : "";
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requestMeta, setRequestMeta] = useState<{ requestId?: string | null; correlationId?: string | null }>({});
+  const [accessIssue, setAccessIssue] = useState<"UNAUTH" | "FORBIDDEN" | null>(null);
 
   useEffect(() => {
-    if (currentEmail) {
-      setEmail(currentEmail);
+    let cancelled = false;
+
+    async function loadEmail() {
+      setLoading(true);
+      setErrorMessage(null);
+      setStatusMessage(null);
+      setAccessIssue(null);
+      try {
+        const res = await fetch("/api/admin/config/platform-email", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        });
+        const json = (await res.json().catch(() => null)) as PlatformEmailResponse | null;
+        const meta = extractRequestInfo(res, json);
+        if (cancelled) return;
+        setRequestMeta(meta);
+
+        if (res.status === 401) {
+          setAccessIssue("UNAUTH");
+          return;
+        }
+        if (res.status === 403) {
+          setAccessIssue("FORBIDDEN");
+          return;
+        }
+        if (!res.ok || !json || json.ok === false) {
+          const errorCode =
+            json && "errorCode" in json && typeof json.errorCode === "string"
+              ? json.errorCode
+              : json && "error" in json && typeof json.error === "string"
+                ? json.error
+                : "UNKNOWN_ERROR";
+          setErrorMessage(`Erro: ${errorCode}`);
+          return;
+        }
+
+        const nextEmail =
+          typeof json.data?.email === "string"
+            ? json.data.email
+            : typeof json.email === "string"
+              ? json.email
+              : "";
+        setCurrentEmail(nextEmail || null);
+        setEmail(nextEmail || "");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[admin/config/platform-email] load", err);
+        setErrorMessage("Erro inesperado ao carregar.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  }, [currentEmail]);
+
+    loadEmail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const normalizedEmail = useMemo(() => normalizeOfficialEmail(email), [email]);
-  const isInvalid = Boolean(normalizedEmail) && !isValidEmail(normalizedEmail);
+  const isValid = useMemo(
+    () => Boolean(normalizedEmail && isValidOfficialEmail(normalizedEmail)),
+    [normalizedEmail],
+  );
 
   const handleSave = async () => {
-    setError(null);
-    setSuccess(null);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setAccessIssue(null);
 
-    if (!normalizedEmail || isInvalid) {
-      setError("Email inválido. Confirma o formato.");
+    if (!normalizedEmail || !isValid) {
+      setErrorMessage("Email inválido. Usa um email válido para a plataforma.");
       return;
     }
 
@@ -67,77 +131,109 @@ export default function AdminPlatformEmailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: normalizedEmail }),
       });
-      const json = (await res.json()) as ApiResponse;
+      const json = (await res.json().catch(() => null)) as PlatformEmailResponse | null;
+      const meta = extractRequestInfo(res, json);
+      setRequestMeta(meta);
 
-      if (!res.ok || !json || !("ok" in json) || !json.ok) {
-        const isUnauthorized = res.status === 401 || res.status === 403;
-        const requestId = json && typeof json === "object" && "requestId" in json ? json.requestId : undefined;
-        if (isUnauthorized) {
-          setError(`Sem permissões (ADMIN)${requestId ? ` • ${requestId}` : ""}`);
-          return;
-        }
-        const msg =
-          json && json.ok === false && typeof json.error === "string"
-            ? json.error
-            : "Não foi possível guardar.";
-        setError(`${msg}${requestId ? ` • ${requestId}` : ""}`);
+      if (res.status === 401) {
+        setAccessIssue("UNAUTH");
+        return;
+      }
+      if (res.status === 403) {
+        setAccessIssue("FORBIDDEN");
+        return;
+      }
+      if (!res.ok || !json || json.ok === false) {
+        const errorCode =
+          json && "errorCode" in json && typeof json.errorCode === "string"
+            ? json.errorCode
+            : json && "error" in json && typeof json.error === "string"
+              ? json.error
+              : "UNKNOWN_ERROR";
+        setErrorMessage(`Erro: ${errorCode}`);
         return;
       }
 
-      setSuccess(`Guardado${json.requestId ? ` • ${json.requestId}` : ""}`);
-      await mutate();
+      setCurrentEmail(normalizedEmail);
+      setEmail(normalizedEmail);
+      setStatusMessage("Guardado.");
     } catch (err) {
-      console.error("Erro ao guardar platform email", err);
-      setError("Erro inesperado ao guardar.");
+      console.error("[admin/config/platform-email] save", err);
+      setErrorMessage("Erro inesperado ao guardar.");
     } finally {
       setSaving(false);
     }
   };
 
+  const requestIdLabel = requestMeta.requestId ? `requestId: ${requestMeta.requestId}` : null;
+  const correlationIdLabel = requestMeta.correlationId ? `correlationId: ${requestMeta.correlationId}` : null;
+
   return (
-    <AdminLayout title="Configurações" subtitle="Email oficial da plataforma.">
+    <AdminLayout
+      title="Configuração"
+      subtitle="Configurações globais de suporte/contato da plataforma."
+    >
       <section className="space-y-6">
         <AdminPageHeader
           title="Email oficial da plataforma"
-          subtitle="Define o endereço usado para verificações e comunicações administrativas."
+          subtitle="Define o email global usado para comunicações administrativas."
           eyebrow="Admin • Config"
         />
 
-        <div className="admin-card p-4 space-y-4">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Atual</p>
-            <p className="mt-1 text-sm text-white/80">{currentEmail || "—"}</p>
+        <div className="admin-card space-y-4 p-4">
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Estado atual</p>
+            <p className="text-sm text-white/80">
+              Atual:{" "}
+              <span className="font-semibold text-white/90">
+                {currentEmail ?? (loading ? "A carregar..." : "—")}
+              </span>
+            </p>
           </div>
 
           <div className="space-y-2">
-            <label className="text-[11px] uppercase tracking-[0.2em] text-white/50">Novo email</label>
+            <label className="text-[12px] uppercase tracking-[0.18em] text-white/50">
+              Email da plataforma
+            </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="email@plataforma.pt"
               className="admin-input w-full"
-              placeholder="admin@orya.pt"
+              disabled={loading || saving}
             />
-            {isInvalid && <p className="text-[12px] text-red-400">Formato inválido.</p>}
+            {!loading && email && !isValid && (
+              <p className="text-[12px] text-amber-200/80">
+                Email inválido. Usa um email válido para a plataforma.
+              </p>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
-              className="admin-button-primary px-4 py-2 text-sm"
+              type="button"
+              className="admin-button px-4 py-2 text-[12px]"
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || loading || !isValid}
             >
               {saving ? "A guardar..." : "Guardar"}
             </button>
-            {success && <p className="text-[12px] text-emerald-300">{success}</p>}
-            {error && <p className="text-[12px] text-red-400">{error}</p>}
+            {statusMessage && <p className="text-[12px] text-emerald-200">{statusMessage}</p>}
+            {errorMessage && <p className="text-[12px] text-amber-200">{errorMessage}</p>}
+            {accessIssue && (
+              <p className="text-[12px] text-amber-200">
+                Sem permissões (ADMIN).
+              </p>
+            )}
           </div>
 
-          {!isLoading && data && !data.ok && data.error && (
-            <p className="text-[12px] text-red-400">
-              {data.error}
-              {data.requestId ? ` • ${data.requestId}` : ""}
-            </p>
+          {(requestIdLabel || correlationIdLabel) && (
+            <div className="text-[11px] text-white/50">
+              {requestIdLabel ? <span>{requestIdLabel}</span> : null}
+              {requestIdLabel && correlationIdLabel ? <span> · </span> : null}
+              {correlationIdLabel ? <span>{correlationIdLabel}</span> : null}
+            </div>
           )}
         </div>
       </section>

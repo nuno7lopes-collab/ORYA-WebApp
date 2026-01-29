@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +6,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus, StoreShipmentStatus } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const createShipmentSchema = z.object({
   carrier: z.string().trim().max(120).optional().nullable(),
@@ -45,10 +46,32 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _POST(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -56,13 +79,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ orderId: 
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const orderId = parseId(resolvedParams.orderId);
     if (!orderId.ok) {
-      return jsonWrap({ ok: false, error: orderId.error }, { status: 400 });
+      return fail(400, orderId.error);
     }
 
     const order = await prisma.storeOrder.findFirst({
@@ -70,13 +93,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ orderId: 
       select: { id: true, status: true },
     });
     if (!order) {
-      return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
+      return fail(404, "Encomenda nao encontrada.");
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createShipmentSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const payload = parsed.data;
@@ -119,13 +142,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ orderId: 
       return shipment;
     });
 
-    return jsonWrap({ ok: true, shipment: created }, { status: 201 });
+    return respondOk(ctx, { shipment: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("POST /api/me/store/orders/[orderId]/shipments error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar envio." }, { status: 500 });
+    return fail(500, "Erro ao criar envio.");
   }
 }
 export const POST = withApiEnvelope(_POST);

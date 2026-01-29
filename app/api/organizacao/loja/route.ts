@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -11,6 +10,8 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, StoreOwnerType, StoreStatus } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -45,10 +46,32 @@ const updateStoreSchema = z.object({
   showOnProfile: z.boolean().optional(),
 });
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -61,16 +84,16 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
 
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return fail(403, emailGate.error);
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return fail(403, lojaAccess.error);
     }
 
     const store = await prisma.store.findFirst({
@@ -86,20 +109,31 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, store: store ? normalizeStore(store) : null });
+    return respondOk(ctx, {store: store ? normalizeStore(store) : null });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("GET /api/organizacao/loja error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar loja." }, { status: 500 });
+    return fail(500, "Erro ao carregar loja.");
   }
 }
 
 async function _POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -112,16 +146,16 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
 
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return fail(403, emailGate.error);
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return fail(403, lojaAccess.error);
     }
 
     const existing = await prisma.store.findFirst({
@@ -138,7 +172,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (existing) {
-      return jsonWrap({ ok: true, store: normalizeStore(existing) });
+      return respondOk(ctx, {store: normalizeStore(existing) });
     }
 
     const created = await prisma.store.create({
@@ -162,20 +196,31 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, store: normalizeStore(created) }, { status: 201 });
+    return respondOk(ctx, {store: normalizeStore(created) }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("POST /api/organizacao/loja error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar loja." }, { status: 500 });
+    return fail(500, "Erro ao criar loja.");
   }
 }
 
 async function _PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -188,12 +233,12 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
 
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return jsonWrap({ ok: false, error: lojaAccess.error }, { status: 403 });
+      return fail(403, lojaAccess.error);
     }
 
     const store = await prisma.store.findFirst({
@@ -201,13 +246,13 @@ async function _PATCH(req: NextRequest) {
       select: { id: true },
     });
     if (!store) {
-      return jsonWrap({ ok: false, error: "Loja ainda nao criada." }, { status: 404 });
+      return fail(404, "Loja ainda nao criada.");
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateStoreSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const payload = parsed.data;
@@ -230,13 +275,13 @@ async function _PATCH(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, store: normalizeStore(updated) });
+    return respondOk(ctx, {store: normalizeStore(updated) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("PATCH /api/organizacao/loja error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar loja." }, { status: 500 });
+    return fail(500, "Erro ao atualizar loja.");
   }
 }
 export const GET = withApiEnvelope(_GET);

@@ -1,17 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * Endpoint interno para inspecionar a timeline de checkout.
  * Uso: /api/internal/checkout/timeline?purchaseId=... ou ?paymentIntentId=...
  */
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return respondError(
+      ctx,
+      { errorCode: "UNAUTHORIZED", message: "Unauthorized.", retryable: false },
+      { status: 401 },
+    );
   }
 
   const url = new URL(req.url);
@@ -19,8 +24,9 @@ async function _GET(req: NextRequest) {
   const paymentIntentId = (url.searchParams.get("paymentIntentId") || "").trim();
 
   if (!purchaseId && !paymentIntentId) {
-    return jsonWrap(
-      { ok: false, error: "Missing purchaseId or paymentIntentId" },
+    return respondError(
+      ctx,
+      { errorCode: "MISSING_ID", message: "Missing purchaseId or paymentIntentId", retryable: false },
       { status: 400 },
     );
   }
@@ -85,9 +91,9 @@ async function _GET(req: NextRequest) {
       })
     : null;
 
-  return jsonWrap(
+  return respondOk(
+    ctx,
     {
-      ok: true,
       purchaseId: resolvedPurchaseId,
       paymentIntentId: summary?.paymentIntentId ?? paymentIntentId ?? null,
       resolvedStatus: resolved?.status ?? "PROCESSING",
@@ -102,4 +108,3 @@ async function _GET(req: NextRequest) {
     { status: 200 },
   );
 }
-export const GET = withApiEnvelope(_GET);

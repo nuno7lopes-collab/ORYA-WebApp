@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole, NotificationType, TrainerProfileReviewStatus } from "@prisma/client";
@@ -7,7 +6,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { createNotification } from "@/lib/notifications";
 import { normalizeProfileCoverUrl } from "@/lib/profileMedia";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -37,7 +38,25 @@ const parseSpecialties = (value: unknown) => {
   return [] as string[];
 };
 
-async function _GET(req: NextRequest) {
+function fail(
+  ctx: ReturnType<typeof getRequestContext>,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+  details?: Record<string, unknown>,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(
+    ctx,
+    { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -46,7 +65,7 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
 
     const url = new URL(req.url);
@@ -58,7 +77,7 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
     }
 
     const profile = await prisma.trainerProfile.findUnique({
@@ -69,9 +88,9 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         profile,
         organization: profile?.organization ?? organization,
         user: profile?.user ?? null,
@@ -81,11 +100,12 @@ async function _GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organizacao/trainers/profile][GET]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
 
-async function _PATCH(req: NextRequest) {
+export async function PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -94,7 +114,7 @@ async function _PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
 
     const body = await req.json().catch(() => null);
@@ -106,11 +126,25 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
+    }
+
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TRAINER_PROFILE" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
 
     if (membership.role !== OrganizationMemberRole.TRAINER) {
-      return jsonWrap({ ok: false, error: "ONLY_TRAINER_CAN_EDIT" }, { status: 403 });
+      return fail(ctx, 403, "ONLY_TRAINER_CAN_EDIT");
     }
 
     const title = typeof body?.title === "string" ? body.title.trim() : "";
@@ -125,10 +159,10 @@ async function _PATCH(req: NextRequest) {
     const requestReview = body?.requestReview === true;
 
     if (title.length > MAX_TITLE) {
-      return jsonWrap({ ok: false, error: "TITULO_DEMASIADO_LONGO" }, { status: 400 });
+      return fail(ctx, 400, "TITULO_DEMASIADO_LONGO");
     }
     if (bio.length > MAX_BIO) {
-      return jsonWrap({ ok: false, error: "BIO_DEMASIADO_LONGA" }, { status: 400 });
+      return fail(ctx, 400, "BIO_DEMASIADO_LONGA");
     }
 
     const specialties = parseSpecialties(body?.specialties);
@@ -183,11 +217,21 @@ async function _PATCH(req: NextRequest) {
       }).catch((err) => console.warn("[trainer][review-request] notification fail", err));
     }
 
-    return jsonWrap({ ok: true, profile }, { status: 200 });
+    return respondOk(ctx, { profile }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/trainers/profile][PATCH]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const PATCH = withApiEnvelope(_PATCH);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

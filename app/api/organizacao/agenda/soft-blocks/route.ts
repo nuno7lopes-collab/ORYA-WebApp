@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
@@ -10,7 +9,9 @@ import { SoftBlockScope } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createSoftBlock, deleteSoftBlock, updateSoftBlock } from "@/domain/softBlocks/commands";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] as const;
 
@@ -62,6 +63,41 @@ function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflict
     ok: false,
     ...buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" }),
   };
+}
+
+function fail(
+  ctx: RequestContext,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+  details?: Record<string, unknown>,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(
+    ctx,
+    { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+function respondAgendaConflict(
+  ctx: RequestContext,
+  status: number,
+  decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"],
+) {
+  const payload = agendaConflictResponse(decision);
+  return respondError(
+    ctx,
+    {
+      errorCode: payload.errorCode,
+      message: payload.errorCode,
+      retryable: false,
+      details: payload.details,
+    },
+    { status },
+  );
 }
 
 async function loadSoftBlockExistingCandidates(params: {
@@ -247,7 +283,8 @@ async function loadSoftBlockExistingCandidates(params: {
   return candidates;
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
 
@@ -257,29 +294,42 @@ async function _POST(req: NextRequest) {
     roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return fail(ctx, 403, "FORBIDDEN");
   }
   const reservasAccess = await ensureReservasModuleAccess(organization);
   if (!reservasAccess.ok) {
-    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+    return fail(ctx, 403, reservasAccess.error);
+  }
+  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "AGENDA_SOFT_BLOCKS" });
+  if (!emailGate.ok) {
+    return respondError(
+      ctx,
+      {
+        errorCode: emailGate.error ?? "FORBIDDEN",
+        message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+        retryable: false,
+        details: emailGate,
+      },
+      { status: 403 },
+    );
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return fail(ctx, 400, "INVALID_BODY");
 
   const startsAt = parseDate(body.startsAt);
   const endsAt = parseDate(body.endsAt);
   if (!startsAt || !endsAt) {
-    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_INTERVAL");
   }
   if (endsAt <= startsAt) {
-    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_INTERVAL");
   }
 
   const scopeType = parseScopeType(body.scopeType);
   const scopeId = parseScopeId(body.scopeId);
   if (scopeType !== SoftBlockScope.ORGANIZATION && !scopeId) {
-    return jsonWrap({ ok: false, error: "SCOPE_ID_REQUIRED" }, { status: 400 });
+    return fail(ctx, 400, "SCOPE_ID_REQUIRED");
   }
 
   let existing: AgendaCandidate[] | null = null;
@@ -292,10 +342,10 @@ async function _POST(req: NextRequest) {
       endsAt,
     });
   } catch {
-    return jsonWrap(agendaConflictResponse(), { status: 503 });
+    return respondAgendaConflict(ctx, 503);
   }
   if (!existing) {
-    return jsonWrap(agendaConflictResponse(), { status: 503 });
+    return respondAgendaConflict(ctx, 503);
   }
 
   const candidate: AgendaCandidate = {
@@ -306,7 +356,7 @@ async function _POST(req: NextRequest) {
   };
   const decision = evaluateCandidate({ candidate, existing });
   if (!decision.allowed) {
-    return jsonWrap(agendaConflictResponse(decision), { status: 409 });
+    return respondAgendaConflict(ctx, 409, decision);
   }
 
   const reason = typeof body.reason === "string" ? body.reason.trim() || null : null;
@@ -322,13 +372,14 @@ async function _POST(req: NextRequest) {
 
   if (!result.ok) {
     const status = result.error === "SCOPE_NOT_FOUND" ? 404 : 400;
-    return jsonWrap({ ok: false, error: result.error }, { status });
+    return fail(ctx, status, result.error);
   }
 
-  return jsonWrap({ ok: true, softBlockId: result.data.softBlockId }, { status: 201 });
+  return respondOk(ctx, { softBlockId: result.data.softBlockId }, { status: 201 });
 }
 
-async function _PATCH(req: NextRequest) {
+export async function PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
 
@@ -338,23 +389,36 @@ async function _PATCH(req: NextRequest) {
     roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return fail(ctx, 403, "FORBIDDEN");
   }
   const reservasAccess = await ensureReservasModuleAccess(organization);
   if (!reservasAccess.ok) {
-    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+    return fail(ctx, 403, reservasAccess.error);
+  }
+  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "AGENDA_SOFT_BLOCKS" });
+  if (!emailGate.ok) {
+    return respondError(
+      ctx,
+      {
+        errorCode: emailGate.error ?? "FORBIDDEN",
+        message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+        retryable: false,
+        details: emailGate,
+      },
+      { status: 403 },
+    );
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return fail(ctx, 400, "INVALID_BODY");
 
   const id = parseScopeId(body.id);
-  if (!id) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!id) return fail(ctx, 400, "INVALID_ID");
 
   const startsAtInput = body.startsAt !== undefined ? parseDate(body.startsAt) : null;
   const endsAtInput = body.endsAt !== undefined ? parseDate(body.endsAt) : null;
   if ((startsAtInput && !endsAtInput) || (!startsAtInput && endsAtInput)) {
-    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_INTERVAL");
   }
 
   const scopeTypeInput = body.scopeType ? parseScopeType(body.scopeType) : null;
@@ -365,19 +429,19 @@ async function _PATCH(req: NextRequest) {
     select: { id: true, startsAt: true, endsAt: true, scopeType: true, scopeId: true },
   });
   if (!existingBlock) {
-    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return fail(ctx, 404, "NOT_FOUND");
   }
 
   const nextStartsAt = startsAtInput ?? existingBlock.startsAt;
   const nextEndsAt = endsAtInput ?? existingBlock.endsAt;
   if (nextEndsAt <= nextStartsAt) {
-    return jsonWrap({ ok: false, error: "INVALID_INTERVAL" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_INTERVAL");
   }
 
   const nextScopeType = scopeTypeInput ?? existingBlock.scopeType;
   const nextScopeId = scopeIdInput ?? existingBlock.scopeId;
   if (nextScopeType !== SoftBlockScope.ORGANIZATION && !nextScopeId) {
-    return jsonWrap({ ok: false, error: "SCOPE_ID_REQUIRED" }, { status: 400 });
+    return fail(ctx, 400, "SCOPE_ID_REQUIRED");
   }
 
   let existing: AgendaCandidate[] | null = null;
@@ -391,10 +455,10 @@ async function _PATCH(req: NextRequest) {
       excludeSoftBlockId: id,
     });
   } catch {
-    return jsonWrap(agendaConflictResponse(), { status: 503 });
+    return respondAgendaConflict(ctx, 503);
   }
   if (!existing) {
-    return jsonWrap(agendaConflictResponse(), { status: 503 });
+    return respondAgendaConflict(ctx, 503);
   }
 
   const candidate: AgendaCandidate = {
@@ -405,7 +469,7 @@ async function _PATCH(req: NextRequest) {
   };
   const decision = evaluateCandidate({ candidate, existing });
   if (!decision.allowed) {
-    return jsonWrap(agendaConflictResponse(decision), { status: 409 });
+    return respondAgendaConflict(ctx, 409, decision);
   }
 
   const reason = typeof body.reason === "string" ? body.reason.trim() || null : undefined;
@@ -422,13 +486,14 @@ async function _PATCH(req: NextRequest) {
 
   if (!result.ok) {
     const status = result.error === "NOT_FOUND" ? 404 : result.error === "SCOPE_NOT_FOUND" ? 404 : 400;
-    return jsonWrap({ ok: false, error: result.error }, { status });
+    return fail(ctx, status, result.error);
   }
 
-  return jsonWrap({ ok: true, softBlockId: result.data.softBlockId }, { status: 200 });
+  return respondOk(ctx, { softBlockId: result.data.softBlockId }, { status: 200 });
 }
 
-async function _DELETE(req: NextRequest) {
+export async function DELETE(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
 
@@ -438,18 +503,31 @@ async function _DELETE(req: NextRequest) {
     roles: [...ROLE_ALLOWLIST],
   });
   if (!organization || !membership) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return fail(ctx, 403, "FORBIDDEN");
   }
   const reservasAccess = await ensureReservasModuleAccess(organization);
   if (!reservasAccess.ok) {
-    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+    return fail(ctx, 403, reservasAccess.error);
+  }
+  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "AGENDA_SOFT_BLOCKS" });
+  if (!emailGate.ok) {
+    return respondError(
+      ctx,
+      {
+        errorCode: emailGate.error ?? "FORBIDDEN",
+        message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+        retryable: false,
+        details: emailGate,
+      },
+      { status: 403 },
+    );
   }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return fail(ctx, 400, "INVALID_BODY");
 
   const id = parseScopeId(body.id);
-  if (!id) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!id) return fail(ctx, 400, "INVALID_ID");
 
   const result = await deleteSoftBlock({
     softBlockId: id,
@@ -459,11 +537,20 @@ async function _DELETE(req: NextRequest) {
 
   if (!result.ok) {
     const status = result.error === "NOT_FOUND" ? 404 : 400;
-    return jsonWrap({ ok: false, error: result.error }, { status });
+    return fail(ctx, status, result.error);
   }
 
-  return jsonWrap({ ok: true, softBlockId: result.data.softBlockId }, { status: 200 });
+  return respondOk(ctx, { softBlockId: result.data.softBlockId }, { status: 200 });
 }
-export const POST = withApiEnvelope(_POST);
-export const PATCH = withApiEnvelope(_PATCH);
-export const DELETE = withApiEnvelope(_DELETE);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

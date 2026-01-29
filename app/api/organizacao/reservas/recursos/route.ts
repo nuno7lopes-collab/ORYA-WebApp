@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,7 +6,6 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const VIEW_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -22,14 +20,14 @@ const EDIT_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.ADMIN,
 ];
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -39,11 +37,11 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
 
     const items = await prisma.reservationResource.findMany({
@@ -52,24 +50,24 @@ async function _GET(req: NextRequest) {
       select: { id: true, label: true, capacity: true, isActive: true, priority: true },
     });
 
-    return jsonWrap({ ok: true, items });
+    return NextResponse.json({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/reservas/recursos error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar recursos." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao carregar recursos." }, { status: 500 });
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -79,13 +77,13 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -95,10 +93,10 @@ async function _POST(req: NextRequest) {
     const priority = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : 0;
 
     if (!labelRaw) {
-      return jsonWrap({ ok: false, error: "Etiqueta obrigatória." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Etiqueta obrigatória." }, { status: 400 });
     }
     if (!Number.isFinite(capacityRaw) || capacityRaw < 1) {
-      return jsonWrap({ ok: false, error: "Capacidade inválida." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Capacidade inválida." }, { status: 400 });
     }
 
     const resource = await prisma.reservationResource.create({
@@ -112,14 +110,12 @@ async function _POST(req: NextRequest) {
       select: { id: true, label: true, capacity: true, isActive: true, priority: true },
     });
 
-    return jsonWrap({ ok: true, resource }, { status: 201 });
+    return NextResponse.json({ ok: true, resource }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/reservas/recursos error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar recurso." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao criar recurso." }, { status: 500 });
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);

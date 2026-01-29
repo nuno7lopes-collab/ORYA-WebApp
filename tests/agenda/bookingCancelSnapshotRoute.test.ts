@@ -182,8 +182,8 @@ describe("booking cancel snapshot route", () => {
     expect(res.status).toBe(409);
     const json = await res.json();
     expect(json.errorCode).toBe("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
-    expect(res.headers.get("x-request-id")).toBe("req_test");
-    expect(res.headers.get("x-correlation-id")).toBe("corr_test");
+    expect(json.requestId).toBe("req_test");
+    expect(json.correlationId).toBe("corr_test");
     expect(refundBookingPaymentMock).not.toHaveBeenCalled();
   });
 });

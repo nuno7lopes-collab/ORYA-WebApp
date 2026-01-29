@@ -16,6 +16,8 @@ import {
 } from "@prisma/client";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import {
   blockPendingPayout,
@@ -100,6 +102,71 @@ function readNumber(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
   return null;
+}
+
+function resolvePaymentIdFromMetadata(
+  metadata: Stripe.Metadata | null | undefined,
+  purchaseAnchor: string,
+) {
+  const paymentId = readString(metadata?.paymentId) ?? readString(metadata?.purchaseId);
+  return paymentId ?? purchaseAnchor;
+}
+
+async function publishPaymentStatusChanged(params: {
+  paymentId: string;
+  stripeEventId: string;
+  status: PaymentStatus;
+}) {
+  const { paymentId, stripeEventId, status } = params;
+  if (!paymentId) return;
+
+  await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({
+      where: { id: paymentId },
+      select: {
+        id: true,
+        status: true,
+        organizationId: true,
+        sourceType: true,
+        sourceId: true,
+      },
+    });
+    if (!payment) return;
+
+    if (payment.status !== status) {
+      await tx.payment.update({
+        where: { id: paymentId },
+        data: { status },
+      });
+    }
+
+    const eventLogId = crypto.randomUUID();
+    const payload = { eventLogId, paymentId, status };
+    const log = await appendEventLog(
+      {
+        eventId: eventLogId,
+        organizationId: payment.organizationId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        idempotencyKey: stripeEventId,
+        sourceType: payment.sourceType,
+        sourceId: payment.sourceId,
+        correlationId: paymentId,
+        payload,
+      },
+      tx,
+    );
+    if (!log) return;
+    await recordOutboxEvent(
+      {
+        eventId: eventLogId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        payload,
+        causationId: stripeEventId,
+        correlationId: paymentId,
+      },
+      tx,
+    );
+  });
 }
 
 function parseLines(value: unknown) {
@@ -378,6 +445,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
         typeof intent.metadata?.purchaseId === "string" && intent.metadata.purchaseId.trim() !== ""
           ? intent.metadata.purchaseId.trim()
           : intent.id;
+      const paymentId = resolvePaymentIdFromMetadata(intent.metadata, purchaseAnchor);
       const chargeId =
         typeof intent.latest_charge === "string"
           ? intent.latest_charge
@@ -467,6 +535,12 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
         }
       }
 
+      await publishPaymentStatusChanged({
+        paymentId,
+        stripeEventId: event.id,
+        status: PaymentStatus.SUCCEEDED,
+      });
+
       await enqueueOperation({
         operationType: "FULFILL_PAYMENT",
         dedupeKey: intent.id,
@@ -481,6 +555,17 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
     case "payment_intent.canceled": {
       const intent = event.data.object as Stripe.PaymentIntent;
       await cancelPendingPayout(intent.id, event.type);
+      const purchaseAnchor = readString(intent.metadata?.purchaseId) ?? intent.id;
+      const paymentId = resolvePaymentIdFromMetadata(intent.metadata, purchaseAnchor);
+      const nextStatus =
+        event.type === "payment_intent.payment_failed"
+          ? PaymentStatus.FAILED
+          : PaymentStatus.CANCELLED;
+      await publishPaymentStatusChanged({
+        paymentId,
+        stripeEventId: event.id,
+        status: nextStatus,
+      });
       const metadata = intent.metadata ?? {};
       if (metadata.sourceType === "STORE_ORDER") {
         const orderIdRaw = typeof metadata.storeOrderId === "string" ? Number(metadata.storeOrderId) : null;

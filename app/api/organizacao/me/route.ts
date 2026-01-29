@@ -1,12 +1,11 @@
 
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getOrgTransferEnabled, getPlatformFees } from "@/lib/platformSettings";
+import { getOrgTransferEnabled, getPlatformFees, getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
-import { getActiveOrganizationForUser, ORGANIZATION_SELECT_SETTINGS } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isValidWebsite } from "@/lib/validation/organization";
 import { normalizeOrganizationAvatarUrl, normalizeOrganizationCoverUrl } from "@/lib/profileMedia";
 import { Resend } from "resend";
@@ -14,95 +13,55 @@ import { requireOrganizationIdFromRequest } from "@/lib/organizationId";
 import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   DEFAULT_PRIMARY_MODULE,
   parsePrimaryModule,
   parseOrganizationModules,
 } from "@/lib/organizationCategories";
-import { OrganizationStatus, Prisma } from "@prisma/client";
+import { OrganizationStatus } from "@prisma/client";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL;
 const resendClient = resendApiKey ? new Resend(resendApiKey) : null;
 
-type OrganizationSettingsPayload = Prisma.OrganizationGetPayload<{
-  select: typeof ORGANIZATION_SELECT_SETTINGS;
-}>;
-
-function buildOrganizationPayload(
-  organization: OrganizationSettingsPayload,
-  modules: string[],
-) {
-  return {
-    id: organization.id,
-    username: organization.username,
-    stripeAccountId: organization.stripeAccountId,
-    status: organization.status,
-    stripeChargesEnabled: organization.stripeChargesEnabled,
-    stripePayoutsEnabled: organization.stripePayoutsEnabled,
-    feeMode: organization.feeMode,
-    platformFeeBps: organization.platformFeeBps,
-    platformFeeFixedCents: organization.platformFeeFixedCents,
-    businessName: organization.businessName,
-    entityType: organization.entityType,
-    city: organization.city,
-    payoutIban: organization.payoutIban,
-    language: organization.language ?? "pt",
-    timezone: organization.timezone ?? "Europe/Lisbon",
-    alertsEmail: organization.alertsEmail ?? null,
-    alertsSalesEnabled: organization.alertsSalesEnabled ?? true,
-    alertsPayoutEnabled: organization.alertsPayoutEnabled ?? false,
-    officialEmail: organization.officialEmail ?? null,
-    officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
-    brandingAvatarUrl: organization.brandingAvatarUrl ?? null,
-    brandingCoverUrl: organization.brandingCoverUrl ?? null,
-    brandingPrimaryColor: organization.brandingPrimaryColor ?? null,
-    brandingSecondaryColor: organization.brandingSecondaryColor ?? null,
-    organizationKind: organization.organizationKind ?? "PESSOA_SINGULAR",
-    primaryModule: organization.primaryModule ?? DEFAULT_PRIMARY_MODULE,
-    reservationAssignmentMode: organization.reservationAssignmentMode ?? "PROFESSIONAL",
-    modules,
-    publicName: organization.publicName,
-    address: organization.address ?? null,
-    showAddressPublicly: organization.showAddressPublicly ?? false,
-    publicWebsite: organization.publicWebsite ?? null,
-    publicInstagram: organization.publicInstagram ?? null,
-    publicYoutube: organization.publicYoutube ?? null,
-    publicDescription: organization.publicDescription ?? null,
-    publicHours: organization.publicHours ?? null,
-    publicProfileLayout: organization.publicProfileLayout ?? null,
-    infoRules: organization.infoRules ?? null,
-    infoFaq: organization.infoFaq ?? null,
-    infoRequirements: organization.infoRequirements ?? null,
-    infoPolicies: organization.infoPolicies ?? null,
-    infoLocationNotes: organization.infoLocationNotes ?? null,
-    padelDefaults: {
-      shortName: organization.padelDefaultShortName ?? null,
-      city: organization.padelDefaultCity ?? null,
-      address: organization.padelDefaultAddress ?? null,
-      courts: organization.padelDefaultCourts ?? 0,
-      hours: organization.padelDefaultHours ?? null,
-      ruleSetId: organization.padelDefaultRuleSetId ?? null,
-      favoriteCategories: organization.padelFavoriteCategories ?? [],
-    },
-    orgType: organization.orgType ?? "EXTERNAL",
-  };
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
 }
-
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const { data: { user }, error } = await supabase.auth.getUser();
     if (!user || error) {
-      return jsonWrap(
+      return respondError(
+        ctx,
         {
-          ok: false,
-          error: "Não autenticado.",
-          profile: null,
-          organization: null,
+          errorCode: "UNAUTHENTICATED",
+          message: "Não autenticado.",
+          retryable: false,
+          details: { profile: null, organization: null },
         },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -110,14 +69,15 @@ async function _GET(req: NextRequest) {
       where: { id: user.id },
     });
     if (!profile) {
-      return jsonWrap(
+      return respondError(
+        ctx,
         {
-          ok: false,
-          error: "Perfil não encontrado.",
-          profile: null,
-          organization: null,
+          errorCode: "NOT_FOUND",
+          message: "Perfil não encontrado.",
+          retryable: false,
+          details: { profile: null, organization: null },
         },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -134,30 +94,32 @@ async function _GET(req: NextRequest) {
     const memberPermissionsModel = (prisma as {
       organizationMemberPermission?: { findMany?: (args: unknown) => Promise<unknown[]> };
     }).organizationMemberPermission;
-    const [platformFees, orgTransferEnabled, organizationModules, memberPermissions] = await Promise.all([
-      getPlatformFees(),
-      getOrgTransferEnabled(),
-      organization
-        ? prisma.organizationModuleEntry.findMany({
-            where: { organizationId: organization.id, enabled: true },
-            select: { moduleKey: true },
-            orderBy: { moduleKey: "asc" },
-          })
-        : Promise.resolve([]),
-      organization && membership
-        ? memberPermissionsModel?.findMany
-          ? memberPermissionsModel.findMany({
-            where: { organizationId: organization.id, userId: membership.userId },
-            select: {
-              moduleKey: true,
-              accessLevel: true,
-              scopeType: true,
-              scopeId: true,
-            },
-          })
-          : Promise.resolve([])
-        : Promise.resolve([]),
-    ]);
+    const [platformFees, orgTransferEnabled, platformOfficialEmail, organizationModules, memberPermissions] =
+      await Promise.all([
+        getPlatformFees(),
+        getOrgTransferEnabled(),
+        getPlatformOfficialEmail(),
+        organization
+          ? prisma.organizationModuleEntry.findMany({
+              where: { organizationId: organization.id, enabled: true },
+              select: { moduleKey: true },
+              orderBy: { moduleKey: "asc" },
+            })
+          : Promise.resolve([]),
+        organization && membership
+          ? memberPermissionsModel?.findMany
+            ? memberPermissionsModel.findMany({
+                where: { organizationId: organization.id, userId: membership.userId },
+                select: {
+                  moduleKey: true,
+                  accessLevel: true,
+                  scopeType: true,
+                  scopeId: true,
+                },
+              })
+            : Promise.resolve([])
+          : Promise.resolve([]),
+      ]);
 
     const profilePayload = {
       id: profile.id,
@@ -174,10 +136,62 @@ async function _GET(req: NextRequest) {
     const isAdmin = profileRoles.some((r) => r?.toLowerCase() === "admin");
 
     const organizationPayload = organization
-      ? buildOrganizationPayload(
-          organization as OrganizationSettingsPayload,
-          organizationModules.map((module) => module.moduleKey),
-        )
+      ? {
+          id: organization.id,
+          username: organization.username,
+          stripeAccountId: organization.stripeAccountId,
+          status: organization.status,
+          stripeChargesEnabled: organization.stripeChargesEnabled,
+          stripePayoutsEnabled: organization.stripePayoutsEnabled,
+          feeMode: organization.feeMode,
+          platformFeeBps: organization.platformFeeBps,
+          platformFeeFixedCents: organization.platformFeeFixedCents,
+          businessName: organization.businessName,
+          entityType: organization.entityType,
+          city: organization.city,
+          payoutIban: organization.payoutIban,
+          language: (organization as { language?: string | null }).language ?? "pt",
+          timezone: (organization as { timezone?: string | null }).timezone ?? "Europe/Lisbon",
+          alertsEmail: (organization as { alertsEmail?: string | null }).alertsEmail ?? null,
+          alertsSalesEnabled: (organization as { alertsSalesEnabled?: boolean | null }).alertsSalesEnabled ?? true,
+          alertsPayoutEnabled: (organization as { alertsPayoutEnabled?: boolean | null }).alertsPayoutEnabled ?? false,
+          officialEmail: (organization as { officialEmail?: string | null }).officialEmail ?? null,
+          officialEmailVerifiedAt: (organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+          brandingAvatarUrl: (organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
+          brandingCoverUrl: (organization as { brandingCoverUrl?: string | null }).brandingCoverUrl ?? null,
+          brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
+          brandingSecondaryColor: (organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
+          organizationKind: (organization as any).organizationKind ?? "PESSOA_SINGULAR",
+          primaryModule:
+            (organization as { primaryModule?: string | null }).primaryModule ??
+            DEFAULT_PRIMARY_MODULE,
+          reservationAssignmentMode:
+            (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? "PROFESSIONAL",
+          modules: organizationModules.map((module) => module.moduleKey),
+          publicName: organization.publicName,
+          address: (organization as { address?: string | null }).address ?? null,
+          showAddressPublicly: (organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false,
+          publicWebsite: (organization as { publicWebsite?: string | null }).publicWebsite ?? null,
+          publicInstagram: (organization as { publicInstagram?: string | null }).publicInstagram ?? null,
+          publicYoutube: (organization as { publicYoutube?: string | null }).publicYoutube ?? null,
+          publicDescription: (organization as { publicDescription?: string | null }).publicDescription ?? null,
+          publicHours: (organization as { publicHours?: string | null }).publicHours ?? null,
+          publicProfileLayout: (organization as { publicProfileLayout?: unknown }).publicProfileLayout ?? null,
+          infoRules: (organization as { infoRules?: string | null }).infoRules ?? null,
+          infoFaq: (organization as { infoFaq?: string | null }).infoFaq ?? null,
+          infoRequirements: (organization as { infoRequirements?: string | null }).infoRequirements ?? null,
+          infoPolicies: (organization as { infoPolicies?: string | null }).infoPolicies ?? null,
+          infoLocationNotes: (organization as { infoLocationNotes?: string | null }).infoLocationNotes ?? null,
+          padelDefaults: {
+            shortName: (organization as any).padelDefaultShortName ?? null,
+            city: (organization as any).padelDefaultCity ?? null,
+            address: (organization as any).padelDefaultAddress ?? null,
+            courts: (organization as any).padelDefaultCourts ?? 0,
+            hours: (organization as any).padelDefaultHours ?? null,
+            ruleSetId: (organization as any).padelDefaultRuleSetId ?? null,
+            favoriteCategories: (organization as any).padelFavoriteCategories ?? [],
+          },
+        }
       : null;
 
     const profileStatus =
@@ -199,13 +213,14 @@ async function _GET(req: NextRequest) {
           : "NO_STRIPE"
       : "NO_STRIPE";
 
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         profile: profilePayload,
         organization: organizationPayload,
         platformFees,
         orgTransferEnabled,
+        platformOfficialEmail,
         contactEmail: user.email,
         profileStatus,
         paymentsStatus,
@@ -214,23 +229,35 @@ async function _GET(req: NextRequest) {
         membershipRolePack: membership?.rolePack ?? null,
         modulePermissions: memberPermissions,
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (err) {
     console.error("GET /api/organizacao/me error:", err);
-    return jsonWrap(
+    return respondError(
+      ctx,
       {
-        ok: false,
-        error: "Erro interno.",
-        profile: null,
-        organization: null,
+        errorCode: "INTERNAL_ERROR",
+        message: "Erro interno.",
+        retryable: true,
+        details: { profile: null, organization: null },
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
-async function _PATCH(req: NextRequest) {
+export async function PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -239,12 +266,12 @@ async function _PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (!user || error) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
 
     const body = await req.json().catch(() => null);
     if (!body) {
-      return jsonWrap({ ok: false, error: "Payload inválido." }, { status: 400 });
+      return fail(400, "Payload inválido.");
     }
 
     const {
@@ -300,10 +327,7 @@ async function _PATCH(req: NextRequest) {
       ? parsePrimaryModule(primaryModuleRaw)
       : null;
     if (primaryModuleProvided && !primaryModule) {
-      return jsonWrap(
-        { ok: false, error: "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS." },
-        { status: 400 },
-      );
+      return fail(400, "primaryModule inválido. Usa EVENTOS, RESERVAS ou TORNEIOS.");
     }
 
     const reservationAssignmentMode = reservationAssignmentModeProvided
@@ -316,28 +340,19 @@ async function _PATCH(req: NextRequest) {
       reservationAssignmentMode &&
       !["PROFESSIONAL", "RESOURCE"].includes(reservationAssignmentMode)
     ) {
-      return jsonWrap(
-        { ok: false, error: "reservationAssignmentMode inválido. Usa PROFESSIONAL ou RESOURCE." },
-        { status: 400 },
-      );
+      return fail(400, "reservationAssignmentMode inválido. Usa PROFESSIONAL ou RESOURCE.");
     }
 
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
-      return jsonWrap(
-        { ok: false, error: "modules inválido. Usa uma lista de módulos válidos." },
-        { status: 400 },
-      );
+      return fail(400, "modules inválido. Usa uma lista de módulos válidos.");
     }
 
     // Validação de telefone (opcional, mas consistente com checkout)
     if (typeof contactPhone === "string" && contactPhone.trim()) {
       const phoneRaw = contactPhone.trim();
       if (!isValidPhone(phoneRaw)) {
-        return jsonWrap(
-          { ok: false, error: "Telefone inválido. Usa um número real (podes incluir indicativo, ex.: +351...)." },
-          { status: 400 },
-        );
+        return fail(400, "Telefone inválido. Usa um número real (podes incluir indicativo, ex.: +351...).");
       }
     }
 
@@ -354,17 +369,14 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (!organization) {
-      return jsonWrap({ ok: false, error: "Ainda não és organização." }, { status: 403 });
+      return fail(403, "Ainda não és organização.");
     }
     if (!membership || !["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role)) {
-      return jsonWrap(
-        { ok: false, error: "Apenas Owner ou Admin podem alterar estas definições." },
-        { status: 403 },
-      );
+      return fail(403, "Apenas Owner ou Admin podem alterar estas definições.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization);
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_SETTINGS" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const isOwner = membership.role === "OWNER";
@@ -392,10 +404,7 @@ async function _PATCH(req: NextRequest) {
       ]);
       const disallowed = Object.keys(body).filter((key) => !adminAllowed.has(key));
       if (disallowed.length > 0) {
-        return jsonWrap(
-          { ok: false, error: "Admins apenas podem alterar dados operacionais." },
-          { status: 403 },
-        );
+        return fail(403, "Admins apenas podem alterar dados operacionais.");
       }
     }
 
@@ -407,7 +416,7 @@ async function _PATCH(req: NextRequest) {
       const email = alertsEmail.trim();
       const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
       if (!emailRegex.test(email)) {
-        return jsonWrap({ ok: false, error: "Email de alertas inválido." }, { status: 400 });
+        return fail(400, "Email de alertas inválido.");
       }
     }
 
@@ -454,10 +463,7 @@ async function _PATCH(req: NextRequest) {
       } else {
         const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
         if (!isValidWebsite(normalized)) {
-          return jsonWrap(
-            { ok: false, error: "Website inválido. Usa um URL válido (ex: https://orya.pt)." },
-            { status: 400 },
-          );
+          return fail(400, "Website inválido. Usa um URL válido (ex: https://orya.pt).");
         }
         organizationUpdates.publicWebsite = normalized;
       }
@@ -466,14 +472,14 @@ async function _PATCH(req: NextRequest) {
     if (typeof publicInstagram === "string") {
       const normalized = normalizeSocialLink(publicInstagram, "instagram");
       if (normalized.error) {
-        return jsonWrap({ ok: false, error: normalized.error }, { status: 400 });
+        return fail(400, normalized.error);
       }
       organizationUpdates.publicInstagram = normalized.value;
     }
     if (typeof publicYoutube === "string") {
       const normalized = normalizeSocialLink(publicYoutube, "youtube");
       if (normalized.error) {
-        return jsonWrap({ ok: false, error: normalized.error }, { status: 400 });
+        return fail(400, normalized.error);
       }
       organizationUpdates.publicYoutube = normalized.value;
     }
@@ -489,7 +495,7 @@ async function _PATCH(req: NextRequest) {
       } else {
         const sanitizedLayout = sanitizePublicProfileLayout(publicProfileLayout);
         if (!sanitizedLayout) {
-          return jsonWrap({ ok: false, error: "Layout do perfil inválido." }, { status: 400 });
+          return fail(400, "Layout do perfil inválido.");
         }
         organizationUpdates.publicProfileLayout = mergeLayoutWithDefaults(sanitizedLayout);
       }
@@ -541,9 +547,9 @@ async function _PATCH(req: NextRequest) {
       const kind = organizationKind.toUpperCase();
       const allowed = ["CLUBE_PADEL", "RESTAURANTE", "EMPRESA_EVENTOS", "ASSOCIACAO", "PESSOA_SINGULAR"];
       if (!allowed.includes(kind)) {
-        return jsonWrap(
-          { ok: false, error: "organizationKind inválido. Usa CLUBE_PADEL, RESTAURANTE, EMPRESA_EVENTOS, ASSOCIACAO ou PESSOA_SINGULAR." },
-          { status: 400 },
+        return fail(
+          400,
+          "organizationKind inválido. Usa CLUBE_PADEL, RESTAURANTE, EMPRESA_EVENTOS, ASSOCIACAO ou PESSOA_SINGULAR.",
         );
       }
       organizationUpdates.organizationKind = kind;
@@ -623,9 +629,9 @@ async function _PATCH(req: NextRequest) {
       new Set(
         nextModulesRaw
           .map((module) => (module === "ANALYTICS" ? "FINANCEIRO" : module))
-          .filter((module) => typeof module === "string" && module.length > 0),
+          .filter((module): module is string => typeof module === "string" && module.length > 0),
       ),
-    ) as string[];
+    );
 
     if (modulesProvided) {
       await recordOrganizationAuditSafe({
@@ -636,27 +642,16 @@ async function _PATCH(req: NextRequest) {
       });
     }
 
-    const refreshedOrganization = await prisma.organization.findUnique({
-      where: { id: organization.id },
-      select: ORGANIZATION_SELECT_SETTINGS,
-    });
-    const finalOrganization =
-      refreshedOrganization ?? (organization as OrganizationSettingsPayload);
     const verifiedOfficialEmail =
-      finalOrganization.officialEmailVerifiedAt ? finalOrganization.officialEmail ?? null : null;
+      organization && (organization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt
+        ? (organization as { officialEmail?: string | null }).officialEmail ?? null
+        : null;
     const alertsTarget =
       verifiedOfficialEmail ??
-      (typeof alertsEmail === "string" && alertsEmail.trim().length > 0
-        ? alertsEmail.trim()
-        : finalOrganization.alertsEmail);
-    const alertsSales =
-      typeof alertsSalesEnabled === "boolean"
-        ? alertsSalesEnabled
-        : finalOrganization.alertsSalesEnabled;
+      (typeof alertsEmail === "string" && alertsEmail.trim().length > 0 ? alertsEmail.trim() : organization.alertsEmail);
+    const alertsSales = typeof alertsSalesEnabled === "boolean" ? alertsSalesEnabled : organization.alertsSalesEnabled;
     const shouldNotifyAlertsEnabled =
-      alertsSalesProvided &&
-      alertsSalesEnabled === true &&
-      finalOrganization.alertsSalesEnabled !== true;
+      alertsSalesProvided && alertsSalesEnabled === true && organization.alertsSalesEnabled !== true;
     if (alertsTarget && alertsSales && shouldNotifyAlertsEnabled && resendClient && resendFromEmail) {
       try {
         await resendClient.emails.send({
@@ -670,17 +665,18 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    return jsonWrap(
-      {
-        ok: true,
-        organization: buildOrganizationPayload(finalOrganization, nextModules),
+    return respondOk(ctx, { organization: {
+          primaryModule:
+            primaryModule ??
+            (organization as { primaryModule?: string | null }).primaryModule ??
+            DEFAULT_PRIMARY_MODULE,
+          modules: nextModules,
+        },
       },
       { status: 200 },
     );
   } catch (err) {
     console.error("PATCH /api/organizacao/me error:", err);
-    return jsonWrap({ ok: false, error: "Erro interno." }, { status: 500 });
+    return fail(500, "Erro interno.");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const PATCH = withApiEnvelope(_PATCH);

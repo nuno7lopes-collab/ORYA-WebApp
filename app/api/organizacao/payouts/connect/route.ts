@@ -1,21 +1,22 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   createAccountLink,
   createStripeAccount,
 } from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { ensureOrgOwner } from "@/lib/organizationPermissions";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -24,8 +25,9 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap(
-        { ok: false, error: "Não autenticado." },
+      return respondError(
+        ctx,
+        { errorCode: "UNAUTHENTICATED", message: "Não autenticado.", retryable: false },
         { status: 401 },
       );
     }
@@ -35,8 +37,9 @@ async function _POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return jsonWrap(
-        { ok: false, error: "Perfil não encontrado." },
+      return respondError(
+        ctx,
+        { errorCode: "PROFILE_NOT_FOUND", message: "Perfil não encontrado.", retryable: false },
         { status: 404 },
       );
     }
@@ -45,34 +48,55 @@ async function _POST(req: NextRequest) {
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: ["OWNER"],
-      includeOrganizationFields: "settings",
     });
 
-    const ownerCheck = membership ? ensureOrgOwner(membership.role) : { ok: false as const };
-    if (!organization || !membership || !ownerCheck.ok) {
-      return jsonWrap(
-        { ok: false, error: "APENAS_OWNER" },
+    if (!organization || !membership) {
+      return respondError(
+        ctx,
+        { errorCode: "APENAS_OWNER", message: "Apenas owner.", retryable: false },
+        { status: 403 },
+      );
+    }
+
+    const emailGate = await requireOfficialEmailVerified({
+      organizationId: organization.id,
+      organization,
+      reasonCode: "PAYOUTS_CONNECT",
+      actorUserId: profile.id,
+    });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "OFFICIAL_EMAIL_REQUIRED",
+          message: emailGate.message ?? "Email oficial obrigatório.",
+          retryable: false,
+          details: emailGate,
+        },
         { status: 403 },
       );
     }
 
     if (organization.status !== "ACTIVE") {
-      return jsonWrap(
+      return respondError(
+        ctx,
         {
-          ok: false,
-          error: "Conta de organização ainda não está ativa.",
-          status: organization.status,
+          errorCode: "ORGANIZATION_NOT_ACTIVE",
+          message: "Conta de organização ainda não está ativa.",
+          retryable: false,
+          details: { status: organization.status },
         },
         { status: 403 },
       );
     }
 
     if (organization.orgType === "PLATFORM") {
-      return jsonWrap(
+      return respondError(
+        ctx,
         {
-          ok: false,
-          error: "PLATFORM_ACCOUNT",
+          errorCode: "PLATFORM_ACCOUNT",
           message: "Esta organização recebe pagamentos na conta ORYA, sem Stripe Connect.",
+          retryable: false,
         },
         { status: 409 },
       );
@@ -116,9 +140,9 @@ async function _POST(req: NextRequest) {
       type: "account_onboarding",
     });
 
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         url: link.url,
         accountId,
       },
@@ -126,10 +150,10 @@ async function _POST(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização][payouts][connect] erro:", err);
-    return jsonWrap(
-      { ok: false, error: "Erro ao gerar onboarding Stripe." },
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro ao gerar onboarding Stripe.", retryable: true },
       { status: 500 },
     );
   }
 }
-export const POST = withApiEnvelope(_POST);

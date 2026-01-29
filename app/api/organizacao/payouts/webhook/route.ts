@@ -5,15 +5,13 @@ import { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { constructStripeWebhookEvent } from "@/domain/finance/gateway/stripeGateway";
 import { prisma } from "@/lib/prisma";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { respondPlainText } from "@/lib/http/envelope";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { respondOk, respondPlainText } from "@/lib/http/envelope";
 
 const webhookSecret =
   process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const sig = req.headers.get("stripe-signature");
 
@@ -51,18 +49,10 @@ async function _POST(req: NextRequest) {
         const chargesEnabled = Boolean(account.charges_enabled);
         const payoutsEnabled = Boolean(account.payouts_enabled);
 
-        const organization = await prisma.organization.findFirst({
+        await prisma.organization.updateMany({
           where: organizationIdNumber
             ? { id: organizationIdNumber }
             : { stripeAccountId: account.id },
-          select: { id: true },
-        });
-        if (!organization) {
-          return respondPlainText(ctx, "ORG_NOT_RESOLVED", { status: 422 });
-        }
-
-        await prisma.organization.update({
-          where: { id: organization.id },
           data: {
             stripeChargesEnabled: chargesEnabled,
             stripePayoutsEnabled: payoutsEnabled,
@@ -71,7 +61,7 @@ async function _POST(req: NextRequest) {
         });
 
         console.log("[Stripe Connect Webhook] account.updated sync", {
-          organizationId: organization.id,
+          organizationId: organizationIdNumber,
           accountId: account.id,
           chargesEnabled,
           payoutsEnabled,
@@ -88,9 +78,7 @@ async function _POST(req: NextRequest) {
     }
   } catch (err) {
     console.error("[Stripe Connect Webhook] Error processing event:", err);
-    return respondPlainText(ctx, "WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 
-  return jsonWrap({ ok: true, received: true }, { status: 200, ctx });
+  return respondOk(ctx, { received: true }, { status: 200 });
 }
-export const POST = withApiEnvelope(_POST);

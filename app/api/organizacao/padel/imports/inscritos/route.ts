@@ -1,8 +1,6 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   OrganizationMemberRole,
   PadelPairingPaymentStatus,
@@ -19,6 +17,8 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   ACTIVE_PAIRING_REGISTRATION_WHERE,
   mapRegistrationToPairingLifecycle,
@@ -50,15 +50,31 @@ const buildSummary = (totalRows: number, validRows: number, errors: PadelImportE
   errorCount: errors.length,
 });
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return fail(401, "UNAUTHENTICATED");
 
   const formData = await req.formData().catch(() => null);
-  if (!formData) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!formData) return fail(400, "INVALID_BODY");
 
   const eventId = Number(formData.get("eventId"));
   const fallbackCategoryIdRaw = formData.get("fallbackCategoryId");
@@ -68,31 +84,42 @@ async function _POST(req: NextRequest) {
   const dryRun = resolveImportBoolean(asString(formData.get("dryRun")), false);
   const file = formData.get("file");
   if (!Number.isFinite(eventId) || eventId <= 0) {
-    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    return fail(400, "INVALID_EVENT");
   }
   if (!file || !(file instanceof File)) {
-    return jsonWrap({ ok: false, error: "MISSING_FILE" }, { status: 400 });
+    return fail(400, "MISSING_FILE");
   }
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: { organizationId: true },
   });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return fail(404, "EVENT_NOT_FOUND");
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-  const emailGate = ensureOrganizationEmailVerified(organization);
-  if (!emailGate.ok) return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+  if (!organization) return fail(403, "FORBIDDEN");
+  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "PADEL_IMPORTS" });
+  if (!emailGate.ok) {
+    return respondError(
+      ctx,
+      {
+        errorCode: emailGate.error ?? "FORBIDDEN",
+        message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+        retryable: false,
+        details: emailGate,
+      },
+      { status: 403 },
+    );
+  }
 
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
     select: { defaultCategoryId: true, advancedSettings: true },
   });
-  if (!config) return jsonWrap({ ok: false, error: "PADEL_CONFIG_MISSING" }, { status: 409 });
+  if (!config) return fail(409, "PADEL_CONFIG_MISSING");
 
   const categoryLinks = await prisma.padelEventCategoryLink.findMany({
     where: { eventId, isEnabled: true },
@@ -114,11 +141,11 @@ async function _POST(req: NextRequest) {
     ? read(buffer.toString("utf8"), { type: "string", raw: false, codepage: 65001 })
     : read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return jsonWrap({ ok: false, error: "EMPTY_FILE" }, { status: 400 });
+  if (!sheetName) return fail(400, "EMPTY_FILE");
   const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return jsonWrap({ ok: false, error: "EMPTY_FILE" }, { status: 400 });
+  if (!sheet) return fail(400, "EMPTY_FILE");
   const rows = utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
-  if (rows.length === 0) return jsonWrap({ ok: false, error: "NO_ROWS" }, { status: 400 });
+  if (rows.length === 0) return fail(400, "NO_ROWS");
 
   const {
     rows: parsedRows,
@@ -133,7 +160,7 @@ async function _POST(req: NextRequest) {
   });
 
   if (nonEmptyRows === 0) {
-    return jsonWrap({ ok: false, error: "NO_ROWS" }, { status: 400 });
+    return fail(400, "NO_ROWS");
   }
 
   const advanced = (config.advancedSettings as Record<string, unknown>) ?? {};
@@ -269,7 +296,11 @@ async function _POST(req: NextRequest) {
   const summary = buildSummary(nonEmptyRows, validRows.length, errors);
 
   if (errors.length > 0) {
-    return jsonWrap({ ok: false, error: "INVALID_ROWS", errors, summary }, { status: 400 });
+    return respondError(
+      ctx,
+      { errorCode: "INVALID_ROWS", message: "INVALID_ROWS", retryable: false, details: { errors, summary } },
+      { status: 400 },
+    );
   }
 
   if (dryRun) {
@@ -289,9 +320,9 @@ async function _POST(req: NextRequest) {
         categories: categorySummary,
       },
     });
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         dryRun: true,
         summary,
         preview: {
@@ -559,7 +590,7 @@ async function _POST(req: NextRequest) {
       message === "EVENT_FULL" || message === "CATEGORY_FULL" || message === "CATEGORY_PLAYERS_FULL"
         ? message
         : "IMPORT_FAILED";
-    return jsonWrap({ ok: false, error }, { status: 409 });
+    return fail(409, error);
   }
 
   createdPairings.forEach((p) => {
@@ -606,9 +637,9 @@ async function _POST(req: NextRequest) {
       },
     });
 
-  return jsonWrap(
+  return respondOk(
+    ctx,
     {
-      ok: true,
       imported: {
         pairings: createdPairings.length,
         seedsApplied: seedsToApply.size,
@@ -618,4 +649,15 @@ async function _POST(req: NextRequest) {
     { status: 200 },
   );
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

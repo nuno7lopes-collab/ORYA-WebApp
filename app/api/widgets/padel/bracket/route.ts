@@ -1,11 +1,12 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 type MatchRow = {
   id: number;
@@ -51,12 +52,25 @@ const parseRoundMeta = (label: string) => {
   return { prefix, size };
 };
 
-async function _GET(req: NextRequest) {
+function fail(
+  ctx: RequestContext,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const slug = req.nextUrl.searchParams.get("slug");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
   if (!eventId && !slug) {
-    return jsonWrap({ ok: false, error: "EVENT_REQUIRED" }, { status: 400 });
+    return fail(ctx, 400, "EVENT_REQUIRED");
   }
 
   const rateLimited = await enforcePublicRateLimit(req, {
@@ -71,24 +85,27 @@ async function _GET(req: NextRequest) {
       id: true,
       title: true,
       status: true,
-      publicAccessMode: true,
-      inviteOnly: true,
       padelTournamentConfig: { select: { advancedSettings: true } },
+      accessPolicies: {
+        orderBy: { policyVersion: "desc" },
+        take: 1,
+        select: { mode: true },
+      },
     },
   });
-  if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event) return fail(ctx, 404, "EVENT_NOT_FOUND");
 
+  const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
   });
   const isPublicEvent =
-    event.publicAccessMode !== "INVITE" &&
-    !event.inviteOnly &&
+    isPublicAccessMode(accessMode) &&
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
     competitionState === "PUBLIC";
   if (!isPublicEvent) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return fail(ctx, 403, "FORBIDDEN");
   }
 
   const matches = await prisma.padelMatch.findMany({
@@ -124,6 +141,21 @@ async function _GET(req: NextRequest) {
     })
     .map(([label, items]) => ({ label, matches: items }));
 
-  return jsonWrap({ ok: true, event: { id: event.id, title: event.title }, rounds }, { status: 200 });
+  return respondOk(
+    ctx,
+    { event: { id: event.id, title: event.title }, rounds },
+    { status: 200 },
+  );
 }
-export const GET = withApiEnvelope(_GET);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

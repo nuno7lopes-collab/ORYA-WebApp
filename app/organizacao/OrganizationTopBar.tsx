@@ -18,6 +18,7 @@ import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import CrmSubnav from "@/app/organizacao/(dashboard)/crm/CrmSubnav";
 import { type ObjectiveTab } from "@/app/organizacao/objectiveNav";
 import { hasModuleAccess, normalizeAccessLevel, resolveModuleAccess } from "@/lib/organizationRbac";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import StoreAdminSubnav from "@/components/store/StoreAdminSubnav";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
@@ -314,7 +315,8 @@ export default function OrganizationTopBar({
   const isOrgDataLoading = Boolean(activeOrg) && !orgData && !orgDataError;
   const shouldAutoRefreshOrg = useMemo(() => {
     if (!orgData) return false;
-    const emailVerified = Boolean(orgData.organization?.officialEmailVerifiedAt);
+    const officialEmailNormalized = normalizeOfficialEmail(orgData.organization?.officialEmail ?? null);
+    const emailVerified = Boolean(officialEmailNormalized && orgData.organization?.officialEmailVerifiedAt);
     const paymentsMode = orgData.paymentsMode ?? null;
     const paymentsStatus = orgData.paymentsStatus ?? null;
     const paymentsReady = paymentsMode === "PLATFORM" || paymentsStatus === "READY";
@@ -343,11 +345,12 @@ export default function OrganizationTopBar({
   const activationItems = useMemo(() => {
     if (!orgData) return [];
     const officialEmailVerifiedAt = orgData.organization?.officialEmailVerifiedAt ?? null;
-    const officialEmail = orgData.organization?.officialEmail ?? null;
+    const officialEmail = normalizeOfficialEmail(orgData.organization?.officialEmail ?? null);
+    const emailVerified = Boolean(officialEmail && officialEmailVerifiedAt);
     const paymentsStatus = orgData.paymentsStatus ?? null;
     const paymentsMode = orgData.paymentsMode ?? null;
     const items: Array<{ key: string; label: string; href: string; tone: "danger" | "warning" }> = [];
-    if (!officialEmailVerifiedAt) {
+    if (!emailVerified) {
       items.push({
         key: "email",
         label: officialEmail ? "Email por verificar" : "Email obrigatório",

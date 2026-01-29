@@ -10,7 +10,6 @@ export type EnvelopeSuccess<T> = {
   requestId: string;
   correlationId: string;
   data: T;
-  result?: T;
 };
 
 export type EnvelopeError = {
@@ -39,21 +38,12 @@ export type EnvelopeErrorInput = {
 };
 
 export function successEnvelope<T>(ctx: RequestContext, data: T): EnvelopeSuccess<T> {
-  const envelope: Record<string, unknown> = {
+  return {
     ok: true,
     requestId: ctx.requestId,
     correlationId: ctx.correlationId,
     data,
-    result: data,
   };
-  if (data && typeof data === "object" && !Array.isArray(data)) {
-    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-      if (!(key in envelope)) {
-        envelope[key] = value;
-      }
-    }
-  }
-  return envelope as EnvelopeSuccess<T>;
 }
 
 export function errorEnvelope(ctx: RequestContext, input: EnvelopeErrorInput): EnvelopeError {

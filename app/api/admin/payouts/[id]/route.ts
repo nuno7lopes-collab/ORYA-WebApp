@@ -1,26 +1,39 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { Prisma } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
+      return respondError(
+        ctx,
+        { errorCode: admin.error, message: admin.error, retryable: false },
+        { status: admin.status },
+      );
     }
 
     const resolved = await params;
     const payoutId = Number(resolved.id);
     if (!Number.isFinite(payoutId)) {
-      return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+      return respondError(
+        ctx,
+        { errorCode: "INVALID_ID", message: "ID inválido.", retryable: false },
+        { status: 400 },
+      );
     }
 
     const payout = await prisma.pendingPayout.findUnique({ where: { id: payoutId } });
     if (!payout) {
-      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return respondError(
+        ctx,
+        { errorCode: "NOT_FOUND", message: "Payout não encontrado.", retryable: false },
+        { status: 404 },
+      );
     }
 
     const organization = payout.recipientConnectAccountId
@@ -84,7 +97,9 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ id: strin
         )
       : [];
 
-    const actorIds = Array.from(new Set(auditRows.map((row) => row.actor_user_id).filter((id): id is string => Boolean(id))));
+    const actorIds = Array.from(
+      new Set(auditRows.map((row) => row.actor_user_id).filter((id): id is string => Boolean(id))),
+    );
     const actors = actorIds.length
       ? await prisma.profile.findMany({
           where: { id: { in: actorIds } },
@@ -100,9 +115,9 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ id: strin
       actor: row.actor_user_id ? actorById.get(row.actor_user_id) ?? null : null,
     }));
 
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         payout,
         organization,
         source,
@@ -112,7 +127,10 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ id: strin
     );
   } catch (err) {
     console.error("[admin/payouts/detail]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const GET = withApiEnvelope(_GET);

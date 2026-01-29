@@ -98,15 +98,20 @@ export function mapEventToCardDTO(
     return null;
   }
 
-  const prices = event.ticketTypes
+  let priceFrom: number | null = null;
+  const ticketPrices = event.ticketTypes
     ? event.ticketTypes
         .filter((tt): tt is { price: number } => Boolean(tt) && typeof tt?.price === "number")
         .map((tt) => tt.price)
     : [];
-  const priceFromCents = prices.length > 0 ? Math.min(...prices) : null;
-  const isFree = deriveIsFreeEvent({
+
+  if (ticketPrices.length > 0) {
+    priceFrom = Math.min(...ticketPrices);
+  }
+
+  const isGratis = deriveIsFreeEvent({
     pricingMode: event.pricingMode ?? undefined,
-    ticketPrices: prices,
+    ticketPrices,
   });
 
   return {
@@ -116,8 +121,8 @@ export function mapEventToCardDTO(
     startsAt: event.startsAt ?? null,
     endsAt: event.endsAt ?? null,
     locationCity: event.locationCity ?? null,
-    isGratis: isFree,
-    priceFrom: priceFromCents !== null ? priceFromCents / 100 : null,
+    isGratis,
+    priceFrom: priceFrom !== null ? priceFrom / 100 : null,
     coverImageUrl: event.coverImageUrl ?? null,
   };
 }

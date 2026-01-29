@@ -1,16 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/utils/email";
 import { rateLimit } from "@/lib/auth/rateLimit";
-import { assertInviteTokenValid, hashInviteToken } from "@/lib/invites/inviteTokens";
+import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const limiter = await rateLimit(req, { windowMs: 5 * 60 * 1000, max: 10, keyPrefix: "invite_token" });
   if (!limiter.allowed) {
-    return jsonWrap({ ok: false, allow: false }, { status: 429 });
+    return fail(429, "RATE_LIMITED");
   }
 
   const resolved = await params;
@@ -27,48 +38,84 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
       ? body.ticketTypeId
       : null;
 
-  if (!inviteToken || !emailNormalized) {
-    return jsonWrap({ ok: true, allow: false });
+  if (!inviteToken) {
+    return respondOk(ctx, { allow: false, reason: "INVITE_TOKEN_REQUIRED" });
   }
 
   const event = await prisma.event.findUnique({
     where: { slug: resolved.slug },
-    select: { id: true },
+    select: { id: true, ownerUserId: true },
   });
   if (!event) {
-    return jsonWrap({ ok: true, allow: false });
+    return respondOk(ctx, { allow: false, reason: "EVENT_NOT_FOUND" });
   }
 
   const accessDecision = await evaluateEventAccess({ eventId: event.id, intent: "INVITE_TOKEN" });
   if (!accessDecision.allowed) {
-    return jsonWrap({ ok: true, allow: false });
+    return respondOk(ctx, { allow: false, reason: accessDecision.reasonCode });
   }
 
-  const tokenHash = hashInviteToken(inviteToken);
-  const tokenRow = await prisma.inviteToken.findUnique({
-    where: { tokenHash },
-    select: {
-      id: true,
-      eventId: true,
-      ticketTypeId: true,
-      emailNormalized: true,
-      expiresAt: true,
-      usedAt: true,
+  const grantResult = await resolveInviteTokenGrant(
+    {
+      eventId: event.id,
+      token: inviteToken,
+      emailNormalized: emailNormalized || undefined,
+      ticketTypeId,
+    },
+    prisma,
+  );
+  if (!grantResult.ok) {
+    return respondOk(ctx, { allow: false, reason: grantResult.reason });
+  }
+
+  if (!event.ownerUserId) {
+    return respondError(
+      ctx,
+      { errorCode: "EVENT_OWNER_REQUIRED", message: "EVENT_OWNER_REQUIRED", retryable: false },
+      { status: 500 },
+    );
+  }
+
+  const invite = await prisma.eventInvite.findFirst({
+    where: { eventId: event.id, targetIdentifier: grantResult.grant.emailNormalized, scope: "PUBLIC" },
+    select: { id: true },
+  });
+
+  const ensuredInvite =
+    invite ??
+    (await prisma.eventInvite.create({
+      data: {
+        eventId: event.id,
+        invitedByUserId: event.ownerUserId,
+        targetIdentifier: grantResult.grant.emailNormalized,
+        scope: "PUBLIC",
+      },
+      select: { id: true },
+    }));
+
+  return respondOk(ctx, {
+    allow: true,
+    eventInviteId: ensuredInvite.id,
+    normalized: grantResult.grant.emailNormalized,
+    expiresAt: grantResult.grant.expiresAt,
+    ticketTypeId: grantResult.grant.ticketTypeId ?? undefined,
+    accessGrant: {
+      type: "EVENT_INVITE",
+      eventInviteId: ensuredInvite.id,
+      scope: "PUBLIC",
     },
   });
-
-  const ok = assertInviteTokenValid({
-    tokenRow,
-    eventId: event.id,
-    emailNormalized,
-    ticketTypeIds: ticketTypeId ? [ticketTypeId] : [],
-    now: new Date(),
-  });
-
-  if (!ok) {
-    return jsonWrap({ ok: true, allow: false });
-  }
-
-  return jsonWrap({ ok: true, allow: true, expiresAt: tokenRow!.expiresAt });
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  if (status === 429) return "RATE_LIMITED";
+  return "INTERNAL_ERROR";
+}

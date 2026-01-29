@@ -10,7 +10,8 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const MAX_DIGITAL_BYTES = 100 * 1024 * 1024; // 100MB
 
@@ -68,10 +69,32 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -79,13 +102,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
+      return fail(400, productId.error);
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -93,7 +116,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       select: { id: true },
     });
     if (!product) {
-      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return fail(404, "Produto nao encontrado.");
     }
 
     const items = await prisma.storeDigitalAsset.findMany({
@@ -110,20 +133,31 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       },
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("GET /api/me/store/products/[id]/digital-assets error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar ficheiros." }, { status: 500 });
+    return fail(500, "Erro ao carregar ficheiros.");
   }
 }
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -131,17 +165,17 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     if (context.store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return fail(403, "Catalogo bloqueado.");
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
+      return fail(400, productId.error);
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -149,22 +183,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       select: { id: true },
     });
     if (!product) {
-      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return fail(404, "Produto nao encontrado.");
     }
 
     const formData = await req.formData();
     const file = formData.get("file");
     if (!(file instanceof File)) {
-      return jsonWrap({ ok: false, error: "Ficheiro em falta." }, { status: 400 });
+      return fail(400, "Ficheiro em falta.");
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     if (buffer.byteLength === 0) {
-      return jsonWrap({ ok: false, error: "Ficheiro vazio." }, { status: 400 });
+      return fail(400, "Ficheiro vazio.");
     }
     if (buffer.byteLength > MAX_DIGITAL_BYTES) {
-      return jsonWrap({ ok: false, error: "Ficheiro demasiado grande." }, { status: 413 });
+      return fail(413, "Ficheiro demasiado grande.");
     }
 
     const maxDownloadsRaw = formData.get("maxDownloads");
@@ -172,7 +206,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (typeof maxDownloadsRaw === "string" && maxDownloadsRaw.trim()) {
       const parsed = Number(maxDownloadsRaw);
       if (!Number.isFinite(parsed) || parsed < 1) {
-        return jsonWrap({ ok: false, error: "Max downloads invalido." }, { status: 400 });
+        return fail(400, "Max downloads invalido.");
       }
       maxDownloads = Math.trunc(parsed);
     }
@@ -189,7 +223,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const ensured = await ensureBucketExists(bucket);
     if (!ensured.ok) {
       console.error("[POST /api/me/store/products/[id]/digital-assets] ensure bucket error", ensured.error);
-      return jsonWrap({ ok: false, error: "Storage indisponivel." }, { status: 500 });
+      return fail(500, "Storage indisponivel.");
     }
     const uploadRes = await supabaseAdmin.storage.from(bucket).upload(objectPath, buffer, {
       contentType: file.type || "application/octet-stream",
@@ -199,7 +233,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     if (uploadRes.error) {
       console.error("[POST /api/me/store/products/[id]/digital-assets] upload error", uploadRes.error);
-      return jsonWrap({ ok: false, error: "Erro ao fazer upload." }, { status: 500 });
+      return fail(500, "Erro ao fazer upload.");
     }
 
     const created = await prisma.storeDigitalAsset.create({
@@ -223,13 +257,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       },
     });
 
-    return jsonWrap({ ok: true, item: created }, { status: 201 });
+    return respondOk(ctx, { item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("POST /api/me/store/products/[id]/digital-assets error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar ficheiro." }, { status: 500 });
+    return fail(500, "Erro ao criar ficheiro.");
   }
 }
 export const GET = withApiEnvelope(_GET);

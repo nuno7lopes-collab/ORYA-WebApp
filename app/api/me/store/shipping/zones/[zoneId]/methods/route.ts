@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +6,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreShippingMode } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const createMethodSchema = z.object({
   name: z.string().trim().min(1, "Nome obrigatorio.").max(120),
@@ -40,10 +41,32 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -51,13 +74,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ zoneId: st
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
-      return jsonWrap({ ok: false, error: zoneId.error }, { status: 400 });
+      return fail(400, zoneId.error);
     }
 
     const zone = await prisma.storeShippingZone.findFirst({
@@ -65,7 +88,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ zoneId: st
       select: { id: true },
     });
     if (!zone) {
-      return jsonWrap({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
+      return fail(404, "Zona nao encontrada.");
     }
 
     const items = await prisma.storeShippingMethod.findMany({
@@ -85,20 +108,31 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ zoneId: st
       },
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("GET /api/me/store/shipping/zones/[zoneId]/methods error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar metodos." }, { status: 500 });
+    return fail(500, "Erro ao carregar metodos.");
   }
 }
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ zoneId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -106,13 +140,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ zoneId: s
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const zoneId = parseId(resolvedParams.zoneId);
     if (!zoneId.ok) {
-      return jsonWrap({ ok: false, error: zoneId.error }, { status: 400 });
+      return fail(400, zoneId.error);
     }
 
     const zone = await prisma.storeShippingZone.findFirst({
@@ -120,20 +154,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ zoneId: s
       select: { id: true },
     });
     if (!zone) {
-      return jsonWrap({ ok: false, error: "Zona nao encontrada." }, { status: 404 });
+      return fail(404, "Zona nao encontrada.");
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createMethodSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const payload = parsed.data;
     const etaMinDays = payload.etaMinDays ?? null;
     const etaMaxDays = payload.etaMaxDays ?? null;
     if (etaMinDays !== null && etaMaxDays !== null && etaMinDays > etaMaxDays) {
-      return jsonWrap({ ok: false, error: "ETA invalida." }, { status: 400 });
+      return fail(400, "ETA invalida.");
     }
 
     const created = await prisma.$transaction(async (tx) => {
@@ -170,13 +204,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ zoneId: s
       });
     });
 
-    return jsonWrap({ ok: true, item: created }, { status: 201 });
+    return respondOk(ctx, { item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("POST /api/me/store/shipping/zones/[zoneId]/methods error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar metodo." }, { status: 500 });
+    return fail(500, "Erro ao criar metodo.");
   }
 }
 export const GET = withApiEnvelope(_GET);

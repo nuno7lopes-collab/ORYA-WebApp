@@ -1,24 +1,33 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
+      return respondError(
+        ctx,
+        { errorCode: admin.error, message: admin.error, retryable: false },
+        { status: admin.status },
+      );
     }
 
     const body = (await req.json().catch(() => null)) as { paymentIntentId?: string } | null;
     const paymentIntentId =
       typeof body?.paymentIntentId === "string" ? body.paymentIntentId.trim() : "";
     if (!paymentIntentId) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYMENT_INTENT_ID" }, { status: 400 });
+      return respondError(
+        ctx,
+        { errorCode: "INVALID_PAYMENT_INTENT_ID", message: "PaymentIntent inválido.", retryable: false },
+        { status: 400 },
+      );
     }
 
     await enqueueOperation({
@@ -46,10 +55,13 @@ async function _POST(req: NextRequest) {
       });
     }
 
-    return jsonWrap({ ok: true, paymentIntentId }, { status: 200 });
+    return respondOk(ctx, { paymentIntentId }, { status: 200 });
   } catch (err) {
     console.error("[admin/payments/reprocess]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const POST = withApiEnvelope(_POST);

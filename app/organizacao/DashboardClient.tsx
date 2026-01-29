@@ -39,6 +39,7 @@ import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
 import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { ensurePublicProfileLayout } from "@/lib/publicProfileLayout";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
@@ -509,6 +510,7 @@ function OrganizacaoPageInner({
       organization?: OrganizationLite | null;
       ok?: boolean;
       orgTransferEnabled?: boolean | null;
+      platformOfficialEmail?: string | null;
       membershipRole?: string | null;
       membershipRolePack?: string | null;
       modulePermissions?: Array<{
@@ -524,6 +526,7 @@ function OrganizacaoPageInner({
   const isSuspended = organization?.status === "SUSPENDED";
   const isActive = organization?.status === "ACTIVE";
   const isPending = Boolean(organization?.status && !isActive && !isSuspended);
+  const platformSupportEmail = organizationData?.platformOfficialEmail ?? null;
   const primaryModule = organization?.primaryModule ?? null;
   const rawModules = useMemo(() => {
     if (!Array.isArray(organization?.modules)) return [];
@@ -1602,7 +1605,8 @@ function OrganizacaoPageInner({
   const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
   const nextEvent = eventsList[0] ?? null;
   const publicProfileUrl = organization?.username ? `/${organization.username}` : null;
-  const officialEmailVerified = Boolean(organization?.officialEmail && organization?.officialEmailVerifiedAt);
+  const officialEmailNormalized = normalizeOfficialEmail(organization?.officialEmail ?? null);
+  const officialEmailVerified = Boolean(officialEmailNormalized && organization?.officialEmailVerifiedAt);
   const profileCoverUrl = useMemo(() => {
     const customCover = organization?.brandingCoverUrl?.trim() || null;
     if (!customCover) return null;
@@ -2394,11 +2398,21 @@ function OrganizacaoPageInner({
           <p className="text-[11px] uppercase tracking-[0.24em] text-amber-100/80">Organização suspensa</p>
           <h1 className="text-2xl font-semibold text-white">Acesso apenas de leitura.</h1>
           <p className="text-sm text-amber-100/80">
-            Se precisares de ajuda, contacta{" "}
-            <a href="mailto:oryapt@gmail.com" className="underline decoration-amber-200/70 underline-offset-4">
-              oryapt@gmail.com
-            </a>
-            .
+            Se precisares de ajuda,{" "}
+            {platformSupportEmail ? (
+              <>
+                contacta{" "}
+                <a
+                  href={`mailto:${platformSupportEmail}`}
+                  className="underline decoration-amber-200/70 underline-offset-4"
+                >
+                  {platformSupportEmail}
+                </a>
+                .
+              </>
+            ) : (
+              "contacta o suporte."
+            )}
           </p>
         </div>
       </div>

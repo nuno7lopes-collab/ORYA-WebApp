@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -10,6 +9,8 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -46,11 +47,33 @@ function normalizeIdList(value: unknown, label: string) {
   return { ids: Array.from(new Set(parsed)), error: null as string | null };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const resolved = await params;
   const serviceId = parseServiceId(resolved.id);
   if (!serviceId) {
-    return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
+    return fail(400, "Serviço inválido.");
   }
 
   try {
@@ -59,7 +82,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -69,18 +92,18 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return fail(403, reservasAccess.error);
     }
 
     const writeAccess = ensureOrganizationWriteAccess(organization, {
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return jsonWrap({ ok: false, error: writeAccess.error }, { status: 403 });
+      return fail(403, writeAccess.error);
     }
 
     const service = await prisma.service.findFirst({
@@ -117,23 +140,34 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     });
 
     if (!service) {
-      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return fail(404, "Serviço não encontrado.");
     }
-    return jsonWrap({ ok: true, service });
+    return respondOk(ctx, {service });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("GET /api/organizacao/servicos/[id] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar serviço." }, { status: 500 });
+    return fail(500, "Erro ao carregar serviço.");
   }
 }
 
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const resolved = await params;
   const serviceId = parseServiceId(resolved.id);
   if (!serviceId) {
-    return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
+    return fail(400, "Serviço inválido.");
   }
 
   try {
@@ -142,7 +176,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -152,11 +186,11 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return fail(403, reservasAccess.error);
     }
 
     const existing = await prisma.service.findFirst({
@@ -165,7 +199,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     });
 
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return fail(404, "Serviço não encontrado.");
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -173,21 +207,21 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (typeof payload?.title === "string") updates.title = payload.title.trim();
     if (typeof payload?.name === "string" && !updates.title) updates.title = payload.name.trim();
     if (typeof updates.title === "string" && !updates.title) {
-      return jsonWrap({ ok: false, error: "Título inválido." }, { status: 400 });
+      return fail(400, "Título inválido.");
     }
     if (typeof payload?.description === "string") updates.description = payload.description.trim() || null;
     if (Number.isFinite(Number(payload?.durationMinutes))) {
       const duration = Number(payload.durationMinutes);
       const allowedDurations = new Set([30, 60, 90, 120]);
       if (!allowedDurations.has(duration)) {
-        return jsonWrap({ ok: false, error: "Duração inválida (30/60/90/120 min)." }, { status: 400 });
+        return fail(400, "Duração inválida (30/60/90/120 min).");
       }
       updates.durationMinutes = duration;
     }
     if (Number.isFinite(Number(payload?.unitPriceCents ?? payload?.price))) {
       const price = Math.round(Number(payload.unitPriceCents ?? payload.price));
       if (price < 0) {
-        return jsonWrap({ ok: false, error: "Preço inválido." }, { status: 400 });
+        return fail(400, "Preço inválido.");
       }
       updates.unitPriceCents = price;
     }
@@ -206,7 +240,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (typeof payload?.locationMode === "string") {
       const locationMode = payload.locationMode.trim().toUpperCase();
       if (!["FIXED", "CHOOSE_AT_BOOKING"].includes(locationMode)) {
-        return jsonWrap({ ok: false, error: "Localização inválida." }, { status: 400 });
+        return fail(400, "Localização inválida.");
       }
       updates.locationMode = locationMode;
     }
@@ -223,7 +257,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         select: { id: true },
       });
       if (!policy) {
-        return jsonWrap({ ok: false, error: "Política inválida." }, { status: 400 });
+        return fail(400, "Política inválida.");
       }
       updates.policyId = policy.id;
     }
@@ -233,7 +267,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       "Profissionais",
     );
     if (professionalIdsError) {
-      return jsonWrap({ ok: false, error: professionalIdsError }, { status: 400 });
+      return fail(400, professionalIdsError);
     }
     if (professionalIds !== null) {
       if (professionalIds.length) {
@@ -242,14 +276,14 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           select: { id: true },
         });
         if (existing.length !== professionalIds.length) {
-          return jsonWrap({ ok: false, error: "Profissionais inválidos." }, { status: 400 });
+          return fail(400, "Profissionais inválidos.");
         }
       }
     }
 
     const { ids: resourceIds, error: resourceIdsError } = normalizeIdList(payload?.resourceIds, "Recursos");
     if (resourceIdsError) {
-      return jsonWrap({ ok: false, error: resourceIdsError }, { status: 400 });
+      return fail(400, resourceIdsError);
     }
     if (resourceIds !== null) {
       if (resourceIds.length) {
@@ -258,13 +292,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           select: { id: true },
         });
         if (existing.length !== resourceIds.length) {
-          return jsonWrap({ ok: false, error: "Recursos inválidos." }, { status: 400 });
+          return fail(400, "Recursos inválidos.");
         }
       }
     }
 
     if (Object.keys(updates).length === 0 && professionalIds === null && resourceIds === null) {
-      return jsonWrap({ ok: false, error: "Sem alterações." }, { status: 400 });
+      return fail(400, "Sem alterações.");
     }
 
     const service = await prisma.$transaction(async (tx) => {
@@ -335,7 +369,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     });
 
     if (!service) {
-      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return fail(404, "Serviço não encontrado.");
     }
 
     const { ip, userAgent } = getRequestMeta(req);
@@ -353,21 +387,32 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       userAgent,
     });
 
-    return jsonWrap({ ok: true, service });
+    return respondOk(ctx, {service });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("PATCH /api/organizacao/servicos/[id] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar serviço." }, { status: 500 });
+    return fail(500, "Erro ao atualizar serviço.");
   }
 }
 
 async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const resolved = await params;
   const serviceId = parseServiceId(resolved.id);
   if (!serviceId) {
-    return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
+    return fail(400, "Serviço inválido.");
   }
 
   try {
@@ -376,7 +421,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -386,13 +431,13 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return fail(403, reservasAccess.error);
     }
 
     const existing = await prisma.service.findFirst({
@@ -401,7 +446,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     });
 
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return fail(404, "Serviço não encontrado.");
     }
 
     await prisma.service.update({
@@ -419,13 +464,13 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
       userAgent,
     });
 
-    return jsonWrap({ ok: true });
+    return respondOk(ctx, {});
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("DELETE /api/organizacao/servicos/[id] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao remover serviço." }, { status: 500 });
+    return fail(500, "Erro ao remover serviço.");
   }
 }
 export const GET = withApiEnvelope(_GET);

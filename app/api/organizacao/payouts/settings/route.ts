@@ -7,21 +7,17 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { FeeMode } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { ensureOrgOwner } from "@/lib/organizationPermissions";
-import { respondError, respondOk } from "@/lib/http/envelope";
+import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 function isValidFeeMode(value: string | null | undefined): value is FeeMode {
   if (!value) return false;
   return value === "INCLUDED";
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
-  const fail = (errorCode: string, message: string, status: number) =>
-    respondError(ctx, { errorCode, message }, { status });
-
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -30,7 +26,11 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return fail("UNAUTHENTICATED", "UNAUTHENTICATED", 401);
+      return respondError(
+        ctx,
+        { errorCode: "UNAUTHENTICATED", message: "Sessão inválida.", retryable: false },
+        { status: 401 },
+      );
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -39,12 +39,38 @@ async function _POST(req: NextRequest) {
       roles: ["OWNER"],
     });
 
-    const ownerCheck = membership ? ensureOrgOwner(membership.role) : { ok: false as const };
-    if (!organization || !membership || !ownerCheck.ok) {
-      return fail("APENAS_OWNER", "APENAS_OWNER", 403);
+    if (!organization || !membership) {
+      return respondError(
+        ctx,
+        { errorCode: "APENAS_OWNER", message: "Apenas owner.", retryable: false },
+        { status: 403 },
+      );
     }
     if (organization.status !== "ACTIVE") {
-      return fail("ORGANIZATION_NOT_ACTIVE", "ORGANIZATION_NOT_ACTIVE", 403);
+      return respondError(
+        ctx,
+        { errorCode: "ORGANIZATION_NOT_ACTIVE", message: "Organização inativa.", retryable: false },
+        { status: 403 },
+      );
+    }
+
+    const emailGate = await requireOfficialEmailVerified({
+      organizationId: organization.id,
+      organization,
+      reasonCode: "PAYOUTS_SETTINGS",
+      actorUserId: user.id,
+    });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "OFFICIAL_EMAIL_REQUIRED",
+          message: emailGate.message ?? "Email oficial obrigatório.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
 
     const body = (await req.json().catch(() => null)) as {
@@ -54,14 +80,22 @@ async function _POST(req: NextRequest) {
     } | null;
 
     if (!body || typeof body !== "object") {
-      return fail("INVALID_BODY", "INVALID_BODY", 400);
+      return respondError(
+        ctx,
+        { errorCode: "INVALID_BODY", message: "Payload inválido.", retryable: false },
+        { status: 400 },
+      );
     }
 
     const updates: Partial<{ feeMode: FeeMode; platformFeeBps: number; platformFeeFixedCents: number }> = {};
 
     if (body.feeMode !== undefined) {
       if (!isValidFeeMode(body.feeMode)) {
-        return fail("FEE_MODE_LOCKED", "FEE_MODE_LOCKED", 400);
+        return respondError(
+          ctx,
+          { errorCode: "FEE_MODE_LOCKED", message: "Fee mode bloqueado.", retryable: false },
+          { status: 400 },
+        );
       }
       updates.feeMode = body.feeMode;
     }
@@ -69,7 +103,11 @@ async function _POST(req: NextRequest) {
     if (body.platformFeeBps !== undefined) {
       const value = Number(body.platformFeeBps);
       if (!Number.isFinite(value) || value < 0 || value > 5000) {
-        return fail("INVALID_FEE_BPS", "INVALID_FEE_BPS", 400);
+        return respondError(
+          ctx,
+          { errorCode: "INVALID_FEE_BPS", message: "Fee BPS inválida.", retryable: false },
+          { status: 400 },
+        );
       }
       updates.platformFeeBps = Math.floor(value);
     }
@@ -77,13 +115,21 @@ async function _POST(req: NextRequest) {
     if (body.platformFeeFixedCents !== undefined) {
       const value = Number(body.platformFeeFixedCents);
       if (!Number.isFinite(value) || value < 0 || value > 5000) {
-        return fail("INVALID_FEE_FIXED", "INVALID_FEE_FIXED", 400);
+        return respondError(
+          ctx,
+          { errorCode: "INVALID_FEE_FIXED", message: "Fee fixa inválida.", retryable: false },
+          { status: 400 },
+        );
       }
       updates.platformFeeFixedCents = Math.floor(value);
     }
 
     if (Object.keys(updates).length === 0) {
-      return fail("NOTHING_TO_UPDATE", "NOTHING_TO_UPDATE", 400);
+      return respondError(
+        ctx,
+        { errorCode: "NOTHING_TO_UPDATE", message: "Nada para atualizar.", retryable: false },
+        { status: 400 },
+      );
     }
 
     const updated = await prisma.organization.update({
@@ -105,7 +151,10 @@ async function _POST(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/payouts/settings][POST] erro", err);
-    return fail("INTERNAL_ERROR", "INTERNAL_ERROR", 500);
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const POST = withApiEnvelope(_POST);

@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
@@ -7,7 +6,8 @@ import { promoteNextPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
 import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -18,8 +18,8 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     },
   });
   if (!evt?.organizationId) return false;
-  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {});
-  if (!emailGate.ok) return false;
+  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "PADEL_WAITLIST" });
+  if (!emailGate.ok) return { ...emailGate, status: 403 };
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { onboardingDone: true, fullName: true, username: true },
@@ -61,19 +61,49 @@ async function ensurePadelPlayerProfile(params: { organizationId: number; userId
   });
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (error || !data?.user) return fail(401, "UNAUTHENTICATED");
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const eventId = typeof body?.eventId === "number" ? body.eventId : Number(body?.eventId);
   const categoryIdRaw = typeof body?.categoryId === "number" ? body.categoryId : Number(body?.categoryId);
   const categoryId = Number.isFinite(categoryIdRaw) ? Number(categoryIdRaw) : null;
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isFinite(eventId)) return fail(400, "INVALID_EVENT");
 
   const authorized = await ensureOrganizationAccess(data.user.id, eventId);
-  if (!authorized) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (authorized !== true) {
+    if (authorized && typeof authorized === "object" && "error" in authorized) {
+      return respondError(
+        ctx,
+        {
+          errorCode: authorized.error ?? "FORBIDDEN",
+          message: authorized.message ?? authorized.error ?? "Sem permissões.",
+          retryable: false,
+          details: authorized,
+        },
+        { status: authorized.status ?? 403 },
+      );
+    }
+    return fail(403, "FORBIDDEN");
+  }
 
   const [event, config] = await Promise.all([
     prisma.event.findUnique({ where: { id: eventId }, select: { startsAt: true, status: true } }),
@@ -83,7 +113,7 @@ async function _POST(req: NextRequest) {
     }),
   ]);
   if (!event || !config) {
-    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    return fail(404, "EVENT_NOT_FOUND");
   }
 
   const advanced = (config.advancedSettings || {}) as {
@@ -94,7 +124,7 @@ async function _POST(req: NextRequest) {
     competitionState?: string | null;
   };
   if (advanced.waitlistEnabled !== true) {
-    return jsonWrap({ ok: false, error: "WAITLIST_DISABLED" }, { status: 409 });
+    return fail(409, "WAITLIST_DISABLED");
   }
   const registrationStartsAt =
     advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
@@ -116,7 +146,7 @@ async function _POST(req: NextRequest) {
     competitionState: advanced.competitionState ?? null,
   });
   if (!registrationCheck.ok) {
-    return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });
+    return fail(409, registrationCheck.code);
   }
 
   const result = await prisma.$transaction((tx) =>
@@ -131,10 +161,25 @@ async function _POST(req: NextRequest) {
   );
 
   if (!result.ok) {
-    return jsonWrap({ ok: false, error: result.code }, { status: 409 });
+    return fail(409, result.code);
   }
 
   await ensurePadelPlayerProfile({ organizationId: result.organizationId, userId: result.userId });
-  return jsonWrap({ ok: true, entryId: result.entryId, pairingId: result.pairingId }, { status: 200 });
+  return respondOk(
+    ctx,
+    { entryId: result.entryId, pairingId: result.pairingId },
+    { status: 200 },
+  );
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

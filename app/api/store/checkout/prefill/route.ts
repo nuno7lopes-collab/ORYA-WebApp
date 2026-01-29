@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreAddressType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 type PrefillResponse = {
   ok: boolean;
@@ -41,15 +42,37 @@ function parseStoreId(req: NextRequest) {
   return { ok: true as const, storeId };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const storeParsed = parseStoreId(req);
     if (!storeParsed.ok) {
-      return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
+      return fail(400, storeParsed.error);
     }
 
     const store = await prisma.store.findFirst({
@@ -57,14 +80,14 @@ async function _GET(req: NextRequest) {
       select: { id: true },
     });
     if (!store) {
-      return jsonWrap({ ok: false, error: "Store nao encontrada." }, { status: 404 });
+      return fail(404, "Store nao encontrada.");
     }
 
     const supabase = await createSupabaseServer();
     const { data } = await supabase.auth.getUser();
     const user = data?.user;
     if (!user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const [profile, lastOrder] = await Promise.all([
@@ -108,15 +131,13 @@ async function _GET(req: NextRequest) {
       phone: profile?.contactPhone ?? lastOrder?.customerPhone ?? null,
     };
 
-    return jsonWrap({
-      ok: true,
-      customer,
+    return respondOk(ctx, { customer,
       shippingAddress,
       billingAddress,
     });
   } catch (err) {
     console.error("GET /api/store/checkout/prefill error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar prefill." }, { status: 500 });
+    return fail(500, "Erro ao carregar prefill.");
   }
 }
 export const GET = withApiEnvelope(_GET);

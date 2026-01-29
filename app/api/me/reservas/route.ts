@@ -1,16 +1,39 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { decideCancellation } from "@/lib/bookingCancellation";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   getSnapshotCancellationWindowMinutes,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
 
-async function _GET(_req: NextRequest) {
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = false,
+    details?: Record<string, unknown>,
+  ) =>
+    respondError(
+      ctx,
+      { errorCode, message, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -170,7 +193,11 @@ async function _GET(_req: NextRequest) {
         assignmentMode: booking.assignmentMode,
         partySize: booking.partySize ?? null,
         professional: booking.professional
-          ? { id: booking.professional.id, name: booking.professional.name, avatarUrl: booking.professional.user?.avatarUrl ?? null }
+          ? {
+              id: booking.professional.id,
+              name: booking.professional.name,
+              avatarUrl: booking.professional.user?.avatarUrl ?? null,
+            }
           : null,
         resource: booking.resource
           ? { id: booking.resource.id, label: booking.resource.label, capacity: booking.resource.capacity }
@@ -189,13 +216,12 @@ async function _GET(_req: NextRequest) {
       };
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
     console.error("GET /api/me/reservas error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar reservas." }, { status: 500 });
+    return fail(500, "Erro ao carregar reservas.", "INTERNAL_ERROR", true);
   }
 }
-export const GET = withApiEnvelope(_GET);

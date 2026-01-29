@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -10,6 +9,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -63,13 +64,35 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; optionId: string; valueId: string }> },
 ) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -77,33 +100,33 @@ async function _PATCH(
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     if (context.store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return fail(403, "Catalogo bloqueado.");
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
+      return fail(400, productId.error);
     }
 
     const optionId = parseId(resolvedParams.optionId);
     if (!optionId.ok) {
-      return jsonWrap({ ok: false, error: optionId.error }, { status: 400 });
+      return fail(400, optionId.error);
     }
 
     const valueId = parseId(resolvedParams.valueId);
     if (!valueId.ok) {
-      return jsonWrap({ ok: false, error: valueId.error }, { status: 400 });
+      return fail(400, valueId.error);
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateValueSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -111,7 +134,7 @@ async function _PATCH(
       select: { id: true },
     });
     if (!product) {
-      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return fail(404, "Produto nao encontrado.");
     }
 
     const option = await prisma.storeProductOption.findFirst({
@@ -119,7 +142,7 @@ async function _PATCH(
       select: { id: true },
     });
     if (!option) {
-      return jsonWrap({ ok: false, error: "Opcao nao encontrada." }, { status: 404 });
+      return fail(404, "Opcao nao encontrada.");
     }
 
     const existing = await prisma.storeProductOptionValue.findFirst({
@@ -127,7 +150,7 @@ async function _PATCH(
       select: { id: true },
     });
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Valor nao encontrado." }, { status: 404 });
+      return fail(404, "Valor nao encontrado.");
     }
 
     const payload = parsed.data;
@@ -155,16 +178,16 @@ async function _PATCH(
       },
     });
 
-    return jsonWrap({ ok: true, item: updated });
+    return respondOk(ctx, {item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error(
       "PATCH /api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId] error:",
       err,
     );
-    return jsonWrap({ ok: false, error: "Erro ao atualizar valor." }, { status: 500 });
+    return fail(500, "Erro ao atualizar valor.");
   }
 }
 
@@ -172,9 +195,20 @@ async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; optionId: string; valueId: string }> },
 ) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -182,27 +216,27 @@ async function _DELETE(
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     if (context.store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return fail(403, "Catalogo bloqueado.");
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
+      return fail(400, productId.error);
     }
 
     const optionId = parseId(resolvedParams.optionId);
     if (!optionId.ok) {
-      return jsonWrap({ ok: false, error: optionId.error }, { status: 400 });
+      return fail(400, optionId.error);
     }
 
     const valueId = parseId(resolvedParams.valueId);
     if (!valueId.ok) {
-      return jsonWrap({ ok: false, error: valueId.error }, { status: 400 });
+      return fail(400, valueId.error);
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -210,7 +244,7 @@ async function _DELETE(
       select: { id: true },
     });
     if (!product) {
-      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return fail(404, "Produto nao encontrado.");
     }
 
     const option = await prisma.storeProductOption.findFirst({
@@ -218,7 +252,7 @@ async function _DELETE(
       select: { id: true },
     });
     if (!option) {
-      return jsonWrap({ ok: false, error: "Opcao nao encontrada." }, { status: 404 });
+      return fail(404, "Opcao nao encontrada.");
     }
 
     const existing = await prisma.storeProductOptionValue.findFirst({
@@ -226,21 +260,21 @@ async function _DELETE(
       select: { id: true },
     });
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Valor nao encontrado." }, { status: 404 });
+      return fail(404, "Valor nao encontrado.");
     }
 
     await prisma.storeProductOptionValue.delete({ where: { id: valueId.id } });
 
-    return jsonWrap({ ok: true });
+    return respondOk(ctx, {});
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error(
       "DELETE /api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId] error:",
       err,
     );
-    return jsonWrap({ ok: false, error: "Erro ao remover valor." }, { status: 500 });
+    return fail(500, "Erro ao remover valor.");
   }
 }
 export const PATCH = withApiEnvelope(_PATCH);

@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,7 +7,9 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { ConsentStatus, ConsentType, OrganizationMemberRole } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
@@ -29,7 +30,23 @@ function sanitizeSource(value: unknown) {
   return trimmed.slice(0, 80);
 }
 
-async function _PUT(req: NextRequest, context: { params: Promise<{ userId: string }> }) {
+export async function PUT(req: NextRequest, context: { params: Promise<{ userId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   try {
     const supabase = await createSupabaseServer();
     const actor = await ensureAuthenticated(supabase);
@@ -41,20 +58,33 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "CRM_CONSENTS" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(403, crmAccess.error);
     }
 
     const resolvedParams = await context.params;
     const userId = resolvedParams.userId;
     if (!userId) {
-      return jsonWrap({ ok: false, error: "Utilizador inválido." }, { status: 400 });
+      return fail(400, "Utilizador inválido.");
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -68,7 +98,7 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
     const source = sanitizeSource(payload?.source);
 
     if (!consentType || granted === null) {
-      return jsonWrap({ ok: false, error: "Payload inválido." }, { status: 400 });
+      return fail(400, "Payload inválido.");
     }
 
     const [crmCustomer, existingConsent] = await Promise.all([
@@ -83,7 +113,7 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
     ]);
 
     if (!crmCustomer && !existingConsent) {
-      return jsonWrap({ ok: false, error: "Cliente não encontrado." }, { status: 404 });
+      return fail(404, "Cliente não encontrado.");
     }
 
     const status = granted ? ConsentStatus.GRANTED : ConsentStatus.REVOKED;
@@ -176,13 +206,24 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
       },
     });
 
-    return jsonWrap({ ok: true, consent });
+    return respondOk(ctx, { consent });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
     console.error("PUT /api/organizacao/consentimentos/[userId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar consentimento." }, { status: 500 });
+    return fail(500, "Erro ao atualizar consentimento.");
   }
 }
-export const PUT = withApiEnvelope(_PUT);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

@@ -1,38 +1,49 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
+import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { getPlatformOfficialEmail } from "@/lib/platformSettings";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { OrgType, PendingPayoutStatus } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type VerifyPlatformEmailBody = {
   organizationId?: number | string;
 };
-
-const PLATFORM_EMAIL = "oryapt@gmail.com";
 
 function parseOrganizationId(value: unknown) {
   const parsed = typeof value === "string" ? Number(value) : Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-async function _POST(req: NextRequest) {
+function fail(
+  ctx: ReturnType<typeof getRequestContext>,
+  status: number,
+  errorCode: string,
+  message = errorCode,
+  retryable = status >= 500,
+) {
+  return respondError(ctx, { errorCode, message, retryable }, { status });
+}
+
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
+      return fail(ctx, admin.status, admin.error);
     }
 
     const body = (await req.json().catch(() => null)) as VerifyPlatformEmailBody | null;
     if (!body || typeof body !== "object") {
-      return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      return fail(ctx, 400, "INVALID_BODY");
     }
 
     const organizationId = parseOrganizationId(body.organizationId);
     if (!organizationId) {
-      return jsonWrap({ ok: false, error: "INVALID_FIELDS" }, { status: 400 });
+      return fail(ctx, 400, "INVALID_FIELDS");
     }
 
     const organization = await prisma.organization.findUnique({
@@ -48,12 +59,13 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization) {
-      return jsonWrap({ ok: false, error: "ORGANIZATION_NOT_FOUND" }, { status: 404 });
+      return fail(ctx, 404, "ORGANIZATION_NOT_FOUND");
     }
 
+    const platformEmail = await getPlatformOfficialEmail();
     const alreadyVerified =
       organization.orgType === OrgType.PLATFORM &&
-      organization.officialEmail?.toLowerCase() === PLATFORM_EMAIL &&
+      normalizeOfficialEmail(organization.officialEmail ?? null) === platformEmail &&
       Boolean(organization.officialEmailVerifiedAt);
 
     let cancelledPayouts = 0;
@@ -74,7 +86,7 @@ async function _POST(req: NextRequest) {
       where: { id: organization.id },
       data: {
         orgType: OrgType.PLATFORM,
-        officialEmail: PLATFORM_EMAIL,
+        officialEmail: platformEmail,
         officialEmailVerifiedAt: new Date(),
       },
       select: { id: true, orgType: true, officialEmail: true, officialEmailVerifiedAt: true },
@@ -86,15 +98,16 @@ async function _POST(req: NextRequest) {
       organizationId: organization.id,
       actorUserId: admin.userId,
       action: "admin_organization_platform_email_verify",
+      correlationId: ctx.correlationId,
       metadata: {
         from: {
           orgType: organization.orgType,
-          officialEmail: organization.officialEmail,
+          officialEmail: maskEmailForLog(organization.officialEmail),
           officialEmailVerifiedAt: organization.officialEmailVerifiedAt,
         },
         to: {
           orgType: updated.orgType,
-          officialEmail: updated.officialEmail,
+          officialEmail: maskEmailForLog(updated.officialEmail),
           officialEmailVerifiedAt: updated.officialEmailVerifiedAt,
         },
         alreadyVerified,
@@ -104,20 +117,26 @@ async function _POST(req: NextRequest) {
       userAgent,
     });
 
-    return jsonWrap({
-      ok: true,
-      organization: {
-        id: updated.id,
-        orgType: updated.orgType,
-        officialEmail: updated.officialEmail,
-        officialEmailVerifiedAt: updated.officialEmailVerifiedAt,
+    return respondOk(
+      ctx,
+      {
+        organization: {
+          id: updated.id,
+          orgType: updated.orgType,
+          officialEmail: updated.officialEmail,
+          officialEmailVerifiedAt: updated.officialEmailVerifiedAt,
+        },
+        alreadyVerified,
+        cancelledPayouts,
       },
-      alreadyVerified,
-      cancelledPayouts,
-    });
+      { status: 200 },
+    );
   } catch (err) {
-    console.error("[/api/admin/organizacoes/verify-platform-email] Erro inesperado:", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    console.error("[/api/admin/organizacoes/verify-platform-email] Erro inesperado:", {
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      err,
+    });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
-export const POST = withApiEnvelope(_POST);

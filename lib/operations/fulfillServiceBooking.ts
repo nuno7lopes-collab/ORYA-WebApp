@@ -5,8 +5,13 @@ import { getStripeBaseFees } from "@/lib/platformSettings";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
-import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
+import { CrmInteractionSource, CrmInteractionType, type Prisma } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import {
+  BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
+  buildBookingConfirmationSnapshot,
+  type BookingConfirmationPaymentMeta,
+} from "@/lib/reservas/confirmationSnapshot";
 
 function parseNumber(value: unknown) {
   const parsed = Number(value);
@@ -16,6 +21,119 @@ function parseNumber(value: unknown) {
 function parseId(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+const toInt = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+};
+
+const extractPolicyIdFromSnapshot = (snapshot: unknown) => {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const policyId = toInt((snapshot as any)?.policySnapshot?.policyId);
+  return policyId && policyId > 0 ? policyId : null;
+};
+
+const extractSnapshotCreatedAt = (snapshot: unknown, fallback: Date) => {
+  if (!snapshot || typeof snapshot !== "object") return fallback;
+  const raw = (snapshot as any)?.createdAt;
+  if (typeof raw !== "string") return fallback;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
+
+async function ensureConfirmationSnapshot(params: {
+  tx: Prisma.TransactionClient;
+  bookingId: number;
+  now: Date;
+  policyIdHint?: number | null;
+  paymentMeta?: BookingConfirmationPaymentMeta | null;
+}) {
+  const { tx, bookingId, now, policyIdHint = null, paymentMeta = null } = params;
+  const booking = await tx.booking.findUnique({
+    where: { id: bookingId },
+    select: {
+      id: true,
+      organizationId: true,
+      price: true,
+      currency: true,
+      confirmationSnapshot: true,
+      confirmationSnapshotVersion: true,
+      confirmationSnapshotCreatedAt: true,
+      policyRef: { select: { id: true, policyId: true } },
+      service: {
+        select: {
+          policyId: true,
+          unitPriceCents: true,
+          currency: true,
+          organization: {
+            select: {
+              feeMode: true,
+              platformFeeBps: true,
+              platformFeeFixedCents: true,
+              orgType: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!booking || !booking.service) {
+    throw new Error("PRICING_SNAPSHOT_MISSING");
+  }
+
+  let snapshot = booking.confirmationSnapshot ?? null;
+  let resolvedPolicyId = extractPolicyIdFromSnapshot(snapshot) ?? booking.policyRef?.policyId ?? null;
+
+  if (!snapshot) {
+    const result = await buildBookingConfirmationSnapshot({
+      tx,
+      booking,
+      now,
+      policyIdHint,
+      paymentMeta,
+    });
+    if (!result.ok) {
+      throw new Error(result.code);
+    }
+    snapshot = result.snapshot;
+    resolvedPolicyId = result.policyId;
+  }
+
+  if (!resolvedPolicyId) {
+    throw new Error("POLICY_SNAPSHOT_MISSING");
+  }
+
+  const snapshotVersion =
+    booking.confirmationSnapshotVersion ??
+    toInt((snapshot as any)?.version) ??
+    BOOKING_CONFIRMATION_SNAPSHOT_VERSION;
+  const snapshotCreatedAt =
+    booking.confirmationSnapshotCreatedAt ?? extractSnapshotCreatedAt(snapshot, now);
+  const needsUpdate =
+    !booking.confirmationSnapshot ||
+    !booking.confirmationSnapshotVersion ||
+    !booking.confirmationSnapshotCreatedAt;
+
+  if (needsUpdate) {
+    await tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        confirmationSnapshot: snapshot,
+        confirmationSnapshotVersion: snapshotVersion,
+        confirmationSnapshotCreatedAt: snapshotCreatedAt,
+      },
+    });
+  }
+
+  if (!booking.policyRef) {
+    await tx.bookingPolicyRef.create({
+      data: { bookingId: booking.id, policyId: resolvedPolicyId },
+    });
+  }
+
+  return { policyId: resolvedPolicyId };
 }
 
 async function estimateStripeFee(amountCents: number) {
@@ -45,6 +163,11 @@ export async function fulfillServiceBookingIntent(
   const policyId = parseId(meta.policyId);
   const userId = typeof meta.userId === "string" ? meta.userId : null;
   const platformFeeCents = parseNumber(meta.platformFeeCents) ?? 0;
+  const paymentMeta: BookingConfirmationPaymentMeta = {
+    grossAmountCents: meta.grossAmountCents ?? null,
+    cardPlatformFeeCents: meta.cardPlatformFeeCents ?? null,
+    stripeFeeEstimateCents: meta.stripeFeeEstimateCents ?? null,
+  };
 
   let stripeFeeCents: number | null = null;
   let stripeChargeId: string | null = null;
@@ -78,20 +201,21 @@ export async function fulfillServiceBookingIntent(
 
   try {
     const txnResult = await prisma.$transaction(async (tx) => {
+      const now = new Date();
       let crmPayload:
         | { organizationId: number; userId: string; bookingId: number; amountCents: number; currency: string }
         | null = null;
-
       if (bookingId) {
         const result = await confirmPendingBooking({
           tx,
           bookingId,
-          now: new Date(),
+          now,
           ignoreExpiry: true,
+          paymentMeta,
         });
 
         if (!result.ok) {
-          if (result.code === "SLOT_TAKEN") {
+          if (["SLOT_TAKEN", "POLICY_SNAPSHOT_MISSING", "PRICING_SNAPSHOT_MISSING"].includes(result.code)) {
             await tx.booking.update({
               where: { id: bookingId },
               data: { status: "CANCELLED_BY_CLIENT" },
@@ -122,6 +246,14 @@ export async function fulfillServiceBookingIntent(
             data: { paymentIntentId: intent.id },
           });
         }
+
+        await ensureConfirmationSnapshot({
+          tx,
+          bookingId: booking.id,
+          now,
+          policyIdHint: policyId,
+          paymentMeta,
+        });
 
         const existingTransaction = await tx.transaction.findFirst({
           where: { stripePaymentIntentId: intent.id },
@@ -270,6 +402,15 @@ export async function fulfillServiceBookingIntent(
         }
       }
 
+      if (!isCancelled) {
+        await ensureConfirmationSnapshot({
+          tx,
+          bookingId: booking.id,
+          now,
+          policyIdHint: policyId,
+          paymentMeta,
+        });
+      }
       const existingTransaction = await tx.transaction.findFirst({
         where: { stripePaymentIntentId: intent.id },
         select: { id: true },
@@ -363,7 +504,16 @@ export async function fulfillServiceBookingIntent(
     crmPayload = txnResult?.crmPayload ?? null;
   } catch (err) {
     const code = err instanceof Error ? err.message : "UNKNOWN";
-    if (bookingId && ["SLOT_TAKEN", "INVALID_CAPACITY", "SERVICE_INACTIVE"].includes(code)) {
+    if (
+      bookingId &&
+      [
+        "SLOT_TAKEN",
+        "INVALID_CAPACITY",
+        "SERVICE_INACTIVE",
+        "POLICY_SNAPSHOT_MISSING",
+        "PRICING_SNAPSHOT_MISSING",
+      ].includes(code)
+    ) {
       if (intent.id) {
         await refundBookingPayment({
           bookingId,

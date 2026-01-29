@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { randomUUID } from "crypto";
 import { OrganizationMemberRole } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -8,13 +7,40 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { sendOfficialEmailVerificationEmail } from "@/lib/emailSender";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import {
+  isValidOfficialEmail,
+  maskEmailForLog,
+  normalizeOfficialEmail,
+} from "@/lib/organizationOfficialEmail";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24; // 24h
 const STATUS_PENDING = "PENDING";
 
-async function _POST(req: NextRequest) {
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -23,22 +49,22 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const body = await req.json().catch(() => null);
     const organizationId = parseOrganizationId(body?.organizationId);
-    const emailRaw = typeof body?.email === "string" ? body.email.trim().toLowerCase() : null;
-    if (!organizationId || !emailRaw) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+    const emailNormalized = normalizeOfficialEmail(typeof body?.email === "string" ? body.email : null);
+    if (!organizationId || !emailNormalized) {
+      return fail(400, "INVALID_PAYLOAD");
     }
-    if (!EMAIL_REGEX.test(emailRaw)) {
-      return jsonWrap({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
+    if (!isValidOfficialEmail(emailNormalized)) {
+      return fail(400, "INVALID_EMAIL");
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!membership || membership.role !== OrganizationMemberRole.OWNER) {
-      return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_UPDATE_OFFICIAL_EMAIL" }, { status: 403 });
+      return fail(403, "ONLY_OWNER_CAN_UPDATE_OFFICIAL_EMAIL");
     }
 
     const organization = await prisma.organization.findUnique({
@@ -52,25 +78,21 @@ async function _POST(req: NextRequest) {
       },
     });
     if (!organization) {
-      return jsonWrap({ ok: false, error: "ORGANIZATION_NOT_FOUND" }, { status: 404 });
+      return fail(404, "ORGANIZATION_NOT_FOUND");
     }
 
-    if (organization.officialEmailVerifiedAt && organization.officialEmail === emailRaw) {
-      return jsonWrap(
+    const currentNormalized = normalizeOfficialEmail(organization.officialEmail ?? null);
+    if (organization.officialEmailVerifiedAt && currentNormalized === emailNormalized) {
+      return respondOk(
+        ctx,
         {
-          ok: true,
           status: "VERIFIED",
           verifiedAt: organization.officialEmailVerifiedAt,
-          email: organization.officialEmail,
+          email: currentNormalized,
         },
         { status: 200 },
       );
     }
-
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: { officialEmail: emailRaw },
-    });
 
     const now = Date.now();
     const expiresAt = new Date(now + DEFAULT_EXPIRATION_MS);
@@ -87,7 +109,7 @@ async function _POST(req: NextRequest) {
         data: {
           organizationId,
           requestedByUserId: user.id,
-          newEmail: emailRaw,
+          newEmail: emailNormalized,
           token,
           status: STATUS_PENDING,
           expiresAt,
@@ -96,14 +118,22 @@ async function _POST(req: NextRequest) {
 
       await tx.organization.update({
         where: { id: organizationId },
-        data: { officialEmail: emailRaw, officialEmailVerifiedAt: null },
+        data: { officialEmail: emailNormalized, officialEmailVerifiedAt: null },
       });
 
+      const requestedDomain = emailNormalized.split("@")[1] ?? null;
       await recordOrganizationAudit(tx, {
         organizationId,
         actorUserId: user.id,
         action: "OFFICIAL_EMAIL_CHANGE_REQUESTED",
-        metadata: { email: emailRaw, requestId: created.id },
+        correlationId: ctx.correlationId,
+        metadata: {
+          email: maskEmailForLog(emailNormalized),
+          requestId: created.id,
+          verificationMethod: "EMAIL_TOKEN",
+          verifiedDomain: requestedDomain,
+          requestIdExternal: ctx.requestId,
+        },
         ip,
         userAgent: req.headers.get("user-agent"),
       });
@@ -116,28 +146,27 @@ async function _POST(req: NextRequest) {
       const organizationName =
         organization.publicName || organization.username || "Organização ORYA";
       await sendOfficialEmailVerificationEmail({
-        to: emailRaw,
+        to: emailNormalized,
         organizationName,
         token: request.token,
-        pendingEmail: emailRaw,
+        pendingEmail: emailNormalized,
         expiresAt: request.expiresAt,
       });
     } catch (emailErr) {
       console.error("[organization/official-email] Falha ao enviar email de verificação", emailErr);
     }
 
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         status: request.status,
         expiresAt: request.expiresAt,
-        pendingEmail: emailRaw,
+        pendingEmail: emailNormalized,
       },
       { status: 200 },
     );
   } catch (err) {
-    console.error("[organization/official-email][POST]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    console.error("[organization/official-email][POST]", { requestId: ctx.requestId, err });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
-export const POST = withApiEnvelope(_POST);

@@ -41,11 +41,12 @@ export type OrganizationContextResult = {
 };
 
 type OrganizationContextGuard = { ok: true; context: OrganizationContextResult } | { ok: false; error: string };
-
 export const ORGANIZATION_SELECT_MINIMAL = {
   id: true,
   status: true,
   groupId: true,
+  officialEmail: true,
+  officialEmailVerifiedAt: true,
 } satisfies Prisma.OrganizationSelect;
 
 export const ORGANIZATION_SELECT_SETTINGS = {
@@ -212,7 +213,7 @@ export const getActiveOrganizationForUser = cache(
           select: {
             organizations: {
               where: { status: { in: allowedStatuses } },
-              select: { id: true, status: true, groupId: true },
+              select: ORGANIZATION_SELECT_MINIMAL,
               orderBy: { id: "asc" },
             },
           },

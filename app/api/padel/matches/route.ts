@@ -1,7 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { OrganizationMemberRole, padel_match_status, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -12,12 +11,27 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel/score";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
 
-async function _GET(req: NextRequest) {
+function fail(
+  ctx: RequestContext,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -25,7 +39,7 @@ async function _GET(req: NextRequest) {
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isFinite(eventId)) return fail(ctx, 400, "INVALID_EVENT");
   const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
 
   const event = await prisma.event.findUnique({
@@ -33,12 +47,15 @@ async function _GET(req: NextRequest) {
     select: {
       organizationId: true,
       status: true,
-      publicAccessMode: true,
-      inviteOnly: true,
       padelTournamentConfig: { select: { advancedSettings: true } },
+      accessPolicies: {
+        orderBy: { policyVersion: "desc" },
+        take: 1,
+        select: { mode: true },
+      },
     },
   });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId) return fail(ctx, 404, "EVENT_NOT_FOUND");
 
   const rateLimited = await enforcePublicRateLimit(req, {
     keyPrefix: "padel_matches",
@@ -51,14 +68,14 @@ async function _GET(req: NextRequest) {
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
   });
+  const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
   const isPublicEvent =
-    event.publicAccessMode !== "INVITE" &&
-    !event.inviteOnly &&
+    isPublicAccessMode(accessMode) &&
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
     competitionState === "PUBLIC";
 
   if (!user && !isPublicEvent) {
-    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return fail(ctx, 401, "UNAUTHENTICATED");
   }
 
   if (user && !isPublicEvent) {
@@ -66,7 +83,7 @@ async function _GET(req: NextRequest) {
       organizationId: event.organizationId,
       roles: ROLE_ALLOWLIST,
     });
-    if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!organization) return fail(ctx, 403, "FORBIDDEN");
   }
 
   const matches = await prisma.padelMatch.findMany({
@@ -83,19 +100,20 @@ async function _GET(req: NextRequest) {
     ],
   });
 
-  return jsonWrap({ ok: true, items: matches }, { status: 200 });
+  return respondOk(ctx, { items: matches }, { status: 200 });
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  if (!user) return fail(ctx, 401, "UNAUTHENTICATED");
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  if (!body) return fail(ctx, 400, "INVALID_BODY");
 
   const matchId = typeof body.id === "number" ? body.id : Number(body.id);
   const statusRaw =
@@ -117,29 +135,29 @@ async function _POST(req: NextRequest) {
         ? Number(body.courtNumber)
         : undefined;
 
-  if (!Number.isFinite(matchId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isFinite(matchId)) return fail(ctx, 400, "INVALID_ID");
   if (startAtRaw && Number.isNaN(startAtRaw.getTime())) {
-    return jsonWrap({ ok: false, error: "INVALID_START_AT" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_START_AT");
   }
 
   const match = await prisma.padelMatch.findUnique({
     where: { id: matchId },
     include: { event: { select: { organizationId: true } } },
   });
-  if (!match || !match.event?.organizationId) return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
+  if (!match || !match.event?.organizationId) return fail(ctx, 404, "MATCH_NOT_FOUND");
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: match.event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) {
-    return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+    return fail(ctx, 403, "NO_ORGANIZATION");
   }
 
   const isAdmin = adminRoles.has(membership.role);
 
   if (scoreRaw && !isValidScore(scoreRaw)) {
-    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_SCORE");
   }
 
   const scoreObj = scoreRaw && typeof scoreRaw === "object" ? (scoreRaw as Record<string, unknown>) : null;
@@ -148,7 +166,7 @@ async function _POST(req: NextRequest) {
   const existingScore =
     match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
   if (existingScore.disputeStatus === "OPEN" && !isAdmin) {
-    return jsonWrap({ ok: false, error: "MATCH_DISPUTED" }, { status: 423 });
+    return fail(ctx, 423, "MATCH_DISPUTED");
   }
   const mergedScore =
     scoreObj && typeof scoreObj === "object"
@@ -182,7 +200,7 @@ async function _POST(req: NextRequest) {
   const stats = resolvePadelMatchStats(rawSets, mergedScore, shouldApplyScoreRules ? scoreRules ?? undefined : undefined);
 
   if (Array.isArray(rawSets) && rawSets.length > 0 && nextStatus === "DONE" && !stats) {
-    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_SCORE");
   }
 
   let winnerPairingId: number | null = null;
@@ -198,7 +216,7 @@ async function _POST(req: NextRequest) {
     if (!match.pairingAId && match.pairingBId) winnerPairingId = match.pairingBId;
   }
   if (shouldSetWinner && !winnerPairingId) {
-    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+    return fail(ctx, 400, "INVALID_SCORE");
   }
 
   const scoreValue = (scoreObj ? mergedScore : existingScore) as Prisma.InputJsonValue;
@@ -278,7 +296,17 @@ async function _POST(req: NextRequest) {
     },
   });
 
-  return jsonWrap({ ok: true, match: updated, outboxEventId }, { status: 200 });
+  return respondOk(ctx, { match: updated, outboxEventId }, { status: 200 });
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

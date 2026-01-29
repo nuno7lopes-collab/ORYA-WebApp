@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,7 +7,6 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { OrganizationMemberRole } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const VIEW_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -23,14 +21,14 @@ const EDIT_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.ADMIN,
 ];
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -40,11 +38,11 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
 
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
@@ -86,24 +84,24 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, items });
+    return NextResponse.json({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/reservas/profissionais error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar profissionais." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao carregar profissionais." }, { status: 500 });
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -113,13 +111,13 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -139,7 +137,7 @@ async function _POST(req: NextRequest) {
     }
 
     if (!resolvedName) {
-      return jsonWrap({ ok: false, error: "Nome obrigatório." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Nome obrigatório." }, { status: 400 });
     }
 
     if (userIdRaw) {
@@ -148,7 +146,7 @@ async function _POST(req: NextRequest) {
         userId: userIdRaw,
       });
       if (!member) {
-        return jsonWrap({ ok: false, error: "Utilizador não pertence à organização." }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "Utilizador não pertence à organização." }, { status: 400 });
       }
 
       const existing = await prisma.reservationProfessional.findFirst({
@@ -156,7 +154,7 @@ async function _POST(req: NextRequest) {
         select: { id: true },
       });
       if (existing) {
-        return jsonWrap({ ok: false, error: "Profissional já existe para este utilizador." }, { status: 409 });
+        return NextResponse.json({ ok: false, error: "Profissional já existe para este utilizador." }, { status: 409 });
       }
     }
 
@@ -179,14 +177,12 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, professional }, { status: 201 });
+    return NextResponse.json({ ok: true, professional }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/reservas/profissionais error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar profissional." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao criar profissional." }, { status: 500 });
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);

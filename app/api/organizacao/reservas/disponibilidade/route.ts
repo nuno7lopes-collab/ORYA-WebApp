@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,7 +8,6 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { normalizeIntervals } from "@/lib/reservas/availability";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -84,14 +82,14 @@ async function resolveScope(params: {
   return { ok: true as const, scopeType, scopeId: resource.id };
 }
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -101,11 +99,11 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
 
     const scopeResolution = await resolveScope({
@@ -117,7 +115,7 @@ async function _GET(req: NextRequest) {
     });
 
     if (!scopeResolution.ok) {
-      return jsonWrap({ ok: false, error: scopeResolution.error }, { status: 403 });
+      return NextResponse.json({ ok: false, error: scopeResolution.error }, { status: 403 });
     }
 
     const { scopeType, scopeId } = scopeResolution;
@@ -136,7 +134,7 @@ async function _GET(req: NextRequest) {
 
     const hasCustomTemplates = templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0);
 
-    return jsonWrap({
+    return NextResponse.json({
       ok: true,
       scope: { scopeType, scopeId },
       templates,
@@ -145,21 +143,21 @@ async function _GET(req: NextRequest) {
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/organizacao/reservas/disponibilidade error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar disponibilidade." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao carregar disponibilidade." }, { status: 500 });
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -169,13 +167,13 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return NextResponse.json(reservasAccess, { status: 403 });
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -188,7 +186,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!scopeResolution.ok) {
-      return jsonWrap({ ok: false, error: scopeResolution.error }, { status: 403 });
+      return NextResponse.json({ ok: false, error: scopeResolution.error }, { status: 403 });
     }
 
     const { scopeType, scopeId } = scopeResolution;
@@ -198,7 +196,7 @@ async function _POST(req: NextRequest) {
     if (mode === "TEMPLATE") {
       const dayOfWeek = Number(payload?.dayOfWeek);
       if (!Number.isFinite(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
-        return jsonWrap({ ok: false, error: "Dia inválido." }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "Dia inválido." }, { status: 400 });
       }
       const intervals = normalizeIntervals(payload?.intervals);
       const template = await prisma.weeklyAvailabilityTemplate.upsert({
@@ -223,7 +221,7 @@ async function _POST(req: NextRequest) {
         userAgent,
       });
 
-      return jsonWrap({ ok: true, template });
+      return NextResponse.json({ ok: true, template });
     }
 
     if (mode === "OVERRIDE") {
@@ -231,10 +229,10 @@ async function _POST(req: NextRequest) {
       const kindRaw = typeof payload?.kind === "string" ? payload.kind.trim().toUpperCase() : "";
       const match = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (!match) {
-        return jsonWrap({ ok: false, error: "Data inválida." }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "Data inválida." }, { status: 400 });
       }
       if (!["CLOSED", "OPEN", "BLOCK"].includes(kindRaw)) {
-        return jsonWrap({ ok: false, error: "Tipo de override inválido." }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "Tipo de override inválido." }, { status: 400 });
       }
       const year = Number(match[1]);
       const month = Number(match[2]);
@@ -262,17 +260,15 @@ async function _POST(req: NextRequest) {
         userAgent,
       });
 
-      return jsonWrap({ ok: true, override }, { status: 201 });
+      return NextResponse.json({ ok: true, override }, { status: 201 });
     }
 
-    return jsonWrap({ ok: false, error: "Pedido inválido." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Pedido inválido." }, { status: 400 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
     console.error("POST /api/organizacao/reservas/disponibilidade error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao guardar disponibilidade." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Erro ao guardar disponibilidade." }, { status: 500 });
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);

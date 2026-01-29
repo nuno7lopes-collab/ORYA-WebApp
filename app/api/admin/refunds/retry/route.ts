@@ -1,15 +1,20 @@
 // app/api/admin/refunds/retry/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) {
-      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
+      return respondError(
+        ctx,
+        { errorCode: admin.error, message: admin.error, retryable: false },
+        { status: admin.status },
+      );
     }
 
     const body = (await req.json().catch(() => null)) as { operationId?: number | string } | null;
@@ -21,7 +26,11 @@ async function _POST(req: NextRequest) {
           : NaN;
 
     if (!Number.isFinite(operationId)) {
-      return jsonWrap({ ok: false, error: "INVALID_OPERATION" }, { status: 400 });
+      return respondError(
+        ctx,
+        { errorCode: "INVALID_OPERATION", message: "Operação inválida.", retryable: false },
+        { status: 400 },
+      );
     }
 
     const op = await prisma.operation.findUnique({
@@ -29,7 +38,11 @@ async function _POST(req: NextRequest) {
       select: { id: true, operationType: true },
     });
     if (!op || op.operationType !== "PROCESS_REFUND_SINGLE") {
-      return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return respondError(
+        ctx,
+        { errorCode: "NOT_FOUND", message: "Operação não encontrada.", retryable: false },
+        { status: 404 },
+      );
     }
 
     await prisma.operation.update({
@@ -43,10 +56,13 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true }, { status: 200 });
+    return respondOk(ctx, { retried: true }, { status: 200 });
   } catch (err) {
     console.error("[admin/refunds/retry]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const POST = withApiEnvelope(_POST);

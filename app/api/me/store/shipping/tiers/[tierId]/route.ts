@@ -1,11 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const updateTierSchema = z.object({
   minSubtotalCents: z.number().int().nonnegative().optional(),
@@ -40,10 +41,32 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -51,13 +74,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ tierId: st
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const tierId = parseId(resolvedParams.tierId);
     if (!tierId.ok) {
-      return jsonWrap({ ok: false, error: tierId.error }, { status: 400 });
+      return fail(400, tierId.error);
     }
 
     const item = await prisma.storeShippingTier.findFirst({
@@ -72,23 +95,34 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ tierId: st
     });
 
     if (!item) {
-      return jsonWrap({ ok: false, error: "Tier nao encontrado." }, { status: 404 });
+      return fail(404, "Tier nao encontrado.");
     }
 
-    return jsonWrap({ ok: true, item });
+    return respondOk(ctx, { item });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("GET /api/me/store/shipping/tiers/[tierId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar tier." }, { status: 500 });
+    return fail(500, "Erro ao carregar tier.");
   }
 }
 
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -96,13 +130,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ tierId: 
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const tierId = parseId(resolvedParams.tierId);
     if (!tierId.ok) {
-      return jsonWrap({ ok: false, error: tierId.error }, { status: 400 });
+      return fail(400, tierId.error);
     }
 
     const existing = await prisma.storeShippingTier.findFirst({
@@ -116,20 +150,20 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ tierId: 
     });
 
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Tier nao encontrado." }, { status: 404 });
+      return fail(404, "Tier nao encontrado.");
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateTierSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const payload = parsed.data;
     const nextMin = payload.minSubtotalCents ?? existing.minSubtotalCents;
     const nextMax = payload.maxSubtotalCents === undefined ? existing.maxSubtotalCents : payload.maxSubtotalCents;
     if (nextMax !== null && nextMax < nextMin) {
-      return jsonWrap({ ok: false, error: "Intervalo invalido." }, { status: 400 });
+      return fail(400, "Intervalo invalido.");
     }
 
     const otherTiers = await prisma.storeShippingTier.findMany({
@@ -138,7 +172,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ tierId: 
     });
     const overlap = otherTiers.some((tier) => rangesOverlap(nextMin, nextMax, tier.minSubtotalCents, tier.maxSubtotalCents));
     if (overlap) {
-      return jsonWrap({ ok: false, error: "Tier sobrepoe-se a outro intervalo." }, { status: 409 });
+      return fail(409, "Tier sobrepoe-se a outro intervalo.");
     }
 
     const data: {
@@ -169,20 +203,31 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ tierId: 
       },
     });
 
-    return jsonWrap({ ok: true, item: updated });
+    return respondOk(ctx, { item: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("PATCH /api/me/store/shipping/tiers/[tierId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar tier." }, { status: 500 });
+    return fail(500, "Erro ao atualizar tier.");
   }
 }
 
 async function _DELETE(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -190,13 +235,13 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ tierId:
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const tierId = parseId(resolvedParams.tierId);
     if (!tierId.ok) {
-      return jsonWrap({ ok: false, error: tierId.error }, { status: 400 });
+      return fail(400, tierId.error);
     }
 
     const existing = await prisma.storeShippingTier.findFirst({
@@ -205,18 +250,18 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ tierId:
     });
 
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Tier nao encontrado." }, { status: 404 });
+      return fail(404, "Tier nao encontrado.");
     }
 
     await prisma.storeShippingTier.delete({ where: { id: existing.id } });
 
-    return jsonWrap({ ok: true });
+    return respondOk(ctx, {});
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("DELETE /api/me/store/shipping/tiers/[tierId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao remover tier." }, { status: 500 });
+    return fail(500, "Erro ao remover tier.");
   }
 }
 export const GET = withApiEnvelope(_GET);

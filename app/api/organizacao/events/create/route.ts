@@ -1,8 +1,7 @@
 
 
 // app/api/organizacao/events/create/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -13,15 +12,17 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { clampDeadlineHours } from "@/domain/padelDeadlines";
 import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { SourceType, EventPricingMode } from "@prisma/client";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
+import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import {
-  EventParticipantAccessMode,
-  EventPublicAccessMode,
   EventTemplateType,
   LiveHubVisibility,
   PadelEligibilityType,
@@ -72,18 +73,12 @@ type CreateOrganizationEventBody = {
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   pricingMode?: string | null;
   coverImageUrl?: string | null;
-  inviteOnly?: boolean;
-  publicAccessMode?: string;
-  participantAccessMode?: string;
-  publicTicketScope?: string;
-  participantTicketScope?: string;
-  publicTicketTypeIds?: number[];
-  participantTicketTypeIds?: number[];
   liveHubVisibility?: string;
   payoutMode?: string; // ORGANIZATION | PLATFORM
   feeMode?: string;
   platformFeeBps?: number;
   platformFeeFixedCents?: number;
+  accessPolicy?: Record<string, unknown> | null;
   padel?: {
     format?: string;
     numberOfCourts?: number;
@@ -163,17 +158,30 @@ async function generateUniqueSlug(baseSlug: string) {
   return `${baseSlug}-${maxSuffix + 1}`;
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   try {
     let body: CreateOrganizationEventBody | null = null;
 
     try {
       body = (await req.json()) as CreateOrganizationEventBody;
     } catch {
-      return jsonWrap(
-        { ok: false, error: "Body inválido." },
-        { status: 400 }
-      );
+      return fail(400, "Body inválido.");
     }
 
     const supabase = await createSupabaseServer();
@@ -185,26 +193,18 @@ async function _POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return jsonWrap(
-        {
-          ok: false,
-          error:
-            "Perfil não encontrado. Completa o onboarding de utilizador antes de criares eventos de organização.",
-        },
-        { status: 400 }
+      return fail(
+        400,
+        "Perfil não encontrado. Completa o onboarding de utilizador antes de criares eventos de organização.",
       );
     }
     const hasUserOnboarding =
       profile.onboardingDone ||
       (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
     if (!hasUserOnboarding) {
-      return jsonWrap(
-        {
-          ok: false,
-          error:
-            "Completa o onboarding de utilizador (nome e username) antes de criares eventos de organização.",
-        },
-        { status: 400 }
+      return fail(
+        400,
+        "Completa o onboarding de utilizador (nome e username) antes de criares eventos de organização.",
       );
     }
 
@@ -214,7 +214,7 @@ async function _POST(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
     const access = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -225,7 +225,20 @@ async function _POST(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "EVENTS_CREATE" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
     const organizationInfo = await prisma.organization.findUnique({
@@ -241,7 +254,7 @@ async function _POST(req: NextRequest) {
       },
     });
     if (!organizationInfo) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
     const isPlatformAccount = organizationInfo.orgType === "PLATFORM";
 
@@ -293,33 +306,21 @@ async function _POST(req: NextRequest) {
     const payoutMode: PayoutMode = isPlatformAccount ? PayoutMode.PLATFORM : payoutModeRequested;
 
     if (!title) {
-      return jsonWrap(
-        { ok: false, error: "Título é obrigatório." },
-        { status: 400 }
-      );
+      return fail(400, "Título é obrigatório.");
     }
 
     if (!startsAtRaw) {
-      return jsonWrap(
-        { ok: false, error: "Data/hora de início é obrigatória." },
-        { status: 400 }
-      );
+      return fail(400, "Data/hora de início é obrigatória.");
     }
 
     const isLocationTbd = locationSource === "MANUAL" && !locationName && !locationCity && !address;
     if (!locationCity && !isLocationTbd) {
-      return jsonWrap(
-        { ok: false, error: "Cidade é obrigatória." },
-        { status: 400 },
-      );
+      return fail(400, "Cidade é obrigatória.");
     }
     if (locationSource === "OSM") {
       const hasCoords = Number.isFinite(latitude ?? NaN) && Number.isFinite(longitude ?? NaN);
       if (!locationProviderId || !hasCoords) {
-        return jsonWrap(
-          { ok: false, error: "Localização OSM inválida." },
-          { status: 400 },
-        );
+        return fail(400, "Localização OSM inválida.");
       }
     }
     // Permitimos cidades fora da whitelist para não bloquear dados existentes
@@ -336,10 +337,7 @@ async function _POST(req: NextRequest) {
 
     const startsAt = parseDate(startsAtRaw);
     if (!startsAt) {
-      return jsonWrap(
-        { ok: false, error: "Data/hora de início inválida." },
-        { status: 400 }
-      );
+      return fail(400, "Data/hora de início inválida.");
     }
 
     // Para simplificar e evitar conflitos de tipos, endsAt será sempre enviado.
@@ -362,26 +360,6 @@ async function _POST(req: NextRequest) {
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
-    const inviteOnly = body.inviteOnly === true;
-    const publicAccessModeRaw = body.publicAccessMode?.toUpperCase();
-    const participantAccessModeRaw = body.participantAccessMode?.toUpperCase();
-    const publicAccessMode: EventPublicAccessMode =
-      publicAccessModeRaw === "OPEN" || publicAccessModeRaw === "TICKET" || publicAccessModeRaw === "INVITE"
-        ? (publicAccessModeRaw as EventPublicAccessMode)
-        : inviteOnly
-          ? EventPublicAccessMode.INVITE
-          : EventPublicAccessMode.OPEN;
-    const participantAccessMode: EventParticipantAccessMode =
-      participantAccessModeRaw === "NONE" ||
-      participantAccessModeRaw === "TICKET" ||
-      participantAccessModeRaw === "INSCRIPTION" ||
-      participantAccessModeRaw === "INVITE"
-        ? (participantAccessModeRaw as EventParticipantAccessMode)
-        : EventParticipantAccessMode.NONE;
-    const publicTicketScopeRaw = body.publicTicketScope?.toUpperCase();
-    const participantTicketScopeRaw = body.participantTicketScope?.toUpperCase();
-    const publicTicketScope = publicTicketScopeRaw === "SPECIFIC" ? "SPECIFIC" : "ALL";
-    const participantTicketScope = participantTicketScopeRaw === "SPECIFIC" ? "SPECIFIC" : "ALL";
     const liveHubVisibilityRaw = body.liveHubVisibility?.toUpperCase();
     const liveHubVisibility: LiveHubVisibility =
       liveHubVisibilityRaw === "PUBLIC" || liveHubVisibilityRaw === "PRIVATE" || liveHubVisibilityRaw === "DISABLED"
@@ -431,7 +409,7 @@ async function _POST(req: NextRequest) {
       );
 
     if (ticketPriceError) {
-      return jsonWrap({ ok: false, error: ticketPriceError }, { status: 400 });
+      return fail(400, ticketPriceError);
     }
 
     const pricingModeRaw = typeof body.pricingMode === "string" ? body.pricingMode.trim().toUpperCase() : null;
@@ -451,8 +429,17 @@ async function _POST(req: NextRequest) {
       ticketPrices,
     });
     if (!guard.ok) {
-      return jsonWrap({ ok: false, error: guard.error }, { status: 400 });
+      return fail(400, guard.error);
     }
+
+    const accessPolicyResolution = resolveEventAccessPolicyInput({
+      accessPolicy:
+        (body as { accessPolicy?: Record<string, unknown> | null })?.accessPolicy ?? null,
+      legacy: body,
+      templateType,
+      hasRestrictedTickets: ticketTypesData.some((t) => t.publicAccess === false),
+    });
+    const accessPolicyInput = accessPolicyResolution.policyInput;
 
     const hasPaidTickets = ticketTypesData.some((t) => t.price > 0);
     if (hasPaidTickets && !isAdmin) {
@@ -465,34 +452,18 @@ async function _POST(req: NextRequest) {
         requireStripe: payoutMode === PayoutMode.ORGANIZATION && !isPlatformAccount,
       });
       if (!gate.ok) {
-        return jsonWrap(
+        return respondError(
+          ctx,
           {
-            ok: false,
-            code: "PAYMENTS_NOT_READY",
-            error: formatPaidSalesGateMessage(gate, "Para vender bilhetes pagos,"),
-            missingEmail: gate.missingEmail,
-            missingStripe: gate.missingStripe,
+            errorCode: "PAYMENTS_NOT_READY",
+            message: formatPaidSalesGateMessage(gate, "Para vender bilhetes pagos,"),
+            retryable: false,
+            details: {
+              missingEmail: gate.missingEmail,
+              missingStripe: gate.missingStripe,
+            },
           },
           { status: 403 },
-        );
-      }
-    }
-
-    if (publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC") {
-      const hasPublicTicket = ticketTypesData.some((t) => t.publicAccess);
-      if (!hasPublicTicket) {
-        return jsonWrap(
-          { ok: false, error: "Seleciona pelo menos um bilhete para o público." },
-          { status: 400 },
-        );
-      }
-    }
-    if (participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC") {
-      const hasParticipantTicket = ticketTypesData.some((t) => t.participantAccess);
-      if (!hasParticipantTicket) {
-        return jsonWrap(
-          { ok: false, error: "Seleciona pelo menos um bilhete para participantes." },
-          { status: 400 },
         );
       }
     }
@@ -573,10 +544,7 @@ async function _POST(req: NextRequest) {
       let allowedCategoryIds: Set<number> | null = null;
 
       if (!padelClubId) {
-        return jsonWrap(
-          { ok: false, error: "Seleciona um clube de padel." },
-          { status: 400 },
-        );
+        return fail(400, "Seleciona um clube de padel.");
       }
 
       const club = await prisma.padelClub.findFirst({
@@ -584,10 +552,7 @@ async function _POST(req: NextRequest) {
         select: { id: true },
       });
       if (!club) {
-        return jsonWrap(
-          { ok: false, error: "Clube de padel arquivado ou inexistente." },
-          { status: 400 },
-        );
+        return fail(400, "Clube de padel arquivado ou inexistente.");
       }
 
       const activeCourts = await prisma.padelClubCourt.findMany({
@@ -595,19 +560,13 @@ async function _POST(req: NextRequest) {
         select: { id: true },
       });
       if (activeCourts.length === 0) {
-        return jsonWrap(
-          { ok: false, error: "O clube selecionado não tem courts ativos." },
-          { status: 400 },
-        );
+        return fail(400, "O clube selecionado não tem courts ativos.");
       }
       const activeCourtIds = new Set(activeCourts.map((court) => court.id));
       if (requestedCourtIds.length > 0) {
         resolvedCourtIds = requestedCourtIds.filter((id) => activeCourtIds.has(id));
         if (resolvedCourtIds.length === 0) {
-          return jsonWrap(
-            { ok: false, error: "Seleciona courts válidos para o clube." },
-            { status: 400 },
-          );
+          return fail(400, "Seleciona courts válidos para o clube.");
         }
       } else {
         resolvedCourtIds = activeCourts.map((court) => court.id);
@@ -621,10 +580,7 @@ async function _POST(req: NextRequest) {
         const activeStaffIds = new Set(activeStaff.map((member) => member.id));
         resolvedStaffIds = requestedStaffIds.filter((id) => activeStaffIds.has(id));
         if (resolvedStaffIds.length === 0) {
-          return jsonWrap(
-            { ok: false, error: "Seleciona staff válido para o clube." },
-            { status: 400 },
-          );
+          return fail(400, "Seleciona staff válido para o clube.");
         }
       } else {
         resolvedStaffIds = [];
@@ -712,11 +668,6 @@ async function _POST(req: NextRequest) {
           latitude: Number.isFinite(latitude ?? NaN) ? latitude : null,
           longitude: Number.isFinite(longitude ?? NaN) ? longitude : null,
           pricingMode,
-          inviteOnly: publicAccessMode === "INVITE",
-          publicAccessMode,
-          participantAccessMode,
-          publicTicketTypeIds: [],
-          participantTicketTypeIds: [],
           liveHubVisibility,
           status: "PUBLISHED",
           resaleMode,
@@ -724,6 +675,8 @@ async function _POST(req: NextRequest) {
           payoutMode,
         },
       });
+
+      await createEventAccessPolicyVersion(created.id, accessPolicyInput, tx);
 
       if (created.organizationId) {
         const eventIdLog = crypto.randomUUID();
@@ -880,18 +833,12 @@ async function _POST(req: NextRequest) {
           ]
         : ticketTypesData;
 
-    const createdTicketTypes: Array<{
-      id: number;
-      publicAccess: boolean;
-      participantAccess: boolean;
-    }> = [];
-
     for (const ticket of autoTicketTypes) {
       const padelEventCategoryLinkId =
         templateType === "PADEL" && ticket.padelCategoryId
           ? padelCategoryLinkMap.get(ticket.padelCategoryId) ?? null
           : null;
-      const created = await prisma.ticketType.create({
+      await prisma.ticketType.create({
         data: {
           eventId: event.id,
           name: ticket.name,
@@ -902,52 +849,36 @@ async function _POST(req: NextRequest) {
         },
         select: { id: true },
       });
-      createdTicketTypes.push({
-        id: created.id,
-        publicAccess: ticket.publicAccess,
-        participantAccess: ticket.participantAccess,
-      });
     }
 
-    const shouldAssignPublic = publicAccessMode === "TICKET" && publicTicketScope === "SPECIFIC";
-    const shouldAssignParticipant = participantAccessMode === "TICKET" && participantTicketScope === "SPECIFIC";
-    const publicTicketTypeIds = shouldAssignPublic
-      ? createdTicketTypes.filter((t) => t.publicAccess).map((t) => t.id)
-      : [];
-    const participantTicketTypeIds = shouldAssignParticipant
-      ? createdTicketTypes.filter((t) => t.participantAccess).map((t) => t.id)
-      : [];
-
-    if (publicTicketTypeIds.length > 0 || participantTicketTypeIds.length > 0) {
-      await prisma.event.update({
-        where: { id: event.id },
-        data: {
-          publicTicketTypeIds,
-          participantTicketTypeIds,
-        },
-      });
-    }
-
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         event: {
           id: event.id,
           slug: event.slug,
           title: event.title,
         },
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("POST /api/organizacao/events/create error:", err);
-    return jsonWrap(
-      { ok: false, error: "Erro interno ao criar evento." },
-      { status: 500 }
-    );
+    return fail(500, "Erro interno ao criar evento.");
   }
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

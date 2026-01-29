@@ -1,13 +1,11 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { CheckinResultCode } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   getCheckinResultFromExisting,
   getEntitlementEffectiveStatus,
@@ -18,6 +16,8 @@ import {
   resolvePolicyForCheckin,
 } from "@/lib/checkin/accessPolicy";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 
 type Body = {
@@ -30,14 +30,28 @@ type Body = {
   correlationId?: string | null;
 };
 
+function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correlationId: string }) {
+  if (!requireInternalSecret(req)) {
+    return respondError(
+      ctx,
+      { errorCode: "UNAUTHORIZED", message: "Unauthorized.", retryable: false },
+      { status: 401 },
+    );
+  }
+  return null;
+}
+
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-async function _POST(req: NextRequest) {
-  if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const unauthorized = ensureInternalSecret(req, ctx);
+  if (unauthorized) return unauthorized;
+
+  const allow = (data: Record<string, unknown>, status = 200) =>
+    respondOk(ctx, data, { status });
 
   const body = (await req.json().catch(() => null)) as Body | null;
   const qrPayload = typeof body?.qrPayload === "string" ? body.qrPayload.trim() : "";
@@ -57,7 +71,7 @@ async function _POST(req: NextRequest) {
       : null;
 
   if (!qrPayload || !Number.isFinite(eventId)) {
-    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return allow({ allow: false, reasonCode: "INVALID" });
   }
 
   const tokenHash = hashToken(qrPayload);
@@ -71,12 +85,12 @@ async function _POST(req: NextRequest) {
   });
 
   if (!tokenRow?.entitlement) {
-    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return allow({ allow: false, reasonCode: "INVALID" });
   }
 
   const ent = tokenRow.entitlement;
   if (!ent.eventId || ent.eventId !== eventId) {
-    return jsonWrap({ allow: false, reasonCode: "NOT_ALLOWED" }, { status: 200 });
+    return allow({ allow: false, reasonCode: "NOT_ALLOWED" });
   }
 
   const event = await prisma.event.findUnique({
@@ -85,27 +99,29 @@ async function _POST(req: NextRequest) {
   });
   const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
   if (isOutsideWindow(window)) {
-    return jsonWrap({ allow: false, reasonCode: "OUTSIDE_WINDOW" }, { status: 200 });
+    return allow({ allow: false, reasonCode: "OUTSIDE_WINDOW" });
   }
 
   if (tokenRow.expiresAt && tokenRow.expiresAt < new Date()) {
-    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return allow({ allow: false, reasonCode: "INVALID" });
   }
 
   const policyResolution = await resolvePolicyForCheckin(eventId, ent.policyVersionApplied);
   if (!policyResolution.ok) {
-    return jsonWrap(
-      { allow: false, reasonCode: "NOT_ALLOWED", policyVersionApplied: ent.policyVersionApplied ?? null },
-      { status: 200 },
-    );
+    return allow({
+      allow: false,
+      reasonCode: "NOT_ALLOWED",
+      policyVersionApplied: ent.policyVersionApplied ?? null,
+    });
   }
   if (policyResolution.policy) {
     const method = resolveCheckinMethodForEntitlement(ent.type);
     if (!method || !policyResolution.policy.checkinMethods.includes(method)) {
-      return jsonWrap(
-        { allow: false, reasonCode: "NOT_ALLOWED", policyVersionApplied: ent.policyVersionApplied ?? null },
-        { status: 200 },
-      );
+      return allow({
+        allow: false,
+        reasonCode: "NOT_ALLOWED",
+        policyVersionApplied: ent.policyVersionApplied ?? null,
+      });
     }
   }
 
@@ -114,35 +130,34 @@ async function _POST(req: NextRequest) {
     checkins: ent.checkins,
   });
   if (effectiveStatus === "SUSPENDED") {
-    return jsonWrap(
-      { allow: false, reasonCode: "SUSPENDED", policyVersionApplied: ent.policyVersionApplied ?? null },
-      { status: 200 },
-    );
+    return allow({
+      allow: false,
+      reasonCode: "SUSPENDED",
+      policyVersionApplied: ent.policyVersionApplied ?? null,
+    });
   }
   if (effectiveStatus === "REVOKED") {
-    return jsonWrap(
-      { allow: false, reasonCode: "REVOKED", policyVersionApplied: ent.policyVersionApplied ?? null },
-      { status: 200 },
-    );
+    return allow({
+      allow: false,
+      reasonCode: "REVOKED",
+      policyVersionApplied: ent.policyVersionApplied ?? null,
+    });
   }
 
   const alreadyConsumed = isConsumed({ status: ent.status, checkins: ent.checkins });
   if (alreadyConsumed) {
     const existing = ent.checkins?.[0] ?? null;
     const duplicate = getCheckinResultFromExisting(existing) ?? CheckinResultCode.ALREADY_USED;
-    return jsonWrap(
-      {
-        allow: false,
-        reasonCode: duplicate,
-        entitlementId: ent.id,
-        policyVersionApplied: ent.policyVersionApplied ?? null,
-        duplicate: {
-          duplicateOfConsumedAt: existing?.checkedInAt ?? null,
-          duplicateCount: ent.checkins?.length ?? 1,
-        },
+    return allow({
+      allow: false,
+      reasonCode: duplicate,
+      entitlementId: ent.id,
+      policyVersionApplied: ent.policyVersionApplied ?? null,
+      duplicate: {
+        duplicateOfConsumedAt: existing?.checkedInAt ?? null,
+        duplicateCount: ent.checkins?.length ?? 1,
       },
-      { status: 200 },
-    );
+    });
   }
 
   const fallbackKey = `${eventId}:${ent.id}:${deviceId ?? "unknown"}`;
@@ -186,24 +201,25 @@ async function _POST(req: NextRequest) {
       });
     }
 
-    return jsonWrap(
-      {
-        allow: true,
-        entitlementId: ent.id,
-        consumedAt: created.checkedInAt,
-        policyVersionApplied: ent.policyVersionApplied ?? null,
-      },
-      { status: 200 },
-    );
+    return allow({
+      allow: true,
+      entitlementId: ent.id,
+      consumedAt: created.checkedInAt,
+      policyVersionApplied: ent.policyVersionApplied ?? null,
+    });
   } catch (err: any) {
     if (err?.code === "P2002") {
-      return jsonWrap(
-        { allow: false, reasonCode: "ALREADY_USED", policyVersionApplied: ent.policyVersionApplied ?? null },
-        { status: 200 },
-      );
+      return allow({
+        allow: false,
+        reasonCode: "ALREADY_USED",
+        policyVersionApplied: ent.policyVersionApplied ?? null,
+      });
     }
     console.error("[internal/checkin/consume] error", err);
-    return jsonWrap({ allow: false, reasonCode: "INVALID" }, { status: 200 });
+    return respondError(
+      ctx,
+      { errorCode: "CHECKIN_FAILED", message: "Erro ao consumir check-in.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const POST = withApiEnvelope(_POST);

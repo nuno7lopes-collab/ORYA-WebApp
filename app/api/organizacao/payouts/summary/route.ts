@@ -1,17 +1,18 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, PendingPayoutStatus, TicketStatus } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -20,17 +21,24 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return respondError(
+        ctx,
+        { errorCode: "UNAUTHENTICATED", message: "Sessão inválida.", retryable: false },
+        { status: 401 },
+      );
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
-      includeOrganizationFields: "settings",
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return respondError(
+        ctx,
+        { errorCode: "FORBIDDEN", message: "Sem permissões.", retryable: false },
+        { status: 403 },
+      );
     }
 
     const access = await ensureMemberModuleAccess({
@@ -42,7 +50,11 @@ async function _GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return respondError(
+        ctx,
+        { errorCode: "FORBIDDEN", message: "Sem permissões.", retryable: false },
+        { status: 403 },
+      );
     }
 
     const ticketsAgg = await prisma.ticket.aggregate({
@@ -112,9 +124,9 @@ async function _GET(req: NextRequest) {
       actionRequired: Boolean(actionRequired),
     };
 
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         ticketsSold,
         revenueCents,
         grossCents,
@@ -127,7 +139,10 @@ async function _GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organização/payouts/summary][GET] erro", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const GET = withApiEnvelope(_GET);

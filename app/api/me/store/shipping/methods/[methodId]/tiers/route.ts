@@ -1,11 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const createTierSchema = z.object({
   minSubtotalCents: z.number().int().nonnegative(),
@@ -40,10 +41,32 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -51,13 +74,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ methodId: 
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
-      return jsonWrap({ ok: false, error: methodId.error }, { status: 400 });
+      return fail(400, methodId.error);
     }
 
     const method = await prisma.storeShippingMethod.findFirst({
@@ -65,7 +88,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ methodId: 
       select: { id: true },
     });
     if (!method) {
-      return jsonWrap({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
+      return fail(404, "Metodo nao encontrado.");
     }
 
     const items = await prisma.storeShippingTier.findMany({
@@ -80,20 +103,31 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ methodId: 
       },
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("GET /api/me/store/shipping/methods/[methodId]/tiers error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar tiers." }, { status: 500 });
+    return fail(500, "Erro ao carregar tiers.");
   }
 }
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ methodId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -101,13 +135,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ methodId:
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const methodId = parseId(resolvedParams.methodId);
     if (!methodId.ok) {
-      return jsonWrap({ ok: false, error: methodId.error }, { status: 400 });
+      return fail(400, methodId.error);
     }
 
     const method = await prisma.storeShippingMethod.findFirst({
@@ -115,19 +149,19 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ methodId:
       select: { id: true },
     });
     if (!method) {
-      return jsonWrap({ ok: false, error: "Metodo nao encontrado." }, { status: 404 });
+      return fail(404, "Metodo nao encontrado.");
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createTierSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const payload = parsed.data;
     if (payload.maxSubtotalCents !== null && payload.maxSubtotalCents !== undefined) {
       if (payload.maxSubtotalCents < payload.minSubtotalCents) {
-        return jsonWrap({ ok: false, error: "Intervalo invalido." }, { status: 400 });
+        return fail(400, "Intervalo invalido.");
       }
     }
 
@@ -144,7 +178,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ methodId:
       ),
     );
     if (overlap) {
-      return jsonWrap({ ok: false, error: "Tier sobrepoe-se a outro intervalo." }, { status: 409 });
+      return fail(409, "Tier sobrepoe-se a outro intervalo.");
     }
 
     const created = await prisma.storeShippingTier.create({
@@ -163,13 +197,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ methodId:
       },
     });
 
-    return jsonWrap({ ok: true, item: created }, { status: 201 });
+    return respondOk(ctx, { item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("POST /api/me/store/shipping/methods/[methodId]/tiers error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar tier." }, { status: 500 });
+    return fail(500, "Erro ao criar tier.");
   }
 }
 export const GET = withApiEnvelope(_GET);

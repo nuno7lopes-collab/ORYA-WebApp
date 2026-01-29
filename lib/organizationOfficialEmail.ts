@@ -2,29 +2,45 @@ import { prisma } from "@/lib/prisma";
 
 const PLATFORM_EMAIL_KEY = "platform.officialEmail";
 const FALLBACK_PLATFORM_EMAIL = "admin@orya.pt";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
-export function normalizeOfficialEmail(value: string) {
-  return value.normalize("NFKC").trim().toLowerCase();
+export function normalizeOfficialEmail(input?: string | null) {
+  if (typeof input !== "string") return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.normalize("NFKC").toLowerCase();
+  return normalized || null;
 }
 
-export function isValidOfficialEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+export function isValidOfficialEmail(input?: string | null) {
+  const normalized = normalizeOfficialEmail(input);
+  if (!normalized) return false;
+  return EMAIL_REGEX.test(normalized);
 }
 
-export async function getPlatformOfficialEmail(): Promise<{ email: string; source: "db" | "env" | "fallback" }>
-{
+export function maskEmailForLog(input?: string | null) {
+  const normalized = normalizeOfficialEmail(input);
+  if (!normalized) return null;
+  const [local, domain] = normalized.split("@");
+  if (!domain) return null;
+  const visible = local.length <= 2 ? local.slice(0, 1) : local.slice(0, 2);
+  return `${visible}***@${domain}`;
+}
+
+export async function getPlatformOfficialEmail(): Promise<{ email: string; source: "db" | "env" | "fallback" }> {
   const row = await prisma.platformSetting.findUnique({
     where: { key: PLATFORM_EMAIL_KEY },
     select: { value: true },
   });
 
-  if (row?.value) {
-    return { email: normalizeOfficialEmail(row.value), source: "db" };
+  const dbEmail = normalizeOfficialEmail(row?.value ?? null);
+  if (dbEmail) {
+    return { email: dbEmail, source: "db" };
   }
 
-  const envEmail = process.env.PLATFORM_OFFICIAL_EMAIL;
+  const envEmail = normalizeOfficialEmail(process.env.PLATFORM_OFFICIAL_EMAIL ?? null);
   if (envEmail) {
-    return { email: normalizeOfficialEmail(envEmail), source: "env" };
+    return { email: envEmail, source: "env" };
   }
 
   console.warn("[platform-email] fallback email in use", { key: PLATFORM_EMAIL_KEY });

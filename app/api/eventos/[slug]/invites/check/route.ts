@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/utils/email";
+import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
+import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { validateUsername } from "@/lib/username";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -36,35 +38,107 @@ function normalizeIdentifier(raw: string): CheckResult {
   return { ok: true, normalized: validation.normalized, type: "username" };
 }
 
-async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const resolved = await params;
     const slug = resolved.slug;
     if (!slug) {
-      return jsonWrap({ ok: false, error: "SLUG_REQUIRED" }, { status: 400 });
+      return fail(400, "SLUG_REQUIRED");
     }
 
-    let body: { identifier?: string; scope?: string } | null = null;
+    let body: { identifier?: string; scope?: string; token?: string; ticketTypeId?: number | null } | null = null;
     try {
-      body = (await req.json()) as { identifier?: string; scope?: string };
+      body = (await req.json()) as { identifier?: string; scope?: string; token?: string; ticketTypeId?: number | null };
     } catch {
-      return jsonWrap({ ok: false, error: "BODY_INVALID" }, { status: 400 });
+      return fail(400, "BODY_INVALID");
+    }
+
+    const scopeRaw = typeof body?.scope === "string" ? body.scope.trim().toUpperCase() : "";
+    const scope = scopeRaw === "PARTICIPANT" ? "PARTICIPANT" : "PUBLIC";
+    const inviteToken = typeof body?.token === "string" ? body.token.trim() : "";
+    const ticketTypeId =
+      typeof body?.ticketTypeId === "number" && Number.isFinite(body.ticketTypeId)
+        ? body.ticketTypeId
+        : null;
+
+    const event = await prisma.event.findUnique({
+      where: { slug },
+      select: { id: true, ownerUserId: true },
+    });
+    if (!event) {
+      return fail(404, "EVENT_NOT_FOUND");
+    }
+
+    if (inviteToken) {
+      const accessDecision = await evaluateEventAccess({ eventId: event.id, intent: "INVITE_TOKEN" });
+      if (!accessDecision.allowed) {
+        return respondOk(ctx, {
+          invited: false,
+          reason: accessDecision.reasonCode ?? "INVITE_TOKEN_NOT_ALLOWED",
+        });
+      }
+
+      const grantResult = await resolveInviteTokenGrant(
+        {
+          eventId: event.id,
+          token: inviteToken,
+          ticketTypeId,
+        },
+        prisma,
+      );
+      if (!grantResult.ok) {
+        return respondOk(ctx, { invited: false, reason: grantResult.reason });
+      }
+
+      if (!event.ownerUserId) {
+        return respondError(
+          ctx,
+          { errorCode: "EVENT_OWNER_REQUIRED", message: "EVENT_OWNER_REQUIRED", retryable: false },
+          { status: 500 },
+        );
+      }
+
+      const invite = await prisma.eventInvite.findFirst({
+        where: { eventId: event.id, targetIdentifier: grantResult.grant.emailNormalized, scope },
+        select: { id: true },
+      });
+      const ensuredInvite =
+        invite ??
+        (await prisma.eventInvite.create({
+          data: {
+            eventId: event.id,
+            invitedByUserId: event.ownerUserId,
+            targetIdentifier: grantResult.grant.emailNormalized,
+            scope,
+          },
+          select: { id: true },
+        }));
+
+      return respondOk(ctx, {
+        invited: true,
+        type: "email",
+        normalized: grantResult.grant.emailNormalized,
+        eventInviteId: ensuredInvite.id,
+        expiresAt: grantResult.grant.expiresAt,
+        ticketTypeId: grantResult.grant.ticketTypeId ?? undefined,
+      });
     }
 
     const identifier = typeof body?.identifier === "string" ? body.identifier : "";
     const normalized = normalizeIdentifier(identifier);
     if (!normalized.ok) {
-      return jsonWrap({ ok: false, error: normalized.error }, { status: 400 });
-    }
-    const scopeRaw = typeof body?.scope === "string" ? body.scope.trim().toUpperCase() : "";
-    const scope = scopeRaw === "PARTICIPANT" ? "PARTICIPANT" : "PUBLIC";
-
-    const event = await prisma.event.findUnique({
-      where: { slug },
-      select: { id: true },
-    });
-    if (!event) {
-      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return fail(400, normalized.error);
     }
 
     const invite = await prisma.eventInvite.findFirst({
@@ -72,15 +146,25 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
       select: { id: true },
     });
 
-    return jsonWrap({
-      ok: true,
+    return respondOk(ctx, {
       invited: Boolean(invite),
       type: normalized.type,
       normalized: normalized.normalized,
     });
   } catch (err) {
     console.error("[eventos/invites/check]", err);
-    return jsonWrap({ ok: false, error: "Erro ao validar convite." }, { status: 500 });
+    return fail(500, "Erro ao validar convite.");
   }
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

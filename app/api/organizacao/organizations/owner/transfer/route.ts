@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { randomUUID } from "crypto";
 import { OrganizationMemberRole } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -11,7 +10,9 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24 * 3; // 3 dias
 const isUniquePendingError = (err: unknown) =>
@@ -20,11 +21,33 @@ const isUniquePendingError = (err: unknown) =>
   "code" in err &&
   (err as { code?: string }).code === "P2002";
 
-async function _POST(req: NextRequest) {
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const ownerTransferModel = (prisma as any).organizationOwnerTransfer;
     if (!ownerTransferModel?.create) {
-      return jsonWrap({ ok: false, error: "OWNER_TRANSFER_UNAVAILABLE" }, { status: 501 });
+      return fail(501, "OWNER_TRANSFER_UNAVAILABLE");
     }
 
     const supabase = await createSupabaseServer();
@@ -34,12 +57,12 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
 
     const transferEnabled = await getOrgTransferEnabled();
     if (!transferEnabled) {
-      return jsonWrap({ ok: false, error: "ORG_TRANSFER_DISABLED" }, { status: 403 });
+      return fail(403, "ORG_TRANSFER_DISABLED");
     }
 
     const body = await req.json().catch(() => null);
@@ -47,21 +70,32 @@ async function _POST(req: NextRequest) {
     const targetRaw = typeof body?.targetUserId === "string" ? body.targetUserId.trim() : null;
 
     if (!organizationId || !targetRaw) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return fail(400, "INVALID_PAYLOAD");
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership || callerMembership.role !== OrganizationMemberRole.OWNER) {
-      return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_TRANSFER" }, { status: 403 });
+      return fail(403, "ONLY_OWNER_CAN_TRANSFER");
+    }
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { officialEmail: true, officialEmailVerifiedAt: true },
+    });
+    if (!organization) {
+      return fail(404, "ORGANIZATION_NOT_FOUND");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_OWNER_TRANSFER" });
+    if (!emailGate.ok) {
+      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const resolved = await resolveUserIdentifier(targetRaw);
     const targetUserId = resolved?.userId ?? null;
     if (!targetUserId) {
-      return jsonWrap({ ok: false, error: "TARGET_NOT_FOUND" }, { status: 404 });
+      return fail(404, "TARGET_NOT_FOUND");
     }
     if (targetUserId === user.id) {
-      return jsonWrap({ ok: false, error: "CANNOT_TRANSFER_TO_SELF" }, { status: 400 });
+      return fail(400, "CANNOT_TRANSFER_TO_SELF");
     }
 
     const now = Date.now();
@@ -143,15 +177,12 @@ async function _POST(req: NextRequest) {
       });
     } catch (err) {
       if (isUniquePendingError(err)) {
-        return jsonWrap({ ok: false, error: "OWNER_TRANSFER_PENDING_EXISTS" }, { status: 409 });
+        return fail(409, "OWNER_TRANSFER_PENDING_EXISTS");
       }
       throw err;
     }
 
-    return jsonWrap(
-      {
-        ok: true,
-        transfer: {
+    return respondOk(ctx, { transfer: {
           id: transfer.id,
           status: transfer.status,
           token: transfer.token,
@@ -162,7 +193,6 @@ async function _POST(req: NextRequest) {
     );
   } catch (err) {
     console.error("[organization/owner/transfer][POST]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
-export const POST = withApiEnvelope(_POST);

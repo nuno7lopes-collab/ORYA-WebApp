@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,7 +8,8 @@ import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, OrganizationPolicyType } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -24,7 +24,29 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-async function _GET(req: NextRequest) {
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -34,7 +56,7 @@ async function _GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -44,11 +66,11 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization);
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     await ensureDefaultPolicies(prisma, organization.id);
@@ -65,17 +87,28 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("GET /api/organizacao/policies error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar políticas." }, { status: 500 });
+    return fail(500, "Erro ao carregar políticas.");
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -85,7 +118,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -95,7 +128,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -112,7 +145,7 @@ async function _POST(req: NextRequest) {
           : null;
 
     if (!name) {
-      return jsonWrap({ ok: false, error: "Nome é obrigatório." }, { status: 400 });
+      return fail(400, "Nome é obrigatório.");
     }
 
     const policy = await prisma.organizationPolicy.create({
@@ -145,14 +178,12 @@ async function _POST(req: NextRequest) {
       userAgent,
     });
 
-    return jsonWrap({ ok: true, policy }, { status: 201 });
+    return respondOk(ctx, { policy }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("POST /api/organizacao/policies error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar política." }, { status: 500 });
+    return fail(500, "Erro ao criar política.");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);

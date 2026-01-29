@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -10,6 +9,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -63,10 +64,32 @@ function parseId(value: string) {
   return { ok: true as const, id };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -74,13 +97,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
+      return fail(400, productId.error);
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -88,7 +111,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       select: { id: true },
     });
     if (!product) {
-      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return fail(404, "Produto nao encontrado.");
     }
 
     const items = await prisma.storeProductVariant.findMany({
@@ -105,20 +128,31 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       },
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, {items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("GET /api/organizacao/loja/products/[id]/variants error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar variantes." }, { status: 500 });
+    return fail(500, "Erro ao carregar variantes.");
   }
 }
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -126,23 +160,23 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const context = await getOrganizationContext(req, user.id, { requireVerifiedEmail: req.method !== "GET" });
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     if (context.store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+      return fail(403, "Catalogo bloqueado.");
     }
 
     const resolvedParams = await params;
     const productId = parseId(resolvedParams.id);
     if (!productId.ok) {
-      return jsonWrap({ ok: false, error: productId.error }, { status: 400 });
+      return fail(400, productId.error);
     }
 
     const body = await req.json().catch(() => null);
     const parsed = createVariantSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const product = await prisma.storeProduct.findFirst({
@@ -150,7 +184,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       select: { id: true },
     });
     if (!product) {
-      return jsonWrap({ ok: false, error: "Produto nao encontrado." }, { status: 404 });
+      return fail(404, "Produto nao encontrado.");
     }
 
     const payload = parsed.data;
@@ -175,13 +209,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       },
     });
 
-    return jsonWrap({ ok: true, item: created }, { status: 201 });
+    return respondOk(ctx, {item: created }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("POST /api/organizacao/loja/products/[id]/variants error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar variante." }, { status: 500 });
+    return fail(500, "Erro ao criar variante.");
   }
 }
 export const GET = withApiEnvelope(_GET);

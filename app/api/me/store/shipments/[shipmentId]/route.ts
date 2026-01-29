@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -7,6 +6,8 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus, StoreShipmentStatus } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const updateShipmentSchema = z
   .object({
@@ -48,10 +49,32 @@ async function getStoreContext(userId: string) {
   return { ok: true as const, store };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ shipmentId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -59,13 +82,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ shipment
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const shipmentId = parseId(resolvedParams.shipmentId);
     if (!shipmentId.ok) {
-      return jsonWrap({ ok: false, error: shipmentId.error }, { status: 400 });
+      return fail(400, shipmentId.error);
     }
 
     const shipment = await prisma.storeShipment.findFirst({
@@ -73,13 +96,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ shipment
       select: { id: true, orderId: true, status: true },
     });
     if (!shipment) {
-      return jsonWrap({ ok: false, error: "Envio nao encontrado." }, { status: 404 });
+      return fail(404, "Envio nao encontrado.");
     }
 
     const body = await req.json().catch(() => null);
     const parsed = updateShipmentSchema.safeParse(body);
     if (!parsed.success) {
-      return jsonWrap({ ok: false, error: "Dados invalidos." }, { status: 400 });
+      return fail(400, "Dados invalidos.");
     }
 
     const payload = parsed.data;
@@ -131,20 +154,31 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ shipment
       return updatedShipment;
     });
 
-    return jsonWrap({ ok: true, shipment: updated });
+    return respondOk(ctx, { shipment: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("PATCH /api/me/store/shipments/[shipmentId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar envio." }, { status: 500 });
+    return fail(500, "Erro ao atualizar envio.");
   }
 }
 
 async function _DELETE(req: NextRequest, { params }: { params: Promise<{ shipmentId: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
-      return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+      return fail(403, "Loja desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -152,13 +186,13 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ shipmen
 
     const context = await getStoreContext(user.id);
     if (!context.ok) {
-      return jsonWrap({ ok: false, error: context.error }, { status: 403 });
+      return fail(403, context.error);
     }
 
     const resolvedParams = await params;
     const shipmentId = parseId(resolvedParams.shipmentId);
     if (!shipmentId.ok) {
-      return jsonWrap({ ok: false, error: shipmentId.error }, { status: 400 });
+      return fail(400, shipmentId.error);
     }
 
     const shipment = await prisma.storeShipment.findFirst({
@@ -166,18 +200,18 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ shipmen
       select: { id: true },
     });
     if (!shipment) {
-      return jsonWrap({ ok: false, error: "Envio nao encontrado." }, { status: 404 });
+      return fail(404, "Envio nao encontrado.");
     }
 
     await prisma.storeShipment.delete({ where: { id: shipment.id } });
 
-    return jsonWrap({ ok: true });
+    return respondOk(ctx, {});
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
+      return fail(401, "Nao autenticado.");
     }
     console.error("DELETE /api/me/store/shipments/[shipmentId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao remover envio." }, { status: 500 });
+    return fail(500, "Erro ao remover envio.");
   }
 }
 export const PATCH = withApiEnvelope(_PATCH);

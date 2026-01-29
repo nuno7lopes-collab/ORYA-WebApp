@@ -10,13 +10,12 @@ import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/
 import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
-import { PaymentEventSource, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType } from "@prisma/client";
+import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType } from "@prisma/client";
 import { EntitlementV7Status, mapV7StatusToLegacy } from "@/lib/entitlements/status";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
 import { markSaleDisputed } from "@/domain/finance/disputes";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   sendPurchaseConfirmationEmail,
   sendEntitlementDeliveredEmail,
@@ -39,6 +38,9 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger";
 import { handleStripeWebhook } from "@/domain/finance/webhook";
+import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { handleFinanceOutboxEvent } from "@/domain/finance/outbox";
 import { sweepPendingProcessorFees } from "@/domain/finance/reconciliationSweep";
@@ -52,7 +54,8 @@ import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTrans
 import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
@@ -86,6 +89,71 @@ async function markEntitlementsStatusByPurchase(purchaseId: string, status: Enti
   await prisma.entitlement.updateMany({
     where: { purchaseId },
     data: { status: legacyStatus },
+  });
+}
+
+async function resolvePaymentIdForOperation(params: {
+  purchaseId?: string | null;
+  paymentIntentId?: string | null;
+}) {
+  const purchaseId = params.purchaseId?.trim() || null;
+  if (purchaseId) return purchaseId;
+  const paymentIntentId = params.paymentIntentId?.trim() || null;
+  if (!paymentIntentId) return null;
+  const event = await prisma.paymentEvent.findFirst({
+    where: { stripePaymentIntentId: paymentIntentId },
+    select: { purchaseId: true },
+  });
+  return event?.purchaseId ?? null;
+}
+
+async function publishPaymentStatusChanged(params: {
+  paymentId: string | null;
+  status: PaymentStatus;
+  causationId: string;
+  source: string;
+}) {
+  if (!params.paymentId) return;
+  await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({ where: { id: params.paymentId } });
+    if (!payment) return;
+    if (payment.status === params.status) return;
+    await tx.payment.update({
+      where: { id: params.paymentId },
+      data: { status: params.status },
+    });
+    const eventLogId = crypto.randomUUID();
+    const payload = {
+      eventLogId,
+      paymentId: params.paymentId,
+      status: params.status,
+      source: params.source,
+      eventType: params.causationId,
+    };
+    const log = await appendEventLog(
+      {
+        eventId: eventLogId,
+        organizationId: payment.organizationId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        idempotencyKey: params.causationId,
+        sourceType: payment.sourceType,
+        sourceId: payment.sourceId,
+        correlationId: params.paymentId,
+        payload,
+      },
+      tx,
+    );
+    if (!log) return;
+    await recordOutboxEvent(
+      {
+        eventId: eventLogId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        payload,
+        causationId: params.causationId,
+        correlationId: params.paymentId,
+      },
+      tx,
+    );
   });
 }
 
@@ -255,13 +323,18 @@ async function processSendEmailOutbox(op: OperationRecord) {
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return respondError(
+      ctx,
+      { errorCode: "UNAUTHORIZED", message: "Unauthorized.", retryable: false },
+      { status: 401 },
+    );
   }
 
   const results = await runOperationsBatch();
-  return jsonWrap({ ok: true, processed: results.length, results }, { status: 200 });
+  return respondOk(ctx, { processed: results.length, results }, { status: 200 });
 }
 
 export async function runOperationsBatch() {
@@ -542,7 +615,7 @@ async function processStripeEvent(op: OperationRecord) {
     const chargeId = typeof payload.chargeId === "string" ? payload.chargeId : null;
     if (!chargeId) throw new Error("Missing chargeId");
     const charge = await retrieveCharge(chargeId);
-    return handleRefund(charge as Stripe.Charge);
+    return handleRefund(charge as Stripe.Charge, { stripeEventId: op.stripeEventId ?? null });
   }
   if (eventType === "dispute.created" || eventType === "dispute.won" || eventType === "dispute.lost" || eventType === "charge.dispute.created") {
     const stripeEventObject =
@@ -951,6 +1024,14 @@ async function processRefundSingle(op: OperationRecord) {
   });
 
   await markEntitlementsStatusByPurchase(purchaseId, "REVOKED");
+
+  const paymentId = await resolvePaymentIdForOperation({ purchaseId, paymentIntentId });
+  await publishPaymentStatusChanged({
+    paymentId,
+    status: PaymentStatus.REFUNDED,
+    causationId: op.id,
+    source: "operations.refund",
+  });
 }
 
 async function processMarkDispute(op: OperationRecord) {
@@ -1000,6 +1081,14 @@ async function processMarkDispute(op: OperationRecord) {
   if (purchaseId) {
     await markEntitlementsStatusByPurchase(purchaseId, "SUSPENDED");
   }
+
+  const paymentId = await resolvePaymentIdForOperation({ purchaseId, paymentIntentId });
+  await publishPaymentStatusChanged({
+    paymentId,
+    status: PaymentStatus.DISPUTED,
+    causationId: op.id,
+    source: "operations.dispute",
+  });
 }
 
 async function processSendEmailReceipt(op: OperationRecord) {
@@ -1150,4 +1239,3 @@ async function processApplyPromoRedemption(op: OperationRecord) {
     guestEmail,
   });
 }
-export const POST = withApiEnvelope(_POST);

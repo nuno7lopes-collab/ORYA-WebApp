@@ -42,7 +42,7 @@ describe("outbox dlq endpoints", () => {
     const res = await GET(req);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.result.items).toHaveLength(1);
+    expect(body.data.items).toHaveLength(1);
     expect(prismaMock.outboxEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ deadLetteredAt: { not: null }, publishedAt: null }),

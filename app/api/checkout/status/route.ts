@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { CheckoutStatus, deriveCheckoutStatusFromPayment } from "@/domain/finance/status";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 type Status = CheckoutStatus;
 
@@ -15,7 +15,8 @@ function cleanParam(v: string | null) {
   return s ? s : null;
 }
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const url = new URL(req.url);
   const purchaseId = cleanParam(url.searchParams.get("purchaseId"));
   const paymentIntentIdRaw = cleanParam(url.searchParams.get("paymentIntentId"));
@@ -24,12 +25,11 @@ async function _GET(req: NextRequest) {
     paymentIntentIdRaw === FREE_PLACEHOLDER_INTENT_ID ? null : paymentIntentIdRaw;
 
   if (!purchaseId && !paymentIntentId) {
-    return jsonWrap(
+    return respondError(
+      ctx,
       {
-        ok: false,
-        status: "FAILED" as Status,
-        error: "MISSING_ID",
-        code: "MISSING_ID",
+        errorCode: "MISSING_ID",
+        message: "purchaseId ou paymentIntentId obrigatórios.",
         retryable: false,
         nextAction: "NONE",
       },
@@ -68,9 +68,9 @@ async function _GET(req: NextRequest) {
         const nextAction =
           status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
         const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
-        return jsonWrap(
+        return respondOk(
+          ctx,
           {
-            ok: true,
             status,
             final,
             purchaseId: payment.id,
@@ -97,9 +97,9 @@ async function _GET(req: NextRequest) {
         const nextAction =
           status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
         const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
-        return jsonWrap(
+        return respondOk(
+          ctx,
           {
-            ok: true,
             status,
             final,
             purchaseId: resolvedPaymentId,
@@ -152,9 +152,9 @@ async function _GET(req: NextRequest) {
             : mappedOp === "REQUIRES_ACTION"
               ? "PAY_NOW"
               : "NONE";
-        return jsonWrap(
+        return respondOk(
+          ctx,
           {
-            ok: true,
             status: mappedOp,
             final,
             purchaseId: op.purchaseId ?? purchaseId ?? paymentIntentId,
@@ -197,9 +197,9 @@ async function _GET(req: NextRequest) {
     if (paymentEvent) {
       // PaymentEvent é apenas telemetria; não inferimos estado final daqui.
       const status: Status = "PROCESSING";
-      return jsonWrap(
+      return respondOk(
+        ctx,
         {
-          ok: true,
           status,
           final: false,
           purchaseId: paymentEvent.purchaseId ?? purchaseId ?? paymentIntentId,
@@ -216,9 +216,9 @@ async function _GET(req: NextRequest) {
     // -------------------------
     // 3) Nada encontrado ainda
     // -------------------------
-    return jsonWrap(
+    return respondOk(
+      ctx,
       {
-        ok: true,
         status: "PENDING" as Status,
         final: false,
         purchaseId: purchaseId ?? paymentIntentId,
@@ -232,12 +232,11 @@ async function _GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[checkout/status] erro inesperado", err);
-    return jsonWrap(
+    return respondError(
+      ctx,
       {
-        ok: false,
-        status: "FAILED" as Status,
-        error: "INTERNAL_ERROR",
-        code: "INTERNAL_ERROR",
+        errorCode: "INTERNAL_ERROR",
+        message: "Erro interno.",
         retryable: true,
         nextAction: "NONE",
       },
@@ -245,4 +244,3 @@ async function _GET(req: NextRequest) {
     );
   }
 }
-export const GET = withApiEnvelope(_GET);

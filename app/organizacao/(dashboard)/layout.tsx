@@ -10,6 +10,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { OrganizationLangSetter } from "../OrganizationLangSetter";
 import { OrganizationStatus } from "@prisma/client";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 
 type OrganizationSwitcherOption = {
   organizationId: number;
@@ -157,7 +159,9 @@ export default async function OrganizationDashboardLayout({ children }: { childr
   const officialEmail = (activeOrganization as { officialEmail?: string | null })?.officialEmail ?? null;
   const officialEmailVerifiedAt =
     (activeOrganization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt ?? null;
-  const isEmailVerified = Boolean(officialEmail && officialEmailVerifiedAt);
+  const officialEmailNormalized = normalizeOfficialEmail(officialEmail);
+  const isEmailVerified = Boolean(officialEmailNormalized && officialEmailVerifiedAt);
+  const platformOfficialEmail = await getPlatformOfficialEmail();
 
   const userInfo = user
     ? {
@@ -205,7 +209,8 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         user={userInfo}
         role={activeRole}
         isSuspended={isSuspended}
-        emailVerification={activeOrganization ? { isVerified: isEmailVerified, email: officialEmail } : null}
+        emailVerification={activeOrganization ? { isVerified: isEmailVerified, email: officialEmailNormalized } : null}
+        platformOfficialEmail={platformOfficialEmail}
       >
         {children}
       </OrganizationDashboardShell>

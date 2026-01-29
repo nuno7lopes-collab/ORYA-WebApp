@@ -1,10 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // DLQ: listar via GET /api/internal/outbox/dlq; replay via POST /api/internal/outbox/replay.
+
+function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correlationId: string }) {
+  if (!requireInternalSecret(req)) {
+    return respondError(
+      ctx,
+      { errorCode: "UNAUTHORIZED", message: "Unauthorized.", retryable: false },
+      { status: 401 },
+    );
+  }
+  return null;
+}
 
 function parseLimit(value: string | null) {
   const parsed = Number(value);
@@ -12,10 +23,10 @@ function parseLimit(value: string | null) {
   return Math.min(100, Math.floor(parsed));
 }
 
-async function _GET(req: NextRequest) {
-  if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const unauthorized = ensureInternalSecret(req, ctx);
+  if (unauthorized) return unauthorized;
 
   const eventType = req.nextUrl.searchParams.get("eventType")?.trim() || null;
   const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
@@ -35,8 +46,7 @@ async function _GET(req: NextRequest) {
 
   const nextBefore = items.length ? items[items.length - 1].createdAt.toISOString() : null;
 
-  return jsonWrap({
-    ok: true,
+  return respondOk(ctx, {
     items: items.map((evt) => ({
       eventId: evt.eventId,
       eventType: evt.eventType,
@@ -49,4 +59,3 @@ async function _GET(req: NextRequest) {
     nextBefore,
   });
 }
-export const GET = withApiEnvelope(_GET);

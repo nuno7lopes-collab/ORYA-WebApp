@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,7 +8,9 @@ import { refundPurchase } from "@/lib/refunds/refundService";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { OrganizationModule, RefundReason } from "@prisma/client";
 import { mapV7StatusToLegacy } from "@/lib/entitlements/status";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ALLOWED_REASONS: RefundReason[] = ["CANCELLED", "DELETED", "DATE_CHANGED"];
 
@@ -25,14 +26,22 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-async function _POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const resolved = await params;
   const eventId = Number(resolved.id);
   if (!Number.isFinite(eventId)) {
-    return jsonWrap({ ok: false, error: "EVENT_INVALID" }, { status: 400 });
+    return fail(400, "EVENT_INVALID");
   }
 
   try {
@@ -44,7 +53,7 @@ async function _POST(
       select: { id: true, organizationId: true, title: true },
     });
     if (!event?.organizationId) {
-      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+      return fail(404, "EVENT_NOT_FOUND");
     }
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
@@ -52,7 +61,20 @@ async function _POST(
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "EVENTS_REFUND" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     const access = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -63,13 +85,13 @@ async function _POST(
       required: "EDIT",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
 
     const payload = await req.json().catch(() => ({}));
     const purchaseId = typeof payload?.purchaseId === "string" ? payload.purchaseId.trim() : "";
     if (!purchaseId) {
-      return jsonWrap({ ok: false, error: "PURCHASE_ID_REQUIRED" }, { status: 400 });
+      return fail(400, "PURCHASE_ID_REQUIRED");
     }
 
     const saleSummary = await prisma.saleSummary.findUnique({
@@ -77,7 +99,7 @@ async function _POST(
       select: { paymentIntentId: true, eventId: true },
     });
     if (!saleSummary || saleSummary.eventId !== eventId) {
-      return jsonWrap({ ok: false, error: "PURCHASE_NOT_FOUND" }, { status: 404 });
+      return fail(404, "PURCHASE_NOT_FOUND");
     }
 
     const reason = parseReason(payload?.reason);
@@ -97,7 +119,7 @@ async function _POST(
     });
 
     if (!refund) {
-      return jsonWrap({ ok: false, error: "REFUND_FAILED" }, { status: 502 });
+      return fail(502, "REFUND_FAILED");
     }
 
     await prisma.entitlement.updateMany({
@@ -118,17 +140,27 @@ async function _POST(
       userAgent,
     });
 
-    return jsonWrap({
-      ok: true,
+    return respondOk(ctx, {
       refundId: refund.id,
       refundedAt: refund.refundedAt,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("POST /api/organizacao/events/[id]/refund error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao reembolsar compra." }, { status: 500 });
+    return fail(500, "Erro ao reembolsar compra.");
   }
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

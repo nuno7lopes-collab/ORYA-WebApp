@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 import { adminLoadOpsSummary, adminReplayOutboxEvents } from "./actions";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
 
 type OrganizationStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | string;
 
@@ -360,11 +361,57 @@ export default function AdminOrganizacoesPage() {
     Record<string, { status: string; requirements: string[]; accountId: string | null }>
   >({});
   const [lastActionByOrg, setLastActionByOrg] = useState<Record<string, LastAction>>({});
-
+  const [platformEmail, setPlatformEmail] = useState<string | null>(null);
+  const normalizedPlatformEmail = useMemo(() => {
+    if (!platformEmail) return "";
+    return normalizeOfficialEmail(platformEmail) ?? platformEmail;
+  }, [platformEmail]);
+  const platformEmailLabel = normalizedPlatformEmail || "email da plataforma";
   const pendingOrganizations = useMemo(
     () => organizations.filter((o) => o.status === "PENDING"),
     [organizations],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPlatformEmail() {
+      try {
+        const res = await fetch("/api/admin/config/platform-email", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        });
+
+        if (!res.ok) return;
+
+        const json = (await res.json().catch(() => null)) as
+          | { ok?: boolean; email?: string; data?: { email?: string } }
+          | null;
+        const email =
+          json?.ok === true
+            ? typeof json.data?.email === "string"
+              ? json.data.email
+              : typeof json.email === "string"
+                ? json.email
+                : ""
+            : "";
+        if (!cancelled && email) {
+          setPlatformEmail(email);
+        }
+      } catch (err) {
+        console.error("[admin/organizacoes] Erro ao carregar platform email:", err);
+      }
+    }
+
+    loadPlatformEmail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -592,10 +639,13 @@ export default function AdminOrganizacoesPage() {
   }
 
   async function verifyPlatformEmail(organizationId: number | string) {
-    const confirmed = window.confirm(
-      "Confirmas marcar esta organização como plataforma e validar o email oficial para oryapt@gmail.com?",
-    );
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        `Confirmas marcar esta organização como plataforma e validar o email oficial para ${platformEmailLabel}?`,
+      )
+    ) {
+      return;
+    }
 
     try {
       setUpdatingEmailId(organizationId);
@@ -610,12 +660,18 @@ export default function AdminOrganizacoesPage() {
         | {
             ok?: boolean;
             error?: string;
+            errorCode?: string;
             requestId?: string | null;
+            data?: {
+              organization?: AdminOrganizationItem;
+              alreadyVerified?: boolean;
+              cancelledPayouts?: number;
+            };
             organization?: AdminOrganizationItem;
           }
         | null;
       if (!res.ok || !data?.ok) {
-        const code = data?.error ?? "INTERNAL_ERROR";
+        const code = data?.errorCode ?? data?.error ?? "INTERNAL_ERROR";
         logAdminError("verify-platform-email", code);
         const resolvedRequestId = data?.requestId ?? requestId;
         setActionError({ scope: "payments", code, requestId: resolvedRequestId });
@@ -627,15 +683,16 @@ export default function AdminOrganizacoesPage() {
       }
 
       const resolvedRequestId = data?.requestId ?? requestId;
+      const responseOrg = data?.data?.organization ?? data?.organization;
       setOrganizations((prev) =>
         prev.map((org) =>
           String(org.id) === String(organizationId)
             ? {
                 ...org,
-                orgType: data.organization?.orgType ?? "PLATFORM",
-                officialEmail: data.organization?.officialEmail ?? "oryapt@gmail.com",
+                orgType: responseOrg?.orgType ?? org.orgType ?? null,
+                officialEmail: responseOrg?.officialEmail ?? org.officialEmail ?? null,
                 officialEmailVerifiedAt:
-                  data.organization?.officialEmailVerifiedAt ?? new Date().toISOString(),
+                  responseOrg?.officialEmailVerifiedAt ?? org.officialEmailVerifiedAt ?? null,
               }
             : org,
         ),
@@ -1186,13 +1243,17 @@ export default function AdminOrganizacoesPage() {
                           className={
                             "inline-flex items-center rounded-full border px-2 py-[2px] font-medium " +
                             emailBadgeClasses(
-                              (selectedOrganization.officialEmail ?? "").toLowerCase() ===
-                                "oryapt@gmail.com" && Boolean(selectedOrganization.officialEmailVerifiedAt),
+                              Boolean(normalizedPlatformEmail) &&
+                                normalizeOfficialEmail(selectedOrganization.officialEmail ?? null) ===
+                                  normalizedPlatformEmail &&
+                                Boolean(selectedOrganization.officialEmailVerifiedAt),
                             )
                           }
                         >
                           Email plataforma{" "}
-                          {(selectedOrganization.officialEmail ?? "").toLowerCase() === "oryapt@gmail.com" &&
+                          {Boolean(normalizedPlatformEmail) &&
+                          normalizeOfficialEmail(selectedOrganization.officialEmail ?? null) ===
+                            normalizedPlatformEmail &&
                           selectedOrganization.officialEmailVerifiedAt
                             ? "confirmado"
                             : "pendente"}

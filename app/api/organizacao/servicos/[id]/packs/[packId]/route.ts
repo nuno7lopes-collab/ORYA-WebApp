@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -10,6 +9,8 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -29,15 +30,37 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
 async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; packId: string }> },
 ) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const resolved = await params;
   const serviceId = parseId(resolved.id);
   const packId = parseId(resolved.packId);
   if (!serviceId || !packId) {
-    return jsonWrap({ ok: false, error: "Dados inválidos." }, { status: 400 });
+    return fail(400, "Dados inválidos.");
   }
 
   try {
@@ -46,7 +69,7 @@ async function _PATCH(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -56,17 +79,17 @@ async function _PATCH(
     });
 
     if (!organization) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return fail(403, reservasAccess.error);
     }
     const writeAccess = ensureOrganizationWriteAccess(organization, {
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return jsonWrap({ ok: false, error: writeAccess.error }, { status: 403 });
+      return fail(403, writeAccess.error);
     }
 
     const pack = await prisma.servicePack.findFirst({
@@ -74,7 +97,7 @@ async function _PATCH(
       select: { id: true, packPriceCents: true, isActive: true },
     });
     if (!pack) {
-      return jsonWrap({ ok: false, error: "Pack não encontrado." }, { status: 404 });
+      return fail(404, "Pack não encontrado.");
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -82,14 +105,14 @@ async function _PATCH(
     if (Number.isFinite(Number(payload?.quantity))) {
       const quantity = Math.floor(Number(payload.quantity));
       if (quantity <= 0) {
-        return jsonWrap({ ok: false, error: "Quantidade inválida." }, { status: 400 });
+        return fail(400, "Quantidade inválida.");
       }
       updates.quantity = quantity;
     }
     if (Number.isFinite(Number(payload?.packPriceCents ?? payload?.packPrice))) {
       const packPriceCents = Math.round(Number(payload.packPriceCents ?? payload.packPrice));
       if (packPriceCents <= 0) {
-        return jsonWrap({ ok: false, error: "Preço inválido." }, { status: 400 });
+        return fail(400, "Preço inválido.");
       }
       updates.packPriceCents = packPriceCents;
     }
@@ -101,7 +124,7 @@ async function _PATCH(
     if (typeof payload?.isActive === "boolean") updates.isActive = payload.isActive;
 
     if (Object.keys(updates).length === 0) {
-      return jsonWrap({ ok: false, error: "Sem alterações." }, { status: 400 });
+      return fail(400, "Sem alterações.");
     }
 
     const updated = await prisma.servicePack.update({
@@ -119,13 +142,13 @@ async function _PATCH(
       userAgent,
     });
 
-    return jsonWrap({ ok: true, pack: updated });
+    return respondOk(ctx, {pack: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("PATCH /api/organizacao/servicos/[id]/packs/[packId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar pack." }, { status: 500 });
+    return fail(500, "Erro ao atualizar pack.");
   }
 }
 
@@ -133,11 +156,22 @@ async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; packId: string }> },
 ) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const resolved = await params;
   const serviceId = parseId(resolved.id);
   const packId = parseId(resolved.packId);
   if (!serviceId || !packId) {
-    return jsonWrap({ ok: false, error: "Dados inválidos." }, { status: 400 });
+    return fail(400, "Dados inválidos.");
   }
 
   try {
@@ -146,7 +180,7 @@ async function _DELETE(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -156,11 +190,11 @@ async function _DELETE(
     });
 
     if (!organization) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
+      return fail(403, reservasAccess.error);
     }
 
     const pack = await prisma.servicePack.findFirst({
@@ -168,7 +202,7 @@ async function _DELETE(
       select: { id: true },
     });
     if (!pack) {
-      return jsonWrap({ ok: false, error: "Pack não encontrado." }, { status: 404 });
+      return fail(404, "Pack não encontrado.");
     }
 
     await prisma.servicePack.update({
@@ -186,13 +220,13 @@ async function _DELETE(
       userAgent,
     });
 
-    return jsonWrap({ ok: true });
+    return respondOk(ctx, {});
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     console.error("DELETE /api/organizacao/servicos/[id]/packs/[packId] error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao remover pack." }, { status: 500 });
+    return fail(500, "Erro ao remover pack.");
   }
 }
 export const PATCH = withApiEnvelope(_PATCH);

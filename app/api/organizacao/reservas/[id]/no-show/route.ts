@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -11,7 +10,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole } from "@prisma/client";
 import { markNoShowBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   computeNoShowRefundFromSnapshot,
   parseBookingConfirmationSnapshot,
@@ -36,27 +35,38 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-async function _POST(
+export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  type NoShowTxnResult =
+    | { error: Response }
+    | {
+        booking: { id: number; status: string };
+        userId: string | null;
+        paymentIntentId: string | null;
+        refundAmountCents: number;
+        snapshotTimezone: string;
+      };
+
   const resolved = await params;
   const bookingId = parseId(resolved.id);
   const ctx = getRequestContext(req);
-  const errorWithCtx = (status: number, error: string, errorCode = error, details?: Record<string, unknown>) =>
-    jsonWrap(
-      {
-        ok: false,
-        error,
-        errorCode,
-        requestId: ctx.requestId,
-        correlationId: ctx.correlationId,
-        ...(details ? { details } : {}),
-      },
+  const fail = (
+    status: number,
+    errorCode: string,
+    message: string,
+    retryable = false,
+    details?: Record<string, unknown>,
+  ) =>
+    respondError(
+      ctx,
+      { errorCode, message, retryable, ...(details ? { details } : {}) },
       { status },
     );
+
   if (!bookingId) {
-    return errorWithCtx(400, "ID inválido.", "BOOKING_ID_INVALID");
+    return fail(400, "BOOKING_ID_INVALID", "ID inválido.");
   }
 
   try {
@@ -65,7 +75,7 @@ async function _POST(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(403, "FORBIDDEN", "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -75,20 +85,24 @@ async function _POST(
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(403, "FORBIDDEN", "Sem permissões.");
     }
 
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return jsonWrap(reservasAccess, { status: 403 });
+      return fail(
+        403,
+        reservasAccess.error ?? "FORBIDDEN",
+        reservasAccess.message ?? "Sem permissões.",
+      );
     }
 
     const { ip, userAgent } = getRequestMeta(req);
     const now = new Date();
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction<NoShowTxnResult>(async (tx) => {
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, organizationId: organization.id },
         select: {
@@ -106,34 +120,34 @@ async function _POST(
       });
 
       if (!booking) {
-        return { ok: false as const, error: errorWithCtx(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND") };
+        return { error: fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.") };
       }
       if (
         membership.role === OrganizationMemberRole.STAFF &&
         (!booking.professional?.userId || booking.professional.userId !== profile.id)
       ) {
-        return { ok: false as const, error: errorWithCtx(403, "Sem permissões.", "FORBIDDEN") };
+        return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
       }
       if (
         ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(
           booking.status,
         )
       ) {
-        return { ok: false as const, error: errorWithCtx(409, "Reserva já encerrada.", "BOOKING_ALREADY_CLOSED") };
+        return { error: fail(409, "BOOKING_ALREADY_CLOSED", "Reserva já encerrada.") };
       }
 
       if (booking.startsAt > now) {
-        return { ok: false as const, error: errorWithCtx(409, "Reserva ainda não ocorreu.", "BOOKING_NOT_STARTED") };
+        return { error: fail(409, "BOOKING_NOT_STARTED", "Reserva ainda não ocorreu.") };
       }
 
       const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
       if (!snapshot) {
         return {
-          ok: false as const,
-          error: errorWithCtx(
+          error: fail(
             409,
-            "Reserva sem snapshot. Corre o backfill antes de marcar no-show.",
             "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
+            "Reserva sem snapshot. Corre o backfill antes de marcar no-show.",
+            false,
             { bookingId: booking.id },
           ),
         };
@@ -142,11 +156,11 @@ async function _POST(
       const refundComputation = computeNoShowRefundFromSnapshot(snapshot);
       if (!refundComputation) {
         return {
-          ok: false as const,
-          error: errorWithCtx(
+          error: fail(
             409,
-            "Snapshot inválido. Corre o backfill antes de marcar no-show.",
             "BOOKING_CONFIRMATION_SNAPSHOT_INVALID",
+            "Snapshot inválido. Corre o backfill antes de marcar no-show.",
+            false,
             { bookingId: booking.id },
           ),
         };
@@ -160,7 +174,6 @@ async function _POST(
         select: { id: true, status: true },
         tx,
       });
-      const updatedSummary = { id: updated.id, status: updated.status };
 
       await recordOrganizationAudit(tx, {
         organizationId: organization.id,
@@ -181,8 +194,7 @@ async function _POST(
       });
 
       return {
-        ok: true as const,
-        booking: updatedSummary,
+        booking: { id: updated.id, status: updated.status },
         userId: booking.userId,
         paymentIntentId: booking.paymentIntentId,
         refundAmountCents: refundComputation.refundCents,
@@ -190,7 +202,7 @@ async function _POST(
       };
     });
 
-    if (!result.ok) return result.error;
+    if ("error" in result) return result.error;
 
     if (result.paymentIntentId && result.refundAmountCents > 0) {
       try {
@@ -202,7 +214,12 @@ async function _POST(
         });
       } catch (refundErr) {
         console.error("[organizacao/no-show] refund failed", refundErr);
-        return errorWithCtx(502, "No-show registado, mas o reembolso falhou.", "BOOKING_REFUND_FAILED");
+        return fail(
+          502,
+          "BOOKING_REFUND_FAILED",
+          "No-show registado, mas o reembolso falhou.",
+          true,
+        );
       }
     }
 
@@ -221,17 +238,15 @@ async function _POST(
       }
     }
 
-    return jsonWrap({
-      ok: true,
+    return respondOk(ctx, {
       booking: result.booking,
       snapshotTimezone: result.snapshotTimezone,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return errorWithCtx(401, "Não autenticado.", "UNAUTHENTICATED");
+      return fail(401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("POST /api/organizacao/reservas/[id]/no-show error:", err);
-    return errorWithCtx(500, "Erro ao atualizar reserva.", "BOOKING_NO_SHOW_FAILED");
+    return fail(500, "BOOKING_NO_SHOW_FAILED", "Erro ao atualizar reserva.", true);
   }
 }
-export const POST = withApiEnvelope(_POST);

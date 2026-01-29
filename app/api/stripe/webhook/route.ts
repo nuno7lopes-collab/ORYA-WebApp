@@ -24,6 +24,7 @@ import {
   PadelRegistrationStatus,
   PaymentMode,
   PaymentEventSource,
+  PaymentStatus,
   Prisma,
   PromoType,
   SaleSummaryStatus,
@@ -48,6 +49,7 @@ import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { consumeStripeWebhookEvent } from "@/domain/finance/outbox";
+import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
@@ -2103,7 +2105,57 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
   }
 }
 
-export async function handleRefund(charge: Stripe.Charge) {
+async function publishPaymentRefunded(params: {
+  paymentId: string | null;
+  stripeEventId?: string | null;
+  source: string;
+}) {
+  if (!params.paymentId) return;
+  await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({ where: { id: params.paymentId } });
+    if (!payment) return;
+    if (payment.status === PaymentStatus.REFUNDED) return;
+    await tx.payment.update({
+      where: { id: params.paymentId },
+      data: { status: PaymentStatus.REFUNDED },
+    });
+    const eventLogId = crypto.randomUUID();
+    const payload = {
+      eventLogId,
+      paymentId: params.paymentId,
+      status: PaymentStatus.REFUNDED,
+      source: params.source,
+      eventType: "charge.refunded",
+    };
+    const idempotencyKey = params.stripeEventId ?? `charge.refunded:${params.paymentId}`;
+    const log = await appendEventLog(
+      {
+        eventId: eventLogId,
+        organizationId: payment.organizationId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        idempotencyKey,
+        sourceType: payment.sourceType,
+        sourceId: payment.sourceId,
+        correlationId: params.paymentId,
+        payload,
+      },
+      tx,
+    );
+    if (!log) return;
+    await recordOutboxEvent(
+      {
+        eventId: eventLogId,
+        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+        payload,
+        causationId: idempotencyKey,
+        correlationId: params.paymentId,
+      },
+      tx,
+    );
+  });
+}
+
+export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId?: string | null }) {
   const paymentIntentId =
     typeof charge.payment_intent === "string"
       ? charge.payment_intent
@@ -2116,6 +2168,10 @@ export async function handleRefund(charge: Stripe.Charge) {
 
   // Obter metadata do payment intent para identificar PADEL_SPLIT
   const intent = await retrievePaymentIntent(paymentIntentId, { expand: ["latest_charge"] }).catch(() => null);
+  const paymentId =
+    intent?.metadata?.paymentId ??
+    intent?.metadata?.purchaseId ??
+    null;
 
   const paymentScenario = normalizePaymentScenario(
     typeof intent?.metadata?.paymentScenario === "string" ? intent?.metadata?.paymentScenario : null,
@@ -2133,6 +2189,11 @@ export async function handleRefund(charge: Stripe.Charge) {
 
   if (isPadelSplit) {
     await handlePadelSplitRefund(paymentIntentId, tickets, charge.livemode);
+    await publishPaymentRefunded({
+      paymentId,
+      stripeEventId: opts?.stripeEventId ?? null,
+      source: "stripe.webhook",
+    });
     return;
   }
 
@@ -2194,6 +2255,12 @@ export async function handleRefund(charge: Stripe.Charge) {
         ]
       : []),
   ]);
+
+  await publishPaymentRefunded({
+    paymentId: saleSummary?.purchaseId ?? paymentId,
+    stripeEventId: opts?.stripeEventId ?? null,
+    source: "stripe.webhook",
+  });
 
   console.log("[handleRefund] Tickets marcados como REFUNDED", {
     paymentIntentId,

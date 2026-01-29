@@ -16,12 +16,11 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const HOLD_MINUTES = 10;
 const ORYA_CARD_FEE_BPS = 100;
 
-async function _POST(
+export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -112,7 +111,7 @@ async function _POST(
         actorUserId: user.id,
         data: { status: "CANCELLED_BY_CLIENT" },
       });
-      return fail("RESERVA_EXPIRADA", "Reserva expirada.", 409);
+      return fail("RESERVA_EXPIRADA", "Reserva expirada.", 410);
     }
 
     const allowedPaymentMethods = paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);
@@ -340,4 +339,3 @@ async function _POST(
     return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
-export const POST = withApiEnvelope(_POST);

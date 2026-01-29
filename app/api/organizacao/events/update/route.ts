@@ -1,19 +1,17 @@
 // app/api/organizacao/events/update/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   TicketTypeStatus,
   Prisma,
   EventTemplateType,
   EventStatus,
   LiveHubVisibility,
-  EventPublicAccessMode,
-  EventParticipantAccessMode,
   EventPricingMode,
   LocationSource,
   PayoutMode,
@@ -89,14 +87,9 @@ type UpdateEventBody = {
   templateType?: string | null;
   isGratis?: boolean;
   pricingMode?: string | null;
-  inviteOnly?: boolean;
   coverImageUrl?: string | null;
   liveHubVisibility?: string | null;
   liveStreamUrl?: string | null;
-  publicAccessMode?: string | null;
-  participantAccessMode?: string | null;
-  publicTicketTypeIds?: number[];
-  participantTicketTypeIds?: number[];
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
   payoutMode?: string | null;
@@ -157,7 +150,23 @@ async function generateUniqueSlug(baseSlug: string, eventId?: number) {
   return `${baseSlug}-${maxSuffix + 1}`;
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+    details?: Record<string, unknown>,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -166,12 +175,12 @@ async function _POST(req: NextRequest) {
     try {
       body = (await req.json()) as UpdateEventBody;
     } catch {
-      return jsonWrap({ ok: false, error: "Body inválido." }, { status: 400 });
+      return fail(400, "Body inválido.");
     }
 
     const eventId = Number(body?.eventId);
     if (!eventId || Number.isNaN(eventId)) {
-      return jsonWrap({ ok: false, error: "eventId é obrigatório." }, { status: 400 });
+      return fail(400, "eventId é obrigatório.");
     }
 
     // Autorização: perfil + membership no organization do evento
@@ -335,29 +344,19 @@ async function _POST(req: NextRequest) {
     ]);
 
     if (!profile) {
-      return jsonWrap(
-        { ok: false, error: "Perfil não encontrado. Completa o onboarding de utilizador." },
-        { status: 400 },
-      );
+      return fail(400, "Perfil não encontrado. Completa o onboarding de utilizador.");
     }
     const hasUserOnboarding =
       profile.onboardingDone ||
       (Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim()));
     if (!hasUserOnboarding) {
-      return jsonWrap(
-        {
-          ok: false,
-          error:
-            "Completa o onboarding de utilizador (nome e username) antes de editares eventos.",
-        },
-        { status: 400 },
-      );
+      return fail(400, "Completa o onboarding de utilizador (nome e username) antes de editares eventos.");
     }
 
     event = eventResult;
 
     if (!event) {
-      return jsonWrap({ ok: false, error: "Evento não encontrado." }, { status: 404 });
+      return fail(404, "Evento não encontrado.");
     }
 
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
@@ -365,12 +364,12 @@ async function _POST(req: NextRequest) {
     let membership: { role: OrganizationMemberRole; rolePack: OrganizationRolePack | null } | null = null;
     if (event.organizationId == null) {
       if (!isAdmin) {
-        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return fail(403, "FORBIDDEN");
       }
     } else {
       membership = await resolveGroupMemberForOrg({ organizationId: event.organizationId, userId: user.id });
       if (!membership) {
-        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return fail(403, "FORBIDDEN");
       }
       const access = await ensureMemberModuleAccess({
         organizationId: event.organizationId,
@@ -381,14 +380,23 @@ async function _POST(req: NextRequest) {
         required: "EDIT",
       });
       if (!access.ok) {
-        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        return fail(403, "FORBIDDEN");
       }
     }
 
     if (event.organization) {
-      const emailGate = ensureOrganizationEmailVerified(event.organization);
+      const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_UPDATE" });
       if (!emailGate.ok) {
-        return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+        return respondError(
+          ctx,
+          {
+            errorCode: emailGate.error ?? "FORBIDDEN",
+            message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+            retryable: false,
+            details: emailGate,
+          },
+          { status: 403 },
+        );
       }
     }
 
@@ -398,13 +406,10 @@ async function _POST(req: NextRequest) {
       } catch (err: any) {
         const message = typeof err?.message === "string" ? err.message : "";
         if (message.startsWith("ACCESS_POLICY_LOCKED")) {
-          return jsonWrap({ ok: false, error: "ACCESS_POLICY_LOCKED" }, { status: 409 });
+          return fail(409, "ACCESS_POLICY_LOCKED");
         }
         if (message === "INVITE_TOKEN_TTL_REQUIRED") {
-          return jsonWrap(
-            { ok: false, error: "INVITE_TOKEN_TTL_REQUIRED" },
-            { status: 400 },
-          );
+          return fail(400, "INVITE_TOKEN_TTL_REQUIRED");
         }
         throw err;
       }
@@ -415,10 +420,7 @@ async function _POST(req: NextRequest) {
     );
     const hasNewTicketsPayload = Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
     if (hasNonEurTickets && hasNewTicketsPayload) {
-      return jsonWrap(
-        { ok: false, error: "CURRENCY_NOT_SUPPORTED" },
-        { status: 400 },
-      );
+      return fail(400, "CURRENCY_NOT_SUPPORTED");
     }
 
     const organization = event.organization;
@@ -429,12 +431,13 @@ async function _POST(req: NextRequest) {
       const hasRegistrations = (event._count?.tickets ?? 0) > 0 || (event._count?.reservations ?? 0) > 0;
       const hasPayments = hasSoldTickets;
       if (hasRegistrations || hasPayments) {
-        return jsonWrap(
+        return respondError(
+          ctx,
           {
-            ok: false,
-            code: "EVENT_HAS_ATTENDEES",
-            error:
+            errorCode: "EVENT_HAS_ATTENDEES",
+            message:
               "Não é possível apagar/arquivar este evento porque já existem inscrições ou pagamentos associados.",
+            retryable: false,
           },
           { status: 400 },
         );
@@ -454,7 +457,7 @@ async function _POST(req: NextRequest) {
     if (slugSource !== undefined) {
       const baseSlug = slugify(typeof slugSource === "string" ? slugSource : "");
       if (!baseSlug) {
-        return jsonWrap({ ok: false, error: "Slug inválido." }, { status: 400 });
+        return fail(400, "Slug inválido.");
       }
       const nextSlug = await generateUniqueSlug(baseSlug, eventId);
       if (nextSlug !== event.slug) {
@@ -465,14 +468,14 @@ async function _POST(req: NextRequest) {
     if (body.startsAt) {
       const d = new Date(body.startsAt);
       if (Number.isNaN(d.getTime())) {
-        return jsonWrap({ ok: false, error: "startsAt inválido." }, { status: 400 });
+        return fail(400, "startsAt inválido.");
       }
       dataUpdate.startsAt = d;
     }
     if (body.endsAt) {
       const d = new Date(body.endsAt);
       if (Number.isNaN(d.getTime())) {
-        return jsonWrap({ ok: false, error: "endsAt inválido." }, { status: 400 });
+        return fail(400, "endsAt inválido.");
       }
       dataUpdate.endsAt = d;
     }
@@ -530,11 +533,6 @@ async function _POST(req: NextRequest) {
         dataUpdate.templateType = tpl as EventTemplateType;
       }
     }
-    if (body.inviteOnly !== undefined && body.publicAccessMode === undefined) {
-      const inviteOnly = body.inviteOnly === true;
-      dataUpdate.inviteOnly = inviteOnly;
-      dataUpdate.publicAccessMode = inviteOnly ? EventPublicAccessMode.INVITE : EventPublicAccessMode.OPEN;
-    }
     if (body.coverImageUrl !== undefined) dataUpdate.coverImageUrl = body.coverImageUrl ?? null;
     if (body.liveStreamUrl !== undefined) {
       const trimmed = typeof body.liveStreamUrl === "string" ? body.liveStreamUrl.trim() : "";
@@ -546,29 +544,6 @@ async function _POST(req: NextRequest) {
       if (normalized === "PUBLIC" || normalized === "PRIVATE" || normalized === "DISABLED") {
         dataUpdate.liveHubVisibility = normalized as LiveHubVisibility;
       }
-    }
-    if (body.publicAccessMode !== undefined) {
-      const normalized = typeof body.publicAccessMode === "string" ? body.publicAccessMode.trim().toUpperCase() : "";
-      if (normalized === "OPEN" || normalized === "TICKET" || normalized === "INVITE") {
-        dataUpdate.publicAccessMode = normalized as EventPublicAccessMode;
-        dataUpdate.inviteOnly = normalized === "INVITE";
-      }
-    }
-    if (body.participantAccessMode !== undefined) {
-      const normalized = typeof body.participantAccessMode === "string" ? body.participantAccessMode.trim().toUpperCase() : "";
-      if (normalized === "NONE" || normalized === "TICKET" || normalized === "INSCRIPTION" || normalized === "INVITE") {
-        dataUpdate.participantAccessMode = normalized as EventParticipantAccessMode;
-      }
-    }
-    if (Array.isArray(body.publicTicketTypeIds)) {
-      dataUpdate.publicTicketTypeIds = body.publicTicketTypeIds
-        .filter((id) => Number.isFinite(id))
-        .map((id) => Number(id));
-    }
-    if (Array.isArray(body.participantTicketTypeIds)) {
-      dataUpdate.participantTicketTypeIds = body.participantTicketTypeIds
-        .filter((id) => Number.isFinite(id))
-        .map((id) => Number(id));
     }
     if (
       isAdmin &&
@@ -616,13 +591,16 @@ async function _POST(req: NextRequest) {
         requireStripe: payoutMode === PayoutMode.ORGANIZATION && organization?.orgType !== "PLATFORM",
       });
       if (!gate.ok) {
-        return jsonWrap(
+        return respondError(
+          ctx,
           {
-            ok: false,
-            code: "PAYMENTS_NOT_READY",
-            error: formatPaidSalesGateMessage(gate, "Para vender bilhetes pagos,"),
-            missingEmail: gate.missingEmail,
-            missingStripe: gate.missingStripe,
+            errorCode: "PAYMENTS_NOT_READY",
+            message: formatPaidSalesGateMessage(gate, "Para vender bilhetes pagos,"),
+            retryable: false,
+            details: {
+              missingEmail: gate.missingEmail,
+              missingStripe: gate.missingStripe,
+            },
           },
           { status: 403 },
         );
@@ -705,11 +683,11 @@ async function _POST(req: NextRequest) {
     const nextPricingMode = (dataUpdate.pricingMode ?? event.pricingMode ?? EventPricingMode.STANDARD) as EventPricingMode;
     const guard = validateZeroPriceGuard({ pricingMode: nextPricingMode, ticketPrices });
     if (!guard.ok) {
-      return jsonWrap({ ok: false, error: guard.error }, { status: 400 });
+      return fail(400, guard.error);
     }
 
     if (!hasDataUpdate && !hasTicketStatusUpdates && !hasNewTickets) {
-      return jsonWrap({ ok: false, error: "Nada para atualizar." }, { status: 400 });
+      return fail(400, "Nada para atualizar.");
     }
 
     await prisma.$transaction(async (tx) => {
@@ -808,18 +786,18 @@ async function _POST(req: NextRequest) {
       }
     });
 
-    return jsonWrap({ ok: true }, { status: 200 });
+    return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("POST /api/organizacao/events/update error:", err);
     const message = err instanceof Error ? err.message : "";
     if (message === "UNAUTHENTICATED") {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     if (message === "INVALID_PADEL_CATEGORY_LINK") {
-      return jsonWrap({ ok: false, error: "Categoria Padel inválida para este evento." }, { status: 400 });
+      return fail(400, "Categoria Padel inválida para este evento.");
     }
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(401, "Não autenticado.");
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       const code = err.code;
@@ -829,15 +807,29 @@ async function _POST(req: NextRequest) {
         code === "P2022" && column
           ? `Erro de base de dados ao atualizar evento (coluna em falta: ${column}).`
           : "Erro de base de dados ao atualizar evento.";
-      return jsonWrap({ ok: false, error, code }, { status: 400 });
+      return respondError(
+        ctx,
+        {
+          errorCode: code ?? "DB_ERROR",
+          message: error,
+          retryable: false,
+          details: column ? { column } : undefined,
+        },
+        { status: 400 },
+      );
     }
-    return jsonWrap(
-      {
-        ok: false,
-        error: "Erro interno ao atualizar evento.",
-      },
-      { status: 500 },
-    );
+    return fail(500, "Erro interno ao atualizar evento.");
   }
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

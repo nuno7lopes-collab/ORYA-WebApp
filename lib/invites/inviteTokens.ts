@@ -95,6 +95,69 @@ export function assertInviteTokenValid(params: {
   return true;
 }
 
+export type InviteTokenGrant = {
+  tokenId: string;
+  emailNormalized: string;
+  ticketTypeId: number | null;
+  expiresAt: Date;
+};
+
+export async function resolveInviteTokenGrant(
+  input: {
+    eventId: number;
+    token: string;
+    emailNormalized?: string | null;
+    ticketTypeId?: number | null;
+    now?: Date;
+  },
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<{ ok: true; grant: InviteTokenGrant } | { ok: false; reason: string }> {
+  const tokenRaw = typeof input.token === "string" ? input.token.trim() : "";
+  if (!tokenRaw) return { ok: false, reason: "INVITE_TOKEN_REQUIRED" };
+
+  const tokenHash = hashInviteToken(tokenRaw);
+  const tokenRow = await client.inviteToken.findUnique({
+    where: { tokenHash },
+    select: {
+      id: true,
+      eventId: true,
+      ticketTypeId: true,
+      emailNormalized: true,
+      expiresAt: true,
+      usedAt: true,
+    },
+  });
+  if (!tokenRow) return { ok: false, reason: "INVITE_TOKEN_NOT_FOUND" };
+
+  const emailNormalized = input.emailNormalized ?? tokenRow.emailNormalized;
+  if (!emailNormalized) return { ok: false, reason: "INVITE_EMAIL_REQUIRED" };
+
+  const resolvedTicketTypeId =
+    typeof input.ticketTypeId === "number" && Number.isFinite(input.ticketTypeId)
+      ? input.ticketTypeId
+      : tokenRow.ticketTypeId ?? null;
+  const ticketTypeIds = resolvedTicketTypeId ? [resolvedTicketTypeId] : [];
+
+  const ok = assertInviteTokenValid({
+    tokenRow,
+    eventId: input.eventId,
+    emailNormalized,
+    ticketTypeIds,
+    now: input.now ?? new Date(),
+  });
+  if (!ok) return { ok: false, reason: "INVITE_TOKEN_INVALID" };
+
+  return {
+    ok: true,
+    grant: {
+      tokenId: tokenRow.id,
+      emailNormalized,
+      ticketTypeId: tokenRow.ticketTypeId ?? resolvedTicketTypeId ?? null,
+      expiresAt: tokenRow.expiresAt,
+    },
+  };
+}
+
 export async function consumeInviteToken(
   input: InviteTokenConsumeInput,
   client: Prisma.TransactionClient | typeof prisma = prisma,

@@ -1,18 +1,28 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { runOperationsBatch } from "@/app/api/internal/worker/operations/route";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-async function _POST(req: NextRequest) {
+function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correlationId: string }) {
   if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return respondError(
+      ctx,
+      { errorCode: "UNAUTHORIZED", message: "Unauthorized.", retryable: false },
+      { status: 401 },
+    );
   }
+  return null;
+}
+
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const unauthorized = ensureInternalSecret(req, ctx);
+  if (unauthorized) return unauthorized;
 
   const results = await runOperationsBatch();
-  return jsonWrap({ ok: true, processed: results.length, results }, { status: 200 });
+  return respondOk(ctx, { processed: results.length, results }, { status: 200 });
 }
-export const POST = withApiEnvelope(_POST);

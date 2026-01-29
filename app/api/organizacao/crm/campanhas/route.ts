@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,11 +7,31 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { campaignChannelsToList, normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { CrmCampaignChannel, CrmCampaignStatus, OrganizationMemberRole } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-async function _GET(req: NextRequest) {
+function fail(
+  ctx: RequestContext,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+  details?: Record<string, unknown>,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(
+    ctx,
+    { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -24,14 +43,14 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "Sem permissões.");
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(ctx, 403, crmAccess.error);
     }
 
     const campaigns = await prisma.crmCampaign.findMany({
@@ -66,17 +85,18 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return jsonWrap({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
     console.error("GET /api/organizacao/crm/campanhas error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar campanhas." }, { status: 500 });
+    return fail(ctx, 500, "Erro ao carregar campanhas.");
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -88,14 +108,27 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "Sem permissões.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "CRM_CAMPAIGNS" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(ctx, 403, crmAccess.error);
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -110,7 +143,7 @@ async function _POST(req: NextRequest) {
 
     const name = typeof payload?.name === "string" ? payload.name.trim() : "";
     if (name.length < 2) {
-      return jsonWrap({ ok: false, error: "Nome inválido." }, { status: 400 });
+      return fail(ctx, 400, "Nome inválido.");
     }
 
     const description = typeof payload?.description === "string" ? payload.description.trim() : null;
@@ -132,11 +165,11 @@ async function _POST(req: NextRequest) {
     if (typeof scheduledAtRaw === "string" && scheduledAtRaw.trim()) {
       const parsed = new Date(scheduledAtRaw);
       if (Number.isNaN(parsed.getTime())) {
-        return jsonWrap({ ok: false, error: "Data invalida." }, { status: 400 });
+        return fail(ctx, 400, "Data invalida.");
       }
       scheduledAt = parsed;
     } else if (scheduledAtRaw !== null && scheduledAtRaw !== undefined && scheduledAtRaw !== "") {
-      return jsonWrap({ ok: false, error: "Data invalida." }, { status: 400 });
+      return fail(ctx, 400, "Data invalida.");
     }
 
     if (segmentId) {
@@ -145,7 +178,7 @@ async function _POST(req: NextRequest) {
         select: { id: true },
       });
       if (!segment) {
-        return jsonWrap({ ok: false, error: "Segmento inválido." }, { status: 400 });
+        return fail(ctx, 400, "Segmento inválido.");
       }
     }
 
@@ -172,14 +205,24 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, campaign });
+    return respondOk(ctx, { campaign });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
     console.error("POST /api/organizacao/crm/campanhas error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar campanha." }, { status: 500 });
+    return fail(ctx, 500, "Erro ao criar campanha.");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

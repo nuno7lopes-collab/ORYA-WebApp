@@ -1,19 +1,30 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { enqueueOperation } from "@/lib/operations/enqueue";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_STUCK_MINUTES = 15;
 
-async function _POST(req: NextRequest) {
+function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correlationId: string }) {
   if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return respondError(
+      ctx,
+      { errorCode: "UNAUTHORIZED", message: "Unauthorized.", retryable: false },
+      { status: 401 },
+    );
   }
+  return null;
+}
+
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const unauthorized = ensureInternalSecret(req, ctx);
+  if (unauthorized) return unauthorized;
 
   const body = (await req.json().catch(() => null)) as { minutes?: number } | null;
   const minutes = Number(body?.minutes ?? DEFAULT_STUCK_MINUTES);
@@ -74,6 +85,5 @@ async function _POST(req: NextRequest) {
     });
   }
 
-  return jsonWrap({ ok: true, requeued }, { status: 200 });
+  return respondOk(ctx, { requeued }, { status: 200 });
 }
-export const POST = withApiEnvelope(_POST);

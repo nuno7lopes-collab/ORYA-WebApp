@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
@@ -8,12 +7,25 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, TournamentFormat } from "@prisma/client";
 import { updateTournament } from "@/domain/tournaments/commands";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const tournamentId = readNumericParam(params?.id, req, "tournaments");
   if (tournamentId === null) {
-    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return fail(400, "INVALID_ID");
   }
 
   const supabase = await createSupabaseServer();
@@ -28,16 +40,34 @@ async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
       event: { select: { id: true, organizationId: true, title: true, startsAt: true, endsAt: true } },
     },
   });
-  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return fail(404, "NOT_FOUND");
 
   const organizationId = tournament.event.organizationId;
-  if (!organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!organizationId) return fail(404, "EVENT_NOT_FOUND");
 
   const { membership } = await getActiveOrganizationForUser(user.id, {
     organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!membership) return fail(403, "FORBIDDEN");
+
+  const emailGate = await requireOfficialEmailVerified({
+    organizationId: tournament.event.organizationId,
+    reasonCode: "TOURNAMENTS_UPDATE",
+    actorUserId: user.id,
+  });
+  if (!emailGate.ok) {
+    return respondError(
+      ctx,
+      {
+        errorCode: emailGate.error ?? "FORBIDDEN",
+        message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+        retryable: false,
+        details: emailGate,
+      },
+      { status: emailGate.error === "ORGANIZATION_NOT_FOUND" ? 404 : 403 },
+    );
+  }
 
   const access = await ensureMemberModuleAccess({
     organizationId,
@@ -47,15 +77,26 @@ async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
     moduleKey: OrganizationModule.TORNEIOS,
     required: "VIEW",
   });
-  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!access.ok) return fail(403, "FORBIDDEN");
 
-  return jsonWrap({ ok: true, tournament }, { status: 200 });
+  return respondOk(ctx, { tournament }, { status: 200 });
 }
 
-async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   const tournamentId = readNumericParam(params?.id, req, "tournaments");
   if (tournamentId === null) {
-    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return fail(400, "INVALID_ID");
   }
   const body = await req.json().catch(() => ({}));
 
@@ -65,16 +106,16 @@ async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) 
     where: { id: tournamentId },
     select: { id: true, event: { select: { organizationId: true } } },
   });
-  if (!tournament) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (!tournament) return fail(404, "NOT_FOUND");
 
   const organizationId = tournament.event.organizationId;
-  if (!organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!organizationId) return fail(404, "EVENT_NOT_FOUND");
 
   const { membership } = await getActiveOrganizationForUser(user.id, {
     organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!membership) return fail(403, "FORBIDDEN");
 
   const access = await ensureMemberModuleAccess({
     organizationId,
@@ -84,7 +125,7 @@ async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) 
     moduleKey: OrganizationModule.TORNEIOS,
     required: "EDIT",
   });
-  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!access.ok) return fail(403, "FORBIDDEN");
 
   const format = body?.format as TournamentFormat | undefined;
   const bracketSize = Number.isFinite(body?.bracketSize) ? Number(body.bracketSize) : null;
@@ -102,12 +143,22 @@ async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) 
   });
   if (!result.ok) {
     if (result.error === "EVENT_NOT_PADEL") {
-      return jsonWrap({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 400 });
+      return fail(400, "EVENT_NOT_PADEL");
     }
-    return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    return fail(404, "NOT_FOUND");
   }
 
-  return jsonWrap({ ok: true }, { status: 200 });
+  return respondOk(ctx, {}, { status: 200 });
 }
-export const GET = withApiEnvelope(_GET);
-export const PATCH = withApiEnvelope(_PATCH);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

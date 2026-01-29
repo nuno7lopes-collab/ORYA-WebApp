@@ -88,7 +88,7 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 
 ### Scope exato (paths + UI)
 - `app/api/**`
-- `proxy.ts`
+- `middleware.ts`
 - `lib/observability/**`, `lib/utils/**`, `lib/validation/**`
 - UI: `app/components/checkout/**`, `app/organizacao/**`, `app/admin/**`
 
@@ -137,12 +137,6 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - [ ] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
 - [ ] **LOGS**: requestId/correlationId em logs de erro.
 
-### PR/merge metadata (CI gates)
-- PR #1: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/1
-- Branch: `chore/seed-gates`
-- Merge commit (developer): f4d2a6a
-- Required check: `gates`
-
 ### Criterios de DONE (producao)
 - 100% das rotas criticas devolvem envelope canonico.
 - Headers `x-orya-request-id` e `x-orya-correlation-id` presentes em todas as respostas HTTP.
@@ -151,7 +145,7 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 
 ### Riscos/Drifts conhecidos + mitigacao
 - Drift entre rotas antigas/novas → aplicar helper canonico.
-- Erros silenciosos sem requestId → padronizar proxy.
+- Erros silenciosos sem requestId → padronizar middleware.
 
 ### Guardrails (rg/tests/CI)
 - `rg -n "NextResponse.json\(\{ ok: false" app/api -S` (verificar shape)
@@ -223,11 +217,6 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - [x] **ERROS** com envelope canonico + requestId.
 - [x] **LOGS**: correlacao `paymentIntentId` + `purchaseId`.
 
-### PR/merge metadata (PR1)
-- PR #2: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/2
-- Branch: `block1/payments-checkout-ledger-outbox`
-- Merge commit (developer): 67b8b45
-
 ### Criterios de DONE (producao)
 - Todos os entrypoints criam PI via fluxo canonico.
 - Se falhar em producao: runbook permite reprocess/replay sem duplos charges.
@@ -289,30 +278,17 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - `domain/opsFeed/consumer.ts`
 
 ### Checklist de fecho
-- [x] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
-- [x] **REMOVER** processamento concorrente sem dedupe.
-- [x] **FAIL-CLOSED**: worker sem secret nao executa.
-- [x] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
-- [x] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
-- [x] **ERROS** canonicos em replay/dlq.
-- [x] **LOGS** com correlationId.
+- [ ] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
+- [ ] **REMOVER** processamento concorrente sem dedupe.
+- [ ] **FAIL-CLOSED**: worker sem secret nao executa.
+- [ ] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
+- [ ] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
+- [ ] **ERROS** canonicos em replay/dlq.
+- [ ] **LOGS** com correlationId.
 
 ### Criterios de DONE (producao)
 - Double-publish = 0 (provado por testes + logs).
 - Runbook permite replay seguro apos crash.
-
-### Metadata (PR/merge)
-- PR: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/8
-- Merge SHA: aabb7b5c7f0fbc492f9f17c057a78342cbc30d25
-- Resumo (3-6 linhas):
-  - Claim/lock winner-only em outbox publisher (avoid double publish).
-  - Claim winner-only no worker operations (skip concorrencia).
-  - Cron operations alinhado com worker e guard interno.
-  - Sem refactors fora do scope do bloco.
-  - Gates executados localmente.
-- Comandos de verificacao:
-  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run db:gates:offline`
-  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx vitest run tests/outbox tests/ops`
 
 ### Riscos/Drifts conhecidos + mitigacao
 - Concurrency sem lock → adotar SKIP LOCKED/claim seguro.
@@ -404,11 +380,6 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Nenhuma pagina mostra "nao verificado" quando esta verificado.
 - Se falhar, runbook de reenvio/confirmacao recupera em minutos.
 
-### Metadata (PR/merge)
-- PR: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/13
-- Merge SHA: 2b1728efda31f4432b228cce2f6b6267c9fdc720
-- Status: CLOSED (E2E OK + gates)
-
 ### Riscos/Drifts conhecidos + mitigacao
 - Divergencia UI/API → alinhar org context e refetch.
 
@@ -475,11 +446,6 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 ### Criterios de DONE (producao)
 - Admin console operavel end-to-end.
 - Se falhar em producao: runbook para regressar a dados minimos e recuperar.
-
-### Metadata (PR/merge)
-- PR: https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/14
-- Merge SHA: 658da4ff7af2f375588d475993f0d216d94d2024
-- Status: CLOSED (E2E OK + gates)
 
 ### Riscos/Drifts conhecidos + mitigacao
 - UI depende de stats legacy → substituir por ops feed/rollups.
@@ -648,11 +614,6 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Backfill dedicado:
   - `scripts/backfill_booking_confirmation_snapshot.ts`
   - SSOT helper: `lib/reservas/backfillConfirmationSnapshot.ts`
-- PR2 metadata:
-  - PR: #3 https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/3
-  - Branch: `chat3/block7-pr2-snapshot`
-  - Commits: `18e3f71` (code), `487e11c` (metadata), `7532de4` (PR link), `f9aec4a` (commit list), `e4aead2` (guardrail fix), `01e66f1` (ci retrigger)
-  - Gates/tests: `npm run db:gates:offline` PASS (local), `npx vitest run tests/agenda` PASS (local)
 
 ### Backfill obrigatorio antes de deploy (PR2)
 - Dry-run (recomendado primeiro):
@@ -719,21 +680,6 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 ### Guardrails (rg/tests/CI)
 - `rg -n "X-ORYA-CRON-SECRET" app/api/internal app/api/cron -S`
 - `npx vitest run tests/ops`
-
-### Metadata (PR/merge)
-- PR12.1 (helper canónico): https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/7
-- Merge SHA (PR12.1): b1136f5a0166a3cc7e50e5bcdca875d47890acc5
-- PR12.2 (envelope/response): https://github.com/nuno7lopes-collab/ORYA-WebApp/pull/12
-- Merge SHA (PR12.2): d574ae20ce1fba019b19ce08b6c9efbacea484fc
-- Resumo (3-6 linhas):
-  - Helper canónico aplicado a todas as rotas cron/internal.
-  - feed/audit internos normalizados para envelope canónico.
-  - Status codes preservados (200/401/500).
-  - Sem refactors extra fora do scope.
-  - Gates executados localmente.
-- Comandos de verificacao:
-  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run db:gates:offline`
-  - `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx vitest run tests/ops`
 
 ---
 

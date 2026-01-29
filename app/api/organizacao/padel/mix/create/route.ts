@@ -1,7 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -9,8 +8,11 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { padel_format, EventTemplateType, EventPublicAccessMode, EventParticipantAccessMode, OrganizationModule } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { padel_format, EventAccessMode, EventTemplateType, OrganizationModule } from "@prisma/client";
+import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
+import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const slugify = (value: string) =>
   value
@@ -44,13 +46,24 @@ type MixPayload = {
   locationCity?: string;
 };
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const body = (await req.json().catch(() => null)) as MixPayload | null;
     if (!body) {
-      return jsonWrap({ ok: false, error: "BODY_INVALID" }, { status: 400 });
+      return fail(400, "BODY_INVALID");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -59,7 +72,7 @@ async function _POST(req: NextRequest) {
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
     const access = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -70,17 +83,26 @@ async function _POST(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(403, "FORBIDDEN");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization);
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "PADEL_MIX" });
     if (!emailGate.ok) {
-      return jsonWrap({ ok: false, error: emailGate.error }, { status: 403 });
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
 
     const title = body.title?.trim() || "Mix rápido";
     const startsAtRaw = body.startsAt ? new Date(body.startsAt) : null;
     if (!startsAtRaw || Number.isNaN(startsAtRaw.getTime())) {
-      return jsonWrap({ ok: false, error: "START_REQUIRED" }, { status: 400 });
+      return fail(400, "START_REQUIRED");
     }
 
     const durationMinutes = Math.min(300, Math.max(60, Math.round(Number(body.durationMinutes ?? 180))));
@@ -122,32 +144,42 @@ async function _POST(req: NextRequest) {
     const baseSlug = slugify(title) || "mix";
     const slug = await generateUniqueSlug(baseSlug);
 
-    const event = await prisma.event.create({
-      data: {
-        title,
-        slug,
-        description: "Mix rápido de padel (community games).",
-        templateType: EventTemplateType.PADEL,
-        status: "PUBLISHED",
-        publicAccessMode: EventPublicAccessMode.OPEN,
-        participantAccessMode: EventParticipantAccessMode.NONE,
-        pricingMode: "FREE_ONLY",
-        inviteOnly: false,
-        locationName,
-        locationCity,
-        startsAt: startsAtRaw,
-        endsAt,
-        timezone: organization.language === "en" ? "Europe/Lisbon" : "Europe/Lisbon",
-        ownerUserId: user.id,
-        organizationId: organization.id,
+    const policyResolution = resolveEventAccessPolicyInput({
+      accessPolicy: {
+        mode: EventAccessMode.PUBLIC,
+        guestCheckoutAllowed: false,
+        inviteTokenAllowed: false,
+        requiresEntitlementForEntry: false,
       },
-      select: { id: true, slug: true },
+      templateType: EventTemplateType.PADEL,
+      defaultMode: EventAccessMode.PUBLIC,
     });
 
-    await prisma.$transaction([
-      prisma.padelTournamentConfig.create({
+    const event = await prisma.$transaction(async (tx) => {
+      const created = await tx.event.create({
         data: {
-          eventId: event.id,
+          title,
+          slug,
+          description: "Mix rápido de padel (community games).",
+          templateType: EventTemplateType.PADEL,
+          status: "PUBLISHED",
+          pricingMode: "FREE_ONLY",
+          locationName,
+          locationCity,
+          startsAt: startsAtRaw,
+          endsAt,
+          timezone: organization.language === "en" ? "Europe/Lisbon" : "Europe/Lisbon",
+          ownerUserId: user.id,
+          organizationId: organization.id,
+        },
+        select: { id: true, slug: true },
+      });
+
+      await createEventAccessPolicyVersion(created.id, policyResolution.policyInput, tx);
+
+      await tx.padelTournamentConfig.create({
+        data: {
+          eventId: created.id,
           organizationId: organization.id,
           format,
           numberOfCourts: 1,
@@ -159,25 +191,37 @@ async function _POST(req: NextRequest) {
             ...(groupsConfig ? { groupsConfig } : {}),
           },
         },
-      }),
-      prisma.padelEventCategoryLink.create({
+      });
+      await tx.padelEventCategoryLink.create({
         data: {
-          eventId: event.id,
+          eventId: created.id,
           padelCategoryId: category.id,
           capacityTeams: teamsCount,
           format,
           isEnabled: true,
         },
-      }),
-    ]);
+      });
+      return created;
+    });
 
-    return jsonWrap({ ok: true, eventId: event.id, slug: event.slug }, { status: 200 });
+    return respondOk(ctx, { eventId: event.id, slug: event.slug }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(401, "UNAUTHENTICATED");
     }
     console.error("[padel/mix/create]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(500, "INTERNAL_ERROR");
   }
 }
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

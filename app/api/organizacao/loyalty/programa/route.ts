@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -8,11 +7,31 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { LoyaltyProgramStatus, OrganizationMemberRole } from "@prisma/client";
 import { LOYALTY_GUARDRAILS } from "@/lib/loyalty/guardrails";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-async function _GET(req: NextRequest) {
+function fail(
+  ctx: ReturnType<typeof getRequestContext>,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+  details?: Record<string, unknown>,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(
+    ctx,
+    { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -24,14 +43,14 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "Sem permissões.");
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "VIEW",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(ctx, 403, crmAccess.error);
     }
 
     const program = await prisma.loyaltyProgram.findUnique({
@@ -42,17 +61,18 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, program, guardrails: LOYALTY_GUARDRAILS });
+    return respondOk(ctx, { program, guardrails: LOYALTY_GUARDRAILS });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
     console.error("GET /api/organizacao/loyalty/programa error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar programa." }, { status: 500 });
+    return fail(ctx, 500, "Erro ao carregar programa.");
   }
 }
 
-async function _PUT(req: NextRequest) {
+export async function PUT(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -64,14 +84,27 @@ async function _PUT(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "Sem permissões.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "LOYALTY_PROGRAM" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
     const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
       member: { userId: membership.userId, role: membership.role },
       required: "EDIT",
     });
     if (!crmAccess.ok) {
-      return jsonWrap({ ok: false, error: crmAccess.error }, { status: 403 });
+      return fail(ctx, 403, crmAccess.error);
     }
 
     const payload = (await req.json().catch(() => null)) as {
@@ -115,14 +148,24 @@ async function _PUT(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, program, guardrails: LOYALTY_GUARDRAILS });
+    return respondOk(ctx, { program, guardrails: LOYALTY_GUARDRAILS });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
     console.error("PUT /api/organizacao/loyalty/programa error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao guardar programa." }, { status: 500 });
+    return fail(ctx, 500, "Erro ao guardar programa.");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const PUT = withApiEnvelope(_PUT);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

@@ -1,14 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { enqueueOperation } from "@/lib/operations/enqueue";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const admin = await requireAdminUser();
   if (!admin.ok) {
-    return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
+    return respondError(
+      ctx,
+      { errorCode: admin.error, message: admin.error, retryable: false },
+      { status: admin.status },
+    );
   }
 
   const body = await req.json().catch(() => ({}));
@@ -16,7 +21,11 @@ async function _POST(req: NextRequest) {
   const reason = typeof body?.reason === "string" ? body.reason : null;
 
   if (!Number.isFinite(saleSummaryId)) {
-    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+    return respondError(
+      ctx,
+      { errorCode: "INVALID_ID", message: "ID inválido.", retryable: false },
+      { status: 400 },
+    );
   }
 
   // Nota: sem RBAC forte (exemplo). Para produção, colocar auth/admin.
@@ -26,7 +35,13 @@ async function _POST(req: NextRequest) {
       where: { id: saleSummaryId },
       select: { purchaseId: true, paymentIntentId: true },
     });
-    if (!sale) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    if (!sale) {
+      return respondError(
+        ctx,
+        { errorCode: "NOT_FOUND", message: "Venda não encontrada.", retryable: false },
+        { status: 404 },
+      );
+    }
     await enqueueOperation({
       operationType: "MARK_DISPUTE",
       dedupeKey: sale.purchaseId ?? sale.paymentIntentId ?? `dispute:${saleSummaryId}`,
@@ -41,10 +56,13 @@ async function _POST(req: NextRequest) {
         reason,
       },
     });
-    return jsonWrap({ ok: true, queued: true }, { status: 200 });
+    return respondOk(ctx, { queued: true }, { status: 200 });
   } catch (err) {
     console.error("[admin/dispute] erro", err);
-    return jsonWrap({ ok: false, error: "FAILED" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "FAILED", message: "Falha ao processar disputa.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const POST = withApiEnvelope(_POST);

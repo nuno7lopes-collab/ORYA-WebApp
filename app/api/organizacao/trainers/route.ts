@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { NotificationType, OrganizationMemberRole, OrganizationModule, TrainerProfileReviewStatus } from "@prisma/client";
@@ -8,9 +7,29 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { createNotification } from "@/lib/notifications";
 import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
-async function _GET(req: NextRequest) {
+function fail(
+  ctx: ReturnType<typeof getRequestContext>,
+  status: number,
+  message: string,
+  errorCode = errorCodeForStatus(status),
+  retryable = status >= 500,
+  details?: Record<string, unknown>,
+) {
+  const resolvedMessage = typeof message === "string" ? message : String(message);
+  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+  return respondError(
+    ctx,
+    { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -19,7 +38,7 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
 
     const url = new URL(req.url);
@@ -30,7 +49,21 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
+    }
+
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TRAINERS" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.error ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
 
     const access = await ensureMemberModuleAccess({
@@ -42,7 +75,7 @@ async function _GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
     }
 
     const trainerMembers = await prisma.organizationMember.findMany({
@@ -77,14 +110,15 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return jsonWrap({ ok: true, items, organizationId: organization.id }, { status: 200 });
+    return respondOk(ctx, { items, organizationId: organization.id }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/trainers][GET]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
 
-async function _PATCH(req: NextRequest) {
+export async function PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -93,7 +127,7 @@ async function _PATCH(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
 
     const body = await req.json().catch(() => null);
@@ -103,7 +137,7 @@ async function _PATCH(req: NextRequest) {
     const reviewNote = typeof body?.reviewNote === "string" ? body.reviewNote.trim() : null;
 
     if (!targetUserId || !action) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+      return fail(ctx, 400, "INVALID_PAYLOAD");
     }
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
@@ -111,7 +145,7 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
     }
 
     const access = await ensureMemberModuleAccess({
@@ -123,7 +157,7 @@ async function _PATCH(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
     }
 
     const trainerMembership = await prisma.organizationMember.findUnique({
@@ -131,7 +165,7 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (!trainerMembership || trainerMembership.role !== OrganizationMemberRole.TRAINER) {
-      return jsonWrap({ ok: false, error: "NOT_TRAINER" }, { status: 404 });
+      return fail(ctx, 404, "NOT_TRAINER");
     }
 
     const existingProfile = await prisma.trainerProfile.findUnique({
@@ -140,10 +174,10 @@ async function _PATCH(req: NextRequest) {
 
     const allowedActions = new Set(["APPROVE", "REJECT", "HIDE", "PUBLISH"]);
     if (!allowedActions.has(action)) {
-      return jsonWrap({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
+      return fail(ctx, 400, "UNKNOWN_ACTION");
     }
     if (action === "PUBLISH" && existingProfile?.reviewStatus !== TrainerProfileReviewStatus.APPROVED) {
-      return jsonWrap({ ok: false, error: "NEEDS_APPROVAL" }, { status: 400 });
+      return fail(ctx, 400, "NEEDS_APPROVAL");
     }
 
     const now = new Date();
@@ -214,14 +248,15 @@ async function _PATCH(req: NextRequest) {
       }).catch((err) => console.warn("[trainer][review] notification fail", err));
     }
 
-    return jsonWrap({ ok: true, profile }, { status: 200 });
+    return respondOk(ctx, { profile }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/trainers][PATCH]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
 
-async function _POST(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -230,7 +265,7 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED");
     }
 
     const body = await req.json().catch(() => null);
@@ -239,7 +274,7 @@ async function _POST(req: NextRequest) {
     const username = rawUsername.startsWith("@") ? rawUsername.slice(1) : rawUsername;
 
     if (!username) {
-      return jsonWrap({ ok: false, error: "MISSING_USERNAME" }, { status: 400 });
+      return fail(ctx, 400, "MISSING_USERNAME");
     }
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
@@ -247,7 +282,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
     }
 
     const access = await ensureMemberModuleAccess({
@@ -259,7 +294,7 @@ async function _POST(req: NextRequest) {
       required: "EDIT",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN");
     }
 
     const targetProfile = await prisma.profile.findFirst({
@@ -268,7 +303,7 @@ async function _POST(req: NextRequest) {
     });
 
     if (!targetProfile) {
-      return jsonWrap({ ok: false, error: "USERNAME_NOT_FOUND" }, { status: 404 });
+      return fail(ctx, 404, "USERNAME_NOT_FOUND");
     }
 
     const existingMember = await prisma.organizationMember.findUnique({
@@ -362,12 +397,21 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return jsonWrap({ ok: true, profile }, { status: 200 });
+    return respondOk(ctx, { profile }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/trainers][POST]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
-export const GET = withApiEnvelope(_GET);
-export const PATCH = withApiEnvelope(_PATCH);
-export const POST = withApiEnvelope(_POST);
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}

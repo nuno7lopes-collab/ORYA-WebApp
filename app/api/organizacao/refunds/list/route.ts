@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-import { jsonWrap } from "@/lib/api/wrapResponse";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -7,11 +6,13 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import type { Prisma } from "@prisma/client";
 import { OrganizationModule, RefundReason } from "@prisma/client";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
 
 const PAGE_SIZE = 50;
 
-async function _GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -20,7 +21,11 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+      return respondError(
+        ctx,
+        { errorCode: "UNAUTHENTICATED", message: "Sessão inválida.", retryable: false },
+        { status: 401 },
+      );
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -29,7 +34,11 @@ async function _GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return respondError(
+        ctx,
+        { errorCode: "FORBIDDEN", message: "Sem permissões.", retryable: false },
+        { status: 403 },
+      );
     }
 
     const access = await ensureMemberModuleAccess({
@@ -41,7 +50,11 @@ async function _GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return respondError(
+        ctx,
+        { errorCode: "FORBIDDEN", message: "Sem permissões.", retryable: false },
+        { status: 403 },
+      );
     }
 
     const url = new URL(req.url);
@@ -59,7 +72,11 @@ async function _GET(req: NextRequest) {
       select: { id: true, title: true },
     });
     if (!events.length) {
-      return jsonWrap({ ok: true, items: [], pagination: { nextCursor: null, hasMore: false } }, { status: 200 });
+      return respondOk(
+        ctx,
+        { items: [], pagination: { nextCursor: null, hasMore: false } },
+        { status: 200 },
+      );
     }
     const eventIds = events.map((event) => event.id);
     const eventById = new Map(events.map((event) => [event.id, event]));
@@ -131,13 +148,13 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return jsonWrap(
-      { ok: true, items: mapped, pagination: { nextCursor, hasMore } },
-      { status: 200 },
-    );
+    return respondOk(ctx, { items: mapped, pagination: { nextCursor, hasMore } }, { status: 200 });
   } catch (err) {
     console.error("[organizacao/refunds/list]", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro interno.", retryable: true },
+      { status: 500 },
+    );
   }
 }
-export const GET = withApiEnvelope(_GET);
