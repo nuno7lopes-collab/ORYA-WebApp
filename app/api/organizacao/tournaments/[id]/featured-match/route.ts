@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -54,7 +54,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const organizationRole = await getOrganizationRole(authData.user.id, tournament.eventId);
   if (organizationRole && typeof organizationRole === "object" && "error" in organizationRole) {
-    return NextResponse.json(organizationRole, { status: organizationRole.status ?? 403 });
+    return jsonWrap(organizationRole, { status: organizationRole.status ?? 403 });
   }
   const liveOperatorRoles: OrganizationMemberRole[] = [
     OrganizationMemberRole.OWNER,

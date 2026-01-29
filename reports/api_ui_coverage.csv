@@ -1,5 +1,5 @@
 api_route,api_file,api_type,ui_status,ui_file_count,ui_files
-/api/admin/config/platform-email,app/api/admin/config/platform-email/route.ts,public,covered,1,app/admin/config/platform-email/page.tsx
+/api/admin/config/platform-email,app/api/admin/config/platform-email/route.ts,public,covered,2,app/admin/config/platform-email/page.tsx; app/admin/organizacoes/page.tsx
 /api/admin/data/purge,app/api/admin/data/purge/route.ts,public,covered,1,app/admin/components/AdminDataPurgeTools.tsx
 /api/admin/eventos/list,app/api/admin/eventos/list/route.ts,public,covered,1,app/admin/eventos/page.tsx
 /api/admin/eventos/purge,app/api/admin/eventos/purge/route.ts,public,covered,1,app/admin/eventos/page.tsx
@@ -71,7 +71,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/cron/payouts/release,app/api/cron/payouts/release/route.ts,cron,exempt,0,
 /api/cron/reservations/cleanup,app/api/cron/reservations/cleanup/route.ts,cron,exempt,0,
 /api/email/verified,app/api/email/verified/route.ts,public,orphan,0,
-/api/eventos/[slug]/invite-token,app/api/eventos/[slug]/invite-token/route.ts,public,orphan,0,
+/api/eventos/[slug]/invite-token,app/api/eventos/[slug]/invite-token/route.ts,public,covered,1,app/eventos/[slug]/InviteGateClient.tsx
 /api/eventos/[slug]/invites/check,app/api/eventos/[slug]/invites/check/route.ts,public,covered,1,app/eventos/[slug]/InviteGateClient.tsx
 /api/eventos/[slug]/resales,app/api/eventos/[slug]/resales/route.ts,public,orphan,0,
 /api/eventos/list,app/api/eventos/list/route.ts,public,covered,1,app/eventos/page.tsx
@@ -256,7 +256,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/loyalty/recompensas,app/api/organizacao/loyalty/recompensas/route.ts,public,covered,1,app/organizacao/(dashboard)/crm/loyalty/page.tsx
 /api/organizacao/loyalty/regras,app/api/organizacao/loyalty/regras/route.ts,public,covered,1,app/organizacao/(dashboard)/crm/loyalty/page.tsx
 /api/organizacao/marketing/overview,app/api/organizacao/marketing/overview/route.ts,public,covered,1,app/organizacao/DashboardClient.tsx
-/api/organizacao/me,app/api/organizacao/me/route.ts,public,covered,15,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx; app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts; app/organizacao/(dashboard)/eventos/EventEditClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/reservas/page.tsx; app/organizacao/(dashboard)/settings/page.tsx; app/organizacao/(dashboard)/staff/page.tsx; app/organizacao/DashboardClient.tsx; app/organizacao/ObjectiveSubnav.tsx; app/organizacao/OrganizationDashboardShell.tsx; app/organizacao/OrganizationPublicProfilePanel.tsx; app/organizacao/OrganizationTopBar.tsx; app/organizacao/pagamentos/FinanceAlertsPanel.tsx; app/organizacao/pagamentos/invoices/invoices-client.tsx
+/api/organizacao/me,app/api/organizacao/me/route.ts,public,covered,14,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx; app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts; app/organizacao/(dashboard)/eventos/EventEditClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/reservas/page.tsx; app/organizacao/(dashboard)/settings/page.tsx; app/organizacao/(dashboard)/staff/page.tsx; app/organizacao/DashboardClient.tsx; app/organizacao/ObjectiveSubnav.tsx; app/organizacao/OrganizationDashboardShell.tsx; app/organizacao/OrganizationPublicProfilePanel.tsx; app/organizacao/OrganizationTopBar.tsx; app/organizacao/pagamentos/FinanceAlertsPanel.tsx
 /api/organizacao/mensagens/broadcast,app/api/organizacao/mensagens/broadcast/route.ts,public,orphan,0,
 /api/organizacao/mensagens/history,app/api/organizacao/mensagens/history/route.ts,public,orphan,0,
 /api/organizacao/ops/feed,app/api/organizacao/ops/feed/route.ts,public,orphan,0,

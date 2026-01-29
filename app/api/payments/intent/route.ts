@@ -28,7 +28,7 @@ import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { normalizeEmail } from "@/lib/utils/email";
 import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
@@ -47,7 +47,6 @@ import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organization
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
-const LEGACY_INTENT_DISABLED = process.env.LEGACY_INTENT_DISABLED === "true";
 const INTENT_BUILD_FINGERPRINT = "INTENT_PATCH_v2";
 
 type CheckoutItem = {
@@ -243,15 +242,7 @@ async function hasExistingFreeEntryForUser(params: { eventId: number; userId: st
 
 async function _POST(req: NextRequest) {
   if (process.env.NODE_ENV === "development") {
-    console.info(
-      "[payments/intent] buildFingerprint=",
-      INTENT_BUILD_FINGERPRINT,
-      "LEGACY_INTENT_DISABLED=",
-      process.env.LEGACY_INTENT_DISABLED ?? "<undefined>",
-    );
-  }
-  if (LEGACY_INTENT_DISABLED) {
-    return intentError("LEGACY_INTENT_DISABLED", "Endpoint desativado.", { httpStatus: 410 });
+    console.info("[payments/intent] buildFingerprint=", INTENT_BUILD_FINGERPRINT);
   }
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
@@ -367,9 +358,6 @@ async function _POST(req: NextRequest) {
         fee_mode: string | null;
         fee_mode_override: string | null;
         organization_id: number | null;
-        invite_only: boolean | null;
-        public_access_mode: string | null;
-        public_ticket_type_ids: number[] | null;
         org_type: string | null;
         org_stripe_account_id: string | null;
         org_stripe_charges_enabled: boolean | null;
@@ -400,9 +388,6 @@ async function _POST(req: NextRequest) {
         e.fee_mode,
         e.fee_mode_override,
         e.organization_id,
-        e.invite_only,
-        e.public_access_mode,
-        e.public_ticket_type_ids,
         o.org_type AS org_type,
         o.stripe_account_id AS org_stripe_account_id,
         o.stripe_charges_enabled AS org_stripe_charges_enabled,
@@ -466,12 +451,8 @@ async function _POST(req: NextRequest) {
     const hasExistingFreeEntry =
       Boolean(event.is_free) && userId ? await hasExistingFreeEntryForUser({ eventId: event.id, userId }) : false;
 
-    const publicAccessMode = event.public_access_mode ?? (event.invite_only ? "INVITE" : "OPEN");
-    const inviteOnly = publicAccessMode === "INVITE";
-    const publicTicketTypeIds = Array.isArray(event.public_ticket_type_ids)
-      ? event.public_ticket_type_ids
-      : [];
-    const perTicketAccessEnabled = publicAccessMode === "TICKET" && publicTicketTypeIds.length > 0;
+    const accessPolicy = await getLatestPolicyForEvent(event.id);
+    const inviteRestricted = accessPolicy?.mode === "INVITE_ONLY";
 
     const padelConfig = await prisma.padelTournamentConfig.findUnique({
       where: { eventId: event.id },
@@ -598,17 +579,16 @@ async function _POST(req: NextRequest) {
       return intentError("TICKET_NOT_FOUND", "Um dos bilhetes não foi encontrado ou não pertence a este evento.", { httpStatus: 400 });
     }
 
-    const requiresInvite =
-      inviteOnly || (perTicketAccessEnabled && ticketTypes.some((t) => !publicTicketTypeIds.includes(t.id)));
+    const requiresInviteToken = inviteRestricted;
 
-    if (requiresInvite && !isAdmin) {
+    if (requiresInviteToken && !isAdmin) {
       if (!userId) {
         return intentError("INVITE_REQUIRED", "Este bilhete é apenas por convite.", {
           httpStatus: 403,
           status: "FAILED",
           nextAction: "LOGIN",
           retryable: false,
-          extra: { inviteOnly: true },
+          extra: { inviteRestricted: true },
         });
       }
 
@@ -625,7 +605,7 @@ async function _POST(req: NextRequest) {
           status: "FAILED",
           nextAction: "NONE",
           retryable: false,
-          extra: { inviteOnly: true },
+          extra: { inviteRestricted: true },
         });
       }
 
@@ -640,7 +620,7 @@ async function _POST(req: NextRequest) {
           status: "FAILED",
           nextAction: "NONE",
           retryable: false,
-          extra: { inviteOnly: true },
+          extra: { inviteRestricted: true },
         });
       }
     }

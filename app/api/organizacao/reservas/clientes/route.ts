@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,6 +6,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -14,7 +17,22 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-export async function GET(req: NextRequest) {
+function fail(
+  ctx: { requestId: string; correlationId: string },
+  status: number,
+  errorCode: string,
+  message: string,
+  details?: Record<string, unknown>,
+) {
+  return respondError(
+    ctx,
+    { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -25,7 +43,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -35,11 +53,11 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json(reservasAccess, { status: 403 });
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
     const url = new URL(req.url);
@@ -47,7 +65,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 10), 20);
 
     if (query.length < 2) {
-      return NextResponse.json({ ok: true, items: [] });
+      return respondOk(ctx, { items: [] });
     }
 
     const items = await prisma.profile.findMany({
@@ -78,12 +96,14 @@ export async function GET(req: NextRequest) {
       email: item.users?.email ?? null,
     }));
 
-    return NextResponse.json({ ok: true, items: mapped });
+    return respondOk(ctx, { items: mapped });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("GET /api/organizacao/reservas/clientes error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar clientes." }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao carregar clientes.");
   }
 }
+
+export const GET = withApiEnvelope(_GET);

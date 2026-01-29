@@ -28,23 +28,6 @@ beforeEach(() => {
 });
 
 describe("payments intent access gate", () => {
-  it("bloqueia checkout quando legacy intent esta desativado", async () => {
-    process.env.LEGACY_INTENT_DISABLED = "true";
-    vi.resetModules();
-    POST = (await import("@/app/api/payments/intent/route")).POST;
-    const req = new NextRequest("http://localhost/api/payments/intent", {
-      method: "POST",
-      body: JSON.stringify({
-        slug: "slug",
-        items: [],
-      }),
-    });
-    const res = await POST(req);
-    const body = await res.json();
-    expect(body.errorCode).toBe("LEGACY_INTENT_DISABLED");
-    expect(evaluateEventAccess).not.toHaveBeenCalled();
-  });
-
   it("bloqueia checkout com payload inválido antes do access engine", async () => {
     vi.resetModules();
     POST = (await import("@/app/api/payments/intent/route")).POST;
@@ -61,7 +44,7 @@ describe("payments intent access gate", () => {
     expect(evaluateEventAccess).not.toHaveBeenCalled();
   });
 
-  it("bloqueia checkout quando access engine nega (legacy enabled)", async () => {
+  it("bloqueia checkout quando access engine nega", async () => {
     vi.resetModules();
     POST = (await import("@/app/api/payments/intent/route")).POST;
     prisma.$queryRaw.mockResolvedValue([
@@ -89,7 +72,7 @@ describe("payments intent access gate", () => {
     expect(evaluateEventAccess).toHaveBeenCalled();
   });
 
-  it("nao bloqueia quando LEGACY_INTENT_DISABLED nao esta definido", async () => {
+  it("propaga erro do access engine em payload valido", async () => {
     delete process.env.LEGACY_INTENT_DISABLED;
     vi.resetModules();
     POST = (await import("@/app/api/payments/intent/route")).POST;

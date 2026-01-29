@@ -71,7 +71,7 @@ api_route,file_path_server,frontend_files_that_call_it
 /api/cron/payouts/release,app/api/cron/payouts/release/route.ts,
 /api/cron/reservations/cleanup,app/api/cron/reservations/cleanup/route.ts,
 /api/email/verified,app/api/email/verified/route.ts,
-/api/eventos/[slug]/invite-token,app/api/eventos/[slug]/invite-token/route.ts,
+/api/eventos/[slug]/invite-token,app/api/eventos/[slug]/invite-token/route.ts,app/eventos/[slug]/InviteGateClient.tsx
 /api/eventos/[slug]/invites/check,app/api/eventos/[slug]/invites/check/route.ts,app/eventos/[slug]/InviteGateClient.tsx
 /api/eventos/[slug]/resales,app/api/eventos/[slug]/resales/route.ts,
 /api/eventos/list,app/api/eventos/list/route.ts,app/eventos/page.tsx
@@ -201,16 +201,16 @@ api_route,file_path_server,frontend_files_that_call_it
 /api/organizacao/estatisticas/overview,app/api/organizacao/estatisticas/overview/route.ts,app/organizacao/DashboardClient.tsx
 /api/organizacao/estatisticas/time-series,app/api/organizacao/estatisticas/time-series/route.ts,app/organizacao/DashboardClient.tsx
 /api/organizacao/events/[id]/attendees,app/api/organizacao/events/[id]/attendees/route.ts,app/organizacao/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
-/api/organizacao/events/[id]/invite-token,app/api/organizacao/events/[id]/invite-token/route.ts,
+/api/organizacao/events/[id]/invite-token,app/api/organizacao/events/[id]/invite-token/route.ts,INTERNAL_ONLY (owner: backoffice; reason: admin tooling)
 /api/organizacao/events/[id]/invites,app/api/organizacao/events/[id]/invites/route.ts,app/organizacao/(dashboard)/eventos/EventEditClient.tsx
 /api/organizacao/events/[id]/refund,app/api/organizacao/events/[id]/refund/route.ts,app/organizacao/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
 /api/organizacao/events/create,app/api/organizacao/events/create/route.ts,app/organizacao/(dashboard)/eventos/novo/page.tsx
 /api/organizacao/events/list,app/api/organizacao/events/list/route.ts,app/components/checkin/CheckinScanner.tsx; app/organizacao/(dashboard)/categorias/page.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/DashboardClient.tsx
 /api/organizacao/events/update,app/api/organizacao/events/update/route.ts,app/eventos/[slug]/EventLiveClient.tsx; app/organizacao/(dashboard)/eventos/EventEditClient.tsx; app/organizacao/(dashboard)/eventos/EventLivePrepClient.tsx; app/organizacao/DashboardClient.tsx
 /api/organizacao/faturacao,app/api/organizacao/faturacao/route.ts,
-/api/organizacao/finance/exports/fees,app/api/organizacao/finance/exports/fees/route.ts,
-/api/organizacao/finance/exports/ledger,app/api/organizacao/finance/exports/ledger/route.ts,
-/api/organizacao/finance/exports/payouts,app/api/organizacao/finance/exports/payouts/route.ts,
+/api/organizacao/finance/exports/fees,app/api/organizacao/finance/exports/fees/route.ts,"INTERNAL_ONLY (owner: backoffice; reason: export, no web UI)"
+/api/organizacao/finance/exports/ledger,app/api/organizacao/finance/exports/ledger/route.ts,"INTERNAL_ONLY (owner: backoffice; reason: export, no web UI)"
+/api/organizacao/finance/exports/payouts,app/api/organizacao/finance/exports/payouts/route.ts,"INTERNAL_ONLY (owner: backoffice; reason: export, no web UI)"
 /api/organizacao/finance/invoicing,app/api/organizacao/finance/invoicing/route.ts,
 /api/organizacao/finance/overview,app/api/organizacao/finance/overview/route.ts,app/organizacao/DashboardClient.tsx
 /api/organizacao/finance/reconciliation,app/api/organizacao/finance/reconciliation/route.ts,app/organizacao/pagamentos/ReconciliationPanel.tsx
@@ -286,7 +286,7 @@ api_route,file_path_server,frontend_files_that_call_it
 /api/organizacao/pagamentos/invoices,app/api/organizacao/pagamentos/invoices/route.ts,app/organizacao/pagamentos/invoices/invoices-client.tsx
 /api/organizacao/payouts/connect,app/api/organizacao/payouts/connect/route.ts,app/organizacao/DashboardClient.tsx
 /api/organizacao/payouts/list,app/api/organizacao/payouts/list/route.ts,app/organizacao/pagamentos/PayoutsPanel.tsx
-/api/organizacao/payouts/settings,app/api/organizacao/payouts/settings/route.ts,
+/api/organizacao/payouts/settings,app/api/organizacao/payouts/settings/route.ts,INTERNAL_ONLY (owner: mobile/backoffice; reason: no web UI)
 /api/organizacao/payouts/status,app/api/organizacao/payouts/status/route.ts,app/organizacao/DashboardClient.tsx
 /api/organizacao/payouts/summary,app/api/organizacao/payouts/summary/route.ts,app/organizacao/DashboardClient.tsx
 /api/organizacao/payouts/webhook,app/api/organizacao/payouts/webhook/route.ts,
@@ -354,7 +354,7 @@ api_route,file_path_server,frontend_files_that_call_it
 /api/padel/pairings/[id]/accept,app/api/padel/pairings/[id]/accept/route.ts,app/api/padel/pairings/invite-status/route.ts
 /api/padel/pairings/[id]/assume,app/api/padel/pairings/[id]/assume/route.ts,
 /api/padel/pairings/[id]/cancel,app/api/padel/pairings/[id]/cancel/route.ts,app/api/padel/pairings/invite-status/route.ts
-/api/padel/pairings/[id]/checkout,app/api/padel/pairings/[id]/checkout/route.ts,
+/api/padel/pairings/[id]/checkout,app/api/padel/pairings/[id]/checkout/route.ts,INTERNAL_ONLY (owner: mobile; reason: mobile client)
 /api/padel/pairings/[id]/decline,app/api/padel/pairings/[id]/decline/route.ts,app/api/padel/pairings/invite-status/route.ts
 /api/padel/pairings/[id]/invite,app/api/padel/pairings/[id]/invite/route.ts,app/api/padel/pairings/invite-status/route.ts
 /api/padel/pairings/[id]/public,app/api/padel/pairings/[id]/public/route.ts,
@@ -383,7 +383,7 @@ api_route,file_path_server,frontend_files_that_call_it
 /api/qr/[token],app/api/qr/[token]/route.ts,app/components/tickets/TicketCard.tsx; app/components/tickets/TicketLiveQr.tsx; app/components/tickets/TicketQrBox.tsx
 /api/servicos/[id]/calendario,app/api/servicos/[id]/calendario/route.ts,app/[username]/_components/ReservasBookingClient.tsx
 /api/servicos/[id]/checkout,app/api/servicos/[id]/checkout/route.ts,app/[username]/_components/ReservasBookingClient.tsx
-/api/servicos/[id]/creditos/checkout,app/api/servicos/[id]/creditos/checkout/route.ts,
+/api/servicos/[id]/creditos/checkout,app/api/servicos/[id]/creditos/checkout/route.ts,INTERNAL_ONLY (owner: mobile; reason: mobile client)
 /api/servicos/[id]/creditos,app/api/servicos/[id]/creditos/route.ts,
 /api/servicos/[id]/disponibilidade,app/api/servicos/[id]/disponibilidade/route.ts,
 /api/servicos/[id]/reservar,app/api/servicos/[id]/reservar/route.ts,app/[username]/_components/ReservasBookingClient.tsx

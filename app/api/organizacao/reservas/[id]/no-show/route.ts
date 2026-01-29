@@ -11,6 +11,7 @@ import { OrganizationMemberRole } from "@prisma/client";
 import { markNoShowBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computeNoShowRefundFromSnapshot,
   parseBookingConfirmationSnapshot,
@@ -35,7 +36,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -250,3 +251,5 @@ export async function POST(
     return fail(500, "BOOKING_NO_SHOW_FAILED", "Erro ao atualizar reserva.", true);
   }
 }
+
+export const POST = withApiEnvelope(_POST);

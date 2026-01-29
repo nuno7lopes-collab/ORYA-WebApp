@@ -23,10 +23,4 @@ CSV: docs/v9_api_frontend_mapping.csv
 
 ## Endpoints referenced in v9_close_plan without frontend usage
 - Nota: lista calculada por strings `/api/...` no frontend; endpoints aqui podem ser mobile/server-only.
-- /api/servicos/[id]/creditos/checkout
-- /api/padel/pairings/[id]/checkout
-- /api/organizacao/payouts/settings
-- /api/organizacao/finance/exports/fees
-- /api/organizacao/finance/exports/ledger
-- /api/organizacao/finance/exports/payouts
-- /api/organizacao/events/[id]/invite-token
+- none

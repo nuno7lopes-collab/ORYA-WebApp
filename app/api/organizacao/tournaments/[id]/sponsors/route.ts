@@ -7,6 +7,7 @@ import { OrganizationModule } from "@prisma/client";
 import { updateTournament } from "@/domain/tournaments/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type SponsorSlot = {
   label?: string | null;
@@ -55,7 +56,7 @@ function normalizeSlot(input: SponsorSlot | null | undefined) {
   };
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -146,6 +147,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   res.headers.set("Cache-Control", "no-store");
   return res;
 }
+
+export const POST = withApiEnvelope(_POST);
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";

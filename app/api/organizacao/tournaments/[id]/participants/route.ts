@@ -7,6 +7,7 @@ import { OrganizationModule } from "@prisma/client";
 import { updateTournament } from "@/domain/tournaments/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type ParticipantInput = {
   id?: number;
@@ -100,7 +101,7 @@ function normalizeParticipants(items: ParticipantInput[], bracketSize?: number |
   return normalized;
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -159,7 +160,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return res;
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -246,6 +247,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   res.headers.set("Cache-Control", "no-store");
   return res;
 }
+
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";

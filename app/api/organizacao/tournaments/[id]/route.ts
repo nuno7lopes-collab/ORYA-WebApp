@@ -10,8 +10,9 @@ import { updateTournament } from "@/domain/tournaments/commands";
 import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   return respondOk(ctx, { tournament }, { status: 200 });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -150,6 +151,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   return respondOk(ctx, {}, { status: 200 });
 }
+
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";

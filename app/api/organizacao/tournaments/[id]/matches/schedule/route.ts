@@ -8,6 +8,7 @@ import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -39,7 +40,7 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
 
 type ScheduleItem = { matchId: number; courtId?: number | null; startAt?: string | null };
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -145,6 +146,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   return respondOk(ctx, { updated: updatedIds.length, changes }, { status: 200 });
 }
+
+export const POST = withApiEnvelope(_POST);
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";

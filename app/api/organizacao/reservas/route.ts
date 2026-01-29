@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -14,6 +14,9 @@ import { OrganizationMemberRole } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createBooking } from "@/domain/bookings/commands";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -24,6 +27,20 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
 
 const PENDING_HOLD_MINUTES = 10;
 const SLOT_STEP_MINUTES = 15;
+
+function fail(
+  ctx: { requestId: string; correlationId: string },
+  status: number,
+  errorCode: string,
+  message: string,
+  details?: Record<string, unknown>,
+) {
+  return respondError(
+    ctx,
+    { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
+    { status },
+  );
+}
 
 function getMinutesOfDay(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -56,13 +73,11 @@ function buildBlocks(
 }
 
 function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
-  return {
-    ok: false,
-    ...buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" }),
-  };
+  return buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" });
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const url = new URL(req.url);
     const fromParam = url.searchParams.get("from");
@@ -86,7 +101,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -96,11 +111,11 @@ export async function GET(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
-      return NextResponse.json(reservasAccess, { status: 403 });
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
     const assignmentMode =
@@ -114,7 +129,7 @@ export async function GET(req: NextRequest) {
       });
       staffProfessionalIds = staffProfessionals.map((item) => item.id);
       if (staffProfessionalIds.length === 0) {
-        return NextResponse.json({ ok: true, items: [] });
+        return respondOk(ctx, { items: [] });
       }
     }
 
@@ -182,17 +197,18 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, items });
+    return respondOk(ctx, { items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("GET /api/organizacao/reservas error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao carregar reservas." }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao carregar reservas.");
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -202,7 +218,7 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -212,13 +228,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json(reservasAccess, { status: 403 });
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
@@ -229,7 +245,7 @@ export async function POST(req: NextRequest) {
         })
       : null;
     if (isStaff && !staffProfessional) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -244,13 +260,13 @@ export async function POST(req: NextRequest) {
     const partySizeRaw = parsePositiveInt(payload?.partySize);
 
     if (!Number.isFinite(serviceId)) {
-      return NextResponse.json({ ok: false, error: "Serviço inválido." }, { status: 400 });
+      return fail(ctx, 400, "INVALID_SERVICE", "Serviço inválido.");
     }
     if (!userId) {
-      return NextResponse.json({ ok: false, error: "Cliente inválido." }, { status: 400 });
+      return fail(ctx, 400, "INVALID_CLIENT", "Cliente inválido.");
     }
     if (!startsAt || Number.isNaN(startsAt.getTime())) {
-      return NextResponse.json({ ok: false, error: "Horário inválido." }, { status: 400 });
+      return fail(ctx, 400, "INVALID_TIME", "Horário inválido.");
     }
 
     const clientProfile = await prisma.profile.findUnique({
@@ -258,10 +274,10 @@ export async function POST(req: NextRequest) {
       select: { id: true, contactPhone: true },
     });
     if (!clientProfile) {
-      return NextResponse.json({ ok: false, error: "Cliente não encontrado." }, { status: 404 });
+      return fail(ctx, 404, "CLIENT_NOT_FOUND", "Cliente não encontrado.");
     }
     if (!clientProfile.contactPhone) {
-      return NextResponse.json({ ok: false, error: "PHONE_REQUIRED" }, { status: 400 });
+      return fail(ctx, 400, "PHONE_REQUIRED", "PHONE_REQUIRED");
     }
 
     const service = await prisma.service.findFirst({
@@ -292,18 +308,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (!service) {
-      return NextResponse.json({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+      return fail(ctx, 404, "SERVICE_NOT_FOUND", "Serviço não encontrado.");
     }
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";
     const minutesOfDay = getMinutesOfDay(startsAt, timezone);
     if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return NextResponse.json({ ok: false, error: "Horário fora da grelha de 15 minutos." }, { status: 400 });
+      return fail(ctx, 400, "INVALID_TIME_SLOT", "Horário fora da grelha de 15 minutos.");
     }
 
     const now = new Date();
     if (startsAt <= now) {
-      return NextResponse.json({ ok: false, error: "Este horário já passou." }, { status: 400 });
+      return fail(ctx, 400, "TIME_PASSED", "Este horário já passou.");
     }
 
     const assignmentConfig = resolveServiceAssignmentMode({
@@ -328,30 +344,36 @@ export async function POST(req: NextRequest) {
     let scopeIds: number[] = [];
 
     if (!assignmentConfig.isCourtService && (partySizeRaw || resourceIdRaw)) {
-      return NextResponse.json(getResourceModeBlockedPayload(), { status: 409 });
+      const blocked = getResourceModeBlockedPayload();
+      return fail(
+        ctx,
+        409,
+        blocked.error ?? "RESOURCE_MODE_NOT_ALLOWED",
+        blocked.message ?? "Este serviço não permite reservas por recurso.",
+      );
     }
 
     if (assignmentMode === "RESOURCE") {
       if (!partySizeRaw) {
-        return NextResponse.json({ ok: false, error: "Capacidade obrigatória." }, { status: 400 });
+        return fail(ctx, 400, "CAPACITY_REQUIRED", "Capacidade obrigatória.");
       }
       if (allowedResourceIds && allowedResourceIds.length === 0) {
-        return NextResponse.json({ ok: false, error: "Sem recursos disponíveis para este serviço." }, { status: 409 });
+        return fail(ctx, 409, "RESOURCES_UNAVAILABLE", "Sem recursos disponíveis para este serviço.");
       }
       partySize = partySizeRaw;
       if (resourceIdRaw) {
         if (allowedResourceIds && !allowedResourceIds.includes(resourceIdRaw)) {
-          return NextResponse.json({ ok: false, error: "Recurso inválido." }, { status: 404 });
+          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
         const resource = await prisma.reservationResource.findFirst({
           where: { id: resourceIdRaw, organizationId: service.organizationId, isActive: true },
           select: { id: true, capacity: true },
         });
         if (!resource) {
-          return NextResponse.json({ ok: false, error: "Recurso inválido." }, { status: 404 });
+          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
         if (resource.capacity < partySize) {
-          return NextResponse.json({ ok: false, error: "Capacidade acima do recurso." }, { status: 400 });
+          return fail(ctx, 400, "RESOURCE_CAPACITY_EXCEEDED", "Capacidade acima do recurso.");
         }
         resourceId = resource.id;
         scopeIds = [resource.id];
@@ -368,35 +390,35 @@ export async function POST(req: NextRequest) {
         });
         scopeIds = resources.map((resource) => resource.id);
         if (scopeIds.length === 0) {
-          return NextResponse.json({ ok: false, error: "Sem recursos disponíveis para esta capacidade." }, { status: 409 });
+          return fail(ctx, 409, "RESOURCES_UNAVAILABLE", "Sem recursos disponíveis para esta capacidade.");
         }
       }
     } else {
       if (isStaff && staffProfessional) {
         if (allowedProfessionalIds && !allowedProfessionalIds.includes(staffProfessional.id)) {
-          return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
         if (professionalIdRaw && professionalIdRaw !== staffProfessional.id) {
-          return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
         professionalId = staffProfessional.id;
         scopeIds = [staffProfessional.id];
       } else if (professionalIdRaw) {
         if (allowedProfessionalIds && !allowedProfessionalIds.includes(professionalIdRaw)) {
-          return NextResponse.json({ ok: false, error: "Profissional inválido." }, { status: 404 });
+          return fail(ctx, 404, "PROFESSIONAL_INVALID", "Profissional inválido.");
         }
         const professional = await prisma.reservationProfessional.findFirst({
           where: { id: professionalIdRaw, organizationId: service.organizationId, isActive: true },
           select: { id: true },
         });
         if (!professional) {
-          return NextResponse.json({ ok: false, error: "Profissional inválido." }, { status: 404 });
+          return fail(ctx, 404, "PROFESSIONAL_INVALID", "Profissional inválido.");
         }
         professionalId = professional.id;
         scopeIds = [professional.id];
       } else {
         if (allowedProfessionalIds && allowedProfessionalIds.length === 0) {
-          return NextResponse.json({ ok: false, error: "Sem profissionais disponíveis para este serviço." }, { status: 409 });
+          return fail(ctx, 409, "PROFESSIONALS_UNAVAILABLE", "Sem profissionais disponíveis para este serviço.");
         }
         const professionals = await prisma.reservationProfessional.findMany({
           where: {
@@ -412,11 +434,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (assignmentMode === "PROFESSIONAL" && scopeIds.length === 0) {
-      return NextResponse.json({ ok: false, error: "Sem profissionais configurados." }, { status: 409 });
+      return fail(ctx, 409, "PROFESSIONALS_MISSING", "Sem profissionais configurados.");
     }
 
     if (assignmentMode === "RESOURCE" && scopeIds.length === 0) {
-      return NextResponse.json({ ok: false, error: "Sem recursos configurados." }, { status: 409 });
+      return fail(ctx, 409, "RESOURCES_MISSING", "Sem recursos configurados.");
     }
 
     const dateParts = getDateParts(startsAt, timezone);
@@ -424,7 +446,7 @@ export async function POST(req: NextRequest) {
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
     if (scopeIds.length === 0) {
-      return NextResponse.json({ ok: false, error: "Sem disponibilidade para este serviço." }, { status: 409 });
+      return fail(ctx, 409, "NO_AVAILABILITY", "Sem disponibilidade para este serviço.");
     }
 
     const shouldUseOrgOnly = false;
@@ -524,7 +546,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!slotIsAvailable) {
-      return NextResponse.json({ ok: false, error: "Horário indisponível." }, { status: 409 });
+      return fail(ctx, 409, "SLOT_UNAVAILABLE", "Horário indisponível.");
     }
 
     if (assignmentMode === "RESOURCE" && !resourceId && assignedScopeId) {
@@ -536,7 +558,8 @@ export async function POST(req: NextRequest) {
 
     const scopeIdForConflict = assignmentMode === "RESOURCE" ? resourceId : professionalId;
     if (!scopeIdForConflict) {
-      return NextResponse.json(agendaConflictResponse(), { status: 503 });
+      const conflict = agendaConflictResponse();
+      return fail(ctx, 503, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
     }
 
     const candidate: AgendaCandidate = {
@@ -576,7 +599,8 @@ export async function POST(req: NextRequest) {
 
     const decision = evaluateCandidate({ candidate, existing });
     if (!decision.allowed) {
-      return NextResponse.json(agendaConflictResponse(decision), { status: 409 });
+      const conflict = agendaConflictResponse(decision);
+      return fail(ctx, 409, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
     }
 
     const pendingExpiresAt = new Date(now.getTime() + PENDING_HOLD_MINUTES * 60 * 1000);
@@ -585,7 +609,7 @@ export async function POST(req: NextRequest) {
         ? locationTextInput || null
         : service.defaultLocationText ?? service.organization?.address ?? null;
     if (service.locationMode === "CHOOSE_AT_BOOKING" && !locationText) {
-      return NextResponse.json({ ok: false, error: "Local obrigatório para esta marcação." }, { status: 400 });
+      return fail(ctx, 400, "LOCATION_REQUIRED", "Local obrigatório para esta marcação.");
     }
 
     const { booking } = await createBooking({
@@ -624,12 +648,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ ok: true, booking });
+    return respondOk(ctx, { booking });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("POST /api/organizacao/reservas error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao criar reserva." }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao criar reserva.");
   }
 }
+
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

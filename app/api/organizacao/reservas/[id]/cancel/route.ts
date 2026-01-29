@@ -14,6 +14,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { cancelBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computeCancellationRefundFromSnapshot,
   getSnapshotCancellationWindowMinutes,
@@ -38,7 +39,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -302,3 +303,5 @@ export async function POST(
     return fail(500, "BOOKING_CANCEL_FAILED", "Erro ao cancelar reserva.", true);
   }
 }
+
+export const POST = withApiEnvelope(_POST);

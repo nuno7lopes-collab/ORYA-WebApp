@@ -166,6 +166,9 @@ Total endpoints referenced: 265
 ## /api/eventos/[param]/invites/check
 - app/eventos/[slug]/InviteGateClient.tsx
 
+## /api/eventos/[param]/invite-token
+- app/eventos/[slug]/InviteGateClient.tsx
+
 ## /api/eventos/list
 - app/eventos/page.tsx
 
@@ -955,3 +958,24 @@ Total endpoints referenced: 265
 
 ## /api/widgets/padel/calendar
 - app/widgets/padel/calendar/page.tsx
+
+## /api/organizacao/payouts/settings
+- INTERNAL_ONLY (owner: mobile/backoffice; reason: no web UI)
+
+## /api/organizacao/finance/exports/fees
+- INTERNAL_ONLY (owner: backoffice; reason: export, no web UI)
+
+## /api/organizacao/finance/exports/ledger
+- INTERNAL_ONLY (owner: backoffice; reason: export, no web UI)
+
+## /api/organizacao/finance/exports/payouts
+- INTERNAL_ONLY (owner: backoffice; reason: export, no web UI)
+
+## /api/organizacao/events/[param]/invite-token
+- INTERNAL_ONLY (owner: backoffice; reason: admin tooling)
+
+## /api/servicos/[param]/creditos/checkout
+- INTERNAL_ONLY (owner: mobile; reason: mobile client)
+
+## /api/padel/pairings/[param]/checkout
+- INTERNAL_ONLY (owner: mobile; reason: mobile client)

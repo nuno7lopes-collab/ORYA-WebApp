@@ -1,12 +1,12 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-01-28T20:28:20.931Z
+Generated: 2026-01-29T10:54:19.983Z
 CSV: reports/api_ui_coverage.csv
 
 ## Summary
 - API routes total: 438
-- Covered by UI: 262
-- Orphan (no UI): 138
+- Covered by UI: 263
+- Orphan (no UI): 137
 - Exempt (internal/cron/webhook): 38
 - UI endpoints missing API: 0
 
@@ -23,7 +23,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/chat/conversations/[conversationId]/threads/[messageId] (app/api/chat/conversations/[conversationId]/threads/[messageId]/route.ts)
 - /api/chat/messages/[messageId]/report (app/api/chat/messages/[messageId]/report/route.ts)
 - /api/email/verified (app/api/email/verified/route.ts)
-- /api/eventos/[slug]/invite-token (app/api/eventos/[slug]/invite-token/route.ts)
 - /api/eventos/[slug]/resales (app/api/eventos/[slug]/resales/route.ts)
 - /api/location/ip (app/api/location/ip/route.ts)
 - /api/me (app/api/me/route.ts)

@@ -24,6 +24,8 @@ jobs:
       RESEND_API_KEY: dummy
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -52,6 +54,9 @@ jobs:
 
       - name: Internal secret gate
         run: npm run gate:internal-secret
+
+      - name: Runbook gate
+        run: npm run gate:runbooks
 
       - name: P0 error envelope gate
         run: npm run gate:p0-errors

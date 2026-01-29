@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -6,6 +6,9 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EDIT_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -18,14 +21,29 @@ function parseId(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function PATCH(
+function fail(
+  ctx: { requestId: string; correlationId: string },
+  status: number,
+  errorCode: string,
+  message: string,
+  details?: Record<string, unknown>,
+) {
+  return respondError(
+    ctx,
+    { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const ctx = getRequestContext(req);
   const resolved = await params;
   const resourceId = parseId(resolved.id);
   if (!resourceId) {
-    return NextResponse.json({ ok: false, error: "Recurso inválido." }, { status: 400 });
+    return fail(ctx, 400, "INVALID_RESOURCE", "Recurso inválido.");
   }
 
   try {
@@ -34,7 +52,7 @@ export async function PATCH(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -44,13 +62,13 @@ export async function PATCH(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json(reservasAccess, { status: 403 });
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
     const resource = await prisma.reservationResource.findFirst({
@@ -59,7 +77,7 @@ export async function PATCH(
     });
 
     if (!resource) {
-      return NextResponse.json({ ok: false, error: "Recurso não encontrado." }, { status: 404 });
+      return fail(ctx, 404, "RESOURCE_NOT_FOUND", "Recurso não encontrado.");
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -75,7 +93,7 @@ export async function PATCH(
     if (priorityRaw !== null) data.priority = priorityRaw;
 
     if (Object.keys(data).length === 0) {
-      return NextResponse.json({ ok: false, error: "Nada para atualizar." }, { status: 400 });
+      return fail(ctx, 400, "NOTHING_TO_UPDATE", "Nada para atualizar.");
     }
 
     const updated = await prisma.reservationResource.update({
@@ -84,24 +102,25 @@ export async function PATCH(
       select: { id: true, label: true, capacity: true, isActive: true, priority: true },
     });
 
-    return NextResponse.json({ ok: true, resource: updated });
+    return respondOk(ctx, { resource: updated });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("PATCH /api/organizacao/reservas/recursos/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao atualizar recurso." }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao atualizar recurso.");
   }
 }
 
-export async function DELETE(
+async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const ctx = getRequestContext(req);
   const resolved = await params;
   const resourceId = parseId(resolved.id);
   if (!resourceId) {
-    return NextResponse.json({ ok: false, error: "Recurso inválido." }, { status: 400 });
+    return fail(ctx, 400, "INVALID_RESOURCE", "Recurso inválido.");
   }
 
   try {
@@ -110,7 +129,7 @@ export async function DELETE(
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
 
     if (!profile) {
-      return NextResponse.json({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
@@ -120,13 +139,13 @@ export async function DELETE(
     });
 
     if (!organization || !membership) {
-      return NextResponse.json({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
     const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
-      return NextResponse.json(reservasAccess, { status: 403 });
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
     const resource = await prisma.reservationResource.findFirst({
@@ -135,17 +154,20 @@ export async function DELETE(
     });
 
     if (!resource) {
-      return NextResponse.json({ ok: false, error: "Recurso não encontrado." }, { status: 404 });
+      return fail(ctx, 404, "RESOURCE_NOT_FOUND", "Recurso não encontrado.");
     }
 
     await prisma.reservationResource.delete({ where: { id: resource.id } });
 
-    return NextResponse.json({ ok: true });
+    return respondOk(ctx, { deleted: true });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return NextResponse.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("DELETE /api/organizacao/reservas/recursos/[id] error:", err);
-    return NextResponse.json({ ok: false, error: "Erro ao remover recurso." }, { status: 500 });
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao remover recurso.");
   }
 }
+
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

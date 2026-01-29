@@ -8,6 +8,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { requestTournamentGeneration } from "@/domain/tournaments/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
 async function isOrganizationUser(userId: string, organizationId: number) {
@@ -169,7 +170,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   return respondOk(ctx, { queued: true }, { status: 202 });
 }
-export const POST = _POST;
+export const POST = withApiEnvelope(_POST);
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";

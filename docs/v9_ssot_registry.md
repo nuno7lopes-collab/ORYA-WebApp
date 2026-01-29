@@ -31,7 +31,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `lib/security.ts` (auth fail-closed)
 
 **Status**: TODO (implementacao em curso)
-**DONE (data/commit/nota)**: —
+**DONE (data/commit/nota)**: 2026-01-29 — Envelope aplicado em rotas de reservas + tournaments (inclui matches/participants/rules/sponsors); runbooks de requestId e reconcile de pagamentos adicionados; mapping marcado com INTERNAL_ONLY onde nao ha UI web.
 
 ---
 
@@ -71,6 +71,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 
 **Status**: DONE
 **DONE (data/commit/nota)**: 2026-01-27 — Block 1: canonical PI + idempotency + refunds/disputes status sync + guardrails/tests.
+**DONE (data/commit/nota)**: 2026-01-29 — Runbook de reconcile/rollback de pagamentos; legacy intent gate removido de `/api/payments/intent`.
 
 ---
 
