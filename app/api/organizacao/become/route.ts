@@ -180,7 +180,6 @@ async function _POST(req: NextRequest) {
     }
 
     // Procurar organization existente para este user
-<<<<<<< HEAD
     const { organization: currentOrganization, membership } = await getActiveOrganizationForUser(
       profile.id,
       ORG_CONTEXT_UI,

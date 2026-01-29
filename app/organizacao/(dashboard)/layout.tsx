@@ -54,7 +54,6 @@ export default async function OrganizationDashboardLayout({ children }: { childr
       where: { id: user.id },
       select: { fullName: true, username: true, avatarUrl: true, updatedAt: true },
     });
-<<<<<<< HEAD
     const activeOrgPromise = getActiveOrganizationForUser(user.id, {
       ...ORG_CONTEXT_UI,
       includeOrganizationFields: "settings",
