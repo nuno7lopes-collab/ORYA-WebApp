@@ -44,7 +44,7 @@ describe("ledger export route", () => {
 
   it("devolve CSV com headers", async () => {
     getActiveOrganizationForUser.mockResolvedValue({
-      organization: { id: 1 },
+      organization: { id: 1, officialEmail: "finance@org.pt", officialEmailVerifiedAt: new Date() },
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });

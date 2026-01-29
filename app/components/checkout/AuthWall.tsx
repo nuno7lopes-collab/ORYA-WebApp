@@ -526,6 +526,7 @@ export default function AuthWall({
             : "Criar conta e enviar"}
         </button>
       </form>
+    </>
   );
 
   if (variant === "plain") {

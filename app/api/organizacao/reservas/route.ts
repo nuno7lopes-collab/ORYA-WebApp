@@ -324,7 +324,7 @@ export async function POST(req: NextRequest) {
     let professionalId: number | null = null;
     let resourceId: number | null = null;
     let partySize: number | null = null;
-    let scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
+    const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
     let scopeIds: number[] = [];
 
     if (!assignmentConfig.isCourtService && (partySizeRaw || resourceIdRaw)) {

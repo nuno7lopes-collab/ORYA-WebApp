@@ -80,7 +80,7 @@ describe("tournament create route", () => {
     const res = await POST(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.result.tournamentId).toBe(10);
+    expect(body.data.tournamentId).toBe(10);
     expect(createTournamentForEvent).toHaveBeenCalled();
   });
 });

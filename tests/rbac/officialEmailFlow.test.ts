@@ -74,7 +74,7 @@ describe("official email flow", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(body.status).toBe("PENDING");
+    expect(body.data.status).toBe("PENDING");
     expect(body.requestId).toBeTruthy();
     expect(body.correlationId).toBeTruthy();
   });
@@ -117,7 +117,7 @@ describe("official email flow", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(body.status).toBe("VERIFIED");
+    expect(body.data.status).toBe("VERIFIED");
     expect(body.requestId).toBeTruthy();
     expect(body.correlationId).toBeTruthy();
   });

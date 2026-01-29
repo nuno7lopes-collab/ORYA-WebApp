@@ -17,10 +17,14 @@ const ACCESS_LEVELS = ["NONE", "VIEW", "EDIT"] as const;
 
 type AccessLevel = (typeof ACCESS_LEVELS)[number];
 
+type PermissionModel = {
+  findMany?: (args: unknown) => Promise<unknown[]>;
+  deleteMany?: (args: unknown) => Promise<unknown>;
+  upsert?: (args: unknown) => Promise<unknown>;
+};
+
 function getPermissionModel() {
-  return (prisma as {
-    organizationMemberPermission?: { findMany?: Function; deleteMany?: Function; upsert?: Function };
-  }).organizationMemberPermission;
+  return (prisma as { organizationMemberPermission?: PermissionModel }).organizationMemberPermission;
 }
 
 function resolveIp(req: NextRequest) {
@@ -191,7 +195,7 @@ export async function PATCH(req: NextRequest) {
 
     if (shouldClear) {
       await prisma.$transaction(async (tx) => {
-        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: { deleteMany?: Function } })
+        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: PermissionModel })
           .organizationMemberPermission;
         if (!permissionModelTx?.deleteMany) {
           throw new Error("RBAC_NOT_READY");
@@ -261,7 +265,7 @@ export async function PATCH(req: NextRequest) {
     const accessLevel = accessLevelRaw as AccessLevel;
 
       await prisma.$transaction(async (tx) => {
-        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: { upsert?: Function } })
+        const permissionModelTx = (tx as typeof prisma & { organizationMemberPermission?: PermissionModel })
           .organizationMemberPermission;
         if (!permissionModelTx?.upsert) {
           throw new Error("RBAC_NOT_READY");

@@ -22,7 +22,31 @@ vi.mock("@/lib/prisma", () => {
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     create: vi.fn().mockResolvedValue(null),
   };
-  return { prisma: { pendingPayout, paymentEvent } };
+  const eventLog = {
+    create: vi.fn().mockResolvedValue({ id: "evt_log_1" }),
+  };
+  const outboxEvent = {
+    create: vi.fn().mockResolvedValue({ id: "outbox_1" }),
+  };
+  const payment = {
+    findUnique: vi.fn().mockResolvedValue({
+      id: "pay_1",
+      status: "PAID",
+      organizationId: 1,
+      sourceType: SourceType.TICKET_ORDER,
+      sourceId: "99",
+    }),
+    update: vi.fn().mockResolvedValue(null),
+  };
+  const prismaClient = {
+    pendingPayout,
+    paymentEvent,
+    eventLog,
+    outboxEvent,
+    payment,
+    $transaction: vi.fn((fn: any) => fn(prismaClient)),
+  };
+  return { prisma: prismaClient };
 });
 
 vi.mock("@/lib/stripeClient", () => {

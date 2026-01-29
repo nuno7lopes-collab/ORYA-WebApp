@@ -122,33 +122,33 @@ describe("checkin.consume v7", () => {
   it("happy path consume + idempotência", async () => {
     const res1 = await POST(makeReq({ qrPayload: "token", eventId: 1, deviceId: "dev-1" }) as any);
     const json1 = await res1.json();
-    expect(json1.result.allow).toBe(true);
-    expect(json1.result.entitlementId).toBe("ent-1");
+    expect(json1.data.allow).toBe(true);
+    expect(json1.data.entitlementId).toBe("ent-1");
     entitlementState.checkins = checkins;
 
     const res2 = await POST(makeReq({ qrPayload: "token", eventId: 1, deviceId: "dev-1" }) as any);
     const json2 = await res2.json();
-    expect(json2.result.allow).toBe(false);
-    expect(json2.result.reasonCode).toBe(CheckinResultCode.ALREADY_USED);
+    expect(json2.data.allow).toBe(false);
+    expect(json2.data.reasonCode).toBe(CheckinResultCode.ALREADY_USED);
   });
 
   it("policyVersionApplied obrigatório quando existe policy", async () => {
     entitlementState.policyVersionApplied = null;
     const res = await POST(makeReq({ qrPayload: "token", eventId: 1 }) as any);
     const json = await res.json();
-    expect(json.result.allow).toBe(false);
-    expect(json.result.reasonCode).toBe(CheckinResultCode.NOT_ALLOWED);
+    expect(json.data.allow).toBe(false);
+    expect(json.data.reasonCode).toBe(CheckinResultCode.NOT_ALLOWED);
   });
 
   it("SUSPENDED/REVOKED bloqueiam check-in", async () => {
     entitlementState.status = EntitlementStatus.SUSPENDED;
     let res = await POST(makeReq({ qrPayload: "token", eventId: 1 }) as any);
     let json = await res.json();
-    expect(json.result.reasonCode).toBe(CheckinResultCode.SUSPENDED);
+    expect(json.data.reasonCode).toBe(CheckinResultCode.SUSPENDED);
 
     entitlementState.status = EntitlementStatus.REVOKED;
     res = await POST(makeReq({ qrPayload: "token", eventId: 1 }) as any);
     json = await res.json();
-    expect(json.result.reasonCode).toBe(CheckinResultCode.REVOKED);
+    expect(json.data.reasonCode).toBe(CheckinResultCode.REVOKED);
   });
 });

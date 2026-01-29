@@ -55,7 +55,7 @@ beforeEach(async () => {
 describe("finance invoicing route", () => {
   it("bloqueia sem ack no modo manual", async () => {
     getActiveOrganizationForUser.mockResolvedValue({
-      organization: { id: 1 },
+      organization: { id: 1, officialEmail: "finance@org.pt", officialEmailVerifiedAt: new Date() },
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
@@ -69,7 +69,7 @@ describe("finance invoicing route", () => {
 
   it("guarda config e escreve EventLog+Outbox", async () => {
     getActiveOrganizationForUser.mockResolvedValue({
-      organization: { id: 1 },
+      organization: { id: 1, officialEmail: "finance@org.pt", officialEmailVerifiedAt: new Date() },
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
@@ -84,7 +84,7 @@ describe("finance invoicing route", () => {
     const res = await POST(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.result.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
+    expect(body.data.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
     expect(recordOutboxEvent).toHaveBeenCalledTimes(1);
     expect(appendEventLog).toHaveBeenCalledTimes(1);
   });
@@ -98,7 +98,7 @@ describe("finance invoicing route", () => {
       invoicingAcknowledgedAt: new Date("2024-01-01T00:00:00Z"),
     };
     getActiveOrganizationForUser.mockResolvedValue({
-      organization: { id: 1 },
+      organization: { id: 1, officialEmail: "finance@org.pt", officialEmailVerifiedAt: new Date() },
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
@@ -106,6 +106,6 @@ describe("finance invoicing route", () => {
     const res = await GET(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.result.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
+    expect(body.data.settings.invoicingMode).toBe("EXTERNAL_SOFTWARE");
   });
 });

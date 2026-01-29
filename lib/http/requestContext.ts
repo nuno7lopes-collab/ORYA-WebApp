@@ -50,9 +50,9 @@ export function resolveRequestContext(
   opts?: { orgId?: number | null },
 ): RequestContext {
   const requestId =
-    pickHeader(headers, [REQUEST_ID_HEADER, ORYA_REQUEST_ID_HEADER]) ?? generateId();
+    pickHeader(headers, [ORYA_REQUEST_ID_HEADER, REQUEST_ID_HEADER]) ?? generateId();
   const correlationId =
-    pickHeader(headers, [CORRELATION_ID_HEADER, ORYA_CORRELATION_ID_HEADER]) ?? requestId;
+    pickHeader(headers, [ORYA_CORRELATION_ID_HEADER, CORRELATION_ID_HEADER]) ?? requestId;
   const orgId =
     typeof opts?.orgId === "number" ? opts.orgId : normalizeOrgId(headers.get("x-org-id"));
 

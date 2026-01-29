@@ -1,7 +1,6 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
-import jsxA11y from "eslint-plugin-jsx-a11y";
 
 const A11Y_P0_RULES = {
   "jsx-a11y/alt-text": "error",
@@ -26,9 +25,6 @@ const eslintConfig = defineConfig([
   ]),
   {
     files: ["**/*.{ts,tsx,js,jsx}"],
-    plugins: {
-      "jsx-a11y": jsxA11y,
-    },
     rules: {
       ...A11Y_P0_RULES,
       // Desativamos regras ruidosas até concluirmos um cleanup completo do código existente.

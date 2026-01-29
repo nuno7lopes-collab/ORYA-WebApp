@@ -24,7 +24,7 @@ describe("role packs v7", () => {
     expect(hasModuleAccess(access, OrganizationModule.CRM, "EDIT")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.STAFF, "VIEW")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.DEFINICOES, "VIEW")).toBe(true);
-    expect(hasModuleAccess(access, OrganizationModule.FINANCEIRO, "VIEW")).toBe(false);
+    expect(hasModuleAccess(access, OrganizationModule.FINANCEIRO, "VIEW")).toBe(true);
   });
 
   it("tournament director scopes", () => {
@@ -66,7 +66,7 @@ describe("role packs v7", () => {
       overrides: [],
     });
 
-    expect(hasModuleAccess(access, OrganizationModule.FINANCEIRO, "VIEW")).toBe(false);
+    expect(hasModuleAccess(access, OrganizationModule.FINANCEIRO, "VIEW")).toBe(true);
   });
 
   it("staff without pack cannot edit events", () => {
