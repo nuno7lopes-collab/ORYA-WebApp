@@ -5,7 +5,7 @@ import OrganizationDashboardShell from "../OrganizationDashboardShell";
 import { getCurrentUser } from "@/lib/supabaseServer";
 import {
   getActiveOrganizationForUser,
-  ORG_ACTIVE_ACCESS_OPTIONS,
+  ORG_CONTEXT_UI,
 } from "@/lib/organizationContext";
 import { prisma } from "@/lib/prisma";
 import { OrganizationLangSetter } from "../OrganizationLangSetter";
@@ -54,8 +54,9 @@ export default async function OrganizationDashboardLayout({ children }: { childr
       where: { id: user.id },
       select: { fullName: true, username: true, avatarUrl: true, updatedAt: true },
     });
+<<<<<<< HEAD
     const activeOrgPromise = getActiveOrganizationForUser(user.id, {
-      ...ORG_ACTIVE_ACCESS_OPTIONS,
+      ...ORG_CONTEXT_UI,
       includeOrganizationFields: "settings",
     });
     const membershipsPromise = prisma.organizationMember.findMany({

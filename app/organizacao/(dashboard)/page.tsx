@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, getActiveOrganizationIdForUser } from "@/lib/organizationContext";
 import DashboardClient from "../DashboardClient";
 import { OrganizationTour } from "../OrganizationTour";
 import { cookies } from "next/headers";
 import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { OrganizationStatus, Prisma } from "@prisma/client";
+import { resolveOrganizationIdForUi } from "@/lib/organizationId";
 
 export const runtime = "nodejs";
 
@@ -63,10 +64,14 @@ export default async function OrganizationRouterPage() {
   // 2) Existe organização ativa?
   const cookieStore = await cookies();
   const cookieOrgId = cookieStore.get("orya_organization")?.value;
-  const forcedOrgId = cookieOrgId ? Number(cookieOrgId) : undefined;
+  const profileActiveOrgId = await getActiveOrganizationIdForUser(user.id);
+  const uiOrg = resolveOrganizationIdForUi({
+    profileOrganizationId: profileActiveOrgId,
+    cookieOrganizationId: cookieOrgId,
+  });
   const { organization } = await getActiveOrganizationForUser(user.id, {
-    organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
-    allowFallback: true,
+    organizationId: uiOrg.organizationId ?? undefined,
+    allowFallback: false,
     allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
   const activeOrganizationId = organization?.id ?? null;

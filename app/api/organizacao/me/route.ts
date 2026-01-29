@@ -10,8 +10,7 @@ import { getActiveOrganizationForUser, ORGANIZATION_SELECT_SETTINGS } from "@/li
 import { isValidWebsite } from "@/lib/validation/organization";
 import { normalizeOrganizationAvatarUrl, normalizeOrganizationCoverUrl } from "@/lib/profileMedia";
 import { Resend } from "resend";
-import { cookies } from "next/headers";
-import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { requireOrganizationIdFromRequest } from "@/lib/organizationId";
 import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
@@ -122,13 +121,13 @@ async function _GET(req: NextRequest) {
       );
     }
 
-    const cookieStore = await cookies();
-    const cookieOrgId = cookieStore.get("orya_organization")?.value;
-    const urlOrg = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-    const forcedOrgId = urlOrg ?? (cookieOrgId ? Number(cookieOrgId) : undefined);
+    const orgResult = requireOrganizationIdFromRequest({ req, actorId: user.id });
+    if (!orgResult.ok) {
+      return orgResult.response;
+    }
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
-      organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
-      allowFallback: !urlOrg,
+      organizationId: orgResult.organizationId,
+      allowFallback: false,
       allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
       includeOrganizationFields: "settings",
     });
@@ -342,15 +341,15 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    const cookieStore = await cookies();
-    const cookieOrgId = cookieStore.get("orya_organization")?.value;
-    const urlOrg = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-    const forcedOrgId = urlOrg ?? (cookieOrgId ? Number(cookieOrgId) : undefined);
+    const orgResult = requireOrganizationIdFromRequest({ req, actorId: user.id });
+    if (!orgResult.ok) {
+      return orgResult.response;
+    }
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: Number.isFinite(forcedOrgId) ? forcedOrgId : undefined,
+      organizationId: orgResult.organizationId,
       roles: ["OWNER", "CO_OWNER", "ADMIN"],
-      allowFallback: !urlOrg,
+      allowFallback: false,
       includeOrganizationFields: "settings",
     });
 

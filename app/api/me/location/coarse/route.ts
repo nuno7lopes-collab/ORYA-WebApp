@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, ORG_CONTEXT_API } from "@/lib/organizationContext";
 import crypto from "crypto";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -43,7 +43,7 @@ async function _POST(req: NextRequest) {
     const now = new Date();
     const correlationId = crypto.randomUUID();
 
-    const orgContext = await getActiveOrganizationForUser(userId, ORG_ACTIVE_ACCESS_OPTIONS);
+    const orgContext = await getActiveOrganizationForUser(userId, ORG_CONTEXT_API);
     const organizationId = orgContext.organization?.id ?? null;
     const hasMembership = Boolean(orgContext.membership);
 

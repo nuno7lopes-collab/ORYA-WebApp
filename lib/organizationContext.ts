@@ -124,129 +124,138 @@ export const ORG_ACTIVE_ALLOWED_STATUSES = [
   OrganizationStatus.SUSPENDED,
 ] as const;
 
-export const ORG_ACTIVE_ACCESS_OPTIONS = {
+export const ORG_CONTEXT_UI = {
   allowedStatuses: ORG_ACTIVE_ALLOWED_STATUSES,
   allowFallback: true,
 } as const;
 
-// Mutacoes devem exigir orgId explicito (sem fallback).
-export const ORG_ACTIVE_WRITE_OPTIONS = {
+export const ORG_CONTEXT_API = {
   allowedStatuses: ORG_ACTIVE_ALLOWED_STATUSES,
   allowFallback: false,
 } as const;
 
+// Mutacoes devem exigir orgId explicito (sem fallback).
+export const ORG_ACTIVE_WRITE_OPTIONS = ORG_CONTEXT_API;
+
+// @deprecated Prefer ORG_CONTEXT_UI or ORG_CONTEXT_API (split to avoid misuse).
+export const ORG_ACTIVE_ACCESS_OPTIONS = ORG_CONTEXT_UI;
+
 export const getActiveOrganizationForUser = cache(
   async (userId: string, opts: Options = {}): Promise<OrganizationContextResult> => {
-  const { roles } = opts;
-  const allowFallback = typeof opts.allowFallback === "boolean" ? opts.allowFallback : false;
-  const allowedStatuses = opts.allowedStatuses ? [...opts.allowedStatuses] : [OrganizationStatus.ACTIVE];
-  const { select: organizationSelect, kind: organizationSelectKind } = resolveOrganizationSelect(opts);
-  const shouldHydrateOrganization = organizationSelectKind !== "minimal";
-  const directOrganizationId =
-    typeof opts.organizationId === "number" && Number.isFinite(opts.organizationId)
-      ? opts.organizationId
-      : null;
-  const profileActive =
-    directOrganizationId || !allowFallback
-      ? null
-      : await prisma.profile.findUnique({
-          where: { id: userId },
-          select: { activeOrganizationId: true },
-        });
-  const cookieOrganizationId =
-    directOrganizationId || !allowFallback || profileActive?.activeOrganizationId
-      ? null
-      : await resolveOrganizationIdFromCookies();
-  const organizationId = directOrganizationId ?? profileActive?.activeOrganizationId ?? cookieOrganizationId;
+    const { roles } = opts;
+    const allowFallback = typeof opts.allowFallback === "boolean" ? opts.allowFallback : false;
+    const allowedStatuses = opts.allowedStatuses ? [...opts.allowedStatuses] : [OrganizationStatus.ACTIVE];
+    const { select: organizationSelect, kind: organizationSelectKind } = resolveOrganizationSelect(opts);
+    const shouldHydrateOrganization = organizationSelectKind !== "minimal";
+    const directOrganizationId =
+      typeof opts.organizationId === "number" && Number.isFinite(opts.organizationId)
+        ? opts.organizationId
+        : null;
+    const profileActive =
+      directOrganizationId || !allowFallback
+        ? null
+        : await prisma.profile.findUnique({
+            where: { id: userId },
+            select: { activeOrganizationId: true },
+          });
+    const cookieOrganizationId =
+      directOrganizationId || !allowFallback || profileActive?.activeOrganizationId
+        ? null
+        : await resolveOrganizationIdFromCookies();
+    const organizationId = directOrganizationId ?? profileActive?.activeOrganizationId ?? cookieOrganizationId;
 
-  // 1) Se organizationId foi especificado, tenta buscar diretamente essa membership primeiro
-  if (organizationId) {
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      ...(organizationSelect ? { select: organizationSelect } : {}),
-    });
-    if (organization && allowedStatuses.includes(organization.status)) {
-      const member = await resolveGroupMemberForOrg({ organizationId, userId });
-      if (member) {
-        if (!roles || roles.includes(member.role)) {
-          return {
-            organization,
-            membership: {
-              id: member.memberId,
-              organizationId,
-              userId,
-              groupId: member.groupId,
-              role: member.role,
-              rolePack: member.rolePack,
-            },
-          };
-        }
-      }
-    }
-    // Se o organizationId foi pedido explicitamente e não existe membership, não faz fallback.
-    if (!allowFallback) {
+    if (!organizationId && !allowFallback) {
       return { organization: null, membership: null };
     }
-  }
 
-  const groupMembers = await prisma.organizationGroupMember.findMany({
-    where: { userId },
-    select: {
-      id: true,
-      role: true,
-      rolePack: true,
-      scopeAllOrgs: true,
-      scopeOrgIds: true,
-      groupId: true,
-      group: {
-        select: {
-          organizations: {
-            where: { status: { in: allowedStatuses } },
-            select: { id: true, status: true, groupId: true },
-            orderBy: { id: "asc" },
+    // 1) Se organizationId foi especificado, tenta buscar diretamente essa membership primeiro
+    if (organizationId) {
+      const organization = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        ...(organizationSelect ? { select: organizationSelect } : {}),
+      });
+      if (organization && allowedStatuses.includes(organization.status)) {
+        const member = await resolveGroupMemberForOrg({ organizationId, userId });
+        if (member) {
+          if (!roles || roles.includes(member.role)) {
+            return {
+              organization,
+              membership: {
+                id: member.memberId,
+                organizationId,
+                userId,
+                groupId: member.groupId,
+                role: member.role,
+                rolePack: member.rolePack,
+              },
+            };
+          }
+        }
+      }
+      // Se o organizationId foi pedido explicitamente e não existe membership, não faz fallback.
+      if (!allowFallback) {
+        return { organization: null, membership: null };
+      }
+    }
+
+    const groupMembers = await prisma.organizationGroupMember.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        role: true,
+        rolePack: true,
+        scopeAllOrgs: true,
+        scopeOrgIds: true,
+        groupId: true,
+        group: {
+          select: {
+            organizations: {
+              where: { status: { in: allowedStatuses } },
+              select: { id: true, status: true, groupId: true },
+              orderBy: { id: "asc" },
+            },
           },
         },
       },
-    },
-  });
+    });
 
-  for (const member of groupMembers) {
-    if (roles && !roles.includes(member.role)) continue;
-    const orgs = member.group?.organizations ?? [];
-    for (const org of orgs) {
-      const scopeOk = member.scopeAllOrgs || (member.scopeOrgIds ?? []).includes(org.id);
-      if (!scopeOk) continue;
-      const override = await prisma.organizationGroupMemberOrganizationOverride.findUnique({
-        where: { groupMemberId_organizationId: { groupMemberId: member.id, organizationId: org.id } },
-        select: { roleOverride: true, revokedAt: true },
-      });
-      if (override?.revokedAt) continue;
-      const effectiveRole = override?.roleOverride ?? member.role;
-      if (roles && !roles.includes(effectiveRole)) continue;
-      let organization = org;
-      if (shouldHydrateOrganization) {
-        const hydrated = await prisma.organization.findUnique({
-          where: { id: org.id },
-          ...(organizationSelect ? { select: organizationSelect } : {}),
+    for (const member of groupMembers) {
+      if (roles && !roles.includes(member.role)) continue;
+      const orgs = member.group?.organizations ?? [];
+      for (const org of orgs) {
+        const scopeOk = member.scopeAllOrgs || (member.scopeOrgIds ?? []).includes(org.id);
+        if (!scopeOk) continue;
+        const override = await prisma.organizationGroupMemberOrganizationOverride.findUnique({
+          where: { groupMemberId_organizationId: { groupMemberId: member.id, organizationId: org.id } },
+          select: { roleOverride: true, revokedAt: true },
         });
-        if (!hydrated || !allowedStatuses.includes(hydrated.status)) continue;
-        organization = hydrated;
+        if (override?.revokedAt) continue;
+        const effectiveRole = override?.roleOverride ?? member.role;
+        if (roles && !roles.includes(effectiveRole)) continue;
+        let organization = org;
+        if (shouldHydrateOrganization) {
+          const hydrated = await prisma.organization.findUnique({
+            where: { id: org.id },
+            ...(organizationSelect ? { select: organizationSelect } : {}),
+          });
+          if (!hydrated || !allowedStatuses.includes(hydrated.status)) continue;
+          organization = hydrated;
+        }
+        return {
+          organization,
+          membership: {
+            id: member.id,
+            organizationId: org.id,
+            userId,
+            groupId: member.groupId,
+            role: effectiveRole,
+            rolePack: member.rolePack,
+          },
+        };
       }
-      return {
-        organization,
-        membership: {
-          id: member.id,
-          organizationId: org.id,
-          userId,
-          groupId: member.groupId,
-          role: effectiveRole,
-          rolePack: member.rolePack,
-        },
-      };
     }
-  }
 
-  return { organization: null, membership: null };
+    return { organization: null, membership: null };
   },
 );
 

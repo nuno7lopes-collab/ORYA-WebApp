@@ -4,6 +4,7 @@ import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { requireOrganizationIdFromPayload } from "@/lib/organizationId";
 
 function parseDate(value: unknown): Date | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
@@ -35,7 +36,20 @@ async function _POST(req: NextRequest) {
       contactPhone?: unknown;
     } | null;
 
-    const organizationId = typeof payload?.organizationId === "number" ? payload.organizationId : null;
+    const organizationIdResult = requireOrganizationIdFromPayload({
+      payload: (payload ?? null) as Record<string, unknown> | null,
+      actorId: typeof payload?.userId === "string" ? payload.userId : null,
+      jobName: "crm-ingest",
+      requestId:
+        req.headers.get("x-request-id") ||
+        req.headers.get("x-correlation-id") ||
+        req.headers.get("x-vercel-id") ||
+        null,
+    });
+    if (!organizationIdResult.ok) {
+      return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
+    }
+    const organizationId = organizationIdResult.organizationId;
     const userId = typeof payload?.userId === "string" ? payload.userId : null;
     const type =
       typeof payload?.type === "string" && Object.values(CrmInteractionType).includes(payload.type as CrmInteractionType)

@@ -3,7 +3,7 @@
 // app/api/organizacao/become/route.ts
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, ORG_CONTEXT_UI } from "@/lib/organizationContext";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -42,36 +42,16 @@ async function _GET() {
     const profile = await prisma.profile.findUnique({
       where: { id: user.id },
     });
-  if (!profile) {
-    return jsonWrap(
-      { ok: false, error: "Perfil não encontrado." },
-      { status: 400 },
-    );
-  }
-  const profileSafe = profile;
+    if (!profile) {
+      return jsonWrap(
+        { ok: false, error: "Perfil não encontrado." },
+        { status: 400 },
+      );
+    }
+    const profileSafe = profile;
 
-    const { organization: currentOrganization } = await getActiveOrganizationForUser(
-      profileSafe.id,
-      ORG_ACTIVE_ACCESS_OPTIONS,
-    );
-    const fallbackOrganization = currentOrganization
-      ? await prisma.organization.findUnique({
-          where: { id: currentOrganization.id },
-          select: {
-            id: true,
-            publicName: true,
-            status: true,
-            stripeAccountId: true,
-            entityType: true,
-            businessName: true,
-            city: true,
-            payoutIban: true,
-            username: true,
-            primaryModule: true,
-            publicWebsite: true,
-          },
-        })
-      : null;
+    const { organization: currentOrganization } = await getActiveOrganizationForUser(profileSafe.id, ORG_CONTEXT_UI);
+    const fallbackOrganization = currentOrganization ?? null;
     const organizationModules = fallbackOrganization
       ? await prisma.organizationModuleEntry.findMany({
           where: { organizationId: fallbackOrganization.id, enabled: true },
@@ -200,9 +180,10 @@ async function _POST(req: NextRequest) {
     }
 
     // Procurar organization existente para este user
+<<<<<<< HEAD
     const { organization: currentOrganization, membership } = await getActiveOrganizationForUser(
       profile.id,
-      ORG_ACTIVE_ACCESS_OPTIONS,
+      ORG_CONTEXT_UI,
     );
 
     // Se já existe organização ativo e o caller não é OWNER dessa organização, bloquear promoção

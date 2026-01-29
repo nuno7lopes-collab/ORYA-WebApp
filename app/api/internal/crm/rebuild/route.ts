@@ -1,14 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { rebuildCrmCustomers } from "@/lib/crm/rebuild";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-
-function parseOrganizationId(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
+import { parseOrganizationId, requireOrganizationIdFromPayload } from "@/lib/organizationId";
 
 async function _POST(req: NextRequest) {
   try {
@@ -18,12 +13,25 @@ async function _POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => null)) as { organizationId?: unknown } | null;
     const orgParam = parseOrganizationId(req.nextUrl.searchParams.get("organizationId"));
-    const organizationId =
+    const rawOrganizationId =
       typeof body?.organizationId === "number" && Number.isFinite(body.organizationId)
         ? body.organizationId
         : orgParam;
 
-    const result = await rebuildCrmCustomers({ organizationId: organizationId ?? null });
+    const orgResult = requireOrganizationIdFromPayload({
+      payload: { organizationId: rawOrganizationId ?? null },
+      jobName: "crm-rebuild",
+      requestId:
+        req.headers.get("x-request-id") ||
+        req.headers.get("x-correlation-id") ||
+        req.headers.get("x-vercel-id") ||
+        null,
+    });
+    if (!orgResult.ok) {
+      return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
+    }
+
+    const result = await rebuildCrmCustomers({ organizationId: orgResult.organizationId });
 
     return jsonWrap({
       ok: true,
