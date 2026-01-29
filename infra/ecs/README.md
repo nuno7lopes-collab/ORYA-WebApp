@@ -27,3 +27,4 @@ Secrets are referenced by name only (no values). Replace placeholders like `{{or
 ## Notes
 - Health check uses `x-orya-cron-secret` header. Ensure `ORYA_CRON_SECRET` is available.
 - Worker uses Fargate Spot with fallback to Fargate for cost control.
+- ECR lifecycle policy keeps last 20 images to control storage cost.

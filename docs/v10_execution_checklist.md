@@ -513,7 +513,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 - [x] Configuração de Deploy AWS
   - Estado real: DONE — runbook AWS definido + infra skeleton + workflow CI/CD.
-  - Evidência: `docs/release/aws_runbook.md:1-80`, `infra/ecs/orya-ecs-stack.yaml:1-240`, `infra/ecs/route53-acm.yaml:1-40`, `.github/workflows/deploy-ecs.yml:1-90`, `docs/deploy/ci_cd.md:1-60`, `Dockerfile.worker`.
+  - Evidência: `docs/release/aws_runbook.md:1-80`, `infra/ecs/orya-ecs-stack.yaml:1-260`, `infra/ecs/route53-acm.yaml:1-40`, `.github/workflows/deploy-ecs.yml:1-90`, `docs/deploy/ci_cd.md:1-60`, `docs/deploy/cost-optimization.md:1-40`, `Dockerfile.worker`.
   - Ação exata: manter runbook alinhado ao infra atual.
   - Risco/Impacto: baixo.
 
