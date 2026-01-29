@@ -1,0 +1,79 @@
+name: Deploy ECS (prod)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - developer
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  ECR_REPOSITORY_WEB: ${{ secrets.ECR_REPOSITORY_WEB }}
+  ECR_REPOSITORY_WORKER: ${{ secrets.ECR_REPOSITORY_WORKER }}
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+  ECS_SERVICE_WEB: ${{ secrets.ECS_SERVICE_WEB }}
+  ECS_SERVICE_WORKER: ${{ secrets.ECS_SERVICE_WORKER }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (vitest)
+        run: npm run test:coverage
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push web image
+        run: |
+          docker build -t ${ECR_REPOSITORY_WEB}:latest -f Dockerfile.web .
+          docker tag ${ECR_REPOSITORY_WEB}:latest ${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}:latest
+          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}:latest
+
+      - name: Build & push worker image
+        run: |
+          docker build -t ${ECR_REPOSITORY_WORKER}:latest -f Dockerfile.worker .
+          docker tag ${ECR_REPOSITORY_WORKER}:latest ${ECR_REGISTRY}/${ECR_REPOSITORY_WORKER}:latest
+          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY_WORKER}:latest
+
+      - name: Render task definitions
+        run: |
+          python3 scripts/render-taskdef.py infra/ecs/taskdef-web.json /tmp/taskdef-web.json ${ECR_REGISTRY}
+          python3 scripts/render-taskdef.py infra/ecs/taskdef-worker.json /tmp/taskdef-worker.json ${ECR_REGISTRY}
+
+      - name: Register task definitions
+        run: |
+          aws ecs register-task-definition --cli-input-json file:///tmp/taskdef-web.json
+          aws ecs register-task-definition --cli-input-json file:///tmp/taskdef-worker.json
+
+      - name: Deploy web service
+        run: |
+          aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE_WEB} --force-new-deployment
+
+      - name: Deploy worker service
+        run: |
+          aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE_WORKER} --force-new-deployment

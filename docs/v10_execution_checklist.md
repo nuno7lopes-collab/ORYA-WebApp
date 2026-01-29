@@ -482,14 +482,14 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 ### P1
 - [x] Runbooks por Domínio
-  - Estado real: DONE — runbooks por domínio consolidados (payments, check-in, reservas, notificações).
-  - Evidência: `docs/runbooks/payments-refunds.md:1-60`, `docs/runbooks/checkin.md:1-40`, `docs/runbooks/reservas.md:1-40`, `docs/runbooks/notifications.md:1-40`.
+  - Estado real: DONE — runbooks por domínio consolidados (payments, check-in, reservas, notificações) + incident/rollback.
+  - Evidência: `docs/runbooks/payments-refunds.md:1-60`, `docs/runbooks/checkin.md:1-40`, `docs/runbooks/reservas.md:1-40`, `docs/runbooks/notifications.md:1-40`, `docs/runbooks/payments-incident.md:1-40`, `docs/runbooks/deploy-rollback.md:1-40`, `docs/runbooks/db-migrations.md:1-40`.
   - Ação exata: manter índice atualizado.
   - Risco/Impacto: baixo (runbooks completos).
 
 - [x] Métricas e Alertas
-  - Estado real: DONE — health inclui contagens críticas + runbook de métricas/alertas.
-  - Evidência: `domain/ops/health.ts:1-50`, `docs/runbooks/metrics-alerts.md:1-60`.
+  - Estado real: DONE — health inclui contagens críticas + runbook de métricas/alertas + queries CloudWatch.
+  - Evidência: `domain/ops/health.ts:1-50`, `docs/runbooks/metrics-alerts.md:1-60`, `docs/observability/sentry-integration.md:1-40`.
   - Ação exata: criar alarms no provider (CloudWatch/Sentry).
   - Risco/Impacto: baixo (instrumentação mínima).
 
@@ -512,8 +512,8 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo.
 
 - [x] Configuração de Deploy AWS
-  - Estado real: DONE — runbook AWS definido + passos de build/migrate/smoke.
-  - Evidência: `docs/release/aws_runbook.md:1-80`, `Dockerfile.worker`, `vercel.json`.
+  - Estado real: DONE — runbook AWS definido + infra skeleton + workflow CI/CD.
+  - Evidência: `docs/release/aws_runbook.md:1-80`, `infra/ecs/orya-ecs-stack.yaml:1-240`, `infra/ecs/route53-acm.yaml:1-40`, `.github/workflows/deploy-ecs.yml:1-90`, `docs/deploy/ci_cd.md:1-60`, `Dockerfile.worker`.
   - Ação exata: manter runbook alinhado ao infra atual.
   - Risco/Impacto: baixo.
 
@@ -531,26 +531,26 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 ### P1
 - [ ] Testes Finais em Mobile
-  - Estado real: BLOCKED — requer dispositivo real / BrowserStack para QA mobile.
-  - Evidência: falta execução local/device farm.
-  - Ação exata: rodar checklist mobile (checkout, eventos, reservas, wallet) em iOS/Android.
+  - Estado real: BLOCKED — requer device farm/credenciais; scripts prontos.
+  - Evidência: `scripts/run-devicefarm.sh:1-40`.
+  - Bloqueio adicional: secrets ausentes em prod — `orya/prod/DATABASE_URL`, `orya/prod/DIRECT_URL`, `orya/prod/QR_SECRET_KEY`, `orya/prod/APP_BASE_URL`, `orya/prod/NEXT_PUBLIC_BASE_URL`, `orya/prod/ORYA_CRON_SECRET`, `orya/prod/SUPABASE_URL`, `orya/prod/NEXT_PUBLIC_SUPABASE_URL`, `orya/prod/SUPABASE_ANON_KEY`, `orya/prod/NEXT_PUBLIC_SUPABASE_ANON_KEY`, `orya/prod/SUPABASE_SERVICE_ROLE`, `orya/prod/STRIPE_SECRET_KEY`, `orya/prod/STRIPE_WEBHOOK_SECRET`, `orya/prod/NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `orya/prod/RESEND_API_KEY`, `orya/prod/RESEND_FROM_EMAIL`, `orya/prod/APPLE_SIGNIN_SERVICE_ID`, `orya/prod/APPLE_SIGNIN_REDIRECT_URI`, `orya/prod/APPLE_SIGNIN_TEAM_ID`, `orya/prod/APPLE_SIGNIN_KEY_ID`, `orya/prod/APPLE_SIGNIN_PRIVATE_KEY_BASE64`, `orya/prod/APNS_TEAM_ID`, `orya/prod/APNS_KEY_ID`, `orya/prod/APNS_PRIVATE_KEY_BASE64`, `orya/prod/APNS_TOPIC`, `orya/prod/SENTRY_DSN`, `orya/prod/STAGING_ADMIN_EMAIL`, `orya/prod/STAGING_ADMIN_PASSWORD`, `orya/prod/STAGING_ADMIN_SESSION`.\n+  - Ação exata: configurar provider e executar suite mobile (checkout, eventos, reservas, wallet).
   - Risco/Impacto: regressões em dispositivos móveis.
 
 - [ ] Acessibilidade (A11y)
-  - Estado real: BLOCKED — auditoria WCAG/Lighthouse pendente.
-  - Evidência: sem relatório A11y no repo.
+  - Estado real: BLOCKED — auditoria WCAG/Lighthouse pendente; scripts prontos.
+  - Evidência: `scripts/run-axe.sh:1-20`, `scripts/run-lighthouse.sh:1-20`.
   - Ação exata: executar auditoria (Lighthouse/axe) e corrigir issues.
   - Risco/Impacto: UX e compliance comprometidas.
 
 - [ ] Performance Percebida
-  - Estado real: BLOCKED — sem baseline Lighthouse/rum medido.
-  - Evidência: ausência de relatório de performance.
+  - Estado real: BLOCKED — sem baseline Lighthouse/rum medido; scripts prontos.
+  - Evidência: `scripts/run-lighthouse.sh:1-20`.
   - Ação exata: medir LCP/CLS/TTI e aplicar otimizações direcionadas.
   - Risco/Impacto: abandono de checkout.
 
 - [ ] Responsividade e Mobile UX
-  - Estado real: BLOCKED — revisão cross-device pendente.
-  - Evidência: falta QA visual e screenshots mobile.
+  - Estado real: BLOCKED — revisão cross-device pendente; scripts prontos.
+  - Evidência: `scripts/run-devicefarm.sh:1-40`.
   - Ação exata: validar breakpoints principais e corrigir layout.
   - Risco/Impacto: experiência ruim em mobile.
 

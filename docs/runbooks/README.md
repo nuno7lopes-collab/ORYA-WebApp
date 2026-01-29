@@ -18,5 +18,10 @@ Objetivo: ponto unico para runbooks operacionais.
 - `docs/runbooks/reservas.md`
 - `docs/runbooks/notifications.md`
 - `docs/runbooks/metrics-alerts.md`
+- `docs/runbooks/payments-incident.md`
+- `docs/runbooks/cron-recovery.md`
+- `docs/runbooks/db-migrations.md`
+- `docs/runbooks/deploy-rollback.md`
+- `docs/runbooks/device-farm.md`
 
 Nota: alguns runbooks podem estar em PRs separados; manter este indice atualizado quando houver merge.

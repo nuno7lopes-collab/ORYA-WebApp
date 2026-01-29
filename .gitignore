@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+*_PRIVATE_KEY_BASE64.txt
 
 # debug
 npm-debug.log*
