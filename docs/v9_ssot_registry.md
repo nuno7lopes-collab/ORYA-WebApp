@@ -225,6 +225,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - Esperado: contagens por mode/source + warnings (default/restricoes).
 
 **Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-29 — Deleted test events (slug test-*/qa-*, dry-run validated, backup at `backups/pre_delete_events_2026-01-29.dump`). Deleted IDs list at `reports/deleted_events_2026-01-29.json`.
 
 ---
 
