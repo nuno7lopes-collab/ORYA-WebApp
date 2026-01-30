@@ -1,22 +1,35 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: ORYA prod ACM certificate + Route53 validation (skeleton)
+Description: ORYA prod ACM certificate + Route53 validation
 
 Parameters:
   HostedZoneId:
     Type: String
     Description: Route53 hosted zone ID
-  DomainName:
+  RootDomain:
+    Type: String
+    Default: orya.pt
+  AppDomain:
     Type: String
     Default: app.orya.pt
+  AdminDomain:
+    Type: String
+    Default: admin.orya.pt
 
 Resources:
   Certificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
-      DomainName: !Ref DomainName
+      DomainName: !Ref RootDomain
+      SubjectAlternativeNames:
+        - !Ref AppDomain
+        - !Ref AdminDomain
       ValidationMethod: DNS
       DomainValidationOptions:
-        - DomainName: !Ref DomainName
+        - DomainName: !Ref RootDomain
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: !Ref AppDomain
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: !Ref AdminDomain
           HostedZoneId: !Ref HostedZoneId
 
 Outputs:

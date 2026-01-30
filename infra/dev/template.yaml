@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ORYA dev serverless (HTTP API + Lambda)
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+  ImageUri:
+    Type: String
+    Description: ECR image URI built for Lambda Web Adapter
+  SecretsPrefix:
+    Type: String
+    Default: orya/dev
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+  MemorySize:
+    Type: Number
+    Default: 1024
+  Timeout:
+    Type: Number
+    Default: 30
+
+Resources:
+  DevHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref EnvironmentName
+
+  DevFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: !Ref ImageUri
+      MemorySize: !Ref MemorySize
+      Timeout: !Ref Timeout
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/*"
+      Environment:
+        Variables:
+          NODE_ENV: development
+          DATABASE_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:DATABASE_URL}}"
+          DIRECT_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:DIRECT_URL}}"
+          APP_BASE_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:APP_BASE_URL}}"
+          NEXT_PUBLIC_BASE_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:NEXT_PUBLIC_BASE_URL}}"
+          ORYA_CRON_SECRET: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:ORYA_CRON_SECRET}}"
+          QR_SECRET_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:QR_SECRET_KEY}}"
+          INTERNAL_SECRET_HEADER: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:INTERNAL_SECRET_HEADER}}"
+          LOG_LEVEL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:LOG_LEVEL}}"
+          LOG_FORMAT: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:LOG_FORMAT}}"
+          XRAY_ENABLED: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:XRAY_ENABLED}}"
+          SENTRY_DSN: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:SENTRY_DSN}}"
+          SUPABASE_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/supabase:SecretString:SUPABASE_URL}}"
+          SUPABASE_SERVICE_ROLE: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/supabase:SecretString:SUPABASE_SERVICE_ROLE}}"
+          SUPABASE_ANON_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/supabase:SecretString:SUPABASE_ANON_KEY}}"
+          NEXT_PUBLIC_SUPABASE_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/supabase:SecretString:NEXT_PUBLIC_SUPABASE_URL}}"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/supabase:SecretString:NEXT_PUBLIC_SUPABASE_ANON_KEY}}"
+          STRIPE_SECRET_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/payments:SecretString:STRIPE_SECRET_KEY}}"
+          STRIPE_WEBHOOK_SECRET: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/payments:SecretString:STRIPE_WEBHOOK_SECRET}}"
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/payments:SecretString:NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}}"
+          APPLE_SIGNIN_SERVICE_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_SERVICE_ID}}"
+          APPLE_SIGNIN_REDIRECT_URI: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_REDIRECT_URI}}"
+          APPLE_SIGNIN_TEAM_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_TEAM_ID}}"
+          APPLE_SIGNIN_KEY_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_KEY_ID}}"
+          APPLE_SIGNIN_PRIVATE_KEY_BASE64: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_PRIVATE_KEY_BASE64}}"
+          APNS_TEAM_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APNS_TEAM_ID}}"
+          APNS_KEY_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APNS_KEY_ID}}"
+          APNS_PRIVATE_KEY_BASE64: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APNS_PRIVATE_KEY_BASE64}}"
+          APNS_TOPIC: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APNS_TOPIC}}"
+          RESEND_API_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:RESEND_API_KEY}}"
+          RESEND_FROM_EMAIL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:RESEND_FROM_EMAIL}}"
+          SES_REGION: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_REGION}}"
+          SES_IDENTITY_DOMAIN: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_IDENTITY_DOMAIN}}"
+          SES_SMTP_USERNAME: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_SMTP_USERNAME}}"
+          SES_SMTP_PASSWORD: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_SMTP_PASSWORD}}"
+      Events:
+        ProxyApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DevHttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  DevLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/orya-${EnvironmentName}-dev"
+      RetentionInDays: !Ref LogRetentionDays
+
+Outputs:
+  HttpApiUrl:
+    Value: !Sub "https://${DevHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}"
+  FunctionName:
+    Value: !Ref DevFunction

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: ORYA prod ECS/Fargate + ECR + ALB + EventBridge (skeleton)
+Description: ORYA prod ECS/Fargate + ECR + ALB + EventBridge (cost-first)
 
 Parameters:
   EnvironmentName:
@@ -11,9 +11,30 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
   PrivateSubnets:
     Type: List<AWS::EC2::Subnet::Id>
+  ServiceSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  AssignPublicIp:
+    Type: String
+    Default: ENABLED
+    AllowedValues:
+      - ENABLED
+      - DISABLED
+  CreateALB:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+  EnableWorker:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
   AlbCertificateArn:
     Type: String
-    Description: ACM certificate ARN for app.orya.pt
+    Default: ""
+    Description: ACM certificate ARN for app/admin domains
   WebImage:
     Type: String
     Description: ECR image URI for web (e.g. 495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-web:latest)
@@ -22,10 +43,10 @@ Parameters:
     Description: ECR image URI for worker (e.g. 495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-worker:latest)
   WebDesiredCount:
     Type: Number
-    Default: 2
+    Default: 1
   WorkerDesiredCount:
     Type: Number
-    Default: 1
+    Default: 0
   TaskCpu:
     Type: String
     Default: "512"
@@ -41,6 +62,21 @@ Parameters:
   OutboxSchedule:
     Type: String
     Default: rate(1 minute)
+  SecretsPrefix:
+    Type: String
+    Default: orya/prod
+  BudgetNotificationEmail:
+    Type: String
+    Default: ""
+  LogIngestThresholdBytes:
+    Type: Number
+    Default: 50000000
+
+Conditions:
+  HasALB: !Equals [!Ref CreateALB, "true"]
+  NoALB: !Equals [!Ref CreateALB, "false"]
+  UseWorker: !Equals [!Ref EnableWorker, "true"]
+  HasBudgetEmail: !Not [!Equals [!Ref BudgetNotificationEmail, ""]]
 
 Resources:
   EcrRepoWeb:
@@ -53,11 +89,11 @@ Resources:
             "rules": [
               {
                 "rulePriority": 1,
-                "description": "Keep last 20 images",
+                "description": "Keep last 5 images",
                 "selection": {
                   "tagStatus": "any",
                   "countType": "imageCountMoreThan",
-                  "countNumber": 20
+                  "countNumber": 5
                 },
                 "action": { "type": "expire" }
               }
@@ -73,11 +109,11 @@ Resources:
             "rules": [
               {
                 "rulePriority": 1,
-                "description": "Keep last 20 images",
+                "description": "Keep last 5 images",
                 "selection": {
                   "tagStatus": "any",
                   "countType": "imageCountMoreThan",
-                  "countNumber": 20
+                  "countNumber": 5
                 },
                 "action": { "type": "expire" }
               }
@@ -95,6 +131,92 @@ Resources:
       LogGroupName: !Sub "/ecs/orya/${EnvironmentName}/worker"
       RetentionInDays: !Ref LogsRetentionDays
 
+  BudgetAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "orya-${EnvironmentName}-budget-alerts"
+
+  BudgetAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasBudgetEmail
+    Properties:
+      TopicArn: !Ref BudgetAlertsTopic
+      Protocol: email
+      Endpoint: !Ref BudgetNotificationEmail
+
+  BudgetMonthly20:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "orya-${EnvironmentName}-monthly-20"
+        BudgetLimit:
+          Amount: 20
+          Unit: USD
+        BudgetType: COST
+        TimeUnit: MONTHLY
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 20
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref BudgetAlertsTopic
+
+  BudgetMonthly50:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "orya-${EnvironmentName}-monthly-50"
+        BudgetLimit:
+          Amount: 50
+          Unit: USD
+        BudgetType: COST
+        TimeUnit: MONTHLY
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref BudgetAlertsTopic
+
+  LogIngestAlarmWeb:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "orya-${EnvironmentName}-log-ingest-web"
+      Namespace: AWS/Logs
+      MetricName: IncomingBytes
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref LogIngestThresholdBytes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LogGroupName
+          Value: !Ref LogGroupWeb
+      AlarmActions:
+        - !Ref BudgetAlertsTopic
+
+  LogIngestAlarmWorker:
+    Type: AWS::CloudWatch::Alarm
+    Condition: UseWorker
+    Properties:
+      AlarmName: !Sub "orya-${EnvironmentName}-log-ingest-worker"
+      Namespace: AWS/Logs
+      MetricName: IncomingBytes
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref LogIngestThresholdBytes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LogGroupName
+          Value: !Ref LogGroupWorker
+      AlarmActions:
+        - !Ref BudgetAlertsTopic
+
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
@@ -108,6 +230,7 @@ Resources:
 
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    Condition: HasALB
     Properties:
       GroupDescription: ORYA ALB SG
       VpcId: !Ref VpcId
@@ -126,16 +249,23 @@ Resources:
       GroupDescription: ORYA ECS Service SG
       VpcId: !Ref VpcId
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
-          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - !If
+          - HasALB
+          - IpProtocol: tcp
+            FromPort: 3000
+            ToPort: 3000
+            SourceSecurityGroupId: !Ref ALBSecurityGroup
+          - IpProtocol: tcp
+            FromPort: 3000
+            ToPort: 3000
+            CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: HasALB
     Properties:
       Name: !Sub "orya-${EnvironmentName}-alb"
       Scheme: internet-facing
@@ -146,6 +276,7 @@ Resources:
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: HasALB
     Properties:
       Name: !Sub "orya-${EnvironmentName}-tg"
       Port: 3000
@@ -159,6 +290,7 @@ Resources:
 
   Listener443:
     Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasALB
     Properties:
       LoadBalancerArn: !Ref LoadBalancer
       Port: 443
@@ -191,7 +323,13 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: "arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/*"
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin*"
 
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -213,7 +351,13 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: "arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/*"
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin*"
               - Effect: Allow
                 Action:
                   - logs:CreateLogStream
@@ -241,57 +385,119 @@ Resources:
               Value: production
           Secrets:
             - Name: DATABASE_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/DATABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DATABASE_URL::"
             - Name: DIRECT_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/DIRECT_URL
-            - Name: SUPABASE_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SUPABASE_URL
-            - Name: SUPABASE_SERVICE_ROLE
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SUPABASE_SERVICE_ROLE
-            - Name: SUPABASE_ANON_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SUPABASE_ANON_KEY
-            - Name: STRIPE_SECRET_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/STRIPE_SECRET_KEY
-            - Name: STRIPE_WEBHOOK_SECRET
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/STRIPE_WEBHOOK_SECRET
-            - Name: RESEND_API_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/RESEND_API_KEY
-            - Name: RESEND_FROM_EMAIL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/RESEND_FROM_EMAIL
-            - Name: SENTRY_DSN
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SENTRY_DSN
-            - Name: ORYA_CRON_SECRET
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/ORYA_CRON_SECRET
-            - Name: QR_SECRET_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/QR_SECRET_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DIRECT_URL::"
             - Name: APP_BASE_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APP_BASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:APP_BASE_URL::"
             - Name: NEXT_PUBLIC_BASE_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/NEXT_PUBLIC_BASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXT_PUBLIC_BASE_URL::"
+            - Name: ORYA_CRON_SECRET
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ORYA_CRON_SECRET::"
+            - Name: QR_SECRET_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:QR_SECRET_KEY::"
+            - Name: INTERNAL_SECRET_HEADER
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:INTERNAL_SECRET_HEADER::"
+            - Name: ICS_SECRET_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ICS_SECRET_KEY::"
+            - Name: PWA_MANIFEST_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:PWA_MANIFEST_URL::"
+            - Name: MAPKIT_JS_KEY_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAPKIT_JS_KEY_ID::"
+            - Name: MAPKIT_JS_ORIGIN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAPKIT_JS_ORIGIN::"
+            - Name: MAPKIT_JS_PRIVATE_KEY_BASE64
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAPKIT_JS_PRIVATE_KEY_BASE64::"
+            - Name: MAP_PROVIDER
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAP_PROVIDER::"
+            - Name: CLOUDWATCH_LOG_GROUP
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:CLOUDWATCH_LOG_GROUP::"
+            - Name: CLOUDWATCH_LOG_RETENTION_DAYS
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:CLOUDWATCH_LOG_RETENTION_DAYS::"
+            - Name: CLOUDWATCH_METRICS_NAMESPACE
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:CLOUDWATCH_METRICS_NAMESPACE::"
+            - Name: LOG_LEVEL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:LOG_LEVEL::"
+            - Name: LOG_FORMAT
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:LOG_FORMAT::"
+            - Name: SENTRY_DSN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:SENTRY_DSN::"
+            - Name: XRAY_DAEMON_ADDRESS
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:XRAY_DAEMON_ADDRESS::"
+            - Name: XRAY_ENABLED
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:XRAY_ENABLED::"
+            - Name: ALERTS_SNS_TOPIC_ARN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ALERTS_SNS_TOPIC_ARN::"
+            - Name: S3_SECRETS_BUCKET
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:S3_SECRETS_BUCKET::"
+            - Name: NEXTAUTH_SECRET
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXTAUTH_SECRET::"
+            - Name: NEXTAUTH_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXTAUTH_URL::"
+            - Name: SUPABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_URL::"
+            - Name: SUPABASE_SERVICE_ROLE
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_SERVICE_ROLE::"
+            - Name: SUPABASE_ANON_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_ANON_KEY::"
             - Name: NEXT_PUBLIC_SUPABASE_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/NEXT_PUBLIC_SUPABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:NEXT_PUBLIC_SUPABASE_URL::"
             - Name: NEXT_PUBLIC_SUPABASE_ANON_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/NEXT_PUBLIC_SUPABASE_ANON_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:NEXT_PUBLIC_SUPABASE_ANON_KEY::"
+            - Name: STRIPE_SECRET_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_SECRET_KEY::"
+            - Name: STRIPE_WEBHOOK_SECRET
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_WEBHOOK_SECRET::"
             - Name: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY::"
             - Name: APPLE_SIGNIN_SERVICE_ID
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APPLE_SIGNIN_SERVICE_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_SIGNIN_SERVICE_ID::"
             - Name: APPLE_SIGNIN_REDIRECT_URI
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APPLE_SIGNIN_REDIRECT_URI
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_SIGNIN_REDIRECT_URI::"
             - Name: APPLE_SIGNIN_TEAM_ID
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APPLE_SIGNIN_TEAM_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_SIGNIN_TEAM_ID::"
             - Name: APPLE_SIGNIN_KEY_ID
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APPLE_SIGNIN_KEY_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_SIGNIN_KEY_ID::"
             - Name: APPLE_SIGNIN_PRIVATE_KEY_BASE64
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APPLE_SIGNIN_PRIVATE_KEY_BASE64
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_SIGNIN_PRIVATE_KEY_BASE64::"
+            - Name: APPLE_PAY_CERTIFICATE_BASE64
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_PAY_CERTIFICATE_BASE64::"
+            - Name: APPLE_PAY_DOMAIN_VERIFICATION_FILE
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_PAY_DOMAIN_VERIFICATION_FILE::"
+            - Name: APPLE_PAY_MERCHANT_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_PAY_MERCHANT_ID::"
             - Name: APNS_TEAM_ID
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APNS_TEAM_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APNS_TEAM_ID::"
             - Name: APNS_KEY_ID
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APNS_KEY_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APNS_KEY_ID::"
             - Name: APNS_PRIVATE_KEY_BASE64
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APNS_PRIVATE_KEY_BASE64
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APNS_PRIVATE_KEY_BASE64::"
             - Name: APNS_TOPIC
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/APNS_TOPIC
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APNS_TOPIC::"
+            - Name: RESEND_API_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_API_KEY::"
+            - Name: RESEND_FROM_EMAIL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_FROM_EMAIL::"
+            - Name: SES_REGION
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_REGION::"
+            - Name: SES_IDENTITY_DOMAIN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_IDENTITY_DOMAIN::"
+            - Name: SES_SMTP_USERNAME
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_SMTP_USERNAME::"
+            - Name: SES_SMTP_PASSWORD
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_SMTP_PASSWORD::"
+            - Name: STAGING_ADMIN_EMAIL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin:STAGING_ADMIN_EMAIL::"
+            - Name: STAGING_ADMIN_PASSWORD
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin:STAGING_ADMIN_PASSWORD::"
+            - Name: STAGING_ADMIN_SESSION
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin:STAGING_ADMIN_SESSION::"
+            - Name: DEVICE_FARM_PROVIDER
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin:DEVICE_FARM_PROVIDER::"
+            - Name: DEVICE_FARM_USER
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin:DEVICE_FARM_USER::"
+            - Name: DEVICE_FARM_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin:DEVICE_FARM_KEY::"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -326,29 +532,25 @@ Resources:
               Value: production
           Secrets:
             - Name: DATABASE_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/DATABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DATABASE_URL::"
             - Name: DIRECT_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/DIRECT_URL
-            - Name: SUPABASE_URL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SUPABASE_URL
-            - Name: SUPABASE_SERVICE_ROLE
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SUPABASE_SERVICE_ROLE
-            - Name: SUPABASE_ANON_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SUPABASE_ANON_KEY
-            - Name: STRIPE_SECRET_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/STRIPE_SECRET_KEY
-            - Name: STRIPE_WEBHOOK_SECRET
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/STRIPE_WEBHOOK_SECRET
-            - Name: RESEND_API_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/RESEND_API_KEY
-            - Name: RESEND_FROM_EMAIL
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/RESEND_FROM_EMAIL
-            - Name: SENTRY_DSN
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/SENTRY_DSN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DIRECT_URL::"
             - Name: ORYA_CRON_SECRET
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/ORYA_CRON_SECRET
-            - Name: QR_SECRET_KEY
-              ValueFrom: arn:aws:secretsmanager:eu-west-1:495219734037:secret:orya/prod/QR_SECRET_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ORYA_CRON_SECRET::"
+            - Name: SUPABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_URL::"
+            - Name: SUPABASE_SERVICE_ROLE
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_SERVICE_ROLE::"
+            - Name: STRIPE_SECRET_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_SECRET_KEY::"
+            - Name: STRIPE_WEBHOOK_SECRET
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_WEBHOOK_SECRET::"
+            - Name: RESEND_API_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_API_KEY::"
+            - Name: RESEND_FROM_EMAIL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_FROM_EMAIL::"
+            - Name: SENTRY_DSN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:SENTRY_DSN::"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -356,8 +558,9 @@ Resources:
               awslogs-region: eu-west-1
               awslogs-stream-prefix: ecs
 
-  WebService:
+  WebServiceAlb:
     Type: AWS::ECS::Service
+    Condition: HasALB
     DependsOn: Listener443
     Properties:
       ServiceName: !Sub "orya-${EnvironmentName}-web"
@@ -367,8 +570,8 @@ Resources:
       TaskDefinition: !Ref WebTaskDefinition
       NetworkConfiguration:
         AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          Subnets: !Ref PrivateSubnets
+          AssignPublicIp: !Ref AssignPublicIp
+          Subnets: !Ref ServiceSubnets
           SecurityGroups:
             - !Ref ServiceSecurityGroup
       LoadBalancers:
@@ -379,8 +582,28 @@ Resources:
         MinimumHealthyPercent: 50
         MaximumPercent: 200
 
+  WebServiceNoAlb:
+    Type: AWS::ECS::Service
+    Condition: NoALB
+    Properties:
+      ServiceName: !Sub "orya-${EnvironmentName}-web"
+      Cluster: !Ref ECSCluster
+      DesiredCount: !Ref WebDesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref WebTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: !Ref AssignPublicIp
+          Subnets: !Ref ServiceSubnets
+          SecurityGroups:
+            - !Ref ServiceSecurityGroup
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+
   WorkerService:
     Type: AWS::ECS::Service
+    Condition: UseWorker
     Properties:
       ServiceName: !Sub "orya-${EnvironmentName}-worker"
       Cluster: !Ref ECSCluster
@@ -393,13 +616,14 @@ Resources:
       TaskDefinition: !Ref WorkerTaskDefinition
       NetworkConfiguration:
         AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          Subnets: !Ref PrivateSubnets
+          AssignPublicIp: !Ref AssignPublicIp
+          Subnets: !Ref ServiceSubnets
           SecurityGroups:
             - !Ref ServiceSecurityGroup
 
   EventsRunTaskRole:
     Type: AWS::IAM::Role
+    Condition: UseWorker
     Properties:
       RoleName: orya-eventbridge-run-task
       AssumeRolePolicyDocument:
@@ -427,6 +651,7 @@ Resources:
 
   OutboxScheduleRule:
     Type: AWS::Events::Rule
+    Condition: UseWorker
     Properties:
       Name: !Sub "orya-${EnvironmentName}-outbox"
       ScheduleExpression: !Ref OutboxSchedule
@@ -441,17 +666,25 @@ Resources:
             LaunchType: FARGATE
             NetworkConfiguration:
               AwsVpcConfiguration:
-                Subnets: !Ref PrivateSubnets
+                Subnets: !Ref ServiceSubnets
                 SecurityGroups:
                   - !Ref ServiceSecurityGroup
-                AssignPublicIp: ENABLED
+                AssignPublicIp: !Ref AssignPublicIp
 
 Outputs:
   ClusterName:
     Value: !Ref ECSCluster
   WebServiceName:
-    Value: !Ref WebService
+    Value: !If [HasALB, !Ref WebServiceAlb, !Ref WebServiceNoAlb]
   WorkerServiceName:
-    Value: !Ref WorkerService
+    Value: !If [UseWorker, !Ref WorkerService, ""]
   LoadBalancerDNS:
+    Condition: HasALB
     Value: !GetAtt LoadBalancer.DNSName
+  WebURL:
+    Value: !If
+      - HasALB
+      - !Sub "https://${LoadBalancer.DNSName}"
+      - ""
+  TaskRoleArn:
+    Value: !GetAtt ECSTaskRole.Arn
