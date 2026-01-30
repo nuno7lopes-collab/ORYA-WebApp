@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "REPLACE_ME_TEAMID.com.orya.service.prod",
+        "paths": ["*"]
+      }
+    ]
+  }
+}
