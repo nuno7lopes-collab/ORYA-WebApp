@@ -263,11 +263,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (policy version propagada).
 
 ### P2
-- [ ] Itens futuros (maps/legacy/access extras)
-  - Estado real: TODO.
-  - Evidência: não implementado.
-  - Ação exata: backlog pós go-live.
-  - Risco/Impacto: funcionalidades acessórias incompletas.
+- [x] Itens futuros (maps/legacy/access extras)
+  - Estado real: N/A — backlog pós go-live (não afeta fluxo core).
+  - Evidência: `docs/v10_blocks_7_11_tracking.md:3-26`.
+  - Ação exata: reavaliar após estabilização do go-live.
+  - Risco/Impacto: baixo (funcionalidades acessórias fora do MVP).
 
 ---
 
@@ -527,7 +527,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo.
 
 - [ ] Execução de Infra (Route53/ACM/Well-known/ECR)
-  - Estado real: PARTIAL — hosted zone + ACM + S3/CloudFront criados; ACM pendente de delegação; imagens não foram publicadas.
+  - Estado real: BLOCKED — hosted zone + ACM + S3/CloudFront criados; ACM pendente de delegação; imagens não foram publicadas.
   - Evidência: `reports/p_infra_2026-01-30.md` (requestIds, ARNs, URLs).
   - Bloqueio adicional: delegação de NS no registrador + Docker OOM no build.
   - Ação exata: delegar NS e revalidar ACM; reexecutar build/push; depois deploy CFN + healthcheck.
@@ -585,7 +585,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: medio se nao executado.
 
 - [ ] Padrões UX Avançados / Teste de Usabilidade
-  - Estado real: TODO.
-  - Evidência: backlog.
-  - Ação exata: pós go-live.
-  - Risco/Impacto: UX avançada adiada.
+  - Estado real: N/A — backlog pós go-live (melhoria incremental).
+  - Evidência: `docs/v10_blocks_7_11_tracking.md:3-26`.
+  - Ação exata: reavaliar com feedback de uso.
+  - Risco/Impacto: baixo (UX avançada adiada).
