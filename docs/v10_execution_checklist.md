@@ -280,9 +280,15 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: manter snapshot como requisito.
   - Risco/Impacto: baixo.
 
-- [ ] Backfill de Snapshots em Prod
-  - Estado real: BLOCKED — requer `DATABASE_URL`/`DIRECT_URL` (sem envs neste contexto); script pronto mas não executado.
+- [x] Backfill de Snapshots — tooling/script pronto
+  - Estado real: DONE — script e lib prontos para execução controlada.
   - Evidência: `scripts/backfill_booking_confirmation_snapshot.ts:1-63`, `lib/reservas/backfillConfirmationSnapshot.ts:52-179`.
+  - Ação exata: manter script idempotente e documentado.
+  - Risco/Impacto: baixo (tooling pronto).
+
+- [ ] Backfill de Snapshots — execução em DB real
+  - Estado real: BLOCKED — requer `DATABASE_URL`/`DIRECT_URL` (sem envs neste contexto).
+  - Evidência: `scripts/backfill_booking_confirmation_snapshot.ts:1-63`, `reports/block7_closeout_2026-01-30.md`.
   - Bloqueio: ausência de DB env local (sem secrets) impede dry-run/execução controlada.
   - Ação exata: executar dry-run `--limit=200` e depois batches controlados quando DB env estiver disponível.
   - Risco/Impacto: alto se não executado antes do go-live (cancel/no-show fail-closed).
@@ -377,7 +383,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Extras (Revenda/Carteira)
   - Estado real: DONE — revenda + carteira com UI/rotas e estados vazios.
-  - Evidência: `app/api/eventos/[slug]/resales/route.ts:1-140`, `app/api/tickets/resale/list/route.ts:1-180`, `app/api/tickets/resale/cancel/route.ts:1-120`, `app/eventos/[slug]/page.tsx:630-1365`, `app/me/carteira/WalletHubClient.tsx:150-470`, `app/api/me/wallet/route.ts:1-220`.
+  - Evidência: `app/api/eventos/[slug]/resales/route.ts:1-140`, `app/api/tickets/resale/list/route.ts:1-180`, `app/api/tickets/resale/cancel/route.ts:1-120`, `app/eventos/[slug]/page.tsx:630-1365`, `app/me/carteira/WalletHubClient.tsx:150-470`, `app/api/me/wallet/route.ts:1-220`, `reports/block9_closeout_2026-01-30.md`.
   - Ação exata: monitorar taxa de conversão e abuso de revenda.
   - Risco/Impacto: baixo (funcionalidades secundárias operacionais).
 
@@ -414,7 +420,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Melhorias de Perfil
   - Estado real: DONE — settings com visibilidade, notificações e interesses; persistência via API.
-  - Evidência: `app/me/settings/page.tsx:40-520`, `app/api/me/settings/save/route.ts:1-150`, `app/api/me/contact-phone/route.ts:1-80`.
+  - Evidência: `app/me/settings/page.tsx:40-520`, `app/api/me/settings/save/route.ts:1-150`, `app/api/me/contact-phone/route.ts:1-80`, `reports/block10_closeout_2026-01-30.md`.
   - Ação exata: adicionar métricas de uso de settings.
   - Risco/Impacto: baixo (UX de perfil coberta).
 
@@ -468,7 +474,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Monitoramento de Cron (health check)
   - Estado real: DONE — heartbeat por job + endpoint interno de coverage.
-  - Evidência: `app/api/internal/cron/coverage/route.ts:11-66` (endpoint fail-closed), `lib/cron/heartbeat.ts:23-55` (writer), `app/api/cron/operations/route.ts:22-39` + `app/api/cron/bookings/cleanup/route.ts:110-135` + `app/api/cron/padel/reminders/route.ts:190-205` (success/error por job), `lib/cron/jobs.ts:9-94` (inventário jobs), `prisma/schema.prisma:2079-2094` + `prisma/migrations/20260130155341_cron_heartbeat/migration.sql:1-16` (schema/migração), `docs/runbooks/cron-coverage.md:1-53` (runbook).
+  - Evidência: `app/api/internal/cron/coverage/route.ts:11-66` (endpoint fail-closed), `lib/cron/heartbeat.ts:23-55` (writer), `app/api/cron/operations/route.ts:22-39` + `app/api/cron/bookings/cleanup/route.ts:110-135` + `app/api/cron/padel/reminders/route.ts:190-205` (success/error por job), `lib/cron/jobs.ts:9-94` (inventário jobs), `prisma/schema.prisma:2079-2094` + `prisma/migrations/20260130155341_cron_heartbeat/migration.sql:1-16` (schema/migração), `docs/runbooks/cron-coverage.md:1-53` (runbook), `reports/p2_closeout_2026-01-30.md`.
   - Ação exata: configurar scheduler externo e monitorar `stale=true`.
   - Risco/Impacto: baixo (detecção de cron parado disponível).
 
@@ -561,7 +567,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] PWA e App Store
   - Estado real: DONE — manifest + meta + ícones base.
-  - Evidência: `public/manifest.json:1-30`, `app/layout.tsx:14-30` (manifest/meta/icons), `public/brand/orya-logo-192.png`, `public/brand/orya-logo-512.png`, `public/brand/orya-logo-180.png`.
+  - Evidência: `public/manifest.json:1-30`, `app/layout.tsx:14-30` (manifest/meta/icons), `public/brand/orya-logo-192.png`, `public/brand/orya-logo-512.png`, `public/brand/orya-logo-180.png`, `reports/p2_closeout_2026-01-30.md`.
   - Ação exata: validar comportamento “Add to Home Screen” em iOS/Android.
   - Risco/Impacto: baixo (PWA básico pronto).
 
