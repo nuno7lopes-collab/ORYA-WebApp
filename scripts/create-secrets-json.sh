@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SRC_FILE=${1:-/tmp/orya-prod-secrets.json}
+SRC_FILE=/tmp/orya-prod-secrets.json
 OUT_DIR=${OUT_DIR:-/tmp/orya-secrets}
 FLAT_TEMPLATE=${FLAT_TEMPLATE:-/tmp/orya-prod-secrets.flat.json}
 REGION=${AWS_REGION:-${AWS_DEFAULT_REGION:-eu-west-1}}
@@ -12,6 +12,35 @@ NO_UPLOAD=${NO_UPLOAD:-false}
 ONLY_GROUPS=${ONLY_GROUPS:-}
 ONLY_ENVS=${ONLY_ENVS:-}
 FORCE_PLACEHOLDERS_PROD=${FORCE_PLACEHOLDERS_PROD:-false}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --in)
+      SRC_FILE="$2"; shift 2;;
+    --out)
+      OUT_DIR="$2"; shift 2;;
+    --flat)
+      FLAT_TEMPLATE="$2"; shift 2;;
+    --profile)
+      PROFILE="$2"; shift 2;;
+    --region)
+      REGION="$2"; shift 2;;
+    --copy-prod-to-dev)
+      COPY_PROD_TO_DEV="true"; shift;;
+    --allow-placeholders-dev)
+      ALLOW_PLACEHOLDERS_DEV="true"; shift;;
+    --force-placeholders-prod)
+      FORCE_PLACEHOLDERS_PROD="true"; shift;;
+    --only-envs)
+      ONLY_ENVS="$2"; shift 2;;
+    --only-groups)
+      ONLY_GROUPS="$2"; shift 2;;
+    --no-upload)
+      NO_UPLOAD="true"; shift;;
+    *)
+      echo "Unknown argument: $1" >&2; exit 1;;
+  esac
+done
 
 if [[ ! -f "$SRC_FILE" ]]; then
   echo "Source file not found: $SRC_FILE" >&2
