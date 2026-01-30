@@ -93,7 +93,7 @@ function distinct_subnets() {
     if [[ -z "$subnet" || -z "$az" ]]; then
       continue
     fi
-    if [[ " ${seen_az[*]} " == *" $az "* ]]; then
+    if [[ " ${seen_az[*]-} " == *" $az "* ]]; then
       continue
     fi
     chosen+=("$subnet")
