@@ -11,6 +11,7 @@ ALLOW_PLACEHOLDERS_DEV=${ALLOW_PLACEHOLDERS_DEV:-true}
 NO_UPLOAD=${NO_UPLOAD:-false}
 ONLY_GROUPS=${ONLY_GROUPS:-}
 ONLY_ENVS=${ONLY_ENVS:-}
+FORCE_PLACEHOLDERS_PROD=${FORCE_PLACEHOLDERS_PROD:-false}
 
 if [[ ! -f "$SRC_FILE" ]]; then
   echo "Source file not found: $SRC_FILE" >&2
@@ -24,6 +25,7 @@ OUT_DIR="$OUT_DIR" \
 FLAT_TEMPLATE="$FLAT_TEMPLATE" \
 COPY_PROD_TO_DEV="$COPY_PROD_TO_DEV" \
 ALLOW_PLACEHOLDERS_DEV="$ALLOW_PLACEHOLDERS_DEV" \
+FORCE_PLACEHOLDERS_PROD="$FORCE_PLACEHOLDERS_PROD" \
 python3 - <<'PY'
 import json
 import os
@@ -35,6 +37,7 @@ out_dir = Path(os.environ.get("OUT_DIR", "/tmp/orya-secrets"))
 flat_template = Path(os.environ.get("FLAT_TEMPLATE", "/tmp/orya-prod-secrets.flat.json"))
 copy_prod_to_dev = os.environ.get("COPY_PROD_TO_DEV", "false").lower() == "true"
 allow_placeholders_dev = os.environ.get("ALLOW_PLACEHOLDERS_DEV", "true").lower() == "true"
+force_placeholders_prod = os.environ.get("FORCE_PLACEHOLDERS_PROD", "false").lower() == "true"
 
 with src_file.open("r", encoding="utf-8") as f:
     data = json.load(f)
@@ -150,6 +153,11 @@ flat_template.write_text(json.dumps(flat, indent=2, ensure_ascii=True), encoding
 prod_groups = {"app": {}, "supabase": {}, "payments": {}, "apple": {}, "email": {}, "admin": {}}
 for key, value in value_by_key.items():
     prod_groups[group_for(key)][key] = value
+
+# Optionally inject placeholders for missing keys in prod (apple/aasa)
+if force_placeholders_prod and missing_keys:
+    for key in sorted(missing_keys):
+        prod_groups[group_for(key)].setdefault(key, f"REPLACE_ME_{key}")
 
 # Dev groups
 if copy_prod_to_dev:
