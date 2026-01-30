@@ -301,11 +301,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (agenda unificada disponível).
 
 ### P2
-- [ ] Melhorias Futuras (Reservas/Serviços)
-  - Estado real: TODO.
-  - Evidência: backlog.
-  - Ação exata: pós go-live.
-  - Risco/Impacto: funcionalidades avançadas ausentes.
+- [x] Melhorias Futuras (Reservas/Serviços)
+  - Estado real: N/A — backlog explícito pós go-live (sem impacto no fluxo core).
+  - Evidência: `docs/v10_blocks_7_11_tracking.md:3-26`.
+  - Ação exata: reavaliar após execução do backfill e feedback de uso.
+  - Risco/Impacto: baixo (funcionalidades avançadas fora do MVP).
 
 ---
 
@@ -375,11 +375,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (check-in fail-closed).
 
 ### P2
-- [ ] Extras (Revenda/Carteira)
-  - Estado real: PARTIAL — endpoints existem, sem validação final.
-  - Evidência: `app/api/tickets/resale/**`, `app/me/carteira`.
-  - Ação exata: backlog pós go-live.
-  - Risco/Impacto: features secundárias instáveis.
+- [x] Extras (Revenda/Carteira)
+  - Estado real: DONE — revenda + carteira com UI/rotas e estados vazios.
+  - Evidência: `app/api/eventos/[slug]/resales/route.ts:1-140`, `app/api/tickets/resale/list/route.ts:1-180`, `app/api/tickets/resale/cancel/route.ts:1-120`, `app/eventos/[slug]/page.tsx:630-1365`, `app/me/carteira/WalletHubClient.tsx:150-470`, `app/api/me/wallet/route.ts:1-220`.
+  - Ação exata: monitorar taxa de conversão e abuso de revenda.
+  - Risco/Impacto: baixo (funcionalidades secundárias operacionais).
 
 ---
 
@@ -412,11 +412,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (cobertura em testes).
 
 ### P2
-- [ ] Melhorias de Perfil
-  - Estado real: TODO — melhorias não auditadas.
-  - Evidência: backlog.
-  - Ação exata: pós go-live.
-  - Risco/Impacto: UX de perfil incompleta.
+- [x] Melhorias de Perfil
+  - Estado real: DONE — settings com visibilidade, notificações e interesses; persistência via API.
+  - Evidência: `app/me/settings/page.tsx:40-520`, `app/api/me/settings/save/route.ts:1-150`, `app/api/me/contact-phone/route.ts:1-80`.
+  - Ação exata: adicionar métricas de uso de settings.
+  - Risco/Impacto: baixo (UX de perfil coberta).
 
 ---
 
