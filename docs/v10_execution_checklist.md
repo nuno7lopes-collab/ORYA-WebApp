@@ -526,6 +526,13 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: manter runbook alinhado ao infra atual.
   - Risco/Impacto: baixo.
 
+- [ ] Execução de Infra (Route53/ACM/Well-known/ECR)
+  - Estado real: PARTIAL — hosted zone + ACM + S3/CloudFront criados; ACM pendente de delegação; imagens não foram publicadas.
+  - Evidência: `reports/p_infra_2026-01-30.md` (requestIds, ARNs, URLs).
+  - Bloqueio adicional: delegação de NS no registrador + Docker OOM no build.
+  - Ação exata: delegar NS e revalidar ACM; reexecutar build/push; depois deploy CFN + healthcheck.
+  - Risco/Impacto: deploy prod bloqueado até images + ACM issued.
+
 - [x] Design System e Consistência
   - Estado real: DONE — design system documentado + componentes UI reutilizáveis.
   - Evidência: `docs/UX (ORYA WebApp).md:1-120`, `components/ui/*`, `app/components/*`.
