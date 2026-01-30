@@ -14,6 +14,7 @@ import {
 } from "@/domain/padel/standings";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { logError } from "@/lib/observability/logger";
 
 async function _GET(req: NextRequest) {
   try {
@@ -111,7 +112,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
     }
-    console.error("[padel/standings] error", err);
+    logError("padel.standings_failed", err);
     return jsonWrap({ ok: false, error: "Erro ao gerar standings." }, { status: 500 });
   }
 }

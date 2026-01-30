@@ -4,6 +4,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ResaleStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 /**
  * F5-9 – Listar revendas disponíveis por evento
@@ -137,7 +138,7 @@ async function _GET(
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error in GET /api/eventos/[slug]/resales:", error);
+    logError("eventos.resales_failed", error);
     return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }

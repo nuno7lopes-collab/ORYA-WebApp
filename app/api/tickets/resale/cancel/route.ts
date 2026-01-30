@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { TicketStatus, ResaleStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError, logWarn } from "@/lib/observability/logger";
 
 /**
  * F5-8 – Cancelar revenda
@@ -19,7 +20,7 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError) {
-      console.error("Error getting user in resale/cancel:", authError);
+      logWarn("tickets.resale_cancel_auth_failed", { error: authError });
     }
 
     if (!user) {
@@ -115,7 +116,7 @@ async function _POST(req: NextRequest) {
 
     return jsonWrap({ ok: true }, { status: 200 });
   } catch (error) {
-    console.error("Error in /api/tickets/resale/cancel:", error);
+    logError("tickets.resale_cancel_failed", error);
     return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }

@@ -8,7 +8,8 @@
   - Snapshot imutável no confirm; cancel/no-show/refund sempre por snapshot (fail-closed).
 - Backfill:
   - Dry-run: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --dry-run --limit=200`
-  - Execução controlada: `... --limit=200` (repetir em batches).
+  - Execução em batches: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --batch-size=200 --batches=5 --verify`
+  - Retomar de checkpoint: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --batch-size=200 --batches=5 --after-id=<ID> --verify`
 - Testes:
   - `npx vitest run tests/agenda tests/outbox tests/ops`
 - Smoke steps (manual):

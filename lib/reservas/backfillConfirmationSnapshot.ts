@@ -6,7 +6,7 @@ import {
 
 type PrismaLike = Pick<PrismaClient, "booking" | "organizationPolicy"> | Prisma.TransactionClient;
 
-const BACKFILL_STATUSES = [
+export const BACKFILL_STATUSES = [
   "CONFIRMED",
   "COMPLETED",
   "NO_SHOW",
@@ -32,12 +32,14 @@ const safeDate = (value: Date | null | undefined, fallback: Date) => {
 export type BackfillBookingConfirmationOptions = {
   dryRun?: boolean;
   limit?: number | null;
+  afterId?: number | null;
   logger?: (message: string) => void;
 };
 
 export type BackfillBookingConfirmationSummary = {
   dryRun: boolean;
   limit: number;
+  lastId: number | null;
   scanned: number;
   updated: number;
   skipped: number;
@@ -55,14 +57,16 @@ export async function backfillBookingConfirmationSnapshots(
 ): Promise<BackfillBookingConfirmationSummary> {
   const dryRun = Boolean(options?.dryRun);
   const limit = toPositiveLimit(options?.limit ?? null);
+  const afterId = Number.isFinite(options?.afterId) ? Number(options?.afterId) : null;
   const logger = options?.logger ?? (() => {});
 
   const bookings = await prisma.booking.findMany({
     where: {
       status: { in: [...BACKFILL_STATUSES] },
       confirmationSnapshot: { equals: Prisma.DbNull },
+      ...(afterId ? { id: { gt: afterId } } : {}),
     },
-    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+    orderBy: [{ id: "asc" }],
     take: limit,
     select: {
       id: true,
@@ -91,8 +95,10 @@ export async function backfillBookingConfirmationSnapshots(
     },
   });
 
+  const lastId = bookings.length > 0 ? bookings[bookings.length - 1]?.id ?? null : null;
+
   logger(
-    `[booking_confirmation_backfill] Found ${bookings.length} bookings without confirmationSnapshot (limit=${limit}).`,
+    `[booking_confirmation_backfill] Found ${bookings.length} bookings without confirmationSnapshot (limit=${limit}, afterId=${afterId ?? "none"}).`,
   );
 
   let updated = 0;
@@ -187,6 +193,7 @@ export async function backfillBookingConfirmationSnapshots(
   return {
     dryRun,
     limit,
+    lastId,
     scanned: bookings.length,
     updated,
     skipped,

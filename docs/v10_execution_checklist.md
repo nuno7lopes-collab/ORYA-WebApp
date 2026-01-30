@@ -282,8 +282,8 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 - [x] Backfill de Snapshots — tooling/script pronto
   - Estado real: DONE — script e lib prontos para execução controlada.
-  - Evidência: `scripts/backfill_booking_confirmation_snapshot.ts:1-63`, `lib/reservas/backfillConfirmationSnapshot.ts:52-179`.
-  - Ação exata: manter script idempotente e documentado.
+  - Evidência: `scripts/backfill_booking_confirmation_snapshot.ts:1-140` (dry-run/limit/batches/checkpoint/verify), `lib/reservas/backfillConfirmationSnapshot.ts:1-200` (idempotente).
+  - Ação exata: manter script idempotente com `--dry-run`, `--limit`, `--batch-size`, `--batches`, `--after-id`, `--verify`.
   - Risco/Impacto: baixo (tooling pronto).
 
 - [ ] Backfill de Snapshots — execução em DB real
@@ -346,7 +346,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Resultados e Rankings
   - Estado real: DONE — standings/rankings com endpoints + widgets + UI publica.
-  - Evidência: `app/api/padel/standings/route.ts:1-140`, `app/api/padel/rankings/route.ts:1-90`, `app/eventos/[slug]/PadelPublicTablesClient.tsx:90-230`, `app/widgets/padel/standings/StandingsWidgetClient.tsx:1-140`.
+  - Evidência: `app/api/padel/standings/route.ts:1-140` (withApiEnvelope + logError + gating), `app/api/padel/rankings/route.ts:1-120` (respondOk/respondError + requestId), `app/eventos/[slug]/PadelPublicTablesClient.tsx:90-230`, `app/widgets/padel/standings/StandingsWidgetClient.tsx:1-140`.
   - Ação exata: monitorar consistencia de dados em eventos grandes.
   - Risco/Impacto: baixo (UI e API ativos).
 
@@ -383,7 +383,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Extras (Revenda/Carteira)
   - Estado real: DONE — revenda + carteira com UI/rotas e estados vazios.
-  - Evidência: `app/api/eventos/[slug]/resales/route.ts:1-140`, `app/api/tickets/resale/list/route.ts:1-180`, `app/api/tickets/resale/cancel/route.ts:1-120`, `app/eventos/[slug]/page.tsx:630-1365`, `app/me/carteira/WalletHubClient.tsx:150-470`, `app/api/me/wallet/route.ts:1-220`, `reports/block9_closeout_2026-01-30.md`.
+  - Evidência: `app/api/eventos/[slug]/resales/route.ts:1-150` (withApiEnvelope + logError), `app/api/tickets/resale/list/route.ts:1-190` (auth + logError/logWarn), `app/api/tickets/resale/cancel/route.ts:1-130` (auth + logError/logWarn), `app/api/me/wallet/route.ts:1-230` (withApiEnvelope + auth), `app/eventos/[slug]/page.tsx:630-1365`, `app/me/carteira/WalletHubClient.tsx:150-470`, `reports/block9_closeout_2026-01-30.md`.
   - Ação exata: monitorar taxa de conversão e abuso de revenda.
   - Risco/Impacto: baixo (funcionalidades secundárias operacionais).
 
@@ -420,7 +420,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Melhorias de Perfil
   - Estado real: DONE — settings com visibilidade, notificações e interesses; persistência via API.
-  - Evidência: `app/me/settings/page.tsx:40-520`, `app/api/me/settings/save/route.ts:1-150`, `app/api/me/contact-phone/route.ts:1-80`, `reports/block10_closeout_2026-01-30.md`.
+  - Evidência: `app/me/settings/page.tsx:40-520`, `app/api/me/settings/save/route.ts:1-150` (withApiEnvelope + auth), `app/api/me/contact-phone/route.ts:1-80`, `reports/block10_closeout_2026-01-30.md`.
   - Ação exata: adicionar métricas de uso de settings.
   - Risco/Impacto: baixo (UX de perfil coberta).
 
@@ -431,7 +431,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Busca Global Simples
   - Estado real: DONE — search global via Navbar + explorar com estados vazios/erro.
-  - Evidência: `app/components/Navbar.tsx:780-1260`, `app/api/users/search/route.ts:1-140`, `app/api/organizations/search/route.ts:1-140`, `app/explorar/_components/ExplorarContent.tsx:880-1320`.
+  - Evidência: `app/components/Navbar.tsx:780-1260`, `app/api/users/search/route.ts:1-140` (limit default + withApiEnvelope + logError), `app/api/organizations/search/route.ts:1-140` (limit default + withApiEnvelope + logError), `app/explorar/_components/ExplorarContent.tsx:880-1320`.
   - Ação exata: monitorar performance de queries em prod.
   - Risco/Impacto: baixo (descoberta funcional).
 

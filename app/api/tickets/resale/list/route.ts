@@ -3,6 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError, logWarn } from "@/lib/observability/logger";
 
 /**
  * F5-7 – Criar revenda (listar bilhete)
@@ -22,7 +23,7 @@ async function _POST(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError) {
-      console.error("Error getting user in resale/list:", authError);
+      logWarn("tickets.resale_list_auth_failed", { error: authError });
     }
 
     if (!user) {
@@ -174,7 +175,7 @@ async function _POST(req: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error in /api/tickets/resale/list:", error);
+    logError("tickets.resale_list_failed", error);
     return jsonWrap(
       { ok: false, error: "INTERNAL_ERROR" },
       { status: 500 }

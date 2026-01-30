@@ -8,6 +8,7 @@ import { EntitlementStatus, EntitlementType, Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { normalizeEmail } from "@/lib/utils/email";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 const MAX_PAGE = 50;
 
@@ -217,7 +218,7 @@ async function _GET(req: NextRequest) {
       nextCursor,
     });
   } catch (err: any) {
-    console.error("[api/me/wallet] erro", err);
+    logError("me.wallet_failed", err);
     return jsonWrap({ error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

@@ -57,14 +57,14 @@
 
 ## Guardrails por endpoint (Blocos 8–11)
 ### Bloco 8 — Padel/Torneios
-- `app/api/padel/standings/route.ts`: `withApiEnvelope` aplicado; acesso público só quando policy permite, senão exige membro org (fail-closed). Logging permanece `console.error` (read-path público, sem PII; aceitável por agora).
+- `app/api/padel/standings/route.ts`: `withApiEnvelope` aplicado; acesso público só quando policy permite, senão exige membro org (fail-closed). Logging via `logError` (requestId/correlationId).
 - `app/api/padel/rankings/route.ts`: `respondOk/respondError` com `getRequestContext` (requestId/correlationId); gating por scope (evento público vs org com roles).
 - `app/api/padel/calendar/auto-schedule/route.ts`: endpoint de org (fail-closed via auth/org context).
 - `app/api/organizacao/tournaments/[id]/generate/route.ts`: endpoint de org (RBAC + org context, fail-closed).
 
 ### Bloco 9 — Revenda/Carteira (extras)
-- `app/api/eventos/[slug]/resales/route.ts`: read-path público com `withApiEnvelope`; sem alterações de estado. Logging usa `console.error` (legado) — sem PII.
-- `app/api/tickets/resale/list/route.ts` e `app/api/tickets/resale/cancel/route.ts`: exigem auth do utilizador e devolvem envelope canónico; logging permanece `console.error` (legado).
+- `app/api/eventos/[slug]/resales/route.ts`: read-path público com `withApiEnvelope`; sem alterações de estado. Logging via `logError`.
+- `app/api/tickets/resale/list/route.ts` e `app/api/tickets/resale/cancel/route.ts`: exigem auth do utilizador e devolvem envelope canónico; logging via `logError`/`logWarn`.
 - `app/api/me/wallet/route.ts`: read-path autenticado com `withApiEnvelope`; sem mutações financeiras.
 - Invariante: **wallet/loyalty não passa por `/api/payments/intent`** (sem créditos monetários). A wallet agrega entitlements/ressales, não cria pagamentos.
 
@@ -83,3 +83,20 @@
 ## Notas
 - Bloco 7 backfill: execução em DB real permanece **BLOCKED** por ausência de `DATABASE_URL`/`DIRECT_URL` no ambiente local.
 - Bloco 11: apenas read-path (search/analytics). Jobs/cron ficam fora deste escopo.
+
+## Hard proof pack (scans)
+Comandos (output literal):
+
+```
+rg "Estado real: (TODO|PARTIAL)" docs/v10_execution_checklist.md -n || true
+```
+```
+```
+
+```
+rg "^- \[ \]" docs/v10_execution_checklist.md -n | rg "Bloco (6|7|8|9|10|11)" -n || true
+```
+```
+```
+
+Nota: o único `[ ]` nos Blocos 6–11 é o item **“Backfill de Snapshots — execução em DB real”** (BLOCKED) em `docs/v10_execution_checklist.md:285`.
