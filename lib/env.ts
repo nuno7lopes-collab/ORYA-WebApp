@@ -18,6 +18,7 @@ const isTestRuntime =
   process.env.ORIGINAL_NODE_ENV === "test" ||
   process.env.VITEST === "true" ||
   typeof process.env.VITEST_WORKER_ID === "string";
+const isBuildRuntime = process.env.NEXT_PHASE === "phase-production-build";
 
 const testFallbacks: Partial<Record<EnvKey, string>> = {
   SUPABASE_URL: "http://127.0.0.1:54321",
@@ -39,7 +40,7 @@ function getEnv(key: EnvKey, fallbackKeys: string[] = []): string {
     if (fallbackValue) return fallbackValue;
   }
 
-  if (isTestRuntime) {
+  if (isTestRuntime || isBuildRuntime) {
     const fallback = testFallbacks[key];
     if (fallback) return fallback;
   }
