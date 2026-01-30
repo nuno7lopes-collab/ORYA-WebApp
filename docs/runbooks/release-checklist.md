@@ -36,6 +36,30 @@ Objetivo: checklist executavel para release (DoD de producao).
   2) `npx vitest run tests/finance tests/fiscal tests/outbox tests/ops tests/notifications tests/analytics`
   3) `npm run db:gates`
 
+## Checklist final (antes do go-live)
+- Ambiente:
+  - `scripts/check-db-env.js` OK.
+  - Variaveis obrigatorias confirmadas em secrets manager.
+  - URL base e health check OK (`/api/internal/health`).
+- E2E:
+  - Fluxo P0 (intent -> webhook -> status -> entitlement -> check-in) com requestIds registados.
+  - Fluxo P1 (refund/dispute -> ledger -> invalidacao) com requestIds registados.
+- Observabilidade:
+  - `/api/internal/ops/health` OK.
+  - `/api/internal/ops/slo` sem backlog antigo/dlq.
+  - Sentry sem spike de erros.
+- Mobile/A11y/Perf:
+  - Lighthouse + axe executados (sem regressao critica).
+  - Device farm ou browserstack OK.
+- Rollback:
+  - TaskDefinition anterior registado.
+  - Runbook `docs/runbooks/deploy-rollback.md` pronto.
+
+## Evidencia minima a arquivar
+- Logs com requestId/correlationId dos fluxos E2E.
+- Saida dos testes (typecheck/lint/vitest).
+- Dumps de queries DB (payments, ledger, entitlements, checkins).
+
 ## Notas
 - Se `db:gates` falhar por infra/DB indisponivel, bloquear release ate resolver.
 - Qualquer nova suite critica deve ser adicionada a este checklist.

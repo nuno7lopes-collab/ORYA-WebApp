@@ -13,6 +13,9 @@ type FeesResponse =
       stripe: { feeBps: number; feeFixedCents: number; region: string };
     }
   | { ok: false; error?: string };
+type PlatformEmailResponse =
+  | { ok: true; email: string | null }
+  | { ok: false; error?: string };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -28,6 +31,13 @@ export default function AdminSettingsPage() {
   const { data, isLoading, mutate } = useSWR<FeesResponse>("/api/admin/fees", fetcher, {
     revalidateOnFocus: false,
   });
+  const {
+    data: platformEmailData,
+    isLoading: isPlatformEmailLoading,
+    mutate: mutatePlatformEmail,
+  } = useSWR<PlatformEmailResponse>("/api/admin/config/platform-email", fetcher, {
+    revalidateOnFocus: false,
+  });
 
   const [platformPercent, setPlatformPercent] = useState("8.00");
   const [platformFixed, setPlatformFixed] = useState("0.30");
@@ -36,6 +46,10 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [platformEmail, setPlatformEmail] = useState("");
+  const [platformEmailSaving, setPlatformEmailSaving] = useState(false);
+  const [platformEmailError, setPlatformEmailError] = useState<string | null>(null);
+  const [platformEmailSuccess, setPlatformEmailSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (data && data.ok) {
@@ -45,6 +59,12 @@ export default function AdminSettingsPage() {
       setStripeFixed((data.stripe.feeFixedCents / 100).toFixed(2));
     }
   }, [data]);
+
+  useEffect(() => {
+    if (platformEmailData && platformEmailData.ok) {
+      setPlatformEmail(platformEmailData.email ?? "");
+    }
+  }, [platformEmailData]);
 
   const parsedPlatformBps = useMemo(
     () => Math.max(0, Math.round(Number(platformPercent || "0") * 100)),
@@ -97,6 +117,34 @@ export default function AdminSettingsPage() {
       setSaveError("Erro inesperado ao guardar.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSavePlatformEmail = async () => {
+    setPlatformEmailError(null);
+    setPlatformEmailSuccess(null);
+    setPlatformEmailSaving(true);
+    try {
+      const res = await fetch("/api/admin/config/platform-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: platformEmail.trim() }),
+      });
+      const json = (await res.json().catch(() => null)) as PlatformEmailResponse | null;
+      if (!res.ok || !json || !("ok" in json) || !json.ok) {
+        const msg = (json && "error" in json && typeof json.error === "string")
+          ? json.error
+          : "Não foi possível guardar o email.";
+        setPlatformEmailError(msg);
+        return;
+      }
+      setPlatformEmailSuccess("Email da plataforma atualizado.");
+      await mutatePlatformEmail();
+    } catch (err) {
+      console.error("Erro a guardar email da plataforma", err);
+      setPlatformEmailError("Erro inesperado ao guardar.");
+    } finally {
+      setPlatformEmailSaving(false);
     }
   };
 
@@ -268,6 +316,49 @@ export default function AdminSettingsPage() {
           {saveSuccess && <p className="mt-3 text-[11px] text-emerald-300">{saveSuccess}</p>}
           {saveError && <p className="mt-3 text-[11px] text-red-300">{saveError}</p>}
           {data && !data.ok && <p className="mt-3 text-[11px] text-red-300">Erro a carregar fees.</p>}
+        </div>
+
+        <div className="admin-card p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Identidade</p>
+              <h3 className="text-sm font-semibold text-white">Email oficial da plataforma</h3>
+              <p className="text-[12px] text-white/60">
+                Endereço usado em comunicações oficiais e validações internas.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSavePlatformEmail}
+              disabled={platformEmailSaving || isPlatformEmailLoading}
+              className="admin-button px-3 py-1.5 text-sm disabled:opacity-60"
+            >
+              {platformEmailSaving ? "A guardar…" : "Guardar email"}
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-3 text-sm text-white/85">
+            <label className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <span>Email da plataforma</span>
+              <input
+                type="email"
+                value={platformEmail}
+                onChange={(e) => setPlatformEmail(e.target.value)}
+                placeholder="admin@orya.pt"
+                className="admin-input w-full md:w-72"
+                disabled={isPlatformEmailLoading}
+              />
+            </label>
+            {isPlatformEmailLoading && (
+              <p className="text-[12px] text-white/60">A carregar email atual…</p>
+            )}
+            {platformEmailError && (
+              <p className="text-[12px] text-red-200">{platformEmailError}</p>
+            )}
+            {platformEmailSuccess && (
+              <p className="text-[12px] text-emerald-200">{platformEmailSuccess}</p>
+            )}
+          </div>
         </div>
       </section>
     </AdminLayout>

@@ -23,6 +23,7 @@ Objetivo: definir alertas basicos para operacao sem gaps.
 - Disponibilidade API core: 99.5%/30d (checkout, webhook, worker).
 - Outbox publish: < 5 min backlog em 95% do tempo.
 - Check-in: 99% respostas < 2s.
+ - Definicao completa: `docs/observability/slo_sli.md`.
 
 ## CloudWatch (exemplo)
 - Criar metric filter em logs:

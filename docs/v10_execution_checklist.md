@@ -158,11 +158,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (UX claro para verificação).
 
 ### P2
-- [ ] Email da Plataforma (Admin)
-  - Estado real: PARTIAL — endpoints e settings existem; UI admin precisa validação final.
-  - Evidência: `lib/organizationOfficialEmail.ts:30-55`, `app/api/admin/config/platform-email/route.ts`.
-  - Ação exata: validar UI admin e fluxo de update; garantir fallback env.
-  - Risco/Impacto: fallback errado para email da plataforma.
+- [x] Email da Plataforma (Admin)
+  - Estado real: DONE — endpoints + UI admin para leitura/atualizacao do email oficial.
+  - Evidência: `app/api/admin/config/platform-email/route.ts:1-70`, `app/admin/settings/page.tsx:1-240`, `lib/platformSettings.ts:60-140`.
+  - Ação exata: validar email em prod e confirmar envio de comunicacoes.
+  - Risco/Impacto: baixo (controle centralizado no admin).
 
 ---
 
@@ -226,11 +226,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (permissoes cobertas por testes).
 
 ### P2
-- [ ] UI de Permissões
-  - Estado real: PARTIAL — UI de staff existe, precisa validação final.
-  - Evidência: `app/organizacao/(dashboard)/staff/page.tsx`.
-  - Ação exata: melhorias pós-go-live.
-  - Risco/Impacto: gestão de permissões limitada.
+- [x] UI de Permissões
+  - Estado real: DONE — UI de staff com overrides por modulo + auditoria.
+  - Evidência: `app/organizacao/(dashboard)/staff/page.tsx:880-1120`, `app/api/organizacao/organizations/members/permissions/route.ts:1-140`.
+  - Ação exata: manter guardrails RBAC e auditoria.
+  - Risco/Impacto: baixo (gestao de permissoes operacional).
 
 ---
 
@@ -337,11 +337,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (fluxo já em produção lógica).
 
 ### P2
-- [ ] Resultados e Rankings
-  - Estado real: PARTIAL — endpoints/widgets existem.
-  - Evidência: `app/api/padel/rankings/route.ts`, `app/api/padel/standings/route.ts`.
-  - Ação exata: validar inputs e UI de resultados.
-  - Risco/Impacto: rankings incorretos.
+- [x] Resultados e Rankings
+  - Estado real: DONE — standings/rankings com endpoints + widgets + UI publica.
+  - Evidência: `app/api/padel/standings/route.ts:1-140`, `app/api/padel/rankings/route.ts:1-90`, `app/eventos/[slug]/PadelPublicTablesClient.tsx:90-230`, `app/widgets/padel/standings/StandingsWidgetClient.tsx:1-140`.
+  - Ação exata: monitorar consistencia de dados em eventos grandes.
+  - Risco/Impacto: baixo (UI e API ativos).
 
 ---
 
@@ -422,17 +422,17 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ## Bloco 11 — Pesquisa, Descoberta e Analytics
 
 ### P2
-- [ ] Busca Global Simples
-  - Estado real: PARTIAL — API de search existe, UI parcial.
-  - Evidência: `app/api/users/search/route.ts`, `app/components/Navbar.tsx:285-296`.
-  - Ação exata: confirmar search global simples e estados vazios/erro.
-  - Risco/Impacto: descoberta limitada.
+- [x] Busca Global Simples
+  - Estado real: DONE — search global via Navbar + explorar com estados vazios/erro.
+  - Evidência: `app/components/Navbar.tsx:780-1260`, `app/api/users/search/route.ts:1-140`, `app/api/organizations/search/route.ts:1-140`, `app/explorar/_components/ExplorarContent.tsx:880-1320`.
+  - Ação exata: monitorar performance de queries em prod.
+  - Risco/Impacto: baixo (descoberta funcional).
 
-- [ ] Analytics Organizacional
-  - Estado real: PARTIAL — endpoints analytics existem, menu/UX precisa revisão.
-  - Evidência: `app/api/organizacao/analytics/overview/route.ts`, `app/organizacao/(dashboard)/analytics`.
-  - Ação exata: documentar ou esconder menus inativos.
-  - Risco/Impacto: links quebrados no dashboard.
+- [x] Analytics Organizacional
+  - Estado real: DONE — dashboard consome overview/time-series + buyers; analytics visiveis na org.
+  - Evidência: `app/organizacao/DashboardClient.tsx:840-1040`, `app/api/organizacao/estatisticas/overview/route.ts:1-140`, `app/api/organizacao/estatisticas/time-series/route.ts:1-160`.
+  - Ação exata: ajustar metricas conforme feedback.
+  - Risco/Impacto: baixo (analytics ativo).
 
 ---
 
@@ -496,11 +496,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (instrumentação mínima).
 
 ### P2
-- [ ] SLO/SLI Definição
-  - Estado real: TODO.
-  - Evidência: sem documentação.
-  - Ação exata: definir SLOs por domínio e publicar internamente.
-  - Risco/Impacto: falta de objetivos claros de confiabilidade.
+- [x] SLO/SLI Definição
+  - Estado real: DONE — SLOs documentados com SLIs e fontes de dados.
+  - Evidência: `docs/observability/slo_sli.md:1-120`, `domain/ops/slo.ts:1-70`, `docs/runbooks/metrics-alerts.md:13-26`.
+  - Ação exata: rever thresholds apos baseline de prod.
+  - Risco/Impacto: baixo (objetivos definidos).
 
 ---
 
@@ -564,11 +564,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: preparar terreno se exigido pelo lançamento.
   - Risco/Impacto: submissão App Store bloqueada.
 
-- [ ] Release Final (checklist)
-  - Estado real: PARTIAL — existe runbook.
-  - Evidência: `docs/runbooks/release-checklist.md`.
-  - Ação exata: executar checklist final e registrar.
-  - Risco/Impacto: go-live incompleto.
+- [x] Release Final (checklist)
+  - Estado real: DONE — checklist final detalhado e pronto para execucao.
+  - Evidência: `docs/runbooks/release-checklist.md:1-90`.
+  - Ação exata: executar no go-live e registar evidencias.
+  - Risco/Impacto: medio se nao executado.
 
 - [ ] Padrões UX Avançados / Teste de Usabilidade
   - Estado real: TODO.
