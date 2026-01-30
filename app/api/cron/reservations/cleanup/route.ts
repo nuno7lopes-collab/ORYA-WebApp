@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
+import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
 /**
  * ⚠️ IMPORTANT
@@ -22,6 +23,7 @@ import { logError } from "@/lib/observability/logger";
  */
 
 async function _GET(req: NextRequest) {
+  const startedAt = new Date();
   try {
     if (!requireInternalSecret(req)) {
       return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
@@ -50,6 +52,7 @@ async function _GET(req: NextRequest) {
       },
     });
 
+    await recordCronHeartbeat("reservations-cleanup", { status: "SUCCESS", startedAt });
     return jsonWrap({
       ok: true,
       expiredUpdated: expired.count,
@@ -58,6 +61,7 @@ async function _GET(req: NextRequest) {
     });
   } catch (err) {
     logError("cron.reservations.cleanup_error", err);
+    await recordCronHeartbeat("reservations-cleanup", { status: "ERROR", startedAt, error: err });
     return jsonWrap(
       { ok: false, error: "Internal cleanup error" },
       { status: 500 }

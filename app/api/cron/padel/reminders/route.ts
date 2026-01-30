@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 const REMINDER_MINUTES = 30;
 const WINDOW_MINUTES = 10;
 const MAX_MATCHES = 120;
@@ -42,9 +43,11 @@ const formatPairing = (pairing: {
 };
 
 async function _POST(req: NextRequest) {
-  if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
+  const startedAt = new Date();
+  try {
+    if (!requireInternalSecret(req)) {
+      return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
 
   const now = new Date();
   const windowStart = new Date(now.getTime() + (REMINDER_MINUTES - WINDOW_MINUTES) * 60 * 1000);
@@ -191,9 +194,14 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  return jsonWrap(
-    { ok: true, windowStart, windowEnd, sent, skipped, matches: matches.length },
-    { status: 200 },
-  );
+    await recordCronHeartbeat("padel-reminders", { status: "SUCCESS", startedAt });
+    return jsonWrap(
+      { ok: true, windowStart, windowEnd, sent, skipped, matches: matches.length },
+      { status: 200 },
+    );
+  } catch (err) {
+    await recordCronHeartbeat("padel-reminders", { status: "ERROR", startedAt, error: err });
+    return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
+  }
 }
 export const POST = withApiEnvelope(_POST);

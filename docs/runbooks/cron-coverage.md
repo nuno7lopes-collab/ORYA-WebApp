@@ -42,6 +42,8 @@ curl -s -X POST \
 ## Notas
 - Todos os endpoints de cron devem falhar sem `X-ORYA-CRON-SECRET`.
 - Evitar chamar cron contra producao a partir de ambiente local.
+- Endpoint de cobertura: `GET /api/internal/cron/coverage` (requer `X-ORYA-CRON-SECRET`).
+  - Retorna ultima execucao por job, lag e status `stale` por job.
 
 ## Execucao externa (prod)
 - Usar scheduler (ex.: CloudWatch/EventBridge) com:

@@ -6,6 +6,7 @@ import { runOperationsBatch } from "@/app/api/internal/worker/operations/route";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
 function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correlationId: string }) {
   if (!requireInternalSecret(req)) {
@@ -23,6 +24,17 @@ export async function POST(req: NextRequest) {
   const unauthorized = ensureInternalSecret(req, ctx);
   if (unauthorized) return unauthorized;
 
-  const results = await runOperationsBatch();
-  return respondOk(ctx, { processed: results.length, results }, { status: 200 });
+  const startedAt = new Date();
+  try {
+    const results = await runOperationsBatch();
+    await recordCronHeartbeat("operations", { status: "SUCCESS", startedAt });
+    return respondOk(ctx, { processed: results.length, results }, { status: 200 });
+  } catch (err) {
+    await recordCronHeartbeat("operations", { status: "ERROR", startedAt, error: err });
+    return respondError(
+      ctx,
+      { errorCode: "INTERNAL_ERROR", message: "Erro ao executar cron.", retryable: true },
+      { status: 500 },
+    );
+  }
 }

@@ -465,11 +465,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (documentação consolidada).
 
 ### P2
-- [ ] Monitoramento de Cron (health check)
-  - Estado real: PARTIAL — endpoints de ops/health existem.
-  - Evidência: `app/api/internal/ops/health/route.ts:1-15`.
-  - Ação exata: expor health de cron e alertas.
-  - Risco/Impacto: jobs falham sem alertas.
+- [x] Monitoramento de Cron (health check)
+  - Estado real: DONE — heartbeat por job + endpoint interno de coverage.
+  - Evidência: `app/api/internal/cron/coverage/route.ts:1-120`, `lib/cron/heartbeat.ts:1-60`, `prisma/schema.prisma:2060-2100`, `docs/runbooks/cron-coverage.md:20-40`.
+  - Ação exata: configurar scheduler externo e monitorar `stale=true`.
+  - Risco/Impacto: baixo (detecção de cron parado disponível).
 
 ---
 
@@ -558,11 +558,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: experiência ruim em mobile.
 
 ### P2
-- [ ] PWA e App Store
-  - Estado real: TODO — não preparado.
-  - Evidência: ausência de config PWA/App Store.
-  - Ação exata: preparar terreno se exigido pelo lançamento.
-  - Risco/Impacto: submissão App Store bloqueada.
+- [x] PWA e App Store
+  - Estado real: DONE — manifest + meta + ícones base.
+  - Evidência: `public/manifest.json:1-24`, `app/layout.tsx:1-40`, `public/brand/orya-logo-192.png`, `public/brand/orya-logo-512.png`.
+  - Ação exata: validar comportamento “Add to Home Screen” em iOS/Android.
+  - Risco/Impacto: baixo (PWA básico pronto).
 
 - [x] Release Final (checklist)
   - Estado real: DONE — checklist final detalhado e pronto para execucao.

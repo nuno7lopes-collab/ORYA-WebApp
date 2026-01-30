@@ -8,6 +8,7 @@ import { LoyaltyEntryType, LoyaltyProgramStatus, LoyaltySourceType, Prisma } fro
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logInfo } from "@/lib/observability/logger";
+import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
 type ExpireRow = {
   user_id: string;
@@ -15,6 +16,7 @@ type ExpireRow = {
 };
 
 async function _POST(req: NextRequest) {
+  const startedAt = new Date();
   try {
     if (!requireInternalSecret(req)) {
       return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
@@ -109,12 +111,14 @@ async function _POST(req: NextRequest) {
       expiredUsers,
     });
 
+    await recordCronHeartbeat("loyalty-expire", { status: "SUCCESS", startedAt });
     return jsonWrap(
       { ok: true, programs: programs.length, expiredEntries, expiredUsers },
       { status: 200 },
     );
   } catch (err) {
     logError("cron.loyalty.expire_error", err);
+    await recordCronHeartbeat("loyalty-expire", { status: "ERROR", startedAt, error: err });
     return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
   }
 }

@@ -12,15 +12,18 @@ import {
 import { expireHolds } from "@/domain/padelPairingHold";
 import { INACTIVE_REGISTRATION_STATUSES, transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
 // Expira pairings SPLIT com locked_until ultrapassado: cancela slots e liberta tickets sem refunds automáticos.
 // Pode ser executado via cron. Não expõe dados sensíveis, mas requer permissão server-side.
 async function _POST(req: NextRequest) {
-  if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  const now = new Date();
-  await expireHolds(prisma, now);
+  const startedAt = new Date();
+  try {
+    if (!requireInternalSecret(req)) {
+      return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    const now = new Date();
+    await expireHolds(prisma, now);
 
   // Emite outbox para segunda cobrança quando a janela expira
   const chargeable = await prisma.padelPairing.findMany({
@@ -91,6 +94,11 @@ async function _POST(req: NextRequest) {
     processed += 1;
   }
 
-  return jsonWrap({ ok: true, processed, now: now.toISOString() });
+    await recordCronHeartbeat("padel-expire", { status: "SUCCESS", startedAt });
+    return jsonWrap({ ok: true, processed, now: now.toISOString() });
+  } catch (err) {
+    await recordCronHeartbeat("padel-expire", { status: "ERROR", startedAt, error: err });
+    return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
+  }
 }
 export const POST = withApiEnvelope(_POST);

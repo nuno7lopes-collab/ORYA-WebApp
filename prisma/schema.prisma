@@ -2076,6 +2076,24 @@ model OutboxEvent {
   @@schema("app_v3")
 }
 
+model CronHeartbeat {
+  jobKey        String   @id @map("job_key") @db.Text
+  lastRunAt     DateTime @map("last_run_at") @db.Timestamptz(6)
+  lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz(6)
+  lastErrorAt   DateTime? @map("last_error_at") @db.Timestamptz(6)
+  lastError     String?  @map("last_error") @db.Text
+  runCount      Int      @default(0) @map("run_count")
+  successCount  Int      @default(0) @map("success_count")
+  errorCount    Int      @default(0) @map("error_count")
+  lastDurationMs Int?     @map("last_duration_ms")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([lastRunAt], map: "cron_heartbeats_last_run_idx")
+  @@map("cron_heartbeats")
+  @@schema("app_v3")
+}
+
 model EventLog {
   id             String      @id @db.Uuid
   organizationId Int         @map("organization_id")

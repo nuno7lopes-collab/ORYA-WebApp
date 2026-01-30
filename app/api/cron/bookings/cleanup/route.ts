@@ -8,11 +8,13 @@ import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
+import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
 const HOLD_MINUTES = 10;
 const COMPLETION_GRACE_HOURS = 2;
 
 async function _GET(req: NextRequest) {
+  const startedAt = new Date();
   try {
     if (!requireInternalSecret(req)) {
       return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
@@ -121,6 +123,7 @@ async function _GET(req: NextRequest) {
       }
     }
 
+    await recordCronHeartbeat("bookings-cleanup", { status: "SUCCESS", startedAt });
     return jsonWrap({
       ok: true,
       cancelled: bookingIds.length,
@@ -128,6 +131,7 @@ async function _GET(req: NextRequest) {
     });
   } catch (err) {
     logError("cron.bookings.cleanup_error", err);
+    await recordCronHeartbeat("bookings-cleanup", { status: "ERROR", startedAt, error: err });
     return jsonWrap({ ok: false, error: "Internal cleanup error" }, { status: 500 });
   }
 }

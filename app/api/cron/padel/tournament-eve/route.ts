@@ -8,14 +8,17 @@ import { queueTournamentEve } from "@/domain/notifications/tournament";
 import { shouldNotify } from "@/lib/notifications";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 const REMINDER_HOURS = 24;
 const WINDOW_MINUTES = 60;
 const MAX_EVENTS = 50;
 
 async function _POST(req: NextRequest) {
-  if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-  }
+  const startedAt = new Date();
+  try {
+    if (!requireInternalSecret(req)) {
+      return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
 
   const now = new Date();
   const windowStart = new Date(now.getTime() + (REMINDER_HOURS * 60 - WINDOW_MINUTES) * 60 * 1000);
@@ -63,9 +66,14 @@ async function _POST(req: NextRequest) {
     notified += allowed.length;
   }
 
-  return jsonWrap(
-    { ok: true, windowStart, windowEnd, events: events.length, notified, skipped },
-    { status: 200 },
-  );
+    await recordCronHeartbeat("padel-tournament-eve", { status: "SUCCESS", startedAt });
+    return jsonWrap(
+      { ok: true, windowStart, windowEnd, events: events.length, notified, skipped },
+      { status: 200 },
+    );
+  } catch (err) {
+    await recordCronHeartbeat("padel-tournament-eve", { status: "ERROR", startedAt, error: err });
+    return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });
+  }
 }
 export const POST = withApiEnvelope(_POST);

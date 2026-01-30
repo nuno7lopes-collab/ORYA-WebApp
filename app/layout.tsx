@@ -14,6 +14,20 @@ import { ClientSentryInit } from "./components/ClientSentryInit";
 export const metadata: Metadata = {
   title: "ORYA",
   description: "O centro da tua vida social em Portugal.",
+  manifest: "/manifest.json",
+  themeColor: "#0f172a",
+  appleWebApp: {
+    capable: true,
+    title: "ORYA",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: "/brand/orya-logo-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/brand/orya-logo-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/brand/orya-logo-180.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 const spaceGrotesk = Space_Grotesk({
