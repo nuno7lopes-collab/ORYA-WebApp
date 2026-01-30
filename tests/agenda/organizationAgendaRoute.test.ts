@@ -4,10 +4,12 @@ import { NextRequest } from "next/server";
 const getAgendaItemsForOrganization = vi.hoisted(() => vi.fn());
 const getActiveOrganizationForUser = vi.hoisted(() => vi.fn());
 const ensureMemberModuleAccess = vi.hoisted(() => vi.fn());
+const ensureReservasModuleAccess = vi.hoisted(() => vi.fn());
 
 vi.mock("@/domain/agendaReadModel/query", () => ({ getAgendaItemsForOrganization }));
 vi.mock("@/lib/organizationContext", () => ({ getActiveOrganizationForUser }));
 vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
+vi.mock("@/lib/reservas/access", () => ({ ensureReservasModuleAccess }));
 vi.mock("@/lib/organizationId", () => ({ resolveOrganizationIdFromRequest: () => null }));
 vi.mock("@/lib/supabaseServer", () => ({
   createSupabaseServer: vi.fn(async () => ({
@@ -24,6 +26,7 @@ beforeEach(async () => {
   getAgendaItemsForOrganization.mockReset();
   getActiveOrganizationForUser.mockReset();
   ensureMemberModuleAccess.mockReset();
+  ensureReservasModuleAccess.mockReset();
   vi.resetModules();
   GET = (await import("@/app/api/organizacao/agenda/route")).GET;
 });
@@ -41,6 +44,7 @@ describe("organization agenda route", () => {
       organization: { id: 1 },
       membership: { role: "ADMIN", rolePack: null },
     });
+    ensureReservasModuleAccess.mockResolvedValue({ ok: true });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
     getAgendaItemsForOrganization.mockResolvedValue([
       { kind: "EVENT", eventId: 1, title: "E1", startsAt: new Date(), endsAt: new Date() },

@@ -276,15 +276,16 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P0
 - [x] Cancelamento/No-show via Snapshot (fail-closed se snapshot faltar)
   - Estado real: DONE — cancelamento (org + user) e no-show falham sem snapshot; cálculo deriva de snapshot.
-  - Evidência: `app/api/organizacao/reservas/[id]/cancel/route.ts:151-195`, `app/api/organizacao/reservas/[id]/no-show/route.ts:140-190`, `app/api/me/reservas/[id]/cancel/route.ts:108-175`.
+  - Evidência: `app/api/organizacao/reservas/[id]/cancel/route.ts:156-200`, `app/api/organizacao/reservas/[id]/no-show/route.ts:148-172`, `app/api/me/reservas/[id]/cancel/route.ts:107-156`.
   - Ação exata: manter snapshot como requisito.
   - Risco/Impacto: baixo.
 
-- [x] Backfill de Snapshots em Prod
-  - Estado real: DONE — tooling + script de backfill pronto e documentado para execução.
-  - Evidência: `scripts/backfill_booking_confirmation_snapshot.ts:1-80`, `lib/reservas/backfillConfirmationSnapshot.ts:52-179`.
-  - Ação exata: executar backfill em produção via runbook antes do go-live.
-  - Risco/Impacto: baixo após execução.
+- [ ] Backfill de Snapshots em Prod
+  - Estado real: BLOCKED — requer `DATABASE_URL`/`DIRECT_URL` (sem envs neste contexto); script pronto mas não executado.
+  - Evidência: `scripts/backfill_booking_confirmation_snapshot.ts:1-63`, `lib/reservas/backfillConfirmationSnapshot.ts:52-179`.
+  - Bloqueio: ausência de DB env local (sem secrets) impede dry-run/execução controlada.
+  - Ação exata: executar dry-run `--limit=200` e depois batches controlados quando DB env estiver disponível.
+  - Risco/Impacto: alto se não executado antes do go-live (cancel/no-show fail-closed).
 
 ### P1
 - [x] Preservação de Timezone
@@ -313,7 +314,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P0
 - [x] Inscrição e Pagamento de Torneio via Event
   - Estado real: DONE — inscrição padel usa Event + checkout SSOT.
-  - Evidência: `app/api/padel/pairings/[id]/checkout/route.ts:1-140`, `domain/padelRegistration.ts:1-140`, `app/organizacao/(dashboard)/torneios/[id]/page.tsx:1-40`.
+  - Evidência: `app/api/padel/pairings/[id]/checkout/route.ts:23-200`, `domain/padelRegistration.ts:1-140`, `domain/finance/fulfillment.ts:188-268` (entitlements PADEL_ENTRY), `app/organizacao/(dashboard)/torneios/[id]/page.tsx:1-40`.
   - Ação exata: manter fluxo integrado a `/api/payments/intent`.
   - Risco/Impacto: baixo.
 
