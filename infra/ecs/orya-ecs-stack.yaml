@@ -58,7 +58,7 @@ Parameters:
     Default: 30
   HealthCheckPath:
     Type: String
-    Default: /api/internal/health
+    Default: /api/internal/ops/health
   OutboxSchedule:
     Type: String
     Default: rate(1 minute)
