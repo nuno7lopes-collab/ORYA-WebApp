@@ -42,3 +42,47 @@ Exemplo (estrutura do output JSON):
   ]
 }
 ```
+
+## Infra helpers (prod/dev)
+
+### Secrets (prod + dev)
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
+  scripts/upload-secrets.sh /tmp/orya-prod-secrets.json
+```
+
+### Build & push (ECR)
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
+  scripts/build-and-push.sh
+```
+
+### Deploy ECS (CloudFormation)
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
+  WITH_ALB=true \\
+  scripts/deploy-cf.sh
+```
+
+### Pause/Resume
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/deploy-cf.sh --pause
+AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/deploy-cf.sh --resume
+```
+
+### Dev serverless (SAM)
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
+  IMAGE_URI=495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-web:latest \\
+  scripts/deploy-dev.sh
+```
+
+### Healthcheck
+```bash
+ORYA_CRON_SECRET=*** scripts/healthcheck.sh https://app.orya.pt
+```
+
+### Migrations
+```bash
+scripts/run-migrations.sh
+```
