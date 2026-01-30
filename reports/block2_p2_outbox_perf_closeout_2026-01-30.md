@@ -23,4 +23,5 @@
   - Logs de outbox em stdout/stderr são informativos, sem falhas.
 
 ## Nota performance
-- O índice `created_at, event_id` reduz custo do ORDER BY com LIMIT em outbox pendente sem alterar semântica.
+- Índice mínimo: `outbox_events_created_at_event_idx (created_at, event_id)`.
+- Justificação: cobre o `ORDER BY createdAt, eventId` no claim sem exigir índice composto por event_type, mantendo custo baixo e sem alterar semântica.

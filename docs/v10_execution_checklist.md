@@ -129,7 +129,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Batching e Performance
   - Estado real: DONE — batch configurável + fairness por eventType + logs por batch; sem tight loop em vazio.
-  - Evidência: `domain/outbox/publisher.ts:1-220` (batch claim + fairness), `domain/outbox/publisher.ts:221-360` (batch stats/logs), `tests/outbox/publisher.test.ts:1-230` (batching/fairness/stale), `tests/outbox/loyaltyOutbox.test.ts:1-200` (retry/dead-letter), `prisma/migrations/20260130192015_outbox_created_at_idx/migration.sql:1-1`, `reports/block2_p2_outbox_perf_closeout_2026-01-30.md`.
+  - Evidência: `domain/outbox/publisher.ts:1-220` (batch claim + fairness), `domain/outbox/publisher.ts:221-360` (batch stats/logs), `tests/outbox/publisher.test.ts:1-230` (batching/fairness/stale), `tests/outbox/loyaltyOutbox.test.ts:1-200` (retry/dead-letter), `prisma/migrations/20260130192015_outbox_created_at_idx/migration.sql:1-1`, `reports/block2_p2_outbox_perf_closeout_2026-01-30.md`, commits `96b577f` + `45cfbe5`, tests `npx vitest run tests/outbox` (OK 2026-01-30).
   - Ação exata: ajustar `OUTBOX_PUBLISH_BATCH_SIZE`/`OUTBOX_PUBLISH_LOOKAHEAD_MULTIPLIER` conforme carga.
   - Risco/Impacto: baixo (throughput consistente).
 
@@ -191,7 +191,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Melhorias Futuras (Admin)
   - Estado real: DONE — paginação/filtros básicos + UI resiliente (loading/empty/error) no admin de organizações.
-  - Evidência: `app/api/admin/organizacoes/list/route.ts:1-190`, `app/api/admin/organizacoes/event-log/route.ts:1-150`, `app/admin/organizacoes/page.tsx:330-1520`, `tests/admin/organizationsListRoute.test.ts:1-120`, `tests/admin/organizationsEventLogRoute.test.ts:1-120`, `reports/block4_admin_p2_closeout_2026-01-30.md`.
+  - Evidência: `app/api/admin/organizacoes/list/route.ts:1-190`, `app/api/admin/organizacoes/event-log/route.ts:1-150`, `app/admin/organizacoes/page.tsx:330-1520`, `tests/admin/organizationsListRoute.test.ts:1-120`, `tests/admin/organizationsEventLogRoute.test.ts:1-120`, `reports/block4_admin_p2_closeout_2026-01-30.md`, commit `fd46f46`, tests `npx vitest run tests/admin` (OK 2026-01-30).
   - Ação exata: manter cursor pagination e filtros no admin (org list + event log).
   - Risco/Impacto: baixo (admin mais resiliente e escalável).
 

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import type { RequestContext } from "@/lib/http/requestContext";
+import type { Prisma } from "@prisma/client";
 
 const execFileAsync = promisify(execFile);
 const SCRIPT_TIMEOUT_MS = 15 * 60 * 1000;
@@ -38,13 +39,13 @@ export async function auditInfraAction(
     organizationId: orgId,
     eventType: action,
     actorUserId: admin.userId,
-    payload,
+    payload: payload as Prisma.InputJsonValue,
     correlationId: ctx.correlationId,
   });
 }
 
 function buildEnv(ctx: RequestContext, extra?: Record<string, string>) {
-  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  const env: NodeJS.ProcessEnv = { ...process.env, ...(extra ?? {}) };
   const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "eu-west-1";
   env.AWS_REGION = region;
   env.AWS_DEFAULT_REGION = region;
@@ -53,7 +54,7 @@ function buildEnv(ctx: RequestContext, extra?: Record<string, string>) {
   }
   env.ORYA_REQUEST_ID = ctx.requestId;
   env.ORYA_CORRELATION_ID = ctx.correlationId;
-  return { ...env, ...(extra ?? {}) };
+  return env;
 }
 
 export async function runScript(
