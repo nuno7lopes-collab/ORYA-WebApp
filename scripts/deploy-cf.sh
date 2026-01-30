@@ -11,6 +11,7 @@ ENV_NAME=${ENV_NAME:-prod}
 WITH_ALB=${WITH_ALB:-false}
 WITH_ACM=${WITH_ACM:-false}
 ENABLE_WORKER=${ENABLE_WORKER:-false}
+HEALTH_CHECK_PATH=${HEALTH_CHECK_PATH:-/api/internal/ops/health}
 PAUSE=false
 RESUME=false
 HARD_PAUSE=false
@@ -188,6 +189,7 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
     WorkerImage="$WORKER_IMAGE" \
     WebDesiredCount="$WEB_DESIRED_COUNT" \
     WorkerDesiredCount="$WORKER_DESIRED_COUNT" \
+    HealthCheckPath="$HEALTH_CHECK_PATH" \
     CreateALB="$WITH_ALB" \
     EnableWorker="$ENABLE_WORKER" \
     AlbCertificateArn="${ALB_CERT_ARN:-}" \
