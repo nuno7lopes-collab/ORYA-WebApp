@@ -527,11 +527,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo.
 
 - [ ] Execução de Infra (Route53/ACM/Well-known/ECR)
-  - Estado real: BLOCKED — hosted zone + ACM + S3/CloudFront criados; ACM pendente de delegação; imagens não foram publicadas.
+  - Estado real: BLOCKED — hosted zone + ACM + S3/CloudFront criados; build ECR falhou por erro de build Next.js.
   - Evidência: `reports/p_infra_2026-01-30.md` (requestIds, ARNs, URLs).
-  - Bloqueio adicional: delegação de NS no registrador + Docker OOM no build.
-  - Ação exata: delegar NS e revalidar ACM; reexecutar build/push; depois deploy CFN + healthcheck.
-  - Risco/Impacto: deploy prod bloqueado até images + ACM issued.
+  - Bloqueio adicional: `Module not found: Can't resolve 'tls'` (pg import em client bundle).
+  - Ação exata: corrigir import chain (server-only) e reexecutar CodeBuild; depois deploy CFN + healthcheck.
+  - Risco/Impacto: deploy prod bloqueado até images.
 
 - [x] Design System e Consistência
   - Estado real: DONE — design system documentado + componentes UI reutilizáveis.
