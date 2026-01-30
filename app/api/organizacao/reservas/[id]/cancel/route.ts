@@ -52,6 +52,7 @@ async function _POST(
         paymentIntentId: string | null;
         refundAmountCents: number | null;
         snapshotTimezone: string;
+        crmPayload: { organizationId: number; userId: string; bookingId: number } | null;
       };
 
   const resolved = await params;
@@ -96,10 +97,14 @@ async function _POST(
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
+      const reservasMessage =
+        "message" in reservasAccess && typeof reservasAccess.message === "string"
+          ? reservasAccess.message
+          : reservasAccess.error ?? "Sem permissões.";
       return fail(
         403,
         reservasAccess.error ?? "FORBIDDEN",
-        reservasAccess.message ?? "Sem permissões.",
+        reservasMessage,
       );
     }
 
@@ -108,7 +113,6 @@ async function _POST(
     const { ip, userAgent } = getRequestMeta(req);
     const now = new Date();
 
-    let crmPayload: { organizationId: number; userId: string; bookingId: number } | null = null;
     let bookingUserId: string | null = null;
     const result = await prisma.$transaction<CancelTxnResult>(async (tx) => {
       const booking = await tx.booking.findFirst({
@@ -145,6 +149,7 @@ async function _POST(
           paymentIntentId: booking.paymentIntentId ?? null,
           refundAmountCents: null,
           snapshotTimezone: booking.snapshotTimezone,
+          crmPayload: null,
         };
       }
 
@@ -215,12 +220,6 @@ async function _POST(
         userAgent,
       });
 
-      crmPayload = {
-        organizationId: organization.id,
-        userId: booking.userId,
-        bookingId: booking.id,
-      };
-
       return {
         booking: { id: updated.id, status: updated.status },
         already: false,
@@ -228,6 +227,11 @@ async function _POST(
         paymentIntentId: booking.paymentIntentId ?? null,
         refundAmountCents,
         snapshotTimezone: booking.snapshotTimezone,
+        crmPayload: {
+          organizationId: organization.id,
+          userId: booking.userId,
+          bookingId: booking.id,
+        },
       };
     });
 
@@ -252,6 +256,7 @@ async function _POST(
       }
     }
 
+    const crmPayload = result.crmPayload ?? null;
     if (!result.already && crmPayload) {
       try {
         await ingestCrmInteraction({

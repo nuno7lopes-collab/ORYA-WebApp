@@ -65,7 +65,7 @@ export function getRequestContext(
 ): RequestContext {
   if (req?.headers) return resolveRequestContext(req.headers, opts);
   try {
-    const hdrs = nextHeaders();
+    const hdrs = nextHeaders() as unknown as HeaderSource;
     return resolveRequestContext(hdrs, opts);
   } catch {
     const requestId = generateId();

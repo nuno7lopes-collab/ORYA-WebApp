@@ -7,7 +7,6 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { isOrgOwner } from "@/lib/organizationPermissions";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -36,7 +35,7 @@ export async function GET(req: NextRequest) {
       organizationId: organizationId ?? undefined,
     });
 
-    if (!organization || !membership || !hasOrgOwnerAccess(membership.role)) {
+    if (!organization || !membership || membership.role !== "OWNER") {
       return respondError(
         ctx,
         { errorCode: "APENAS_OWNER", message: "Apenas owner.", retryable: false },

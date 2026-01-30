@@ -1,6 +1,6 @@
 # v10 Execution Checklist (FINAL) — ORYA
 
-Atualizado: 2026-01-29
+Atualizado: 2026-01-30
 Fonte de verdade: `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md` + `docs/orya_blueprint_v9_final.md` + `docs/v9_ssot_registry.md` + `docs/v9_close_plan.md` + `docs/v9_close_checklist.md` + `docs/envs_required.md`
 Legenda estado: DONE | PARTIAL | TODO | N/A
 
@@ -9,6 +9,8 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ## Auditoria (primeiro sweep)
 - `app/api/**/route.ts` usa `withApiEnvelope` ou `respondOk/respondError` (script de varredura sem faltas).
 - `app/api/internal/**` + `app/api/cron/**` usam `requireInternalSecret` (script de varredura sem faltas).
+- Verificações locais (2026-01-30): `npm run typecheck`, `npm run lint`, `npm run test:coverage` **PASS**.
+  - Evidência: `reports/p1_closeout_2026-01-29.md` (secção Tests).
 
 ---
 
@@ -17,7 +19,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P0
 - [x] Envelope de Resposta Unificado (C-G5, requestId/correlationId em body+headers)
   - Estado real: DONE — rotas críticas usam `withApiEnvelope` ou `respondOk/respondError`; envelope válido em payments/internal/cron/admin.
-  - Evidência: `app/api/checkout/status/route.ts:1-240`, `app/api/payments/intent/route.ts:1-2060`, `app/api/stripe/webhook/route.ts:200-245`, `app/api/internal/ops/feed/route.ts:1-80`, `app/api/cron/creditos/expire/route.ts:1-60`, `lib/http/envelope.ts:8-82`.
+  - Evidência: `app/api/checkout/status/route.ts:1-240`, `app/api/payments/intent/route.ts:1-2060`, `app/api/stripe/webhook/route.ts:200-245`, `app/api/internal/ops/feed/route.ts:1-80`, `app/api/cron/creditos/expire/route.ts:1-60`, `lib/http/envelope.ts:1-180`.
   - Ação exata: manter padrão em novos endpoints.
   - Risco/Impacto: baixo.
 
@@ -35,7 +37,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 - [x] Checklist C-G5 (subitens do close checklist v9)
   - Estado real: DONE — envelope + text/plain para webhooks confirmados em rotas P0.
-  - Evidência: `app/api/stripe/webhook/route.ts:200-245` (respondPlainText), `lib/http/envelope.ts:8-74`, `app/api/checkout/status/route.ts:1-240`, `app/api/internal/worker/operations/route.ts:60-120`.
+  - Evidência: `app/api/stripe/webhook/route.ts:200-245` (respondPlainText), `lib/http/envelope.ts:1-180`, `app/api/checkout/status/route.ts:1-240`, `app/api/internal/worker/operations/route.ts:60-140`.
   - Ação exata: manter revisão em novos endpoints.
   - Risco/Impacto: baixo.
 

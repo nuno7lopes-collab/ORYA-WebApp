@@ -281,7 +281,7 @@ export async function autoGeneratePadelMatches({
           displayOrder: idx,
         };
       })
-      .filter((court): court is CourtSlot => Boolean(court));
+      .filter((court): court is NonNullable<typeof court> => Boolean(court)) as CourtSlot[];
   }
 
   if (courtsList.length === 0) {

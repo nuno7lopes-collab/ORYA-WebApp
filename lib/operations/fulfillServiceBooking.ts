@@ -170,6 +170,7 @@ export async function fulfillServiceBookingIntent(
     stripeFeeEstimateCents: meta.stripeFeeEstimateCents ?? null,
   };
 
+  const paymentIntentId = intent.id;
   let stripeFeeCents: number | null = null;
   let stripeChargeId: string | null = null;
   try {

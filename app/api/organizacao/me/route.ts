@@ -17,6 +17,7 @@ import {
   DEFAULT_PRIMARY_MODULE,
   parsePrimaryModule,
   parseOrganizationModules,
+  type OrganizationModule,
 } from "@/lib/organizationCategories";
 import { OrganizationStatus } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -625,11 +626,15 @@ export async function PATCH(req: NextRequest) {
             orderBy: { moduleKey: "asc" },
           })
         ).map((module) => module.moduleKey);
+    type AllowedModule = Exclude<OrganizationModule, "ANALYTICS">;
     const nextModules = Array.from(
       new Set(
         nextModulesRaw
           .map((module) => (module === "ANALYTICS" ? "FINANCEIRO" : module))
-          .filter((module): module is string => typeof module === "string" && module.length > 0),
+          .filter(
+            (module): module is AllowedModule =>
+              typeof module === "string" && module.length > 0,
+          ),
       ),
     );
 

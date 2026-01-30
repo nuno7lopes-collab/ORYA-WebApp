@@ -37,7 +37,21 @@ export type EnvelopeErrorInput = {
   data?: unknown;
 };
 
-export function successEnvelope<T>(ctx: RequestContext, data: T): EnvelopeSuccess<T> {
+export type RequestContextLike = {
+  requestId: string;
+  correlationId: string;
+  orgId?: number | null;
+};
+
+function normalizeContext(ctx: RequestContextLike): RequestContext {
+  return {
+    requestId: ctx.requestId,
+    correlationId: ctx.correlationId,
+    orgId: ctx.orgId ?? null,
+  };
+}
+
+export function successEnvelope<T>(ctx: RequestContextLike, data: T): EnvelopeSuccess<T> {
   return {
     ok: true,
     requestId: ctx.requestId,
@@ -46,7 +60,7 @@ export function successEnvelope<T>(ctx: RequestContext, data: T): EnvelopeSucces
   };
 }
 
-export function errorEnvelope(ctx: RequestContext, input: EnvelopeErrorInput): EnvelopeError {
+export function errorEnvelope(ctx: RequestContextLike, input: EnvelopeErrorInput): EnvelopeError {
   const data = input.data ?? input.details ?? undefined;
   return {
     ok: false,
@@ -63,18 +77,21 @@ export function errorEnvelope(ctx: RequestContext, input: EnvelopeErrorInput): E
   };
 }
 
-export function respondOk<T>(ctx: RequestContext, data: T, init?: ResponseInit) {
-  const headers = buildResponseHeaders(ctx, init?.headers);
-  return NextResponse.json(successEnvelope(ctx, data), { ...init, headers });
+export function respondOk<T>(ctx: RequestContextLike, data: T, init?: ResponseInit) {
+  const normalized = normalizeContext(ctx);
+  const headers = buildResponseHeaders(normalized, init?.headers);
+  return NextResponse.json(successEnvelope(normalized, data), { ...init, headers });
 }
 
-export function respondError(ctx: RequestContext, input: EnvelopeErrorInput, init?: ResponseInit) {
-  const headers = buildResponseHeaders(ctx, init?.headers);
-  return NextResponse.json(errorEnvelope(ctx, input), { ...init, headers });
+export function respondError(ctx: RequestContextLike, input: EnvelopeErrorInput, init?: ResponseInit) {
+  const normalized = normalizeContext(ctx);
+  const headers = buildResponseHeaders(normalized, init?.headers);
+  return NextResponse.json(errorEnvelope(normalized, input), { ...init, headers });
 }
 
-export function respondPlainText(ctx: RequestContext, text: string, init?: ResponseInit) {
-  const headers = buildResponseHeaders(ctx, init?.headers);
+export function respondPlainText(ctx: RequestContextLike, text: string, init?: ResponseInit) {
+  const normalized = normalizeContext(ctx);
+  const headers = buildResponseHeaders(normalized, init?.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "text/plain; charset=utf-8");
   }

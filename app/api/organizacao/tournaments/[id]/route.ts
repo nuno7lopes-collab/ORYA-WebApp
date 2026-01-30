@@ -44,7 +44,7 @@ async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
   if (!tournament) return fail(404, "NOT_FOUND");
 
   const organizationId = tournament.event.organizationId;
-  if (!organizationId) return fail(404, "EVENT_NOT_FOUND");
+  if (organizationId == null) return fail(404, "EVENT_NOT_FOUND");
 
   const { membership } = await getActiveOrganizationForUser(user.id, {
     organizationId,
@@ -53,16 +53,20 @@ async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
   if (!membership) return fail(403, "FORBIDDEN");
 
   const emailGate = await requireOfficialEmailVerified({
-    organizationId: tournament.event.organizationId,
+    organizationId,
     reasonCode: "TOURNAMENTS_UPDATE",
     actorUserId: user.id,
   });
   if (!emailGate.ok) {
+    const message =
+      "message" in emailGate && typeof emailGate.message === "string"
+        ? emailGate.message
+        : emailGate.error ?? "Sem permissões.";
     return respondError(
       ctx,
       {
         errorCode: emailGate.error ?? "FORBIDDEN",
-        message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+        message,
         retryable: false,
         details: emailGate,
       },

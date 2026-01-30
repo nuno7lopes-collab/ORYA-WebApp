@@ -505,9 +505,9 @@ export default function NewOrganizationEventPage({
   const timeSlots = useMemo(() => buildTimeSlots(), []);
   const startCalendarCells = useMemo(() => buildCalendarCells(startCalendarView), [startCalendarView]);
   const endCalendarCells = useMemo(() => buildCalendarCells(endCalendarView), [endCalendarView]);
-  const organizationOfficialEmailNormalized = normalizeOfficialEmail(
-    (organizationStatus?.organization as { officialEmail?: string | null } | null)?.officialEmail ?? null,
-  );
+  const organizationOfficialEmail =
+    (organizationStatus?.organization as { officialEmail?: string | null } | null)?.officialEmail ?? null;
+  const organizationOfficialEmailNormalized = normalizeOfficialEmail(organizationOfficialEmail);
   const organizationOfficialEmailVerifiedAt =
     (organizationStatus?.organization as { officialEmailVerifiedAt?: string | null } | null)?.officialEmailVerifiedAt ??
     null;
@@ -560,7 +560,7 @@ export default function NewOrganizationEventPage({
     canCreateEvents,
     primaryLabelPlural,
   ]);
-  const organizationId = organizationStatus?.organization?.id ?? null;
+  const organizationIdFromStatus = organizationStatus?.organization?.id ?? null;
 
   const { data: padelClubs, mutate: mutatePadelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
     selectedPreset === "padel" ? "/api/padel/clubs" : null,
@@ -585,15 +585,15 @@ export default function NewOrganizationEventPage({
     { revalidateOnFocus: false },
   );
   const { data: padelCategories } = useSWR<PadelCategoriesResponse>(
-    selectedPreset === "padel" && organizationId
-      ? `/api/padel/categories/my?organizationId=${organizationId}`
+    selectedPreset === "padel" && organizationIdFromStatus
+      ? `/api/padel/categories/my?organizationId=${organizationIdFromStatus}`
       : null,
     fetcher,
     { revalidateOnFocus: false },
   );
   const { data: padelRuleSets } = useSWR<PadelRuleSetsResponse>(
-    selectedPreset === "padel" && organizationId
-      ? `/api/padel/rulesets?organizationId=${organizationId}`
+    selectedPreset === "padel" && organizationIdFromStatus
+      ? `/api/padel/rulesets?organizationId=${organizationIdFromStatus}`
       : null,
     fetcher,
     { revalidateOnFocus: false },
@@ -1270,7 +1270,7 @@ export default function NewOrganizationEventPage({
   };
 
   const createPartnerClubFromDirectory = async (club: PadelPublicClub) => {
-    if (!organizationId) {
+    if (!organizationIdFromStatus) {
       setPadelDirectoryError("Seleciona uma organização antes de adicionar o clube.");
       return;
     }
@@ -1293,7 +1293,7 @@ export default function NewOrganizationEventPage({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          organizationId,
+          organizationId: organizationIdFromStatus,
           name: club.name,
           city: club.city ?? "",
           address: club.address ?? "",

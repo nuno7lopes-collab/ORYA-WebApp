@@ -49,6 +49,7 @@ export async function fulfillServiceCreditPurchaseIntent(intent: Stripe.PaymentI
   });
   if (existingLedger) return true;
 
+  const paymentIntentId = intent.id;
   let stripeFeeCents: number | null = null;
   let stripeChargeId: string | null = null;
   try {

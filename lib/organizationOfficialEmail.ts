@@ -49,7 +49,7 @@ export async function getPlatformOfficialEmail(): Promise<{ email: string; sourc
 
 export async function setPlatformOfficialEmail(rawEmail: string) {
   const normalized = normalizeOfficialEmail(rawEmail);
-  if (!isValidOfficialEmail(normalized)) {
+  if (!normalized || !isValidOfficialEmail(normalized)) {
     throw new Error("INVALID_EMAIL");
   }
 

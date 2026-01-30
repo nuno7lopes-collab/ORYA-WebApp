@@ -116,13 +116,14 @@ async function publishPaymentStatusChanged(params: {
   causationId: string;
   source: string;
 }) {
-  if (!params.paymentId) return;
+  const paymentId = params.paymentId;
+  if (!paymentId) return;
   await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({ where: { id: params.paymentId } });
+    const payment = await tx.payment.findUnique({ where: { id: paymentId } });
     if (!payment) return;
     if (payment.status === params.status) return;
     await tx.payment.update({
-      where: { id: params.paymentId },
+      where: { id: paymentId },
       data: { status: params.status },
     });
     const eventLogId = crypto.randomUUID();
@@ -147,17 +148,17 @@ async function publishPaymentStatusChanged(params: {
       tx,
     );
     if (!log) return;
-    await recordOutboxEvent(
-      {
-        eventId: eventLogId,
-        eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
-        dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED, params.causationId),
-        payload,
-        causationId: params.causationId,
-        correlationId: params.paymentId,
-      },
-      tx,
-    );
+      await recordOutboxEvent(
+        {
+          eventId: eventLogId,
+          eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED,
+          dedupeKey: makeOutboxDedupeKey(FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED, params.causationId),
+          payload,
+          causationId: params.causationId,
+          correlationId: paymentId,
+        },
+        tx,
+      );
   });
 }
 
@@ -719,14 +720,20 @@ async function processStripeEvent(op: OperationRecord) {
       if (eventType === "dispute.lost") {
         await appendChargebackLedgerEntries({
           paymentId,
-          causationId: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? op.id,
+          causationId:
+            typeof payload.stripeEventId === "string"
+              ? payload.stripeEventId
+              : op.stripeEventId ?? String(op.id),
           correlationId: paymentId,
           disputeFeeCents,
         });
       } else if (eventType === "dispute.won") {
         await appendDisputeFeeReversal({
           paymentId,
-          causationId: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? op.id,
+          causationId:
+            typeof payload.stripeEventId === "string"
+              ? payload.stripeEventId
+              : op.stripeEventId ?? String(op.id),
           correlationId: paymentId,
           disputeFeeCents,
         });
@@ -1148,7 +1155,7 @@ async function processRefundSingle(op: OperationRecord) {
   await publishPaymentStatusChanged({
     paymentId,
     status: PaymentStatus.REFUNDED,
-    causationId: op.id,
+    causationId: String(op.id),
     source: "operations.refund",
   });
 
@@ -1296,7 +1303,7 @@ async function processMarkDispute(op: OperationRecord) {
   await publishPaymentStatusChanged({
     paymentId,
     status: PaymentStatus.DISPUTED,
-    causationId: op.id,
+    causationId: String(op.id),
     source: "operations.dispute",
   });
 }

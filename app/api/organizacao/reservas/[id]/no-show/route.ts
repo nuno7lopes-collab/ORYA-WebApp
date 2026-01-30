@@ -93,10 +93,14 @@ async function _POST(
       requireVerifiedEmail: true,
     });
     if (!reservasAccess.ok) {
+      const reservasMessage =
+        "message" in reservasAccess && typeof reservasAccess.message === "string"
+          ? reservasAccess.message
+          : reservasAccess.error ?? "Sem permissões.";
       return fail(
         403,
         reservasAccess.error ?? "FORBIDDEN",
-        reservasAccess.message ?? "Sem permissões.",
+        reservasMessage,
       );
     }
 

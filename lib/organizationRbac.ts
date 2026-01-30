@@ -260,7 +260,7 @@ export function resolveCheckinAccess(input: {
   rolePack?: OrganizationRolePack | null;
 }): CheckinAccessLevel {
   const { role, rolePack } = input;
-  if (shouldUseRolePack(role, rolePack)) {
+  if (shouldUseRolePack(role, rolePack) && rolePack) {
     return ROLE_PACK_ACCESS[rolePack]?.checkin ?? "NONE";
   }
   if (!role) return "NONE";

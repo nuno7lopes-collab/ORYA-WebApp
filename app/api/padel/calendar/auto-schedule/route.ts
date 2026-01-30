@@ -621,7 +621,7 @@ async function _POST(req: NextRequest) {
 
         const dedupeSnapshot = {
           eventId: event.id,
-          scheduledUpdates: payload.scheduledUpdates,
+          scheduledUpdates,
           skipped,
           matchIds: targetMatchIds ?? null,
           priority,

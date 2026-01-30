@@ -2136,13 +2136,14 @@ async function publishPaymentRefunded(params: {
   stripeEventId?: string | null;
   source: string;
 }) {
-  if (!params.paymentId) return;
+  const paymentId = params.paymentId;
+  if (!paymentId) return;
   await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({ where: { id: params.paymentId } });
+    const payment = await tx.payment.findUnique({ where: { id: paymentId } });
     if (!payment) return;
     if (payment.status === PaymentStatus.REFUNDED) return;
     await tx.payment.update({
-      where: { id: params.paymentId },
+      where: { id: paymentId },
       data: { status: PaymentStatus.REFUNDED },
     });
     const eventLogId = crypto.randomUUID();
@@ -2153,7 +2154,7 @@ async function publishPaymentRefunded(params: {
       source: params.source,
       eventType: "charge.refunded",
     };
-    const idempotencyKey = params.stripeEventId ?? `charge.refunded:${params.paymentId}`;
+    const idempotencyKey = params.stripeEventId ?? `charge.refunded:${paymentId}`;
     const log = await appendEventLog(
       {
         eventId: eventLogId,

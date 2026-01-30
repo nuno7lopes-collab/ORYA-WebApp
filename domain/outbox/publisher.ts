@@ -212,7 +212,8 @@ export async function publishOutboxBatch(params?: { now?: Date; batchSize?: numb
           },
           { fallbackToRequestContext: false },
         );
-        return { eventId: event.eventId, status: isDead ? "DEAD_LETTER" : "RETRY" as const };
+        const status: "DEAD_LETTER" | "RETRY" = isDead ? "DEAD_LETTER" : "RETRY";
+        return { eventId: event.eventId, status };
       }
     });
 

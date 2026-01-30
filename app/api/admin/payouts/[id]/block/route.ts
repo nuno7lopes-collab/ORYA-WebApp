@@ -39,7 +39,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
-  if ([PendingPayoutStatus.RELEASED, PendingPayoutStatus.CANCELLED].includes(payout.status)) {
+  const terminalStatuses: PendingPayoutStatus[] = [
+    PendingPayoutStatus.RELEASED,
+    PendingPayoutStatus.CANCELLED,
+  ];
+  if (terminalStatuses.includes(payout.status)) {
     return respondError(
       ctx,
       { errorCode: "INVALID_STATUS", message: "Estado inválido.", retryable: false },

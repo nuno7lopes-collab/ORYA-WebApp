@@ -225,7 +225,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     () => getEventCoverSuggestionIds({ templateType, primaryModule: organizationPrimaryModule }),
     [templateType, organizationPrimaryModule],
   );
-  const organizationId = event.organizationId ?? null;
   const [isGratis] = useState(event.isGratis);
   const [coverUrl, setCoverUrl] = useState<string | null>(event.coverImageUrl);
   const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
@@ -1091,9 +1090,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             padelCategoryLabel: padelLabel,
           },
         ]);
-        if (hasPublicTickets) {
-          setPublicTicketTypeIds((prev) => (prev.includes(tempId) ? prev : [...prev, tempId]));
-        }
       }
       setNewTicket({
         name: "",

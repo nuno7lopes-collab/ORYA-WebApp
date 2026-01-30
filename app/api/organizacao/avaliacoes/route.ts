@@ -54,11 +54,15 @@ export async function GET(req: NextRequest) {
 
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
+      const message =
+        "message" in reservasAccess && typeof reservasAccess.message === "string"
+          ? reservasAccess.message
+          : reservasAccess.error ?? "Sem permissões.";
       return respondError(
         ctx,
         {
           errorCode: reservasAccess.error ?? "FORBIDDEN",
-          message: reservasAccess.message ?? reservasAccess.error ?? "Sem permissões.",
+          message,
           retryable: false,
           details: reservasAccess,
         },

@@ -18,7 +18,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -60,7 +60,15 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ id:
     }
     const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_DELETE" });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      const message =
+        "message" in emailGate && typeof emailGate.message === "string"
+          ? emailGate.message
+          : emailGate.error ?? "Sem permissões.";
+      return respondError(
+        ctx,
+        { errorCode: emailGate.error ?? "FORBIDDEN", message, retryable: false, details: emailGate },
+        { status: 403 },
+      );
     }
 
     // Bloquear se existir algum bilhete ativo/usado associado a eventos desta org

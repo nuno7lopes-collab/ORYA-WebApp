@@ -418,6 +418,11 @@ async function _POST(req: NextRequest) {
     if (!event) {
       return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
     }
+    if (eventOrganizationId == null) {
+      return intentError("EVENT_ORG_NOT_FOUND", "Organização do evento não encontrada.", {
+        httpStatus: 404,
+      });
+    }
     const accessIntent = inviteToken ? "INVITE_TOKEN" : "VIEW";
     const accessDecision = await evaluateEventAccess({
       eventId: event.id,

@@ -114,15 +114,19 @@ export async function GET(req: NextRequest) {
     if ("error" in orgCtx) {
       const status =
         orgCtx.error === "UNAUTHENTICATED" ? 401 : orgCtx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return fail(ctx, status, orgCtx.error);
+      return fail(ctx, status, orgCtx.error ?? "FORBIDDEN");
     }
     const emailGate = ensureOrganizationEmailVerified(orgCtx.organization, { reasonCode: "PROMO" });
     if (!emailGate.ok) {
+      const message =
+        "message" in emailGate && typeof emailGate.message === "string"
+          ? emailGate.message
+          : emailGate.error ?? "Sem permissões.";
       return respondError(
         ctx,
         {
           errorCode: emailGate.error ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          message,
           retryable: false,
           details: emailGate,
         },
@@ -307,15 +311,19 @@ export async function POST(req: NextRequest) {
     if ("error" in orgCtx) {
       const status =
         orgCtx.error === "UNAUTHENTICATED" ? 401 : orgCtx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return fail(ctx, status, orgCtx.error);
+      return fail(ctx, status, orgCtx.error ?? "FORBIDDEN");
     }
     const emailGate = ensureOrganizationEmailVerified(orgCtx.organization, { reasonCode: "PROMO" });
     if (!emailGate.ok) {
+      const message =
+        "message" in emailGate && typeof emailGate.message === "string"
+          ? emailGate.message
+          : emailGate.error ?? "Sem permissões.";
       return respondError(
         ctx,
         {
           errorCode: emailGate.error ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          message,
           retryable: false,
           details: emailGate,
         },
@@ -482,15 +490,19 @@ export async function PATCH(req: NextRequest) {
     if ("error" in orgCtx) {
       const status =
         orgCtx.error === "UNAUTHENTICATED" ? 401 : orgCtx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return fail(ctx, status, orgCtx.error);
+      return fail(ctx, status, orgCtx.error ?? "FORBIDDEN");
     }
     const emailGate = ensureOrganizationEmailVerified(orgCtx.organization, { reasonCode: "PROMO" });
     if (!emailGate.ok) {
+      const message =
+        "message" in emailGate && typeof emailGate.message === "string"
+          ? emailGate.message
+          : emailGate.error ?? "Sem permissões.";
       return respondError(
         ctx,
         {
           errorCode: emailGate.error ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          message,
           retryable: false,
           details: emailGate,
         },
@@ -654,7 +666,7 @@ export async function DELETE(req: NextRequest) {
     if ("error" in orgCtx) {
       const status =
         orgCtx.error === "UNAUTHENTICATED" ? 401 : orgCtx.error === "PROFILE_NOT_FOUND" ? 404 : 403;
-      return fail(ctx, status, orgCtx.error);
+      return fail(ctx, status, orgCtx.error ?? "FORBIDDEN");
     }
     const access = await ensureMemberModuleAccess({
       organizationId: orgCtx.organization.id,
