@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 import { adminLoadOpsSummary, adminReplayOutboxEvents } from "./actions";
@@ -36,6 +36,7 @@ type AdminOrganizationsListResponse =
   | {
       ok: true;
       organizations: AdminOrganizationItem[];
+      page?: { nextCursor?: string | null };
     }
   | {
       ok: false;
@@ -54,7 +55,7 @@ type EventLogItem = {
 };
 
 type EventLogResponse =
-  | { ok: true; items: EventLogItem[] }
+  | { ok: true; items: EventLogItem[]; page?: { nextCursor?: string | null } }
   | { ok: false; error?: string };
 
 type OpsSummaryResponse =
@@ -168,6 +169,10 @@ const ERROR_COPY: Record<string, { title: string; message: string }> = {
   INVALID_ORGANIZATION_ID: {
     title: "ID inválido",
     message: "Confirma o ID da organização e tenta novamente.",
+  },
+  INVALID_CURSOR: {
+    title: "Cursor inválido",
+    message: "Atualiza o painel e tenta novamente.",
   },
   INTERNAL_ERROR: {
     title: "Erro interno",
@@ -327,11 +332,17 @@ function InlineAlert({
 }
 
 export default function AdminOrganizacoesPage() {
+  const isMounted = useRef(true);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [accessIssue, setAccessIssue] = useState<"UNAUTH" | "FORBIDDEN" | null>(null);
   const [organizations, setOrganizations] = useState<AdminOrganizationItem[]>([]);
   const [filter, setFilter] = useState<"ALL" | OrganizationStatus>("ALL");
+  const [orgSearchInput, setOrgSearchInput] = useState("");
+  const [orgSearchQuery, setOrgSearchQuery] = useState("");
+  const [orgCursor, setOrgCursor] = useState<string | null>(null);
+  const [orgHasMore, setOrgHasMore] = useState(false);
+  const [orgLoadingMore, setOrgLoadingMore] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState<number | string | null>(null);
   const [updatingId, setUpdatingId] = useState<number | string | null>(null);
   const [updatingEmailId, setUpdatingEmailId] = useState<number | string | null>(null);
@@ -343,7 +354,11 @@ export default function AdminOrganizacoesPage() {
     loading: boolean;
     error?: string | null;
     items: EventLogItem[];
+    cursor?: string | null;
+    hasMore?: boolean;
   }>({ loading: false, error: null, items: [] });
+  const [eventLogFilter, setEventLogFilter] = useState("");
+  const [eventLogLoadingMore, setEventLogLoadingMore] = useState(false);
   const [opsSummary, setOpsSummary] = useState<{
     loading: boolean;
     error?: string | null;
@@ -371,6 +386,13 @@ export default function AdminOrganizacoesPage() {
     () => organizations.filter((o) => o.status === "PENDING"),
     [organizations],
   );
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -413,61 +435,77 @@ export default function AdminOrganizacoesPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  async function loadOrganizations(options?: { append?: boolean }) {
+    const append = options?.append ?? false;
+    if (append && !orgCursor) return;
 
-    async function loadOrganizations() {
-      try {
+    try {
+      if (append) {
+        setOrgLoadingMore(true);
+      } else {
         setLoading(true);
-        setErrorMsg(null);
-        setAccessIssue(null);
+        setOrgCursor(null);
+        setOrgHasMore(false);
+      }
+      setErrorMsg(null);
+      setAccessIssue(null);
 
-        const res = await fetch("/api/admin/organizacoes/list", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-        });
+      const params = new URLSearchParams({ limit: "50" });
+      if (filter !== "ALL") params.set("status", filter);
+      if (orgSearchQuery) params.set("q", orgSearchQuery);
+      if (append && orgCursor) params.set("cursor", orgCursor);
 
-        if (res.status === 401) {
-          if (!cancelled) setAccessIssue("UNAUTH");
-          return;
-        }
+      const res = await fetch(`/api/admin/organizacoes/list?${params.toString()}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
 
-        if (res.status === 403) {
-          if (!cancelled) setAccessIssue("FORBIDDEN");
-          return;
-        }
+      if (res.status === 401) {
+        if (isMounted.current) setAccessIssue("UNAUTH");
+        return;
+      }
 
-        const json = (await res.json().catch(() => null)) as AdminOrganizationsListResponse | null;
-        if (!res.ok || !json || json.ok === false) {
-          const code = json?.ok === false ? json.error ?? json.reason : null;
-          logAdminError("load-organizations", code);
-          if (!cancelled) {
-            const copy = getErrorCopy(code ?? "INTERNAL_ERROR");
-            setErrorMsg(copy.message);
-          }
-          return;
-        }
+      if (res.status === 403) {
+        if (isMounted.current) setAccessIssue("FORBIDDEN");
+        return;
+      }
 
-        if (!cancelled) {
-          setOrganizations(Array.isArray(json.organizations) ? json.organizations : []);
+      const json = (await res.json().catch(() => null)) as AdminOrganizationsListResponse | null;
+      if (!res.ok || !json || json.ok === false) {
+        const code = json?.ok === false ? json.error ?? json.reason : null;
+        logAdminError("load-organizations", code);
+        if (isMounted.current) {
+          const copy = getErrorCopy(code ?? "INTERNAL_ERROR");
+          setErrorMsg(copy.message);
         }
-      } catch (err) {
-        logAdminError("load-organizations", "INTERNAL_ERROR");
-        if (!cancelled) {
-          setErrorMsg("Ocorreu um erro inesperado. Tenta novamente dentro de instantes.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      if (isMounted.current) {
+        const nextCursor = json.page?.nextCursor ?? null;
+        setOrganizations((prev) =>
+          append ? [...prev, ...(json.organizations ?? [])] : json.organizations ?? [],
+        );
+        setOrgCursor(nextCursor);
+        setOrgHasMore(Boolean(nextCursor));
+      }
+    } catch (err) {
+      logAdminError("load-organizations", "INTERNAL_ERROR");
+      if (isMounted.current) {
+        setErrorMsg("Ocorreu um erro inesperado. Tenta novamente dentro de instantes.");
+      }
+    } finally {
+      if (isMounted.current) {
+        if (append) setOrgLoadingMore(false);
+        else setLoading(false);
       }
     }
+  }
 
-    loadOrganizations();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useEffect(() => {
+    void loadOrganizations();
+  }, [filter, orgSearchQuery]);
 
   useEffect(() => {
     if (organizations.length === 0) {
@@ -482,9 +520,10 @@ export default function AdminOrganizacoesPage() {
 
   useEffect(() => {
     if (!selectedOrgId) return;
+    setEventLog((prev) => ({ ...prev, cursor: null, hasMore: false, items: [] }));
     void loadEventLog(selectedOrgId);
     void loadRollupStatus(selectedOrgId);
-  }, [selectedOrgId]);
+  }, [selectedOrgId, eventLogFilter]);
 
   useEffect(() => {
     void loadOpsSummary();
@@ -532,22 +571,61 @@ export default function AdminOrganizacoesPage() {
     }));
   }
 
-  async function loadEventLog(orgId: number | string) {
-    setEventLog((prev) => ({ ...prev, loading: true, error: null }));
-    const params = new URLSearchParams({ orgId: String(orgId), limit: "12" });
-    const res = await fetch(`/api/admin/organizacoes/event-log?${params.toString()}`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-    });
-    const json = (await res.json().catch(() => null)) as EventLogResponse | null;
-    if (!res.ok || !json || json.ok === false) {
-      const code = json?.ok === false ? json.error : null;
-      logAdminError("load-event-log", code);
-      setEventLog({ loading: false, error: code ?? "INTERNAL_ERROR", items: [] });
-      return;
+  async function loadEventLog(orgId: number | string, options?: { append?: boolean }) {
+    const append = options?.append ?? false;
+    if (append && !eventLog.cursor) return;
+    if (append) {
+      setEventLogLoadingMore(true);
+    } else {
+      setEventLog((prev) => ({ ...prev, loading: true, error: null }));
     }
-    setEventLog({ loading: false, error: null, items: json.items ?? [] });
+    try {
+      const params = new URLSearchParams({ orgId: String(orgId), limit: "12" });
+      const trimmedFilter = eventLogFilter.trim();
+      if (trimmedFilter) params.set("eventType", trimmedFilter);
+      if (append && eventLog.cursor) params.set("cursor", eventLog.cursor);
+      const res = await fetch(`/api/admin/organizacoes/event-log?${params.toString()}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        if (isMounted.current) {
+          setEventLog({ loading: false, error: "UNAUTHENTICATED", items: [] });
+        }
+        return;
+      }
+      if (res.status === 403) {
+        if (isMounted.current) {
+          setEventLog({ loading: false, error: "FORBIDDEN", items: [] });
+        }
+        return;
+      }
+
+      const json = (await res.json().catch(() => null)) as EventLogResponse | null;
+      if (!res.ok || !json || json.ok === false) {
+        const code = json?.ok === false ? json.error : null;
+        logAdminError("load-event-log", code);
+        if (isMounted.current) {
+          setEventLog({ loading: false, error: code ?? "INTERNAL_ERROR", items: [] });
+        }
+        return;
+      }
+      if (isMounted.current) {
+        const nextCursor = json.page?.nextCursor ?? null;
+        setEventLog((prev) => ({
+          loading: false,
+          error: null,
+          items: append ? [...prev.items, ...(json.items ?? [])] : json.items ?? [],
+          cursor: nextCursor,
+          hasMore: Boolean(nextCursor),
+        }));
+      }
+    } finally {
+      if (isMounted.current && append) {
+        setEventLogLoadingMore(false);
+      }
+    }
   }
 
   async function loadOpsSummary() {
@@ -934,6 +1012,46 @@ export default function AdminOrganizacoesPage() {
           })}
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="text-white/60 uppercase tracking-[0.18em]">Pesquisar</span>
+          <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1">
+            <input
+              type="search"
+              value={orgSearchInput}
+              onChange={(event) => setOrgSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  setOrgSearchQuery(orgSearchInput.trim());
+                }
+              }}
+              placeholder="Nome ou email oficial"
+              className="bg-transparent text-[11px] text-white/80 placeholder:text-white/40 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => setOrgSearchQuery(orgSearchInput.trim())}
+              className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/60 hover:bg-white/10"
+            >
+              Aplicar
+            </button>
+            {orgSearchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOrgSearchInput("");
+                  setOrgSearchQuery("");
+                }}
+                className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/60 hover:bg-white/10"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+          {orgSearchQuery && (
+            <span className="text-white/40">Filtro ativo: “{orgSearchQuery}”</span>
+          )}
+        </div>
+
         {accessIssue === "UNAUTH" && (
           <InlineAlert
             tone="warning"
@@ -964,11 +1082,14 @@ export default function AdminOrganizacoesPage() {
         {!loading && !accessIssue && !errorMsg && !hasOrganizations && (
           <div className="mt-8 rounded-2xl border border-dashed border-white/20 bg-black/60 px-6 py-8 text-center space-y-3">
             <p className="text-base font-medium text-white/90">
-              Ainda não há organizações registadas
+              {filter !== "ALL" || orgSearchQuery
+                ? "Nenhuma organização encontrada com os filtros atuais"
+                : "Ainda não há organizações registadas"}
             </p>
             <p className="text-[13px] text-white/65 max-w-md mx-auto">
-              Assim que um utilizador fizer pedido para se tornar organização,
-              vais conseguir aprovar ou recusar essa conta a partir daqui.
+              {filter !== "ALL" || orgSearchQuery
+                ? "Ajusta o filtro de estado ou a pesquisa para ver mais resultados."
+                : "Assim que um utilizador fizer pedido para se tornar organização, vais conseguir aprovar ou recusar essa conta a partir daqui."}
             </p>
           </div>
         )}
@@ -1019,6 +1140,20 @@ export default function AdminOrganizacoesPage() {
                       </button>
                     );
                   })}
+                </div>
+                <div className="flex items-center justify-between pt-2 text-[10px] text-white/50">
+                  {orgHasMore ? (
+                    <button
+                      type="button"
+                      onClick={() => loadOrganizations({ append: true })}
+                      disabled={orgLoadingMore}
+                      className="rounded-full border border-white/15 px-3 py-1 text-[10px] text-white/70 hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {orgLoadingMore ? "A carregar..." : "Carregar mais"}
+                    </button>
+                  ) : (
+                    <span>Fim da lista</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1433,15 +1568,24 @@ export default function AdminOrganizacoesPage() {
                     <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">
                       Auditoria (EventLog)
                     </p>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        selectedOrganization ? loadEventLog(selectedOrganization.id) : null
-                      }
-                      className="rounded-full border border-white/15 px-3 py-1 text-[10px] text-white/60 hover:bg-white/10"
-                    >
-                      Atualizar
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={eventLogFilter}
+                        onChange={(event) => setEventLogFilter(event.target.value)}
+                        placeholder="eventType (opcional)"
+                        className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] text-white/70 placeholder:text-white/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          selectedOrganization ? loadEventLog(selectedOrganization.id) : null
+                        }
+                        className="rounded-full border border-white/15 px-3 py-1 text-[10px] text-white/60 hover:bg-white/10"
+                      >
+                        Atualizar
+                      </button>
+                    </div>
                   </div>
                   {eventLog.loading ? (
                     <div className="space-y-2">
@@ -1478,6 +1622,24 @@ export default function AdminOrganizacoesPage() {
                           </div>
                         </div>
                       ))}
+                      <div className="flex items-center justify-between pt-2 text-[10px] text-white/50">
+                        {eventLog.hasMore ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              selectedOrganization
+                                ? loadEventLog(selectedOrganization.id, { append: true })
+                                : null
+                            }
+                            disabled={eventLogLoadingMore}
+                            className="rounded-full border border-white/15 px-3 py-1 text-[10px] text-white/70 hover:bg-white/10 disabled:opacity-50"
+                          >
+                            {eventLogLoadingMore ? "A carregar..." : "Carregar mais"}
+                          </button>
+                        ) : (
+                          <span>Fim do feed</span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

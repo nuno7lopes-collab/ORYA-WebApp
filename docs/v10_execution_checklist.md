@@ -189,11 +189,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (visibilidade operacional disponível).
 
 ### P2
-- [ ] Melhorias Futuras (Admin)
-  - Estado real: TODO — sem implementação específica.
-  - Evidência: ausência de UI dedicada no admin para itens avançados.
-  - Ação exata: backlog pós go-live.
-  - Risco/Impacto: menor maturidade operacional.
+- [x] Melhorias Futuras (Admin)
+  - Estado real: DONE — paginação/filtros básicos + UI resiliente (loading/empty/error) no admin de organizações.
+  - Evidência: `app/api/admin/organizacoes/list/route.ts:1-190`, `app/api/admin/organizacoes/event-log/route.ts:1-150`, `app/admin/organizacoes/page.tsx:330-1520`, `tests/admin/organizationsListRoute.test.ts:1-120`, `tests/admin/organizationsEventLogRoute.test.ts:1-120`, `reports/block4_admin_p2_closeout_2026-01-30.md`.
+  - Ação exata: manter cursor pagination e filtros no admin (org list + event log).
+  - Risco/Impacto: baixo (admin mais resiliente e escalável).
 
 ---
 
