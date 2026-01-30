@@ -1,6 +1,6 @@
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 import { prisma } from "@/lib/prisma";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 type OrganizationWriteContext = {
   id?: number;

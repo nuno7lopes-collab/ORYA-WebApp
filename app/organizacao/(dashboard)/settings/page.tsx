@@ -9,7 +9,7 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { CTA_DANGER, CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { cn } from "@/lib/utils";
 
 type OrganizationMeResponse = {

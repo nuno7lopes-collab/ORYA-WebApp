@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 

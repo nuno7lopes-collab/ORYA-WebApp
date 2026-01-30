@@ -10,7 +10,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { OrganizationLangSetter } from "../OrganizationLangSetter";
 import { OrganizationStatus } from "@prisma/client";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 
 type OrganizationSwitcherOption = {

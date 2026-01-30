@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
-import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";

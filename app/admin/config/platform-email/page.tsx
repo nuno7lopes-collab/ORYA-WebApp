@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
-import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 type PlatformEmailResponse =
   | {

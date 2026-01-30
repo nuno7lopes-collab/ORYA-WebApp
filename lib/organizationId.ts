@@ -1,23 +1,16 @@
+import "server-only";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import {
+  parseOrganizationId,
+  resolveOrganizationIdForUi,
+  resolveOrganizationIdFromParams,
+} from "@/lib/organizationIdUtils";
 
 export const ORGANIZATION_COOKIE_NAME = "orya_organization";
 
-export function parseOrganizationId(value: unknown): number | null {
-  if (typeof value === "number") {
-    return Number.isFinite(value) && value > 0 ? value : null;
-  }
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-export function resolveOrganizationIdFromParams(params: URLSearchParams): number | null {
-  return parseOrganizationId(params.get("organizationId"));
-}
+export { parseOrganizationId, resolveOrganizationIdForUi, resolveOrganizationIdFromParams };
 
 export async function resolveOrganizationIdFromCookies(): Promise<number | null> {
   try {
@@ -131,18 +124,4 @@ export function requireOrganizationIdFromPayload(params: {
     return { ok: false };
   }
   return { ok: true, organizationId };
-}
-
-export function resolveOrganizationIdForUi(input: {
-  directOrganizationId?: unknown;
-  profileOrganizationId?: unknown;
-  cookieOrganizationId?: unknown;
-}): { organizationId: number | null; source: "direct" | "profile" | "cookie" | null } {
-  const direct = parseOrganizationId(input.directOrganizationId);
-  if (direct) return { organizationId: direct, source: "direct" };
-  const profile = parseOrganizationId(input.profileOrganizationId);
-  if (profile) return { organizationId: profile, source: "profile" };
-  const cookie = parseOrganizationId(input.cookieOrganizationId);
-  if (cookie) return { organizationId: cookie, source: "cookie" };
-  return { organizationId: null, source: null };
 }

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 export type PlatformFeeConfig = {
   feeBps: number;

@@ -22,7 +22,7 @@ import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 
 type TicketTypeRow = {

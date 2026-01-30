@@ -8,7 +8,7 @@ import { sendImportantUpdateEmail } from "@/lib/emailSender";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { PendingPayoutStatus, Prisma, NotificationType } from "@prisma/client";
 import { logFinanceError } from "@/lib/observability/finance";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { logWarn } from "@/lib/observability/logger";
 
 type ReleaseResult = {

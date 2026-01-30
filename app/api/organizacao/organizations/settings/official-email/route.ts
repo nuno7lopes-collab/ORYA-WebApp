@@ -11,7 +11,7 @@ import {
   isValidOfficialEmail,
   maskEmailForLog,
   normalizeOfficialEmail,
-} from "@/lib/organizationOfficialEmail";
+} from "@/lib/organizationOfficialEmailUtils";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 

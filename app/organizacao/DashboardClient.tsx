@@ -39,7 +39,7 @@ import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
 import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { ensurePublicProfileLayout } from "@/lib/publicProfileLayout";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 

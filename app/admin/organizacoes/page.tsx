@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 import { adminLoadOpsSummary, adminReplayOutboxEvents } from "./actions";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 type OrganizationStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | string;
 

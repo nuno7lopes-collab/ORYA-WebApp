@@ -1,5 +1,5 @@
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 type PaidSalesGateInput = {
   officialEmail?: string | null;

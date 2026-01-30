@@ -1,32 +1,9 @@
+import "server-only";
 import { prisma } from "@/lib/prisma";
+import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 const PLATFORM_EMAIL_KEY = "platform.officialEmail";
 const FALLBACK_PLATFORM_EMAIL = "admin@orya.pt";
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-
-export function normalizeOfficialEmail(input?: string | null) {
-  if (typeof input !== "string") return null;
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const normalized = trimmed.normalize("NFKC").toLowerCase();
-  return normalized || null;
-}
-
-export function isValidOfficialEmail(input?: string | null) {
-  const normalized = normalizeOfficialEmail(input);
-  if (!normalized) return false;
-  return EMAIL_REGEX.test(normalized);
-}
-
-export function maskEmailForLog(input?: string | null) {
-  const normalized = normalizeOfficialEmail(input);
-  if (!normalized) return null;
-  const [local, domain] = normalized.split("@");
-  if (!domain) return null;
-  const visible = local.length <= 2 ? local.slice(0, 1) : local.slice(0, 2);
-  return `${visible}***@${domain}`;
-}
-
 export async function getPlatformOfficialEmail(): Promise<{ email: string; source: "db" | "env" | "fallback" }> {
   const row = await prisma.platformSetting.findUnique({
     where: { key: PLATFORM_EMAIL_KEY },
@@ -60,4 +37,10 @@ export async function setPlatformOfficialEmail(rawEmail: string) {
   });
 
   return normalized;
+}
+
+export async function validateOfficialEmail(payload: { email?: string | null }) {
+  const normalized = normalizeOfficialEmail(payload?.email ?? null);
+  const valid = Boolean(normalized && isValidOfficialEmail(normalized));
+  return { normalized, valid };
 }

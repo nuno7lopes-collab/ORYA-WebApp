@@ -6,7 +6,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { parseOrganizationId } from "@/lib/organizationId";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 import {
   CORE_ORGANIZATION_MODULES,
   OPERATION_MODULES,

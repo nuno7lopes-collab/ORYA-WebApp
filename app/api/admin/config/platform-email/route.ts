@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getPlatformOfficialEmail, setPlatformOfficialEmail } from "@/lib/platformSettings";
-import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";

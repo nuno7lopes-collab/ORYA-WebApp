@@ -22,7 +22,7 @@ import {
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { OrganizationFormStatus } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";

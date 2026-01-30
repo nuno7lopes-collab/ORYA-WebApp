@@ -5,7 +5,7 @@ import { normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { sendCrmCampaignEmail } from "@/lib/emailSender";
 import { assertResendReady } from "@/lib/resendClient";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import {
   ConsentStatus,
   ConsentType,

@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import OrganizationTopBar from "@/app/organizacao/OrganizationTopBar";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 export type OrganizationShellOrgOption = {
   organizationId: number;

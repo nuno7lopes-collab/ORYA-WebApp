@@ -18,7 +18,7 @@ import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import CrmSubnav from "@/app/organizacao/(dashboard)/crm/CrmSubnav";
 import { type ObjectiveTab } from "@/app/organizacao/objectiveNav";
 import { hasModuleAccess, normalizeAccessLevel, resolveModuleAccess } from "@/lib/organizationRbac";
-import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmail";
+import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import StoreAdminSubnav from "@/components/store/StoreAdminSubnav";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
