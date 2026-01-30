@@ -71,16 +71,24 @@ Parameters:
   LogIngestThresholdBytes:
     Type: Number
     Default: 50000000
+  CreateEcrRepos:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
 
 Conditions:
   HasALB: !Equals [!Ref CreateALB, "true"]
   NoALB: !Equals [!Ref CreateALB, "false"]
   UseWorker: !Equals [!Ref EnableWorker, "true"]
   HasBudgetEmail: !Not [!Equals [!Ref BudgetNotificationEmail, ""]]
+  CreateEcr: !Equals [!Ref CreateEcrRepos, "true"]
 
 Resources:
   EcrRepoWeb:
     Type: AWS::ECR::Repository
+    Condition: CreateEcr
     Properties:
       RepositoryName: orya-web
       Tags:
@@ -106,6 +114,7 @@ Resources:
           }
   EcrRepoWorker:
     Type: AWS::ECR::Repository
+    Condition: CreateEcr
     Properties:
       RepositoryName: orya-worker
       Tags:
