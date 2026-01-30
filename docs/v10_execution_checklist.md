@@ -129,7 +129,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Batching e Performance
   - Estado real: DONE — batch configurável + fairness por eventType + logs por batch; sem tight loop em vazio.
-  - Evidência: `domain/outbox/publisher.ts:1-220` (batch claim + fairness), `domain/outbox/publisher.ts:221-360` (batch stats/logs), `tests/outbox/publisher.test.ts:1-230` (batching/fairness/stale), `tests/outbox/loyaltyOutbox.test.ts:1-200` (retry/dead-letter), `reports/block2_p2_outbox_perf_closeout_2026-01-30.md`.
+  - Evidência: `domain/outbox/publisher.ts:1-220` (batch claim + fairness), `domain/outbox/publisher.ts:221-360` (batch stats/logs), `tests/outbox/publisher.test.ts:1-230` (batching/fairness/stale), `tests/outbox/loyaltyOutbox.test.ts:1-200` (retry/dead-letter), `prisma/migrations/20260130192015_outbox_created_at_idx/migration.sql:1-1`, `reports/block2_p2_outbox_perf_closeout_2026-01-30.md`.
   - Ação exata: ajustar `OUTBOX_PUBLISH_BATCH_SIZE`/`OUTBOX_PUBLISH_LOOKAHEAD_MULTIPLIER` conforme carga.
   - Risco/Impacto: baixo (throughput consistente).
 

@@ -2072,6 +2072,7 @@ model OutboxEvent {
   @@index([publishedAt, nextAttemptAt], map: "outbox_events_publish_idx")
   @@index([deadLetteredAt], map: "outbox_events_dead_letter_idx")
   @@index([claimedAt], map: "outbox_events_claimed_idx")
+  @@index([createdAt, eventId], map: "outbox_events_created_at_event_idx")
   @@map("outbox_events")
   @@schema("app_v3")
 }
