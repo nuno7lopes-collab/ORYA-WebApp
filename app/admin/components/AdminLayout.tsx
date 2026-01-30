@@ -38,7 +38,10 @@ const navGroups = [
   },
   {
     label: "Sistema",
-    items: [{ href: "/admin/settings", label: "Configurações" }],
+    items: [
+      { href: "/admin/settings", label: "Configurações" },
+      { href: "/admin/infra", label: "Infra" },
+    ],
   },
 ];
 
