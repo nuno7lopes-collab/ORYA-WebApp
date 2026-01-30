@@ -526,12 +526,11 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: manter runbook alinhado ao infra atual.
   - Risco/Impacto: baixo.
 
-- [ ] Execução de Infra (Route53/ACM/Well-known/ECR)
-  - Estado real: BLOCKED — hosted zone + ACM + S3/CloudFront criados; build ECR falhou por erro de build Next.js.
-  - Evidência: `reports/p_infra_2026-01-30.md` (requestIds, ARNs, URLs).
-  - Bloqueio adicional: `Module not found: Can't resolve 'tls'` (pg import em client bundle).
-  - Ação exata: corrigir import chain (server-only) e reexecutar CodeBuild; depois deploy CFN + healthcheck.
-  - Risco/Impacto: deploy prod bloqueado até images.
+- [x] Execução de Infra (Route53/ACM/Well-known/ECR)
+  - Estado real: DONE — hosted zone + ACM + CloudFront/S3 well-known, CodeBuild ECR images, CFN stack e healthcheck OK.
+  - Evidência: `reports/p_infra_2026-01-30.md` (requestIds, ARNs, URLs, outputs).
+  - Ação exata: manter pipeline e repetir em cada release.
+  - Risco/Impacto: baixo.
 
 - [x] Design System e Consistência
   - Estado real: DONE — design system documentado + componentes UI reutilizáveis.
@@ -549,8 +548,8 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 - [ ] Testes Finais em Mobile
   - Estado real: BLOCKED — requer device farm/credenciais; scripts prontos.
   - Evidência: `scripts/run-devicefarm.sh:1-40`.
-  - Bloqueio adicional: secrets ausentes em prod — `orya/prod/DATABASE_URL`, `orya/prod/DIRECT_URL`, `orya/prod/QR_SECRET_KEY`, `orya/prod/APP_BASE_URL`, `orya/prod/NEXT_PUBLIC_BASE_URL`, `orya/prod/ORYA_CRON_SECRET`, `orya/prod/SUPABASE_URL`, `orya/prod/NEXT_PUBLIC_SUPABASE_URL`, `orya/prod/SUPABASE_ANON_KEY`, `orya/prod/NEXT_PUBLIC_SUPABASE_ANON_KEY`, `orya/prod/SUPABASE_SERVICE_ROLE`, `orya/prod/STRIPE_SECRET_KEY`, `orya/prod/STRIPE_WEBHOOK_SECRET`, `orya/prod/NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `orya/prod/RESEND_API_KEY`, `orya/prod/RESEND_FROM_EMAIL`, `orya/prod/APPLE_SIGNIN_SERVICE_ID`, `orya/prod/APPLE_SIGNIN_REDIRECT_URI`, `orya/prod/APPLE_SIGNIN_TEAM_ID`, `orya/prod/APPLE_SIGNIN_KEY_ID`, `orya/prod/APPLE_SIGNIN_PRIVATE_KEY_BASE64`, `orya/prod/APNS_TEAM_ID`, `orya/prod/APNS_KEY_ID`, `orya/prod/APNS_PRIVATE_KEY_BASE64`, `orya/prod/APNS_TOPIC`, `orya/prod/SENTRY_DSN`, `orya/prod/STAGING_ADMIN_EMAIL`, `orya/prod/STAGING_ADMIN_PASSWORD`, `orya/prod/STAGING_ADMIN_SESSION`.
-  - Ação exata: configurar provider e executar suite mobile (checkout, eventos, reservas, wallet).
+  - Bloqueio adicional: secrets existem mas ainda com placeholders REPLACE_ME para chaves Apple/Stripe/Resend/Sentry e credenciais de device farm.
+  - Ação exata: preencher secrets reais e executar suite mobile (checkout, eventos, reservas, wallet).
   - Risco/Impacto: regressões em dispositivos móveis.
 
 - [ ] Acessibilidade (A11y)
