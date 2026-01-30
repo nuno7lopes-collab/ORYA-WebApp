@@ -467,7 +467,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Monitoramento de Cron (health check)
   - Estado real: DONE — heartbeat por job + endpoint interno de coverage.
-  - Evidência: `app/api/internal/cron/coverage/route.ts:1-120`, `lib/cron/heartbeat.ts:1-60`, `prisma/schema.prisma:2060-2100`, `docs/runbooks/cron-coverage.md:20-40`.
+  - Evidência: `app/api/internal/cron/coverage/route.ts:11-66` (endpoint fail-closed), `lib/cron/heartbeat.ts:23-55` (writer), `app/api/cron/operations/route.ts:22-39` + `app/api/cron/bookings/cleanup/route.ts:110-135` + `app/api/cron/padel/reminders/route.ts:190-205` (success/error por job), `lib/cron/jobs.ts:9-94` (inventário jobs), `prisma/schema.prisma:2079-2094` + `prisma/migrations/20260130155341_cron_heartbeat/migration.sql:1-16` (schema/migração), `docs/runbooks/cron-coverage.md:1-53` (runbook).
   - Ação exata: configurar scheduler externo e monitorar `stale=true`.
   - Risco/Impacto: baixo (detecção de cron parado disponível).
 
@@ -560,7 +560,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] PWA e App Store
   - Estado real: DONE — manifest + meta + ícones base.
-  - Evidência: `public/manifest.json:1-24`, `app/layout.tsx:1-40`, `public/brand/orya-logo-192.png`, `public/brand/orya-logo-512.png`.
+  - Evidência: `public/manifest.json:1-30`, `app/layout.tsx:14-30` (manifest/meta/icons), `public/brand/orya-logo-192.png`, `public/brand/orya-logo-512.png`, `public/brand/orya-logo-180.png`.
   - Ação exata: validar comportamento “Add to Home Screen” em iOS/Android.
   - Risco/Impacto: baixo (PWA básico pronto).
 
