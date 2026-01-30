@@ -38,10 +38,23 @@ vi.mock("@/lib/prisma", () => {
     }),
   };
   const outboxEvent = {
+    findUnique: vi.fn(({ where }: any) => outboxEvents.find((evt) => evt.eventId === where.eventId) ?? null),
     update: vi.fn(({ where, data }: any) => {
       const event = outboxEvents.find((evt) => evt.eventId === where.eventId);
       if (event) Object.assign(event, data);
       return event ?? null;
+    }),
+    updateMany: vi.fn(({ where, data }: any) => {
+      const ids = Array.isArray(where?.eventId?.in) ? where.eventId.in : [where?.eventId].filter(Boolean);
+      const token = where?.processingToken ?? null;
+      let count = 0;
+      for (const evt of outboxEvents) {
+        if (!ids.includes(evt.eventId)) continue;
+        if (token && evt.processingToken !== token) continue;
+        Object.assign(evt, data);
+        count += 1;
+      }
+      return { count };
     }),
   };
   const prisma = {
@@ -61,10 +74,16 @@ vi.mock("@/lib/prisma", () => {
               !lockedIds.has(evt.eventId),
           );
           if (!pending.length) return [];
-          const event = pending[0];
-          lockedIds.add(event.eventId);
-          txLocks.add(event.eventId);
-          return [event];
+          const sorted = pending
+            .map((evt) => ({ ...evt, createdAt: evt.createdAt ?? currentNow }))
+            .sort((a, b) =>
+              a.createdAt.getTime() - b.createdAt.getTime() || String(a.eventId).localeCompare(String(b.eventId)),
+            );
+          for (const evt of sorted) {
+            lockedIds.add(evt.eventId);
+            txLocks.add(evt.eventId);
+          }
+          return sorted;
         }),
       };
       try {
@@ -107,6 +126,8 @@ describe("loyalty outbox consumer", () => {
     enqueueMock.mockClear();
     recordOutboxMock.mockClear();
     prismaMock.outboxEvent.update.mockClear();
+    prismaMock.outboxEvent.updateMany?.mockClear();
+    prismaMock.outboxEvent.findUnique?.mockClear();
     prismaMock.operation.findUnique.mockClear();
     prismaMock.operation.create.mockClear();
   });
@@ -181,6 +202,7 @@ describe("loyalty outbox consumer", () => {
         publishedAt: null,
         nextAttemptAt: null,
         deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
       },
     ];
     const now = new Date("2024-01-01T00:00:00Z");

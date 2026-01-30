@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { publishOutboxBatch, OUTBOX_MAX_ATTEMPTS } from "@/domain/outbox/publisher";
+import { publishOutboxBatch, OUTBOX_MAX_ATTEMPTS, buildFairOutboxBatch } from "@/domain/outbox/publisher";
 import { prisma } from "@/lib/prisma";
 
 let outboxEvents: any[] = [];
@@ -19,10 +19,23 @@ vi.mock("@/lib/prisma", () => {
     }),
   };
   const outboxEvent = {
+    findUnique: vi.fn(({ where }: any) => outboxEvents.find((evt) => evt.eventId === where.eventId) ?? null),
     update: vi.fn(({ where, data }: any) => {
       const event = outboxEvents.find((evt) => evt.eventId === where.eventId);
       if (event) Object.assign(event, data);
       return event ?? null;
+    }),
+    updateMany: vi.fn(({ where, data }: any) => {
+      const ids = Array.isArray(where?.eventId?.in) ? where.eventId.in : [where?.eventId].filter(Boolean);
+      const token = where?.processingToken ?? null;
+      let count = 0;
+      for (const evt of outboxEvents) {
+        if (!ids.includes(evt.eventId)) continue;
+        if (token && evt.processingToken !== token) continue;
+        Object.assign(evt, data);
+        count += 1;
+      }
+      return { count };
     }),
   };
   const prisma = {
@@ -43,10 +56,16 @@ vi.mock("@/lib/prisma", () => {
               !lockedIds.has(evt.eventId),
           );
           if (!pending.length) return [];
-          const event = pending[0];
-          lockedIds.add(event.eventId);
-          txLocks.add(event.eventId);
-          return [event];
+          const sorted = pending
+            .map((evt) => ({ ...evt, createdAt: evt.createdAt ?? currentNow }))
+            .sort((a, b) =>
+              a.createdAt.getTime() - b.createdAt.getTime() || String(a.eventId).localeCompare(String(b.eventId)),
+            );
+          for (const evt of sorted) {
+            lockedIds.add(evt.eventId);
+            txLocks.add(evt.eventId);
+          }
+          return sorted;
         }),
       };
       try {
@@ -70,6 +89,8 @@ describe("Outbox publisher", () => {
     prismaMock.operation.findUnique.mockClear();
     prismaMock.operation.create.mockClear();
     prismaMock.outboxEvent.update.mockClear();
+    prismaMock.outboxEvent.updateMany.mockClear();
+    prismaMock.outboxEvent.findUnique.mockClear();
   });
 
   it("enfileira operação e mantém publishedAt null até sucesso", async () => {
@@ -84,6 +105,7 @@ describe("Outbox publisher", () => {
         publishedAt: null,
         nextAttemptAt: null,
         deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
       },
     ];
 
@@ -109,6 +131,7 @@ describe("Outbox publisher", () => {
         publishedAt: null,
         nextAttemptAt: null,
         deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
       },
     ];
     operations = [
@@ -134,6 +157,7 @@ describe("Outbox publisher", () => {
         publishedAt: null,
         nextAttemptAt: null,
         deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
       },
     ];
     prismaMock.operation.create.mockImplementationOnce(() => {
@@ -158,6 +182,7 @@ describe("Outbox publisher", () => {
         publishedAt: null,
         nextAttemptAt: null,
         deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
       },
     ];
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -181,6 +206,7 @@ describe("Outbox publisher", () => {
         publishedAt: null,
         nextAttemptAt: null,
         deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
       },
     ];
 
@@ -203,6 +229,7 @@ describe("Outbox publisher", () => {
         nextAttemptAt: null,
         deadLetteredAt: null,
         claimedAt: new Date(now.getTime() - STALE_CLAIM_MS - 1000),
+        createdAt: new Date(now.getTime() - 2000),
       },
       {
         eventId: "evt-fresh",
@@ -213,6 +240,7 @@ describe("Outbox publisher", () => {
         nextAttemptAt: null,
         deadLetteredAt: null,
         claimedAt: new Date(now.getTime() - 60 * 1000),
+        createdAt: new Date(now.getTime() - 1000),
       },
     ];
 
@@ -221,5 +249,109 @@ describe("Outbox publisher", () => {
     const fresh = outboxEvents.find((evt) => evt.eventId === "evt-fresh");
     expect(stale?.processingToken).toBeTruthy();
     expect(fresh?.processingToken).toBeFalsy();
+  });
+
+  it("processa até batchSize e não reclama todos os eventos", async () => {
+    outboxEvents = [
+      {
+        eventId: "evt-a1",
+        eventType: "A",
+        payload: {},
+        attempts: 0,
+        publishedAt: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+      },
+      {
+        eventId: "evt-a2",
+        eventType: "A",
+        payload: {},
+        attempts: 0,
+        publishedAt: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:01Z"),
+      },
+      {
+        eventId: "evt-b1",
+        eventType: "B",
+        payload: {},
+        attempts: 0,
+        publishedAt: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:02Z"),
+      },
+    ];
+
+    const now = new Date("2024-01-01T00:00:00Z");
+    currentNow = now;
+    await publishOutboxBatch({ now, batchSize: 2 });
+    const claimed = outboxEvents.filter((evt) => evt.processingToken);
+    expect(claimed).toHaveLength(2);
+    expect(prismaMock.operation.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("intercala eventTypes no batch (fairness)", async () => {
+    outboxEvents = [
+      {
+        eventId: "evt-a1",
+        eventType: "A",
+        payload: {},
+        attempts: 0,
+        publishedAt: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+      },
+      {
+        eventId: "evt-a2",
+        eventType: "A",
+        payload: {},
+        attempts: 0,
+        publishedAt: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:01Z"),
+      },
+      {
+        eventId: "evt-b1",
+        eventType: "B",
+        payload: {},
+        attempts: 0,
+        publishedAt: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:02Z"),
+      },
+      {
+        eventId: "evt-b2",
+        eventType: "B",
+        payload: {},
+        attempts: 0,
+        publishedAt: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        createdAt: new Date("2024-01-01T00:00:03Z"),
+      },
+    ];
+
+    const now = new Date("2024-01-01T00:00:00Z");
+    currentNow = now;
+    await publishOutboxBatch({ now, batchSize: 3 });
+    const order = operations.map((op) => op.payload.eventId);
+    expect(order.slice(0, 3)).toEqual(["evt-a1", "evt-b1", "evt-a2"]);
+  });
+
+  it("buildFairOutboxBatch respeita round-robin", () => {
+    const events = [
+      { eventId: "a1", eventType: "A", createdAt: new Date("2024-01-01T00:00:00Z") },
+      { eventId: "a2", eventType: "A", createdAt: new Date("2024-01-01T00:00:01Z") },
+      { eventId: "b1", eventType: "B", createdAt: new Date("2024-01-01T00:00:02Z") },
+      { eventId: "b2", eventType: "B", createdAt: new Date("2024-01-01T00:00:03Z") },
+    ] as any[];
+    const batch = buildFairOutboxBatch(events, 3).map((e) => e.eventId);
+    expect(batch).toEqual(["a1", "b1", "a2"]);
   });
 });
