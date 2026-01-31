@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
 type CheckoutResponse = {
   ok?: boolean;
@@ -72,8 +73,12 @@ export default function ResaleCheckoutPage() {
   const [preview, setPreview] = useState<ResalePreview | null>(null);
 
   const stripePromise = useMemo(() => {
-    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    return key ? loadStripe(key) : null;
+    try {
+      const key = getStripePublishableKey();
+      return loadStripe(key);
+    } catch {
+      return null;
+    }
   }, []);
 
   useEffect(() => {

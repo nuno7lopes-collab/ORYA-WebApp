@@ -1,5 +1,5 @@
 import type Stripe from "stripe";
-import { stripe } from "@/lib/stripeClient";
+import { getStripeClient } from "@/lib/stripeClient";
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 
 export type StripeOrgContext = {
@@ -26,7 +26,7 @@ export function assertConnectReady(
 }
 
 export async function createPaymentIntent(
-  params: Parameters<typeof stripe.paymentIntents.create>[0],
+  params: Stripe.PaymentIntentCreateParams,
   opts?: {
     idempotencyKey?: string;
     requireStripe?: boolean;
@@ -34,6 +34,7 @@ export async function createPaymentIntent(
   },
 ) {
   assertConnectReady(opts?.org ?? null, opts?.requireStripe ?? true);
+  const stripe = getStripeClient();
   return stripe.paymentIntents.create(
     params,
     opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined,
@@ -44,6 +45,7 @@ export async function retrievePaymentIntent(
   id: string,
   params?: Stripe.PaymentIntentRetrieveParams,
 ) {
+  const stripe = getStripeClient();
   return stripe.paymentIntents.retrieve(id, params as Stripe.PaymentIntentRetrieveParams);
 }
 
@@ -51,20 +53,24 @@ export async function cancelPaymentIntent(
   id: string,
   params?: Parameters<typeof stripe.paymentIntents.cancel>[1],
 ) {
+  const stripe = getStripeClient();
   return stripe.paymentIntents.cancel(id, params);
 }
 
 export async function createStripeAccount(params: Stripe.AccountCreateParams) {
+  const stripe = getStripeClient();
   return stripe.accounts.create(params);
 }
 
 export async function createAccountLink(
-  params: Parameters<typeof stripe.accountLinks.create>[0],
+  params: Stripe.AccountLinkCreateParams,
 ) {
+  const stripe = getStripeClient();
   return stripe.accountLinks.create(params);
 }
 
 export async function retrieveStripeAccount(id: string) {
+  const stripe = getStripeClient();
   return stripe.accounts.retrieve(id);
 }
 
@@ -72,6 +78,7 @@ export async function retrieveCharge(
   id: string,
   params?: Stripe.ChargeRetrieveParams,
 ) {
+  const stripe = getStripeClient();
   return stripe.charges.retrieve(id, params as Stripe.ChargeRetrieveParams);
 }
 
@@ -84,6 +91,7 @@ export async function createRefund(
   },
 ) {
   assertConnectReady(opts?.org ?? null, opts?.requireStripe ?? true);
+  const stripe = getStripeClient();
   return stripe.refunds.create(
     params,
     opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined,
@@ -91,7 +99,7 @@ export async function createRefund(
 }
 
 export async function createTransfer(
-  params: Parameters<typeof stripe.transfers.create>[0],
+  params: Stripe.TransferCreateParams,
   opts?: {
     idempotencyKey?: string;
     requireStripe?: boolean;
@@ -99,6 +107,7 @@ export async function createTransfer(
   },
 ) {
   assertConnectReady(opts?.org ?? null, opts?.requireStripe ?? true);
+  const stripe = getStripeClient();
   return stripe.transfers.create(
     params,
     opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined,
@@ -110,5 +119,6 @@ export function constructStripeWebhookEvent(
   signature: string,
   secret: string,
 ): Stripe.Event {
+  const stripe = getStripeClient();
   return stripe.webhooks.constructEvent(payload, signature, secret);
 }

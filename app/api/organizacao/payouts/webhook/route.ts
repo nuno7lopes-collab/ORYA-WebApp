@@ -8,12 +8,11 @@ import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk, respondPlainText } from "@/lib/http/envelope";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
-
-const webhookSecret =
-  process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+import { getStripePayoutsWebhookSecret } from "@/lib/stripeKeys";
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
+  const webhookSecret = getStripePayoutsWebhookSecret();
   const sig = req.headers.get("stripe-signature");
 
   if (!sig) {

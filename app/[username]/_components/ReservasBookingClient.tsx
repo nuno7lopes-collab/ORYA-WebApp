@@ -16,6 +16,7 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
 type Service = {
   id: number;
@@ -413,8 +414,12 @@ export default function ReservasBookingClient({
   const slotGroups = useMemo(() => groupSlotsByPeriod(daySlots, timezone), [daySlots, timezone]);
 
   const stripePromise = useMemo(() => {
-    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    return key ? loadStripe(key) : null;
+    try {
+      const key = getStripePublishableKey();
+      return loadStripe(key);
+    } catch {
+      return null;
+    }
   }, []);
 
   const elementsOptions = useMemo<StripeElementsOptions | null>(() => {

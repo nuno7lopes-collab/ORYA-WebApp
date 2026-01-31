@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
-import { env } from "@/lib/env";
+import { getStripeWebhookSecret } from "@/lib/stripeKeys";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { respondPlainText } from "@/lib/http/envelope";
@@ -63,7 +63,6 @@ import {
   queueOffsessionActionRequired,
 } from "@/domain/notifications/splitPayments";
 
-const webhookSecret = env.stripeWebhookSecret;
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const STRIPE_OUTBOX_TYPE = "payment.webhook.received";
 
@@ -203,6 +202,7 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const logCtx = { requestId: ctx.requestId, correlationId: ctx.correlationId };
+  const webhookSecret = getStripeWebhookSecret();
   if (!webhookSecret) {
     logWebhookError("missing_webhook_secret", new Error("STRIPE_WEBHOOK_SECRET_MISSING"), logCtx);
     return respondPlainText(ctx, "Webhook secret not configured", { status: 500 });

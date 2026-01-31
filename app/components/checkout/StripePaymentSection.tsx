@@ -15,6 +15,7 @@ import {
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { useCheckout, type CheckoutBreakdown } from "./contextoCheckout";
 import OrderSummaryPanel from "./OrderSummaryPanel";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
 type StripePaymentSectionProps = {
   loading: boolean;
@@ -38,9 +39,12 @@ export default function StripePaymentSection({
   onRetry,
 }: StripePaymentSectionProps) {
   const stripePromise = useMemo(() => {
-    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    if (!key) return null;
-    return loadStripe(key);
+    try {
+      const key = getStripePublishableKey();
+      return loadStripe(key);
+    } catch {
+      return null;
+    }
   }, []);
 
   const appearance: Appearance = {

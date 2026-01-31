@@ -10,6 +10,7 @@ datasource db {
 /// Perfil base do utilizador ORYA (1-1 com auth.users)
 model Profile {
   id                                                               String                  @id @db.Uuid
+  env                                                              String                  @default("prod")
   username                                                         String?                 @unique @db.Citext
   fullName                                                         String?                 @map("full_name")
   avatarUrl                                                        String?                 @map("avatar_url")
@@ -120,6 +121,7 @@ model Profile {
 
 model UserIdentity {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  env             String   @default("prod")
   userId          String   @map("user_id") @db.Uuid
   provider        String   @db.Text
   providerUserId  String   @map("provider_user_id") @db.Text
@@ -136,6 +138,7 @@ model UserIdentity {
 
 model PushDeviceToken {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  env       String   @default("prod")
   userId    String   @map("user_id") @db.Uuid
   platform  String   @db.Text
   token     String   @db.Text
@@ -152,6 +155,7 @@ model PushDeviceToken {
 
 /// Entidade organização (marca, página de eventos)
 model Organization {
+  env                     String                         @default("prod")
   id                      Int                             @id @default(autoincrement())
   groupId                 Int                             @map("group_id")
   stripeAccountId         String?                         @map("stripe_account_id")
@@ -237,8 +241,8 @@ model Organization {
   reservationResources    ReservationResource[]
   padelRuleSets           PadelRuleSet[]                  @relation("OrganizationPadelRuleSets")
   padelTournaments        PadelTournamentConfig[]
-  padelCourtBlocks        PadelCourtBlock[]
-  padelAvailabilities     PadelAvailability[]
+  padelCourtBlocks        CalendarBlock[]
+  padelAvailabilities     CalendarAvailability[]
   padelWaitlistEntries    PadelWaitlistEntry[]
   organizationPolicies    OrganizationPolicy[]
   services                Service[]
@@ -277,6 +281,7 @@ model Organization {
 }
 
 model OrganizationSettings {
+  env                     String                         @default("prod")
   organizationId                  Int           @id @map("organization_id")
   invoicingMode                   InvoicingMode? @map("invoicing_mode")
   invoicingSoftwareName           String?       @map("invoicing_software_name")
@@ -293,6 +298,7 @@ model OrganizationSettings {
 }
 
 model OrganizationGroup {
+  env                     String                         @default("prod")
   id         Int                      @id @default(autoincrement())
   createdAt  DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -304,6 +310,7 @@ model OrganizationGroup {
 }
 
 model OrganizationGroupMember {
+  env                     String                         @default("prod")
   id           String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   groupId      Int                     @map("group_id")
   userId       String                  @map("user_id") @db.Uuid
@@ -326,6 +333,7 @@ model OrganizationGroupMember {
 }
 
 model OrganizationGroupMemberOrganizationOverride {
+  env                     String                         @default("prod")
   id            String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   groupMemberId String                  @map("group_member_id") @db.Uuid
   organizationId Int                    @map("organization_id")
@@ -344,6 +352,7 @@ model OrganizationGroupMemberOrganizationOverride {
 }
 
 model Store {
+  env                     String                         @default("prod")
   id                         Int              @id @default(autoincrement())
   ownerType                  StoreOwnerType   @map("owner_type")
   ownerOrganizationId        Int?             @map("owner_organization_id")
@@ -380,6 +389,7 @@ model Store {
 }
 
 model StoreCategory {
+  env                     String                         @default("prod")
   id            Int      @id @default(autoincrement())
   storeId       Int      @map("store_id")
   name          String
@@ -400,6 +410,7 @@ model StoreCategory {
 }
 
 model StoreProduct {
+  env                     String                         @default("prod")
   id                   Int                 @id @default(autoincrement())
   storeId              Int                 @map("store_id")
   categoryId           Int?                @map("category_id")
@@ -444,6 +455,7 @@ model StoreProduct {
 }
 
 model StoreProductVariant {
+  env                     String                         @default("prod")
   id           Int      @id @default(autoincrement())
   productId    Int      @map("product_id")
   label        String
@@ -468,6 +480,7 @@ model StoreProductVariant {
 }
 
 model StoreProductImage {
+  env                     String                         @default("prod")
   id         Int      @id @default(autoincrement())
   productId  Int      @map("product_id")
   url        String
@@ -483,6 +496,7 @@ model StoreProductImage {
 }
 
 model StoreProductOption {
+  env                     String                         @default("prod")
   id              Int                    @id @default(autoincrement())
   productId       Int                    @map("product_id")
   optionType      StoreProductOptionType @map("option_type")
@@ -504,6 +518,7 @@ model StoreProductOption {
 }
 
 model StoreProductOptionValue {
+  env                     String                         @default("prod")
   id              Int      @id @default(autoincrement())
   optionId        Int      @map("option_id")
   value           String
@@ -520,6 +535,7 @@ model StoreProductOptionValue {
 }
 
 model StoreDigitalAsset {
+  env                     String                         @default("prod")
   id           Int      @id @default(autoincrement())
   productId    Int      @map("product_id")
   storagePath  String   @map("storage_path")
@@ -537,6 +553,7 @@ model StoreDigitalAsset {
 }
 
 model StoreDigitalGrant {
+  env                     String                         @default("prod")
   id             Int      @id @default(autoincrement())
   orderLineId    Int      @map("order_line_id")
   userId         String?  @map("user_id") @db.Uuid
@@ -555,6 +572,7 @@ model StoreDigitalGrant {
 }
 
 model StoreBundle {
+  env                     String                         @default("prod")
   id          Int                  @id @default(autoincrement())
   storeId     Int                  @map("store_id")
   name        String
@@ -579,6 +597,7 @@ model StoreBundle {
 }
 
 model StoreBundleItem {
+  env                     String                         @default("prod")
   id        Int      @id @default(autoincrement())
   bundleId  Int      @map("bundle_id")
   productId Int      @map("product_id")
@@ -596,6 +615,7 @@ model StoreBundleItem {
 }
 
 model StoreCart {
+  env                     String                         @default("prod")
   id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   storeId   Int             @map("store_id")
   userId    String?         @map("user_id") @db.Uuid
@@ -616,6 +636,7 @@ model StoreCart {
 }
 
 model StoreCartItem {
+  env                     String                         @default("prod")
   id             Int      @id @default(autoincrement())
   cartId         String   @map("cart_id") @db.Uuid
   productId      Int      @map("product_id")
@@ -642,6 +663,7 @@ model StoreCartItem {
 }
 
 model StoreOrder {
+  env                     String                         @default("prod")
   id              Int            @id @default(autoincrement())
   storeId         Int            @map("store_id")
   userId          String?        @map("user_id") @db.Uuid
@@ -684,6 +706,7 @@ model StoreOrder {
 }
 
 model StoreOrderLine {
+  env                     String                         @default("prod")
   id               Int      @id @default(autoincrement())
   orderId          Int      @map("order_id")
   productId        Int?     @map("product_id")
@@ -713,6 +736,7 @@ model StoreOrderLine {
 }
 
 model StoreOrderBundle {
+  env                     String                         @default("prod")
   id             Int                   @id @default(autoincrement())
   orderId        Int                   @map("order_id")
   bundleId       Int?                  @map("bundle_id")
@@ -735,6 +759,7 @@ model StoreOrderBundle {
 }
 
 model StoreOrderBundleItem {
+  env                     String                         @default("prod")
   id            Int      @id @default(autoincrement())
   orderBundleId Int      @map("order_bundle_id")
   productId     Int?     @map("product_id")
@@ -755,6 +780,7 @@ model StoreOrderBundleItem {
 }
 
 model StoreOrderAddress {
+  env                     String                         @default("prod")
   id          Int             @id @default(autoincrement())
   orderId     Int             @map("order_id")
   addressType StoreAddressType @map("address_type")
@@ -775,6 +801,7 @@ model StoreOrderAddress {
 }
 
 model StoreShipment {
+  env                     String                         @default("prod")
   id             Int               @id @default(autoincrement())
   orderId        Int               @map("order_id")
   carrier        String?
@@ -793,6 +820,7 @@ model StoreShipment {
 }
 
 model StoreShippingZone {
+  env                     String                         @default("prod")
   id        Int      @id @default(autoincrement())
   storeId   Int      @map("store_id")
   name      String
@@ -810,6 +838,7 @@ model StoreShippingZone {
 }
 
 model StoreShippingMethod {
+  env                     String                         @default("prod")
   id            Int               @id @default(autoincrement())
   zoneId        Int               @map("zone_id")
   name          String
@@ -832,6 +861,7 @@ model StoreShippingMethod {
 }
 
 model StoreShippingTier {
+  env                     String                         @default("prod")
   id               Int      @id @default(autoincrement())
   methodId         Int      @map("method_id")
   minSubtotalCents Int      @map("min_subtotal_cents")
@@ -846,6 +876,7 @@ model StoreShippingTier {
 }
 
 model StoreInventoryMovement {
+  env                     String                         @default("prod")
   id            Int                       @id @default(autoincrement())
   productId     Int                       @map("product_id")
   variantId     Int?                      @map("variant_id")
@@ -863,6 +894,7 @@ model StoreInventoryMovement {
 }
 
 model OrganizationForm {
+  env                     String                         @default("prod")
   id              Int                             @id @default(autoincrement())
   organizationId     Int                             @map("organization_id")
   title           String
@@ -884,6 +916,7 @@ model OrganizationForm {
 }
 
 model OrganizationFormField {
+  env                     String                         @default("prod")
   id          Int                         @id @default(autoincrement())
   formId      Int                         @map("form_id")
   label       String
@@ -903,6 +936,7 @@ model OrganizationFormField {
 }
 
 model OrganizationFormSubmission {
+  env                     String                         @default("prod")
   id         Int                               @id @default(autoincrement())
   formId     Int                               @map("form_id")
   userId     String?                           @map("user_id") @db.Uuid
@@ -921,6 +955,7 @@ model OrganizationFormSubmission {
 }
 
 model OrganizationModuleEntry {
+  env                     String                         @default("prod")
   organizationId Int                @map("organization_id")
   moduleKey   OrganizationModule @map("module_key")
   enabled     Boolean            @default(true)
@@ -932,6 +967,7 @@ model OrganizationModuleEntry {
 }
 
 model OrganizationOfficialEmailRequest {
+  env                     String                         @default("prod")
   id                Int       @id @default(autoincrement())
   organizationId       Int       @map("organization_id")
   requestedByUserId String?   @map("requested_by_user_id") @db.Uuid
@@ -952,6 +988,7 @@ model OrganizationOfficialEmailRequest {
 
 model GlobalUsername {
   username  String   @id @db.Citext
+  env       String   @default("prod")
   ownerType String   @map("owner_type")
   ownerId   String   @map("owner_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -963,6 +1000,7 @@ model GlobalUsername {
 }
 
 model Notification {
+  env                     String                         @default("prod")
   id          String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId      String                 @map("user_id") @db.Uuid
   type        NotificationType
@@ -1005,6 +1043,7 @@ model Notification {
 /// Locks simples para operações concorrentes (drag/edit)
 model Lock {
   key       String   @id
+  env       String   @default("prod")
   expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
 
   @@map("locks")
@@ -1012,6 +1051,7 @@ model Lock {
 }
 
 model NotificationPreference {
+  env                     String                         @default("prod")
   userId                   String   @id @map("userId") @db.Uuid
   allowEmailNotifications  Boolean  @default(true) @map("allow_email_notifications")
   allowEventReminders      Boolean  @default(true) @map("allow_event_reminders")
@@ -1028,6 +1068,7 @@ model NotificationPreference {
 }
 
 model NotificationOutbox {
+  env                     String                         @default("prod")
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId           String?   @map("user_id") @db.Uuid
   notificationType String    @map("notification_type")
@@ -1049,6 +1090,7 @@ model NotificationOutbox {
 }
 
 model ChatThread {
+  env                     String                         @default("prod")
   id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityType     ChatEntityType   @map("entity_type")
   entityId       Int              @map("entity_id")
@@ -1079,6 +1121,7 @@ model ChatThread {
 }
 
 model ChatMember {
+  env                     String                         @default("prod")
   id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   threadId   String         @map("thread_id") @db.Uuid
   userId     String         @map("user_id") @db.Uuid
@@ -1101,6 +1144,7 @@ model ChatMember {
 }
 
 model ChatMessage {
+  env                     String                         @default("prod")
   id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   threadId     String           @map("thread_id") @db.Uuid
   userId       String?          @map("user_id") @db.Uuid
@@ -1120,6 +1164,7 @@ model ChatMessage {
 }
 
 model ChatReadState {
+  env                     String                         @default("prod")
   threadId   String     @map("thread_id") @db.Uuid
   userId     String     @map("user_id") @db.Uuid
   lastReadAt DateTime   @default(now()) @map("last_read_at") @db.Timestamptz(6)
@@ -1133,6 +1178,7 @@ model ChatReadState {
 }
 
 model ChatModerationLog {
+  env                     String                         @default("prod")
   id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   threadId    String     @map("thread_id") @db.Uuid
   actorUserId String?    @map("actor_user_id") @db.Uuid
@@ -1149,6 +1195,7 @@ model ChatModerationLog {
 }
 
 model InternalChatChannel {
+  env                     String                         @default("prod")
   id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId  Int           @map("organization_id")
   name            String
@@ -1169,6 +1216,7 @@ model InternalChatChannel {
 }
 
 model InternalChatMessage {
+  env                     String                         @default("prod")
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId   Int       @map("organization_id")
   channelId        String    @map("channel_id") @db.Uuid
@@ -1191,6 +1239,7 @@ model InternalChatMessage {
 }
 
 model ChatConversation {
+  env                     String                         @default("prod")
   id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId  Int                  @map("organization_id")
   type            ChatConversationType
@@ -1215,6 +1264,7 @@ model ChatConversation {
 }
 
 model ChatConversationMember {
+  env                     String                         @default("prod")
   conversationId    String                   @map("conversation_id") @db.Uuid
   organizationId    Int                      @map("organization_id")
   userId            String                   @map("user_id") @db.Uuid
@@ -1237,6 +1287,7 @@ model ChatConversationMember {
 }
 
 model ChatConversationMessage {
+  env                     String                         @default("prod")
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   conversationId  String    @map("conversation_id") @db.Uuid
   organizationId  Int       @map("organization_id")
@@ -1270,6 +1321,7 @@ model ChatConversationMessage {
 }
 
 model ChatConversationAttachment {
+  env                     String                         @default("prod")
   id        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   messageId String             @map("message_id") @db.Uuid
   type      ChatAttachmentType
@@ -1290,6 +1342,7 @@ model ChatConversationAttachment {
 }
 
 model ChatMessageReaction {
+  env                     String                         @default("prod")
   messageId String   @map("message_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
   emoji     String
@@ -1305,6 +1358,7 @@ model ChatMessageReaction {
 }
 
 model ChatMessagePin {
+  env                     String                         @default("prod")
   id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   messageId String  @map("message_id") @db.Uuid
   pinnedBy  String  @map("pinned_by") @db.Uuid
@@ -1320,6 +1374,7 @@ model ChatMessagePin {
 }
 
 model ChatUserPresence {
+  env                     String                         @default("prod")
   userId     String   @id @map("user_id") @db.Uuid
   lastSeenAt DateTime @map("last_seen_at") @db.Timestamptz(6)
   updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1331,6 +1386,7 @@ model ChatUserPresence {
 }
 
 model ChatMessageReport {
+  env                     String                         @default("prod")
   id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   messageId  String    @map("message_id") @db.Uuid
   reporterId String    @map("reporter_id") @db.Uuid
@@ -1348,6 +1404,7 @@ model ChatMessageReport {
 }
 
 model ChatUserBlock {
+  env                     String                         @default("prod")
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   blockerId  String   @map("blocker_id") @db.Uuid
   blockedId  String   @map("blocked_id") @db.Uuid
@@ -1364,6 +1421,7 @@ model ChatUserBlock {
 }
 
 model MatchNotification {
+  env                     String                         @default("prod")
   id        Int      @id @default(autoincrement())
   matchId   Int      @map("match_id")
   dedupeKey String   @unique @map("dedupe_key")
@@ -1376,6 +1434,7 @@ model MatchNotification {
 }
 
 model EmailIdentity {
+  env                     String                         @default("prod")
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   emailNormalized String   @unique @map("email_normalized") @db.Citext
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
@@ -1388,6 +1447,7 @@ model EmailIdentity {
 }
 
 model EmailOutbox {
+  env                     String                         @default("prod")
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   templateKey   String    @map("template_key")
   recipient     String    @db.Citext
@@ -1408,6 +1468,7 @@ model EmailOutbox {
 }
 
 model OrganizationMember {
+  env                     String                         @default("prod")
   id                                                      String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId                                             Int                 @map("organization_id")
   userId                                                  String              @map("user_id") @db.Uuid
@@ -1431,6 +1492,7 @@ model OrganizationMember {
 }
 
 model OrganizationMemberPermission {
+  env                     String                         @default("prod")
   id              Int                          @id @default(autoincrement())
   organizationId  Int                          @map("organization_id")
   userId          String                       @map("user_id") @db.Uuid
@@ -1452,6 +1514,7 @@ model OrganizationMemberPermission {
 }
 
 model OrganizationMemberInvite {
+  env                     String                         @default("prod")
   id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId      Int                 @map("organization_id")
   invitedByUserId  String              @map("invited_by_user_id") @db.Uuid
@@ -1479,6 +1542,7 @@ model OrganizationMemberInvite {
 }
 
 model OrganizationAuditLog {
+  env                     String                         @default("prod")
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int      @map("organization_id")
   groupId     Int?     @map("group_id")
@@ -1502,6 +1566,7 @@ model OrganizationAuditLog {
 }
 
 model PublicApiKey {
+  env                     String                         @default("prod")
   id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int              @map("organization_id")
   keyPrefix      String           @map("key_prefix")
@@ -1519,6 +1584,7 @@ model PublicApiKey {
 }
 
 model OrganizationOwnerTransfer {
+  env                     String                         @default("prod")
   id          String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int                          @map("organization_id")
   fromUserId  String                       @map("from_user_id") @db.Uuid
@@ -1543,6 +1609,7 @@ model OrganizationOwnerTransfer {
 
 /// Evento — todo o conteúdo público é tratado como evento de organização
 model Event {
+  env                     String                         @default("prod")
   id                                Int                     @id @default(autoincrement())
   slug                              String                  @unique
   title                             String
@@ -1596,8 +1663,8 @@ model Event {
   padelRankingEntries               PadelRankingEntry[]
   padelTournamentConfig             PadelTournamentConfig?
   padelCategoryLinks                PadelEventCategoryLink[]
-  padelCourtBlocks                  PadelCourtBlock[]
-  padelAvailabilities               PadelAvailability[]
+  padelCourtBlocks                  CalendarBlock[]
+  padelAvailabilities               CalendarAvailability[]
   padelWaitlistEntries              PadelWaitlistEntry[]
   tournamentEntries                 TournamentEntry[]
   tournament                        Tournament?             @relation("EventTournament")
@@ -1621,6 +1688,7 @@ model Event {
 }
 
 model EventAccessPolicy {
+  env                     String                         @default("prod")
   id                        Int                 @id @default(autoincrement())
   eventId                   Int                 @map("event_id")
   policyVersion             Int                 @map("policy_version")
@@ -1647,6 +1715,7 @@ model EventAccessPolicy {
 }
 
 model EventInvite {
+  env                     String                         @default("prod")
   id               Int      @id @default(autoincrement())
   eventId          Int      @map("event_id")
   invitedByUserId  String   @map("invited_by_user_id") @db.Uuid
@@ -1668,6 +1737,7 @@ model EventInvite {
 }
 
 model InviteToken {
+  env                     String                         @default("prod")
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tokenHash       String    @unique @map("token_hash")
   eventId         Int       @map("event_id")
@@ -1690,6 +1760,7 @@ model InviteToken {
 
 /// Tipos de bilhete (antigas "waves")
 model TicketType {
+  env                     String                         @default("prod")
   id            Int                 @id @default(autoincrement())
   eventId       Int                 @map("event_id")
   padelEventCategoryLinkId Int?     @map("padel_event_category_link_id")
@@ -1721,6 +1792,7 @@ model TicketType {
 
 /// Bilhete individual (por utilizador)
 model Ticket {
+  env                     String                         @default("prod")
   id                    String            @id @default(cuid())
   eventId               Int               @map("event_id")
   ticketTypeId          Int               @map("ticket_type_id")
@@ -1769,6 +1841,7 @@ model Ticket {
 /// Ligação de bilhetes comprados como convidado
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model GuestTicketLink {
+  env                     String                         @default("prod")
   ticketId         String    @id @map("ticket_id")
   guestEmail       String    @map("guest_email")
   guestName        String    @map("guest_name")
@@ -1783,6 +1856,7 @@ model GuestTicketLink {
 
 /// Reservas temporárias de stock de bilhetes
 model TicketReservation {
+  env                     String                         @default("prod")
   id           String            @id @default(cuid())
   eventId      Int               @map("event_id")
   ticketTypeId Int               @map("ticket_type_id")
@@ -1805,6 +1879,7 @@ model TicketReservation {
 
 /// Checkout source (TICKET_ORDER)
 model TicketOrder {
+  env                     String                         @default("prod")
   id             String            @id @default(uuid()) @db.Uuid
   organizationId Int               @map("organization_id")
   eventId        Int               @map("event_id")
@@ -1824,6 +1899,7 @@ model TicketOrder {
 
 /// Linhas do TicketOrder (para pricing snapshot)
 model TicketOrderLine {
+  env                     String                         @default("prod")
   id            Int         @id @default(autoincrement())
   ticketOrderId String      @map("ticket_order_id") @db.Uuid
   ticketTypeId  Int         @map("ticket_type_id")
@@ -1841,6 +1917,7 @@ model TicketOrderLine {
 
 /// Revenda de bilhetes pelo utilizador
 model TicketResale {
+  env                     String                         @default("prod")
   id           String       @id @default(cuid())
   ticketId     String       @map("ticket_id")
   price        Int
@@ -1859,6 +1936,7 @@ model TicketResale {
 
 /// SSOT financeiro (Payment) conforme blueprint v7
 model Payment {
+  env                     String                         @default("prod")
   id                   String              @id
   organizationId       Int                 @map("organization_id")
   sourceType           SourceType          @map("source_type")
@@ -1885,6 +1963,7 @@ model Payment {
 
 /// Ledger append-only conforme blueprint v7
 model LedgerEntry {
+  env                     String                         @default("prod")
   id            Int             @id @default(autoincrement())
   paymentId     String          @map("payment_id")
   entryType     LedgerEntryType @map("entry_type")
@@ -1907,6 +1986,7 @@ model LedgerEntry {
 
 /// Read-model financeiro (snapshot derivado) — gerado via consumer
 model PaymentSnapshot {
+  env                     String                         @default("prod")
   paymentId          String        @id @map("payment_id")
   organizationId     Int           @map("organization_id")
   sourceType         SourceType    @map("source_type")
@@ -1929,6 +2009,7 @@ model PaymentSnapshot {
 
 /// Registo de eventos de pagamento (auditoria webhooks/intent)
 model PaymentEvent {
+  env                     String                         @default("prod")
   id                    Int                @id @default(autoincrement())
   status                String             @default("PROCESSING")
   stripePaymentIntentId String?            @unique @map("stripe_payment_intent_id") @db.Text
@@ -1958,6 +2039,7 @@ model PaymentEvent {
 
 /// Read-model financeiro (derivado) — resumo por compra
 model SaleSummary {
+  env                     String                         @default("prod")
   id                    Int               @id @default(autoincrement())
   eventId               Int               @map("event_id")
   userId                String?           @map("user_id") @db.Uuid
@@ -1997,6 +2079,7 @@ model SaleSummary {
 
 /// Linhas por venda (read-model financeiro)
 model SaleLine {
+  env                     String                         @default("prod")
   id                   Int        @id @default(autoincrement())
   saleSummaryId        Int        @map("sale_summary_id")
   eventId              Int        @map("event_id")
@@ -2028,6 +2111,7 @@ model SaleLine {
 }
 
 model Operation {
+  env                     String                         @default("prod")
   id              Int             @id @default(autoincrement())
   operationType   String          @map("operation_type")
   dedupeKey       String          @unique(map: "operations_dedupe_key_unique") @map("dedupe_key")
@@ -2055,6 +2139,7 @@ model Operation {
 }
 
 model OutboxEvent {
+  env                     String                         @default("prod")
   eventId        String   @id @db.Uuid @map("event_id")
   eventType      String   @map("event_type")
   dedupeKey      String   @unique(map: "outbox_events_dedupe_key_unique") @map("dedupe_key") @db.Text
@@ -2079,6 +2164,7 @@ model OutboxEvent {
 
 model CronHeartbeat {
   jobKey        String   @id @map("job_key") @db.Text
+  env           String   @default("prod")
   lastRunAt     DateTime @map("last_run_at") @db.Timestamptz(6)
   lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz(6)
   lastErrorAt   DateTime? @map("last_error_at") @db.Timestamptz(6)
@@ -2096,6 +2182,7 @@ model CronHeartbeat {
 }
 
 model EventLog {
+  env                     String                         @default("prod")
   id             String      @id @db.Uuid
   organizationId Int         @map("organization_id")
   eventType      String      @map("event_type")
@@ -2118,6 +2205,7 @@ model EventLog {
 }
 
 model ActivityFeedItem {
+  env                     String                         @default("prod")
   id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int         @map("organization_id")
   eventId        String      @unique @map("event_id") @db.Uuid
@@ -2138,6 +2226,7 @@ model ActivityFeedItem {
 }
 
 model SoftBlock {
+  env                     String                         @default("prod")
   id             Int             @id @default(autoincrement())
   organizationId Int             @map("organization_id")
   scopeType      SoftBlockScope  @default(ORGANIZATION) @map("scope_type")
@@ -2158,6 +2247,7 @@ model SoftBlock {
 }
 
 model AgendaItem {
+  env                     String                         @default("prod")
   id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int              @map("organization_id")
   sourceType     SourceType       @map("source_type")
@@ -2178,6 +2268,7 @@ model AgendaItem {
 }
 
 model SearchIndexItem {
+  env                     String                         @default("prod")
   id                       String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId           Int                   @map("organization_id")
   sourceType               SourceType            @map("source_type")
@@ -2219,6 +2310,7 @@ model SearchIndexItem {
 /// Configurações simples chave-valor (taxas, etc.)
 model PlatformSetting {
   id        Int       @id @default(autoincrement())
+  env       String    @default("prod")
   key       String    @unique(map: "platform_settings_key_idx")
   value     String
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -2231,6 +2323,7 @@ model PlatformSetting {
 /// Códigos promocionais simples
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model PromoCode {
+  env                     String                         @default("prod")
   id            Int               @id @default(autoincrement())
   code          String
   type          PromoType
@@ -2266,6 +2359,7 @@ model PromoCode {
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model PromoRedemption {
+  env                     String                         @default("prod")
   id          Int       @id @default(autoincrement())
   promoCodeId Int       @map("promo_code_id")
   userId      String?   @map("user_id") @db.Uuid
@@ -2284,6 +2378,7 @@ model PromoRedemption {
 }
 
 model Refund {
+  env                     String                         @default("prod")
   id                Int          @id @default(autoincrement())
   dedupeKey         String       @unique(map: "refunds_dedupe_key_unique") @map("dedupe_key")
   purchaseId        String?      @map("purchase_id") @db.Text
@@ -2306,9 +2401,70 @@ model Refund {
   @@schema("app_v3")
 }
 
+/// Endereço normalizado (SSOT) — usado por todos os módulos via Address Service
+model Address {
+  env                     String                         @default("prod")
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  formattedAddress       String                   @map("formatted_address")
+  canonical              Json                     @map("canonical")
+  latitude               Float                    @map("lat")
+  longitude              Float                    @map("lng")
+  sourceProvider         AddressSourceProvider    @map("source_provider")
+  sourceProviderPlaceId  String?                  @map("source_provider_place_id")
+  confidenceScore        Int                      @default(0) @map("confidence_score")
+  validationStatus       AddressValidationStatus  @default(NORMALIZED) @map("validation_status")
+  addressHash            String                   @unique @map("address_hash")
+  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lookups                AddressLookup[]
+  padelClubs             PadelClub[]
+
+  @@index([sourceProvider], map: "addresses_provider_idx")
+  @@map("addresses")
+  @@schema("app_v3")
+}
+
+/// Cache persistente para providerId -> addressId
+model AddressLookup {
+  env                     String                         @default("prod")
+  id                     Int                    @id @default(autoincrement())
+  addressId              String                 @map("address_id") @db.Uuid
+  sourceProvider         AddressSourceProvider  @map("source_provider")
+  sourceProviderPlaceId  String                 @map("source_provider_place_id")
+  resolvedAt             DateTime               @default(now()) @map("resolved_at") @db.Timestamptz(6)
+  address                Address                @relation(fields: [addressId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceProvider, sourceProviderPlaceId], map: "address_lookups_provider_place_uq")
+  @@index([addressId], map: "address_lookups_address_idx")
+  @@map("address_lookups")
+  @@schema("app_v3")
+}
+
+/// Política de reembolso versionada (auditável)
+model RefundPolicyVersion {
+  env                     String                         @default("prod")
+  id             Int           @id @default(autoincrement())
+  organizationId Int           @map("organization_id")
+  eventId        Int?          @map("event_id")
+  policyVersion  String        @map("policy_version")
+  feeBps         Int           @default(0) @map("fee_bps")
+  feeFixedCents  Int           @default(0) @map("fee_fixed_cents")
+  feePayer       RefundFeePayer @default(CUSTOMER) @map("fee_payer")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdByUserId String?      @map("created_by_user_id") @db.Uuid
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event          Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, eventId, policyVersion], map: "refund_policy_versions_org_event_version_uq")
+  @@index([organizationId, eventId], map: "refund_policy_versions_org_event_idx")
+  @@map("refund_policy_versions")
+  @@schema("app_v3")
+}
+
 /// Venda agregada por PaymentIntent (fonte de verdade de valores)
 /// Padel MVP: perfis de jogadores do clube
 model PadelPlayerProfile {
+  env                     String                         @default("prod")
   id            Int                 @id @default(autoincrement())
   organizationId   Int                 @map("organization_id")
   userId        String?             @map("user_id") @db.Uuid
@@ -2329,7 +2485,7 @@ model PadelPlayerProfile {
   organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users         users?              @relation(fields: [userId], references: [id], onUpdate: NoAction)
   rankings      PadelRankingEntry[]
-  availabilities PadelAvailability[]
+  availabilities CalendarAvailability[]
 
   @@map("padel_player_profiles")
   @@schema("app_v3")
@@ -2337,12 +2493,14 @@ model PadelPlayerProfile {
 
 /// Clubes de Padel por organização
 model PadelClub {
+  env                     String                         @default("prod")
   id                  Int                     @id @default(autoincrement())
   organizationId         Int                     @map("organization_id")
   name                String
   shortName           String?                 @map("short_name")
   city                String?
   address             String?
+  addressId           String?                 @map("address_id") @db.Uuid
   kind                PadelClubKind           @default(OWN) @map("kind")
   sourceClubId        Int?                    @map("source_club_id")
   locationSource      LocationSource          @default(MANUAL) @map("location_source")
@@ -2362,16 +2520,19 @@ model PadelClub {
   deletedAt           DateTime?               @map("deleted_at") @db.Timestamptz(6)
   courts              PadelClubCourt[]
   staff               PadelClubStaff[]
-  calendarBlocks      PadelCourtBlock[]
+  calendarBlocks      CalendarBlock[]
   organization           Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tournaments         PadelTournamentConfig[]
+  addressRef          Address?            @relation(fields: [addressId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([organizationId], map: "padel_clubs_organization_idx")
+  @@index([addressId], map: "padel_clubs_address_idx")
   @@map("padel_clubs")
   @@schema("app_v3")
 }
 
 model PadelClubCourt {
+  env                     String                         @default("prod")
   id           Int       @id @default(autoincrement())
   padelClubId  Int       @map("padel_club_id")
   name         String
@@ -2383,7 +2544,7 @@ model PadelClubCourt {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   club         PadelClub @relation(fields: [padelClubId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  calendarBlocks PadelCourtBlock[]
+  calendarBlocks CalendarBlock[]
   matches       PadelMatch[]     @relation("PadelMatchCourt")
   availabilities Availability[]
   bookings       Booking[]
@@ -2394,6 +2555,7 @@ model PadelClubCourt {
 }
 
 model PadelClubStaff {
+  env                     String                         @default("prod")
   id              Int       @id @default(autoincrement())
   padelClubId     Int       @map("padel_club_id")
   userId          String?   @map("user_id") @db.Uuid
@@ -2413,6 +2575,7 @@ model PadelClubStaff {
 
 /// Categorias / níveis de Padel
 model PadelCategory {
+  env                     String                         @default("prod")
   id                Int                     @id @default(autoincrement())
   organizationId       Int                     @map("organization_id")
   label             String
@@ -2439,6 +2602,7 @@ model PadelCategory {
 
 /// Categorias de Padel por evento (multi-categoria)
 model PadelEventCategoryLink {
+  env                     String                         @default("prod")
   id              Int           @id @default(autoincrement())
   eventId         Int           @map("event_id")
   padelCategoryId Int           @map("padel_category_id")
@@ -2463,6 +2627,7 @@ model PadelEventCategoryLink {
 
 /// Regras base + tabela de pontos por clube
 model PadelRuleSet {
+  env                     String                         @default("prod")
   id                   Int                     @id @default(autoincrement())
   organizationId          Int                     @map("organization_id")
   name                 String
@@ -2476,19 +2641,47 @@ model PadelRuleSet {
   defaultForOrganizations Organization[]             @relation("OrganizationPadelDefaultRuleSet")
   organization            Organization               @relation("OrganizationPadelRuleSets", fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tournaments          PadelTournamentConfig[]
+  versions             PadelRuleSetVersion[]
 
   @@map("padel_rule_sets")
   @@schema("app_v3")
 }
 
+/// Snapshot/versionamento de regras por torneio (congela regras no evento)
+model PadelRuleSetVersion {
+  env                     String                         @default("prod")
+  id                 Int          @id @default(autoincrement())
+  tournamentConfigId Int          @map("tournament_config_id")
+  version            Int          @default(1)
+  sourceRuleSetId    Int?         @map("source_rule_set_id")
+  name               String
+  tieBreakRules      Json         @default("{}") @map("tie_break_rules")
+  pointsTable        Json         @default("{}") @map("points_table")
+  enabledFormats     String[]     @default(["TODOS_CONTRA_TODOS", "QUADRO_ELIMINATORIO"]) @map("enabled_formats")
+  season             String?
+  year               Int?
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdByUserId    String?      @map("created_by_user_id") @db.Uuid
+  tournamentConfig   PadelTournamentConfig @relation(fields: [tournamentConfigId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourceRuleSet      PadelRuleSet? @relation(fields: [sourceRuleSetId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([tournamentConfigId, version], map: "padel_rule_set_versions_config_version_uq")
+  @@index([tournamentConfigId], map: "padel_rule_set_versions_config_idx")
+  @@index([sourceRuleSetId], map: "padel_rule_set_versions_source_idx")
+  @@map("padel_rule_set_versions")
+  @@schema("app_v3")
+}
+
 /// Configuração específica do torneio Padel (por evento)
 model PadelTournamentConfig {
+  env                     String                         @default("prod")
   id                 Int                  @id @default(autoincrement())
   eventId            Int                  @unique(map: "padel_tournament_configs_event_unique") @map("event_id")
   organizationId        Int                  @map("organization_id")
   format             padel_format
   numberOfCourts     Int                  @default(1) @map("number_of_courts")
   ruleSetId          Int?                 @map("rule_set_id")
+  ruleSetVersionId   Int?                 @map("rule_set_version_id")
   defaultCategoryId  Int?                 @map("default_category_id")
   enabledFormats     String[]             @default([]) @map("enabled_formats")
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -2498,20 +2691,54 @@ model PadelTournamentConfig {
   padelClubId        Int?                 @map("padel_club_id")
   partnerClubIds     Int[]                @default([]) @map("partner_club_ids")
   advancedSettings   Json?                @map("advanced_settings")
+  lifecycleStatus    PadelTournamentLifecycleStatus @default(DRAFT) @map("lifecycle_status")
+  publishedAt        DateTime?            @map("published_at") @db.Timestamptz(6)
+  lockedAt           DateTime?            @map("locked_at") @db.Timestamptz(6)
+  liveAt             DateTime?            @map("live_at") @db.Timestamptz(6)
+  completedAt        DateTime?            @map("completed_at") @db.Timestamptz(6)
+  cancelledAt        DateTime?            @map("cancelled_at") @db.Timestamptz(6)
+  lifecycleUpdatedAt DateTime?            @map("lifecycle_updated_at") @db.Timestamptz(6)
   eligibilityType    PadelEligibilityType @default(OPEN) @map("eligibility_type")
   category           PadelCategory?       @relation(fields: [defaultCategoryId], references: [id], onUpdate: NoAction)
   event              Event                @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   organization          Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   club               PadelClub?           @relation(fields: [padelClubId], references: [id], onUpdate: NoAction)
   ruleSet            PadelRuleSet?        @relation(fields: [ruleSetId], references: [id], onUpdate: NoAction)
+  ruleSetVersion     PadelRuleSetVersion? @relation(fields: [ruleSetVersionId], references: [id], onUpdate: NoAction)
+  roleAssignments    PadelTournamentRoleAssignment[]
 
   @@index([padelClubId], map: "padel_tournament_configs_padel_club_idx")
+  @@index([ruleSetVersionId], map: "padel_tournament_configs_rule_set_version_idx")
+  @@index([lifecycleStatus], map: "padel_tournament_configs_lifecycle_idx")
   @@map("padel_tournament_configs")
   @@schema("app_v3")
 }
 
+/// Atribuições de roles específicas por torneio (árbitro, diretor, etc.)
+model PadelTournamentRoleAssignment {
+  env                     String                         @default("prod")
+  id             Int                  @id @default(autoincrement())
+  eventId        Int                  @map("event_id")
+  organizationId Int                  @map("organization_id")
+  userId         String               @map("user_id") @db.Uuid
+  role           PadelTournamentRole  @map("role")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event          Event                @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user           Profile              @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([eventId, role, userId], map: "padel_tournament_roles_event_role_user_uq")
+  @@index([eventId], map: "padel_tournament_roles_event_idx")
+  @@index([organizationId], map: "padel_tournament_roles_org_idx")
+  @@index([userId], map: "padel_tournament_roles_user_idx")
+  @@map("padel_tournament_roles")
+  @@schema("app_v3")
+}
+
 /// Bloqueios de court para calendário de padel (bloqueios administrativos)
-model PadelCourtBlock {
+model CalendarBlock {
+  env                     String                         @default("prod")
   id           Int       @id @default(autoincrement())
   organizationId  Int       @map("organization_id")
   eventId      Int       @map("event_id")
@@ -2538,7 +2765,8 @@ model PadelCourtBlock {
 }
 
 /// Indisponibilidade de jogadores/duplas para o calendário
-model PadelAvailability {
+model CalendarAvailability {
+  env                     String                         @default("prod")
   id               Int                 @id @default(autoincrement())
   organizationId      Int                 @map("organization_id")
   eventId          Int                 @map("event_id")
@@ -2563,6 +2791,7 @@ model PadelAvailability {
 
 /// Pairings (duplas) para Padel v2
 model PadelPairing {
+  env                     String                         @default("prod")
   id                          Int                         @id @default(autoincrement())
   eventId                     Int                         @map("event_id")
   organizationId                 Int                         @map("organization_id")
@@ -2618,6 +2847,7 @@ model PadelPairing {
 }
 
 model PadelPairingHold {
+  env                     String                         @default("prod")
   id        Int                    @id @default(autoincrement())
   pairingId Int                    @map("pairing_id")
   eventId   Int                    @map("event_id")
@@ -2637,6 +2867,7 @@ model PadelPairingHold {
 
 /// Checkout source (PADEL_REGISTRATION)
 model PadelRegistration {
+  env                     String                         @default("prod")
   id             String                 @id @default(uuid()) @db.Uuid
   organizationId Int                    @map("organization_id")
   eventId        Int                    @map("event_id")
@@ -2659,6 +2890,7 @@ model PadelRegistration {
 
 /// Linhas da PadelRegistration (para pricing snapshot)
 model PadelRegistrationLine {
+  env                     String                         @default("prod")
   id                  Int               @id @default(autoincrement())
   padelRegistrationId String            @map("padel_registration_id") @db.Uuid
   label               String            @map("label")
@@ -2674,6 +2906,7 @@ model PadelRegistrationLine {
 
 /// Lista de espera para inscricoes de Padel
 model PadelWaitlistEntry {
+  env                     String                         @default("prod")
   id               Int                   @id @default(autoincrement())
   eventId          Int                   @map("event_id")
   organizationId   Int                   @map("organization_id")
@@ -2700,6 +2933,7 @@ model PadelWaitlistEntry {
 }
 
 model TournamentEntry {
+  env                     String                         @default("prod")
   id              Int                   @id @default(autoincrement())
   eventId         Int                   @map("event_id")
   userId          String                @map("user_id") @db.Uuid
@@ -2729,6 +2963,7 @@ model TournamentEntry {
 
 /// Slots de cada pairing (um por jogador)
 model PadelPairingSlot {
+  env                     String                         @default("prod")
   id              Int                       @id @default(autoincrement())
   pairingId       Int                       @map("pairing_id")
   ticketId        String?                   @unique @map("ticket_id")
@@ -2758,6 +2993,7 @@ model PadelPairingSlot {
 
 /// Jogos
 model PadelMatch {
+  env                     String                         @default("prod")
   id              Int                @id @default(autoincrement())
   eventId         Int                @map("event_id")
   categoryId      Int?               @map("category_id")
@@ -2796,6 +3032,7 @@ model PadelMatch {
 
 /// Ranking básico por torneio/clube
 model PadelRankingEntry {
+  env                     String                         @default("prod")
   id          Int                @id @default(autoincrement())
   organizationId Int                @map("organization_id")
   playerId    Int                @map("player_id")
@@ -2816,6 +3053,7 @@ model PadelRankingEntry {
 
 /// Estrutura base de torneios (formatos/chaves)
 model Tournament {
+  env                     String                         @default("prod")
   id                    Int                  @id @default(autoincrement())
   eventId               Int                  @unique @map("event_id")
   format                TournamentFormat
@@ -2837,6 +3075,7 @@ model Tournament {
 }
 
 model TournamentStage {
+  env                     String                         @default("prod")
   id           Int                 @id @default(autoincrement())
   tournamentId Int                 @map("tournament_id")
   name         String?
@@ -2854,6 +3093,7 @@ model TournamentStage {
 }
 
 model TournamentGroup {
+  env                     String                         @default("prod")
   id        Int               @id @default(autoincrement())
   stageId   Int               @map("stage_id")
   name      String
@@ -2869,6 +3109,7 @@ model TournamentGroup {
 }
 
 model TournamentMatch {
+  env                     String                         @default("prod")
   id          Int                   @id @default(autoincrement())
   stageId     Int                   @map("stage_id")
   groupId     Int?                  @map("group_id")
@@ -2894,6 +3135,7 @@ model TournamentMatch {
 }
 
 model TournamentAuditLog {
+  env                     String                         @default("prod")
   id            Int        @id @default(autoincrement())
   tournamentId  Int        @map("tournament_id")
   userId        String?    @map("user_id") @db.Uuid
@@ -2912,6 +3154,7 @@ model TournamentAuditLog {
 
 model follows {
   id                                      Int      @id @default(autoincrement())
+  env                                     String   @default("prod")
   follower_id                             String   @db.Uuid
   following_id                            String   @db.Uuid
   created_at                              DateTime @default(now()) @db.Timestamptz(6)
@@ -2926,6 +3169,7 @@ model follows {
 
 model follow_requests {
   id                                 Int      @id @default(autoincrement())
+  env                                String   @default("prod")
   requester_id                       String   @db.Uuid
   target_id                          String   @db.Uuid
   created_at                         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -2941,6 +3185,7 @@ model follow_requests {
 
 model organization_follows {
   id                                                      Int      @id @default(autoincrement())
+  env                                                     String   @default("prod")
   follower_id                                             String   @db.Uuid
   organization_id                                            Int
   created_at                                              DateTime @default(now()) @db.Timestamptz(6)
@@ -3028,6 +3273,7 @@ model users {
 }
 
 model Entitlement {
+  env                     String                         @default("prod")
   id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   type             EntitlementType
   status           EntitlementStatus     @default(ACTIVE)
@@ -3035,7 +3281,9 @@ model Entitlement {
   ownerIdentityId  String?               @map("owner_identity_id") @db.Uuid
   ownerKey         String                @map("owner_key")
   purchaseId       String                @map("purchase_id") @db.Text
-  saleLineId       Int                   @map("sale_line_id")
+  saleLineId       Int?                  @map("sale_line_id")
+  bookingId        Int?                  @map("booking_id")
+  storeOrderLineId Int?                  @map("store_order_line_id")
   ticketId         String?               @unique @map("ticket_id")
   lineItemIndex    Int                   @default(0) @map("line_item_index")
   eventId          Int?                  @map("event_id")
@@ -3046,19 +3294,25 @@ model Entitlement {
   snapshotVenueName String?              @map("snapshot_venue_name")
   snapshotStartAt  DateTime              @map("snapshot_start_at") @db.Timestamptz(6)
   snapshotTimezone String                @map("snapshot_timezone")
-  policyVersionApplied Int?              @map("policy_version_applied")
+  policyVersionApplied Int               @default(0) @map("policy_version_applied")
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  saleLine         SaleLine              @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
+  saleLine         SaleLine?             @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
+  booking          Booking?              @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  storeOrderLine   StoreOrderLine?       @relation(fields: [storeOrderLineId], references: [id], onDelete: SetNull)
   ticket           Ticket?               @relation("TicketEntitlement", fields: [ticketId], references: [id], onDelete: SetNull)
   checkins         EntitlementCheckin[]
   qrTokens         EntitlementQrToken[]
 
   @@unique([purchaseId, saleLineId, lineItemIndex, ownerKey, type], map: "entitlements_purchase_sale_owner_type_idx")
+  @@unique([bookingId, lineItemIndex, ownerKey, type], map: "entitlements_booking_owner_line_idx")
+  @@unique([storeOrderLineId, lineItemIndex, ownerKey, type], map: "entitlements_store_line_owner_idx")
   @@index([ownerKey, snapshotStartAt], map: "entitlements_owner_start_idx")
   @@index([eventId], map: "entitlements_event_idx")
   @@index([tournamentId], map: "entitlements_tournament_idx")
   @@index([seasonId], map: "entitlements_season_idx")
+  @@index([bookingId], map: "entitlements_booking_idx")
+  @@index([storeOrderLineId], map: "entitlements_store_line_idx")
   @@index([status], map: "entitlements_status_idx")
   @@index([eventId, policyVersionApplied], map: "entitlements_event_policy_idx")
   @@map("entitlements")
@@ -3066,6 +3320,7 @@ model Entitlement {
 }
 
 model EntitlementCheckin {
+  env                     String                         @default("prod")
   id             Int                @id @default(autoincrement())
   entitlementId  String             @map("entitlement_id") @db.Uuid
   eventId        Int                @map("event_id")
@@ -3090,6 +3345,7 @@ model EntitlementCheckin {
 }
 
 model EntitlementQrToken {
+  env                     String                         @default("prod")
   id            BigInt      @id @default(autoincrement())
   tokenHash     String      @map("token_hash") @unique
   entitlementId String      @map("entitlement_id") @db.Uuid
@@ -3103,6 +3359,7 @@ model EntitlementQrToken {
 }
 
 model UserActivity {
+  env                     String                         @default("prod")
   id         Int              @id @default(autoincrement())
   userId     String           @map("user_id") @db.Uuid
   type       UserActivityType
@@ -3118,6 +3375,7 @@ model UserActivity {
 }
 
 model OrganizationPolicy {
+  env                     String                         @default("prod")
   id                          Int                     @id @default(autoincrement())
   organizationId                 Int                     @map("organization_id")
   name                        String
@@ -3141,6 +3399,7 @@ model OrganizationPolicy {
 }
 
 model ReservationProfessional {
+  env                     String                         @default("prod")
   id              Int           @id @default(autoincrement())
   organizationId  Int           @map("organization_id")
   userId          String?       @map("user_id") @db.Uuid
@@ -3163,6 +3422,7 @@ model ReservationProfessional {
 }
 
 model ReservationResource {
+  env                     String                         @default("prod")
   id              Int           @id @default(autoincrement())
   organizationId  Int           @map("organization_id")
   label           String
@@ -3183,6 +3443,7 @@ model ReservationResource {
 }
 
 model Service {
+  env                     String                         @default("prod")
   id              Int           @id @default(autoincrement())
   organizationId     Int           @map("organization_id")
   policyId        Int?          @map("policy_id")
@@ -3222,6 +3483,7 @@ model Service {
 }
 
 model ServicePack {
+  env                     String                         @default("prod")
   id              Int      @id @default(autoincrement())
   serviceId       Int      @map("service_id")
   quantity        Int
@@ -3240,6 +3502,7 @@ model ServicePack {
 }
 
 model ServiceCreditBalance {
+  env                     String                         @default("prod")
   id             Int                        @id @default(autoincrement())
   userId         String                     @map("user_id") @db.Uuid
   serviceId      Int                        @map("service_id")
@@ -3260,6 +3523,7 @@ model ServiceCreditBalance {
 }
 
 model ServiceCreditLedger {
+  env                     String                         @default("prod")
   id             Int                      @id @default(autoincrement())
   userId         String                   @map("user_id") @db.Uuid
   serviceId      Int                      @map("service_id")
@@ -3283,6 +3547,7 @@ model ServiceCreditLedger {
 }
 
 model WeeklyAvailabilityTemplate {
+  env                     String                         @default("prod")
   id              Int      @id @default(autoincrement())
   organizationId  Int      @map("organization_id")
   scopeType       AvailabilityScopeType @default(ORGANIZATION) @map("scope_type")
@@ -3301,6 +3566,7 @@ model WeeklyAvailabilityTemplate {
 }
 
 model AvailabilityOverride {
+  env                     String                         @default("prod")
   id              Int                     @id @default(autoincrement())
   organizationId  Int                     @map("organization_id")
   scopeType       AvailabilityScopeType   @default(ORGANIZATION) @map("scope_type")
@@ -3319,6 +3585,7 @@ model AvailabilityOverride {
 }
 
 model ServiceProfessionalLink {
+  env                     String                         @default("prod")
   id             Int                     @id @default(autoincrement())
   serviceId      Int                     @map("service_id")
   professionalId Int                     @map("professional_id")
@@ -3333,6 +3600,7 @@ model ServiceProfessionalLink {
 }
 
 model ServiceResourceLink {
+  env                     String                         @default("prod")
   id         Int                 @id @default(autoincrement())
   serviceId  Int                 @map("service_id")
   resourceId Int                 @map("resource_id")
@@ -3347,6 +3615,7 @@ model ServiceResourceLink {
 }
 
 model TrainerProfile {
+  env                     String                         @default("prod")
   id               Int          @id @default(autoincrement())
   organizationId   Int          @map("organization_id")
   userId           String       @map("user_id") @db.Uuid
@@ -3375,6 +3644,7 @@ model TrainerProfile {
 }
 
 model Availability {
+  env                     String                         @default("prod")
   id              Int                @id @default(autoincrement())
   serviceId       Int                @map("service_id")
   courtId         Int?               @map("court_id")
@@ -3397,6 +3667,7 @@ model Availability {
 }
 
 model Booking {
+  env                     String                         @default("prod")
   id              Int           @id @default(autoincrement())
   serviceId       Int           @map("service_id")
   organizationId     Int           @map("organization_id")
@@ -3448,6 +3719,7 @@ model Booking {
 }
 
 model ServiceReview {
+  env                     String                         @default("prod")
   id              Int      @id @default(autoincrement())
   bookingId       Int      @unique @map("booking_id")
   serviceId       Int      @map("service_id")
@@ -3471,6 +3743,7 @@ model ServiceReview {
 }
 
 model MembershipPlan {
+  env                     String                         @default("prod")
   id              Int                      @id @default(autoincrement())
   organizationId     Int                      @map("organization_id")
   name            String
@@ -3494,6 +3767,7 @@ model MembershipPlan {
 }
 
 model MembershipPerk {
+  env                     String                         @default("prod")
   id        Int             @id @default(autoincrement())
   planId    Int             @map("plan_id")
   label     String
@@ -3506,6 +3780,7 @@ model MembershipPerk {
 }
 
 model MembershipSubscription {
+  env                     String                         @default("prod")
   id                    Int              @id @default(autoincrement())
   organizationId           Int              @map("organization_id")
   planId                Int              @map("plan_id")
@@ -3531,6 +3806,7 @@ model MembershipSubscription {
 }
 
 model BookingPolicyRef {
+  env                     String                         @default("prod")
   id        Int                @id @default(autoincrement())
   bookingId Int                @unique @map("booking_id")
   policyId  Int                @map("policy_id")
@@ -3544,6 +3820,7 @@ model BookingPolicyRef {
 }
 
 model Transaction {
+  env                     String                         @default("prod")
   id                   Int                     @id @default(autoincrement())
   organizationId          Int                     @map("organization_id")
   userId               String?                 @map("user_id") @db.Uuid
@@ -3569,6 +3846,7 @@ model Transaction {
 }
 
 model PendingPayout {
+  env                     String                         @default("prod")
   id                        Int                 @id @default(autoincrement())
   sourceType                String              @map("source_type")
   sourceId                  String              @map("source_id")
@@ -3598,6 +3876,7 @@ model PendingPayout {
 }
 
 model CrmCustomer {
+  env                     String                         @default("prod")
   id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId     Int               @map("organization_id")
   userId             String            @map("user_id") @db.Uuid
@@ -3634,6 +3913,7 @@ model CrmCustomer {
 }
 
 model CrmInteraction {
+  env                     String                         @default("prod")
   id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int                 @map("organization_id")
   userId         String              @map("user_id") @db.Uuid
@@ -3658,6 +3938,7 @@ model CrmInteraction {
 }
 
 model CrmCustomerNote {
+  env                     String                         @default("prod")
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int      @map("organization_id")
   customerId     String   @map("customer_id") @db.Uuid
@@ -3676,6 +3957,7 @@ model CrmCustomerNote {
 }
 
 model CrmSegment {
+  env                     String                         @default("prod")
   id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId  Int               @map("organization_id")
   name            String
@@ -3699,6 +3981,7 @@ model CrmSegment {
 }
 
 model CrmSegmentMembership {
+  env                     String                         @default("prod")
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int      @map("organization_id")
   segmentId      String   @map("segment_id") @db.Uuid
@@ -3716,6 +3999,7 @@ model CrmSegmentMembership {
 }
 
 model CrmCampaign {
+  env                     String                         @default("prod")
   id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId  Int                @map("organization_id")
   segmentId       String?            @map("segment_id") @db.Uuid
@@ -3745,6 +4029,7 @@ model CrmCampaign {
 }
 
 model CrmCampaignDelivery {
+  env                     String                         @default("prod")
   id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int               @map("organization_id")
   campaignId     String            @map("campaign_id") @db.Uuid
@@ -3769,6 +4054,7 @@ model CrmCampaignDelivery {
 }
 
 model UserConsent {
+  env                     String                         @default("prod")
   id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int           @map("organization_id")
   userId         String        @map("user_id") @db.Uuid
@@ -3790,7 +4076,28 @@ model UserConsent {
   @@schema("app_v3")
 }
 
+model DsarCase {
+  env                     String                         @default("prod")
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  type         DsarCaseType
+  status       DsarCaseStatus @default(REQUESTED)
+  requestedAt  DateTime       @default(now()) @map("requested_at") @db.Timestamptz(6)
+  dueAt        DateTime?      @map("due_at") @db.Timestamptz(6)
+  completedAt  DateTime?      @map("completed_at") @db.Timestamptz(6)
+  metadata     Json?          @map("metadata")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         Profile        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status], map: "dsar_cases_user_status_idx")
+  @@map("dsar_cases")
+  @@schema("app_v3")
+}
+
 model LoyaltyProgram {
+  env                     String                         @default("prod")
   id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId   Int                  @map("organization_id")
   status           LoyaltyProgramStatus @default(ACTIVE)
@@ -3812,6 +4119,7 @@ model LoyaltyProgram {
 }
 
 model LoyaltyRule {
+  env                     String                         @default("prod")
   id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   programId        String             @map("program_id") @db.Uuid
   name             String
@@ -3833,6 +4141,7 @@ model LoyaltyRule {
 }
 
 model LoyaltyReward {
+  env                     String                         @default("prod")
   id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   programId  String             @map("program_id") @db.Uuid
   name       String
@@ -3853,6 +4162,7 @@ model LoyaltyReward {
 }
 
 model LoyaltyLedger {
+  env                     String                         @default("prod")
   id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int               @map("organization_id")
   programId      String            @map("program_id") @db.Uuid
@@ -4340,6 +4650,7 @@ enum AnalyticsDimensionKey {
 }
 
 model AnalyticsRollup {
+  env                     String                         @default("prod")
   id             Int                  @id @default(autoincrement())
   organizationId Int                  @map("organization_id")
   bucketDate     DateTime             @map("bucket_date") @db.Date
@@ -4540,6 +4851,23 @@ enum ResaleMode {
   @@schema("app_v3")
 }
 
+enum AddressSourceProvider {
+  APPLE_MAPS
+  OSM_PHOTON
+  OSM_NOMINATIM
+  MANUAL
+
+  @@schema("app_v3")
+}
+
+enum AddressValidationStatus {
+  RAW
+  NORMALIZED
+  VERIFIED
+
+  @@schema("app_v3")
+}
+
 enum RefundFeePayer {
   ORGANIZATION
   CUSTOMER
@@ -4576,6 +4904,26 @@ enum PadelEligibilityType {
   MALE_ONLY
   FEMALE_ONLY
   MIXED
+
+  @@schema("app_v3")
+}
+
+enum PadelTournamentLifecycleStatus {
+  DRAFT
+  PUBLISHED
+  LOCKED
+  LIVE
+  COMPLETED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelTournamentRole {
+  DIRECTOR
+  REFEREE
+  SCOREKEEPER
+  STREAMER
 
   @@schema("app_v3")
 }
@@ -4781,6 +5129,8 @@ enum EntitlementStatus {
 enum EntitlementType {
   EVENT_TICKET
   PADEL_ENTRY
+  SERVICE_BOOKING
+  STORE_ITEM
   PASS
   SUBSCRIPTION_ACCESS
   FUTURE_TYPE
@@ -5057,6 +5407,22 @@ enum ConsentStatus {
   GRANTED
   REVOKED
   EXPIRED
+
+  @@schema("app_v3")
+}
+
+enum DsarCaseType {
+  EXPORT
+  DELETE
+
+  @@schema("app_v3")
+}
+
+enum DsarCaseStatus {
+  REQUESTED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
 
   @@schema("app_v3")
 }

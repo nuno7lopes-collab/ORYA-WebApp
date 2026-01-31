@@ -3,7 +3,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
-import { auditInfraAction, runScript } from "@/app/api/admin/infra/_helpers";
+import { auditInfraAction, normalizeTargetEnv, requireProdConfirmation, runScript } from "@/app/api/admin/infra/_helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,8 +23,20 @@ export async function POST(req: NextRequest) {
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
 
     const body = (await req.json().catch(() => null)) as
-      | { env?: "prod" | "dev" | "all"; group?: string | "all"; copyProdToDev?: boolean }
+      | {
+          env?: "prod" | "dev" | "all";
+          group?: string | "all";
+          copyProdToDev?: boolean;
+          targetEnv?: string;
+          confirmProd?: string;
+        }
       | null;
+
+    const targetEnv = normalizeTargetEnv(body?.targetEnv);
+    const confirmError = requireProdConfirmation(targetEnv, body?.confirmProd);
+    if (confirmError) {
+      return fail(ctx, 403, confirmError, "Confirmação PROD necessária.");
+    }
 
     const envs = body?.env === "all" || !body?.env ? "prod,dev" : body.env;
     const groups = body?.group === "all" || !body?.group ? "" : body.group;
@@ -34,6 +46,7 @@ export async function POST(req: NextRequest) {
       ONLY_GROUPS: groups,
       ALLOW_PLACEHOLDERS_DEV: "true",
       COPY_PROD_TO_DEV: body?.copyProdToDev ? "true" : "false",
+      APP_ENV: targetEnv,
     };
 
     const result = await runScript(ctx, "create-secrets-json.sh", ["/tmp/orya-prod-secrets.json"], extraEnv);
@@ -41,6 +54,7 @@ export async function POST(req: NextRequest) {
       ok: result.ok,
       envs,
       groups,
+      targetEnv,
     });
 
     if (!result.ok) {

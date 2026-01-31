@@ -14,6 +14,7 @@ import PromoCodeInput from "./PromoCodeInput";
 import PurchaseModeSelector from "./PurchaseModeSelector";
 import { buildClientFingerprint, buildDeterministicIdemKey } from "./checkoutUtils";
 import { validateGuestDetails } from "./checkoutValidation";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
 type TicketCopy = ReturnType<typeof getTicketCopy>;
 
@@ -78,6 +79,13 @@ export default function Step2Pagamento() {
   const ticketOneOf = ticketCopy.isPadel ? "uma das inscrições" : "um dos bilhetes";
   const ticketAllPlural = ticketCopy.isPadel ? "todas as inscrições" : "todos os bilhetes";
   const ticketNameLabel = ticketCopy.isPadel ? "Nome na inscrição" : "Nome no bilhete";
+  const stripeConfigured = useMemo(() => {
+    try {
+      return Boolean(getStripePublishableKey());
+    } catch {
+      return false;
+    }
+  }, []);
   const ticketEmailLabel = ticketCopy.isPadel ? "Email para inscrições e recibo." : "Email para bilhetes e recibo.";
   const freeHeaderLabel = ticketCopy.freeLabel;
   const freeLabelLower = freeHeaderLabel.toLowerCase();
@@ -167,7 +175,6 @@ export default function Step2Pagamento() {
   const scenario = safeDados?.paymentScenario ?? cachedIntent?.paymentScenario ?? null;
   const isGratisScenario = scenario === "FREE_CHECKOUT";
   const needsStripe = !isGratisScenario;
-  const stripeConfigured = Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
   const pairingId =
     safeDados?.additional && typeof safeDados.additional === "object"
       ? (safeDados.additional as Record<string, unknown>).pairingId

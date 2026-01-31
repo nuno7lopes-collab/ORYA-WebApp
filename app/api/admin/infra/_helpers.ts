@@ -12,6 +12,20 @@ const SCRIPT_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_BUFFER = 4 * 1024 * 1024;
 
 export type AdminUser = { userId: string; userEmail: string | null };
+export type TargetEnv = "prod" | "test";
+
+export function normalizeTargetEnv(value?: unknown): TargetEnv {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "test") return "test";
+  }
+  return "prod";
+}
+
+export function requireProdConfirmation(targetEnv: TargetEnv, confirm?: unknown) {
+  if (targetEnv !== "prod") return null;
+  return confirm === "PROD" ? null : "PROD_CONFIRMATION_REQUIRED";
+}
 
 export async function resolveAuditOrgId() {
   const platform = await prisma.organization.findFirst({

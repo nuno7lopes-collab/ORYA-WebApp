@@ -11,6 +11,7 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 import { cn } from "@/lib/utils";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { resolveServiceAssignmentMode, type ReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
@@ -480,8 +481,12 @@ export default function ReservasDashboardPage() {
   }, [drawerBooking, timezone]);
 
   const stripePromise = useMemo(() => {
-    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    return key ? loadStripe(key) : null;
+    try {
+      const key = getStripePublishableKey();
+      return loadStripe(key);
+    } catch {
+      return null;
+    }
   }, []);
 
   const elementsOptions = useMemo<StripeElementsOptions | null>(() => {

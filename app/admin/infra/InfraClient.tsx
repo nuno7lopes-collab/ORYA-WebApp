@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { getClientAppEnv } from "@/lib/appEnvClient";
 
 type ApiEnvelope<T> =
   | { ok: true; data: T; requestId: string; correlationId: string }
@@ -37,6 +38,9 @@ export default function InfraClient() {
   const [secretEnv, setSecretEnv] = useState<(typeof secretEnvs)[number]>("prod");
   const [secretGroup, setSecretGroup] = useState<(typeof secretGroups)[number]>("all");
   const [busy, setBusy] = useState<string | null>(null);
+  const currentEnv = useMemo(() => getClientAppEnv(), []);
+  const [targetEnv, setTargetEnv] = useState<"prod" | "test">(currentEnv);
+  const [confirmProd, setConfirmProd] = useState("");
 
   const loadStatus = useCallback(async () => {
     setStatus((prev) => ({ ...prev, loading: true, error: undefined }));
@@ -65,12 +69,22 @@ export default function InfraClient() {
   const callAction = useCallback(
     async (name: string, path: string, body?: Record<string, unknown>) => {
       if (busy) return;
+      if (targetEnv === "prod" && confirmProd.trim() !== "PROD") {
+        setAction({
+          action: name,
+          ok: false,
+          requestId: "n/a",
+          correlationId: "n/a",
+          payload: { message: "Confirmação PROD em falta. Escreve PROD para continuar." },
+        });
+        return;
+      }
       setBusy(name);
       try {
         const res = await fetch(path, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body ?? {}),
+          body: JSON.stringify({ targetEnv, confirmProd, ...(body ?? {}) }),
         });
         const json = (await res.json().catch(() => null)) as ApiEnvelope<Record<string, unknown>> | null;
         if (!json) throw new Error("Resposta inválida");
@@ -96,7 +110,7 @@ export default function InfraClient() {
         setBusy(null);
       }
     },
-    [busy, loadStatus],
+    [busy, loadStatus, targetEnv, confirmProd],
   );
 
   const outputs = useMemo(() => status.data?.outputs ?? {}, [status.data]);
@@ -108,6 +122,9 @@ export default function InfraClient() {
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Infra</p>
             <h2 className="text-sm font-semibold text-white/90">Estado & Ações</h2>
+            <p className="mt-1 text-xs text-white/60">
+              Ambiente atual: <span className="font-semibold text-white/90">{currentEnv.toUpperCase()}</span>
+            </p>
           </div>
           <button
             className="rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10"
@@ -161,6 +178,28 @@ export default function InfraClient() {
         <h3 className="mb-4 text-sm font-semibold text-white/90">Operações</h3>
 
         <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
+          <label className="inline-flex items-center gap-2">
+            <span>Target</span>
+            <select
+              className="rounded-md bg-white/10 px-2 py-1 text-sm text-white"
+              value={targetEnv}
+              onChange={(e) => setTargetEnv(e.target.value as "prod" | "test")}
+            >
+              <option value="prod">PROD</option>
+              <option value="test">TEST</option>
+            </select>
+          </label>
+          {targetEnv === "prod" && (
+            <label className="inline-flex items-center gap-2">
+              <span>Confirmação</span>
+              <input
+                className="rounded-md bg-white/10 px-2 py-1 text-xs text-white placeholder:text-white/40"
+                placeholder="Escreve PROD"
+                value={confirmProd}
+                onChange={(e) => setConfirmProd(e.target.value)}
+              />
+            </label>
+          )}
           <label className="inline-flex items-center gap-2">
             <input type="checkbox" checked={withAlb} onChange={(e) => setWithAlb(e.target.checked)} />
             Criar ALB

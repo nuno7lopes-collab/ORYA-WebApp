@@ -3,7 +3,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
-import { auditInfraAction, runScript } from "@/app/api/admin/infra/_helpers";
+import { auditInfraAction, normalizeTargetEnv, requireProdConfirmation, runScript } from "@/app/api/admin/infra/_helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +22,15 @@ export async function POST(req: NextRequest) {
     const admin = await requireAdminUser();
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
 
-    const result = await runScript(ctx, "deploy-cf.sh", ["--hard-pause"], {});
-    await auditInfraAction(ctx, admin, "ADMIN_INFRA_HARD_PAUSE", { ok: result.ok });
+    const body = (await req.json().catch(() => null)) as { targetEnv?: string; confirmProd?: string } | null;
+    const targetEnv = normalizeTargetEnv(body?.targetEnv);
+    const confirmError = requireProdConfirmation(targetEnv, body?.confirmProd);
+    if (confirmError) {
+      return fail(ctx, 403, confirmError, "Confirmação PROD necessária.");
+    }
+
+    const result = await runScript(ctx, "deploy-cf.sh", ["--hard-pause"], { APP_ENV: targetEnv });
+    await auditInfraAction(ctx, admin, "ADMIN_INFRA_HARD_PAUSE", { ok: result.ok, targetEnv });
 
     if (!result.ok) {
       return fail(ctx, 500, "INFRA_HARD_PAUSE_FAILED", trim(result.stderr));

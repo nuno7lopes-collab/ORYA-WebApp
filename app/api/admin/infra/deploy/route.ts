@@ -3,7 +3,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
-import { auditInfraAction, runScript } from "@/app/api/admin/infra/_helpers";
+import { auditInfraAction, normalizeTargetEnv, requireProdConfirmation, runScript } from "@/app/api/admin/infra/_helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,13 +28,26 @@ export async function POST(req: NextRequest) {
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
 
     const body = (await req.json().catch(() => null)) as
-      | { withAlb?: boolean; enableWorker?: boolean; webDesiredCount?: number; workerDesiredCount?: number }
+      | {
+          withAlb?: boolean;
+          enableWorker?: boolean;
+          webDesiredCount?: number;
+          workerDesiredCount?: number;
+          targetEnv?: string;
+          confirmProd?: string;
+        }
       | null;
+
+    const targetEnv = normalizeTargetEnv(body?.targetEnv);
+    const confirmError = requireProdConfirmation(targetEnv, body?.confirmProd);
+    if (confirmError) {
+      return fail(ctx, 403, confirmError, "Confirmação PROD necessária.");
+    }
 
     const withAlb = body?.withAlb ?? (process.env.ORYA_WITH_ALB === "true");
     const enableWorker = body?.enableWorker ?? (process.env.ORYA_ENABLE_WORKER === "true");
 
-    const build = await runScript(ctx, "build-and-push.sh");
+    const build = await runScript(ctx, "build-and-push.sh", [], { APP_ENV: targetEnv });
     if (!build.ok) {
       await auditInfraAction(ctx, admin, "ADMIN_INFRA_DEPLOY", { ok: false, step: "build" });
       return fail(ctx, 500, "INFRA_BUILD_FAILED", trim(build.stderr));
@@ -46,6 +59,7 @@ export async function POST(req: NextRequest) {
     const extraEnv: Record<string, string> = {
       WITH_ALB: withAlb ? "true" : "false",
       ENABLE_WORKER: enableWorker ? "true" : "false",
+      APP_ENV: targetEnv,
     };
     if (webImage) extraEnv.WEB_IMAGE = webImage;
     if (workerImage) extraEnv.WORKER_IMAGE = workerImage;
@@ -63,6 +77,7 @@ export async function POST(req: NextRequest) {
       workerImage,
       withAlb,
       enableWorker,
+      targetEnv,
     });
 
     if (!deploy.ok) {

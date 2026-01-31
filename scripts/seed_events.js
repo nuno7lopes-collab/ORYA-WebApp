@@ -9,6 +9,7 @@
  *   SEED_USER_ID=<uuid>
  *   SEED_USERNAME=<username>
  *   SEED_ORG_USERNAME=<username>
+ *   SEED_ENV=prod|test
  */
 
 const fs = require("fs");
@@ -44,6 +45,9 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+const seedEnv = (process.env.SEED_ENV || process.env.APP_ENV || "prod").toLowerCase() === "test" ? "test" : "prod";
+const slugPrefix = seedEnv === "test" ? "test-" : "";
+
 // Dev-only: allow self-signed certs for local/preview DBs.
 if (process.env.NODE_ENV !== "production") {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -71,8 +75,8 @@ async function resolveOwner() {
   const username = process.env.SEED_USERNAME;
 
   if (userId) {
-    const profile = await prisma.profile.findUnique({
-      where: { id: userId },
+    const profile = await prisma.profile.findFirst({
+      where: { id: userId, env: seedEnv },
       select: { id: true, username: true, fullName: true },
     });
     if (!profile) throw new Error(`Utilizador não encontrado para SEED_USER_ID=${userId}`);
@@ -81,7 +85,7 @@ async function resolveOwner() {
 
   if (username) {
     const profile = await prisma.profile.findFirst({
-      where: { username },
+      where: { username, env: seedEnv },
       select: { id: true, username: true, fullName: true },
     });
     if (!profile) throw new Error(`Utilizador não encontrado para SEED_USERNAME=${username}`);
@@ -89,6 +93,7 @@ async function resolveOwner() {
   }
 
   const fallback = await prisma.profile.findFirst({
+    where: { env: seedEnv },
     orderBy: { createdAt: "desc" },
     select: { id: true, username: true, fullName: true },
   });
@@ -98,11 +103,13 @@ async function resolveOwner() {
 
 async function main() {
   const owner = await resolveOwner();
-  const organizationUsername = process.env.SEED_ORG_USERNAME || "orya-demo";
+  const baseOrgUsername = process.env.SEED_ORG_USERNAME || "orya-demo";
+  const organizationUsername =
+    seedEnv === "test" && !process.env.SEED_ORG_USERNAME ? `test-${baseOrgUsername}` : baseOrgUsername;
   console.log("[seed-events] Owner:", { id: owner.id, username: owner.username ?? null });
 
   const organizationExisting = await prisma.organization.findFirst({
-    where: { username: organizationUsername },
+    where: { username: organizationUsername, env: seedEnv },
   });
   if (!organizationExisting) {
     await prisma.$executeRawUnsafe(
@@ -113,13 +120,14 @@ async function main() {
     organizationExisting ??
     (await prisma.organization.create({
       data: {
+        env: seedEnv,
         username: organizationUsername,
-        publicName: "ORYA Demo Studio",
-        businessName: "ORYA Demo Studio",
+        publicName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
+        businessName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
         city: "Lisboa",
         status: "ACTIVE",
         primaryModule: "EVENTOS",
-        group: { create: {} },
+        group: { create: { env: seedEnv } },
       },
     }));
 
@@ -127,8 +135,9 @@ async function main() {
     await prisma.organization.update({
       where: { id: organizationExisting.id },
       data: {
-        publicName: "ORYA Demo Studio",
-        businessName: "ORYA Demo Studio",
+        env: seedEnv,
+        publicName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
+        businessName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
         city: "Lisboa",
         status: "ACTIVE",
         primaryModule: "EVENTOS",
@@ -225,11 +234,12 @@ async function main() {
     base.setHours(19, 0, 0, 0);
     const startsAt = new Date(base.getTime() + seed.startOffsetDays * dayMs);
     const endsAt = new Date(startsAt.getTime() + seed.durationHours * hourMs);
-    const slug = `seed-${slugify(seed.title)}`;
+    const slug = `${slugPrefix}seed-${slugify(seed.title)}`;
 
     const event = await prisma.event.upsert({
       where: { slug },
       update: {
+        env: seedEnv,
         title: seed.title,
         description: seed.description,
         organizationId: organization.id,
@@ -245,6 +255,7 @@ async function main() {
         coverImageUrl: seed.coverImageUrl,
       },
       create: {
+        env: seedEnv,
         slug,
         title: seed.title,
         description: seed.description,
@@ -265,12 +276,13 @@ async function main() {
     console.log("[seed-events] Upserted event:", { id: event.id, slug: event.slug });
 
     await prisma.ticketType.deleteMany({
-      where: { eventId: event.id, name: { startsWith: "Seed " } },
+      where: { eventId: event.id, name: { startsWith: "Seed " }, env: seedEnv },
     });
 
     if (seed.isFree) {
       await prisma.ticketType.create({
         data: {
+          env: seedEnv,
           eventId: event.id,
           name: "Seed Entrada",
           description: "Entrada gratuita",
@@ -285,6 +297,7 @@ async function main() {
       await prisma.ticketType.createMany({
         data: [
           {
+            env: seedEnv,
             eventId: event.id,
             name: "Seed Early Bird",
             description: "Lote antecipado",
@@ -295,6 +308,7 @@ async function main() {
             sortOrder: 1,
           },
           {
+            env: seedEnv,
             eventId: event.id,
             name: "Seed Geral",
             description: "Entrada geral",
@@ -312,7 +326,7 @@ async function main() {
     await prisma.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
-          purchaseId: `seed:${slug}`,
+          purchaseId: `seed:${seedEnv}:${slug}`,
           saleLineId: event.id,
           lineItemIndex: 0,
           ownerKey,
@@ -320,6 +334,7 @@ async function main() {
         },
       },
       update: {
+        env: seedEnv,
         status: "ACTIVE",
         ownerUserId: owner.id,
         eventId: event.id,
@@ -330,7 +345,8 @@ async function main() {
         snapshotTimezone: event.timezone,
       },
       create: {
-        purchaseId: `seed:${slug}`,
+        env: seedEnv,
+        purchaseId: `seed:${seedEnv}:${slug}`,
         saleLineId: event.id,
         lineItemIndex: 0,
         ownerKey,

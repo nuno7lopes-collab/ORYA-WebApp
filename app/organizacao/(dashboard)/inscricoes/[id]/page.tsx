@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { getPublicBaseUrl } from "@/lib/publicBaseUrl";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
@@ -212,11 +213,7 @@ export default function InscricaoDetailPage() {
 
   useEffect(() => {
     if (!form) return;
-    const baseUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ??
-      process.env.NEXT_PUBLIC_BASE_URL ??
-      process.env.NEXT_PUBLIC_APP_URL ??
-      (typeof window !== "undefined" ? window.location.origin : "");
+    const baseUrl = getPublicBaseUrl();
     if (!baseUrl) return;
     setPublicUrl(`${baseUrl.replace(/\/+$/, "")}/inscricoes/${form.id}`);
   }, [form]);

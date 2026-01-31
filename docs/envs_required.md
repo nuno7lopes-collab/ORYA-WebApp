@@ -6,6 +6,7 @@ Keep secrets out of git. Use single-line base64 for Apple keys.
 ## Core runtime (server)
 - DATABASE_URL
 - DIRECT_URL (Prisma)
+- APP_ENV (prod|test; optional override, otherwise inferred from host)
 - QR_SECRET_KEY
 - RESEND_API_KEY
 - RESEND_FROM_EMAIL (recommended)
@@ -31,12 +32,20 @@ Optional:
 
 ## Stripe
 Required:
-- STRIPE_SECRET_KEY
-- STRIPE_WEBHOOK_SECRET
-- NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+- STRIPE_SECRET_KEY_LIVE
+- STRIPE_SECRET_KEY_TEST
+- STRIPE_WEBHOOK_SECRET_LIVE
+- STRIPE_WEBHOOK_SECRET_TEST
+- NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE
+- NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST
 
 Optional:
+- STRIPE_SECRET_KEY (fallback)
+- STRIPE_WEBHOOK_SECRET (fallback)
+- NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY (fallback)
 - STRIPE_PAYOUTS_WEBHOOK_SECRET (Stripe Connect payouts webhook)
+- STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE
+- STRIPE_PAYOUTS_WEBHOOK_SECRET_TEST
 - STRIPE_FEE_* (only if overriding fee defaults)
 
 ## Apple Sign-In
@@ -90,3 +99,4 @@ Optional:
 ## Client (optional)
 - NEXT_PUBLIC_SENTRY_DSN (error tracking in browser)
 - NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE
+- NEXT_PUBLIC_APP_ENV (prod|test override for client)

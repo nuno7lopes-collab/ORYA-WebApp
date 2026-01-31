@@ -1,3 +1,4 @@
+import "server-only";
 // Central helper for server-side environment variables (server-only).
 // ⚠️ Não importar este módulo em componentes com "use client".
 const required = [
@@ -5,8 +6,6 @@ const required = [
   "SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE",
   "DATABASE_URL",
-  "STRIPE_SECRET_KEY",
-  "STRIPE_WEBHOOK_SECRET",
   "QR_SECRET_KEY",
   "RESEND_API_KEY",
 ] as const;
@@ -25,8 +24,6 @@ const testFallbacks: Partial<Record<EnvKey, string>> = {
   SUPABASE_ANON_KEY: "test-anon-key",
   SUPABASE_SERVICE_ROLE: "test-service-role-key",
   DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable",
-  STRIPE_SECRET_KEY: "sk_test_orya",
-  STRIPE_WEBHOOK_SECRET: "whsec_test_orya",
   QR_SECRET_KEY: "test-qr-secret",
   RESEND_API_KEY: "test-resend-key",
 };
@@ -89,8 +86,6 @@ export const env = {
     process.env.NEXT_PUBLIC_SUPABASE_COOKIE_DOMAIN ??
     "",
   dbUrl: getEnv("DATABASE_URL"),
-  stripeSecretKey: getEnv("STRIPE_SECRET_KEY"),
-  stripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET"),
   qrSecretKey: getEnv("QR_SECRET_KEY"),
   resendApiKey: getEnv("RESEND_API_KEY"),
   resendFrom:
