@@ -23,6 +23,25 @@ type ActionResult = {
   ok: boolean;
 };
 
+type InfraCostSummary = {
+  currency?: string;
+  total?: number;
+  byService?: Array<{ service: string; amount: number }>;
+  daily?: Array<{ date: string; amount: number }>;
+};
+
+type InfraUsageSummary = {
+  clusters?: Array<{ name: string; status: string }>;
+  services?: Array<{ name: string; status: string; desired: number; running: number }>;
+  loadBalancers?: Array<{ name: string; dns: string; scheme: string }>;
+  notes?: string[];
+};
+
+type InfraAlertsSummary = {
+  budgets?: Array<{ name: string; limit: string; unit: string; timeUnit: string }>;
+  alarms?: Array<{ name: string; state: string; reason?: string }>;
+};
+
 const secretGroups = ["all", "app", "supabase", "payments", "apple", "email", "admin"] as const;
 const secretEnvs = ["all", "prod", "dev"] as const;
 
@@ -41,6 +60,21 @@ export default function InfraClient() {
   const currentEnv = useMemo(() => getClientAppEnv(), []);
   const [targetEnv, setTargetEnv] = useState<"prod" | "test">(currentEnv);
   const [confirmProd, setConfirmProd] = useState("");
+  const [cost, setCost] = useState<{ loading: boolean; error?: string; data?: InfraCostSummary | null }>({
+    loading: false,
+    error: undefined,
+    data: null,
+  });
+  const [usage, setUsage] = useState<{ loading: boolean; error?: string; data?: InfraUsageSummary | null }>({
+    loading: false,
+    error: undefined,
+    data: null,
+  });
+  const [alerts, setAlerts] = useState<{ loading: boolean; error?: string; data?: InfraAlertsSummary | null }>({
+    loading: false,
+    error: undefined,
+    data: null,
+  });
 
   const loadStatus = useCallback(async () => {
     setStatus((prev) => ({ ...prev, loading: true, error: undefined }));
@@ -115,6 +149,54 @@ export default function InfraClient() {
 
   const outputs = useMemo(() => status.data?.outputs ?? {}, [status.data]);
 
+  const loadCost = useCallback(async () => {
+    setCost((prev) => ({ ...prev, loading: true, error: undefined }));
+    try {
+      const res = await fetch("/api/admin/infra/cost/summary", { cache: "no-store" });
+      const json = (await res.json().catch(() => null)) as ApiEnvelope<InfraCostSummary> | null;
+      if (!json) throw new Error("Resposta inválida");
+      if (!json.ok) {
+        setCost({ loading: false, error: json.message ?? json.errorCode, data: null });
+        return;
+      }
+      setCost({ loading: false, error: undefined, data: json.data });
+    } catch (err: any) {
+      setCost({ loading: false, error: err?.message ?? "Erro ao carregar", data: null });
+    }
+  }, []);
+
+  const loadUsage = useCallback(async () => {
+    setUsage((prev) => ({ ...prev, loading: true, error: undefined }));
+    try {
+      const res = await fetch("/api/admin/infra/usage/summary", { cache: "no-store" });
+      const json = (await res.json().catch(() => null)) as ApiEnvelope<InfraUsageSummary> | null;
+      if (!json) throw new Error("Resposta inválida");
+      if (!json.ok) {
+        setUsage({ loading: false, error: json.message ?? json.errorCode, data: null });
+        return;
+      }
+      setUsage({ loading: false, error: undefined, data: json.data });
+    } catch (err: any) {
+      setUsage({ loading: false, error: err?.message ?? "Erro ao carregar", data: null });
+    }
+  }, []);
+
+  const loadAlerts = useCallback(async () => {
+    setAlerts((prev) => ({ ...prev, loading: true, error: undefined }));
+    try {
+      const res = await fetch("/api/admin/infra/alerts/status", { cache: "no-store" });
+      const json = (await res.json().catch(() => null)) as ApiEnvelope<InfraAlertsSummary> | null;
+      if (!json) throw new Error("Resposta inválida");
+      if (!json.ok) {
+        setAlerts({ loading: false, error: json.message ?? json.errorCode, data: null });
+        return;
+      }
+      setAlerts({ loading: false, error: undefined, data: json.data });
+    } catch (err: any) {
+      setAlerts({ loading: false, error: err?.message ?? "Erro ao carregar", data: null });
+    }
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
@@ -170,6 +252,98 @@ export default function InfraClient() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Infra</p>
+              <h3 className="text-sm font-semibold text-white/90">Custos</h3>
+              <p className="mt-1 text-xs text-white/60">Cost Explorer (MTD + diário)</p>
+            </div>
+            <button
+              className="rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10"
+              onClick={loadCost}
+            >
+              Atualizar
+            </button>
+          </div>
+          {cost.loading && <p className="text-xs text-white/60">A carregar…</p>}
+          {cost.error && <p className="text-xs text-rose-300">{cost.error}</p>}
+          {!cost.loading && !cost.error && !cost.data && <p className="text-xs text-white/60">Sem dados.</p>}
+          {cost.data && (
+            <div className="space-y-2 text-xs text-white/80">
+              <p>Total MTD: {cost.data.total?.toFixed(2) ?? "-"} {cost.data.currency ?? ""}</p>
+              <div className="max-h-40 overflow-auto rounded-lg border border-white/10 bg-white/5 p-2">
+                {(cost.data.byService ?? []).slice(0, 8).map((row) => (
+                  <div key={row.service} className="flex items-center justify-between">
+                    <span>{row.service}</span>
+                    <span>{row.amount.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Infra</p>
+              <h3 className="text-sm font-semibold text-white/90">Uso</h3>
+              <p className="mt-1 text-xs text-white/60">ECS/ALB (snapshot)</p>
+            </div>
+            <button
+              className="rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10"
+              onClick={loadUsage}
+            >
+              Atualizar
+            </button>
+          </div>
+          {usage.loading && <p className="text-xs text-white/60">A carregar…</p>}
+          {usage.error && <p className="text-xs text-rose-300">{usage.error}</p>}
+          {!usage.loading && !usage.error && !usage.data && <p className="text-xs text-white/60">Sem dados.</p>}
+          {usage.data && (
+            <div className="space-y-2 text-xs text-white/80">
+              <p>Clusters: {(usage.data.clusters ?? []).length}</p>
+              <p>Services: {(usage.data.services ?? []).length}</p>
+              <p>ALBs: {(usage.data.loadBalancers ?? []).length}</p>
+              {(usage.data.notes ?? []).length ? (
+                <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-white/60">
+                  {(usage.data.notes ?? []).map((note) => (
+                    <p key={note}>{note}</p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Infra</p>
+              <h3 className="text-sm font-semibold text-white/90">Alertas</h3>
+              <p className="mt-1 text-xs text-white/60">Budgets + CloudWatch</p>
+            </div>
+            <button
+              className="rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10"
+              onClick={loadAlerts}
+            >
+              Atualizar
+            </button>
+          </div>
+          {alerts.loading && <p className="text-xs text-white/60">A carregar…</p>}
+          {alerts.error && <p className="text-xs text-rose-300">{alerts.error}</p>}
+          {!alerts.loading && !alerts.error && !alerts.data && <p className="text-xs text-white/60">Sem dados.</p>}
+          {alerts.data && (
+            <div className="space-y-2 text-xs text-white/80">
+              <p>Budgets: {(alerts.data.budgets ?? []).length}</p>
+              <p>Alarms: {(alerts.data.alarms ?? []).length}</p>
+            </div>
+          )}
         </div>
       </div>
 

@@ -6,6 +6,8 @@ import {
   ORYA_REQUEST_ID_HEADER,
   REQUEST_ID_HEADER,
 } from "@/lib/http/headers";
+import { normalizeAppEnv, resolveEnvFromHost } from "@/lib/appEnvShared";
+import { setRequestAppEnv } from "@/lib/appEnvContext";
 
 type HeaderSource = {
   get(name: string): string | null;
@@ -38,6 +40,20 @@ function normalizeOrgId(value: string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function extractHost(headers: HeaderSource) {
+  return headers.get("x-forwarded-host") || headers.get("host");
+}
+
+function applyEnvFromHeaders(headers: HeaderSource) {
+  const override = normalizeAppEnv(process.env.APP_ENV ?? null) ?? normalizeAppEnv(process.env.NEXT_PUBLIC_APP_ENV ?? null);
+  if (override) {
+    setRequestAppEnv(override);
+    return;
+  }
+  const host = extractHost(headers);
+  setRequestAppEnv(resolveEnvFromHost(host));
+}
+
 function generateId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -49,6 +65,7 @@ export function resolveRequestContext(
   headers: HeaderSource,
   opts?: { orgId?: number | null },
 ): RequestContext {
+  applyEnvFromHeaders(headers);
   const requestId =
     pickHeader(headers, [ORYA_REQUEST_ID_HEADER, REQUEST_ID_HEADER]) ?? generateId();
   const correlationId =
@@ -65,8 +82,11 @@ export function getRequestContext(
 ): RequestContext {
   if (req?.headers) return resolveRequestContext(req.headers, opts);
   try {
-    const hdrs = nextHeaders() as unknown as HeaderSource;
-    return resolveRequestContext(hdrs, opts);
+    const hdrs = nextHeaders();
+    if (hdrs && typeof (hdrs as any).then === "function") {
+      throw new Error("headers_async");
+    }
+    return resolveRequestContext(hdrs as unknown as HeaderSource, opts);
   } catch {
     const requestId = generateId();
     return {
