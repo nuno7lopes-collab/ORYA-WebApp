@@ -528,9 +528,9 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 - [x] Execução de Infra (Route53/ACM/Well-known/ECR)
   - Estado real: DONE — hosted zone + ACM + CloudFront/S3 well-known, CodeBuild ECR images, CFN stack e healthcheck OK; SES domínio + inbound/outbound admin@orya.pt configurados.
-  - Evidência: `reports/p_infra_2026-01-30.md` (requestIds, ARNs, URLs, outputs), `reports/p_email_2026-01-31.md` (SES inbound + Lambda forwarder + DMARC + Gmail inbound S3 proof).
+  - Evidência: `reports/p_infra_2026-01-30.md` (requestIds, ARNs, URLs, outputs), `reports/p_email_2026-01-31.md` (MX Google Workspace + SES outbound + archive).
   - Ação exata: manter pipeline e repetir em cada release.
-  - Risco/Impacto: baixo (envio externo bloqueado até SES Production; inbox Google Workspace requer API/IMAP injection se MX permanecer SES).
+  - Risco/Impacto: baixo (envio externo bloqueado até SES Production; inbox Google Workspace depende de MX Google).
 
 - [x] Design System e Consistência
   - Estado real: DONE — design system documentado + componentes UI reutilizáveis.
