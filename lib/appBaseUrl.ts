@@ -8,7 +8,10 @@ export function getAppBaseUrl() {
   if (!raw) {
     try {
       const hdrs = nextHeaders();
-      const host = hdrs.get("x-forwarded-host") || hdrs.get("host");
+      if (hdrs && typeof (hdrs as any).then === "function") {
+        throw new Error("headers_async");
+      }
+      const host = (hdrs as Headers).get("x-forwarded-host") || (hdrs as Headers).get("host");
       if (host) raw = host;
     } catch {
       // ignore
