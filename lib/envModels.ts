@@ -1,6 +1,7 @@
 // Auto-generated list of Prisma models with env isolation
 export const ENV_MODELS = new Set([
   'ActivityFeedItem',
+  'AdminMfa',
   'Address',
   'AddressLookup',
   'AgendaItem',

@@ -100,7 +100,16 @@ export async function replayOutboxEvents(params: {
     }
     await prisma.outboxEvent.update({
       where: { eventId },
-      data: { deadLetteredAt: null, attempts: 0, nextAttemptAt: now },
+      data: {
+        deadLetteredAt: null,
+        attempts: 0,
+        nextAttemptAt: now,
+        reasonCode: null,
+        errorClass: null,
+        errorStack: null,
+        firstSeenAt: null,
+        lastSeenAt: null,
+      },
     });
     rearmedIds.push(eventId);
   }

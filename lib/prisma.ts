@@ -96,21 +96,52 @@ function mergeEnvWhere(where: unknown, envValue: string) {
   return { ...record, env: envValue };
 }
 
-function normalizeUniqueWhere(where: unknown): Record<string, unknown> | null {
+function stripEnvFromWhere(where: unknown): Record<string, unknown> | null {
   if (!where || typeof where !== "object") return null;
   const record = where as Record<string, unknown>;
-  const keys = Object.keys(record).filter((key) => key !== "env");
-  if (keys.length !== 1) return null;
-  const compositeValue = record[keys[0]];
-  if (!compositeValue || typeof compositeValue !== "object" || Array.isArray(compositeValue)) return null;
-  const entries = Object.entries(compositeValue as Record<string, unknown>);
-  if (entries.length === 0) return null;
-  const isFlat = entries.every(([, value]) => {
-    const type = typeof value;
-    return value === null || type === "string" || type === "number" || type === "boolean";
-  });
-  if (!isFlat) return null;
-  return Object.fromEntries(entries);
+  if (!("env" in record)) return record;
+  const { env: _env, ...rest } = record;
+  return rest;
+}
+
+function expandCompositeWhere(where: unknown): Record<string, unknown> | null {
+  if (!where || typeof where !== "object") return null;
+  const record = where as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  let changed = false;
+
+  for (const [key, value] of Object.entries(record)) {
+    if (key === "AND" || key === "OR" || key === "NOT") {
+      next[key] = value;
+      continue;
+    }
+
+    const isCompositeCandidate = key.includes("_");
+    if (isCompositeCandidate && value && typeof value === "object" && !Array.isArray(value)) {
+      const entries = Object.entries(value as Record<string, unknown>);
+      const expectedKeys = key.split("_");
+      const matchesComposite =
+        entries.length > 0 &&
+        entries.every(([entryKey, entryValue]) => {
+          const type = typeof entryValue;
+          const primitive = entryValue === null || type === "string" || type === "number" || type === "boolean";
+          return primitive && expectedKeys.includes(entryKey);
+        });
+      if (matchesComposite) {
+        for (const [entryKey, entryValue] of entries) {
+          if (!(entryKey in next)) {
+            next[entryKey] = entryValue;
+          }
+        }
+        changed = true;
+        continue;
+      }
+    }
+
+    next[key] = value;
+  }
+
+  return changed ? next : record;
 }
 
 function withEnvData(data: unknown, envValue: string) {
@@ -144,8 +175,8 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
           switch (operation) {
             case "findUnique":
             case "findUniqueOrThrow": {
-              const normalized = normalizeUniqueWhere(safeArgs.where);
-              const where = mergeEnvWhere(normalized ?? safeArgs.where, envValue);
+              const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
+              const where = mergeEnvWhere(normalized, envValue);
               const method = operation === "findUniqueOrThrow" ? "findFirstOrThrow" : "findFirst";
               return (delegate as any)[method]({ ...safeArgs, where });
             }
@@ -155,7 +186,8 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             case "count":
             case "aggregate":
             case "groupBy": {
-              const where = mergeEnvWhere(safeArgs.where, envValue);
+              const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
+              const where = mergeEnvWhere(normalized, envValue);
               return (delegate as any)[operation]({ ...safeArgs, where });
             }
             case "create": {
@@ -171,38 +203,46 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
               });
             }
             case "update": {
+              const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
               await (delegate as any).findFirstOrThrow({
-                where: mergeEnvWhere(safeArgs.where, envValue),
+                where: mergeEnvWhere(normalized, envValue),
               });
+              const where = stripEnvFromWhere(normalized) ?? normalized;
               return (delegate as any)[operation]({
                 ...safeArgs,
+                where,
                 data: withEnvData(safeArgs.data, envValue),
               });
             }
             case "updateMany": {
+              const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
               return (delegate as any)[operation]({
                 ...safeArgs,
-                where: mergeEnvWhere(safeArgs.where, envValue),
+                where: mergeEnvWhere(normalized, envValue),
                 data: withEnvData(safeArgs.data, envValue),
               });
             }
             case "delete": {
+              const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
               await (delegate as any).findFirstOrThrow({
-                where: mergeEnvWhere(safeArgs.where, envValue),
+                where: mergeEnvWhere(normalized, envValue),
               });
-              return (delegate as any)[operation](safeArgs);
+              const where = stripEnvFromWhere(normalized) ?? normalized;
+              return (delegate as any)[operation]({ ...safeArgs, where });
             }
             case "deleteMany": {
+              const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
               return (delegate as any)[operation]({
                 ...safeArgs,
-                where: mergeEnvWhere(safeArgs.where, envValue),
+                where: mergeEnvWhere(normalized, envValue),
               });
             }
             case "upsert": {
-              const normalized = normalizeUniqueWhere(safeArgs.where);
-              const where = mergeEnvWhere(normalized ?? safeArgs.where, envValue);
-              const existing = await (delegate as any).findFirst({ where });
+              const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
+              const lookupWhere = mergeEnvWhere(normalized, envValue);
+              const existing = await (delegate as any).findFirst({ where: lookupWhere });
               if (existing) {
+                const where = stripEnvFromWhere(normalized) ?? normalized;
                 return (delegate as any).update({
                   where,
                   data: withEnvData(safeArgs.update, envValue),

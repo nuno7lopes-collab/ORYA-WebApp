@@ -79,6 +79,7 @@ model Profile {
   tournamentAuditLogs                                              TournamentAuditLog[]    @relation("TournamentAuditLogUser")
   userIdentities                                                  UserIdentity[]
   pushDeviceTokens                                                PushDeviceToken[]
+  adminMfa                                                       AdminMfa?
   users                                                            users                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   notificationOutbox                                               NotificationOutbox[]
   servicesInstructing                                              Service[]               @relation("ServiceInstructor")
@@ -352,6 +353,25 @@ model OrganizationGroupMemberOrganizationOverride {
   @@unique([groupMemberId, organizationId], map: "organization_member_overrides_group_org_uniq")
   @@index([organizationId], map: "organization_member_overrides_org_idx")
   @@map("organization_member_overrides")
+  @@schema("app_v3")
+}
+
+model AdminMfa {
+  env           String   @default("prod")
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  secretEnc     String   @map("secret_enc")
+  secretIv      String   @map("secret_iv")
+  secretTag     String   @map("secret_tag")
+  recoveryCodes Json?    @map("recovery_codes") @db.JsonB
+  enabledAt     DateTime? @map("enabled_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          Profile  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId], map: "admin_mfa_user_uniq")
+  @@map("admin_mfa")
   @@schema("app_v3")
 }
 
@@ -2162,6 +2182,11 @@ model OutboxEvent {
   processingToken String?  @map("processing_token") @db.Uuid
   attempts       Int      @default(0)
   nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  reasonCode     String?  @map("reason_code")
+  errorClass     String?  @map("error_class")
+  errorStack     String?  @map("error_stack")
+  firstSeenAt    DateTime? @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime? @map("last_seen_at") @db.Timestamptz(6)
   causationId    String?  @map("causation_id")
   correlationId  String?  @map("correlation_id")
   deadLetteredAt DateTime? @map("dead_lettered_at") @db.Timestamptz(6)

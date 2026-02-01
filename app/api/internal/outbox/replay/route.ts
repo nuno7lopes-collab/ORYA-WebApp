@@ -56,7 +56,16 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   await prisma.outboxEvent.update({
     where: { eventId },
-    data: { deadLetteredAt: null, attempts: 0, nextAttemptAt: now },
+    data: {
+      deadLetteredAt: null,
+      attempts: 0,
+      nextAttemptAt: now,
+      reasonCode: null,
+      errorClass: null,
+      errorStack: null,
+      firstSeenAt: null,
+      lastSeenAt: null,
+    },
   });
 
   return respondOk(ctx, { eventId, rearmedAt: now.toISOString() });

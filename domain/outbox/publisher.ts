@@ -17,6 +17,11 @@ type OutboxCandidate = {
   publishedAt: Date | null;
   attempts: number;
   nextAttemptAt: Date | null;
+  reasonCode: string | null;
+  errorClass: string | null;
+  errorStack: string | null;
+  firstSeenAt: Date | null;
+  lastSeenAt: Date | null;
   causationId: string | null;
   correlationId: string | null;
   deadLetteredAt: Date | null;
@@ -40,6 +45,20 @@ function resolveLookahead(batchSize: number) {
 function computeBackoffMs(attempts: number) {
   const backoff = attempts * BASE_BACKOFF_MS;
   return Math.min(backoff, 30 * 60 * 1000);
+}
+
+function summarizeError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  const errorClass = err instanceof Error ? err.name : "UnknownError";
+  const reasonCode =
+    err && typeof err === "object" && "code" in err && typeof (err as { code?: unknown }).code === "string"
+      ? String((err as { code?: unknown }).code)
+      : errorClass;
+  const stackSummary =
+    err instanceof Error && err.stack
+      ? err.stack.split("\n").slice(0, 6).join("\n")
+      : null;
+  return { message, errorClass, reasonCode, stackSummary };
 }
 
 export function buildFairOutboxBatch(events: OutboxCandidate[], batchSize: number) {
@@ -92,9 +111,18 @@ async function processClaimedOutboxEvent(params: {
 
     const attempts = current.attempts ?? event.attempts;
     if (attempts >= OUTBOX_MAX_ATTEMPTS) {
+      const firstSeenAt = event.firstSeenAt ?? now;
       const update = await tx.outboxEvent.updateMany({
         where: { eventId: event.eventId, processingToken },
-        data: { deadLetteredAt: now, nextAttemptAt: null },
+        data: {
+          deadLetteredAt: now,
+          nextAttemptAt: null,
+          reasonCode: event.reasonCode ?? "MAX_ATTEMPTS",
+          errorClass: event.errorClass ?? "OutboxMaxAttempts",
+          errorStack: event.errorStack ?? null,
+          firstSeenAt,
+          lastSeenAt: now,
+        },
       });
       if (update.count === 0) {
         return { eventId: event.eventId, status: "SKIPPED" as const };
@@ -129,6 +157,11 @@ async function processClaimedOutboxEvent(params: {
             data: {
               publishedAt: existingOp.updatedAt ?? now,
               nextAttemptAt: null,
+              reasonCode: null,
+              errorClass: null,
+              errorStack: null,
+              firstSeenAt: null,
+              lastSeenAt: null,
             },
           });
           if (update.count === 0) {
@@ -147,9 +180,18 @@ async function processClaimedOutboxEvent(params: {
           return { eventId: event.eventId, status: "PUBLISHED" as const };
         }
         if (existingOp.status === "DEAD_LETTER") {
+          const firstSeenAt = event.firstSeenAt ?? now;
           const update = await tx.outboxEvent.updateMany({
             where: { eventId: event.eventId, processingToken },
-            data: { deadLetteredAt: now, nextAttemptAt: null },
+            data: {
+              deadLetteredAt: now,
+              nextAttemptAt: null,
+              reasonCode: event.reasonCode ?? "OPERATION_DEAD_LETTER",
+              errorClass: event.errorClass ?? "OutboxOperationDeadLetter",
+              errorStack: event.errorStack ?? null,
+              firstSeenAt,
+              lastSeenAt: now,
+            },
           });
           if (update.count === 0) {
             return { eventId: event.eventId, status: "SKIPPED" as const };
@@ -171,6 +213,11 @@ async function processClaimedOutboxEvent(params: {
           where: { eventId: event.eventId, processingToken },
           data: {
             nextAttemptAt: new Date(now.getTime() + computeBackoffMs(Math.max(1, attempts))),
+            reasonCode: event.reasonCode ?? null,
+            errorClass: event.errorClass ?? null,
+            errorStack: event.errorStack ?? null,
+            firstSeenAt: event.firstSeenAt ?? now,
+            lastSeenAt: now,
           },
         });
         return { eventId: event.eventId, status: "RETRY" as const };
@@ -214,14 +261,21 @@ async function processClaimedOutboxEvent(params: {
       );
       return { eventId: event.eventId, status: "RETRY" as const };
     } catch (err) {
+      const { message, errorClass, reasonCode, stackSummary } = summarizeError(err);
       const nextAttempts = attempts + 1;
       const isDead = nextAttempts >= OUTBOX_MAX_ATTEMPTS;
+      const firstSeenAt = event.firstSeenAt ?? now;
       await tx.outboxEvent.updateMany({
         where: { eventId: event.eventId, processingToken },
         data: {
           attempts: nextAttempts,
           nextAttemptAt: isDead ? null : new Date(now.getTime() + computeBackoffMs(nextAttempts)),
           deadLetteredAt: isDead ? now : null,
+          reasonCode,
+          errorClass,
+          errorStack: stackSummary,
+          firstSeenAt,
+          lastSeenAt: now,
         },
       });
       logWarn(
@@ -231,6 +285,9 @@ async function processClaimedOutboxEvent(params: {
           eventType: event.eventType,
           attempts: nextAttempts,
           correlationId: event.correlationId ?? null,
+          errorClass,
+          reasonCode,
+          error: message,
           registrationId:
             event.payload && typeof event.payload === "object"
               ? (event.payload as Record<string, unknown>).registrationId ?? null
@@ -263,6 +320,11 @@ export async function publishOutboxBatch(params?: { now?: Date; batchSize?: numb
           published_at as "publishedAt",
           attempts,
           next_attempt_at as "nextAttemptAt",
+          reason_code as "reasonCode",
+          error_class as "errorClass",
+          error_stack as "errorStack",
+          first_seen_at as "firstSeenAt",
+          last_seen_at as "lastSeenAt",
           causation_id as "causationId",
           correlation_id as "correlationId",
           dead_lettered_at as "deadLetteredAt"
