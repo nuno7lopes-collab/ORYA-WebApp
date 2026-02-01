@@ -7,12 +7,14 @@ export function getAppBaseUrl() {
   let raw = env.appBaseUrl;
   if (!raw) {
     try {
-      const hdrs = nextHeaders();
-      if (hdrs && typeof (hdrs as any).then === "function") {
+      const hdrs = nextHeaders() as unknown;
+      if (hdrs && typeof (hdrs as { then?: unknown }).then === "function") {
         throw new Error("headers_async");
       }
-      const host = (hdrs as Headers).get("x-forwarded-host") || (hdrs as Headers).get("host");
-      if (host) raw = host;
+      if (hdrs && typeof (hdrs as Headers).get === "function") {
+        const host = (hdrs as Headers).get("x-forwarded-host") || (hdrs as Headers).get("host");
+        if (host) raw = host;
+      }
     } catch {
       // ignore
     }

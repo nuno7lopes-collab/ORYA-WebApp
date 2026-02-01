@@ -67,13 +67,19 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
   }, []);
 
   const pathname = usePathname();
+  const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
   const { profile, user } = useUser();
   const [loggingOut, setLoggingOut] = useState(false);
   const adminName = profile?.fullName || profile?.username || user?.email || "Admin ORYA";
   const adminEmail = user?.email || null;
   const avatarUrl = profile?.avatarUrl ?? null;
 
+  useEffect(() => {
+    setHydratedPathname(pathname ?? null);
+  }, [pathname]);
+
   const navItems = useMemo(() => navGroups.flatMap((group) => group.items), []);
+  const activePath = hydratedPathname ?? "";
 
   const handleLogout = useCallback(async () => {
     if (loggingOut) return;
@@ -108,7 +114,7 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
 
           <nav className="hidden lg:flex flex-wrap items-center gap-1">
             {navItems.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = activePath === item.href || activePath.startsWith(`${item.href}/`);
               return (
                 <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={navItemClass(active)}>
                   {item.label}
@@ -128,7 +134,7 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
                     <p className="px-2 text-[10px] uppercase tracking-[0.2em] text-white/45">{group.label}</p>
                     <div className="orya-menu-list">
                       {group.items.map((item) => {
-                        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                        const active = activePath === item.href || activePath.startsWith(`${item.href}/`);
                         return (
                           <Link key={item.href} href={item.href} className={navItemClass(active)}>
                             {item.label}

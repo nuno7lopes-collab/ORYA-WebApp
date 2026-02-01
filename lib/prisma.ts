@@ -17,12 +17,6 @@ const logLevels: (Prisma.LogLevel | Prisma.LogDefinition)[] =
       : ["error", "warn"]
     : ["error"];
 
-// Evitar múltiplas instâncias em dev (hot reload)
-const globalForPrisma = globalThis as unknown as {
-  prismaProd?: PrismaClient;
-  prismaTest?: PrismaClient;
-};
-
 // Pool e adapter para usar o client engine ("library") com Postgres
 function resolvePgSsl(url: string) {
   if (process.env.NODE_ENV === "production") return undefined;
@@ -107,7 +101,6 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             case "update": {
               await (delegate as any).findFirstOrThrow({
                 where: mergeEnvWhere(safeArgs.where, envValue),
-                select: { id: true },
               });
               return (delegate as any)[operation]({
                 ...safeArgs,
@@ -124,7 +117,6 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             case "delete": {
               await (delegate as any).findFirstOrThrow({
                 where: mergeEnvWhere(safeArgs.where, envValue),
-                select: { id: true },
               });
               return (delegate as any)[operation](safeArgs);
             }
@@ -137,7 +129,6 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             case "upsert": {
               const existing = await (delegate as any).findFirst({
                 where: mergeEnvWhere(safeArgs.where, envValue),
-                select: { id: true },
               });
               if (existing) {
                 return (delegate as any).update({
@@ -157,6 +148,14 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
     },
   });
 }
+
+type EnvClient = ReturnType<typeof createEnvExtension>;
+
+// Evitar múltiplas instâncias em dev (hot reload)
+const globalForPrisma = globalThis as unknown as {
+  prismaProd?: EnvClient;
+  prismaTest?: EnvClient;
+};
 
 function createClient(envValue: AppEnv) {
   const pool = new Pool({

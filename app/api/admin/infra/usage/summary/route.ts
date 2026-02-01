@@ -46,7 +46,13 @@ export async function GET(req: NextRequest) {
         const describe = await ecsClient.send(
           new DescribeServicesCommand({ cluster, services: serviceArns.slice(0, 10) }),
         );
-        for (const svc of describe.services ?? []) {
+        const describedServices = (describe.services ?? []) as Array<{
+          serviceName?: string | null;
+          status?: string | null;
+          desiredCount?: number | null;
+          runningCount?: number | null;
+        }>;
+        for (const svc of describedServices) {
           services.push({
             name: svc.serviceName ?? "",
             status: svc.status ?? "",
@@ -62,7 +68,12 @@ export async function GET(req: NextRequest) {
     }
 
     const lbRes = await elbClient.send(new DescribeLoadBalancersCommand({}));
-    const loadBalancers = (lbRes.LoadBalancers ?? []).map((lb) => ({
+    const rawLoadBalancers = (lbRes.LoadBalancers ?? []) as Array<{
+      LoadBalancerName?: string | null;
+      DNSName?: string | null;
+      Scheme?: string | null;
+    }>;
+    const loadBalancers = rawLoadBalancers.map((lb) => ({
       name: lb.LoadBalancerName ?? "",
       dns: lb.DNSName ?? "",
       scheme: lb.Scheme ?? "",

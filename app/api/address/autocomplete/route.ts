@@ -1,2 +1,8 @@
-export { GET } from "@/app/api/geo/autocomplete/route";
+import type { NextRequest } from "next/server";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { GET as geoGET } from "@/app/api/geo/autocomplete/route";
+
 export const runtime = "nodejs";
+
+const handler = (req: NextRequest) => geoGET(req);
+export const GET = withApiEnvelope(handler);

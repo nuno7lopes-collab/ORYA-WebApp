@@ -1267,9 +1267,17 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   );
 }
 
-export function Navbar() {
+export function Navbar({ adminHostHint = false }: { adminHostHint?: boolean }) {
   const rawPathname = usePathname();
-  if (rawPathname?.startsWith("/admin")) {
+  const [isAdminHost, setIsAdminHost] = useState(Boolean(adminHostHint));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const host = window.location.host.toLowerCase();
+    setIsAdminHost(host.startsWith("admin."));
+  }, []);
+
+  if (isAdminHost || rawPathname?.startsWith("/admin")) {
     return null;
   }
 

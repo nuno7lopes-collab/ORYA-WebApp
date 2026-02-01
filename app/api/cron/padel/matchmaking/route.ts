@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 import { isWithinMatchmakingWindow } from "@/domain/padelDeadlines";
@@ -18,13 +19,21 @@ async function _POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const configs = await prisma.padelTournamentConfig.findMany({
+    type MatchmakingConfig = Prisma.PadelTournamentConfigGetPayload<{
+      select: {
+        eventId: true;
+        splitDeadlineHours: true;
+        eligibilityType: true;
+        event: { select: { startsAt: true } };
+      };
+    }>;
+
+    const configs: MatchmakingConfig[] = await prisma.padelTournamentConfig.findMany({
       where: {
         padelV2Enabled: true,
         event: {
           isDeleted: false,
           status: { in: ["PUBLISHED", "DATE_CHANGED"] },
-          startsAt: { not: null },
         },
       },
       select: {

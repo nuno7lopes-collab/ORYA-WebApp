@@ -8,11 +8,12 @@ import {
   TOURNAMENT_LIFECYCLE_LABELS,
   TOURNAMENT_LIFECYCLE_ORDER,
 } from "@/domain/padel/tournamentLifecycle";
+import type { PadelTournamentLifecycleStatus } from "@prisma/client";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type LifecyclePayload = {
-  lifecycleStatus: string;
+  lifecycleStatus: PadelTournamentLifecycleStatus;
   publishedAt?: string | null;
   lockedAt?: string | null;
   liveAt?: string | null;
@@ -24,7 +25,7 @@ type LifecyclePayload = {
 type LifecycleResponse = {
   ok: boolean;
   lifecycle?: LifecyclePayload;
-  transitions?: string[];
+  transitions?: PadelTournamentLifecycleStatus[];
   event?: { status: string };
   canManage?: boolean;
   error?: string;
@@ -48,8 +49,10 @@ export default function PadelTournamentLifecyclePanel({ eventId }: { eventId: nu
   );
 
   const lifecycle = data?.lifecycle;
-  const currentStatus = lifecycle?.lifecycleStatus ?? null;
-  const transitions = Array.isArray(data?.transitions) ? data?.transitions ?? [] : [];
+  const currentStatus = (lifecycle?.lifecycleStatus ?? null) as PadelTournamentLifecycleStatus | null;
+  const transitions = Array.isArray(data?.transitions)
+    ? (data?.transitions as PadelTournamentLifecycleStatus[])
+    : [];
   const canManage = Boolean(data?.canManage);
 
   const timeline = useMemo(
@@ -57,10 +60,9 @@ export default function PadelTournamentLifecyclePanel({ eventId }: { eventId: nu
       TOURNAMENT_LIFECYCLE_ORDER.map((status) => {
         const label = TOURNAMENT_LIFECYCLE_LABELS[status] ?? status;
         const active = currentStatus === status;
+        const currentIndex = currentStatus ? TOURNAMENT_LIFECYCLE_ORDER.indexOf(currentStatus) : -1;
         const done =
-          currentStatus &&
-          TOURNAMENT_LIFECYCLE_ORDER.indexOf(status) <
-            TOURNAMENT_LIFECYCLE_ORDER.indexOf(currentStatus as any);
+          currentIndex >= 0 && TOURNAMENT_LIFECYCLE_ORDER.indexOf(status) < currentIndex;
         return { status, label, active, done };
       }),
     [currentStatus],
@@ -100,7 +102,7 @@ export default function PadelTournamentLifecyclePanel({ eventId }: { eventId: nu
           <p className="text-sm text-white/70">Define fases e bloqueios do torneio.</p>
         </div>
         <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/80">
-          {currentStatus ? TOURNAMENT_LIFECYCLE_LABELS[currentStatus as any] ?? currentStatus : "—"}
+          {currentStatus ? TOURNAMENT_LIFECYCLE_LABELS[currentStatus] ?? currentStatus : "—"}
         </span>
       </div>
 
@@ -153,7 +155,7 @@ export default function PadelTournamentLifecyclePanel({ eventId }: { eventId: nu
               disabled={!canManage || saving === status}
               className={status === "CANCELLED" ? CTA_SECONDARY : CTA_PRIMARY}
             >
-              {saving === status ? "A atualizar…" : `Mover para ${TOURNAMENT_LIFECYCLE_LABELS[status as any] ?? status}`}
+              {saving === status ? "A atualizar…" : `Mover para ${TOURNAMENT_LIFECYCLE_LABELS[status] ?? status}`}
             </button>
           ))}
         </div>

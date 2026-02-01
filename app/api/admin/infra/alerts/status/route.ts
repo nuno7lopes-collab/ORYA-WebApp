@@ -32,7 +32,12 @@ export async function GET(req: NextRequest) {
     const budgetsRes = await budgetsClient.send(
       new DescribeBudgetsCommand({ AccountId: String(accountId) }),
     );
-    const budgets = (budgetsRes.Budgets ?? []).map((b) => ({
+    const rawBudgets = (budgetsRes.Budgets ?? []) as Array<{
+      BudgetName?: string | null;
+      BudgetLimit?: { Amount?: string | null; Unit?: string | null } | null;
+      TimeUnit?: string | null;
+    }>;
+    const budgets = rawBudgets.map((b) => ({
       name: b.BudgetName ?? "",
       limit: b.BudgetLimit?.Amount ?? "0",
       unit: b.BudgetLimit?.Unit ?? "USD",
@@ -40,7 +45,12 @@ export async function GET(req: NextRequest) {
     }));
 
     const alarmsRes = await cwClient.send(new DescribeAlarmsCommand({}));
-    const alarms = (alarmsRes.MetricAlarms ?? []).map((a) => ({
+    const rawAlarms = (alarmsRes.MetricAlarms ?? []) as Array<{
+      AlarmName?: string | null;
+      StateValue?: string | null;
+      StateReason?: string | null;
+    }>;
+    const alarms = rawAlarms.map((a) => ({
       name: a.AlarmName ?? "",
       state: a.StateValue ?? "",
       reason: a.StateReason ?? "",

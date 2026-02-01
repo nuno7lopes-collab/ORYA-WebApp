@@ -43,7 +43,14 @@ export async function GET(req: NextRequest) {
           services: serviceNames,
         }),
       );
-      services = (serviceRes.services ?? []).map((svc) => ({
+      services = (serviceRes.services ?? []).map((svc: {
+        serviceName?: string | null;
+        status?: string | null;
+        desiredCount?: number | null;
+        runningCount?: number | null;
+        pendingCount?: number | null;
+        launchType?: string | null;
+      }) => ({
         serviceName: svc.serviceName,
         status: svc.status,
         desiredCount: svc.desiredCount,

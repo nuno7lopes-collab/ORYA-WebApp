@@ -252,7 +252,7 @@ async function _DELETE(req: NextRequest) {
         isDefault: true,
         _count: {
           select: {
-            matches: true,
+            matchSlots: true,
             pairings: true,
             tournamentEntries: true,
             tournamentConfigs: true,
@@ -269,7 +269,10 @@ async function _DELETE(req: NextRequest) {
       return jsonWrap({ ok: false, error: "Não podes apagar uma categoria base." }, { status: 409 });
     }
 
-    const usageCount = Object.values(existing._count).reduce((sum, value) => sum + value, 0);
+    const usageCount = Object.values(existing._count as Record<string, number>).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
     if (usageCount > 0) {
       return jsonWrap(
         { ok: false, error: "Categoria em uso. Remove-a dos torneios ou desativa em vez de apagar." },

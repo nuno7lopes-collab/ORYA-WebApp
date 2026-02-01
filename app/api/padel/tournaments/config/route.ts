@@ -37,7 +37,7 @@ async function _GET(req: NextRequest) {
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  let [config, tournament] = await Promise.all([
+  const [initialConfig, tournament] = await Promise.all([
     prisma.padelTournamentConfig.findUnique({
       where: { eventId },
       include: {
@@ -51,6 +51,7 @@ async function _GET(req: NextRequest) {
       select: { generatedAt: true, generatedByUserId: true },
     }),
   ]);
+  let config = initialConfig;
 
   if (config?.ruleSetId && !config.ruleSetVersionId) {
     await prisma.$transaction(async (tx) => {

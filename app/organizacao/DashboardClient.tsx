@@ -60,6 +60,7 @@ type OverviewResponse = {
   grossCents?: number;
   discountCents?: number;
   platformFeeCents?: number;
+  feesCents?: number;
   netRevenueCents?: number;
   eventsWithSalesCount: number;
   activeEventsCount: number;

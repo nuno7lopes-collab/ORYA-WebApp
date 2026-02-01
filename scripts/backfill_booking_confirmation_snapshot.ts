@@ -121,7 +121,7 @@ async function main() {
   if (verify) {
     const remaining = await prisma.booking.count({
       where: {
-        status: { in: BACKFILL_STATUSES as unknown as string[] },
+        status: { in: BACKFILL_STATUSES },
         confirmationSnapshot: { equals: Prisma.DbNull },
       },
     });

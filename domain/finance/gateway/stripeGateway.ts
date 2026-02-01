@@ -51,7 +51,7 @@ export async function retrievePaymentIntent(
 
 export async function cancelPaymentIntent(
   id: string,
-  params?: Parameters<typeof stripe.paymentIntents.cancel>[1],
+  params?: Stripe.PaymentIntentCancelParams,
 ) {
   const stripe = getStripeClient();
   return stripe.paymentIntents.cancel(id, params);

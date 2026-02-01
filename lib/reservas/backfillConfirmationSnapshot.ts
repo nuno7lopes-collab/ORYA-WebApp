@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient, BookingStatus } from "@prisma/client";
 import {
   BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
   buildBookingConfirmationSnapshot,
@@ -14,7 +14,7 @@ export const BACKFILL_STATUSES = [
   "CANCELLED",
   "CANCELLED_BY_CLIENT",
   "CANCELLED_BY_ORG",
-] as const;
+] as const satisfies BookingStatus[];
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;

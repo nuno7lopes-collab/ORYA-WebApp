@@ -191,7 +191,7 @@ async function _POST(req: NextRequest) {
 
     await appendEventLog(
       {
-        organizationId: event.organizationId,
+        organizationId: event.organizationId!,
         eventType: "padel_tournament.lifecycle_updated",
         actorUserId: user.id,
         sourceType: SourceType.TOURNAMENT,

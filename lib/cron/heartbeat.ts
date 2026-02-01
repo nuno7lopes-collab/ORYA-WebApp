@@ -7,6 +7,7 @@ type CronHeartbeatInput = {
   status: CronHeartbeatStatus;
   startedAt?: Date;
   error?: unknown;
+  metadata?: Record<string, unknown>;
 };
 
 function stringifyError(error: unknown) {

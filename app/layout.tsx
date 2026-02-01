@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { headers } from "next/headers";
@@ -15,7 +15,6 @@ export const metadata: Metadata = {
   title: "ORYA",
   description: "O centro da tua vida social em Portugal.",
   manifest: "/manifest.json",
-  themeColor: "#0f172a",
   appleWebApp: {
     capable: true,
     title: "ORYA",
@@ -29,6 +28,10 @@ export const metadata: Metadata = {
     apple: [{ url: "/brand/orya-logo-180.png", sizes: "180x180", type: "image/png" }],
   },
 };
+
+export const viewport = {
+  themeColor: "#0f172a",
+} satisfies Viewport;
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -49,8 +52,24 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const host = (await headers()).get("host") ?? "";
-  const isAdminHost = host.startsWith("admin.");
+  const headerStore = await headers();
+  const getHeaderValue = (key: string) => {
+    try {
+      if (headerStore && typeof (headerStore as Headers).get === "function") {
+        return (headerStore as Headers).get(key);
+      }
+      const fallback = (headerStore as unknown as Record<string, unknown> | null | undefined) ?? null;
+      if (!fallback) return null;
+      const direct = fallback[key] ?? fallback[key.toLowerCase()];
+      if (Array.isArray(direct)) return direct[0] ?? null;
+      return typeof direct === "string" ? direct : null;
+    } catch {
+      return null;
+    }
+  };
+  const rawHost = getHeaderValue("x-forwarded-host") ?? getHeaderValue("host") ?? "";
+  const host = rawHost.split(",")[0]?.trim().toLowerCase();
+  const isAdminHost = host?.startsWith("admin.") ?? false;
 
   return (
     <html
@@ -64,7 +83,7 @@ export default async function RootLayout({
           <ClientSentryInit />
           <AuthModalProvider>
             <AuthLinkInterceptor />
-            {!isAdminHost && <Navbar />}
+            <Navbar adminHostHint={isAdminHost} />
             <RecoveryRedirector />
             <main className="main-shell flex-1 transition-[padding] duration-200">
               {children}
