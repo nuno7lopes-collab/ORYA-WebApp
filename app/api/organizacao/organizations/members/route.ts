@@ -244,8 +244,8 @@ export async function PATCH(req: NextRequest) {
         throw new Error("ORG_GROUP_NOT_FOUND");
       }
 
-      const targetGroup = await tx.organizationGroupMember.findUnique({
-        where: { groupId_userId: { groupId: org.groupId, userId: targetUserId } },
+      const targetGroup = await tx.organizationGroupMember.findFirst({
+        where: { groupId: org.groupId, userId: targetUserId },
         select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
       });
 

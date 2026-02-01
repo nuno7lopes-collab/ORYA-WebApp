@@ -18,6 +18,24 @@ const logLevels: (Prisma.LogLevel | Prisma.LogDefinition)[] =
     : ["error"];
 
 // Pool e adapter para usar o client engine ("library") com Postgres
+function stripUnsupportedParams(raw: string) {
+  try {
+    const parsed = new URL(raw);
+    const keys = ["options"];
+    let changed = false;
+    for (const key of keys) {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) return parsed.toString();
+  } catch {
+    // ignore parse errors, return raw
+  }
+  return raw;
+}
+
 function stripSslOptions(raw: string) {
   try {
     const parsed = new URL(raw);
@@ -37,10 +55,11 @@ function stripSslOptions(raw: string) {
 }
 
 function resolvePgSsl(url: string): { ssl: false | { rejectUnauthorized: false } | undefined; connectionString: string } {
+  const sanitized = stripUnsupportedParams(url);
   let sslMode: string | null = null;
   let host = "";
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(sanitized);
     sslMode = parsed.searchParams.get("sslmode");
     host = parsed.hostname;
   } catch {
@@ -54,17 +73,17 @@ function resolvePgSsl(url: string): { ssl: false | { rejectUnauthorized: false }
     sslMode === "disable" ||
     isLocalHost;
   if (forceDisable) {
-    return { ssl: false, connectionString: stripSslOptions(url) };
+    return { ssl: false, connectionString: stripSslOptions(sanitized) };
   }
 
   const allowSelfSigned =
     process.env.PGSSL_ALLOW_SELF_SIGNED === "true" ||
     process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0";
   if (process.env.NODE_ENV !== "production" || allowSelfSigned) {
-    return { ssl: { rejectUnauthorized: false }, connectionString: stripSslOptions(url) };
+    return { ssl: { rejectUnauthorized: false }, connectionString: stripSslOptions(sanitized) };
   }
 
-  return { ssl: undefined, connectionString: url };
+  return { ssl: undefined, connectionString: sanitized };
 }
 
 function mergeEnvWhere(where: unknown, envValue: string) {
@@ -75,6 +94,23 @@ function mergeEnvWhere(where: unknown, envValue: string) {
     return { ...record, AND: [...existing, { env: envValue }] };
   }
   return { ...record, env: envValue };
+}
+
+function normalizeUniqueWhere(where: unknown): Record<string, unknown> | null {
+  if (!where || typeof where !== "object") return null;
+  const record = where as Record<string, unknown>;
+  const keys = Object.keys(record).filter((key) => key !== "env");
+  if (keys.length !== 1) return null;
+  const compositeValue = record[keys[0]];
+  if (!compositeValue || typeof compositeValue !== "object" || Array.isArray(compositeValue)) return null;
+  const entries = Object.entries(compositeValue as Record<string, unknown>);
+  if (entries.length === 0) return null;
+  const isFlat = entries.every(([, value]) => {
+    const type = typeof value;
+    return value === null || type === "string" || type === "number" || type === "boolean";
+  });
+  if (!isFlat) return null;
+  return Object.fromEntries(entries);
 }
 
 function withEnvData(data: unknown, envValue: string) {
@@ -108,7 +144,8 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
           switch (operation) {
             case "findUnique":
             case "findUniqueOrThrow": {
-              const where = mergeEnvWhere(safeArgs.where, envValue);
+              const normalized = normalizeUniqueWhere(safeArgs.where);
+              const where = mergeEnvWhere(normalized ?? safeArgs.where, envValue);
               const method = operation === "findUniqueOrThrow" ? "findFirstOrThrow" : "findFirst";
               return (delegate as any)[method]({ ...safeArgs, where });
             }
@@ -162,12 +199,12 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
               });
             }
             case "upsert": {
-              const existing = await (delegate as any).findFirst({
-                where: mergeEnvWhere(safeArgs.where, envValue),
-              });
+              const normalized = normalizeUniqueWhere(safeArgs.where);
+              const where = mergeEnvWhere(normalized ?? safeArgs.where, envValue);
+              const existing = await (delegate as any).findFirst({ where });
               if (existing) {
                 return (delegate as any).update({
-                  where: safeArgs.where,
+                  where,
                   data: withEnvData(safeArgs.update, envValue),
                 });
               }

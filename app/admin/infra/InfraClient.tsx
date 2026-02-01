@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { getClientAppEnv } from "@/lib/appEnvClient";
 
 type ApiEnvelope<T> =
   | { ok: true; data: T; requestId: string; correlationId: string }
@@ -46,9 +45,14 @@ type InfraAlertsSummary = {
 
 const secretGroups = ["all", "app", "supabase", "payments", "apple", "email", "admin"] as const;
 const secretEnvs = ["all", "prod", "dev"] as const;
-const infraReadOnly = (process.env.NEXT_PUBLIC_INFRA_READ_ONLY ?? "true") !== "false";
 
-export default function InfraClient() {
+export default function InfraClient({
+  initialEnv,
+  infraReadOnly,
+}: {
+  initialEnv: "prod" | "test";
+  infraReadOnly: boolean;
+}) {
   const [status, setStatus] = useState<{ loading: boolean; error?: string; data?: InfraStatus | null }>({
     loading: false,
     error: undefined,
@@ -60,8 +64,8 @@ export default function InfraClient() {
   const [secretEnv, setSecretEnv] = useState<(typeof secretEnvs)[number]>("prod");
   const [secretGroup, setSecretGroup] = useState<(typeof secretGroups)[number]>("all");
   const [busy, setBusy] = useState<string | null>(null);
-  const currentEnv = useMemo(() => getClientAppEnv(), []);
-  const [targetEnv, setTargetEnv] = useState<"prod" | "test">(currentEnv);
+  const currentEnv = initialEnv;
+  const [targetEnv, setTargetEnv] = useState<"prod" | "test">(initialEnv);
   const [confirmProd, setConfirmProd] = useState("");
   const [cost, setCost] = useState<{ loading: boolean; error?: string; data?: InfraCostSummary | null }>({
     loading: false,

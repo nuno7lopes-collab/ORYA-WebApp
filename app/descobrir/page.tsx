@@ -176,6 +176,7 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                         tagTone={isReservations ? undefined : tag.tone}
                         meta={[{ label: formatPriceLabel(event) }]}
                         className={hideOnMobile ? "hidden sm:block" : undefined}
+                        imagePriority={index < 2}
                       />
                     );
                   })}

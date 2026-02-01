@@ -345,8 +345,8 @@ export async function POST(req: NextRequest) {
         throw new Error("ORG_GROUP_NOT_FOUND");
       }
 
-      const targetGroup = await prisma.organizationGroupMember.findUnique({
-        where: { groupId_userId: { groupId: org.groupId, userId: targetProfile.id } },
+      const targetGroup = await prisma.organizationGroupMember.findFirst({
+        where: { groupId: org.groupId, userId: targetProfile.id },
         select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
       });
 

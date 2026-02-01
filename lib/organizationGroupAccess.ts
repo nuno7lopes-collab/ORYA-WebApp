@@ -10,6 +10,19 @@ export type GroupMemberAccess = {
 
 type PrismaClientLike = Prisma.TransactionClient | typeof prisma;
 
+async function findGroupMemberByUser(params: {
+  db: PrismaClientLike;
+  groupId: number;
+  userId: string;
+  select: Prisma.OrganizationGroupMemberSelect;
+}) {
+  const { db, groupId, userId, select } = params;
+  return db.organizationGroupMember.findFirst({
+    where: { groupId, userId },
+    select,
+  });
+}
+
 export async function resolveGroupMemberForOrg(params: {
   organizationId: number;
   userId: string;
@@ -25,8 +38,10 @@ export async function resolveGroupMemberForOrg(params: {
   });
   if (!org?.groupId) return null;
 
-  const member = await db.organizationGroupMember.findUnique({
-    where: { groupId_userId: { groupId: org.groupId, userId } },
+  const member = await findGroupMemberByUser({
+    db,
+    groupId: org.groupId,
+    userId,
     select: {
       id: true,
       role: true,
@@ -72,24 +87,31 @@ export async function ensureGroupMemberForOrg(params: {
     throw new Error("ORG_GROUP_NOT_FOUND");
   }
 
-  const existing = await db.organizationGroupMember.findUnique({
-    where: { groupId_userId: { groupId: org.groupId, userId } },
-    select: { scopeAllOrgs: true, scopeOrgIds: true },
+  const existing = await findGroupMemberByUser({
+    db,
+    groupId: org.groupId,
+    userId,
+    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true },
   });
 
   const scopeOrgIds = existing?.scopeAllOrgs
     ? []
     : Array.from(new Set([...(existing?.scopeOrgIds ?? []), organizationId]));
 
-  return db.organizationGroupMember.upsert({
-    where: { groupId_userId: { groupId: org.groupId, userId } },
-    update: {
-      role,
-      rolePack: rolePack ?? undefined,
-      scopeAllOrgs: existing?.scopeAllOrgs ?? scopeAllOrgs,
-      scopeOrgIds,
-    },
-    create: {
+  if (existing?.id) {
+    return db.organizationGroupMember.update({
+      where: { id: existing.id },
+      data: {
+        role,
+        rolePack: rolePack ?? undefined,
+        scopeAllOrgs: existing.scopeAllOrgs ?? scopeAllOrgs,
+        scopeOrgIds,
+      },
+    });
+  }
+
+  return db.organizationGroupMember.create({
+    data: {
       groupId: org.groupId,
       userId,
       role,
@@ -113,8 +135,10 @@ export async function revokeGroupMemberForOrg(params: {
   });
   if (!org?.groupId) return;
 
-  const targetGroup = await db.organizationGroupMember.findUnique({
-    where: { groupId_userId: { groupId: org.groupId, userId } },
+  const targetGroup = await findGroupMemberByUser({
+    db,
+    groupId: org.groupId,
+    userId,
     select: { id: true, scopeAllOrgs: true, scopeOrgIds: true },
   });
   if (!targetGroup) return;

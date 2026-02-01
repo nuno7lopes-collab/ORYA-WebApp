@@ -35,6 +35,7 @@ type EventSquareCardProps = {
   tagTone?: TagTone;
   meta?: EventMeta[];
   className?: string;
+  imagePriority?: boolean;
 };
 
 type EventListCardProps = {
@@ -101,6 +102,7 @@ export function EventSquareCard({
   tagTone,
   meta,
   className,
+  imagePriority,
 }: EventSquareCardProps) {
   return (
     <Link
@@ -122,6 +124,8 @@ export function EventSquareCard({
             className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
             placeholder="blur"
             blurDataURL={defaultBlurDataURL}
+            priority={imagePriority}
+            fetchPriority={imagePriority ? "high" : "auto"}
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/20 to-black/60" />
           <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/80 via-black/35 to-transparent" />
