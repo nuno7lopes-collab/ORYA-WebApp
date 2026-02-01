@@ -11,6 +11,17 @@ import { getAwsConfig } from "@/lib/awsSdk";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type CostPayload = {
+  source: "cost-explorer" | "budgets";
+  currency: string;
+  total: number;
+  byService: Array<{ service: string; amount: number }>;
+  daily: Array<{ date: string; amount: number }>;
+  note?: string;
+  cached?: boolean;
+  cacheAgeSeconds?: number;
+};
+
 function fail(ctx: ReturnType<typeof getRequestContext>, status: number, errorCode: string, message = errorCode) {
   return respondError(ctx, { errorCode, message, retryable: status >= 500 }, { status });
 }
@@ -18,6 +29,11 @@ function fail(ctx: ReturnType<typeof getRequestContext>, status: number, errorCo
 function formatDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
+
+const CACHE_TTL_SECONDS = Number(process.env.INFRA_COST_CACHE_TTL_SECONDS ?? 10800);
+const REFRESH_COOLDOWN_SECONDS = Number(process.env.INFRA_COST_REFRESH_COOLDOWN_SECONDS ?? 60);
+let costCache: { data: CostPayload; fetchedAt: number } | null = null;
+let lastRefreshAt = 0;
 
 async function getAccountId() {
   const sts = new STSClient(getAwsConfig());
@@ -41,7 +57,8 @@ async function fetchBudgetFallback() {
     byService: [],
     daily: [],
     note: "Cost Explorer indisponível; fallback para Budget.",
-  };
+    cached: false,
+  } satisfies CostPayload;
 }
 
 export async function GET(req: NextRequest) {
@@ -49,6 +66,18 @@ export async function GET(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
+
+    const now = Date.now();
+    const refresh = req.nextUrl.searchParams.get("refresh") === "1";
+    if (refresh) {
+      if (now - lastRefreshAt < REFRESH_COOLDOWN_SECONDS * 1000) {
+        return fail(ctx, 429, "RATE_LIMIT", "Aguarda antes de atualizar novamente.");
+      }
+      lastRefreshAt = now;
+    } else if (costCache && now - costCache.fetchedAt < CACHE_TTL_SECONDS * 1000) {
+      const cachedAge = Math.max(0, Math.round((now - costCache.fetchedAt) / 1000));
+      return respondOk(ctx, { ...costCache.data, cached: true, cacheAgeSeconds: cachedAge });
+    }
 
     const today = new Date();
     const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
@@ -84,10 +113,12 @@ export async function GET(req: NextRequest) {
         .sort((a, b) => b.amount - a.amount);
 
       const total = byService.reduce((sum, row) => sum + row.amount, 0);
-
-      return respondOk(ctx, { source: "cost-explorer", currency, total, byService, daily });
+      const payload: CostPayload = { source: "cost-explorer", currency, total, byService, daily, cached: false };
+      costCache = { data: payload, fetchedAt: now };
+      return respondOk(ctx, payload);
     } catch (ceErr) {
       const fallback = await fetchBudgetFallback();
+      costCache = { data: fallback, fetchedAt: now };
       return respondOk(ctx, fallback);
     }
   } catch (err) {

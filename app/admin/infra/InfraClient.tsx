@@ -30,6 +30,8 @@ type InfraCostSummary = {
   byService?: Array<{ service: string; amount: number }>;
   daily?: Array<{ date: string; amount: number }>;
   note?: string;
+  cached?: boolean;
+  cacheAgeSeconds?: number;
 };
 
 type InfraUsageSummary = {
@@ -177,10 +179,11 @@ export default function InfraClient({
 
   const outputs = useMemo(() => status.data?.outputs ?? {}, [status.data]);
 
-  const loadCost = useCallback(async () => {
+  const loadCost = useCallback(async (force = false) => {
     setCost((prev) => ({ ...prev, loading: true, error: undefined }));
     try {
-      const res = await fetch("/api/admin/infra/cost/summary", { cache: "no-store" });
+      const url = force ? "/api/admin/infra/cost/summary?refresh=1" : "/api/admin/infra/cost/summary";
+      const res = await fetch(url, { cache: "no-store" });
       const json = (await res.json().catch(() => null)) as ApiEnvelope<InfraCostSummary> | null;
       if (!json) throw new Error("Resposta inválida");
       if (!json.ok) {
@@ -459,9 +462,9 @@ export default function InfraClient({
             </div>
             <button
               className="rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10"
-              onClick={loadCost}
+              onClick={() => loadCost(true)}
             >
-              Atualizar
+              Atualizar agora
             </button>
           </div>
           {cost.loading && <p className="text-xs text-white/60">A carregar…</p>}
@@ -474,6 +477,11 @@ export default function InfraClient({
                 {cost.data.source ? (
                   <span className="ml-2 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-white/60">
                     {cost.data.source}
+                  </span>
+                ) : null}
+                {cost.data.cached ? (
+                  <span className="ml-2 rounded-md border border-emerald-400/40 px-2 py-0.5 text-[10px] text-emerald-200/80">
+                    cached{typeof cost.data.cacheAgeSeconds === "number" ? ` • ${cost.data.cacheAgeSeconds}s` : ""}
                   </span>
                 ) : null}
               </p>
