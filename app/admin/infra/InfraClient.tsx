@@ -99,6 +99,7 @@ export default function InfraClient({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [recoveryDownloaded, setRecoveryDownloaded] = useState(false);
   const [mfaNotice, setMfaNotice] = useState<string | null>(null);
+  const [mfaNoticeKind, setMfaNoticeKind] = useState<"success" | "error" | null>(null);
   const [mfaCode, setMfaCode] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const didInitialLoad = useRef(false);
@@ -245,6 +246,7 @@ export default function InfraClient({
     setQrDataUrl(null);
     setRecoveryDownloaded(false);
     setMfaNotice(null);
+    setMfaNoticeKind(null);
     setMfaStatus((prev) => ({ ...prev, loading: true, error: undefined }));
     try {
       const res = await fetch("/api/admin/mfa/enroll", { method: "POST" });
@@ -257,6 +259,7 @@ export default function InfraClient({
       setMfaEnroll(json.data);
       setMfaStatus((prev) => ({ ...prev, loading: false }));
       setMfaNotice("QR gerado. Valida o código para ativar.");
+      setMfaNoticeKind("success");
     } catch (err: any) {
       setMfaStatus({ loading: false, error: err?.message ?? "Erro ao iniciar 2FA", data: null });
     }
@@ -265,6 +268,7 @@ export default function InfraClient({
   const verifyMfa = useCallback(async () => {
     setMfaStatus((prev) => ({ ...prev, loading: true, error: undefined }));
     setMfaNotice(null);
+    setMfaNoticeKind(null);
     try {
       const res = await fetch("/api/admin/mfa/verify", {
         method: "POST",
@@ -275,6 +279,8 @@ export default function InfraClient({
       if (!json) throw new Error("Resposta inválida");
       if (!json.ok) {
         setMfaStatus({ loading: false, error: json.message ?? json.errorCode, data: null });
+        setMfaNotice(json.message ?? "Código 2FA inválido.");
+        setMfaNoticeKind("error");
         return;
       }
       setMfaCode("");
@@ -284,20 +290,26 @@ export default function InfraClient({
       setRecoveryDownloaded(false);
       await loadMfa();
       setMfaNotice("2FA validado com sucesso.");
+      setMfaNoticeKind("success");
     } catch (err: any) {
       setMfaStatus({ loading: false, error: err?.message ?? "Erro ao validar 2FA", data: null });
+      setMfaNotice(err?.message ?? "Erro ao validar 2FA");
+      setMfaNoticeKind("error");
     }
   }, [mfaCode, recoveryCode, loadMfa]);
 
   const resetMfa = useCallback(async () => {
     if (!mfaCode) {
       setMfaStatus((prev) => ({ ...prev, error: "Código 2FA obrigatório para reset." }));
+      setMfaNotice("Código 2FA obrigatório para reset.");
+      setMfaNoticeKind("error");
       return;
     }
     setMfaEnroll(null);
     setQrDataUrl(null);
     setRecoveryDownloaded(false);
     setMfaNotice(null);
+    setMfaNoticeKind(null);
     setMfaStatus((prev) => ({ ...prev, loading: true, error: undefined }));
     try {
       const res = await fetch("/api/admin/mfa/reset", {
@@ -309,6 +321,8 @@ export default function InfraClient({
       if (!json) throw new Error("Resposta inválida");
       if (!json.ok) {
         setMfaStatus({ loading: false, error: json.message ?? json.errorCode, data: null });
+        setMfaNotice(json.message ?? "Código 2FA inválido.");
+        setMfaNoticeKind("error");
         return;
       }
       setMfaEnroll(json.data);
@@ -316,8 +330,11 @@ export default function InfraClient({
       setRecoveryCode("");
       setMfaStatus((prev) => ({ ...prev, loading: false }));
       setMfaNotice("2FA resetado. Usa o novo QR e valida o código.");
+      setMfaNoticeKind("success");
     } catch (err: any) {
       setMfaStatus({ loading: false, error: err?.message ?? "Erro ao resetar 2FA", data: null });
+      setMfaNotice(err?.message ?? "Erro ao resetar 2FA");
+      setMfaNoticeKind("error");
     }
   }, [mfaCode]);
 
@@ -551,7 +568,11 @@ export default function InfraClient({
         {mfaStatus.data?.configMissing && (
           <p className="text-xs text-amber-300">ADMIN_TOTP_ENCRYPTION_KEY em falta.</p>
         )}
-        {mfaNotice && <p className="text-xs text-emerald-200/80">{mfaNotice}</p>}
+        {mfaNotice && (
+          <p className={`text-xs ${mfaNoticeKind === "error" ? "text-rose-300" : "text-emerald-200/80"}`}>
+            {mfaNotice}
+          </p>
+        )}
         {mfaStatus.data && (
           <p className="text-xs text-white/80">
             Estado: <span className="font-semibold">{mfaStatus.data.enabled ? "ATIVO" : "INATIVO"}</span>{" "}
