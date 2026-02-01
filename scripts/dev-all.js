@@ -1,5 +1,6 @@
 // Run the local dev server plus all cron loops in one command.
 const { spawn, execSync } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const repoRoot = path.resolve(__dirname, "..");
@@ -28,6 +29,39 @@ loadEnv();
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const stripeCmd = process.platform === "win32" ? "stripe.exe" : "stripe";
 const redisCmd = process.platform === "win32" ? "redis-server.exe" : "redis-server";
+
+function hashFile(filePath) {
+  const content = fs.readFileSync(filePath);
+  return crypto.createHash("sha256").update(content).digest("hex");
+}
+
+function ensureNodeModules() {
+  if (process.env.DEV_ALL_SKIP_INSTALL === "1") return;
+  const lockPath = path.join(repoRoot, "package-lock.json");
+  if (!fs.existsSync(lockPath)) return;
+
+  const nodeModulesPath = path.join(repoRoot, "node_modules");
+  const cacheDir = path.join(repoRoot, ".cache");
+  const cacheFile = path.join(cacheDir, "dev-all-lock.hash");
+
+  const lockHash = hashFile(lockPath);
+  const cached = fs.existsSync(cacheFile) ? fs.readFileSync(cacheFile, "utf8").trim() : "";
+  const needsInstall = !fs.existsSync(nodeModulesPath) || cached !== lockHash;
+
+  if (!needsInstall) return;
+
+  console.log("[dev-all] Installing dependencies (npm ci)...");
+  try {
+    execSync(`${npmCmd} ci --no-audit --no-fund`, { stdio: "inherit", cwd: repoRoot });
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(cacheFile, lockHash);
+    console.log("[dev-all] Dependencies updated.");
+  } catch (err) {
+    console.log("[dev-all] npm ci failed. You can re-run with DEV_ALL_SKIP_INSTALL=1 to bypass.");
+  }
+}
+
+ensureNodeModules();
 
 function parseBool(value, fallback) {
   if (value === undefined) return fallback;
