@@ -2,11 +2,13 @@
 
 import { Suspense, type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import OrganizationTopBar from "@/app/organizacao/OrganizationTopBar";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
+import OrganizationLinkInterceptor from "@/app/organizacao/OrganizationLinkInterceptor";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export type OrganizationShellOrgOption = {
   organizationId: number;
@@ -97,6 +99,7 @@ export default function OrganizationDashboardShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isSettingsRoute =
     pathname?.startsWith("/organizacao/settings") || pathname?.startsWith("/organizacao/owner/confirm");
   const isChatRoute = pathname?.startsWith("/organizacao/chat");
@@ -150,6 +153,17 @@ export default function OrganizationDashboardShell({
     };
   }, [emailGateActive, isSettingsRoute, router]);
 
+  useEffect(() => {
+    if (!activeOrg?.id) return;
+    const currentParams = new URLSearchParams(searchParams?.toString());
+    const existing = currentParams.get("organizationId");
+    if (existing) return;
+    currentParams.set("organizationId", String(activeOrg.id));
+    const query = currentParams.toString();
+    const target = query ? `${pathname}?${query}` : pathname;
+    router.replace(target);
+  }, [activeOrg?.id, pathname, router, searchParams]);
+
   const handleResendVerification = async () => {
     if (!activeOrg?.id) {
       setEmailGateToast({ tone: "error", message: "Seleciona uma organização primeiro." });
@@ -191,9 +205,11 @@ export default function OrganizationDashboardShell({
       setEmailResending(false);
     }
   };
+  const settingsHref = appendOrganizationIdToHref("/organizacao/settings", activeOrg?.id ?? null);
 
   return (
     <div className="flex min-h-screen w-full min-w-0 flex-col text-white">
+      <OrganizationLinkInterceptor organizationId={activeOrg?.id ?? null} />
       <OrganizationTopBar activeOrg={activeOrg} orgOptions={orgOptions} user={user} role={role} />
       {emailGateToast ? (
         <div
@@ -259,7 +275,7 @@ export default function OrganizationDashboardShell({
               )}
               <div className="mt-5 flex flex-wrap items-center gap-3">
                 <Link
-                  href="/organizacao/settings"
+                  href={settingsHref}
                   className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-200/15 px-4 py-2 text-[12px] font-semibold text-amber-50 shadow-[0_10px_26px_rgba(245,158,11,0.25)] hover:bg-amber-200/25"
                 >
                   Ir para definições

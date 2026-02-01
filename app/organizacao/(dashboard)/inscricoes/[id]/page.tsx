@@ -6,6 +6,7 @@ import { getPublicBaseUrl } from "@/lib/publicBaseUrl";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "NUMBER" | "DATE" | "SELECT" | "CHECKBOX";
 
@@ -116,6 +117,7 @@ export default function InscricaoDetailPage() {
   const formId = params?.id ?? "";
   const router = useRouter();
   const searchParams = useSearchParams();
+  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
   const tabParamRaw = searchParams?.get("tab") ?? "construcao";
   const normalizedTab = tabParamRaw === "editar" ? "construcao" : tabParamRaw;
   const activeTab =
@@ -580,7 +582,7 @@ export default function InscricaoDetailPage() {
         setDeleting(false);
         return;
       }
-      router.push("/organizacao/inscricoes");
+      router.push(appendOrganizationIdToHref("/organizacao/inscricoes", organizationId));
       router.refresh();
     } catch (err) {
       console.error("[inscricoes][delete] erro", err);

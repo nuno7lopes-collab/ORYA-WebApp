@@ -8,11 +8,8 @@ import {
   formatPriceLabel,
   getDiscoverData,
 } from "@/app/descobrir/_lib/discoverData";
-import {
-  EventListCard,
-  EventSquareCard,
-  InvitePeopleCard,
-} from "@/app/components/mobile/MobileCards";
+import { EventListCard, EventSquareCard } from "@/app/components/mobile/MobileCards.server";
+import InvitePeopleCard from "@/app/components/mobile/InvitePeopleCard";
 import { getEventCoverUrl } from "@/lib/eventCover";
 
 export const runtime = "nodejs";
@@ -158,8 +155,8 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                   {primaryEvents.map((event, index) => {
                     const cover = getEventCoverUrl(event.coverImageUrl, {
                       seed: event.slug ?? event.id,
-                      width: 900,
-                      quality: 70,
+                      width: 720,
+                      quality: 65,
                       format: "webp",
                       square: true,
                     });
@@ -209,8 +206,8 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                   {secondaryEvents.map((event) => {
                     const cover = getEventCoverUrl(event.coverImageUrl, {
                       seed: event.slug ?? event.id,
-                      width: 600,
-                      quality: 70,
+                      width: 520,
+                      quality: 65,
                       format: "webp",
                       square: true,
                     });

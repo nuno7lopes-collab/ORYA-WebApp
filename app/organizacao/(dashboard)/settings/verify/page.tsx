@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type State = "idle" | "loading" | "ok" | "error";
 
@@ -11,6 +12,7 @@ export default function VerifyOfficialEmailPage() {
   const search = useSearchParams();
   const router = useRouter();
   const token = search?.get("token");
+  const organizationId = parseOrganizationId(search?.get("organizationId"));
   const [state, setState] = useState<State>("idle");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -38,7 +40,7 @@ export default function VerifyOfficialEmailPage() {
         setMessage("Email oficial confirmado.");
         setTimeout(() => {
           router.refresh();
-          router.push("/organizacao");
+          router.push(appendOrganizationIdToHref("/organizacao", organizationId));
         }, 1200);
       } catch (err) {
         setState("error");
@@ -60,7 +62,7 @@ export default function VerifyOfficialEmailPage() {
         {state === "error" && <p className="text-amber-300">{message || "Token inválido ou expirado."}</p>}
         <div className="flex justify-center">
           <button
-            onClick={() => router.push("/organizacao/settings")}
+            onClick={() => router.push(appendOrganizationIdToHref("/organizacao/settings", organizationId))}
             className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:border-white/35"
           >
             Voltar a definições

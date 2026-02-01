@@ -110,27 +110,30 @@ function expandCompositeWhere(where: unknown): Record<string, unknown> | null {
   const next: Record<string, unknown> = {};
   let changed = false;
 
+  const expandNode = (node: unknown) => {
+    if (!node || typeof node !== "object") return node;
+    if (Array.isArray(node)) {
+      return node.map((item) => expandCompositeWhere(item) ?? item);
+    }
+    return expandCompositeWhere(node) ?? node;
+  };
+
   for (const [key, value] of Object.entries(record)) {
     if (key === "AND" || key === "OR" || key === "NOT") {
-      next[key] = value;
+      next[key] = expandNode(value);
+      if (next[key] !== value) changed = true;
       continue;
     }
 
     const isCompositeCandidate = key.includes("_");
     if (isCompositeCandidate && value && typeof value === "object" && !Array.isArray(value)) {
-      const entries = Object.entries(value as Record<string, unknown>);
+      const valueRecord = value as Record<string, unknown>;
       const expectedKeys = key.split("_");
-      const matchesComposite =
-        entries.length > 0 &&
-        entries.every(([entryKey, entryValue]) => {
-          const type = typeof entryValue;
-          const primitive = entryValue === null || type === "string" || type === "number" || type === "boolean";
-          return primitive && expectedKeys.includes(entryKey);
-        });
-      if (matchesComposite) {
-        for (const [entryKey, entryValue] of entries) {
+      const hasAllKeys = expectedKeys.every((entryKey) => entryKey in valueRecord);
+      if (hasAllKeys) {
+        for (const entryKey of expectedKeys) {
           if (!(entryKey in next)) {
-            next[entryKey] = entryValue;
+            next[entryKey] = valueRecord[entryKey];
           }
         }
         changed = true;
@@ -138,7 +141,8 @@ function expandCompositeWhere(where: unknown): Record<string, unknown> | null {
       }
     }
 
-    next[key] = value;
+    next[key] = expandNode(value);
+    if (next[key] !== value) changed = true;
   }
 
   return changed ? next : record;

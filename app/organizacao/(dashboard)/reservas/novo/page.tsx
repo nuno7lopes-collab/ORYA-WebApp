@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 import {
   CTA_PRIMARY,
   CTA_SECONDARY,
@@ -19,6 +20,8 @@ const DURATION_OPTIONS = [30, 60, 90, 120];
 
 export default function NovoServicoPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [unitPrice, setUnitPrice] = useState("20");
@@ -66,7 +69,8 @@ export default function NovoServicoPage() {
         throw new Error(json?.message || json?.error || "Erro ao criar serviço.");
       }
 
-      router.push(`/organizacao/reservas/${json.service.id}`);
+      const detailHref = appendOrganizationIdToHref(`/organizacao/reservas/${json.service.id}`, organizationId);
+      router.push(detailHref);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar serviço.");
     } finally {
@@ -143,7 +147,11 @@ export default function NovoServicoPage() {
           <button type="button" className={CTA_PRIMARY} onClick={handleSubmit} disabled={saving || !title.trim()}>
             {saving ? "A criar..." : "Criar serviço"}
           </button>
-          <button type="button" className={CTA_SECONDARY} onClick={() => router.push("/organizacao/reservas")}>
+          <button
+            type="button"
+            className={CTA_SECONDARY}
+            onClick={() => router.push(appendOrganizationIdToHref("/organizacao/reservas", organizationId))}
+          >
             Cancelar
           </button>
         </div>

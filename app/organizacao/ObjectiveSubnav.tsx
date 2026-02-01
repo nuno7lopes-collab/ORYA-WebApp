@@ -6,7 +6,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { parseOrganizationId } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 import {
   CORE_ORGANIZATION_MODULES,
   OPERATION_MODULES,
@@ -128,14 +128,22 @@ export default function ObjectiveSubnav({
     inscricoesBasePath,
     operationOverride,
   });
+  const scopedSections = sections.map((section) => ({
+    ...section,
+    href: appendOrganizationIdToHref(section.href, organizationId),
+    items: section.items?.map((item) => ({
+      ...item,
+      href: appendOrganizationIdToHref(item.href, organizationId),
+    })),
+  }));
   const active =
     activeId &&
-    sections.some((section) =>
+    scopedSections.some((section) =>
       section.id === activeId || section.items?.some((item) => item.id === activeId),
     )
       ? activeId
       : "overview";
-  const shouldHideNav = hideWhenSingle && sections.length <= 1;
+  const shouldHideNav = hideWhenSingle && scopedSections.length <= 1;
 
   const isTopbar = variant === "topbar";
   const tabsWrapperClass = cn(
@@ -212,7 +220,7 @@ export default function ObjectiveSubnav({
 
   const tabs = (
     <div className={tabsWrapperClass}>
-      {sections.map((section) => {
+      {scopedSections.map((section) => {
         const isGrouped = Array.isArray(section.items) && section.items.length > 1;
         const isActive =
           section.id === active ||
@@ -391,7 +399,7 @@ export default function ObjectiveSubnav({
     dragState.current.hasDragged = false;
   };
 
-  const openSection = isTopbar ? sections.find((section) => section.id === openDropdownId) ?? null : null;
+  const openSection = isTopbar ? scopedSections.find((section) => section.id === openDropdownId) ?? null : null;
 
   if (variant === "topbar") {
     return (
@@ -485,7 +493,7 @@ export default function ObjectiveSubnav({
         <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
           Objetivo · {OBJECTIVE_LABELS[objective]}
         </div>
-        <div className="text-[11px] text-white/60">{sections.length} secções</div>
+        <div className="text-[11px] text-white/60">{scopedSections.length} secções</div>
       </div>
       <div className="mt-3">{tabs}</div>
     </div>

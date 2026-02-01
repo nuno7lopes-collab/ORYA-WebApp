@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
 import {
@@ -82,6 +83,8 @@ function formatMoney(cents: number, currency: string) {
 export default function ServicoDetalhePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
   const idRaw = params?.id;
   const serviceId = useMemo(() => {
     const value = Array.isArray(idRaw) ? idRaw[0] : idRaw;
@@ -539,7 +542,11 @@ export default function ServicoDetalhePage() {
           <button type="button" className={CTA_PRIMARY} onClick={handleServiceSave} disabled={serviceSaving}>
             {serviceSaving ? "A guardar..." : "Guardar alterações"}
           </button>
-          <button type="button" className={CTA_SECONDARY} onClick={() => router.push("/organizacao/reservas")}>
+          <button
+            type="button"
+            className={CTA_SECONDARY}
+            onClick={() => router.push(appendOrganizationIdToHref("/organizacao/reservas", organizationId))}
+          >
             Voltar
           </button>
         </div>
@@ -648,7 +655,9 @@ export default function ServicoDetalhePage() {
         <button
           type="button"
           className={CTA_SECONDARY}
-          onClick={() => router.push("/organizacao/reservas?tab=availability")}
+          onClick={() =>
+            router.push(appendOrganizationIdToHref("/organizacao/reservas?tab=availability", organizationId))
+          }
         >
           Abrir agenda
         </button>

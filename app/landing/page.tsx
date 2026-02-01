@@ -15,6 +15,7 @@ export default function LandingPage() {
             width={360}
             height={360}
             priority
+            fetchPriority="high"
             sizes="(max-width: 768px) 60vw, 360px"
             className="landing-logo"
           />

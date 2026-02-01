@@ -1,12 +1,13 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { computeLiveWarnings } from "@/domain/tournaments/liveWarnings";
 import { Avatar } from "@/components/ui/avatar";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type PageProps = { params: Promise<{ id: string }> };
 type TournamentLiveManagerProps = { tournamentId: number };
@@ -39,6 +40,8 @@ type UserResult = {
 
 export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
   const isValidTournamentId = Number.isFinite(tournamentId);
   const [authError, setAuthError] = useState<string | null>(null);
   const [slots, setSlots] = useState<Array<Participant | null>>([]);
@@ -66,8 +69,10 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
 
   useEffect(() => {
     if (authError === "login") router.replace("/login");
-    if (authError === "organização") router.replace("/organizacao");
-  }, [authError, router]);
+    if (authError === "organização") {
+      router.replace(appendOrganizationIdToHref("/organizacao", organizationId));
+    }
+  }, [authError, organizationId, router]);
 
   const { data, error } = useSWR(
     isValidTournamentId ? `/api/organizacao/tournaments/${tournamentId}/live` : null,

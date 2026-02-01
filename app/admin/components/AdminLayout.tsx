@@ -70,6 +70,12 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
   const [hydratedPathname, setHydratedPathname] = useState<string | null>(null);
   const { profile, user } = useUser();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mfaGate, setMfaGate] = useState<{
+    loading: boolean;
+    required: boolean;
+    verified: boolean;
+    reason?: string | null;
+  }>({ loading: true, required: false, verified: true, reason: null });
   const adminName = profile?.fullName || profile?.username || user?.email || "Admin ORYA";
   const adminEmail = user?.email || null;
   const avatarUrl = profile?.avatarUrl ?? null;
@@ -78,8 +84,51 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
     setHydratedPathname(pathname ?? null);
   }, [pathname]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const host = window.location.host.split(":")[0]?.toLowerCase();
+    if (host !== "admin.orya.pt") {
+      setMfaGate({ loading: false, required: false, verified: true, reason: null });
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/admin/mfa/session", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (json?.ok) {
+          setMfaGate({
+            loading: false,
+            required: Boolean(json.data?.required),
+            verified: Boolean(json.data?.verified),
+            reason: json.data?.reason ?? null,
+          });
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      if (!cancelled) {
+        setMfaGate({ loading: false, required: false, verified: true, reason: null });
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
   const navItems = useMemo(() => navGroups.flatMap((group) => group.items), []);
   const activePath = hydratedPathname ?? "";
+  const mfaBlocking = mfaGate.required && !mfaGate.verified;
+
+  useEffect(() => {
+    if (!mfaBlocking) return;
+    if (activePath === "/admin/infra") return;
+    if (typeof window === "undefined") return;
+    window.location.href = "/admin/infra?mfa=required";
+  }, [mfaBlocking, activePath]);
 
   const handleLogout = useCallback(async () => {
     if (loggingOut) return;
@@ -188,6 +237,12 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
           {subtitle && <p className="text-[11px] text-white/55">{subtitle}</p>}
         </div>
       </header>
+
+      {mfaBlocking && activePath === "/admin/infra" && (
+        <div className="relative z-20 border-b border-amber-400/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+          2FA obrigatório para aceder ao admin em produção. Finaliza a verificação abaixo para continuar.
+        </div>
+      )}
 
       <main className="relative z-10 w-full px-1 pb-14 pt-6 md:px-2">
         <div className="relative isolate overflow-hidden">{children}</div>

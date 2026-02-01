@@ -1,17 +1,22 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { getEventLocationDisplay } from "@/lib/location/eventLocation";
+import { getEventCoverUrl } from "@/lib/eventCover";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { defaultBlurDataURL } from "@/lib/image";
+
+export const dynamic = "force-dynamic";
 
 type EventCard = {
   id: number;
   slug: string;
   title: string;
   description: string | null;
-  startsAt: string;
-  endsAt: string | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
   locationName: string | null;
   locationCity: string | null;
   address: string | null;
@@ -23,73 +28,118 @@ type EventCard = {
   longitude: number | null;
   isGratis: boolean;
   priceFrom: number | null;
+  coverImageUrl: string | null;
 };
 
-export default function EventosFeedPage() {
-  const [events, setEvents] = useState<EventCard[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type PageProps = {
+  searchParams?: { q?: string } | Promise<{ q?: string }>;
+};
 
-  const [search, setSearch] = useState("");
+function formatDate(date?: Date | null) {
+  if (!date) return "Data a anunciar";
+  return date.toLocaleString("pt-PT", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-  useEffect(() => {
-    fetchEvents();
-  }, []);
+async function loadEvents(query?: string): Promise<EventCard[]> {
+  const filters: Prisma.EventWhereInput[] = [
+    { status: { in: ["PUBLISHED", "DATE_CHANGED"] } },
+    { isDeleted: false },
+    { organizationId: { not: null } },
+    { organization: { status: "ACTIVE" } },
+  ];
 
-  async function fetchEvents() {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const params = new URLSearchParams();
-      if (search.trim()) params.set("q", search.trim());
-
-      const res = await fetch(`/api/eventos/list?${params.toString()}`);
-      if (!res.ok) {
-        throw new Error("Falha ao carregar eventos");
-      }
-
-      const data = await res.json();
-      const items: EventCard[] = Array.isArray(data.events)
-        ? data.events.map((ev: any) => ({
-            id: ev.id,
-            slug: ev.slug,
-            title: ev.title,
-            description: ev.shortDescription ?? ev.description ?? null,
-            startsAt: ev.startDate ?? ev.startsAt ?? "",
-            endsAt: ev.endDate ?? null,
-            locationName: ev.venue?.name ?? ev.locationName ?? null,
-            locationCity: ev.venue?.city ?? ev.locationCity ?? null,
-            address: ev.venue?.address ?? null,
-            locationFormattedAddress: ev.venue?.formattedAddress ?? null,
-            locationSource: ev.venue?.source ?? null,
-            locationComponents: ev.venue?.components ?? null,
-            locationOverrides: ev.venue?.overrides ?? null,
-            latitude: ev.venue?.lat ?? null,
-            longitude: ev.venue?.lng ?? null,
-            isGratis: Boolean(ev.isGratis),
-            priceFrom: ev.priceFrom ?? null,
-          }))
-        : [];
-      setEvents(items);
-    } catch (err: unknown) {
-      console.error(err);
-      const message =
-        err instanceof Error ? err.message : "Erro ao carregar eventos.";
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
+  if (query && query.trim().length > 0) {
+    const q = query.trim();
+    filters.push({
+      OR: [
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { locationName: { contains: q, mode: "insensitive" } },
+        { locationCity: { contains: q, mode: "insensitive" } },
+        { locationFormattedAddress: { contains: q, mode: "insensitive" } },
+        { address: { contains: q, mode: "insensitive" } },
+      ],
+    });
   }
 
-  function handleSearchSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    fetchEvents();
-  }
+  const events = await prisma.event.findMany({
+    where: { AND: filters },
+    orderBy: { startsAt: "asc" },
+    take: 12,
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      description: true,
+      startsAt: true,
+      endsAt: true,
+      locationName: true,
+      locationCity: true,
+      address: true,
+      locationFormattedAddress: true,
+      locationSource: true,
+      locationComponents: true,
+      locationOverrides: true,
+      latitude: true,
+      longitude: true,
+      coverImageUrl: true,
+      pricingMode: true,
+      ticketTypes: {
+        select: { price: true },
+      },
+    },
+  });
+
+  return events.map((ev) => {
+    const ticketPrices = ev.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+    const priceFrom = ticketPrices.length > 0 ? Math.min(...ticketPrices) / 100 : null;
+    const isGratis = deriveIsFreeEvent({
+      pricingMode: ev.pricingMode ?? undefined,
+      ticketPrices,
+    });
+
+    return {
+      id: ev.id,
+      slug: ev.slug,
+      title: ev.title,
+      description: ev.description?.slice(0, 160) ?? null,
+      startsAt: ev.startsAt ?? null,
+      endsAt: ev.endsAt ?? null,
+      locationName: ev.locationName ?? null,
+      locationCity: ev.locationCity ?? null,
+      address: ev.address ?? null,
+      locationFormattedAddress: ev.locationFormattedAddress ?? null,
+      locationSource: ev.locationSource ?? null,
+      locationComponents:
+        ev.locationComponents && typeof ev.locationComponents === "object"
+          ? (ev.locationComponents as Record<string, unknown>)
+          : null,
+      locationOverrides:
+        ev.locationOverrides && typeof ev.locationOverrides === "object"
+          ? (ev.locationOverrides as Record<string, unknown>)
+          : null,
+      latitude: ev.latitude ?? null,
+      longitude: ev.longitude ?? null,
+      isGratis,
+      priceFrom,
+      coverImageUrl: ev.coverImageUrl ?? null,
+    };
+  });
+}
+
+export default async function EventosFeedPage({ searchParams }: PageProps) {
+  const resolved = (await searchParams) ?? {};
+  const search = resolved.q?.trim() ?? "";
+  const events = await loadEvents(search);
 
   return (
     <main className="min-h-screen w-full text-white">
-      {/* Top bar */}
       <header className="border-b border-white/10 bg-black/30 backdrop-blur-xl">
         <div className="orya-page-width px-6 md:px-10 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -101,8 +151,7 @@ export default function EventosFeedPage() {
                 Explorar eventos
               </p>
               <p className="text-sm text-white/80">
-                Descobre o que está a acontecer perto de ti (e onde devias
-                estar).
+                Descobre o que está a acontecer perto de ti (e onde devias estar).
               </p>
             </div>
           </div>
@@ -117,19 +166,15 @@ export default function EventosFeedPage() {
       </header>
 
       <section className="orya-page-width px-6 md:px-10 py-8 md:py-10 space-y-6">
-        {/* Search */}
         <div className="space-y-4">
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex flex-col md:flex-row gap-3 md:items-center"
-          >
+          <form className="flex flex-col md:flex-row gap-3 md:items-center" method="get" action="/eventos">
             <div className="relative flex-1">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-white/40">
                 🔍
               </span>
               <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                name="q"
+                defaultValue={search}
                 placeholder="Pesquisar por evento, local ou vibe..."
                 className="w-full rounded-full bg-black/60 border border-white/15 pl-8 pr-24 py-2 text-xs outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/60 transition"
               />
@@ -143,29 +188,13 @@ export default function EventosFeedPage() {
           </form>
         </div>
 
-        {/* Estado de loading / erro */}
-        {error && (
-          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-100">
-            {error}
-          </div>
-        )}
-
-        {/* Grid de eventos */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-          {loading && !events.length ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-square w-full rounded-2xl border border-white/10 orya-skeleton-surface animate-pulse"
-              />
-            ))
-          ) : events.length === 0 ? (
+          {events.length === 0 ? (
             <p className="text-sm text-white/60 col-span-full">
-              Ainda não há eventos. Tenta ajustar a pesquisa ou criar o primeiro
-              evento.
+              Ainda não há eventos. Tenta ajustar a pesquisa ou criar o primeiro evento.
             </p>
           ) : (
-            events.map((ev) => {
+            events.map((ev, index) => {
               const locationDisplay = getEventLocationDisplay(
                 {
                   locationName: ev.locationName,
@@ -180,60 +209,79 @@ export default function EventosFeedPage() {
                 },
                 "Local a definir",
               );
+              const cover = ev.coverImageUrl
+                ? getEventCoverUrl(ev.coverImageUrl, {
+                    seed: ev.slug ?? ev.id,
+                    width: 900,
+                    quality: 70,
+                    format: "webp",
+                    square: true,
+                  })
+                : null;
               return (
                 <Link
                   key={ev.id}
                   href={`/eventos/${ev.slug}`}
                   className="group w-full rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-black/70 to-black/90 overflow-hidden shadow-[0_18px_40px_rgba(0,0,0,0.7)] hover:border-[#6BFFFF]/60 hover:shadow-[0_0_40px_rgba(107,255,255,0.35)] transition"
                 >
-                <div className="relative aspect-square overflow-hidden">
-                  <div className="h-full w-full bg-[radial-gradient(circle_at_top,_#FF00C8_0,_#02020a_65%)] flex items-center justify-center text-xs text-white/60">
-                    ORYA • Evento
-                  </div>
-                  {ev.isGratis && (
-                    <span className="absolute bottom-2 left-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-semibold text-[#6BFFFF] border border-[#6BFFFF]/40">
-                      Evento gratuito
-                    </span>
-                  )}
-                </div>
-
-                <div className="p-3.5 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-white/60">
-                      {formatDate(ev.startsAt)}
-                    </p>
-                    {ev.priceFrom !== null && !ev.isGratis && (
-                      <p className="text-[11px] text-white">
-                        desde{" "}
-                        <span className="font-semibold">
-                          {ev.priceFrom} €{" "}
-                        </span>
-                      </p>
+                  <div className="relative aspect-square overflow-hidden">
+                    {cover ? (
+                      <Image
+                        src={cover}
+                        alt={ev.title}
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                        className="object-cover"
+                        placeholder="blur"
+                        blurDataURL={defaultBlurDataURL}
+                        priority={index < 2}
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-[radial-gradient(circle_at_top,_#FF00C8_0,_#02020a_65%)] flex items-center justify-center text-xs text-white/60">
+                        ORYA • Evento
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/25 to-black/70" />
+                    {ev.isGratis && (
+                      <span className="absolute bottom-2 left-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-semibold text-[#6BFFFF] border border-[#6BFFFF]/40">
+                        Evento gratuito
+                      </span>
                     )}
                   </div>
 
-                  <h2 className="text-sm font-semibold line-clamp-2">
-                    {ev.title}
-                  </h2>
-
-                  <p className="text-[11px] text-white/60 line-clamp-2">
-                    {ev.description || "Sem descrição adicionada."}
-                  </p>
-
-                  <div className="flex items-center justify-between gap-2 mt-2">
-                    <div className="flex flex-col gap-0.5">
-                      <p className="text-[11px] text-white/70 line-clamp-1">
-                        {locationDisplay.primary}
+                  <div className="p-3.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-white/60">
+                        {formatDate(ev.startsAt)}
                       </p>
-                      {locationDisplay.secondary && (
-                        <p className="text-[10px] text-white/40 line-clamp-1">
-                          {locationDisplay.secondary}
+                      {ev.priceFrom !== null && !ev.isGratis && (
+                        <p className="text-[11px] text-white">
+                          desde{" "}
+                          <span className="font-semibold">{ev.priceFrom} € </span>
                         </p>
                       )}
                     </div>
+
+                    <h2 className="text-sm font-semibold line-clamp-2">{ev.title}</h2>
+
+                    <p className="text-[11px] text-white/60 line-clamp-2">
+                      {ev.description || "Sem descrição adicionada."}
+                    </p>
+
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                      <div className="flex flex-col gap-0.5">
+                        <p className="text-[11px] text-white/70 line-clamp-1">
+                          {locationDisplay.primary}
+                        </p>
+                        {locationDisplay.secondary && (
+                          <p className="text-[10px] text-white/40 line-clamp-1">
+                            {locationDisplay.secondary}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
               );
             })
           )}
@@ -241,16 +289,4 @@ export default function EventosFeedPage() {
       </section>
     </main>
   );
-}
-
-// Helpers
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleString("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

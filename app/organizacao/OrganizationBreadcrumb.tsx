@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 const SECTION_LABELS: Record<string, string> = {
   overview: "Visão geral",
@@ -135,6 +136,8 @@ export function OrganizationBreadcrumb() {
   const marketingParamRaw = searchParams?.get("marketing");
   const presetParamRaw = searchParams?.get("preset");
   const padelParamRaw = searchParams?.get("padel");
+  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
+  const dashboardHref = appendOrganizationIdToHref("/organizacao?tab=overview", organizationId);
   const label = resolveLabel(
     pathname || "",
     tabParamRaw,
@@ -146,9 +149,9 @@ export function OrganizationBreadcrumb() {
 
   return (
     <Breadcrumb className="text-base md:text-lg font-semibold text-white/80">
-      <BreadcrumbList className="gap-3">
+        <BreadcrumbList className="gap-3">
         <BreadcrumbItem className="text-white/75 hover:text-white transition">
-          <Link href="/organizacao">Dashboard</Link>
+          <Link href={dashboardHref}>Dashboard</Link>
         </BreadcrumbItem>
         <BreadcrumbSeparator className="text-white/50" />
         <BreadcrumbItem>

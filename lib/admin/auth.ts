@@ -1,16 +1,28 @@
+import type { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
+import {
+  readAdminHost,
+  readMfaSessionCookie,
+  shouldRequireAdminMfa,
+  verifyMfaSession,
+} from "@/lib/admin/mfaSession";
 
 type AdminAuthResult =
   | { ok: true; userId: string; userEmail: string | null }
   | { ok: false; status: number; error: string };
+
+type RequireAdminOptions = {
+  req?: NextRequest | Request;
+  skipMfa?: boolean;
+};
 
 const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS ?? "")
   .split(",")
   .map((id) => id.trim())
   .filter(Boolean);
 
-export async function requireAdminUser(): Promise<AdminAuthResult> {
+export async function requireAdminUser(options: RequireAdminOptions = {}): Promise<AdminAuthResult> {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -34,6 +46,17 @@ export async function requireAdminUser(): Promise<AdminAuthResult> {
 
   if (!isAdmin) {
     return { ok: false, status: 403, error: "FORBIDDEN" };
+  }
+
+  if (!options.skipMfa) {
+    const host = readAdminHost(options.req);
+    if (shouldRequireAdminMfa(host)) {
+      const token = readMfaSessionCookie(options.req);
+      const session = verifyMfaSession(token, user.id);
+      if (!session.ok) {
+        return { ok: false, status: 403, error: "MFA_REQUIRED" };
+      }
+    }
   }
 
   return { ok: true, userId: user.id, userEmail: user.email ?? null };

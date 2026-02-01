@@ -128,6 +128,9 @@ export default function OrganizationTopBar({
   const orgDisplay = activeOrg?.name ?? "Organização";
   const orgAvatar = activeOrg?.avatarUrl ?? null;
   const userLabel = user?.name || user?.email || "Utilizador";
+  const dashboardHref = activeOrg?.id
+    ? `/organizacao?tab=overview&organizationId=${activeOrg.id}`
+    : "/organizacao?tab=overview";
 
   const moduleState = useMemo(() => {
     const primary = resolvePrimaryModule(
@@ -507,7 +510,7 @@ export default function OrganizationTopBar({
         >
           <div className="flex min-w-0 items-center gap-2">
             <Link
-              href="/organizacao?tab=overview"
+              href={dashboardHref}
               className="group flex h-11 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/85 shadow-[0_12px_38px_rgba(0,0,0,0.3)] transition hover:bg-white/10"
             >
               {currentApp.moduleKey ? (

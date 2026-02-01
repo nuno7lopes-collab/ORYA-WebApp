@@ -15,7 +15,7 @@ function fail(ctx: ReturnType<typeof getRequestContext>, status: number, errorCo
 export async function GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
-    const admin = await requireAdminUser();
+    const admin = await requireAdminUser({ req, skipMfa: true });
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
     const status = await getMfaStatus(admin.userId);
     return respondOk(ctx, status);

@@ -3,7 +3,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
-import { auditInfraAction, normalizeTargetEnv, requireProdConfirmation, runScript } from "@/app/api/admin/infra/_helpers";
+import { auditInfraAction, normalizeTargetEnv, requireInfraAction, runScript } from "@/app/api/admin/infra/_helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,15 +21,21 @@ export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
-    if (process.env.INFRA_READ_ONLY !== "false") {
-      return fail(ctx, 403, "INFRA_READ_ONLY", "Infra read-only.");
-    }
-
-    const body = (await req.json().catch(() => null)) as { targetEnv?: string; confirmProd?: string } | null;
+    const body = (await req.json().catch(() => null)) as
+      | { targetEnv?: string; confirmProd?: string; mfaCode?: string; recoveryCode?: string }
+      | null;
     const targetEnv = normalizeTargetEnv(body?.targetEnv);
-    const confirmError = requireProdConfirmation(targetEnv, body?.confirmProd);
-    if (confirmError) {
-      return fail(ctx, 403, confirmError, "Confirmação PROD necessária.");
+    const guard = await requireInfraAction({
+      req,
+      ctx,
+      admin,
+      targetEnv,
+      confirmProd: body?.confirmProd,
+      mfaCode: body?.mfaCode,
+      recoveryCode: body?.recoveryCode,
+    });
+    if (!guard.ok) {
+      return fail(ctx, guard.status, guard.error, guard.message);
     }
 
     const result = await runScript(ctx, "deploy-cf.sh", ["--hard-pause"], { APP_ENV: targetEnv });

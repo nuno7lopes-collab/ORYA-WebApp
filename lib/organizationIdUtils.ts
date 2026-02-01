@@ -26,3 +26,19 @@ export function resolveOrganizationIdForUi(input: {
   if (cookie) return { organizationId: cookie, source: "cookie" };
   return { organizationId: null, source: null };
 }
+
+export function appendOrganizationIdToHref(href: string, organizationId: number | null): string {
+  if (!organizationId || !Number.isFinite(organizationId)) return href;
+  try {
+    const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(href);
+    const base = isAbsolute ? undefined : "http://local";
+    const url = new URL(href, base);
+    if (!url.pathname.startsWith("/organizacao")) return href;
+    if (url.searchParams.has("organizationId")) return href;
+    url.searchParams.set("organizationId", String(organizationId));
+    if (isAbsolute) return url.toString();
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return href;
+  }
+}

@@ -23,6 +23,7 @@ import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizati
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 
 type TicketTypeRow = {
@@ -3439,7 +3440,9 @@ export default function NewOrganizationEventPage({
                 {stripeNotReady && (
                   <button
                     type="button"
-                    onClick={() => router.push("/organizacao?tab=analyze&section=financas")}
+                    onClick={() =>
+                      router.push(appendOrganizationIdToHref("/organizacao?tab=analyze&section=financas", organizationId))
+                    }
                     className={`${CTA_PRIMARY} px-3 py-1 text-[11px]`}
                   >
                     Ligar Stripe
@@ -3448,7 +3451,7 @@ export default function NewOrganizationEventPage({
                 {needsOfficialEmailVerification && (
                   <button
                     type="button"
-                    onClick={() => router.push("/organizacao/settings")}
+                    onClick={() => router.push(appendOrganizationIdToHref("/organizacao/settings", organizationId))}
                     className={`${CTA_PRIMARY} px-3 py-1 text-[11px]`}
                   >
                     {organizationOfficialEmail ? "Verificar email oficial" : "Definir email oficial"}
@@ -5110,7 +5113,9 @@ export default function NewOrganizationEventPage({
                 title="Conclui os passos para vender"
                 message={stripeAlert}
                 actionLabel="Abrir Finanças & Payouts"
-                onAction={() => router.push("/organizacao?tab=analyze&section=financas")}
+                onAction={() =>
+                  router.push(appendOrganizationIdToHref("/organizacao?tab=analyze&section=financas", organizationId))
+                }
               />
             )}
             {validationAlert && <FormAlert variant="warning" message={validationAlert} />}

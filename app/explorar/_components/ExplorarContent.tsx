@@ -14,6 +14,7 @@ import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import MobileTopBar from "@/app/components/mobile/MobileTopBar";
 import {
   CalendarIcon,
   CategoryIcon,
@@ -225,8 +226,8 @@ const PADEL_ELIGIBILITY_OPTIONS: Array<{ value: string; label: string }> = [
 const resolveCover = (
   coverImageUrl: string | null | undefined,
   seed: string | number,
-  width = 900,
-) => getEventCoverUrl(coverImageUrl, { seed, width, quality: 72 });
+  width = 720,
+) => getEventCoverUrl(coverImageUrl, { seed, width, quality: 65, format: "webp" });
 
 function formatDateRange(start: string, end: string) {
   const startDate = new Date(start);
@@ -1420,6 +1421,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
 
   return (
     <main className={exploreMainClass}>
+      <MobileTopBar />
       <section className="orya-page-width px-6 md:px-10 py-6 md:py-8 space-y-6">
         {!hideWorldTabs && (
           <div className={exploreTabsCardClass}>
@@ -1867,8 +1869,8 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-                      {padelTournaments.map((item) => (
-                        <PadelTournamentCard key={item.id} item={item} />
+                      {padelTournaments.map((item, index) => (
+                        <PadelTournamentCard key={item.id} item={item} imagePriority={index < 2} />
                       ))}
                     </div>
                   )}
@@ -1909,13 +1911,14 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {visibleOpenPairings.map((item) => (
+                      {visibleOpenPairings.map((item, index) => (
                         <PadelOpenPairingCard
                           key={item.id}
                           item={item}
                           onJoin={() => handleJoinOpenPairing(item)}
                           isLoading={padelJoinLoadingId === item.id}
                           isAuthenticated={Boolean(user)}
+                          imagePriority={index < 2}
                         />
                       ))}
                     </div>
@@ -1927,7 +1930,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                 {[...serviceItems.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - serviceItems.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
                   (entry, idx) =>
                     entry.item ? (
-                      <ServiceCard key={`service-${entry.item.id}`} item={entry.item} />
+                      <ServiceCard key={`service-${entry.item.id}`} item={entry.item} imagePriority={idx < 2} />
                     ) : (
                       <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
                     ),
@@ -1943,6 +1946,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                         item={entry.item}
                         onLike={toggleLike}
                         liked={likedItems.includes(entry.item.id)}
+                        imagePriority={idx < 2}
                       />
                     ) : (
                       <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
@@ -1979,14 +1983,17 @@ type CardProps = {
   liked: boolean;
   onLike: (id: number) => void;
   neonClass?: string;
+  imagePriority?: boolean;
 };
 
 type ServiceCardProps = {
   item: ServiceItem;
+  imagePriority?: boolean;
 };
 
 type PadelTournamentCardProps = {
   item: PadelTournamentItem;
+  imagePriority?: boolean;
 };
 
 type PadelClubCardProps = {
@@ -1998,6 +2005,7 @@ type PadelOpenPairingCardProps = {
   onJoin: () => void;
   isLoading: boolean;
   isAuthenticated: boolean;
+  imagePriority?: boolean;
 };
 
 function PriceBadge({ item }: { item: ExploreItem }) {
@@ -2214,6 +2222,7 @@ function BaseCard({
   onLike,
   badge,
   neonClass,
+  imagePriority,
 }: CardProps & { badge: string }) {
   const router = useRouter();
   const status = statusTag(item.status);
@@ -2249,13 +2258,15 @@ function BaseCard({
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
           <Image
-            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 900)}
+            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 720)}
             alt={item.title}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
             placeholder="blur"
             blurDataURL={defaultBlurDataURL}
+            priority={imagePriority}
+            fetchPriority={imagePriority ? "high" : "auto"}
           />
         </div>
 
@@ -2357,7 +2368,7 @@ function EventCard(props: CardProps) {
   );
 }
 
-function ServiceCard({ item }: ServiceCardProps) {
+function ServiceCard({ item, imagePriority }: ServiceCardProps) {
   const organizationName = item.organization.publicName || item.organization.businessName || "Organização";
   const availabilityLabel = formatServiceAvailability(item.nextAvailability);
   const priceLabel = `${(item.unitPriceCents / 100).toFixed(2)} ${item.currency}`;
@@ -2374,13 +2385,15 @@ function ServiceCard({ item }: ServiceCardProps) {
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
           <Image
-            src={resolveCover(null, `service-${item.id}`, 900)}
+            src={resolveCover(null, `service-${item.id}`, 720)}
             alt={item.title}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
             placeholder="blur"
             blurDataURL={defaultBlurDataURL}
+            priority={imagePriority}
+            fetchPriority={imagePriority ? "high" : "auto"}
           />
         </div>
 
@@ -2422,7 +2435,7 @@ function ServiceCard({ item }: ServiceCardProps) {
   );
 }
 
-function PadelTournamentCard({ item }: PadelTournamentCardProps) {
+function PadelTournamentCard({ item, imagePriority }: PadelTournamentCardProps) {
   const dateLabel = formatPadelDate(item.startsAt, item.endsAt);
   const locationLabel = item.locationName || item.locationCity || "Local a anunciar";
   const priceLabel =
@@ -2438,13 +2451,15 @@ function PadelTournamentCard({ item }: PadelTournamentCardProps) {
       <div className="relative overflow-hidden">
         <div className="aspect-square w-full">
           <Image
-            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 900)}
+            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 720)}
             alt={item.title}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
             placeholder="blur"
             blurDataURL={defaultBlurDataURL}
+            priority={imagePriority}
+            fetchPriority={imagePriority ? "high" : "auto"}
           />
         </div>
         <div className="absolute top-2 left-2 flex items-center gap-2 rounded-2xl border border-white/16 px-3 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-lg bg-gradient-to-r from-white/10 via-white/7 to-white/5">
@@ -2565,6 +2580,7 @@ function PadelOpenPairingCard({
   onJoin,
   isLoading,
   isAuthenticated,
+  imagePriority,
 }: PadelOpenPairingCardProps) {
   const dateLabel = formatPadelDate(item.event.startsAt, item.event.startsAt);
   const locationLabel = item.event.locationName || item.event.locationCity || "Local a anunciar";
@@ -2585,6 +2601,8 @@ function PadelOpenPairingCard({
             className="object-cover"
             placeholder="blur"
             blurDataURL={defaultBlurDataURL}
+            priority={imagePriority}
+            fetchPriority={imagePriority ? "high" : "auto"}
           />
         </div>
         <div className="flex-1 space-y-1">
@@ -2628,7 +2646,7 @@ function PlaceholderCard() {
     <div className="group w-full rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
       <div className="relative aspect-square w-full overflow-hidden">
         <Image
-          src={resolveCover(null, "explorar-placeholder", 900)}
+          src={resolveCover(null, "explorar-placeholder", 720)}
           alt="Em breve na ORYA"
           fill
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"

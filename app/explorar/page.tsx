@@ -1,14 +1,11 @@
 import { Suspense } from "react";
-import MobileTopBar from "@/app/components/mobile/MobileTopBar";
+import ExplorarSkeleton from "./_components/ExplorarSkeleton";
 import { ExplorarContent } from "./_components/ExplorarContent";
 
 export default function ExplorarLandingPage() {
   return (
-    <>
-      <MobileTopBar />
-      <Suspense fallback={null}>
-        <ExplorarContent initialWorld="EVENTOS" />
-      </Suspense>
-    </>
+    <Suspense fallback={<ExplorarSkeleton initialWorld="EVENTOS" />}>
+      <ExplorarContent initialWorld="EVENTOS" />
+    </Suspense>
   );
 }
