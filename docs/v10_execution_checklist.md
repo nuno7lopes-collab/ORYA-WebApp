@@ -532,6 +532,12 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: manter pipeline e repetir em cada release.
   - Risco/Impacto: baixo (envio externo bloqueado até SES Production; inbox Google Workspace OK via MX Google).
 
+- [x] Isolamento por env (prod/test) + host test.orya.pt
+  - Estado real: DONE — APP_ENV por host, seed env=test aplicado e dados test isolados; prod sem leaks.
+  - Evidência: `reports/test_env_isolation_2026-01-31.md` (SQL proofs + counts), `scripts/seed_create_test_profile.js`, `scripts/seed_events.js`, `lib/appEnvShared.ts`, `lib/prisma.ts`.
+  - Ação exata: manter prefixos e rodar seed test após migrações.
+  - Risco/Impacto: baixo (isolamento validado).
+
 - [x] Design System e Consistência
   - Estado real: DONE — design system documentado + componentes UI reutilizáveis.
   - Evidência: `docs/UX (ORYA WebApp).md:1-120`, `components/ui/*`, `app/components/*`.

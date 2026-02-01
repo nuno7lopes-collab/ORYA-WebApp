@@ -21,18 +21,28 @@
 - Envs docs atualizados para chaves Stripe live/test.
   - `docs/envs_required.md`
 
-## Pendente / bloqueado
-- DNS Route53: criação de alias `test.orya.pt` → **BLOCKED** (AWS creds ausentes no runner).
-- Aplicar migrações em DB (incl. RLS) → **PENDING** (schema local inválido; aplicar em ambiente com schema válido).
-- Seed test no DB → **PENDING** (executar após migração: `SEED_ENV=test node scripts/seed_events.js`).
+## Execução concluída (2026-02-01)
+### DNS
+- `test.orya.pt` → ALB (mesmo target de `app.orya.pt`).
+- Evidência (curl): `HTTP/2 307` para `https://test.orya.pt` e `https://app.orya.pt` (proxy OK).
 
-## Execução recomendada (quando tiver creds)
-1) Aplicar migração SQL:
-   - `npm run db:deploy` (ou executar `prisma/migrations/20260131_env_isolation/migration.sql`).
-2) Seed test:
-   - `SEED_ENV=test SEED_USER_ID=<uuid> node scripts/seed_events.js`
-3) DNS:
-   - Route53 ALIAS `test.orya.pt` → mesmo ALB de `app.orya.pt`.
+### Seed env=test (idempotente)
+- Profile test criado/movido para env=test (user test-orya@orya.pt).
+- Organization test criada: **ORYA Demo Studio (TEST)** (env=test).
+- Eventos test criados: `test-seed-*` (6 eventos).
+
+### Provas (SQL Editor / Pooler)
+- Profile:
+  - `test-orya` env=test → id `4efe49a6-92dc-40c7-9d8d-a165128e1874`
+- Organization:
+  - `ORYA Demo Studio (TEST)` env=test → id `3`
+- Eventos (env=test, últimos 5):
+  - `Cinema Open Air`, `Yoga & Sound Bath`, `Techno Warehouse`, `ORYA Run Club`, `Sunset Rooftop Porto`
+- Contagens:
+  - `test_orgs = 1`
+  - `prod_orgs = 2`
+  - `prod_with_test_slug = 0`
 
 ## Notas
 - Limitação atual: constraints únicas ainda são globais; usar prefixos em slugs/usernames para dados de teste.
+- O acesso direto `psql` nas portas 5432/6543 estava a dar `connection refused`; pooler session (`aws-1-eu-west-1.pooler.supabase.com:5432`) funcionou.
