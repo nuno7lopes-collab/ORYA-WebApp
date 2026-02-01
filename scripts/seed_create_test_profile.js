@@ -90,13 +90,12 @@ async function resolveOrCreateUser() {
   if (!source) throw new Error(`Não encontrei profile source em prod: username=${sourceUsername}`);
 
   const existsByUsername = await prisma.profile.findFirst({
-    where: { username: newUsername, env: seedEnv },
+    where: { username: newUsername },
     select: { id: true, username: true, env: true },
   });
 
-  if (existsByUsername) {
-    console.log("EXISTS:", existsByUsername);
-    return;
+  if (existsByUsername && existsByUsername.id !== testUser.id) {
+    throw new Error(`Username ${newUsername} já pertence a outro profile (${existsByUsername.id})`);
   }
 
   const existsById = await prisma.profile.findFirst({
@@ -105,7 +104,43 @@ async function resolveOrCreateUser() {
   });
   if (existsById) {
     if (existsById.env !== seedEnv) {
-      throw new Error(`Profile com id ${testUser.id} já existe em env=${existsById.env}`);
+      const updated = await prisma.profile.update({
+        where: { id: testUser.id },
+        data: {
+          env: seedEnv,
+          username: newUsername,
+          fullName: source.fullName ?? "Orya (TEST)",
+          avatarUrl: source.avatarUrl,
+          coverUrl: source.coverUrl,
+          bio: source.bio ?? "",
+          city: source.city,
+          gender: source.gender,
+          padelLevel: source.padelLevel,
+          padelPreferredSide: source.padelPreferredSide,
+          padelClubName: source.padelClubName,
+          favouriteCategories: source.favouriteCategories ?? [],
+          onboardingDone: true,
+          roles: source.roles ?? ["user"],
+          deletedAt: null,
+          isDeleted: false,
+          visibility: source.visibility ?? "PUBLIC",
+          is_verified: false,
+          contactPhone: source.contactPhone,
+          status: source.status ?? "ACTIVE",
+          deletionRequestedAt: null,
+          deletionScheduledFor: null,
+          deletedAtFinal: null,
+          locationConsent: source.locationConsent ?? "PENDING",
+          locationGranularity: source.locationGranularity ?? "COARSE",
+          locationSource: null,
+          locationCity: null,
+          locationRegion: null,
+          locationUpdatedAt: null,
+          activeOrganizationId: null,
+        },
+      });
+      console.log("MOVED:", { id: updated.id, username: updated.username, env: updated.env, email: seedEmail });
+      return;
     }
     console.log("EXISTS:", existsById);
     return;
