@@ -44,6 +44,7 @@ type InfraAlertsSummary = {
 
 const secretGroups = ["all", "app", "supabase", "payments", "apple", "email", "admin"] as const;
 const secretEnvs = ["all", "prod", "dev"] as const;
+const infraReadOnly = (process.env.NEXT_PUBLIC_INFRA_READ_ONLY ?? "true") !== "false";
 
 export default function InfraClient() {
   const [status, setStatus] = useState<{ loading: boolean; error?: string; data?: InfraStatus | null }>({
@@ -199,14 +200,20 @@ export default function InfraClient() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
+      {!infraReadOnly && (
+        <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Infra</p>
-            <h2 className="text-sm font-semibold text-white/90">Estado & Ações</h2>
+            <h2 className="text-sm font-semibold text-white/90">Estado</h2>
             <p className="mt-1 text-xs text-white/60">
               Ambiente atual: <span className="font-semibold text-white/90">{currentEnv.toUpperCase()}</span>
             </p>
+            {infraReadOnly && (
+              <p className="mt-2 text-xs text-amber-100/80">
+                Infra em modo apenas leitura. Ações de deploy/pausa/rotação estão desativadas por agora.
+              </p>
+            )}
           </div>
           <button
             className="rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10"
@@ -472,24 +479,27 @@ export default function InfraClient() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
-      <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Última operação</p>
-        {action ? (
-          <div className="mt-3 space-y-2 text-sm text-white/80">
-            <p>Action: {action.action}</p>
-            <p>OK: {String(action.ok)}</p>
-            <p>requestId: {action.requestId}</p>
-            <p>correlationId: {action.correlationId}</p>
-            <pre className="max-h-60 overflow-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
-              {JSON.stringify(action.payload, null, 2)}
-            </pre>
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-white/60">Nenhuma ação executada nesta sessão.</p>
-        )}
-      </div>
+      {!infraReadOnly && (
+        <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Última operação</p>
+          {action ? (
+            <div className="mt-3 space-y-2 text-sm text-white/80">
+              <p>Action: {action.action}</p>
+              <p>OK: {String(action.ok)}</p>
+              <p>requestId: {action.requestId}</p>
+              <p>correlationId: {action.correlationId}</p>
+              <pre className="max-h-60 overflow-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
+                {JSON.stringify(action.payload, null, 2)}
+              </pre>
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-white/60">Nenhuma ação executada nesta sessão.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
