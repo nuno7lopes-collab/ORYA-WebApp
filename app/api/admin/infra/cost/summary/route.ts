@@ -3,7 +3,8 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { logError } from "@/lib/observability/logger";
-import { runAwsCli } from "@/app/api/admin/infra/_helpers";
+import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
+import { getAwsConfig } from "@/lib/awsSdk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,24 +27,17 @@ export async function GET(req: NextRequest) {
     const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
     const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 1));
 
-    const costRes = await runAwsCli(ctx, [
-      "ce",
-      "get-cost-and-usage",
-      "--time-period",
-      `Start=${formatDate(start)},End=${formatDate(end)}`,
-      "--granularity",
-      "DAILY",
-      "--metrics",
-      "UnblendedCost",
-      "--group-by",
-      "Type=DIMENSION,Key=SERVICE",
-    ]);
+    const client = new CostExplorerClient(getAwsConfig());
+    const resp = await client.send(
+      new GetCostAndUsageCommand({
+        TimePeriod: { Start: formatDate(start), End: formatDate(end) },
+        Granularity: "DAILY",
+        Metrics: ["UnblendedCost"],
+        GroupBy: [{ Type: "DIMENSION", Key: "SERVICE" }],
+      }),
+    );
 
-    if (!costRes.ok) {
-      return fail(ctx, 500, "COST_EXPLORER_FAILED", costRes.error ?? "COST_EXPLORER_FAILED");
-    }
-
-    const results = costRes.data?.ResultsByTime ?? [];
+    const results = resp.ResultsByTime ?? [];
     const currency = results?.[0]?.Total?.UnblendedCost?.Unit ?? "USD";
     const daily = results.map((day: any) => ({
       date: day.TimePeriod?.Start ?? "",

@@ -162,7 +162,9 @@ function createClient(envValue: AppEnv) {
   const pool = new Pool({
     connectionString: env.dbUrl,
     ssl: resolvePgSsl(env.dbUrl),
-    options: `-c app.env=${envValue}`,
+  });
+  pool.on("connect", (client) => {
+    client.query("select set_config('app.env', $1, true)", [envValue]).catch(() => {});
   });
   const adapter = new PrismaPg(pool);
   const client = new PrismaClient({ adapter, log: logLevels });

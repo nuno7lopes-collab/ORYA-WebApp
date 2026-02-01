@@ -21,6 +21,9 @@ export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdminUser();
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
+    if (process.env.INFRA_READ_ONLY !== "false") {
+      return fail(ctx, 403, "INFRA_READ_ONLY", "Infra read-only.");
+    }
 
     const body = (await req.json().catch(() => null)) as
       | {

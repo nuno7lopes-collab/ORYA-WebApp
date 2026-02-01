@@ -94,19 +94,4 @@ export async function runScript(
   }
 }
 
-export async function runAwsCli(ctx: RequestContext, args: string[]) {
-  const env = buildEnv(ctx);
-  const fullArgs = [...args, "--output", "json"];
-  logInfo("admin.infra.aws_cli", { requestId: ctx.requestId, correlationId: ctx.correlationId, args: fullArgs });
-  try {
-    const { stdout } = await execFileAsync("aws", fullArgs, {
-      env,
-      timeout: SCRIPT_TIMEOUT_MS,
-      maxBuffer: MAX_BUFFER,
-    });
-    return { ok: true, data: JSON.parse(stdout) };
-  } catch (err) {
-    logError("admin.infra.aws_cli_failed", err, { requestId: ctx.requestId, correlationId: ctx.correlationId, args: fullArgs });
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
+// AWS SDK v3 is used for infra read endpoints; keep CLI only for local scripts (actions).

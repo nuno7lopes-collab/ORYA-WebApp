@@ -3,7 +3,10 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { logError } from "@/lib/observability/logger";
-import { runAwsCli } from "@/app/api/admin/infra/_helpers";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { BudgetsClient, DescribeBudgetsCommand } from "@aws-sdk/client-budgets";
+import { CloudWatchClient, DescribeAlarmsCommand } from "@aws-sdk/client-cloudwatch";
+import { getAwsConfig } from "@/lib/awsSdk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,33 +21,30 @@ export async function GET(req: NextRequest) {
     const admin = await requireAdminUser();
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
 
-    const identity = await runAwsCli(ctx, ["sts", "get-caller-identity"]);
-    if (!identity.ok) {
-      return fail(ctx, 500, "STS_FAILED", identity.error ?? "STS_FAILED");
-    }
-    const accountId = identity.data?.Account;
+    const stsClient = new STSClient(getAwsConfig());
+    const budgetsClient = new BudgetsClient(getAwsConfig());
+    const cwClient = new CloudWatchClient(getAwsConfig());
+
+    const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+    const accountId = identity.Account;
     if (!accountId) return fail(ctx, 500, "ACCOUNT_ID_MISSING");
 
-    const budgetsRes = await runAwsCli(ctx, ["budgets", "describe-budgets", "--account-id", String(accountId)]);
-    const budgets =
-      budgetsRes.ok
-        ? (budgetsRes.data?.Budgets ?? []).map((b: any) => ({
-            name: b.BudgetName,
-            limit: b.BudgetLimit?.Amount ?? "0",
-            unit: b.BudgetLimit?.Unit ?? "USD",
-            timeUnit: b.TimeUnit ?? "MONTHLY",
-          }))
-        : [];
+    const budgetsRes = await budgetsClient.send(
+      new DescribeBudgetsCommand({ AccountId: String(accountId) }),
+    );
+    const budgets = (budgetsRes.Budgets ?? []).map((b) => ({
+      name: b.BudgetName ?? "",
+      limit: b.BudgetLimit?.Amount ?? "0",
+      unit: b.BudgetLimit?.Unit ?? "USD",
+      timeUnit: b.TimeUnit ?? "MONTHLY",
+    }));
 
-    const alarmsRes = await runAwsCli(ctx, ["cloudwatch", "describe-alarms"]);
-    const alarms =
-      alarmsRes.ok
-        ? (alarmsRes.data?.MetricAlarms ?? []).map((a: any) => ({
-            name: a.AlarmName,
-            state: a.StateValue,
-            reason: a.StateReason,
-          }))
-        : [];
+    const alarmsRes = await cwClient.send(new DescribeAlarmsCommand({}));
+    const alarms = (alarmsRes.MetricAlarms ?? []).map((a) => ({
+      name: a.AlarmName ?? "",
+      state: a.StateValue ?? "",
+      reason: a.StateReason ?? "",
+    }));
 
     return respondOk(ctx, { budgets, alarms });
   } catch (err) {

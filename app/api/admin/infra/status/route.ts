@@ -3,7 +3,9 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
-import { runAwsCli } from "@/app/api/admin/infra/_helpers";
+import { CloudFormationClient, DescribeStacksCommand } from "@aws-sdk/client-cloudformation";
+import { ECSClient, DescribeServicesCommand } from "@aws-sdk/client-ecs";
+import { getAwsConfig } from "@/lib/awsSdk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,12 +21,11 @@ export async function GET(req: NextRequest) {
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
 
     const stackName = process.env.ORYA_CF_STACK ?? "orya-prod";
-    const stackRes = await runAwsCli(ctx, ["cloudformation", "describe-stacks", "--stack-name", stackName]);
-    if (!stackRes.ok) {
-      return fail(ctx, 500, "INFRA_STATUS_FAILED", stackRes.error ?? "INFRA_STATUS_FAILED");
-    }
+    const cfClient = new CloudFormationClient(getAwsConfig());
+    const ecsClient = new ECSClient(getAwsConfig());
 
-    const stack = (stackRes.data?.Stacks ?? [])[0] ?? null;
+    const stackRes = await cfClient.send(new DescribeStacksCommand({ StackName: stackName }));
+    const stack = (stackRes.Stacks ?? [])[0] ?? null;
     if (!stack) return fail(ctx, 404, "STACK_NOT_FOUND");
 
     const outputs = Object.fromEntries(
@@ -33,25 +34,23 @@ export async function GET(req: NextRequest) {
 
     let services: Array<Record<string, unknown>> = [];
     if (outputs.ClusterName && outputs.WebServiceName) {
-      const serviceRes = await runAwsCli(ctx, [
-        "ecs",
-        "describe-services",
-        "--cluster",
-        String(outputs.ClusterName),
-        "--services",
-        String(outputs.WebServiceName),
-        String(outputs.WorkerServiceName ?? ""),
-      ]);
-      if (serviceRes.ok) {
-        services = (serviceRes.data?.services ?? []).map((svc: any) => ({
-          serviceName: svc.serviceName,
-          status: svc.status,
-          desiredCount: svc.desiredCount,
-          runningCount: svc.runningCount,
-          pendingCount: svc.pendingCount,
-          launchType: svc.launchType,
-        }));
-      }
+      const serviceNames = [String(outputs.WebServiceName)];
+      if (outputs.WorkerServiceName) serviceNames.push(String(outputs.WorkerServiceName));
+
+      const serviceRes = await ecsClient.send(
+        new DescribeServicesCommand({
+          cluster: String(outputs.ClusterName),
+          services: serviceNames,
+        }),
+      );
+      services = (serviceRes.services ?? []).map((svc) => ({
+        serviceName: svc.serviceName,
+        status: svc.status,
+        desiredCount: svc.desiredCount,
+        runningCount: svc.runningCount,
+        pendingCount: svc.pendingCount,
+        launchType: svc.launchType,
+      }));
     }
 
     return respondOk(ctx, {
