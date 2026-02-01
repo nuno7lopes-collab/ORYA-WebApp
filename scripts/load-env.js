@@ -75,13 +75,14 @@ function loadSecretsDefaults() {
   walk("", data);
 
   const token = `/orya/${secretsEnv}/`;
+  const forceKeys = new Set(["DATABASE_URL", "DIRECT_URL"]);
   for (const [pathKey, value] of flat) {
     if (typeof value !== "string") continue;
     if (!pathKey.includes(token)) continue;
     if (!value.trim()) continue;
     if (value.trim().startsWith("REPLACE_ME")) continue;
     const envKey = pathKey.split("/").slice(-1)[0];
-    if (!process.env[envKey] || String(process.env[envKey]).trim() === "") {
+    if (forceKeys.has(envKey) || !process.env[envKey] || String(process.env[envKey]).trim() === "") {
       process.env[envKey] = value;
     }
   }

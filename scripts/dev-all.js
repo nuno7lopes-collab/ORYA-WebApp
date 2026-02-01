@@ -26,6 +26,35 @@ function loadEnv() {
 
 loadEnv();
 
+function loadSecretsJson() {
+  if (process.env.DEV_ALL_SKIP_SECRETS === "1") return;
+  const secretsPath = process.env.ORYA_SECRETS_PATH || "/tmp/orya-prod-secrets.json";
+  if (!fs.existsSync(secretsPath)) return;
+  try {
+    const raw = fs.readFileSync(secretsPath, "utf8");
+    const parsed = JSON.parse(raw);
+    const forceKeys = new Set(["DATABASE_URL", "DIRECT_URL"]);
+    const apply = (node) => {
+      if (!node || typeof node !== "object") return;
+      for (const [key, value] of Object.entries(node)) {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          apply(value);
+          continue;
+        }
+        if (typeof value !== "string") continue;
+        if (!value.trim()) continue;
+        if (value.startsWith("REPLACE_ME")) continue;
+        if (forceKeys.has(key) || !process.env[key]) process.env[key] = value;
+      }
+    };
+    apply(parsed);
+  } catch (err) {
+    console.log(`[dev-all] Failed to load secrets from ${secretsPath}: ${err?.message || err}`);
+  }
+}
+
+loadSecretsJson();
+
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const stripeCmd = process.platform === "win32" ? "stripe.exe" : "stripe";
 const redisCmd = process.platform === "win32" ? "redis-server.exe" : "redis-server";
@@ -37,27 +66,19 @@ function hashFile(filePath) {
 
 function ensureNodeModules() {
   if (process.env.DEV_ALL_SKIP_INSTALL === "1") return;
-  const lockPath = path.join(repoRoot, "package-lock.json");
-  if (!fs.existsSync(lockPath)) return;
-
   const nodeModulesPath = path.join(repoRoot, "node_modules");
-  const cacheDir = path.join(repoRoot, ".cache");
-  const cacheFile = path.join(cacheDir, "dev-all-lock.hash");
+  const missingNodeModules = !fs.existsSync(nodeModulesPath);
+  const missingCostExplorer = !fs.existsSync(
+    path.join(repoRoot, "node_modules", "@aws-sdk", "client-cost-explorer"),
+  );
 
-  const lockHash = hashFile(lockPath);
-  const cached = fs.existsSync(cacheFile) ? fs.readFileSync(cacheFile, "utf8").trim() : "";
-  const needsInstall = !fs.existsSync(nodeModulesPath) || cached !== lockHash;
+  if (!missingNodeModules && !missingCostExplorer) return;
 
-  if (!needsInstall) return;
-
-  console.log("[dev-all] Installing dependencies (npm ci)...");
+  console.log("[dev-all] Installing dependencies (npm install)...");
   try {
-    execSync(`${npmCmd} ci --no-audit --no-fund`, { stdio: "inherit", cwd: repoRoot });
-    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(cacheFile, lockHash);
-    console.log("[dev-all] Dependencies updated.");
+    execSync(`${npmCmd} install --no-audit --no-fund`, { stdio: "inherit", cwd: repoRoot });
   } catch (err) {
-    console.log("[dev-all] npm ci failed. You can re-run with DEV_ALL_SKIP_INSTALL=1 to bypass.");
+    console.log("[dev-all] npm install failed. You can re-run with DEV_ALL_SKIP_INSTALL=1 to bypass.");
   }
 }
 
@@ -320,59 +341,102 @@ if (!process.env.NEXT_PUBLIC_CHAT_WS_URL) {
 
 const children = [
   run("dev", npmCmd, ["run", "dev", "--", "--hostname", localHost]),
-  run("cron", npmCmd, ["run", "cron:local"]),
 ];
 
-const startWorker = parseBool(process.env.START_WORKER, true);
-if (startWorker) {
-  children.push(run("worker", npmCmd, ["run", "worker"]));
-}
+let deferredStarted = false;
 
-const startChatWs = parseBool(process.env.START_CHAT_WS, true);
-if (startChatWs) {
-  const chatWsEnv = {
-    CHAT_POLLING_ONLY: "0",
-    NEXT_PUBLIC_CHAT_POLLING_ONLY: "0",
-  };
-  children.push(run("chat-ws", npmCmd, ["run", "chat:ws"], chatWsEnv));
-}
+function startDeferredServices() {
+  if (deferredStarted) return;
+  deferredStarted = true;
 
-const startRedis = parseBool(process.env.START_REDIS, true);
-if (startRedis) {
-  const redisPort = process.env.REDIS_PORT || "6379";
-  children.push(run("redis", redisCmd, ["--port", redisPort]));
-}
+  children.push(run("cron", npmCmd, ["run", "cron:local"]));
 
-const startStripe = parseBool(process.env.START_STRIPE, true);
-if (startStripe) {
-  const baseUrlRaw =
-    process.env.STRIPE_BASE_URL ||
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    "http://localhost:3000";
-  const baseUrl = baseUrlRaw.replace(/\/+$/, "");
-  const forwardTo =
-    process.env.STRIPE_FORWARD_URL || `${baseUrl}/api/stripe/webhook`;
-  const connectForwardTo =
-    process.env.STRIPE_CONNECT_FORWARD_URL ||
-    `${baseUrl}/api/organizacao/payouts/webhook`;
-
-  const stripeEnv = sanitizeStripeCliEnv(process.env);
-
-  children.push(
-    run("stripe", stripeCmd, ["listen", "--forward-to", forwardTo], stripeEnv),
-  );
-
-  const startStripeConnect = parseBool(process.env.START_STRIPE_CONNECT, true);
-  if (startStripeConnect) {
-    children.push(
-      run(
-        "stripe-connect",
-        stripeCmd,
-        ["listen", "--forward-to", connectForwardTo, "--events", "account.updated"],
-        stripeEnv,
-      ),
-    );
+  const startWorker = parseBool(process.env.START_WORKER, true);
+  if (startWorker) {
+    children.push(run("worker", npmCmd, ["run", "worker"]));
   }
+
+  const startChatWs = parseBool(process.env.START_CHAT_WS, true);
+  if (startChatWs) {
+    const chatWsEnv = {
+      CHAT_POLLING_ONLY: "0",
+      NEXT_PUBLIC_CHAT_POLLING_ONLY: "0",
+    };
+    children.push(run("chat-ws", npmCmd, ["run", "chat:ws"], chatWsEnv));
+  }
+
+  const startRedis = parseBool(process.env.START_REDIS, true);
+  if (startRedis) {
+    const redisPort = process.env.REDIS_PORT || "6379";
+    children.push(run("redis", redisCmd, ["--port", redisPort]));
+  }
+
+  const startStripe = parseBool(process.env.START_STRIPE, true);
+  if (startStripe) {
+    const baseUrlRaw =
+      process.env.STRIPE_BASE_URL ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      "http://localhost:3000";
+    const baseUrl = baseUrlRaw.replace(/\/+$/, "");
+    const forwardTo =
+      process.env.STRIPE_FORWARD_URL || `${baseUrl}/api/stripe/webhook`;
+    const connectForwardTo =
+      process.env.STRIPE_CONNECT_FORWARD_URL ||
+      `${baseUrl}/api/organizacao/payouts/webhook`;
+
+    const stripeEnv = sanitizeStripeCliEnv(process.env);
+
+    children.push(
+      run("stripe", stripeCmd, ["listen", "--forward-to", forwardTo], stripeEnv),
+    );
+
+    const startStripeConnect = parseBool(process.env.START_STRIPE_CONNECT, true);
+    if (startStripeConnect) {
+      children.push(
+        run(
+          "stripe-connect",
+          stripeCmd,
+          ["listen", "--forward-to", connectForwardTo, "--events", "account.updated"],
+          stripeEnv,
+        ),
+      );
+    }
+  }
+}
+
+async function checkServerReady() {
+  const baseUrl = process.env.ORYA_BASE_URL || `http://${localHost}:${nextPort}`;
+  const targetUrl = process.env.ORYA_CRON_SECRET
+    ? `${baseUrl.replace(/\/+$/, "")}/api/internal/ops/health`
+    : baseUrl;
+  const headers = process.env.ORYA_CRON_SECRET
+    ? { "X-ORYA-CRON-SECRET": process.env.ORYA_CRON_SECRET }
+    : undefined;
+  try {
+    const res = await fetch(targetUrl, { headers, redirect: "manual" });
+    return Boolean(res?.status);
+  } catch {
+    return false;
+  }
+}
+
+const skipWait = parseBool(process.env.DEV_ALL_SKIP_WAIT, false);
+if (skipWait) {
+  startDeferredServices();
+} else {
+  let logged = false;
+  const intervalMs = Number(process.env.DEV_ALL_WAIT_INTERVAL_MS || 2000);
+  const timer = setInterval(async () => {
+    const ready = await checkServerReady();
+    if (ready) {
+      clearInterval(timer);
+      console.log("[dev-all] Server ready. Starting cron/worker/services...");
+      startDeferredServices();
+    } else if (!logged) {
+      console.log("[dev-all] Waiting for server before starting cron/worker...");
+      logged = true;
+    }
+  }, intervalMs);
 }
 
 process.on("SIGINT", () => {
