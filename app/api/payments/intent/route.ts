@@ -9,6 +9,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import type Stripe from "stripe";
 import { createPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { computeFeePolicyVersion, createCheckout } from "@/domain/finance/checkout";
+import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
@@ -16,6 +17,8 @@ import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import {
   EntitlementStatus,
   EntitlementType,
+  PadelPairingSlotRole,
+  PadelPaymentMode,
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelRegistrationStatus,
@@ -23,7 +26,7 @@ import {
   Prisma,
   SourceType,
 } from "@prisma/client";
-import type { FeeMode } from "@prisma/client";
+import { FeeMode } from "@prisma/client";
 import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 import { computePromoDiscountCents } from "@/lib/promoMath";
@@ -34,7 +37,6 @@ import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
-import { upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 import {
   checkoutMetadataSchema,
   normalizeItemsForMetadata,
@@ -159,6 +161,555 @@ async function recordFreeCheckoutOutbox(params: {
   });
 }
 
+function normalizePaymentMethod(raw: unknown): "mbway" | "card" {
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (value === "card") return "card";
+  if (value === "mb_way" || value === "mbway") return "mbway";
+  return "mbway";
+}
+
+async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
+  const supabase = await createSupabaseServer();
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id ?? null;
+  if (!userId) {
+    return intentError("AUTH_REQUIRED", "Inicia sessão para concluir o pagamento.", {
+      httpStatus: 401,
+      status: "FAILED",
+      nextAction: "LOGIN",
+    });
+  }
+
+  const pairingId =
+    typeof body.pairingId === "number"
+      ? body.pairingId
+      : typeof body.pairingId === "string"
+        ? Number(body.pairingId)
+        : null;
+  if (!pairingId || !Number.isFinite(pairingId)) {
+    return intentError("PAIRING_REQUIRED", "Precisas de uma dupla ativa para continuar.", {
+      httpStatus: 400,
+      status: "FAILED",
+      retryable: false,
+    });
+  }
+
+  const slotIdInput =
+    typeof body.slotId === "number"
+      ? body.slotId
+      : typeof body.slotId === "string"
+        ? Number(body.slotId)
+        : null;
+  const inviteToken =
+    typeof (body as { inviteToken?: unknown })?.inviteToken === "string"
+      ? (body as { inviteToken?: string }).inviteToken!.trim()
+      : null;
+
+  const scenarioParsed = paymentScenarioSchema.safeParse(
+    typeof body.paymentScenario === "string" ? body.paymentScenario.toUpperCase() : body.paymentScenario,
+  );
+  const requestedScenario = scenarioParsed.success ? scenarioParsed.data : null;
+
+  const paymentMethod = normalizePaymentMethod(body.paymentMethod);
+  const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
+  const clientIdempotencyKey =
+    (typeof body.idempotencyKey === "string" ? body.idempotencyKey : idempotencyKeyHeader || "").trim() || null;
+  const purchaseIdFromBody =
+    typeof body.purchaseId === "string" && body.purchaseId.trim() !== "" ? body.purchaseId.trim() : "";
+
+  const pairing = await prisma.padelPairing.findUnique({
+    where: { id: pairingId },
+    include: {
+      slots: true,
+      registration: { select: { id: true, status: true, buyerIdentityId: true } },
+      event: {
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          status: true,
+          isDeleted: true,
+          startsAt: true,
+          timezone: true,
+          coverImageUrl: true,
+          locationName: true,
+          organizationId: true,
+          organization: {
+            select: {
+              feeMode: true,
+              platformFeeBps: true,
+              platformFeeFixedCents: true,
+              orgType: true,
+              stripeAccountId: true,
+              stripeChargesEnabled: true,
+              stripePayoutsEnabled: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!pairing?.event || pairing.event.isDeleted) {
+    return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
+  }
+  if (pairing.pairingStatus === "CANCELLED") {
+    return intentError("PAIRING_CANCELLED", "A dupla foi cancelada.", { httpStatus: 409, status: "FAILED" });
+  }
+  if (pairing.registration && INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status)) {
+    return intentError("PAIRING_INVALID", "A dupla já não está ativa.", { httpStatus: 409, status: "FAILED" });
+  }
+
+  const scenario =
+    requestedScenario ??
+    (pairing.payment_mode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT");
+  if (scenario === "GROUP_FULL" && pairing.payment_mode !== PadelPaymentMode.FULL) {
+    return intentError("PAIRING_MODE_MISMATCH", "A dupla não está em modo full.", { httpStatus: 400 });
+  }
+  if (scenario === "GROUP_SPLIT" && pairing.payment_mode !== PadelPaymentMode.SPLIT) {
+    return intentError("PAIRING_MODE_MISMATCH", "A dupla não está em modo split.", { httpStatus: 400 });
+  }
+
+  const pendingSlot =
+    pairing.slots.find((slot) => slot.slotStatus === PadelPairingSlotStatus.PENDING) ?? null;
+  const targetSlot =
+    (slotIdInput && pairing.slots.find((slot) => slot.id === slotIdInput)) ||
+    (scenario === "GROUP_SPLIT"
+      ? pendingSlot
+      : pairing.slots.find((slot) => slot.slot_role === PadelPairingSlotRole.CAPTAIN) ??
+        pairing.slots[0] ??
+        null);
+  if (!targetSlot) {
+    return intentError("PAIRING_SLOT_REQUIRED", "Slot da dupla em falta.", { httpStatus: 400 });
+  }
+
+  if (scenario === "GROUP_SPLIT" && targetSlot.paymentStatus === PadelPairingPaymentStatus.PAID) {
+    return intentError("PAIRING_SLOT_PAID", "Este lugar já foi pago.", { httpStatus: 409 });
+  }
+
+  if (scenario === "GROUP_SPLIT" && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+    return intentError("PAIRING_EXPIRED", "A dupla expirou.", { httpStatus: 410 });
+  }
+
+  const matchesUser = pairing.slots.some((slot) => slot.profileId === userId);
+  if (!matchesUser) {
+    const isUnclaimed = !targetSlot.profileId;
+    let allowUnclaimed = false;
+    if (isUnclaimed) {
+      if (pairing.pairingJoinMode === "LOOKING_FOR_PARTNER") {
+        allowUnclaimed = true;
+      } else if (
+        inviteToken &&
+        pairing.partnerInviteToken &&
+        inviteToken === pairing.partnerInviteToken &&
+        (!pairing.partnerLinkExpiresAt || pairing.partnerLinkExpiresAt > new Date())
+      ) {
+        allowUnclaimed = true;
+      } else if (targetSlot.invitedContact) {
+        const invitedRaw = targetSlot.invitedContact.trim().toLowerCase();
+        const invited = invitedRaw.startsWith("@") ? invitedRaw.slice(1) : invitedRaw;
+        const username = userData?.user?.user_metadata?.username?.trim().toLowerCase() ?? "";
+        const email = userData?.user?.email?.trim().toLowerCase() ?? "";
+        if ((invited.includes("@") && email && invited === email) || (!invited.includes("@") && username && invited === username)) {
+          allowUnclaimed = true;
+        }
+      }
+    }
+    if (!allowUnclaimed) {
+      return intentError("PAIRING_NOT_OWNED", "Esta dupla pertence a outro utilizador.", {
+        httpStatus: 403,
+        status: "FAILED",
+      });
+    }
+  }
+
+  const categoryLinkId =
+    typeof body.padelCategoryLinkId === "number"
+      ? body.padelCategoryLinkId
+      : typeof body.ticketTypeId === "number"
+        ? body.ticketTypeId
+        : null;
+
+  let categoryLink = categoryLinkId
+    ? await prisma.padelEventCategoryLink.findUnique({
+        where: { id: categoryLinkId },
+        select: {
+          id: true,
+          eventId: true,
+          padelCategoryId: true,
+          pricePerPlayerCents: true,
+          currency: true,
+          isEnabled: true,
+        },
+      })
+    : null;
+  if (!categoryLink && pairing.categoryId) {
+    categoryLink = await prisma.padelEventCategoryLink.findUnique({
+      where: {
+        eventId_padelCategoryId: {
+          eventId: pairing.eventId,
+          padelCategoryId: pairing.categoryId,
+        },
+      },
+      select: {
+        id: true,
+        eventId: true,
+        padelCategoryId: true,
+        pricePerPlayerCents: true,
+        currency: true,
+        isEnabled: true,
+      },
+    });
+  }
+  if (!categoryLink || categoryLink.eventId !== pairing.eventId) {
+    return intentError("PADEL_CATEGORY_LINK_REQUIRED", "Categoria da dupla em falta.", {
+      httpStatus: 400,
+      status: "FAILED",
+    });
+  }
+  if (categoryLink.isEnabled === false) {
+    return intentError("CATEGORY_DISABLED", "Categoria indisponível.", {
+      httpStatus: 409,
+      status: "FAILED",
+    });
+  }
+  if (pairing.categoryId && categoryLink.padelCategoryId !== pairing.categoryId) {
+    return intentError("PADEL_CATEGORY_MISMATCH", "Categoria da dupla não corresponde.", {
+      httpStatus: 409,
+      status: "FAILED",
+    });
+  }
+
+  const currency = (categoryLink.currency ?? "EUR").toUpperCase();
+  if (currency !== "EUR") {
+    return intentError("CURRENCY_NOT_SUPPORTED", "Moeda não suportada.", { httpStatus: 400 });
+  }
+
+  const ownerResolved = await resolveOwner({ sessionUserId: userId, guestEmail: null });
+  const buyerIdentityId = ownerResolved.ownerIdentityId ?? null;
+
+  const registrationId = await prisma.$transaction(async (tx) => {
+    let registration = await tx.padelRegistration.findUnique({
+      where: { pairingId: pairing.id },
+      select: { id: true, buyerIdentityId: true, currency: true },
+    });
+    if (!registration) {
+      registration = await tx.padelRegistration.create({
+        data: {
+          pairingId: pairing.id,
+          organizationId: pairing.organizationId,
+          eventId: pairing.eventId,
+          buyerIdentityId,
+          currency,
+        },
+        select: { id: true, buyerIdentityId: true, currency: true },
+      });
+    } else {
+      const updates: Prisma.PadelRegistrationUpdateInput = {};
+      if (buyerIdentityId && !registration.buyerIdentityId) {
+        updates.buyerIdentityId = buyerIdentityId;
+      }
+      if (currency && registration.currency !== currency) {
+        updates.currency = currency;
+      }
+      if (Object.keys(updates).length > 0) {
+        registration = await tx.padelRegistration.update({
+          where: { id: registration.id },
+          data: updates,
+          select: { id: true, buyerIdentityId: true, currency: true },
+        });
+      }
+    }
+
+    const existingLines = await tx.padelRegistrationLine.findMany({
+      where: { padelRegistrationId: registration.id },
+      select: { id: true, pairingSlotId: true, unitAmount: true, totalAmount: true, label: true },
+    });
+    const bySlotId = new Map(
+      existingLines
+        .filter((line) => typeof line.pairingSlotId === "number")
+        .map((line) => [line.pairingSlotId as number, line]),
+    );
+
+    for (const slot of pairing.slots) {
+      const label = slot.slot_role === PadelPairingSlotRole.CAPTAIN ? "Inscrição capitão" : "Inscrição parceiro";
+      const unitAmount = Math.max(0, Math.floor(categoryLink.pricePerPlayerCents ?? 0));
+      const totalAmount = unitAmount;
+      const existing = slot.id ? bySlotId.get(slot.id) : null;
+      if (existing) {
+        if (existing.unitAmount !== unitAmount || existing.totalAmount !== totalAmount || existing.label !== label) {
+          await tx.padelRegistrationLine.update({
+            where: { id: existing.id },
+            data: {
+              label,
+              unitAmount,
+              totalAmount,
+              qty: 1,
+            },
+          });
+        }
+      } else if (slot.id) {
+        await tx.padelRegistrationLine.create({
+          data: {
+            padelRegistrationId: registration.id,
+            pairingSlotId: slot.id,
+            label,
+            qty: 1,
+            unitAmount,
+            totalAmount,
+          },
+        });
+      }
+    }
+
+    return registration.id;
+  });
+
+  const registration = await prisma.padelRegistration.findUnique({
+    where: { id: registrationId },
+    include: { lines: true },
+  });
+  if (!registration || !registration.lines.length) {
+    return intentError("PADEL_REGISTRATION_LINES_EMPTY", "Inscrição inválida.", {
+      httpStatus: 400,
+      status: "FAILED",
+    });
+  }
+
+  const payableLines =
+    scenario === "GROUP_FULL"
+      ? registration.lines
+      : registration.lines.filter((line) => line.pairingSlotId === targetSlot.id);
+  if (!payableLines.length) {
+    return intentError("PADEL_REGISTRATION_LINES_EMPTY", "Sem linhas para pagamento.", {
+      httpStatus: 400,
+      status: "FAILED",
+    });
+  }
+
+  const subtotalCents = payableLines.reduce((sum, line) => sum + Math.max(0, line.totalAmount), 0);
+  const platformFees = await getPlatformFees();
+  const pricing = computePricing(subtotalCents, 0, {
+    organizationFeeMode: pairing.event.organization?.feeMode ?? null,
+    organizationPlatformFeeBps: pairing.event.organization?.platformFeeBps ?? null,
+    organizationPlatformFeeFixedCents: pairing.event.organization?.platformFeeFixedCents ?? null,
+    platformDefaultFeeMode: FeeMode.INCLUDED,
+    platformDefaultFeeBps: platformFees.feeBps,
+    platformDefaultFeeFixedCents: platformFees.feeFixedCents,
+    isPlatformOrg: pairing.event.organization?.orgType === "PLATFORM",
+  });
+  const feePolicyVersion = computeFeePolicyVersion({
+    feeMode: pricing.feeMode,
+    feeBps: pricing.feeBpsApplied,
+    feeFixed: pricing.feeFixedApplied,
+  });
+
+  const purchaseId =
+    purchaseIdFromBody ||
+    `padel:${pairing.id}:${scenario === "GROUP_FULL" ? "full" : `slot:${targetSlot.id}`}`;
+  const checkoutIdempotencyKey = checkoutKey(purchaseId);
+
+  const snapshotLines = payableLines.map((line) => ({
+    quantity: line.qty,
+    unitPriceCents: line.unitAmount,
+    totalAmountCents: line.totalAmount,
+    currency,
+    sourceLineId: String(line.id),
+    label: line.label,
+  }));
+
+  await createCheckout({
+    sourceType: SourceType.PADEL_REGISTRATION,
+    sourceId: registration.id,
+    idempotencyKey: checkoutIdempotencyKey,
+    paymentId: purchaseId,
+    buyerIdentityRef: buyerIdentityId,
+    resolvedSnapshot: {
+      organizationId: pairing.organizationId,
+      buyerIdentityId: buyerIdentityId ?? null,
+      eventId: pairing.eventId,
+      snapshot: {
+        currency,
+        gross: pricing.totalCents,
+        discounts: 0,
+        taxes: 0,
+        platformFee: pricing.platformFeeCents,
+        total: pricing.totalCents,
+        netToOrgPending: Math.max(0, pricing.totalCents - pricing.platformFeeCents),
+        processorFeesStatus: ProcessorFeesStatus.PENDING,
+        processorFeesActual: null,
+        feeMode: pricing.feeMode,
+        feeBps: pricing.feeBpsApplied,
+        feeFixed: pricing.feeFixedApplied,
+        feePolicyVersion,
+        promoPolicyVersion: null,
+        sourceType: SourceType.PADEL_REGISTRATION,
+        sourceId: registration.id,
+        lineItems: snapshotLines,
+      },
+    },
+    skipAccessChecks: true,
+  });
+
+  if (pricing.totalCents <= 0) {
+    await recordFreeCheckoutOutbox({
+      organizationId: pairing.organizationId,
+      eventId: pairing.eventId,
+      purchaseId,
+      actorUserId: userId,
+      idempotencyKey: clientIdempotencyKey ?? checkoutIdempotencyKey,
+      payload: {
+        scenario,
+        pairingId: pairing.id,
+        slotId: targetSlot.id,
+        registrationId: registration.id,
+        lineIds: payableLines.map((line) => line.id),
+        sourceType: SourceType.PADEL_REGISTRATION,
+        sourceId: registration.id,
+        ownerUserId: ownerResolved.ownerUserId ?? null,
+        ownerIdentityId: buyerIdentityId ?? null,
+        emailNormalized: ownerResolved.emailNormalized ?? null,
+      } as Prisma.InputJsonObject,
+    });
+
+    return jsonWrap({
+      ok: true,
+      code: "OK",
+      status: "OK",
+      nextAction: "NONE",
+      retryable: false,
+      freeCheckout: true,
+      isGratisCheckout: true,
+      purchaseId,
+      paymentIntentId: FREE_PLACEHOLDER_INTENT_ID,
+      paymentScenario: scenario,
+      amount: 0,
+      currency,
+      discountCents: 0,
+      breakdown: buildPublicBreakdown({
+        lines: snapshotLines.map((line) => ({
+          ticketTypeId: categoryLink.id,
+          name: line.label ?? "Inscrição",
+          quantity: line.quantity,
+          unitPriceCents: line.unitPriceCents,
+          currency,
+          lineTotalCents: line.totalAmountCents ?? line.unitPriceCents * line.quantity,
+        })),
+        subtotalCents,
+        discountCents: 0,
+        platformFeeCents: pricing.platformFeeCents,
+        cardPlatformFeeCents: 0,
+        cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+        totalCents: 0,
+        currency,
+        paymentMethod,
+      }),
+      idempotencyKey: clientIdempotencyKey ?? checkoutIdempotencyKey,
+    });
+  }
+
+  const { paymentIntent } = await ensurePaymentIntent({
+    purchaseId,
+    sourceType: SourceType.PADEL_REGISTRATION,
+    sourceId: registration.id,
+    amountCents: pricing.totalCents,
+    currency,
+    intentParams: {
+      payment_method_types: paymentMethod === "card" ? ["card"] : ["mb_way"],
+    },
+    metadata: {
+      pairingId: String(pairing.id),
+      slotId: String(targetSlot.id),
+      eventId: String(pairing.eventId),
+      paymentScenario: scenario,
+      categoryLinkId: String(categoryLink.id),
+      paymentMethod,
+      ...(ownerResolved.ownerUserId ? { ownerUserId: ownerResolved.ownerUserId } : {}),
+      ...(buyerIdentityId ? { ownerIdentityId: buyerIdentityId } : {}),
+      ...(ownerResolved.emailNormalized ? { emailNormalized: ownerResolved.emailNormalized } : {}),
+    },
+    orgContext: {
+      stripeAccountId: pairing.event.organization?.stripeAccountId ?? null,
+      stripeChargesEnabled: pairing.event.organization?.stripeChargesEnabled ?? null,
+      stripePayoutsEnabled: pairing.event.organization?.stripePayoutsEnabled ?? null,
+      orgType: pairing.event.organization?.orgType ?? null,
+    },
+    requireStripe: true,
+    clientIdempotencyKey: clientIdempotencyKey ?? undefined,
+    resolvedSnapshot: {
+      organizationId: pairing.organizationId,
+      buyerIdentityId: buyerIdentityId ?? null,
+      eventId: pairing.eventId,
+      snapshot: {
+        currency,
+        gross: pricing.totalCents,
+        discounts: 0,
+        taxes: 0,
+        platformFee: pricing.platformFeeCents,
+        total: pricing.totalCents,
+        netToOrgPending: Math.max(0, pricing.totalCents - pricing.platformFeeCents),
+        processorFeesStatus: ProcessorFeesStatus.PENDING,
+        processorFeesActual: null,
+        feeMode: pricing.feeMode,
+        feeBps: pricing.feeBpsApplied,
+        feeFixed: pricing.feeFixedApplied,
+        feePolicyVersion,
+        promoPolicyVersion: null,
+        sourceType: SourceType.PADEL_REGISTRATION,
+        sourceId: registration.id,
+        lineItems: snapshotLines,
+      },
+    },
+    paymentEvent: {
+      eventId: pairing.eventId,
+      userId,
+      amountCents: pricing.totalCents,
+      platformFeeCents: pricing.platformFeeCents,
+    },
+  });
+
+  if (!paymentIntent.client_secret) {
+    return intentError("MISSING_CLIENT_SECRET", "Não foi possível preparar o pagamento.", {
+      httpStatus: 500,
+      status: "FAILED",
+      retryable: true,
+    });
+  }
+
+  return jsonWrap({
+    ok: true,
+    code: "OK",
+    status: "REQUIRES_ACTION",
+    nextAction: "PAY_NOW",
+    retryable: true,
+    clientSecret: paymentIntent.client_secret,
+    amount: pricing.totalCents,
+    currency,
+    discountCents: 0,
+    paymentIntentId: paymentIntent.id,
+    purchaseId,
+    paymentScenario: scenario,
+    breakdown: buildPublicBreakdown({
+      lines: snapshotLines.map((line) => ({
+        ticketTypeId: categoryLink.id,
+        name: line.label ?? "Inscrição",
+        quantity: line.quantity,
+        unitPriceCents: line.unitPriceCents,
+        currency,
+        lineTotalCents: line.totalAmountCents ?? line.unitPriceCents * line.quantity,
+      })),
+      subtotalCents,
+      discountCents: 0,
+      platformFeeCents: pricing.platformFeeCents,
+      cardPlatformFeeCents: 0,
+      cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+      totalCents: pricing.totalCents,
+      currency,
+      paymentMethod,
+    }),
+    idempotencyKey: clientIdempotencyKey ?? checkoutIdempotencyKey,
+  });
+}
+
 type Body = {
   slug?: string;
   items?: CheckoutItem[];
@@ -177,6 +728,8 @@ type Body = {
   ticketTypeId?: number | null;
   eventId?: number | null;
   total?: number | null;
+  sourceType?: string | null;
+  padelCategoryLinkId?: number | null;
 };
 
 type IntentStatus =
@@ -252,6 +805,11 @@ async function _POST(req: NextRequest) {
   }
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
+
+    const sourceTypeRaw = typeof body?.sourceType === "string" ? body?.sourceType?.toUpperCase() : "";
+    if (body && sourceTypeRaw === SourceType.PADEL_REGISTRATION) {
+      return await handlePadelRegistrationIntent(req, body);
+    }
 
     if (!body || !body.slug || !Array.isArray(body.items) || body.items.length === 0) {
       return intentError("INVALID_INPUT", "Dados inválidos.", { httpStatus: 400, status: "FAILED", nextAction: "NONE", retryable: false });
@@ -354,6 +912,7 @@ async function _POST(req: NextRequest) {
         title: string;
         status: string;
         type: string;
+        template_type: string | null;
         is_deleted: boolean;
         is_free: boolean;
         ends_at: Date | null;
@@ -384,6 +943,7 @@ async function _POST(req: NextRequest) {
         e.title,
         e.status,
         e.type,
+        e.template_type,
         e.is_deleted,
         e.is_free,
         e.ends_at,
@@ -469,6 +1029,15 @@ async function _POST(req: NextRequest) {
       where: { eventId: event.id },
       select: { organizationId: true },
     });
+    const isPadelTemplate =
+      typeof event.template_type === "string" && event.template_type.toUpperCase() === "PADEL";
+    if (padelConfig || isPadelTemplate) {
+      return intentError("PADEL_TICKETS_DISABLED", "Inscrições Padel são feitas no fluxo dedicado.", {
+        httpStatus: 409,
+        status: "FAILED",
+        retryable: false,
+      });
+    }
 
     const isResaleRequest =
       requestedScenarioEarly === "RESALE" ||
@@ -2001,18 +2570,6 @@ async function _POST(req: NextRequest) {
         "Sessão de pagamento expirada. Vamos criar um novo intento.",
         { httpStatus: 409, status: "FAILED", retryable: true, nextAction: "PAY_NOW" },
       );
-    }
-
-    if (padelConfig) {
-      const fullName = userData?.user?.user_metadata?.full_name || guestName || "Jogador Padel";
-      const emailToSave = userData?.user?.email || guestEmail || null;
-      const phoneToSave = userData?.user?.phone || contact || guestPhone || null;
-      await upsertPadelPlayerProfile({
-        organizationId: padelConfig.organizationId,
-        fullName,
-        email: emailToSave,
-        phone: phoneToSave,
-      });
     }
 
     if (!paymentIntent.client_secret) {

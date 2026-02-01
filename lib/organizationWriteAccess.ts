@@ -1,6 +1,7 @@
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 import { prisma } from "@/lib/prisma";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type OrganizationWriteContext = {
   id?: number;
@@ -60,10 +61,21 @@ export function isOfficialEmailVerified(org: OrganizationWriteContext) {
 
 export function ensureOrganizationEmailVerified(
   org: OrganizationWriteContext,
-  opts?: { reasonCode?: string; requestId?: string; correlationId?: string; nextStepUrl?: string },
+  opts?: {
+    reasonCode?: string;
+    requestId?: string;
+    correlationId?: string;
+    nextStepUrl?: string;
+    organizationId?: number | null;
+  },
 ): OfficialEmailGateResult {
   const { requestId, correlationId } = resolveGateContext(opts);
-  const nextStepUrl = opts?.nextStepUrl ?? OFFICIAL_EMAIL_VERIFY_URL;
+  const resolvedOrgId = parseOrganizationId(opts?.organizationId ?? org.id ?? null);
+  const nextStepUrl = appendOrganizationIdToHref(
+    opts?.nextStepUrl ?? OFFICIAL_EMAIL_VERIFY_URL,
+    resolvedOrgId,
+  );
+  const verifyUrl = appendOrganizationIdToHref(OFFICIAL_EMAIL_VERIFY_URL, resolvedOrgId);
   const email = normalizeOfficialEmail(org.officialEmail ?? null);
   if (!email) {
     return {
@@ -71,7 +83,7 @@ export function ensureOrganizationEmailVerified(
       error: "OFFICIAL_EMAIL_REQUIRED",
       message: "Email oficial obrigatório para esta ação.",
       email: null,
-      verifyUrl: OFFICIAL_EMAIL_VERIFY_URL,
+      verifyUrl,
       nextStepUrl,
       reasonCode: opts?.reasonCode,
       requestId,
@@ -84,7 +96,7 @@ export function ensureOrganizationEmailVerified(
       error: "OFFICIAL_EMAIL_NOT_VERIFIED",
       message: "Email oficial por verificar para esta ação.",
       email,
-      verifyUrl: OFFICIAL_EMAIL_VERIFY_URL,
+      verifyUrl,
       nextStepUrl,
       reasonCode: opts?.reasonCode,
       requestId,
@@ -112,7 +124,12 @@ export async function requireOfficialEmailVerified(params: {
   if (!org) {
     return { ok: false, error: "ORGANIZATION_NOT_FOUND", message: "Organização não encontrada." };
   }
-  return ensureOrganizationEmailVerified(org, { reasonCode, requestId, correlationId });
+  return ensureOrganizationEmailVerified(org, {
+    reasonCode,
+    requestId,
+    correlationId,
+    organizationId,
+  });
 }
 
 export function isStripeReady(org: OrganizationWriteContext, requireStripe = true) {

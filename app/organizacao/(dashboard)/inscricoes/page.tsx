@@ -8,6 +8,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type FormItem = {
   id: number;
@@ -67,6 +68,8 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
+  const baseHref = appendOrganizationIdToHref("/organizacao/inscricoes", organizationId);
   const { data, mutate, isLoading: loadingForms } = useSWR<FormsResponse>(
     user ? "/api/organizacao/inscricoes" : null,
     fetcher,
@@ -110,7 +113,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
     if (!user) {
       openModal({
         mode: "login",
-        redirectTo: "/organizacao/inscricoes",
+        redirectTo: baseHref,
         showGoogle: true,
       });
       return;
@@ -133,7 +136,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
       setDescription("");
       mutate();
       if (json?.form?.id) {
-        router.push(`/organizacao/inscricoes/${json.form.id}`);
+        router.push(appendOrganizationIdToHref(`/organizacao/inscricoes/${json.form.id}`, organizationId));
       }
       setCreating(false);
     } catch (err) {

@@ -39,6 +39,7 @@ import {
   type PublicProfileModuleType,
   type PublicProfileModuleWidth,
 } from "@/lib/publicProfileLayout";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 const BIO_LIMIT = 280;
 const MODULE_LABELS: Record<
@@ -475,6 +476,7 @@ export default function OrganizationPublicProfilePanel({
   const router = useRouter();
   const canEdit = membershipRole === "OWNER" || membershipRole === "ADMIN";
   const organizationId = organization?.id ?? null;
+  const profileHref = appendOrganizationIdToHref("/organizacao?tab=profile", organizationId);
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -932,7 +934,7 @@ export default function OrganizationPublicProfilePanel({
 
   const handleSaveProfile = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizacao?tab=profile" });
+      openModal({ mode: "login", redirectTo: profileHref });
       return;
     }
     if (!canEdit) return;
@@ -983,7 +985,7 @@ export default function OrganizationPublicProfilePanel({
 
   const handleSaveLayout = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizacao?tab=profile" });
+      openModal({ mode: "login", redirectTo: profileHref });
       return;
     }
     if (!canEdit) return;
@@ -1017,7 +1019,7 @@ export default function OrganizationPublicProfilePanel({
 
   const handleSaveUsername = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizacao?tab=profile" });
+      openModal({ mode: "login", redirectTo: profileHref });
       return;
     }
     if (!canEdit) return;

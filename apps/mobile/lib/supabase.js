@@ -1,10 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { getSharedEnv } from "@orya/shared";
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const { supabaseUrl, supabaseAnonKey } = getSharedEnv();
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn("[mobile] Missing Supabase envs EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY");
+  console.warn(
+    "[mobile] Missing Supabase envs EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY",
+  );
 }
 
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "", {

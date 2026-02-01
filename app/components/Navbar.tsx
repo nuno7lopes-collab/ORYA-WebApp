@@ -10,6 +10,7 @@ import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
 import { getEventCoverUrl } from "@/lib/eventCover";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 import MobileBottomNav from "./MobileBottomNav";
 import useSWR from "swr";
 
@@ -641,7 +642,9 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                   openAuthModal({ mode: "login", redirectTo: redirect });
                   return;
                 }
-                router.push("/organizacao");
+                const orgId = getOrganizationIdFromBrowser();
+                const target = appendOrganizationIdToHref("/organizacao?tab=overview", orgId);
+                router.push(target);
               }}
               className={`${navButtonBase} hidden md:inline-flex border-white/18 bg-white/5 text-white/85 shadow-[0_0_18px_rgba(0,0,0,0.25)] hover:border-white/30 hover:bg-white/10`}
             >

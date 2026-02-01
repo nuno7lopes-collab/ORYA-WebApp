@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, PadelPreferredSide } from "@prisma/client";
+import { Gender, OrganizationMemberRole, PadelPreferredSide, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -39,7 +39,18 @@ async function _GET(req: NextRequest) {
     ? await Promise.all([
         prisma.profile.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, username: true, fullName: true, avatarUrl: true },
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            avatarUrl: true,
+            contactPhone: true,
+            gender: true,
+            padelLevel: true,
+            padelPreferredSide: true,
+            padelClubName: true,
+            users: { select: { email: true } },
+          },
         }),
         prisma.crmCustomer.findMany({
           where: { organizationId: organization.id, userId: { in: userIds } },
@@ -52,6 +63,9 @@ async function _GET(req: NextRequest) {
             totalTournaments: true,
             lastActivityAt: true,
             marketingOptIn: true,
+            displayName: true,
+            contactEmail: true,
+            contactPhone: true,
           },
         }),
       ])
@@ -60,11 +74,49 @@ async function _GET(req: NextRequest) {
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
   const crmMap = new Map(crmCustomers.map((customer) => [customer.userId, customer]));
 
-  const items = players.map((player) => ({
-    ...player,
-    profile: player.userId ? profileMap.get(player.userId) ?? null : null,
-    crm: player.userId ? crmMap.get(player.userId) ?? null : null,
-  }));
+  const items = players.map((player) => {
+    if (!player.userId) {
+      return {
+        ...player,
+        profile: null,
+        crm: null,
+      };
+    }
+    const profile = profileMap.get(player.userId) ?? null;
+    const crm = crmMap.get(player.userId) ?? null;
+    const resolvedFullName = crm?.displayName ?? profile?.fullName ?? player.fullName;
+    const resolvedEmail = crm?.contactEmail ?? profile?.users?.email ?? player.email ?? null;
+    const resolvedPhone = crm?.contactPhone ?? profile?.contactPhone ?? player.phone ?? null;
+    return {
+      ...player,
+      fullName: resolvedFullName || player.fullName,
+      email: resolvedEmail,
+      phone: resolvedPhone,
+      gender: profile?.gender ?? player.gender ?? null,
+      level: profile?.padelLevel ?? player.level ?? null,
+      preferredSide: profile?.padelPreferredSide ?? player.preferredSide ?? null,
+      clubName: profile?.padelClubName ?? player.clubName ?? null,
+      profile: profile
+        ? {
+            id: profile.id,
+            username: profile.username,
+            fullName: profile.fullName,
+            avatarUrl: profile.avatarUrl,
+          }
+        : null,
+      crm: crm
+        ? {
+            id: crm.id,
+            status: crm.status,
+            tags: crm.tags,
+            totalSpentCents: crm.totalSpentCents,
+            totalTournaments: crm.totalTournaments,
+            lastActivityAt: crm.lastActivityAt,
+            marketingOptIn: crm.marketingOptIn,
+          }
+        : null,
+    };
+  });
 
   return jsonWrap({ ok: true, items }, { status: 200 });
 }
@@ -92,7 +144,9 @@ async function _POST(req: NextRequest) {
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : fullName;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
   const phone = typeof body.phone === "string" ? body.phone.trim() : null;
-  const gender = typeof body.gender === "string" ? body.gender.trim() : null;
+  const genderRaw = typeof body.gender === "string" ? body.gender.trim().toUpperCase() : null;
+  const gender =
+    genderRaw && Object.values(Gender).includes(genderRaw as Gender) ? (genderRaw as Gender) : null;
   const level = typeof body.level === "string" ? body.level.trim() : null;
   const preferredSideRaw = typeof body.preferredSide === "string" ? body.preferredSide.trim().toUpperCase() : null;
   const preferredSide =
@@ -106,7 +160,100 @@ async function _POST(req: NextRequest) {
 
   if (!fullName) return jsonWrap({ ok: false, error: "FULLNAME_REQUIRED" }, { status: 400 });
 
+  const userIdInput = typeof body.userId === "string" ? body.userId.trim() : null;
+
   try {
+    let resolvedUserId = userIdInput;
+    if (!resolvedUserId && email) {
+      const matchedUser = await prisma.users.findFirst({
+        where: { email },
+        select: { id: true },
+      });
+      resolvedUserId = matchedUser?.id ?? null;
+    }
+
+    if (resolvedUserId) {
+      const profileUpdate: Prisma.ProfileUpdateInput = {};
+      if (fullName) profileUpdate.fullName = fullName;
+      if (phone) profileUpdate.contactPhone = phone;
+      if (gender) profileUpdate.gender = gender;
+      if (level) profileUpdate.padelLevel = level;
+      if (preferredSide) profileUpdate.padelPreferredSide = preferredSide;
+      if (clubName) profileUpdate.padelClubName = clubName;
+      if (Object.keys(profileUpdate).length > 0) {
+        await prisma.profile.update({
+          where: { id: resolvedUserId },
+          data: profileUpdate,
+        });
+      }
+
+      await prisma.crmCustomer.upsert({
+        where: {
+          organizationId_userId: { organizationId: organization.id, userId: resolvedUserId },
+        },
+        update: {
+          ...(displayName || fullName ? { displayName: displayName || fullName } : {}),
+          ...(email ? { contactEmail: email } : {}),
+          ...(phone ? { contactPhone: phone } : {}),
+        },
+        create: {
+          organizationId: organization.id,
+          userId: resolvedUserId,
+          displayName: displayName || fullName || undefined,
+          contactEmail: email || undefined,
+          contactPhone: phone || undefined,
+        },
+      });
+
+      const profile = await prisma.profile.findUnique({
+        where: { id: resolvedUserId },
+        select: { fullName: true },
+      });
+      const nameForPlayer = fullName || profile?.fullName || displayName || "Jogador Padel";
+
+      const existing = await prisma.padelPlayerProfile.findFirst({
+        where: { organizationId: organization.id, userId: resolvedUserId },
+        select: { id: true },
+      });
+
+      const player = existing?.id
+        ? await prisma.padelPlayerProfile.update({
+            where: { id: existing.id },
+            data: {
+              fullName: nameForPlayer,
+              displayName: displayName || nameForPlayer,
+              email: email || undefined,
+              phone: phone || undefined,
+              gender: gender || undefined,
+              level: level || undefined,
+              preferredSide: preferredSide || undefined,
+              clubName: clubName || undefined,
+              isActive,
+              notes: notes || undefined,
+              birthDate: birthDate && !Number.isNaN(birthDate.getTime()) ? birthDate : undefined,
+            },
+          })
+        : await prisma.padelPlayerProfile.create({
+            data: {
+              organizationId: organization.id,
+              userId: resolvedUserId,
+              fullName: nameForPlayer,
+              displayName: displayName || nameForPlayer,
+              email: email || undefined,
+              phone: phone || undefined,
+              gender: gender || undefined,
+              level: level || undefined,
+              preferredSide: preferredSide || undefined,
+              clubName: clubName || undefined,
+              isActive,
+              notes: notes || undefined,
+              birthDate: birthDate && !Number.isNaN(birthDate.getTime()) ? birthDate : undefined,
+            },
+          });
+
+      return jsonWrap({ ok: true, player }, { status: existing?.id ? 200 : 201 });
+    }
+
     const player = email
       ? await (async () => {
           const existing = await prisma.padelPlayerProfile.findFirst({
@@ -120,7 +267,7 @@ async function _POST(req: NextRequest) {
                 fullName,
                 displayName: displayName || fullName,
                 phone,
-                gender,
+                gender: gender ?? undefined,
                 level,
                 isActive,
                 notes: notes || undefined,
@@ -137,7 +284,7 @@ async function _POST(req: NextRequest) {
               displayName: displayName || fullName,
               email,
               phone,
-              gender,
+              gender: gender ?? undefined,
               level,
               isActive,
               notes: notes || undefined,
@@ -153,7 +300,7 @@ async function _POST(req: NextRequest) {
             fullName,
             displayName: displayName || fullName,
             phone,
-            gender,
+            gender: gender ?? undefined,
             level,
             isActive,
             notes: notes || undefined,

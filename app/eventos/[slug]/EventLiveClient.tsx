@@ -11,6 +11,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import ChatThread from "@/components/chat/ChatThread";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const LOCALE = "pt-PT";
@@ -2877,7 +2878,8 @@ export default function EventLiveClient({
     const params = new URLSearchParams(searchParams?.toString());
     params.set("tab", "preview");
     params.set("edit", "1");
-    return `${base}?${params.toString()}`;
+    const rawHref = `${base}?${params.toString()}`;
+    return appendOrganizationIdToHref(rawHref, organization?.id ?? null);
   })();
   const pendingMatches = flatMatches
     .filter((match) => match.status === "PENDING" || match.status === "SCHEDULED")

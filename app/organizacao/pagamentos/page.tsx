@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
+import { appendOrganizationIdToRedirectHref } from "@/lib/organizationId";
 
 type Props = {
   searchParams?: Record<string, string | string[] | undefined>;
 };
 
-export default function OrganizationPaymentsRedirect({ searchParams }: Props) {
+export default async function OrganizationPaymentsRedirect({ searchParams }: Props) {
   const params = new URLSearchParams();
   if (searchParams) {
     Object.entries(searchParams).forEach(([key, value]) => {
@@ -15,5 +16,6 @@ export default function OrganizationPaymentsRedirect({ searchParams }: Props) {
   }
   params.set("tab", "analyze");
   params.set("section", "financas");
-  redirect(`/organizacao?${params.toString()}`);
+  const target = await appendOrganizationIdToRedirectHref(`/organizacao?${params.toString()}`, searchParams);
+  redirect(target);
 }

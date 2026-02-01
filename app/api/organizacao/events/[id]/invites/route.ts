@@ -108,7 +108,10 @@ async function ensureInviteAccess(
   }
 
   if (options?.requireVerifiedEmail && event.organization) {
-    const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_INVITES" });
+    const emailGate = ensureOrganizationEmailVerified(event.organization, {
+      reasonCode: "EVENTS_INVITES",
+      organizationId,
+    });
     if (!emailGate.ok) {
       return { ...emailGate, status: 403 };
     }

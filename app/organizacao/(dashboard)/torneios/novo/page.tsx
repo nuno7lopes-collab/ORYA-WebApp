@@ -1,5 +1,16 @@
-import NewOrganizationEventPage from "@/app/organizacao/(dashboard)/eventos/novo/page";
+import { redirect } from "next/navigation";
+import { appendOrganizationIdToRedirectHref, resolveOrganizationIdFromSearchParams } from "@/lib/organizationId";
+import PadelTournamentWizardClient from "@/app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient";
 
-export default function OrganizationTorneiosNovoPage() {
-  return <NewOrganizationEventPage forcePreset="padel" />;
+type Props = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
+
+export default async function OrganizationTorneiosNovoPage({ searchParams }: Props) {
+  const orgId = resolveOrganizationIdFromSearchParams(searchParams);
+  if (!orgId) {
+    const target = await appendOrganizationIdToRedirectHref("/organizacao/torneios/novo", searchParams);
+    redirect(target);
+  }
+  return <PadelTournamentWizardClient organizationId={orgId} />;
 }

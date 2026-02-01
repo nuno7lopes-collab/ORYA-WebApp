@@ -7,6 +7,8 @@ import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { defaultBlurDataURL } from "@/lib/image";
+import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -137,6 +139,8 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
   const resolved = (await searchParams) ?? {};
   const search = resolved.q?.trim() ?? "";
   const events = await loadEvents(search);
+  const organizationId = await resolveOrganizationIdFromCookies();
+  const createEventHref = appendOrganizationIdToHref("/organizacao/eventos/novo", organizationId);
 
   return (
     <main className="min-h-screen w-full text-white">
@@ -157,7 +161,7 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
           </div>
 
           <Link
-            href="/organizacao/eventos/novo"
+            href={createEventHref}
             className={`${CTA_PRIMARY} hidden sm:inline-flex px-4 py-1.5 text-xs active:scale-95`}
           >
             + Criar evento

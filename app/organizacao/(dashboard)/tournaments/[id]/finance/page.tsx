@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { appendOrganizationIdToRedirectHref } from "@/lib/organizationId";
 
 type PageProps = { params: Promise<{ id: string }>; searchParams?: { organizationId?: string } };
 
@@ -31,7 +32,10 @@ export default async function TournamentFinancePage({ params, searchParams }: Pa
   const cookie = (await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: "" } })).headers.get("set-cookie");
   const finance = await fetchFinance(tournamentId, cookie);
   if (!finance?.ok) {
-    if (finance?.error === "FORBIDDEN") redirect("/organizacao");
+    if (finance?.error === "FORBIDDEN") {
+      const target = await appendOrganizationIdToRedirectHref("/organizacao", searchParams);
+      redirect(target);
+    }
     notFound();
   }
 

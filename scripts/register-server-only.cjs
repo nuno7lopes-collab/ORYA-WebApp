@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const Module = require("module");
 
 const originalLoad = Module._load;

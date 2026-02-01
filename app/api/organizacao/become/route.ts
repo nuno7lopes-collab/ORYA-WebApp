@@ -119,7 +119,7 @@ async function _POST(req: NextRequest) {
       if (contentType.includes("application/json")) {
         payload = await req.json();
       } else if (contentType.includes("application/x-www-form-urlencoded")) {
-        const form = await req.formData();
+        const form = (await req.formData()) as unknown as { get(name: string): FormDataEntryValue | null };
         payload = {
           entityType: form.get("entityType") as string | null,
           businessName: form.get("businessName") as string | null,

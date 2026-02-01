@@ -151,6 +151,7 @@ export async function POST(req: NextRequest) {
         token: request.token,
         pendingEmail: emailNormalized,
         expiresAt: request.expiresAt,
+        organizationId,
       });
     } catch (emailErr) {
       console.error("[organization/official-email] Falha ao enviar email de verificação", emailErr);

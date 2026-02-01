@@ -5,23 +5,34 @@ import {
   PadelPairingStatus,
   PadelPaymentMode,
   PadelRegistrationStatus,
+  SourceType,
 } from "@prisma/client";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { queueOffsessionActionRequired, queueDeadlineExpired } from "@/domain/notifications/splitPayments";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
+import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 
 type IntentLike = {
   id: string;
   status: string;
   amount: number | null;
   livemode: boolean;
+  currency: string;
   metadata: Record<string, any>;
 };
 
 export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<boolean> {
   const meta = intent.metadata ?? {};
+  const sourceType = typeof meta.sourceType === "string" ? meta.sourceType : null;
+  const scenarioRaw = typeof meta.paymentScenario === "string" ? meta.paymentScenario : typeof meta.scenario === "string" ? meta.scenario : null;
+  if (!scenarioRaw || scenarioRaw.toUpperCase() !== "GROUP_SPLIT_SECOND_CHARGE") {
+    return false;
+  }
+  if (sourceType && sourceType !== SourceType.PADEL_REGISTRATION && sourceType !== "PADEL_REGISTRATION") {
+    return false;
+  }
   const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
   const pairingId = Number(meta.pairingId);
   const idempotencyKey = typeof meta.idempotencyKey === "string" ? meta.idempotencyKey.trim() : "";
@@ -30,6 +41,7 @@ export async function fulfillPadelSecondCharge(intent: IntentLike): Promise<bool
   const now = new Date();
 
   if (intent.status === "succeeded") {
+    await fulfillPadelRegistrationIntent(intent, null).catch(() => null);
     await prisma.$transaction(async (tx) => {
       await tx.padelPairingSlot.updateMany({
         where: { pairingId, slotStatus: { in: ["PENDING", "FILLED"] } },

@@ -16,6 +16,8 @@ const SECTION_LABELS: Record<string, string> = {
   categories: "Categorias",
   players: "Jogadores",
   trainers: "Treinadores",
+  teams: "Equipas",
+  community: "Comunidade",
   lessons: "Aulas",
   inscricoes: "Formulários",
   reservas: "Reservas",
@@ -57,7 +59,9 @@ function resolveLabel(
   preset?: string | null,
   padel?: string | null,
 ) {
-  if (pathname.startsWith("/organizacao/torneios/novo")) return "Criar torneio";
+  if (pathname.startsWith("/organizacao/torneios/novo") || pathname.startsWith("/organizacao/padel/torneios/novo")) {
+    return "Criar torneio";
+  }
   if (pathname.startsWith("/organizacao/eventos/novo")) return preset === "padel" ? "Criar torneio" : "Criar evento";
   if (pathname.startsWith("/organizacao/chat") || pathname.startsWith("/organizacao/mensagens")) {
     return "Chat interno";

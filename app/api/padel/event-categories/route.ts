@@ -37,25 +37,45 @@ async function queueCategoryRefunds(params: {
 }) {
   const { eventId, linkId, refundedBy } = params;
 
-  const ticketTypeIds = await prisma.ticketType.findMany({
-    where: { padelEventCategoryLinkId: linkId },
+  const link = await prisma.padelEventCategoryLink.findUnique({
+    where: { id: linkId },
+    select: { padelCategoryId: true, eventId: true },
+  });
+  if (!link) return 0;
+
+  const lineIds = await prisma.padelRegistrationLine.findMany({
+    where: {
+      padelRegistration: {
+        pairing: {
+          eventId,
+          categoryId: link.padelCategoryId ?? undefined,
+        },
+      },
+    },
     select: { id: true },
   });
-
-  const ids = ticketTypeIds.map((t) => t.id);
-  if (!ids.length) return 0;
+  if (!lineIds.length) return 0;
 
   const summaries = await prisma.saleSummary.findMany({
     where: {
       eventId,
       status: "PAID",
-      lines: { some: { ticketTypeId: { in: ids } } },
+      lines: { some: { padelRegistrationLineId: { in: lineIds.map((l) => l.id) } } },
     },
     select: { purchaseId: true, paymentIntentId: true },
   });
 
+  const unique = new Map<string, { purchaseId: string | null; paymentIntentId: string | null }>();
+  summaries.forEach((summary) => {
+    const key = summary.purchaseId ?? summary.paymentIntentId ?? "";
+    if (!key) return;
+    if (!unique.has(key)) {
+      unique.set(key, { purchaseId: summary.purchaseId ?? null, paymentIntentId: summary.paymentIntentId ?? null });
+    }
+  });
+
   await Promise.all(
-    summaries.map((summary) =>
+    Array.from(unique.values()).map((summary) =>
       enqueueOperation({
         operationType: "PROCESS_REFUND_SINGLE",
         dedupeKey: refundKey(summary.purchaseId ?? summary.paymentIntentId ?? "unknown"),
@@ -76,7 +96,7 @@ async function queueCategoryRefunds(params: {
     ),
   );
 
-  return summaries.length;
+  return unique.size;
 }
 
 async function cancelCategoryActivity(params: { eventId: number; categoryId: number; organizationId: number; actorUserId: string }) {

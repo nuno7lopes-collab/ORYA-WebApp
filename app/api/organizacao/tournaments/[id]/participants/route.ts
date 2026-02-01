@@ -49,6 +49,7 @@ async function ensureOrganizationAccess(
   if (options?.requireVerifiedEmail) {
     const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, {
       reasonCode: "TOURNAMENTS_PARTICIPANTS",
+      organizationId: evt.organizationId,
     });
     if (!emailGate.ok) return { ...emailGate, status: 403 };
   }

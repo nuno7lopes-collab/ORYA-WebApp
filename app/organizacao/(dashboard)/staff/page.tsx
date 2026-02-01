@@ -319,7 +319,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationIdParsed = organizationIdParam ? Number(organizationIdParam) : null;
   const organizationId = organizationIdParsed && Number.isFinite(organizationIdParsed) ? organizationIdParsed : null;
-  const orgMeUrl = user && organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
+  const orgMeUrl = organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
   const { data: meData } = useSWR<{
     ok: boolean;
     organization?: { id: number; publicName?: string | null } | null;

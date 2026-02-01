@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       : null;
 
     const parsedSourceId = Number(payout.sourceId);
+    const organizationId = organization?.id ?? null;
     let source: { title: string | null; href: string | null } = { title: null, href: null };
     if (Number.isFinite(parsedSourceId)) {
       if (payout.sourceType === "EVENT_TICKET") {
@@ -63,7 +65,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         });
         source = {
           title: booking?.service?.title ?? "Reserva",
-          href: `/organizacao/reservas/${parsedSourceId}`,
+          href: appendOrganizationIdToHref(`/organizacao/reservas/${parsedSourceId}`, organizationId),
         };
       } else if (payout.sourceType === "PADEL_PAIRING") {
         const pairing = await prisma.padelPairing.findUnique({

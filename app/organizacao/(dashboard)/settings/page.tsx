@@ -68,7 +68,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgMeUrl =
-    user && organizationId && Number.isFinite(organizationId)
+    organizationId && Number.isFinite(organizationId)
       ? `/api/organizacao/me?organizationId=${organizationId}`
       : null;
   const { data, isLoading, mutate } = useSWR<OrganizationMeResponse>(

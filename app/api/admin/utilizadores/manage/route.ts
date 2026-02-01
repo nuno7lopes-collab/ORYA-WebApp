@@ -45,7 +45,7 @@ async function _POST(req: NextRequest) {
       userId = body?.userId;
       action = body?.action;
     } else {
-      const form = await req.formData();
+      const form = (await req.formData()) as unknown as { get(name: string): FormDataEntryValue | null };
       userId = (form.get("userId") as string | null) ?? undefined;
       action = (form.get("action") as Action | null) ?? undefined;
     }

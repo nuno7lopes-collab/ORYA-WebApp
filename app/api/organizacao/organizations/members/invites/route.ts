@@ -330,7 +330,10 @@ export async function POST(req: NextRequest) {
       where: { id: organizationId },
       select: { officialEmail: true, officialEmailVerifiedAt: true },
     });
-    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBER_INVITES" });
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, {
+      reasonCode: "ORG_MEMBER_INVITES",
+      organizationId,
+    });
     if (!emailGate.ok) {
       return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
@@ -575,7 +578,10 @@ export async function PATCH(req: NextRequest) {
       where: { id: organizationId },
       select: { officialEmail: true, officialEmailVerifiedAt: true },
     });
-    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, { reasonCode: "ORG_MEMBER_INVITES" });
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, {
+      reasonCode: "ORG_MEMBER_INVITES",
+      organizationId,
+    });
     if (!emailGate.ok) {
       return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }

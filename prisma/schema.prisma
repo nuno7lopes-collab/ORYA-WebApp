@@ -72,6 +72,10 @@ model Profile {
   padelPairingsPlayer1                                             PadelPairing[]          @relation("PadelPairingPlayer1")
   padelPairingsPlayer2                                             PadelPairing[]          @relation("PadelPairingPlayer2")
   padelWaitlistEntries                                             PadelWaitlistEntry[]
+  padelTeamMembers                                                 PadelTeamMember[]
+  padelCommunityPosts                                              PadelCommunityPost[]
+  padelCommunityReactions                                          PadelCommunityReaction[]
+  padelCommunityComments                                           PadelCommunityComment[]
   padelTournamentRoleAssignments                                  PadelTournamentRoleAssignment[]
   tournamentEntries                                                TournamentEntry[]
   organizationFormSubmissions                                      OrganizationFormSubmission[]
@@ -238,6 +242,8 @@ model Organization {
   padelCategories         PadelCategory[]
   padelClubs              PadelClub[]
   padelPairings           PadelPairing[]
+  padelTeams              PadelTeam[]
+  padelCommunityPosts     PadelCommunityPost[]
   padelPlayers            PadelPlayerProfile[]
   padelRankingEntries     PadelRankingEntry[]
   reservationProfessionals ReservationProfessional[]
@@ -1692,6 +1698,7 @@ model Event {
   padelCourtBlocks                  CalendarBlock[]
   padelAvailabilities               CalendarAvailability[]
   padelWaitlistEntries              PadelWaitlistEntry[]
+  padelTeamEntries                  PadelTeamEntry[]
   tournamentEntries                 TournamentEntry[]
   tournament                        Tournament?             @relation("EventTournament")
   promoCodes                        PromoCode[]
@@ -2110,7 +2117,8 @@ model SaleLine {
   id                   Int        @id @default(autoincrement())
   saleSummaryId        Int        @map("sale_summary_id")
   eventId              Int        @map("event_id")
-  ticketTypeId         Int        @map("ticket_type_id")
+  ticketTypeId         Int?       @map("ticket_type_id")
+  padelRegistrationLineId Int?    @map("padel_registration_line_id")
   promoCodeId          Int?       @map("promo_code_id")
   promoCodeSnapshot    String?    @map("promo_code_snapshot")
   promoLabelSnapshot   String?    @map("promo_label_snapshot")
@@ -2125,13 +2133,15 @@ model SaleLine {
   createdAt            DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   saleSummary          SaleSummary @relation(fields: [saleSummaryId], references: [id], onDelete: Cascade)
   event                Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  ticketType           TicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  ticketType           TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
+  padelRegistrationLine PadelRegistrationLine? @relation(fields: [padelRegistrationLineId], references: [id], onDelete: SetNull)
   promoCode            PromoCode?  @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   entitlements         Entitlement[]
 
   @@index([saleSummaryId], map: "sale_lines_summary_idx")
   @@index([eventId], map: "sale_lines_event_idx")
   @@index([ticketTypeId], map: "sale_lines_ticket_type_idx")
+  @@index([padelRegistrationLineId], map: "sale_lines_padel_reg_line_idx")
   @@index([promoCodeId], map: "sale_lines_promo_idx")
   @@map("sale_lines")
   @@schema("app_v3")
@@ -2537,7 +2547,7 @@ model PadelClub {
   shortName           String?                 @map("short_name")
   city                String?
   address             String?
-  addressId           String?                 @map("address_id") @db.Uuid
+  addressId           String                 @map("address_id") @db.Uuid
   kind                PadelClubKind           @default(OWN) @map("kind")
   sourceClubId        Int?                    @map("source_club_id")
   locationSource      LocationSource          @default(MANUAL) @map("location_source")
@@ -2560,7 +2570,9 @@ model PadelClub {
   calendarBlocks      CalendarBlock[]
   organization           Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tournaments         PadelTournamentConfig[]
-  addressRef          Address?            @relation(fields: [addressId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  teams               PadelTeam[]
+  communityPosts      PadelCommunityPost[]
+  addressRef          Address            @relation(fields: [addressId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([organizationId], map: "padel_clubs_organization_idx")
   @@index([addressId], map: "padel_clubs_address_idx")
@@ -2632,6 +2644,8 @@ model PadelCategory {
   tournamentEntries TournamentEntry[]
   eventLinks        PadelEventCategoryLink[]
   waitlistEntries   PadelWaitlistEntry[]
+  padelTeams        PadelTeam[]
+  padelTeamEntries  PadelTeamEntry[]
 
   @@map("padel_categories")
   @@schema("app_v3")
@@ -2646,6 +2660,8 @@ model PadelEventCategoryLink {
   format          padel_format?
   capacityTeams   Int?          @map("capacity_teams")
   capacityPlayers Int?          @map("capacity_players")
+  pricePerPlayerCents Int        @default(0) @map("price_per_player_cents")
+  currency         String        @default("EUR")
   liveStreamUrl   String?       @map("live_stream_url")
   isEnabled       Boolean       @default(true) @map("is_enabled")
   isHidden        Boolean       @default(false) @map("is_hidden")
@@ -2722,6 +2738,8 @@ model PadelTournamentConfig {
   ruleSetVersionId   Int?                 @map("rule_set_version_id")
   defaultCategoryId  Int?                 @map("default_category_id")
   enabledFormats     String[]             @default([]) @map("enabled_formats")
+  isInterclub        Boolean              @default(false) @map("is_interclub")
+  teamSize           Int?                 @map("team_size")
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   padelV2Enabled     Boolean              @default(false) @map("padel_v2_enabled")
@@ -2771,6 +2789,128 @@ model PadelTournamentRoleAssignment {
   @@index([organizationId], map: "padel_tournament_roles_org_idx")
   @@index([userId], map: "padel_tournament_roles_user_idx")
   @@map("padel_tournament_roles")
+  @@schema("app_v3")
+}
+
+/// Equipas/Interclubes
+model PadelTeam {
+  env                     String                         @default("prod")
+  id              Int       @id @default(autoincrement())
+  organizationId  Int       @map("organization_id")
+  padelClubId     Int?      @map("padel_club_id")
+  categoryId      Int?      @map("category_id")
+  name            String
+  level           String?
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  club            PadelClub?    @relation(fields: [padelClubId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  category        PadelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  members         PadelTeamMember[]
+  entries         PadelTeamEntry[]
+
+  @@index([organizationId], map: "padel_teams_org_idx")
+  @@index([padelClubId], map: "padel_teams_club_idx")
+  @@map("padel_teams")
+  @@schema("app_v3")
+}
+
+model PadelTeamMember {
+  env                     String                         @default("prod")
+  id          Int               @id @default(autoincrement())
+  teamId      Int               @map("team_id")
+  userId      String            @map("user_id") @db.Uuid
+  role        PadelTeamRole     @default(PLAYER)
+  status      PadelTeamMemberStatus @default(ACTIVE)
+  joinedAt    DateTime?         @map("joined_at") @db.Timestamptz(6)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  team        PadelTeam         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user        Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId], map: "padel_team_members_team_user_uq")
+  @@index([teamId], map: "padel_team_members_team_idx")
+  @@index([userId], map: "padel_team_members_user_idx")
+  @@map("padel_team_members")
+  @@schema("app_v3")
+}
+
+model PadelTeamEntry {
+  env                     String                         @default("prod")
+  id          Int                 @id @default(autoincrement())
+  eventId     Int                 @map("event_id")
+  teamId      Int                 @map("team_id")
+  categoryId  Int?                @map("category_id")
+  status      PadelTeamEntryStatus @default(PENDING)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event       Event               @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  team        PadelTeam            @relation(fields: [teamId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category    PadelCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([eventId, teamId, categoryId], map: "padel_team_entries_event_team_category_uq")
+  @@index([eventId], map: "padel_team_entries_event_idx")
+  @@index([teamId], map: "padel_team_entries_team_idx")
+  @@map("padel_team_entries")
+  @@schema("app_v3")
+}
+
+/// Comunidade do clube
+model PadelCommunityPost {
+  env                     String                         @default("prod")
+  id            Int       @id @default(autoincrement())
+  organizationId Int      @map("organization_id")
+  padelClubId   Int?      @map("padel_club_id")
+  authorUserId  String?   @map("author_user_id") @db.Uuid
+  title         String?
+  body          String
+  kind          PadelCommunityPostKind @default(ANNOUNCEMENT)
+  visibility    PadelCommunityVisibility @default(CLUB_MEMBERS)
+  isPinned      Boolean   @default(false) @map("is_pinned")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  club          PadelClub?    @relation(fields: [padelClubId], references: [id], onDelete: SetNull)
+  author        Profile?      @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  reactions     PadelCommunityReaction[]
+  comments      PadelCommunityComment[]
+
+  @@index([organizationId], map: "padel_community_posts_org_idx")
+  @@index([padelClubId], map: "padel_community_posts_club_idx")
+  @@map("padel_community_posts")
+  @@schema("app_v3")
+}
+
+model PadelCommunityReaction {
+  env                     String                         @default("prod")
+  id          Int       @id @default(autoincrement())
+  postId      Int       @map("post_id")
+  userId      String    @map("user_id") @db.Uuid
+  reaction    String    @map("reaction")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  post        PadelCommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user        Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, reaction], map: "padel_community_reactions_post_user_uq")
+  @@index([postId], map: "padel_community_reactions_post_idx")
+  @@map("padel_community_reactions")
+  @@schema("app_v3")
+}
+
+model PadelCommunityComment {
+  env                     String                         @default("prod")
+  id          Int       @id @default(autoincrement())
+  postId      Int       @map("post_id")
+  authorUserId String?  @map("author_user_id") @db.Uuid
+  body        String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  post        PadelCommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author      Profile?  @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([postId], map: "padel_community_comments_post_idx")
+  @@map("padel_community_comments")
   @@schema("app_v3")
 }
 
@@ -2931,13 +3071,17 @@ model PadelRegistrationLine {
   env                     String                         @default("prod")
   id                  Int               @id @default(autoincrement())
   padelRegistrationId String            @map("padel_registration_id") @db.Uuid
+  pairingSlotId       Int?              @map("pairing_slot_id")
   label               String            @map("label")
   qty                 Int               @map("qty")
   unitAmount          Int               @map("unit_amount")
   totalAmount         Int               @map("total_amount")
   padelRegistration   PadelRegistration @relation(fields: [padelRegistrationId], references: [id], onDelete: Cascade)
+  pairingSlot         PadelPairingSlot? @relation(fields: [pairingSlotId], references: [id], onDelete: SetNull)
+  saleLines           SaleLine[]
 
   @@index([padelRegistrationId], map: "padel_registration_lines_reg_idx")
+  @@index([pairingSlotId], map: "padel_registration_lines_slot_idx")
   @@map("padel_registration_lines")
   @@schema("app_v3")
 }
@@ -3020,6 +3164,7 @@ model PadelPairingSlot {
   profile         Profile?                  @relation("PadelPairingSlotProfile", fields: [profileId], references: [id])
   invitedUser     Profile?                  @relation("PadelPairingSlotInvitedUser", fields: [invitedUserId], references: [id], onDelete: SetNull)
   ticket          Ticket?                   @relation("TicketPairingSlot", fields: [ticketId], references: [id])
+  registrationLines PadelRegistrationLine[]
 
   @@index([pairingId])
   @@index([profileId])
@@ -4963,6 +5108,46 @@ enum PadelTournamentRole {
   REFEREE
   SCOREKEEPER
   STREAMER
+
+  @@schema("app_v3")
+}
+
+enum PadelTeamRole {
+  CAPTAIN
+  PLAYER
+  COACH
+  MANAGER
+
+  @@schema("app_v3")
+}
+
+enum PadelTeamMemberStatus {
+  ACTIVE
+  INVITED
+  REMOVED
+
+  @@schema("app_v3")
+}
+
+enum PadelTeamEntryStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelCommunityPostKind {
+  ANNOUNCEMENT
+  HIGHLIGHT
+  QUESTION
+
+  @@schema("app_v3")
+}
+
+enum PadelCommunityVisibility {
+  CLUB_MEMBERS
+  PUBLIC
 
   @@schema("app_v3")
 }

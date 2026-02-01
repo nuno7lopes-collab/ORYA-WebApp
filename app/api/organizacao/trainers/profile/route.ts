@@ -9,6 +9,7 @@ import { normalizeProfileCoverUrl } from "@/lib/profileMedia";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -206,12 +207,13 @@ export async function PATCH(req: NextRequest) {
     });
 
     if (requestReview) {
+      const trainersHref = appendOrganizationIdToHref("/organizacao/treinadores", organization.id);
       await createNotification({
         userId: user.id,
         type: NotificationType.SYSTEM_ANNOUNCE,
         title: "Perfil enviado para revisão",
         body: `O teu perfil de treinador foi enviado para revisão pela organização ${organization.publicName ?? "ORYA"}.`,
-        ctaUrl: "/organizacao/treinadores",
+        ctaUrl: trainersHref,
         ctaLabel: "Ver perfil",
         organizationId: organization.id,
       }).catch((err) => console.warn("[trainer][review-request] notification fail", err));

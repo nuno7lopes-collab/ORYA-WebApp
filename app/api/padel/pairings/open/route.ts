@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
@@ -25,47 +25,10 @@ import {
 } from "@/domain/padelRegistration";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
+import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 
-async function ensurePlayerProfile(params: { organizationId: number; userId: string }) {
-  const { organizationId, userId } = params;
-  const existing = await prisma.padelPlayerProfile.findFirst({
-    where: { organizationId, userId },
-    select: { id: true },
-  });
-  if (existing) return existing.id;
-  const [profile, authUser] = await Promise.all([
-    prisma.profile.findUnique({
-      where: { id: userId },
-      select: {
-        fullName: true,
-        contactPhone: true,
-        gender: true,
-        padelLevel: true,
-        padelPreferredSide: true,
-        padelClubName: true,
-      },
-    }),
-    prisma.users.findUnique({ where: { id: userId }, select: { email: true } }),
-  ]);
-  const name = profile?.fullName?.trim() || "Jogador Padel";
-  const email = authUser?.email ?? null;
-  const created = await prisma.padelPlayerProfile.create({
-    data: {
-      organizationId,
-      userId,
-      fullName: name,
-      displayName: name,
-      email: email ?? undefined,
-      phone: profile?.contactPhone ?? undefined,
-      gender: profile?.gender ?? undefined,
-      level: profile?.padelLevel ?? undefined,
-      preferredSide: profile?.padelPreferredSide ?? undefined,
-      clubName: profile?.padelClubName ?? undefined,
-    },
-    select: { id: true },
-  });
-  return created.id;
-}
+const ensurePlayerProfile = (params: { organizationId: number; userId: string }) =>
+  ensurePadelPlayerProfileId(prisma, params);
 
 // Permite um parceiro juntar-se a um pairing com mode LOOKING_FOR_PARTNER / isPublicOpen sem token.
 async function _POST(req: NextRequest) {

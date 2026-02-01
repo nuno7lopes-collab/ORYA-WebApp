@@ -10,6 +10,7 @@ import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 function fail(
   ctx: ReturnType<typeof getRequestContext>,
@@ -234,6 +235,7 @@ export async function PATCH(req: NextRequest) {
     });
 
     if (action === "APPROVE" || action === "REJECT") {
+      const trainersHref = appendOrganizationIdToHref("/organizacao/treinadores", organization.id);
       await createNotification({
         userId: targetUserId,
         type: NotificationType.SYSTEM_ANNOUNCE,
@@ -242,7 +244,7 @@ export async function PATCH(req: NextRequest) {
           action === "APPROVE"
             ? `A organização ${organization.publicName ?? "ORYA"} aprovou o teu perfil de treinador.`
             : `A organização ${organization.publicName ?? "ORYA"} recusou o teu perfil. ${reviewNote ? `Motivo: ${reviewNote}` : ""}`,
-        ctaUrl: "/organizacao/treinadores",
+        ctaUrl: trainersHref,
         ctaLabel: "Ver perfil",
         organizationId: organization.id,
       }).catch((err) => console.warn("[trainer][review] notification fail", err));

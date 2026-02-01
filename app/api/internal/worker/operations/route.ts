@@ -25,9 +25,8 @@ import {
   sendImportantUpdateEmail,
 } from "@/lib/emailSender";
 import { fulfillResaleIntent } from "@/lib/operations/fulfillResale";
-import { fulfillPadelSplitIntent } from "@/lib/operations/fulfillPadelSplit";
+import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 import { fulfillPadelSecondCharge } from "@/lib/operations/fulfillPadelSecondCharge";
-import { fulfillPadelFullIntent } from "@/lib/operations/fulfillPadelFull";
 import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
 import { fulfillServiceCreditPurchaseIntent } from "@/lib/operations/fulfillServiceCredits";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -774,16 +773,14 @@ async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEve
   const handledService = await fulfillServiceBookingIntent(intent as Stripe.PaymentIntent);
   const handledCredits = await fulfillServiceCreditPurchaseIntent(intent as Stripe.PaymentIntent);
   const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
-  const handledPadelSplit = await fulfillPadelSplitIntent(intent as Stripe.PaymentIntent, null);
-  const handledPadelFull = await fulfillPadelFullIntent(intent as Stripe.PaymentIntent);
+  const handledPadelRegistration = await fulfillPadelRegistrationIntent(intent as Stripe.PaymentIntent, null);
   const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
   const handledPaid =
     handledStore ||
     handledService ||
     handledCredits ||
     handledResale ||
-    handledPadelSplit ||
-    handledPadelFull ||
+    handledPadelRegistration ||
     handledSecondCharge
       ? true
       : await fulfillPaidIntent(intent as Stripe.PaymentIntent, stripeEventId);
@@ -793,8 +790,7 @@ async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEve
     handledService ||
     handledCredits ||
     handledResale ||
-    handledPadelSplit ||
-    handledPadelFull ||
+    handledPadelRegistration ||
     handledSecondCharge ||
     handledPaid
   );

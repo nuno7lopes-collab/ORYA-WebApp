@@ -10,6 +10,7 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
@@ -195,7 +196,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
           ]);
           await handleSwitch(newId, true);
         } else {
-          router.push("/organizacao?tab=overview");
+          router.push(appendOrganizationIdToHref("/organizacao?tab=overview", currentActive));
         }
       }
     } catch (err) {
@@ -320,7 +321,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
               {orgs.map(renderOrgCard)}
               <button
                 type="button"
-                onClick={() => router.push("/organizacao/become")}
+                onClick={() => router.push(appendOrganizationIdToHref("/organizacao/become", currentActive))}
                 className="flex flex-col justify-between rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)] hover:-translate-y-[3px] hover:border-white/30 transition text-left"
               >
                 <div className="space-y-2">
@@ -351,7 +352,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             </div>
             <button
               type="button"
-              onClick={() => router.push("/organizacao/become")}
+              onClick={() => router.push(appendOrganizationIdToHref("/organizacao/become", currentActive))}
               className={`${CTA_PRIMARY} px-5 py-2 text-sm`}
             >
               Criar primeira organização

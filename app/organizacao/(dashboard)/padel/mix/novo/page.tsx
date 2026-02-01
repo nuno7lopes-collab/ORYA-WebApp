@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type MixFormat = "NON_STOP" | "FASE_FINALS";
 
 export default function PadelMixNovoPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
   const [title, setTitle] = useState("Mix rápido");
   const [startsAt, setStartsAt] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(180);
@@ -46,7 +49,7 @@ export default function PadelMixNovoPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Não foi possível criar o Mix.");
       }
-      router.push(`/organizacao/torneios/${json.eventId}`);
+      router.push(appendOrganizationIdToHref(`/organizacao/torneios/${json.eventId}`, organizationId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar o Mix.");
     } finally {

@@ -16,6 +16,19 @@ function clampLimit(raw: string | null) {
   return Math.min(Math.max(1, Math.floor(parsed)), 30);
 }
 
+const asRecord = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
+  const record = asRecord(canonical);
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
 async function _GET(req: NextRequest) {
   try {
     const rateLimited = await enforcePublicRateLimit(req, {
@@ -56,10 +69,14 @@ async function _GET(req: NextRequest) {
         id: true,
         name: true,
         shortName: true,
-        city: true,
-        address: true,
         courtsCount: true,
         slug: true,
+        addressRef: {
+          select: {
+            formattedAddress: true,
+            canonical: true,
+          },
+        },
         organization: {
           select: {
             publicName: true,
@@ -97,8 +114,9 @@ async function _GET(req: NextRequest) {
           id: club.id,
           name: club.name,
           shortName: club.shortName ?? club.name,
-          city: club.city ?? null,
-          address: club.address ?? null,
+          city:
+            pickCanonicalField(club.addressRef?.canonical ?? null, "city", "addressLine2") ?? null,
+          address: club.addressRef?.formattedAddress ?? null,
           courtsCount: club.courtsCount ?? 0,
           slug: club.slug ?? null,
           organizationName: club.organization?.publicName ?? club.organization?.username ?? null,

@@ -194,23 +194,69 @@ async function issuePadelRegistrationEntitlements(
     include: { lines: true },
   });
   if (!registration) throw new Error("PADEL_REGISTRATION_NOT_FOUND");
-  if (!registration.lines.length) throw new Error("PADEL_REGISTRATION_LINES_EMPTY");
 
   const eventId = parseIntId(registration.eventId);
   if (!eventId) throw new Error("EVENT_ID_INVALID");
   const event = await tx.event.findUnique({ where: { id: eventId } });
   if (!event) throw new Error("EVENT_NOT_FOUND");
 
-  const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
-  const ownerKey = buildOwnerKey(payment.customerIdentityId ?? registration.buyerIdentityId ?? null);
+  const saleSummary = await tx.saleSummary.findFirst({
+    where: { purchaseId: payment.id },
+    select: { id: true },
+  });
+  if (!saleSummary) {
+    throw new Error("SALE_SUMMARY_NOT_FOUND");
+  }
 
-  for (const line of registration.lines) {
+  const saleLines = await tx.saleLine.findMany({
+    where: { saleSummaryId: saleSummary.id, padelRegistrationLineId: { not: null } },
+    include: { padelRegistrationLine: true },
+  });
+  if (!saleLines.length) {
+    throw new Error("PADEL_REGISTRATION_LINES_EMPTY");
+  }
+
+  const pairing = registration.pairingId
+    ? await tx.padelPairing.findUnique({ where: { id: registration.pairingId }, include: { slots: true } })
+    : null;
+  const slotMap = new Map((pairing?.slots ?? []).map((slot) => [slot.id, slot]));
+
+  const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
+
+  const normalizeEmail = (value: string | null | undefined) => {
+    const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+    return email && email.includes("@") ? email : null;
+  };
+
+  const buildPadelOwnerKey = (params: {
+    ownerUserId?: string | null;
+    ownerIdentityId?: string | null;
+    email?: string | null;
+  }) => {
+    if (params.ownerUserId) return `user:${params.ownerUserId}`;
+    if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
+    if (params.email) return `email:${params.email}`;
+    return "unknown";
+  };
+
+  for (const saleLine of saleLines) {
+    const line = saleLine.padelRegistrationLine;
+    if (!line) continue;
+    const slot = line.pairingSlotId ? slotMap.get(line.pairingSlotId) : null;
+    const entitlementOwnerUserId = slot?.profileId ?? slot?.invitedUserId ?? null;
+    const entitlementEmail = normalizeEmail(slot?.invitedContact ?? null);
+    const ownerKey = buildPadelOwnerKey({
+      ownerUserId: entitlementOwnerUserId,
+      ownerIdentityId: payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
+      email: entitlementEmail,
+    });
+
     for (let i = 0; i < line.qty; i += 1) {
       await tx.entitlement.upsert({
         where: {
           purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
             purchaseId: payment.id,
-            saleLineId: line.id,
+            saleLineId: saleLine.id,
             lineItemIndex: i,
             ownerKey,
             type: EntitlementType.PADEL_ENTRY,
@@ -218,6 +264,7 @@ async function issuePadelRegistrationEntitlements(
         },
         update: {
           status: EntitlementStatus.ACTIVE,
+          ownerUserId: entitlementOwnerUserId ?? null,
           ownerIdentityId: payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
           eventId: event.id,
           policyVersionApplied,
@@ -229,10 +276,10 @@ async function issuePadelRegistrationEntitlements(
         },
         create: {
           purchaseId: payment.id,
-          saleLineId: line.id,
+          saleLineId: saleLine.id,
           lineItemIndex: i,
           ownerKey,
-          ownerUserId: null,
+          ownerUserId: entitlementOwnerUserId ?? null,
           ownerIdentityId: payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
           eventId: event.id,
           type: EntitlementType.PADEL_ENTRY,

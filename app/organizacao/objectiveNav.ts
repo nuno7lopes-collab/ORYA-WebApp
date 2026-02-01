@@ -208,6 +208,18 @@ export function getObjectiveSections(
           ],
         },
         {
+          id: "equipas",
+          label: "Equipas",
+          href: padelHref("teams"),
+          items: [{ id: "teams", label: "Equipas", href: padelHref("teams") }],
+        },
+        {
+          id: "comunidade",
+          label: "Comunidade",
+          href: padelHref("community"),
+          items: [{ id: "community", label: "Comunidade", href: padelHref("community") }],
+        },
+        {
           id: "aulas",
           label: "Aulas",
           href: padelHref("lessons"),

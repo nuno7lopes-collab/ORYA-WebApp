@@ -8,6 +8,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import EventLiveDashboardClient from "@/app/organizacao/(dashboard)/eventos/EventLiveDashboardClient";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -46,7 +47,9 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
     allowFallback: true,
   });
 
-  if (!organization || !membership) redirect("/organizacao");
+  if (!organization || !membership) {
+    redirect(appendOrganizationIdToHref("/organizacao", event.organizationId));
+  }
   const access = await ensureMemberModuleAccess({
     organizationId: event.organizationId,
     userId: data.user.id,
@@ -55,7 +58,9 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
     moduleKey: OrganizationModule.EVENTOS,
     required: "EDIT",
   });
-  if (!access.ok) redirect(fallbackHref);
+  if (!access.ok) {
+    redirect(appendOrganizationIdToHref(fallbackHref, event.organizationId));
+  }
   const canManageLiveConfig = access.ok;
 
   return (

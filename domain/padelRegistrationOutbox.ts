@@ -58,7 +58,7 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
     include: {
       pairing: {
         include: {
-          slots: { include: { ticket: true } },
+          slots: true,
         },
       },
     },
@@ -71,10 +71,30 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
   const pairingId = pairing.id;
   const eventId = registration.eventId;
   const organizationId = registration.organizationId;
-  const paidTickets = pairing.slots
-    .filter((slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID && slot.ticket)
-    .map((slot) => slot.ticket!)
-    .filter(Boolean);
+
+  const payments = await prisma.payment.findMany({
+    where: {
+      sourceType: "PADEL_REGISTRATION",
+      sourceId: registration.id,
+      status: { in: ["SUCCEEDED", "PARTIAL_REFUND"] },
+    },
+    select: { id: true },
+  });
+  const paymentIntentByPurchaseId = new Map<string, string>();
+  if (payments.length > 0) {
+    const paymentEvents = await prisma.paymentEvent.findMany({
+      where: {
+        purchaseId: { in: payments.map((payment) => payment.id) },
+        stripePaymentIntentId: { not: null },
+      },
+      select: { purchaseId: true, stripePaymentIntentId: true },
+    });
+    for (const event of paymentEvents) {
+      if (event.purchaseId && event.stripePaymentIntentId) {
+        paymentIntentByPurchaseId.set(event.purchaseId, event.stripePaymentIntentId);
+      }
+    }
+  }
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.padelPairingSlot.updateMany({
@@ -85,16 +105,6 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
         ticketId: null,
       },
     });
-
-    const paidTicket = pairing.slots.find(
-      (slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID && slot.ticket,
-    )?.ticket;
-    if (paidTicket) {
-      await tx.ticket.update({
-        where: { id: paidTicket.id },
-        data: { pairingId: null },
-      });
-    }
 
     await tx.padelPairing.update({
       where: { id: pairingId },
@@ -117,9 +127,9 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
   });
 
   await Promise.all(
-    paidTickets.map((ticket) => {
-      const purchaseId = ticket.purchaseId ?? null;
-      if (!purchaseId) return Promise.resolve(null);
+    payments.map((payment) => {
+      const purchaseId = payment.id;
+      const paymentIntentId = paymentIntentByPurchaseId.get(purchaseId) ?? null;
       return enqueueOperation({
         operationType: "PROCESS_REFUND_SINGLE",
         dedupeKey: refundKey(purchaseId),
@@ -128,12 +138,12 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
           organizationId,
           pairingId,
           purchaseId,
-          paymentIntentId: ticket.stripePaymentIntentId ?? null,
+          paymentIntentId,
         },
         payload: {
           eventId,
           purchaseId,
-          paymentIntentId: ticket.stripePaymentIntentId ?? null,
+          paymentIntentId,
           reason: "CANCELLED",
           refundedBy: "system",
           auditPayload: {

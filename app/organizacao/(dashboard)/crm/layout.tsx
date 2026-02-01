@@ -9,6 +9,7 @@ import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import CrmSubnav from "./CrmSubnav";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { prisma } from "@/lib/prisma";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export default async function CrmLayout({ children }: { children: ReactNode }) {
   const supabase = await createSupabaseServer();
@@ -27,7 +28,7 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
   });
 
   if (!organization || !membership) {
-    redirect("/organizacao?tab=overview&section=modulos");
+    redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization?.id ?? null));
   }
 
   const crmAccess = await ensureCrmModuleAccess(
@@ -42,7 +43,7 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
     },
   );
   if (!crmAccess.ok) {
-    redirect("/organizacao?tab=overview&section=modulos");
+    redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id));
   }
 
   return (

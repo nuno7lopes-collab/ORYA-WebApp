@@ -8,6 +8,7 @@ import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -18,7 +19,10 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     },
   });
   if (!evt?.organizationId) return false;
-  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "PADEL_WAITLIST" });
+  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, {
+    reasonCode: "PADEL_WAITLIST",
+    organizationId: evt.organizationId,
+  });
   if (!emailGate.ok) return { ...emailGate, status: 403 };
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
@@ -37,29 +41,9 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
   return access.ok;
 }
 
-async function ensurePadelPlayerProfile(params: { organizationId: number; userId: string }) {
-  const { organizationId, userId } = params;
-  const existing = await prisma.padelPlayerProfile.findFirst({
-    where: { organizationId, userId },
-    select: { id: true },
-  });
-  if (existing) return;
-  const [profile, authUser] = await Promise.all([
-    prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true, contactPhone: true } }),
-    prisma.users.findUnique({ where: { id: userId }, select: { email: true } }),
-  ]);
-  const name = profile?.fullName?.trim() || "Jogador Padel";
-  await prisma.padelPlayerProfile.create({
-    data: {
-      organizationId,
-      userId,
-      fullName: name,
-      displayName: name,
-      email: authUser?.email ?? undefined,
-      phone: profile?.contactPhone ?? undefined,
-    },
-  });
-}
+const ensurePadelPlayerProfile = async (params: { organizationId: number; userId: string }) => {
+  await ensurePadelPlayerProfileId(prisma, params);
+};
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);

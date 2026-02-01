@@ -15,6 +15,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { formatDateTime } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
 import {
   CTA_GHOST,
   CTA_NEUTRAL,
@@ -362,6 +363,8 @@ export default function ChatInternoV2Client() {
   const searchParams = useSearchParams();
   const requestedConversationId = searchParams.get("conversationId");
   const requestedMessageId = searchParams.get("messageId");
+  const organizationIdParam = parseOrganizationId(searchParams.get("organizationId"));
+  const fallbackOrganizationId = organizationIdParam ?? getOrganizationIdFromBrowser();
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
@@ -607,15 +610,12 @@ export default function ChatInternoV2Client() {
 
   const loadOrganizationId = useCallback(async () => {
     if (organizationId) return organizationId;
-    try {
-      const data = await fetcher<OrganizationContextResponse>("/api/organizacao/me");
-      const id = data.organization?.id ?? null;
-      if (id) setOrganizationId(id);
-      return id;
-    } catch {
-      return null;
+    if (fallbackOrganizationId) {
+      setOrganizationId(fallbackOrganizationId);
+      return fallbackOrganizationId;
     }
-  }, [organizationId]);
+    return null;
+  }, [organizationId, fallbackOrganizationId]);
 
   const loadDirectory = useCallback(async () => {
     setDirectoryLoading(true);

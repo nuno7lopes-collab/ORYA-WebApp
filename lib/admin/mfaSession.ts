@@ -100,25 +100,26 @@ export function verifyMfaSession(token: string | null | undefined, userId?: stri
   return { ok: true as const, payload };
 }
 
-export function readMfaSessionCookie(req?: NextRequest | Request) {
+export async function readMfaSessionCookie(req?: NextRequest | Request) {
   if (req && "cookies" in req) {
     const value = (req as NextRequest).cookies.get(COOKIE_NAME)?.value;
     return value ?? null;
   }
   try {
-    return cookies().get(COOKIE_NAME)?.value ?? null;
+    const store = await cookies();
+    return store.get(COOKIE_NAME)?.value ?? null;
   } catch {
     return null;
   }
 }
 
-export function readAdminHost(req?: NextRequest | Request) {
+export async function readAdminHost(req?: NextRequest | Request) {
   if (req && "headers" in req) {
     const host = (req as NextRequest).headers.get("x-forwarded-host") || (req as NextRequest).headers.get("host");
     return host ?? null;
   }
   try {
-    const hdrs = headers();
+    const hdrs = await headers();
     return hdrs.get("x-forwarded-host") || hdrs.get("host");
   } catch {
     return null;

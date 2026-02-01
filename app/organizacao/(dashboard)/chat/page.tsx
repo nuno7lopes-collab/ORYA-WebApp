@@ -10,6 +10,7 @@ import { CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
 import { OrganizationMemberRole } from "@prisma/client";
 import ChatPreviewClient from "./preview/ChatPreviewClient";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export default async function OrganizationChatPage() {
   const { user } = await getCurrentUser();
@@ -28,7 +29,8 @@ export default async function OrganizationChatPage() {
   ]);
 
   if (!organization || !membership || !allowedRoles.has(membership.role)) {
-    redirect("/organizacao/organizations");
+    const target = appendOrganizationIdToHref("/organizacao/organizations", organization?.id ?? null);
+    redirect(target);
   }
 
   const modulesRows = await prisma.organizationModuleEntry.findMany({
@@ -53,7 +55,10 @@ export default async function OrganizationChatPage() {
           <p className="text-sm text-white/70">
             Ativa o módulo nas apps da organização para começares a usar o chat interno.
           </p>
-          <Link href="/organizacao?tab=overview&section=modulos" className={`${CTA_SECONDARY} mt-4 text-[12px]`}>
+          <Link
+            href={appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id)}
+            className={`${CTA_SECONDARY} mt-4 text-[12px]`}
+          >
             Gerir apps
           </Link>
         </div>

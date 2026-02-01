@@ -13,6 +13,7 @@ import StoreOrdersPanel from "@/components/store/StoreOrdersPanel";
 import StoreOverviewPanel from "@/components/store/StoreOverviewPanel";
 import StoreVisibilityToggle from "@/components/store/StoreVisibilityToggle";
 import Link from "next/link";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +137,7 @@ export default async function LojaPage({ searchParams }: PageProps) {
 
   const view = resolveView(viewParam);
   const sub = resolveSub(view, subParam);
-  const baseHref = "/organizacao/loja";
+  const baseHref = appendOrganizationIdToHref("/organizacao/loja", organization.id);
 
   const showActivationCard = !store;
 

@@ -35,6 +35,7 @@ import {
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule";
+import { createManualAddress } from "../lib/address/service";
 
 const loadEnvFile = (file: string) => {
   if (!fs.existsSync(file)) return;
@@ -182,6 +183,16 @@ const ensureClub = async ({
   kind: PadelClubKind;
 }) => {
   const existing = await prisma.padelClub.findUnique({ where: { slug } });
+  const formattedAddress = [address, city].filter(Boolean).join(", ") || name;
+  const addressResult = await createManualAddress({
+    formattedAddress,
+    latitude: 0,
+    longitude: 0,
+  });
+  if (!addressResult.ok) {
+    throw new Error("SEED_ADDRESS_FAILED");
+  }
+  const addressId = existing?.addressId ?? addressResult.address.id;
   if (existing) {
     return prisma.padelClub.update({
       where: { id: existing.id },
@@ -190,6 +201,7 @@ const ensureClub = async ({
         name,
         city,
         address,
+        addressId,
         courtsCount,
         isDefault,
         kind,
@@ -204,6 +216,7 @@ const ensureClub = async ({
       slug,
       city,
       address,
+      addressId,
       courtsCount,
       isDefault,
       kind,

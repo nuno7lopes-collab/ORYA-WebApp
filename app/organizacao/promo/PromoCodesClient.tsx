@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
@@ -8,6 +9,7 @@ import { trackEvent } from "@/lib/analytics";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { CTA_DANGER, CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type PromoCodeDto = {
   id: number;
@@ -135,6 +137,9 @@ function PromoStatusBadge({ status, active }: { status?: "ACTIVE" | "INACTIVE" |
 export default function PromoCodesClient() {
   const { user } = useUser();
   const { openModal } = useAuthModal();
+  const searchParams = useSearchParams();
+  const orgId = parseOrganizationId(searchParams?.get("organizationId")) ?? getOrganizationIdFromBrowser();
+  const loginRedirectHref = appendOrganizationIdToHref("/organizacao/promo", orgId);
   const { data, mutate } = useSWR<ListResponse>(user ? "/api/organizacao/promo" : null, fetcher);
   const viewerRole = data?.viewerRole ?? null;
   const isPromoterOnly = viewerRole === "PROMOTER";
@@ -162,9 +167,9 @@ export default function PromoCodesClient() {
   const loading = !data;
   useEffect(() => {
     if (!user && !data) {
-      openModal({ mode: "login", redirectTo: "/organizacao/promo", showGoogle: true });
+      openModal({ mode: "login", redirectTo: loginRedirectHref, showGoogle: true });
     }
-  }, [user, data, openModal]);
+  }, [user, data, openModal, loginRedirectHref]);
 
   const events = useMemo(() => data?.events ?? [], [data]);
   const promos = useMemo(() => data?.promoCodes ?? [], [data]);

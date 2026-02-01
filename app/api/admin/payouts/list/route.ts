@@ -6,6 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 const PAGE_SIZE = 50;
 
@@ -106,6 +107,7 @@ export async function GET(req: NextRequest) {
       const organization = payout.recipientConnectAccountId
         ? orgByAccount.get(payout.recipientConnectAccountId) ?? null
         : null;
+      const organizationId = organization?.id ?? null;
       const parsedId = Number(payout.sourceId);
       let source: { title: string | null; href: string | null } = { title: null, href: null };
       if (Number.isFinite(parsedId)) {
@@ -119,7 +121,7 @@ export async function GET(req: NextRequest) {
           const booking = bookingById.get(parsedId);
           source = {
             title: booking?.service?.title ?? "Reserva",
-            href: `/organizacao/reservas/${parsedId}`,
+            href: appendOrganizationIdToHref(`/organizacao/reservas/${parsedId}`, organizationId),
           };
         } else if (payout.sourceType === "PADEL_PAIRING") {
           const pairing = pairingById.get(parsedId);

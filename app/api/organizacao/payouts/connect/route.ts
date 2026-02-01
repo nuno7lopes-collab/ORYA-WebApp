@@ -15,6 +15,7 @@ import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -134,10 +135,18 @@ export async function POST(req: NextRequest) {
     }
 
     const baseUrl = getAppBaseUrl();
+    const refreshPath = appendOrganizationIdToHref(
+      "/organizacao?tab=analyze&section=financas&onboarding=refresh",
+      organization.id,
+    );
+    const returnPath = appendOrganizationIdToHref(
+      "/organizacao?tab=analyze&section=financas&onboarding=done",
+      organization.id,
+    );
     const link = await createAccountLink({
       account: accountId,
-      refresh_url: `${baseUrl}/organizacao?tab=analyze&section=financas&onboarding=refresh`,
-      return_url: `${baseUrl}/organizacao?tab=analyze&section=financas&onboarding=done`,
+      refresh_url: `${baseUrl}${refreshPath}`,
+      return_url: `${baseUrl}${returnPath}`,
       type: "account_onboarding",
     });
 

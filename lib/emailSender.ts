@@ -2,6 +2,7 @@
 
 import { sendEmail, assertResendReady } from "@/lib/resendClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import {
   renderPurchaseConfirmationEmail,
   renderTournamentScheduleEmail,
@@ -222,12 +223,17 @@ type OwnerTransferEmailInput = {
   actorName: string;
   token: string;
   expiresAt?: Date | null;
+  organizationId?: number | null;
 };
 
 export async function sendOwnerTransferEmail(input: OwnerTransferEmailInput) {
   assertResendReady();
   const baseUrl = getAppBaseUrl();
-  const confirmUrl = `${baseUrl}/organizacao/owner/confirm?token=${encodeURIComponent(input.token)}`;
+  const confirmPath = appendOrganizationIdToHref(
+    `/organizacao/owner/confirm?token=${encodeURIComponent(input.token)}`,
+    input.organizationId ?? null,
+  );
+  const confirmUrl = `${baseUrl}${confirmPath}`;
   const { subject, html, text } = renderOwnerTransferEmail({
     organizationName: input.organizationName,
     actorName: input.actorName,
@@ -249,12 +255,17 @@ type OfficialEmailVerificationInput = {
   token: string;
   pendingEmail: string;
   expiresAt?: Date | null;
+  organizationId?: number | null;
 };
 
 export async function sendOfficialEmailVerificationEmail(input: OfficialEmailVerificationInput) {
   assertResendReady();
   const baseUrl = getAppBaseUrl();
-  const confirmUrl = `${baseUrl}/organizacao/settings/verify?token=${encodeURIComponent(input.token)}`;
+  const confirmPath = appendOrganizationIdToHref(
+    `/organizacao/settings/verify?token=${encodeURIComponent(input.token)}`,
+    input.organizationId ?? null,
+  );
+  const confirmUrl = `${baseUrl}${confirmPath}`;
   const { subject, html, text } = renderOfficialEmailVerificationEmail({
     organizationName: input.organizationName,
     confirmUrl,

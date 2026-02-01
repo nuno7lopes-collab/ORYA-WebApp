@@ -72,7 +72,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (event.organization) {
-      const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_INVITE_TOKEN" });
+      const emailGate = ensureOrganizationEmailVerified(event.organization, {
+        reasonCode: "EVENTS_INVITE_TOKEN",
+        organizationId,
+      });
       if (!emailGate.ok) {
         return respondError(
           ctx,

@@ -2211,6 +2211,45 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
   });
 
   if (!tickets.length) {
+    const payment = paymentId
+      ? await prisma.payment.findUnique({ where: { id: paymentId }, select: { sourceType: true } })
+      : null;
+    if (payment?.sourceType === "PADEL_REGISTRATION" && paymentId) {
+      const saleSummary = await prisma.saleSummary.findUnique({
+        where: { purchaseId: paymentId },
+        select: { id: true },
+      });
+      await prisma.$transaction([
+        prisma.entitlement.updateMany({
+          where: { purchaseId: paymentId },
+          data: { status: EntitlementStatus.REVOKED },
+        }),
+        paymentEventRepo(prisma).updateMany({
+          where: { stripePaymentIntentId: paymentIntentId },
+          data: {
+            status: "REFUNDED",
+            errorMessage: null,
+            updatedAt: new Date(),
+            mode: charge.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
+            isTest: !charge.livemode,
+          },
+        }),
+        ...(saleSummary?.id
+          ? [
+              saleSummaryRepo(prisma).update({
+                where: { id: saleSummary.id },
+                data: { status: SaleSummaryStatus.REFUNDED, updatedAt: new Date() },
+              }),
+            ]
+          : []),
+      ]);
+      await publishPaymentRefunded({
+        paymentId: paymentId ?? null,
+        stripeEventId: opts?.stripeEventId ?? null,
+        source: "stripe.webhook",
+      });
+      return;
+    }
     logWebhookWarn("handle_refund.no_tickets_for_payment_intent", { paymentIntentId });
     return;
   }

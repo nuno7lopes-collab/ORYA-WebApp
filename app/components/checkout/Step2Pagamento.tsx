@@ -355,6 +355,8 @@ export default function Step2Pagamento() {
     const idemKey = typeof idemKeyRaw === "string" ? idemKeyRaw.trim() : undefined;
     const purchaseId = undefined;
 
+    const isPadelFlow = checkoutVariant === "PADEL";
+
     return {
       slug: safeDados.slug,
       items,
@@ -368,10 +370,23 @@ export default function Step2Pagamento() {
       pairingId: typeof pairingId === "number" ? pairingId : undefined,
       slotId: typeof pairingSlotId === "number" ? pairingSlotId : undefined,
       ticketTypeId: typeof pairingTicketTypeId === "number" ? pairingTicketTypeId : undefined,
+      padelCategoryLinkId:
+        isPadelFlow && typeof pairingTicketTypeId === "number" ? pairingTicketTypeId : undefined,
+      sourceType: isPadelFlow ? "PADEL_REGISTRATION" : undefined,
       eventId: safeDados.eventId ? Number(safeDados.eventId) : undefined,
       inviteToken: typeof inviteToken === "string" && inviteToken.trim() ? inviteToken.trim() : undefined,
     };
-  }, [safeDados, promoCode, requiresAuth, paymentMethod, pairingId, pairingSlotId, pairingTicketTypeId, inviteToken]);
+  }, [
+    safeDados,
+    promoCode,
+    requiresAuth,
+    paymentMethod,
+    pairingId,
+    pairingSlotId,
+    pairingTicketTypeId,
+    inviteToken,
+    checkoutVariant,
+  ]);
 
   useEffect(() => {
     // Se não houver dados de checkout, mandamos de volta

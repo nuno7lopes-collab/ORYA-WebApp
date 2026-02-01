@@ -2,8 +2,13 @@
 
 import Link from "next/link";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 export default function NovaEventoPage() {
+  const orgId = getOrganizationIdFromBrowser();
+  const becomeHref = appendOrganizationIdToHref("/organizacao/become", orgId);
+  const dashboardHref = appendOrganizationIdToHref("/organizacao?tab=create", orgId);
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10 text-white">
       <div className="orya-page-width flex justify-center">
@@ -15,10 +20,10 @@ export default function NovaEventoPage() {
             organização.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
-            <Link href="/organizacao/become" className={CTA_PRIMARY}>
+            <Link href={becomeHref} className={CTA_PRIMARY}>
               Criar organização
             </Link>
-            <Link href="/organizacao?tab=create" className={CTA_SECONDARY}>
+            <Link href={dashboardHref} className={CTA_SECONDARY}>
               Ir para o dashboard
             </Link>
           </div>

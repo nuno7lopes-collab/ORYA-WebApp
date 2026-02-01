@@ -4,6 +4,7 @@ import { getNotificationPrefs, shouldNotify } from "@/domain/notifications/prefs
 import { deliverApnsPush } from "@/lib/push/apns";
 import type { CreateNotificationInput } from "@/domain/notifications/types";
 import { NotificationType, NotificationPriority, type Prisma } from "@prisma/client";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type EventLogRecord = {
   eventId: string;
@@ -263,18 +264,21 @@ export async function deliverNotificationOutboxItem(item: {
       item.notificationType === "OWNER_TRANSFER_CANCELLED" ? "Transferência de owner cancelada" :
       "Transferência de owner expirada";
     const body = "Consulta os detalhes no painel da organização.";
+    const rawOrgId = typeof payload.organizationId === "number" ? payload.organizationId : Number(payload.organizationId);
+    const resolvedOrgId = Number.isFinite(rawOrgId) ? rawOrgId : null;
+    const orgHref = appendOrganizationIdToHref("/organizacao", resolvedOrgId);
     const notification = await createNotificationRecord({
       userId: item.userId,
       type: NotificationType.SYSTEM_ANNOUNCE,
       title,
       body,
       payload: payloadJson,
-      ctaUrl: "/organizacao",
+      ctaUrl: orgHref,
       ctaLabel: "Abrir organização",
       priority: "NORMAL",
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: "/organizacao" });
+    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: orgHref });
     return notification;
   }
 
@@ -392,9 +396,10 @@ export async function deliverNotificationOutboxItem(item: {
     const orgId = Number.isFinite(payloadOrgId)
       ? payloadOrgId
       : conversation?.organizationId ?? undefined;
-    const ctaUrl = conversationId
+    const baseChatUrl = conversationId
       ? `/organizacao/chat?conversationId=${encodeURIComponent(conversationId)}`
       : "/organizacao/chat";
+    const ctaUrl = appendOrganizationIdToHref(baseChatUrl, orgId ?? null);
 
     const notification = await createNotificationRecord({
       userId: item.userId,

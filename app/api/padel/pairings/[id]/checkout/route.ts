@@ -36,9 +36,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!user) return fail("UNAUTHENTICATED", "Sessão inválida.", 401);
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const ticketTypeId = body && typeof body.ticketTypeId === "number" ? body.ticketTypeId : null;
+  const categoryLinkId = body && typeof body.ticketTypeId === "number" ? body.ticketTypeId : null;
   const inviteToken = typeof body?.inviteToken === "string" ? body.inviteToken : null;
-  if (!ticketTypeId) return fail("MISSING_TICKET_TYPE", "Ticket type obrigatório.", 400);
+  if (!categoryLinkId) return fail("MISSING_CATEGORY_LINK", "Categoria inválida.", 400);
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
@@ -100,21 +100,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return fail("FORBIDDEN", "Sem permissões.", 403);
   }
 
-  const ticketType = await prisma.ticketType.findUnique({
-    where: { id: ticketTypeId },
+  const categoryLink = await prisma.padelEventCategoryLink.findUnique({
+    where: { id: categoryLinkId },
     select: {
-      price: true,
-      currency: true,
+      id: true,
       eventId: true,
+      padelCategoryId: true,
+      pricePerPlayerCents: true,
+      currency: true,
+      isEnabled: true,
       event: { select: { slug: true } },
-      padelEventCategoryLink: { select: { padelCategoryId: true } },
     },
   });
-  if (!ticketType || ticketType.eventId !== pairing.eventId) {
-    return fail("INVALID_TICKET_TYPE", "Ticket type inválido.", 400);
+  if (!categoryLink || categoryLink.eventId !== pairing.eventId) {
+    return fail("INVALID_CATEGORY_LINK", "Categoria inválida.", 400);
   }
-  if (pairing.categoryId && ticketType.padelEventCategoryLink?.padelCategoryId !== pairing.categoryId) {
-    return fail("TICKET_CATEGORY_MISMATCH", "Categoria de ticket inválida.", 409);
+  if (categoryLink.isEnabled === false) {
+    return fail("CATEGORY_DISABLED", "Categoria indisponível.", 409);
+  }
+  if (pairing.categoryId && categoryLink.padelCategoryId !== pairing.categoryId) {
+    return fail("CATEGORY_MISMATCH", "Categoria inválida.", 409);
   }
 
   // Elegibilidade: garantir que capitão + parceiro (quando definido) respeitam regras
@@ -218,19 +223,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return fail(playerCapacity.code, "Capacidade excedida.", 409);
   }
 
-  const currency = ticketType.currency || "EUR";
+  const currency = categoryLink.currency || "EUR";
   if (currency.toUpperCase() !== "EUR") {
     return fail("CURRENCY_NOT_SUPPORTED", "Moeda não suportada.", 400);
   }
   const paymentScenario = pairing.payment_mode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT";
-  const items = [
-    {
-      ticketId: ticketTypeId,
-      quantity: pairing.payment_mode === PadelPaymentMode.FULL ? 2 : 1,
-      unitPriceCents: ticketType.price,
-      currency: currency.toUpperCase(),
-    },
-  ];
+  const payerSlot =
+    pairing.payment_mode === PadelPaymentMode.SPLIT
+      ? pending
+      : pairing.slots.find((slot) => slot.slot_role === "CAPTAIN") ?? pairing.slots[0] ?? null;
+  if (!payerSlot?.id) {
+    return fail("PAIRING_SLOT_REQUIRED", "Slot da dupla em falta.", 400);
+  }
 
   let baseUrl = env.appBaseUrl;
   if (!baseUrl) {
@@ -249,12 +253,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         cookie: req.headers.get("cookie") ?? "",
       },
       body: JSON.stringify({
-        slug: pairing.event.slug ?? ticketType.event?.slug ?? null,
-        items,
+        slug: pairing.event.slug ?? categoryLink.event?.slug ?? null,
+        sourceType: "PADEL_REGISTRATION",
         paymentScenario,
         pairingId: pairing.id,
-        slotId: pending?.id ?? undefined,
+        slotId: payerSlot.id,
         inviteToken: inviteToken ?? undefined,
+        ticketTypeId: categoryLinkId,
+        padelCategoryLinkId: categoryLinkId,
       }),
     });
 

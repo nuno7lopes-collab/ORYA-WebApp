@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 
@@ -350,7 +351,7 @@ export default function InfraClient({
       };
     }
     QRCode.toDataURL(mfaEnroll.otpauth, { margin: 1, width: 220 })
-      .then((url) => {
+      .then((url: string) => {
         if (!cancelled) setQrDataUrl(url);
       })
       .catch(() => {
@@ -616,10 +617,13 @@ export default function InfraClient({
               <div className="space-y-2 text-xs text-white/80">
                 <div className="flex flex-col gap-2">
                   {qrDataUrl ? (
-                    <img
+                    <Image
                       src={qrDataUrl}
                       alt="QR Code 2FA"
+                      width={176}
+                      height={176}
                       className="h-44 w-44 rounded-lg border border-white/10 bg-white/5 p-2"
+                      unoptimized
                     />
                   ) : (
                     <p className="text-xs text-white/60">A gerar QR…</p>

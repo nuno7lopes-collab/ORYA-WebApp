@@ -12,6 +12,7 @@ import { NotificationType } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError, logInfo } from "@/lib/observability/logger";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export async function GET(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -98,6 +99,7 @@ export async function GET(req: NextRequest) {
         select: { userId: true },
       });
       const uniq = Array.from(new Set(owners.map((o) => o.userId)));
+      const financeHref = appendOrganizationIdToHref("/organizacao?tab=analyze&section=financas", organization.id);
       await Promise.all(
         uniq.map(async (uid) => {
           if (!(await shouldNotify(uid, NotificationType.STRIPE_STATUS))) return;
@@ -106,7 +108,7 @@ export async function GET(req: NextRequest) {
             type: NotificationType.STRIPE_STATUS,
             title: "Stripe precisa de atenção",
             body: "Faltam dados no Stripe para ativar pagamentos/payouts.",
-            ctaUrl: "/organizacao?tab=analyze&section=financas",
+            ctaUrl: financeHref,
             ctaLabel: "Rever Stripe",
             payload: { requirements_due },
           });

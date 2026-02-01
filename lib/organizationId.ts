@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
+  appendOrganizationIdToHref,
   parseOrganizationId,
   resolveOrganizationIdForUi,
   resolveOrganizationIdFromParams,
@@ -11,6 +12,30 @@ import {
 export const ORGANIZATION_COOKIE_NAME = "orya_organization";
 
 export { parseOrganizationId, resolveOrganizationIdForUi, resolveOrganizationIdFromParams };
+
+type SearchParamsLike =
+  | URLSearchParams
+  | Record<string, string | string[] | undefined>
+  | null
+  | undefined;
+
+export function resolveOrganizationIdFromSearchParams(searchParams?: SearchParamsLike): number | null {
+  if (!searchParams) return null;
+  if (searchParams instanceof URLSearchParams) {
+    return resolveOrganizationIdFromParams(searchParams);
+  }
+  const raw = searchParams.organizationId;
+  if (Array.isArray(raw)) return parseOrganizationId(raw[0]);
+  return parseOrganizationId(raw);
+}
+
+export async function appendOrganizationIdToRedirectHref(
+  href: string,
+  searchParams?: SearchParamsLike,
+): Promise<string> {
+  const orgId = resolveOrganizationIdFromSearchParams(searchParams) ?? (await resolveOrganizationIdFromCookies());
+  return appendOrganizationIdToHref(href, orgId);
+}
 
 export async function resolveOrganizationIdFromCookies(): Promise<number | null> {
   try {
@@ -27,8 +52,17 @@ export function resolveOrganizationIdFromRequest(
 ): number | null {
   const resolved = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   if (resolved) return resolved;
-  if (!options?.allowFallback) return null;
-  return parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value);
+  const allowFallback = typeof options?.allowFallback === "boolean" ? options.allowFallback : null;
+  if (allowFallback === true) {
+    return parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value);
+  }
+  if (allowFallback === false) return null;
+  const method = req.method?.toUpperCase() ?? "";
+  const isOrgApi = req.nextUrl.pathname.startsWith("/api/organizacao");
+  if ((method === "GET" || method === "HEAD") && isOrgApi) {
+    return parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value);
+  }
+  return null;
 }
 
 type OrgIdSource = "query" | "body" | "payload";

@@ -115,6 +115,23 @@ async function _POST(req: NextRequest) {
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const organizationIdBody = parseOrganizationId(body.organizationId);
   const hasFormat = Object.prototype.hasOwnProperty.call(body, "format");
+  const hasIsInterclub = Object.prototype.hasOwnProperty.call(body, "isInterclub");
+  const isInterclub = typeof body.isInterclub === "boolean" ? body.isInterclub : null;
+  if (hasIsInterclub && typeof body.isInterclub !== "boolean") {
+    return jsonWrap({ ok: false, error: "INVALID_INTERCLUB" }, { status: 400 });
+  }
+  const hasTeamSize = Object.prototype.hasOwnProperty.call(body, "teamSize");
+  const teamSizeRaw =
+    typeof body.teamSize === "number"
+      ? body.teamSize
+      : typeof body.teamSize === "string"
+        ? Number(body.teamSize)
+        : null;
+  const teamSizeParsed =
+    hasTeamSize && Number.isFinite(teamSizeRaw as number) ? Math.floor(teamSizeRaw as number) : null;
+  if (hasTeamSize && (!teamSizeParsed || teamSizeParsed < 2)) {
+    return jsonWrap({ ok: false, error: "INVALID_TEAM_SIZE" }, { status: 400 });
+  }
   const format =
     hasFormat && typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
       ? (body.format as padel_format)
@@ -459,12 +476,21 @@ async function _POST(req: NextRequest) {
           eligibilityType: true,
           splitDeadlineHours: true,
           enabledFormats: true,
+          isInterclub: true,
+          teamSize: true,
         },
       });
       const formatEffective = format ?? existing?.format ?? null;
       if (!formatEffective) {
         throw new Error("MISSING_FIELDS");
       }
+
+      const resolvedIsInterclub = hasIsInterclub ? Boolean(isInterclub) : existing?.isInterclub ?? false;
+      const resolvedTeamSize = hasTeamSize ? teamSizeParsed : existing?.teamSize ?? null;
+      if (resolvedIsInterclub && (!resolvedTeamSize || resolvedTeamSize < 2)) {
+        throw new Error("TEAM_SIZE_REQUIRED");
+      }
+      const normalizedTeamSize = resolvedIsInterclub ? resolvedTeamSize : null;
 
       // Formatos suportados (alinhados com geração de jogos)
       const allowedFormats = new Set<padel_format>([
@@ -519,6 +545,8 @@ async function _POST(req: NextRequest) {
         eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
         splitDeadlineHours: hasSplitDeadlineHours ? splitDeadlineHours ?? undefined : existing?.splitDeadlineHours ?? undefined,
         enabledFormats: normalizedFormats ?? existing?.enabledFormats ?? undefined,
+        isInterclub: resolvedIsInterclub,
+        teamSize: normalizedTeamSize ?? undefined,
         advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
         format: formatEffective,
       };
@@ -530,6 +558,7 @@ async function _POST(req: NextRequest) {
         ...(hasEligibilityType ? { eligibilityType: eligibilityType || undefined } : {}),
         ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
         ...(hasEnabledFormats ? { enabledFormats: normalizedFormats ?? [] } : {}),
+        ...((hasIsInterclub || hasTeamSize) ? { isInterclub: resolvedIsInterclub, teamSize: normalizedTeamSize ?? null } : {}),
         advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
       };
 
@@ -575,6 +604,9 @@ async function _POST(req: NextRequest) {
       }
       if (err.message === "FORMAT_NOT_SUPPORTED") {
         return jsonWrap({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
+      }
+      if (err.message === "TEAM_SIZE_REQUIRED") {
+        return jsonWrap({ ok: false, error: "TEAM_SIZE_REQUIRED" }, { status: 400 });
       }
     }
     console.error("[padel/tournaments/config][POST]", err);

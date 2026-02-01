@@ -91,9 +91,13 @@ type CreateOrganizationEventBody = {
       padelCategoryId?: number | null;
       capacityTeams?: number | null;
       format?: string | null;
+      pricePerPlayer?: number | null;
+      currency?: string | null;
     }>;
     splitDeadlineHours?: number | null;
     padelV2Enabled?: boolean;
+    isInterclub?: boolean | null;
+    teamSize?: number | null;
     padelClubId?: number | null;
     courtIds?: number[];
     staffIds?: number[];
@@ -113,10 +117,14 @@ type PadelConfigInput = {
     padelCategoryId?: number | null;
     capacityTeams?: number | null;
     format?: string | null;
+    pricePerPlayer?: number | null;
+    currency?: string | null;
   }>;
   splitDeadlineHours?: number | null;
   advancedSettings?: unknown;
   padelV2Enabled?: boolean;
+  isInterclub?: boolean | null;
+  teamSize?: number | null;
   courtIds?: number[];
   staffIds?: number[];
 } | null;
@@ -485,9 +493,14 @@ export async function POST(req: NextRequest) {
     let padelDefaultCategoryId: number | null = null;
     let padelEligibilityType: PadelEligibilityType = PadelEligibilityType.OPEN;
     let splitDeadlineHours: number | null = null;
+    let isInterclub = false;
+    let teamSize: number | null = null;
     let resolvedCourtIds: number[] = [];
     let resolvedStaffIds: number[] = [];
-    const categoryConfigMap = new Map<number, { capacityTeams: number | null; format: padel_format | null }>();
+    const categoryConfigMap = new Map<
+      number,
+      { capacityTeams: number | null; format: padel_format | null; pricePerPlayerCents: number | null; currency: string | null }
+    >();
 
     if (padelRequested && organization) {
       padelConfigInput = (body.padel ?? {}) as PadelConfigInput;
@@ -513,6 +526,21 @@ export async function POST(req: NextRequest) {
       if (eligibilityRaw && Object.values(PadelEligibilityType).includes(eligibilityRaw as PadelEligibilityType)) {
         padelEligibilityType = eligibilityRaw as PadelEligibilityType;
       }
+
+      isInterclub = padelConfigInput?.isInterclub === true;
+      const teamSizeRaw =
+        typeof padelConfigInput?.teamSize === "number"
+          ? padelConfigInput.teamSize
+          : typeof padelConfigInput?.teamSize === "string"
+            ? Number(padelConfigInput.teamSize)
+            : null;
+      teamSize =
+        isInterclub && Number.isFinite(teamSizeRaw as number) && (teamSizeRaw as number) >= 2
+          ? Math.floor(teamSizeRaw as number)
+          : null;
+      if (isInterclub && !teamSize) {
+        return fail(400, "Tamanho de equipa inválido.");
+      }
       if (typeof padelConfigInput?.splitDeadlineHours === "number" && Number.isFinite(padelConfigInput.splitDeadlineHours)) {
         splitDeadlineHours = clampDeadlineHours(padelConfigInput.splitDeadlineHours);
       }
@@ -532,7 +560,16 @@ export async function POST(req: NextRequest) {
           typeof cfg?.format === "string" && ALLOWED_PADEL_FORMATS.has(cfg.format as padel_format)
             ? (cfg.format as padel_format)
             : null;
-        categoryConfigMap.set(categoryId, { capacityTeams, format });
+        const priceRaw = typeof cfg?.pricePerPlayer === "number" && Number.isFinite(cfg.pricePerPlayer)
+          ? cfg.pricePerPlayer
+          : typeof cfg?.pricePerPlayer === "string"
+            ? Number(cfg.pricePerPlayer)
+            : null;
+        const pricePerPlayerCents =
+          typeof priceRaw === "number" && Number.isFinite(priceRaw) ? Math.max(0, Math.round(priceRaw * 100)) : null;
+        const currencyRaw = typeof cfg?.currency === "string" ? cfg.currency.trim().toUpperCase() : null;
+        const currency = currencyRaw && /^[A-Z]{3}$/.test(currencyRaw) ? currencyRaw : null;
+        categoryConfigMap.set(categoryId, { capacityTeams, format, pricePerPlayerCents, currency });
       });
 
       const requestedCategoryIds = Array.isArray(padelConfigInput?.categoryIds)
@@ -630,6 +667,37 @@ export async function POST(req: NextRequest) {
         padelDefaultCategoryId = isPermitted ? requestedDefaultCategoryId : null;
       } else if (padelCategoryIds.length > 0) {
         padelDefaultCategoryId = padelCategoryIds[0];
+      }
+    }
+
+    if (padelRequested && categoryConfigMap.size > 0 && !isAdmin) {
+      const hasPaidPadel = Array.from(categoryConfigMap.values()).some(
+        (cfg) => (cfg.pricePerPlayerCents ?? 0) > 0,
+      );
+      if (hasPaidPadel) {
+        const gate = getPaidSalesGate({
+          officialEmail: organizationInfo.officialEmail ?? null,
+          officialEmailVerifiedAt: organizationInfo.officialEmailVerifiedAt ?? null,
+          stripeAccountId: organizationInfo.stripeAccountId ?? null,
+          stripeChargesEnabled: organizationInfo.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: organizationInfo.stripePayoutsEnabled ?? false,
+          requireStripe: payoutMode === PayoutMode.ORGANIZATION && !isPlatformAccount,
+        });
+        if (!gate.ok) {
+          return respondError(
+            ctx,
+            {
+              errorCode: "PAYMENTS_NOT_READY",
+              message: formatPaidSalesGateMessage(gate, "Para vender inscrições pagas,"),
+              retryable: false,
+              details: {
+                missingEmail: gate.missingEmail,
+                missingStripe: gate.missingStripe,
+              },
+            },
+            { status: 403 },
+          );
+        }
       }
     }
 
@@ -766,6 +834,8 @@ export async function POST(req: NextRequest) {
             defaultCategoryId: padelDefaultCategoryId || undefined,
             eligibilityType: padelEligibilityType,
             splitDeadlineHours: splitDeadlineHours ?? undefined,
+            isInterclub,
+            teamSize: isInterclub ? teamSize ?? undefined : null,
             padelV2Enabled,
             advancedSettings: { ...baseAdvanced, courtIds, staffIds },
           },
@@ -778,6 +848,8 @@ export async function POST(req: NextRequest) {
             defaultCategoryId: padelDefaultCategoryId || undefined,
             eligibilityType: padelEligibilityType,
             splitDeadlineHours: splitDeadlineHours ?? undefined,
+            isInterclub,
+            teamSize: isInterclub ? teamSize ?? undefined : null,
             padelV2Enabled,
             advancedSettings: { ...baseAdvanced, courtIds, staffIds },
           },
@@ -815,11 +887,18 @@ export async function POST(req: NextRequest) {
           : undefined;
       const linkData = padelCategoryIds.map((categoryId) => {
         const config = categoryConfigMap.get(categoryId);
+        const pricePerPlayerCents =
+          typeof config?.pricePerPlayerCents === "number" && Number.isFinite(config.pricePerPlayerCents)
+            ? Math.max(0, Math.floor(config.pricePerPlayerCents))
+            : 0;
+        const currency = config?.currency ?? "EUR";
         return {
           eventId: event.id,
           padelCategoryId: categoryId,
           format: config?.format ?? linkFormat,
           capacityTeams: config?.capacityTeams ?? null,
+          pricePerPlayerCents,
+          currency,
           isEnabled: true,
         };
       });
@@ -842,36 +921,35 @@ export async function POST(req: NextRequest) {
       padelCategoryLinkMap = new Map(links.map((link) => [link.padelCategoryId, link.id]));
     }
 
-    const autoTicketTypes =
-      ticketTypesData.length === 0
-        ? [
-            {
-              name: "Entrada gratuita",
-              price: 0,
-              totalQuantity: null,
-              publicAccess: true,
-              participantAccess: false,
-              padelCategoryId: null,
-            },
-          ]
-        : ticketTypesData;
+    if (templateType !== "PADEL") {
+      const autoTicketTypes =
+        ticketTypesData.length === 0
+          ? [
+              {
+                name: "Entrada gratuita",
+                price: 0,
+                totalQuantity: null,
+                publicAccess: true,
+                participantAccess: false,
+                padelCategoryId: null,
+              },
+            ]
+          : ticketTypesData;
 
-    for (const ticket of autoTicketTypes) {
-      const padelEventCategoryLinkId =
-        templateType === "PADEL" && ticket.padelCategoryId
-          ? padelCategoryLinkMap.get(ticket.padelCategoryId) ?? null
-          : null;
-      await prisma.ticketType.create({
-        data: {
-          eventId: event.id,
-          name: ticket.name,
-          price: Math.round(ticket.price * 100),
-          totalQuantity: ticket.totalQuantity ?? null,
-          currency: "EUR",
-          padelEventCategoryLinkId,
-        },
-        select: { id: true },
-      });
+      for (const ticket of autoTicketTypes) {
+        const padelEventCategoryLinkId = null;
+        await prisma.ticketType.create({
+          data: {
+            eventId: event.id,
+            name: ticket.name,
+            price: Math.round(ticket.price * 100),
+            totalQuantity: ticket.totalQuantity ?? null,
+            currency: "EUR",
+            padelEventCategoryLinkId,
+          },
+          select: { id: true },
+        });
+      }
     }
 
     return respondOk(

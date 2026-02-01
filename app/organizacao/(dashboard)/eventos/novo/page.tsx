@@ -59,6 +59,10 @@ type PadelClubSummary = {
   city?: string | null;
   address?: string | null;
   locationFormattedAddress?: string | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+  } | null;
   kind?: "OWN" | "PARTNER" | null;
   sourceClubId?: number | null;
   isActive: boolean;
@@ -120,6 +124,33 @@ const formatTimeLabel = (value: string) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const pickCanonicalField = (canonical: Record<string, unknown> | null | undefined, keys: string[]) => {
+  if (!canonical) return null;
+  for (const key of keys) {
+    const value = canonical[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const resolvePadelClubLocation = (club: PadelClubSummary | null) => {
+  if (!club) return { city: "", address: "", formatted: "" };
+  const canonical = club.addressRef?.canonical ?? null;
+  const city =
+    pickCanonicalField(canonical, ["city", "addressLine2", "locality"]) ||
+    club.city ||
+    "";
+  const address =
+    pickCanonicalField(canonical, ["addressLine1", "street", "road"]) ||
+    club.address ||
+    "";
+  const formatted =
+    club.addressRef?.formattedAddress ||
+    club.locationFormattedAddress ||
+    [address, city].filter(Boolean).join(", ");
+  return { city, address, formatted };
 };
 
 const formatMonthLabel = (value: Date) =>
@@ -221,7 +252,7 @@ type NewOrganizationEventPageProps = {
   forcePreset?: "padel" | "default";
 };
 
-export default function NewOrganizationEventPage({
+export function NewOrganizationEventPage({
   forcePreset,
 }: NewOrganizationEventPageProps = {}) {
   const router = useRouter();
@@ -231,7 +262,7 @@ export default function NewOrganizationEventPage({
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgMeUrl =
-    user && organizationId && Number.isFinite(organizationId)
+    organizationId && Number.isFinite(organizationId)
       ? `/api/organizacao/me?organizationId=${organizationId}`
       : null;
   const { data: organizationStatus } = useSWR<{
@@ -371,8 +402,8 @@ export default function NewOrganizationEventPage({
   const coverModalRef = useRef<HTMLDivElement | null>(null);
   const ticketsModalRef = useRef<HTMLDivElement | null>(null);
   const modalOverflowRef = useRef<{ body: string; html: string } | null>(null);
-  const suggestionBlurTimeout = useRef<NodeJS.Timeout | null>(null);
-  const locationSearchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const suggestionBlurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSearchSeq = useRef(0);
   const locationDetailsSeq = useRef(0);
   const activeProviderRef = useRef<string | null>(null);
@@ -1016,17 +1047,16 @@ export default function NewOrganizationEventPage({
     if (!selectedPadelClubId) return;
     const club = padelClubs?.items?.find((c) => c.id === selectedPadelClubId);
     if (!club) return;
-    const composed =
-      club.locationFormattedAddress?.trim() ||
-      [club.address?.trim(), club.city?.trim()].filter(Boolean).join(", ");
+    const resolved = resolvePadelClubLocation(club);
+    const composed = resolved.formatted?.trim() || [resolved.address?.trim(), resolved.city?.trim()].filter(Boolean).join(", ");
     if (!locationManuallySet) {
       if (composed) setLocationName(composed);
       else if (!locationName) setLocationName(club.name ?? "");
     }
-    if (club.city) {
+    if (resolved.city) {
       // Preenche cidade a partir do clube, mas não sobrepõe escolha manual já feita.
       if (!locationManuallySet || !locationCity) {
-        setLocationCity(club.city);
+        setLocationCity(resolved.city);
       }
     }
     if (!locationManuallySet) {
@@ -2235,7 +2265,7 @@ export default function NewOrganizationEventPage({
   ]);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     if (isSubmitting) {
       timer = setTimeout(() => setShowLoadingHint(true), 750);
     } else {
@@ -5191,3 +5221,5 @@ export default function NewOrganizationEventPage({
     </>
   );
 }
+
+export default NewOrganizationEventPage;

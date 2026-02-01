@@ -193,6 +193,7 @@ export async function POST(req: NextRequest) {
       status: EventStatus;
       organizationId: number | null;
       pricingMode: EventPricingMode | null;
+      templateType: EventTemplateType | null;
       payoutMode: PayoutMode | null;
       ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus; currency: string | null }[];
       organization: {
@@ -270,8 +271,11 @@ export async function POST(req: NextRequest) {
                 organization_id: number | null;
                 payout_mode: PayoutMode | null;
                 pricing_mode: EventPricingMode | null;
+                template_type: EventTemplateType | null;
               }[]
-            >(Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode FROM app_v3.events WHERE id = ${eventId} LIMIT 1`);
+            >(
+              Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode, template_type FROM app_v3.events WHERE id = ${eventId} LIMIT 1`,
+            );
             const row = rows[0];
             if (!row) return null;
             const [ticketTypes, organizationRows, counts] = await Promise.all([
@@ -311,6 +315,7 @@ export async function POST(req: NextRequest) {
               status: row.status,
               organizationId: row.organization_id,
               pricingMode: row.pricing_mode ?? null,
+              templateType: row.template_type ?? null,
               payoutMode: row.payout_mode,
               ticketTypes: ticketTypes.map((t) => ({
                 id: t.id,
@@ -385,7 +390,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (event.organization) {
-      const emailGate = ensureOrganizationEmailVerified(event.organization, { reasonCode: "EVENTS_UPDATE" });
+      const emailGate = ensureOrganizationEmailVerified(event.organization, {
+        reasonCode: "EVENTS_UPDATE",
+        organizationId: event.organizationId ?? null,
+      });
       if (!emailGate.ok) {
         return respondError(
           ctx,
@@ -564,6 +572,10 @@ export async function POST(req: NextRequest) {
       ? body.ticketTypeUpdates
       : [];
     const newTicketTypes = Array.isArray(body.newTicketTypes) ? body.newTicketTypes : [];
+    const isPadelEvent = event.templateType === "PADEL";
+    if (isPadelEvent && (ticketTypeUpdates.length > 0 || newTicketTypes.length > 0)) {
+      return fail(400, "PADEL_TICKETS_DISABLED");
+    }
     const needsPadelLinkValidation = newTicketTypes.some(
       (nt) => typeof nt?.padelEventCategoryLinkId === "number",
     );
@@ -579,8 +591,8 @@ export async function POST(req: NextRequest) {
       : new Set<number>();
 
     const payoutMode = event.payoutMode ?? PayoutMode.ORGANIZATION;
-    const hasExistingPaid = event.ticketTypes.some((t) => (t.price ?? 0) > 0);
-    const hasNewPaid = newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
+    const hasExistingPaid = !isPadelEvent && event.ticketTypes.some((t) => (t.price ?? 0) > 0);
+    const hasNewPaid = !isPadelEvent && newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
     if (event.organizationId && (hasExistingPaid || hasNewPaid) && !isAdmin) {
       const gate = getPaidSalesGate({
         officialEmail: organization?.officialEmail ?? null,
@@ -676,10 +688,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const ticketPrices = [
-      ...event.ticketTypes.map((t) => Number(t.price ?? 0)),
-      ...newTicketTypes.map((t) => Number(t.price ?? 0)),
-    ];
+    const ticketPrices = isPadelEvent
+      ? []
+      : [
+          ...event.ticketTypes.map((t) => Number(t.price ?? 0)),
+          ...newTicketTypes.map((t) => Number(t.price ?? 0)),
+        ];
     const nextPricingMode = (dataUpdate.pricingMode ?? event.pricingMode ?? EventPricingMode.STANDARD) as EventPricingMode;
     const guard = validateZeroPriceGuard({ pricingMode: nextPricingMode, ticketPrices });
     if (!guard.ok) {

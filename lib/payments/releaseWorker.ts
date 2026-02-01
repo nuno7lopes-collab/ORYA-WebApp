@@ -10,6 +10,7 @@ import { PendingPayoutStatus, Prisma, NotificationType } from "@prisma/client";
 import { logFinanceError } from "@/lib/observability/finance";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { logWarn } from "@/lib/observability/logger";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type ReleaseResult = {
   id: number;
@@ -165,12 +166,13 @@ async function monitorActionRequired(now: Date) {
       await Promise.all(
         Array.from(recipients).map(async (uid) => {
           if (!(await shouldNotify(uid, NotificationType.STRIPE_STATUS))) return;
+          const actionHref = appendOrganizationIdToHref(ACTION_REQUIRED_CTA_URL, organization.id);
           await createNotification({
             userId: uid,
             type: NotificationType.STRIPE_STATUS,
             title: ACTION_REQUIRED_TITLE,
             body: ACTION_REQUIRED_BODY,
-            ctaUrl: ACTION_REQUIRED_CTA_URL,
+            ctaUrl: actionHref,
             ctaLabel: ACTION_REQUIRED_CTA_LABEL,
             priority: "HIGH",
             organizationId: organization.id,
@@ -188,11 +190,12 @@ async function monitorActionRequired(now: Date) {
       if (organization.alertsPayoutEnabled && alertsTarget) {
         try {
           const baseUrl = getAppBaseUrl();
+          const actionHref = appendOrganizationIdToHref(ACTION_REQUIRED_CTA_URL, organization.id);
           await sendImportantUpdateEmail({
             to: alertsTarget,
             eventTitle: organization.publicName ?? "Pagamentos ORYA",
             message: ACTION_REQUIRED_BODY,
-            ticketUrl: `${baseUrl}${ACTION_REQUIRED_CTA_URL}`,
+            ticketUrl: `${baseUrl}${actionHref}`,
           });
         } catch (err) {
           logWarn("payouts.action_required.email_failed", {

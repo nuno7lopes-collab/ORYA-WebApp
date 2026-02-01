@@ -347,28 +347,30 @@ function AuthModalContent({
         credentials: "include",
       });
 
-      // Se a API exigir confirmação de email, volta para o modo verify
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const needsEmailConfirmation = data?.needsEmailConfirmation;
-        if (needsEmailConfirmation) {
-          if (typeof window !== "undefined" && email && isEmailLike(email)) {
-            window.localStorage.setItem("orya_pending_email", email);
-            window.localStorage.setItem("orya_pending_step", "verify");
-          }
-          setMode("verify");
-          if (email && isEmailLike(email)) {
-            await triggerResendOtp(email);
-          }
-          setLoading(false);
-          return;
+      const data = await res.json().catch(() => null);
+      const needsEmailConfirmation = data?.needsEmailConfirmation;
+      if (needsEmailConfirmation) {
+        const candidateEmail =
+          (email && isEmailLike(email) ? email : "") ||
+          (typeof data?.user?.email === "string" && isEmailLike(data.user.email) ? data.user.email : "");
+        if (typeof window !== "undefined" && candidateEmail) {
+          window.localStorage.setItem("orya_pending_email", candidateEmail);
+          window.localStorage.setItem("orya_pending_step", "verify");
         }
+        setMode("verify");
+        if (candidateEmail) {
+          await triggerResendOtp(candidateEmail);
+        }
+        setLoading(false);
+        return;
+      }
+
+      if (!res.ok) {
         closeModal();
         router.push(safeRedirect);
         return;
       }
 
-      const data = await res.json();
       const onboardingDone = data?.profile?.onboardingDone;
       // Atualiza SWR para refletir o novo estado de auth/profile imediatamente
       swrMutate("/api/auth/me");

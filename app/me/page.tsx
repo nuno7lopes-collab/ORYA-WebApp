@@ -9,6 +9,7 @@ import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
 import useSWR from "swr";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 function parseDate(value?: string | null): Date | null {
   if (!value) return null;
@@ -30,6 +31,8 @@ export default function MePage() {
   const { user, profile, isLoading: meLoading } = useUser();
   const router = useRouter();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
+  const orgId = getOrganizationIdFromBrowser();
+  const orgDashboardHref = appendOrganizationIdToHref("/organizacao?tab=overview", orgId);
   const [padelStatus, setPadelStatus] = useState<{ complete: boolean; missingCount: number } | null>(null);
   const {
     items: tickets,
@@ -414,7 +417,7 @@ export default function MePage() {
             <p className="text-[11px] text-white/68">Entra rapido no modo organização.</p>
           </div>
           <Link
-            href="/organizacao"
+            href={orgDashboardHref}
             className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
           >
             Ver painel

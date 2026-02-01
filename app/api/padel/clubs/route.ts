@@ -8,13 +8,11 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { PORTUGAL_CITIES } from "@/config/cities";
-import { createManualAddress } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const CLUB_KINDS = new Set(["OWN", "PARTNER"]);
-const LOCATION_SOURCES = new Set(["OSM", "MANUAL"]);
 
 function normalizeSlug(raw: string | null | undefined) {
   if (!raw) return "";
@@ -90,6 +88,19 @@ async function _GET(req: NextRequest) {
       ...(includeInactive ? {} : { isActive: true }),
     },
     orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+    include: {
+      addressRef: {
+        select: {
+          id: true,
+          formattedAddress: true,
+          canonical: true,
+          latitude: true,
+          longitude: true,
+          sourceProvider: true,
+          sourceProviderPlaceId: true,
+        },
+      },
+    },
   });
 
   return jsonWrap({ ok: true, items }, { status: 200 });
@@ -116,8 +127,6 @@ async function _POST(req: NextRequest) {
 
   const id = typeof body.id === "number" ? body.id : null;
   const name = typeof body.name === "string" ? body.name.trim() : "";
-  const city = typeof body.city === "string" ? body.city.trim() : "";
-  const address = typeof body.address === "string" ? body.address.trim() : "";
   const addressIdRaw = typeof body.addressId === "string" ? body.addressId.trim() : "";
   const addressIdInput = addressIdRaw || null;
   const kindRaw = typeof body.kind === "string" ? body.kind.trim().toUpperCase() : "";
@@ -127,27 +136,6 @@ async function _POST(req: NextRequest) {
       ? body.sourceClubId
       : typeof body.sourceClubId === "string"
         ? Number(body.sourceClubId)
-        : null;
-  const locationSourceRaw = typeof body.locationSource === "string" ? body.locationSource.trim().toUpperCase() : "";
-  const locationSourceInput = LOCATION_SOURCES.has(locationSourceRaw) ? locationSourceRaw : null;
-  const locationProviderIdRaw = typeof body.locationProviderId === "string" ? body.locationProviderId.trim() : "";
-  const locationFormattedAddressRaw =
-    typeof body.locationFormattedAddress === "string" ? body.locationFormattedAddress.trim() : "";
-  const locationComponentsRaw =
-    body.locationComponents && typeof body.locationComponents === "object" && !Array.isArray(body.locationComponents)
-      ? (body.locationComponents as Record<string, unknown>)
-      : null;
-  const latitudeRaw =
-    typeof body.latitude === "number"
-      ? body.latitude
-      : typeof body.latitude === "string"
-        ? Number(body.latitude)
-        : null;
-  const longitudeRaw =
-    typeof body.longitude === "number"
-      ? body.longitude
-      : typeof body.longitude === "string"
-        ? Number(body.longitude)
         : null;
   const courtsCountRaw =
     typeof body.courtsCount === "number"
@@ -165,8 +153,6 @@ async function _POST(req: NextRequest) {
         select: {
           id: true,
           name: true,
-          city: true,
-          address: true,
           addressId: true,
           kind: true,
           sourceClubId: true,
@@ -176,8 +162,20 @@ async function _POST(req: NextRequest) {
           locationComponents: true,
           latitude: true,
           longitude: true,
+          city: true,
+          address: true,
           isDefault: true,
           isActive: true,
+          addressRef: {
+            select: {
+              formattedAddress: true,
+              canonical: true,
+              latitude: true,
+              longitude: true,
+              sourceProvider: true,
+              sourceProviderPlaceId: true,
+            },
+          },
         },
       })
     : null;
@@ -197,96 +195,54 @@ async function _POST(req: NextRequest) {
         select: {
           id: true,
           addressId: true,
-          address: true,
-          city: true,
-          latitude: true,
-          longitude: true,
           locationFormattedAddress: true,
           locationProviderId: true,
           locationComponents: true,
           locationSource: true,
+          city: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+          addressRef: {
+            select: {
+              formattedAddress: true,
+              canonical: true,
+              latitude: true,
+              longitude: true,
+              sourceProvider: true,
+              sourceProviderPlaceId: true,
+            },
+          },
         },
       })
     : null;
 
-  let resolvedAddressId = addressIdInput ?? sourceClub?.addressId ?? existing?.addressId ?? null;
-  let resolvedAddressRecord = resolvedAddressId
-    ? await prisma.address.findUnique({ where: { id: resolvedAddressId } })
-    : null;
-
-  if (!resolvedAddressRecord && !resolvedAddressId) {
-    const manualFormatted = address || sourceClub?.address || existing?.address || "";
-    const manualLat =
-      typeof latitudeRaw === "number" && Number.isFinite(latitudeRaw)
-        ? latitudeRaw
-        : sourceClub?.latitude ?? existing?.latitude ?? null;
-    const manualLng =
-      typeof longitudeRaw === "number" && Number.isFinite(longitudeRaw)
-        ? longitudeRaw
-        : sourceClub?.longitude ?? existing?.longitude ?? null;
-    if (manualFormatted && manualLat != null && manualLng != null) {
-      const manualAddress = await createManualAddress({
-        formattedAddress: manualFormatted,
-        canonical: sourceClub?.locationComponents ?? existing?.locationComponents ?? null,
-        latitude: manualLat,
-        longitude: manualLng,
-      });
-      if (manualAddress.ok) {
-        resolvedAddressRecord = manualAddress.address;
-        resolvedAddressId = manualAddress.address.id;
-      }
-    }
+  const resolvedAddressId = addressIdInput ?? sourceClub?.addressId ?? existing?.addressId ?? null;
+  if (!resolvedAddressId) {
+    return jsonWrap({ ok: false, error: "Seleciona uma morada normalizada antes de guardar." }, { status: 400 });
   }
 
-  if (resolvedAddressId && !resolvedAddressRecord) {
+  const resolvedAddressRecord = await prisma.address.findUnique({ where: { id: resolvedAddressId } });
+  if (!resolvedAddressRecord) {
     return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
   }
 
   const resolvedName = name || existing?.name || "";
   const resolvedCity =
-    pickCanonicalField(resolvedAddressRecord?.canonical ?? null, "city", "addressLine2") ||
-    city ||
-    sourceClub?.city ||
-    existing?.city ||
+    pickCanonicalField(resolvedAddressRecord.canonical ?? null, "city", "addressLine2") ||
+    pickCanonicalField(sourceClub?.addressRef?.canonical ?? null, "city", "addressLine2") ||
     "";
   const resolvedAddress =
-    resolvedAddressRecord?.formattedAddress ||
-    pickCanonicalField(resolvedAddressRecord?.canonical ?? null, "addressLine1") ||
-    address ||
-    sourceClub?.address ||
-    existing?.address ||
+    resolvedAddressRecord.formattedAddress ||
+    pickCanonicalField(resolvedAddressRecord.canonical ?? null, "addressLine1") ||
+    pickCanonicalField(sourceClub?.addressRef?.canonical ?? null, "addressLine1") ||
     "";
-  const locationSource =
-    resolvedAddressRecord
-      ? mapAddressProviderToLocationSource(resolvedAddressRecord.sourceProvider)
-      : ((locationSourceInput ?? (existing?.locationSource ? String(existing.locationSource).toUpperCase() : null)) ??
-          (isPartner ? "MANUAL" : "OSM")) as LocationSource;
-  const locationProviderId =
-    resolvedAddressRecord?.sourceProviderPlaceId ||
-    locationProviderIdRaw ||
-    sourceClub?.locationProviderId ||
-    existing?.locationProviderId ||
-    null;
-  const composedFormatted = [resolvedAddress, resolvedCity].filter(Boolean).join(", ");
-  const locationFormattedAddress =
-    resolvedAddressRecord?.formattedAddress ||
-    locationFormattedAddressRaw ||
-    sourceClub?.locationFormattedAddress ||
-    composedFormatted ||
-    existing?.locationFormattedAddress ||
-    null;
-  const locationComponents =
-    (resolvedAddressRecord?.canonical as Record<string, unknown> | null) ??
-    locationComponentsRaw ??
-    sourceClub?.locationComponents ??
-    existing?.locationComponents ??
-    null;
-  const latitude =
-    resolvedAddressRecord?.latitude ??
-    (typeof latitudeRaw === "number" && Number.isFinite(latitudeRaw) ? latitudeRaw : sourceClub?.latitude ?? existing?.latitude ?? null);
-  const longitude =
-    resolvedAddressRecord?.longitude ??
-    (typeof longitudeRaw === "number" && Number.isFinite(longitudeRaw) ? longitudeRaw : sourceClub?.longitude ?? existing?.longitude ?? null);
+  const locationSource = mapAddressProviderToLocationSource(resolvedAddressRecord.sourceProvider);
+  const locationProviderId = resolvedAddressRecord.sourceProviderPlaceId || null;
+  const locationFormattedAddress = resolvedAddressRecord.formattedAddress || null;
+  const locationComponents = (resolvedAddressRecord.canonical as Record<string, unknown> | null) ?? null;
+  const latitude = resolvedAddressRecord.latitude ?? null;
+  const longitude = resolvedAddressRecord.longitude ?? null;
 
   if (!resolvedName || resolvedName.length < 3) {
     return jsonWrap({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });

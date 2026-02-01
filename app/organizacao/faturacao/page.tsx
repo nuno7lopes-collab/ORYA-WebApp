@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { appendOrganizationIdToRedirectHref } from "@/lib/organizationId";
 
 type PageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
@@ -19,9 +20,10 @@ const toQuery = (searchParams?: PageProps["searchParams"]) => {
   return params;
 };
 
-export default function OrganizationBillingRedirect({ searchParams }: PageProps) {
+export default async function OrganizationBillingRedirect({ searchParams }: PageProps) {
   const params = toQuery(searchParams);
   params.set("tab", "analyze");
   params.set("section", "invoices");
-  redirect(`/organizacao?${params.toString()}`);
+  const target = await appendOrganizationIdToRedirectHref(`/organizacao?${params.toString()}`, searchParams);
+  redirect(target);
 }

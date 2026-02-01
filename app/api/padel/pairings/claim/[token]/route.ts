@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
@@ -27,47 +27,10 @@ import {
 import { checkPadelCategoryPlayerCapacity } from "@/domain/padelCategoryCapacity";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
+import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 
-async function ensurePlayerProfile(params: { organizationId: number; userId: string }) {
-  const { organizationId, userId } = params;
-  const existing = await prisma.padelPlayerProfile.findFirst({
-    where: { organizationId, userId },
-    select: { id: true },
-  });
-  if (existing) return existing.id;
-  const [profile, authUser] = await Promise.all([
-    prisma.profile.findUnique({
-      where: { id: userId },
-      select: {
-        fullName: true,
-        contactPhone: true,
-        gender: true,
-        padelLevel: true,
-        padelPreferredSide: true,
-        padelClubName: true,
-      },
-    }),
-    prisma.users.findUnique({ where: { id: userId }, select: { email: true } }),
-  ]);
-  const name = profile?.fullName?.trim() || "Jogador Padel";
-  const email = authUser?.email ?? null;
-  const created = await prisma.padelPlayerProfile.create({
-    data: {
-      organizationId,
-      userId,
-      fullName: name,
-      displayName: name,
-      email: email ?? undefined,
-      phone: profile?.contactPhone ?? undefined,
-      gender: profile?.gender ?? undefined,
-      level: profile?.padelLevel ?? undefined,
-      preferredSide: profile?.padelPreferredSide ?? undefined,
-      clubName: profile?.padelClubName ?? undefined,
-    },
-    select: { id: true },
-  });
-  return created.id;
-}
+const ensurePlayerProfile = (params: { organizationId: number; userId: string }) =>
+  ensurePadelPlayerProfileId(prisma, params);
 
 // Claim endpoint para convites (Padel v2).
 async function _GET(_: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -159,15 +122,31 @@ async function _GET(_: NextRequest, { params }: { params: Promise<{ token: strin
     return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 409 });
   }
 
-  const ticketTypes = await prisma.ticketType.findMany({
+  const categoryLinks = await prisma.padelEventCategoryLink.findMany({
     where: {
       eventId: pairing.eventId,
-      status: "ON_SALE",
-      ...(pairing.categoryId ? { padelEventCategoryLink: { padelCategoryId: pairing.categoryId } } : {}),
+      isEnabled: true,
+      ...(pairing.categoryId ? { padelCategoryId: pairing.categoryId } : {}),
     },
-    select: { id: true, name: true, price: true, currency: true },
-    orderBy: { price: "asc" },
+    select: {
+      id: true,
+      padelCategoryId: true,
+      pricePerPlayerCents: true,
+      currency: true,
+      format: true,
+      category: { select: { label: true } },
+    },
+    orderBy: { pricePerPlayerCents: "asc" },
   });
+
+  const ticketTypes = categoryLinks.map((link) => ({
+    id: link.id,
+    name: link.category?.label ?? `Categoria ${link.padelCategoryId}`,
+    price: link.pricePerPlayerCents ?? 0,
+    currency: link.currency ?? "EUR",
+    padelCategoryId: link.padelCategoryId,
+    format: link.format ?? null,
+  }));
 
   const padelEvent = await buildPadelEventSnapshot(pairing.eventId);
 

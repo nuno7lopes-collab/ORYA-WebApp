@@ -16,7 +16,10 @@
     "ios": {
       "bundleIdentifier": "com.orya.app.prod",
       "supportsTablet": true,
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,6 +35,18 @@
     "plugins": [
       "expo-apple-authentication",
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0ff86898-a1ad-4237-b87a-1c64f6c3e33e"
+      }
+    },
+    "owner": "admin_orya",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0ff86898-a1ad-4237-b87a-1c64f6c3e33e"
+    }
   }
 }

@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
+import { appendOrganizationIdToRedirectHref } from "@/lib/organizationId";
 
 type Props = {
   searchParams?: Record<string, string | string[] | undefined>;
 };
 
-export default function OrganizationStatsRedirect({ searchParams }: Props) {
+export default async function OrganizationStatsRedirect({ searchParams }: Props) {
   const params = new URLSearchParams();
   if (searchParams) {
     Object.entries(searchParams).forEach(([key, value]) => {
@@ -15,5 +16,6 @@ export default function OrganizationStatsRedirect({ searchParams }: Props) {
   }
   params.set("tab", "analyze");
   params.set("section", "overview");
-  redirect(`/organizacao?${params.toString()}`);
+  const target = await appendOrganizationIdToRedirectHref(`/organizacao?${params.toString()}`, searchParams);
+  redirect(target);
 }

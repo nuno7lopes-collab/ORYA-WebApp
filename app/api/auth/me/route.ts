@@ -188,7 +188,7 @@ async function _GET() {
           profile: null,
           needsEmailConfirmation: true,
         },
-        { status: 401 },
+        { status: 200 },
       );
     }
 

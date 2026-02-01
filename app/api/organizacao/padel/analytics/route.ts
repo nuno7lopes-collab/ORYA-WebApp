@@ -85,19 +85,32 @@ async function _GET(req: NextRequest) {
     },
   });
 
+  const categoryLinks = await prisma.padelEventCategoryLink.findMany({
+    where: { eventId },
+    select: {
+      padelCategoryId: true,
+      format: true,
+      category: { select: { label: true } },
+    },
+  });
+  const categoryMap = new Map(
+    categoryLinks.map((link) => [
+      link.padelCategoryId,
+      { label: link.category?.label ?? null, format: link.format ?? null },
+    ]),
+  );
+
   const saleLines = await prisma.saleLine.findMany({
     where: { eventId, saleSummary: { status: "PAID" } },
     select: {
       grossCents: true,
       netCents: true,
       platformFeeCents: true,
-      ticketType: {
+      padelRegistrationLine: {
         select: {
-          padelEventCategoryLink: {
+          padelRegistration: {
             select: {
-              padelCategoryId: true,
-              format: true,
-              category: { select: { label: true } },
+              pairing: { select: { categoryId: true } },
             },
           },
         },
@@ -123,14 +136,18 @@ async function _GET(req: NextRequest) {
       stripeFeeCents: sales._sum.stripeFeeCents ?? 0,
       netCents: sales._sum.netCents ?? 0,
     },
-    saleLines: saleLines.map((line) => ({
-      grossCents: line.grossCents ?? 0,
-      netCents: line.netCents ?? 0,
-      platformFeeCents: line.platformFeeCents ?? 0,
-      categoryId: line.ticketType?.padelEventCategoryLink?.padelCategoryId ?? null,
-      categoryLabel: line.ticketType?.padelEventCategoryLink?.category?.label ?? null,
-      format: line.ticketType?.padelEventCategoryLink?.format ?? null,
-    })),
+    saleLines: saleLines.map((line) => {
+      const categoryId = line.padelRegistrationLine?.padelRegistration?.pairing?.categoryId ?? null;
+      const categoryMeta = categoryId ? categoryMap.get(categoryId) : null;
+      return {
+        grossCents: line.grossCents ?? 0,
+        netCents: line.netCents ?? 0,
+        platformFeeCents: line.platformFeeCents ?? 0,
+        categoryId,
+        categoryLabel: categoryMeta?.label ?? null,
+        format: categoryMeta?.format ?? null,
+      };
+    }),
   });
 
   return jsonWrap(

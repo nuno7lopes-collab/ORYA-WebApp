@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOwnerTransferEmail } from "@/lib/emailSender";
 import { sendEmail } from "@/lib/resendClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type OwnerTransferOutboxPayload = {
   transferId: string;
@@ -60,6 +61,7 @@ export async function handleOwnerTransferOutboxEvent(params: {
       actorName,
       token: transfer.token,
       expiresAt: transfer.expiresAt,
+      organizationId: payload.organizationId,
     });
     await prisma.emailOutbox.update({
       where: { dedupeKey },
@@ -86,11 +88,12 @@ export async function handleOwnerTransferOutboxEvent(params: {
     const organizationName =
       transfer.organization?.publicName || transfer.organization?.username || "Organização ORYA";
     const baseUrl = getAppBaseUrl();
+    const staffHref = appendOrganizationIdToHref("/organizacao?tab=manage&section=staff", payload.organizationId);
     await sendEmail({
       to: fromEmail,
       subject: `✅ Transferência concluída – ${organizationName}`,
-      html: `<div style=\"font-family: Arial, sans-serif; color:#0f172a;\">\n            <h2>Transferência de OWNER concluída</h2>\n            <p>O papel de OWNER em <strong>${organizationName}</strong> foi assumido por um novo OWNER.</p>\n            <p>Podes rever o staff aqui: <a href=\"${baseUrl}/organizacao?tab=manage&section=staff\" style=\"color:#2563eb;\">Ver staff</a></p>\n          </div>`,
-      text: `Transferência de OWNER concluída\n${organizationName}\nStaff: ${baseUrl}/organizacao?tab=manage&section=staff`,
+      html: `<div style=\"font-family: Arial, sans-serif; color:#0f172a;\">\n            <h2>Transferência de OWNER concluída</h2>\n            <p>O papel de OWNER em <strong>${organizationName}</strong> foi assumido por um novo OWNER.</p>\n            <p>Podes rever o staff aqui: <a href=\"${baseUrl}${staffHref}\" style=\"color:#2563eb;\">Ver staff</a></p>\n          </div>`,
+      text: `Transferência de OWNER concluída\n${organizationName}\nStaff: ${baseUrl}${staffHref}`,
     });
     await prisma.emailOutbox.update({
       where: { dedupeKey },

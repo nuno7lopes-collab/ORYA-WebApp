@@ -186,7 +186,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       return fail(404, "Produto nao encontrado.");
     }
 
-    const formData = await req.formData();
+    const formData = (await req.formData()) as unknown as { get(name: string): FormDataEntryValue | null };
     const file = formData.get("file");
     if (!(file instanceof File)) {
       return fail(400, "Ficheiro em falta.");

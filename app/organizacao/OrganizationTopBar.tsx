@@ -254,6 +254,7 @@ export default function OrganizationTopBar({
         return "inscricoes";
       }
       if (pathname?.startsWith("/organizacao/scan")) return "checkin";
+      if (pathname?.startsWith("/organizacao/padel/torneios/novo")) return "torneios-criar";
       if (pathname?.startsWith("/organizacao/padel")) return padelParam ?? padelFallback;
       if (pathname?.startsWith("/organizacao/eventos/novo")) return "create";
       if (pathname?.startsWith("/organizacao/torneios/novo")) return "torneios-criar";

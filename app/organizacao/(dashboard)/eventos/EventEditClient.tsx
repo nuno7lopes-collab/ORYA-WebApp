@@ -156,7 +156,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { user, profile } = useUser();
   const organizationId = event.organizationId ?? null;
   const orgMeUrl =
-    user && organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
+    organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
   const { data: organizationStatus } = useSWR<{ paymentsStatus?: string }>(
     orgMeUrl,
     fetcher,
@@ -284,7 +284,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   );
   const steps = useMemo(
     () =>
-      isGratis
+      isGratis || isPadel
         ? [
             { key: "base", label: "Essenciais", desc: "Imagem e localização" },
             { key: "dates", label: "Datas & Local", desc: "Início e fim" },
@@ -295,7 +295,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             { key: "dates", label: "Datas & Local", desc: "Início e fim" },
             { key: "tickets", label: ticketLabelPluralCap, desc: "Gestão e vendas" },
           ],
-    [isGratis, ticketLabelPluralCap],
+    [isGratis, isPadel, ticketLabelPluralCap],
   );
   const freeCapacity = useMemo(() => {
     if (!isGratis) return null;
@@ -332,8 +332,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const cityRef = useRef<HTMLInputElement | null>(null);
   const locationNameRef = useRef<HTMLInputElement | null>(null);
   const locationSearchRef = useRef<HTMLInputElement | null>(null);
-  const locationSearchTimeout = useRef<NodeJS.Timeout | null>(null);
-  const suggestionBlurTimeout = useRef<NodeJS.Timeout | null>(null);
+  const locationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionBlurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSearchSeq = useRef(0);
   const locationDetailsSeq = useRef(0);
   const activeProviderRef = useRef<string | null>(null);

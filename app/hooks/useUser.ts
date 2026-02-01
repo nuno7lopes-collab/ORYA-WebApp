@@ -35,6 +35,7 @@ type ApiMeResponse = {
     allowMarketingCampaigns?: boolean;
     profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   } | null;
+  needsEmailConfirmation?: boolean;
 };
 
 const fetcher = async (url: string) => {
@@ -98,6 +99,7 @@ export function useUser() {
     user: data?.user ?? null,
     profile: data?.profile ?? null,
     roles: data?.profile?.roles ?? [],
+    needsEmailConfirmation: data?.needsEmailConfirmation ?? false,
     isLoading,
     isLoggedIn: !!data?.user,
     error,

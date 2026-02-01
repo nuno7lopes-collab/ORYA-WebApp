@@ -9,6 +9,7 @@ import type { Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 const PAGE_SIZE = 50;
 
@@ -146,7 +147,7 @@ export async function GET(req: NextRequest) {
           const ev = eventById.get(parsedId);
           source = {
             title: ev?.title ?? null,
-            href: ev ? `/organizacao/eventos/${ev.id}` : null,
+            href: ev ? appendOrganizationIdToHref(`/organizacao/eventos/${ev.id}`, organization.id) : null,
           };
         } else if (payout.sourceType === "SERVICE_BOOKING") {
           const booking = bookingById.get(parsedId);
@@ -158,7 +159,9 @@ export async function GET(req: NextRequest) {
           const pairing = pairingById.get(parsedId);
           source = {
             title: pairing?.event?.title ?? "Torneio de Padel",
-            href: pairing?.event?.id ? `/organizacao/eventos/${pairing.event.id}` : null,
+            href: pairing?.event?.id
+              ? appendOrganizationIdToHref(`/organizacao/eventos/${pairing.event.id}`, organization.id)
+              : null,
           };
         }
       }

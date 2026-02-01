@@ -37,7 +37,10 @@ async function ensureCheckinAccess(userId: string, eventId: number) {
     select: { officialEmail: true, officialEmailVerifiedAt: true },
   });
   if (!organization) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
-  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "CHECKIN" });
+  const emailGate = ensureOrganizationEmailVerified(organization, {
+    reasonCode: "CHECKIN",
+    organizationId: event.organizationId,
+  });
   if (!emailGate.ok) {
     return { ...emailGate, status: 403 };
   }

@@ -8,6 +8,7 @@ import FollowClient from "@/app/[username]/FollowClient";
 import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
 import { Avatar } from "@/components/ui/avatar";
 import { getProfileCoverUrl, sanitizeProfileCoverUrl } from "@/lib/profileCover";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 export type ProfileHeaderProps = {
   /** Se é o próprio utilizador a ver o seu perfil */
@@ -72,6 +73,7 @@ export default function ProfileHeader({
   padelAction,
 }: ProfileHeaderProps) {
   const router = useRouter();
+  const orgFallbackHref = appendOrganizationIdToHref("/organizacao", getOrganizationIdFromBrowser());
   const displayName = name?.trim() || "Utilizador ORYA";
   const handle = username?.trim() || undefined;
 
@@ -670,7 +672,7 @@ export default function ProfileHeader({
                   const handle = item.username || item.userId;
                   const displayName =
                     item.fullName || item.username || (isOrganization ? "Organização ORYA" : "Utilizador ORYA");
-                  const href = item.username ? `/${item.username}` : isOrganization ? "/organizacao" : "/me";
+                  const href = item.username ? `/${item.username}` : isOrganization ? orgFallbackHref : "/me";
                   return (
                     <Link
                       key={item.userId}

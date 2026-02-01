@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, type ReactNode, useEffect, useState } from "react";
+import { Suspense, type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,7 @@ import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import OrganizationTopBar from "@/app/organizacao/OrganizationTopBar";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import OrganizationLinkInterceptor from "@/app/organizacao/OrganizationLinkInterceptor";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, parseOrganizationId, setOrganizationIdInHref } from "@/lib/organizationIdUtils";
 
 export type OrganizationShellOrgOption = {
   organizationId: number;
@@ -108,6 +108,7 @@ export default function OrganizationDashboardShell({
   const [emailGateToast, setEmailGateToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [emailResending, setEmailResending] = useState(false);
   const showEmailGate = emailGateActive && !emailGateDismissed && !isSettingsRoute;
+  const syncInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!emailGateToast) return;
@@ -152,6 +153,53 @@ export default function OrganizationDashboardShell({
       if (interval) clearInterval(interval);
     };
   }, [emailGateActive, isSettingsRoute, router]);
+
+  useEffect(() => {
+    const requestedOrgId = parseOrganizationId(searchParams?.get("organizationId"));
+    if (!requestedOrgId) return;
+    if (activeOrg?.id === requestedOrgId) return;
+    if (syncInFlightRef.current) return;
+
+    let cancelled = false;
+    syncInFlightRef.current = true;
+
+    const syncOrgContext = async () => {
+      try {
+        const res = await fetch("/api/organizacao/organizations/switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ organizationId: requestedOrgId }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          throw new Error(json?.error || "ORG_SWITCH_FAILED");
+        }
+        if (!cancelled) {
+          router.refresh();
+        }
+      } catch {
+        if (cancelled) return;
+        const fallbackOrgId = activeOrg?.id ?? null;
+        if (fallbackOrgId && fallbackOrgId !== requestedOrgId) {
+          const currentParams = new URLSearchParams(searchParams?.toString());
+          currentParams.set("organizationId", String(fallbackOrgId));
+          const query = currentParams.toString();
+          const target = query ? `${pathname}?${query}` : pathname ?? "/organizacao";
+          router.replace(setOrganizationIdInHref(target, fallbackOrgId));
+        } else {
+          router.replace("/organizacao/organizations");
+        }
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    };
+
+    syncOrgContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrg?.id, pathname, router, searchParams]);
 
   useEffect(() => {
     if (!activeOrg?.id) return;

@@ -58,7 +58,10 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
     if (!organization) {
       return fail(404, "ORGANIZATION_NOT_FOUND");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_DELETE" });
+    const emailGate = ensureOrganizationEmailVerified(organization, {
+      reasonCode: "ORG_DELETE",
+      organizationId,
+    });
     if (!emailGate.ok) {
       const message =
         "message" in emailGate && typeof emailGate.message === "string"

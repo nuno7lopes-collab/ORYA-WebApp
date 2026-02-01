@@ -17,7 +17,10 @@ async function getOrganizationRole(userId: string, eventId: number) {
     select: { officialEmail: true, officialEmailVerifiedAt: true },
   });
   if (!organization) return null;
-  const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "TOURNAMENTS_MATCH_UNDO" });
+  const emailGate = ensureOrganizationEmailVerified(organization, {
+    reasonCode: "TOURNAMENTS_MATCH_UNDO",
+    organizationId: evt.organizationId,
+  });
   if (!emailGate.ok) return { ...emailGate, status: 403 };
   const profile = await prisma.profile.findUnique({
     where: { id: userId },

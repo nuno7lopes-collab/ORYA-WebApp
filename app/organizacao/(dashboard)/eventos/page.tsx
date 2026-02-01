@@ -8,6 +8,7 @@ import DashboardClient from "@/app/organizacao/DashboardClient";
 import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organizationModules";
 import { prisma } from "@/lib/prisma";
 import { OrganizationStatus } from "@prisma/client";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 export default async function OrganizationEventosPage() {
   const supabase = await createSupabaseServer();
@@ -34,7 +35,7 @@ export default async function OrganizationEventosPage() {
     prisma,
   );
   if (!hasAnyActiveModule(activeModules, ["EVENTOS"])) {
-    redirect("/organizacao?tab=overview&section=modulos");
+    redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id));
   }
 
   return <DashboardClient hasOrganization defaultObjective="manage" defaultSection="eventos" />;

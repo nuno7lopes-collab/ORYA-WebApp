@@ -111,7 +111,7 @@ async function _GET(req: NextRequest) {
       orderBy: { startsAt: "asc" },
       include: {
         padelTournamentConfig: {
-          select: { padelClubId: true, partnerClubIds: true, advancedSettings: true },
+          select: { padelClubId: true, partnerClubIds: true, advancedSettings: true, isInterclub: true, teamSize: true },
         },
         tournament: {
           select: { id: true },
@@ -287,6 +287,8 @@ async function _GET(req: NextRequest) {
           ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null
           : null,
         padelPartnerClubNames: partnerClubIds.map((id) => padelClubMap.get(id) ?? null),
+        isInterclub: event.padelTournamentConfig?.isInterclub ?? false,
+        teamSize: event.padelTournamentConfig?.teamSize ?? null,
       };
     });
 

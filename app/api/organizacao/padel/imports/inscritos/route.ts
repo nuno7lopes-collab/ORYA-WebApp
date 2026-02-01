@@ -33,6 +33,7 @@ import {
   resolveImportIdentifier,
   type PadelImportError,
 } from "@/domain/padel/imports";
+import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -109,7 +110,8 @@ export async function POST(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return fail(401, "UNAUTHENTICATED");
 
-  const formData = await req.formData().catch(() => null);
+  const formData =
+    (await req.formData().catch(() => null)) as { get(name: string): FormDataEntryValue | null } | null;
   if (!formData) return fail(400, "INVALID_BODY");
 
   const eventId = Number(formData.get("eventId"));
@@ -405,22 +407,6 @@ export async function POST(req: NextRequest) {
   });
   const nameToPlayerProfileId = new Map<string, number>();
 
-  const userIds = Array.from(new Set(authUsers.map((u) => u.id)));
-  const profilesByUserId = userIds.length
-    ? await prisma.profile.findMany({
-        where: { id: { in: userIds } },
-        select: {
-          id: true,
-          fullName: true,
-          contactPhone: true,
-          gender: true,
-          padelLevel: true,
-          padelPreferredSide: true,
-          padelClubName: true,
-        },
-      })
-    : [];
-  const profileByUserId = new Map(profilesByUserId.map((p) => [p.id, p]));
 
   const ensurePlayerProfile = async (
     tx: Prisma.TransactionClient,
@@ -431,28 +417,11 @@ export async function POST(req: NextRequest) {
     const userId = emailKey ? emailToUserId.get(emailKey) ?? null : null;
 
     if (userId) {
-      const existingForUser = await tx.padelPlayerProfile.findFirst({
-        where: { organizationId: organization.id, userId },
-        select: { id: true },
+      const playerProfileId = await ensurePadelPlayerProfileId(tx, {
+        organizationId: organization.id,
+        userId,
       });
-      if (existingForUser) return { playerProfileId: existingForUser.id, userId };
-      const profile = profileByUserId.get(userId);
-      const created = await tx.padelPlayerProfile.create({
-        data: {
-          organizationId: organization.id,
-          userId,
-          fullName: profile?.fullName?.trim() || player.name.trim(),
-          displayName: profile?.fullName?.trim() || player.name.trim(),
-          email: player.email ?? undefined,
-          phone: profile?.contactPhone ?? player.phone ?? undefined,
-          gender: profile?.gender ?? undefined,
-          level: profile?.padelLevel ?? undefined,
-          preferredSide: profile?.padelPreferredSide ?? undefined,
-          clubName: profile?.padelClubName ?? undefined,
-        },
-        select: { id: true },
-      });
-      return { playerProfileId: created.id, userId };
+      return { playerProfileId, userId };
     }
 
     if (emailKey) {

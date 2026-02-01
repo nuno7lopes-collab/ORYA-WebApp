@@ -468,19 +468,17 @@ async function _GET(req: NextRequest) {
     partnerSlot?.invitedContact ||
     "Parceiro";
 
-  const ticketType = await prisma.ticketType.findFirst({
+  const categoryLink = await prisma.padelEventCategoryLink.findFirst({
     where: {
       eventId: pairing.eventId,
-      status: "ON_SALE",
-      ...(pairing.categoryId
-        ? { padelEventCategoryLink: { padelCategoryId: pairing.categoryId } }
-        : {}),
+      isEnabled: true,
+      ...(pairing.categoryId ? { padelCategoryId: pairing.categoryId } : {}),
     },
-    select: { id: true, price: true, currency: true },
-    orderBy: { price: "asc" },
+    select: { pricePerPlayerCents: true, currency: true },
+    orderBy: { pricePerPlayerCents: "asc" },
   });
-  const unitPriceCents = ticketType?.price ?? null;
-  const currency = (ticketType?.currency || "EUR").toUpperCase();
+  const unitPriceCents = categoryLink?.pricePerPlayerCents ?? null;
+  const currency = (categoryLink?.currency || "EUR").toUpperCase();
   const amountDueCents =
     state === "AWAITING_PAYMENT"
       ? pairing.payment_mode === PadelPaymentMode.SPLIT

@@ -7,6 +7,7 @@ import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { getProfileCoverUrl, sanitizeProfileCoverUrl } from "@/lib/profileCover";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -60,6 +61,7 @@ type ProfileResponse = {
 export default function TrainerProfilePage() {
   const { user } = useUser();
   const { openModal } = useAuthModal();
+  const loginRedirectHref = appendOrganizationIdToHref("/organizacao/treinadores", getOrganizationIdFromBrowser());
   const { data, isLoading, mutate } = useSWR<ProfileResponse>(
     user ? "/api/organizacao/trainers/profile" : null,
     fetcher,
@@ -145,7 +147,7 @@ export default function TrainerProfilePage() {
 
   const handleSave = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizacao/treinadores" });
+      openModal({ mode: "login", redirectTo: loginRedirectHref });
       return;
     }
     if (!canEdit) return;
@@ -179,7 +181,7 @@ export default function TrainerProfilePage() {
 
   const handleSubmitReview = async () => {
     if (!user) {
-      openModal({ mode: "login", redirectTo: "/organizacao/treinadores" });
+      openModal({ mode: "login", redirectTo: loginRedirectHref });
       return;
     }
     if (!canEdit) return;
@@ -220,7 +222,7 @@ export default function TrainerProfilePage() {
           <p className="mt-2 text-sm text-white/65">Faz login para editar o teu perfil.</p>
           <button
             type="button"
-            onClick={() => openModal({ mode: "login", redirectTo: "/organizacao/treinadores" })}
+            onClick={() => openModal({ mode: "login", redirectTo: loginRedirectHref })}
             className={`${CTA_PRIMARY} mt-4`}
           >
             Entrar

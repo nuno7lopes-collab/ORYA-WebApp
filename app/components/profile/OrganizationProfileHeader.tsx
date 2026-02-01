@@ -5,6 +5,7 @@ import Link from "next/link";
 import OrganizationFollowClient from "@/app/components/profile/OrganizationFollowClient";
 import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
 import { Avatar } from "@/components/ui/avatar";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type OrganizationProfileHeaderProps = {
   name: string | null;
@@ -59,6 +60,7 @@ export default function OrganizationProfileHeader({
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
   const iconBaseClass =
     "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/8 text-white/85 transition hover:border-white/40 hover:bg-white/12";
+  const editProfileHref = appendOrganizationIdToHref("/organizacao?tab=profile", organizationId);
 
   useEffect(() => {
     setAvatar(avatarUrl);
@@ -211,7 +213,7 @@ export default function OrganizationProfileHeader({
 
   const actionsSlot = canEdit ? (
     <Link
-      href="/organizacao?tab=profile"
+      href={editProfileHref}
       className="inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/80 hover:bg-white/12"
     >
       Editar perfil

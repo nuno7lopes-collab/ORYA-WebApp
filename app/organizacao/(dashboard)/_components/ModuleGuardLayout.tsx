@@ -10,6 +10,7 @@ import {
   hasAnyActiveModule,
 } from "@/lib/organizationModules";
 import type { OrganizationModule } from "@/lib/organizationCategories";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type ModuleGuardLayoutProps = {
   children: ReactNode;
@@ -57,7 +58,7 @@ export default async function ModuleGuardLayout({
       : hasAnyActiveModule(activeModules, requiredModules);
 
   if (!hasAccess) {
-    redirect(redirectTo);
+    redirect(appendOrganizationIdToHref(redirectTo, organization.id));
   }
 
   return <>{children}</>;

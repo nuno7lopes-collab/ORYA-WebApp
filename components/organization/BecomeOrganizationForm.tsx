@@ -16,6 +16,7 @@ import {
   BecomeOrganizationFormValues,
   becomeOrganizationSchema,
 } from "@/lib/validation/organization";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "error";
 
@@ -167,7 +168,7 @@ export default function BecomeOrganizationForm() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [usernameTouched, setUsernameTouched] = useState(false);
-  const usernameCheckTimeout = useRef<NodeJS.Timeout | null>(null);
+  const usernameCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChecked = useRef<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
@@ -175,7 +176,8 @@ export default function BecomeOrganizationForm() {
   const [showBuildScreen, setShowBuildScreen] = useState(false);
   const [selectedOperations, setSelectedOperations] = useState<OperationModule[]>([]);
   const [optionalSelection, setOptionalSelection] = useState<OptionalModule[]>([]);
-  const buildTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const buildTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createdOrganizationIdRef = useRef<number | null>(null);
   const isRestoringRef = useRef(true);
 
   const form = useForm<BecomeOrganizationFormValues>({
@@ -280,14 +282,23 @@ export default function BecomeOrganizationForm() {
     };
   }, []);
 
-  const startBuildTransition = () => {
+  const startBuildTransition = (organizationId?: number | null) => {
     setShowBuildScreen(true);
     if (buildTimerRef.current) clearTimeout(buildTimerRef.current);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEY);
     }
+    if (organizationId) {
+      createdOrganizationIdRef.current = organizationId;
+    }
+    const fallbackOrgId =
+      organizationId ?? createdOrganizationIdRef.current ?? getOrganizationIdFromBrowser();
+    const targetHref = appendOrganizationIdToHref(
+      "/organizacao?tab=overview&section=modulos",
+      fallbackOrgId,
+    );
     buildTimerRef.current = setTimeout(() => {
-      router.replace("/organizacao?tab=overview&section=modulos");
+      router.replace(targetHref);
     }, 7000);
   };
 
@@ -431,7 +442,9 @@ export default function BecomeOrganizationForm() {
         return;
       }
 
-      if (data?.organization?.id) {
+      const nextOrganizationId =
+        typeof data?.organization?.id === "number" ? data.organization.id : null;
+      if (nextOrganizationId) {
         await fetch("/api/organizacao/organizations/switch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -439,7 +452,7 @@ export default function BecomeOrganizationForm() {
         });
       }
       setSaving(false);
-      startBuildTransition();
+      startBuildTransition(nextOrganizationId);
     } catch (err) {
       console.error("[organização/become] erro:", err);
       setError("Erro inesperado ao criar organização.");

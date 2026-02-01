@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { appendOrganizationIdToRedirectHref } from "@/lib/organizationId";
 import { prisma } from "@/lib/prisma";
 import OrganizationEventLivePrepPage from "@/app/organizacao/(dashboard)/eventos/[id]/live/page";
 
@@ -21,7 +22,8 @@ export default async function OrganizationTorneioLivePage(props: PageProps) {
     notFound();
   }
   if (event.templateType !== "PADEL") {
-    redirect(`/organizacao/eventos/${eventId}/live`);
+    const target = await appendOrganizationIdToRedirectHref(`/organizacao/eventos/${eventId}/live`);
+    redirect(target);
   }
 
   return OrganizationEventLivePrepPage(props);

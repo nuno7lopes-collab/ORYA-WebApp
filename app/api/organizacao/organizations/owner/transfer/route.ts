@@ -84,7 +84,10 @@ export async function POST(req: NextRequest) {
     if (!organization) {
       return fail(404, "ORGANIZATION_NOT_FOUND");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_OWNER_TRANSFER" });
+    const emailGate = ensureOrganizationEmailVerified(organization, {
+      reasonCode: "ORG_OWNER_TRANSFER",
+      organizationId,
+    });
     if (!emailGate.ok) {
       return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }

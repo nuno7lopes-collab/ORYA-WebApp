@@ -1,7 +1,7 @@
 {
   "name": "mobile",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -9,13 +9,27 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@orya/shared": "file:../../packages/shared",
     "@supabase/supabase-js": "^2.93.3",
+    "@tanstack/react-query": "^5.85.5",
     "expo": "~54.0.33",
     "expo-apple-authentication": "~8.0.8",
+    "expo-dev-client": "~6.0.20",
     "expo-notifications": "~0.32.16",
+    "expo-router": "~5.1.3",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "~29.0.16",
+    "nativewind": "^4.1.23",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-safe-area-context": "5.6.0",
+    "react-native-screens": "~4.16.0",
+    "zustand": "^5.0.6"
+  },
+  "devDependencies": {
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17"
   },
   "private": true
 }

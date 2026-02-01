@@ -18,7 +18,10 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     },
   });
   if (!evt?.organizationId) return false;
-  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, { reasonCode: "TOURNAMENTS_RULES" });
+  const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, {
+    reasonCode: "TOURNAMENTS_RULES",
+    organizationId: evt.organizationId,
+  });
   if (!emailGate.ok) return { ...emailGate, status: 403 };
   const profile = await prisma.profile.findUnique({
     where: { id: userId },

@@ -49,9 +49,9 @@ export async function requireAdminUser(options: RequireAdminOptions = {}): Promi
   }
 
   if (!options.skipMfa) {
-    const host = readAdminHost(options.req);
+    const host = await readAdminHost(options.req);
     if (shouldRequireAdminMfa(host)) {
-      const token = readMfaSessionCookie(options.req);
+      const token = await readMfaSessionCookie(options.req);
       const session = verifyMfaSession(token, user.id);
       if (!session.ok) {
         return { ok: false, status: 403, error: "MFA_REQUIRED" };

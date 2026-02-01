@@ -500,10 +500,9 @@ function OrganizacaoPageInner({
   const organizationIdParam = searchParams?.get("organizationId");
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgMeUrl = useMemo(() => {
-    if (!user) return null;
     if (!organizationId || Number.isNaN(organizationId)) return null;
     return `/api/organizacao/me?organizationId=${organizationId}`;
-  }, [user, organizationId]);
+  }, [organizationId]);
 
   const { data: organizationData, isLoading: organizationLoading, mutate: mutateOrganization } = useSWR<
     OrganizationStatus & {
@@ -600,7 +599,7 @@ function OrganizacaoPageInner({
   const salesUnitLabel = isPadelContext ? "Inscrições" : "Bilhetes";
   const salesCountLabel = isPadelContext ? "Inscrições registadas" : "Bilhetes vendidos";
   const eventRouteBase = isPadelContext ? "/organizacao/torneios" : "/organizacao/eventos";
-  const loading = userLoading || organizationLoading || (Boolean(user) && !organizationData);
+  const loading = userLoading || organizationLoading || (Boolean(orgMeUrl) && !organizationData);
   const paymentsStatus = organizationData?.paymentsStatus ?? "NO_STRIPE";
   const paymentsMode = organizationData?.paymentsMode ?? "CONNECT";
   const profileStatus = organizationData?.profileStatus ?? "MISSING_CONTACT";

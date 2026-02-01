@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { useUser } from "@/app/hooks/useUser";
+import { getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
 import type {
   Attachment,
   ChatEvent,
@@ -358,6 +360,9 @@ function generateClientMessageId() {
 
 export function useChatPreviewData() {
   const { user, profile } = useUser();
+  const searchParams = useSearchParams();
+  const organizationIdParam = parseOrganizationId(searchParams?.get("organizationId"));
+  const fallbackOrganizationId = organizationIdParam ?? getOrganizationIdFromBrowser();
   const viewerId = user?.id ?? null;
   const viewerLabel = profile?.fullName || profile?.username || "Tu";
   const mentionTokens = useMemo(
@@ -479,17 +484,12 @@ export function useChatPreviewData() {
 
   const loadOrganizationId = useCallback(async () => {
     if (organizationId) return organizationId;
-    try {
-      const data = await fetcher<{ organization?: { id?: number | null } | null }>(
-        "/api/organizacao/me",
-      );
-      const id = data.organization?.id ?? null;
-      if (id) setOrganizationId(id);
-      return id;
-    } catch {
-      return null;
+    if (fallbackOrganizationId) {
+      setOrganizationId(fallbackOrganizationId);
+      return fallbackOrganizationId;
     }
-  }, [organizationId]);
+    return null;
+  }, [organizationId, fallbackOrganizationId]);
 
   const loadOrganizationMembers = useCallback(async (): Promise<OrganizationMemberDirectoryItem[]> => {
     const orgId = organizationId ?? (await loadOrganizationId());

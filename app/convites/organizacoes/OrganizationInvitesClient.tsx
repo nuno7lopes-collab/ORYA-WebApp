@@ -8,6 +8,7 @@ import type { OrganizationMemberRole } from "@prisma/client";
 import { RoleBadge } from "@/app/organizacao/RoleBadge";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
 
@@ -72,6 +73,9 @@ export default function OrganizationInvitesClient({
   const router = useRouter();
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const orgIdFallback = getOrganizationIdFromBrowser();
+  const orgHomeHref = appendOrganizationIdToHref("/organizacao", orgIdFallback);
+  const orgBecomeHref = appendOrganizationIdToHref("/organizacao/become", orgIdFallback);
 
   const inviteIdParam = searchParams.get("invite") ?? searchParams.get("inviteId") ?? initialInviteId;
   const tokenParam = searchParams.get("token") ?? initialToken;
@@ -110,7 +114,20 @@ export default function OrganizationInvitesClient({
         setActionMessage(action === "ACCEPT" ? "Convite aceite. Já podes entrar na organização." : "Convite recusado.");
         await mutate();
         if (action === "ACCEPT") {
-          setTimeout(() => router.push("/organizacao"), 600);
+          try {
+            await fetch("/api/organizacao/organizations/switch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ organizationId: invite.organizationId }),
+            });
+          } catch (err) {
+            console.warn("[convites][switch]", err);
+          }
+          const target = appendOrganizationIdToHref(
+            "/organizacao?tab=overview",
+            invite.organizationId ?? orgIdFallback,
+          );
+          setTimeout(() => router.push(target), 600);
         }
       }
     } catch (err) {
@@ -135,13 +152,13 @@ export default function OrganizationInvitesClient({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
-                href="/organizacao"
+                href={orgHomeHref}
                 className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 transition hover:border-white/30"
               >
                 Ir para organizações
               </Link>
               <Link
-                href="/organizacao/become"
+                href={orgBecomeHref}
                 className="rounded-full border border-white/20 bg-gradient-to-r from-cyan-300/80 via-sky-300/80 to-purple-300/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#05060f] shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition hover:brightness-110"
               >
                 Criar organização

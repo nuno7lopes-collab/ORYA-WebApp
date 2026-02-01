@@ -22,6 +22,7 @@ import {
 import { OrganizationStatus } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL;
@@ -38,7 +39,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -247,7 +248,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -685,3 +686,6 @@ export async function PATCH(req: NextRequest) {
     return fail(500, "Erro interno.");
   }
 }
+
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

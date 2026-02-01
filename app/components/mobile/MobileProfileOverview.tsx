@@ -10,6 +10,7 @@ import InterestIcon from "@/app/components/interests/InterestIcon";
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { EventListCard } from "@/app/components/mobile/MobileCards";
 import { getEventCoverUrl } from "@/lib/eventCover";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 type RecentEvent = {
   id: string;
@@ -63,6 +64,7 @@ export default function MobileProfileOverview({
   interests,
   recentEvents,
 }: MobileProfileOverviewProps) {
+  const orgFallbackHref = appendOrganizationIdToHref("/organizacao", getOrganizationIdFromBrowser());
   const [isFollowListOpen, setIsFollowListOpen] = useState(false);
   const [activeList, setActiveList] = useState<"followers" | "following">("followers");
   const [listLoading, setListLoading] = useState(false);
@@ -372,7 +374,7 @@ export default function MobileProfileOverview({
                     const isOrganization = item.kind === "organization";
                     const displayName =
                       item.fullName || item.username || (isOrganization ? "Organização ORYA" : "Utilizador ORYA");
-                    const href = item.username ? `/${item.username}` : isOrganization ? "/organizacao" : "/me";
+                    const href = item.username ? `/${item.username}` : isOrganization ? orgFallbackHref : "/me";
                     return (
                       <Link
                         key={item.userId}

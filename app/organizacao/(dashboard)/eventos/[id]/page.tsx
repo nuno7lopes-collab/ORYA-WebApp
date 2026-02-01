@@ -15,6 +15,7 @@ import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { cn } from "@/lib/utils";
 import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 import { TOURNAMENT_LIFECYCLE_LABELS, TOURNAMENT_LIFECYCLE_ORDER } from "@/domain/padel/tournamentLifecycle";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type PageProps = {
   params: Promise<{
@@ -138,7 +139,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   });
 
   if (!organization || !membership) {
-    redirect("/organizacao");
+    redirect(appendOrganizationIdToHref("/organizacao", event.organizationId));
   }
   const access = await ensureMemberModuleAccess({
     organizationId: event.organizationId,
@@ -149,7 +150,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     required: "EDIT",
   });
   if (!access.ok) {
-    redirect(fallbackHref);
+    redirect(appendOrganizationIdToHref(fallbackHref, event.organizationId));
   }
 
   const locationDisplay = getEventLocationDisplay(

@@ -10,6 +10,7 @@ import { CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { cn } from "@/lib/utils";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -71,7 +72,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
   });
 
   if (!organization || !membership) {
-    redirect("/organizacao");
+    redirect(appendOrganizationIdToHref("/organizacao", event.organizationId));
   }
   const access = await ensureMemberModuleAccess({
     organizationId: event.organizationId,
@@ -82,7 +83,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
     required: "EDIT",
   });
   if (!access.ok) {
-    redirect(fallbackHref);
+    redirect(appendOrganizationIdToHref(fallbackHref, event.organizationId));
   }
 
   const tickets = event.ticketTypes.map((t) => ({

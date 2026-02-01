@@ -7,6 +7,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -130,6 +131,7 @@ function buildUserLabel(item: { fullName: string | null; username: string | null
 export default function SocialHubPage() {
   const { user, isLoggedIn } = useUser();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
+  const orgFallbackHref = appendOrganizationIdToHref("/organizacao", getOrganizationIdFromBrowser());
   const [activeTab, setActiveTab] = useState<HubTab>("social");
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -641,7 +643,10 @@ export default function SocialHubPage() {
                         key={item.id}
                         className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 p-3"
                       >
-                        <Link href={item.username ? `/${item.username}` : "/organizacao"} className="flex items-center gap-3">
+                        <Link
+                          href={item.username ? `/${item.username}` : orgFallbackHref}
+                          className="flex items-center gap-3"
+                        >
                           <Avatar
                             src={item.brandingAvatarUrl}
                             name={displayName}
