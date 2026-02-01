@@ -11,7 +11,8 @@ import {
   PadelRegistrationStatus,
   Prisma,
 } from "@prisma/client";
-import { read, utils } from "xlsx";
+import { Readable } from "node:stream";
+import { Workbook, type CellValue } from "exceljs";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -49,6 +50,41 @@ const buildSummary = (totalRows: number, validRows: number, errors: PadelImportE
   errorRows: totalRows - validRows,
   errorCount: errors.length,
 });
+
+const normalizeCellValue = (value: CellValue): string | number | boolean | null => {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    const record = value as unknown as Record<string, unknown>;
+    if (typeof record.text === "string") return record.text;
+    if (Array.isArray(record.richText)) {
+      return record.richText.map((part) => (part as { text?: string }).text ?? "").join("");
+    }
+    if (typeof record.result === "string" || typeof record.result === "number") return record.result;
+    return String(value);
+  }
+  return value;
+};
+
+const worksheetToJson = (worksheet: ReturnType<Workbook["addWorksheet"]>) => {
+  const headerRow = worksheet.getRow(1);
+  const headerValues = (headerRow.values as CellValue[]).slice(1);
+  const headers = headerValues.map((value, index) => {
+    const header = normalizeCellValue(value);
+    const key = header ? String(header).trim() : "";
+    return key || `col_${index + 1}`;
+  });
+  const rows: Record<string, unknown>[] = [];
+  for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber);
+    const record: Record<string, unknown> = {};
+    headers.forEach((header, idx) => {
+      record[header] = normalizeCellValue(row.getCell(idx + 1).value as CellValue);
+    });
+    rows.push(record);
+  }
+  return rows;
+};
 
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -133,18 +169,19 @@ export async function POST(req: NextRequest) {
     if (link.category.label) categoryByLabel.set(normalizeImportLookup(link.category.label), link.category.id);
   });
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const buffer = Buffer.from(new Uint8Array(await file.arrayBuffer())) as unknown as Buffer;
   const fileName = typeof file.name === "string" ? file.name.toLowerCase() : "";
   const fileType = typeof file.type === "string" ? file.type.toLowerCase() : "";
   const isCsv = fileName.endsWith(".csv") || fileType.includes("csv") || fileType === "text/plain";
-  const workbook = isCsv
-    ? read(buffer.toString("utf8"), { type: "string", raw: false, codepage: 65001 })
-    : read(buffer, { type: "buffer" });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return fail(400, "EMPTY_FILE");
-  const sheet = workbook.Sheets[sheetName];
+  const workbook = new Workbook();
+  if (isCsv) {
+    await workbook.csv.read(Readable.from(buffer));
+  } else {
+    await workbook.xlsx.read(Readable.from(buffer));
+  }
+  const sheet = workbook.worksheets[0];
   if (!sheet) return fail(400, "EMPTY_FILE");
-  const rows = utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+  const rows = worksheetToJson(sheet);
   if (rows.length === 0) return fail(400, "NO_ROWS");
 
   const {

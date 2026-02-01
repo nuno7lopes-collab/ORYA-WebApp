@@ -5,7 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { utils, write } from "xlsx";
+import { Workbook } from "exceljs";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const csvEscape = (value: string | null | undefined) => {
@@ -79,10 +79,11 @@ async function _GET(req: NextRequest) {
   const filenameBase = `padel_resultados_${event.slug || eventId}`;
 
   if (format === "xlsx" || format === "excel") {
-    const sheet = utils.aoa_to_sheet([header, ...rows]);
-    const book = utils.book_new();
-    utils.book_append_sheet(book, sheet, "Resultados");
-    const buffer = write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const workbook = new Workbook();
+    const sheet = workbook.addWorksheet("Resultados");
+    sheet.addRow(header);
+    rows.forEach((row) => sheet.addRow(row));
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {

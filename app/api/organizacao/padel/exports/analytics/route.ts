@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { buildPadelAnalytics } from "@/domain/padel/analytics";
-import { utils, write } from "xlsx";
+import { Workbook } from "exceljs";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const csvEscape = (value: string | number | null | undefined) => {
@@ -140,7 +140,7 @@ async function _GET(req: NextRequest) {
   const format = (req.nextUrl.searchParams.get("format") || "csv").toLowerCase();
 
   if (format === "xlsx" || format === "excel") {
-    const summarySheet = utils.aoa_to_sheet([
+    const summaryRows = [
       ["metric", "value"],
       ["occupancy_pct", analytics.occupancy],
       ["avg_match_minutes", analytics.avgMatchMinutes],
@@ -154,9 +154,9 @@ async function _GET(req: NextRequest) {
       ["payments_platform_fee_cents", analytics.payments.platformFeeCents],
       ["payments_stripe_fee_cents", analytics.payments.stripeFeeCents],
       ["payments_net_cents", analytics.payments.netCents],
-    ]);
+    ];
 
-    const phaseSheet = utils.aoa_to_sheet([
+    const phaseRows = [
       ["phase", "label", "matches", "avg_match_minutes", "avg_delay_minutes", "delayed_matches", "total_minutes"],
       ...analytics.phaseStats.map((phase) => [
         phase.phase,
@@ -167,9 +167,9 @@ async function _GET(req: NextRequest) {
         phase.delayedMatches,
         phase.totalMinutes,
       ]),
-    ]);
+    ];
 
-    const courtDaySheet = utils.aoa_to_sheet([
+    const courtDayRows = [
       ["date", "court", "matches", "minutes", "occupancy_pct", "window_minutes"],
       ...analytics.courtDayBreakdown.map((row) => [
         row.date,
@@ -179,9 +179,9 @@ async function _GET(req: NextRequest) {
         row.occupancy,
         row.windowMinutes,
       ]),
-    ]);
+    ];
 
-    const paymentsCategorySheet = utils.aoa_to_sheet([
+    const paymentsCategoryRows = [
       [
         "category",
         "format",
@@ -198,9 +198,9 @@ async function _GET(req: NextRequest) {
         row.platformFeeCents,
         row.stripeFeeCents,
       ]),
-    ]);
+    ];
 
-    const paymentsPhaseSheet = utils.aoa_to_sheet([
+    const paymentsPhaseRows = [
       ["phase", "label", "total_cents", "net_cents", "platform_fee_cents", "stripe_fee_cents"],
       ...analytics.paymentsByPhase.map((row) => [
         row.phase,
@@ -210,15 +210,25 @@ async function _GET(req: NextRequest) {
         row.platformFeeCents,
         row.stripeFeeCents,
       ]),
-    ]);
+    ];
 
-    const book = utils.book_new();
-    utils.book_append_sheet(book, summarySheet, "Resumo");
-    utils.book_append_sheet(book, phaseSheet, "Fases");
-    utils.book_append_sheet(book, courtDaySheet, "Courts_Dia");
-    utils.book_append_sheet(book, paymentsCategorySheet, "Receitas_Categorias");
-    utils.book_append_sheet(book, paymentsPhaseSheet, "Receitas_Fases");
-    const buffer = write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const workbook = new Workbook();
+    const summarySheet = workbook.addWorksheet("Resumo");
+    summaryRows.forEach((row) => summarySheet.addRow(row));
+
+    const phaseSheet = workbook.addWorksheet("Fases");
+    phaseRows.forEach((row) => phaseSheet.addRow(row));
+
+    const courtDaySheet = workbook.addWorksheet("Courts_Dia");
+    courtDayRows.forEach((row) => courtDaySheet.addRow(row));
+
+    const paymentsCategorySheet = workbook.addWorksheet("Receitas_Categorias");
+    paymentsCategoryRows.forEach((row) => paymentsCategorySheet.addRow(row));
+
+    const paymentsPhaseSheet = workbook.addWorksheet("Receitas_Fases");
+    paymentsPhaseRows.forEach((row) => paymentsPhaseSheet.addRow(row));
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     return new NextResponse(buffer as unknown as BodyInit, {
       status: 200,
       headers: {
