@@ -317,6 +317,34 @@ async function main() {
     }
     console.log("[seed-events] Ticket types ok:", { eventId: event.id });
 
+    let policy = await prisma.eventAccessPolicy.findFirst({
+      where: { eventId: event.id },
+      orderBy: { policyVersion: "desc" },
+      select: { policyVersion: true },
+    });
+    if (!policy) {
+      policy = await prisma.eventAccessPolicy.create({
+        data: {
+          env: seedEnv,
+          eventId: event.id,
+          policyVersion: 1,
+          mode: "PUBLIC",
+          guestCheckoutAllowed: true,
+          inviteTokenAllowed: false,
+          inviteIdentityMatch: "EMAIL",
+          inviteTokenTtlSeconds: null,
+          requiresEntitlementForEntry: true,
+          checkinMethods: ["QR_TICKET", "MANUAL"],
+          scannerRequired: false,
+          allowReentry: false,
+          reentryWindowMinutes: 15,
+          maxEntries: 1,
+          undoWindowMinutes: 10,
+        },
+      });
+    }
+    const policyVersionApplied = policy.policyVersion;
+
     await prisma.entitlement.upsert({
       where: {
         purchaseId_saleLineId_lineItemIndex_ownerKey_type: {
@@ -337,6 +365,7 @@ async function main() {
         snapshotVenueName: event.locationName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
+        policyVersionApplied,
       },
       create: {
         env: seedEnv,
@@ -353,6 +382,7 @@ async function main() {
         snapshotVenueName: event.locationName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
+        policyVersionApplied,
       },
     });
 
