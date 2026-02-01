@@ -56,7 +56,9 @@ if (process.env.NODE_ENV !== "production") {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === "production" ? undefined : { rejectUnauthorized: false },
-  options: `-c app.env=${seedEnv}`,
+});
+pool.on("connect", (client) => {
+  client.query("select set_config('app.env', $1, true)", [seedEnv]).catch(() => {});
 });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ["error"] });
