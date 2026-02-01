@@ -10,14 +10,15 @@ ACM_TEMPLATE=${ACM_TEMPLATE:-infra/ecs/route53-acm.yaml}
 ENV_NAME=${ENV_NAME:-prod}
 WITH_ALB=${WITH_ALB:-false}
 WITH_ACM=${WITH_ACM:-false}
-ENABLE_WORKER=${ENABLE_WORKER:-false}
+ENABLE_WORKER=${ENABLE_WORKER:-true}
+ENABLE_OUTBOX_SCHEDULE=${ENABLE_OUTBOX_SCHEDULE:-false}
 HEALTH_CHECK_PATH=${HEALTH_CHECK_PATH:-/api/internal/ops/health}
 PAUSE=false
 RESUME=false
 HARD_PAUSE=false
 
 WEB_DESIRED_COUNT=${WEB_DESIRED_COUNT:-1}
-WORKER_DESIRED_COUNT=${WORKER_DESIRED_COUNT:-0}
+WORKER_DESIRED_COUNT=${WORKER_DESIRED_COUNT:-1}
 
 function usage() {
   echo "Usage: deploy-cf.sh [--with-alb true|false] [--with-acm true|false] [--pause|--resume|--hard-pause]" >&2
@@ -192,6 +193,7 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
     HealthCheckPath="$HEALTH_CHECK_PATH" \
     CreateALB="$WITH_ALB" \
     EnableWorker="$ENABLE_WORKER" \
+    EnableOutboxSchedule="$ENABLE_OUTBOX_SCHEDULE" \
     AlbCertificateArn="${ALB_CERT_ARN:-}" \
     SecretsPrefix="orya/prod" \
     BudgetNotificationEmail="${BUDGET_NOTIFICATION_EMAIL:-}" \

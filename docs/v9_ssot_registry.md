@@ -246,15 +246,23 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - Snapshot timezone preservado e exposto para representacao:
   - `app/api/me/reservas/route.ts`
 
-**Status**: IN PROGRESS (PR1+PR2 done: snapshot SSOT + cancel/refund/no-show por snapshot)
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-02-01 — Backfill executado (dry-run + exec) sem pendências; logs em `reports/backfill_booking_confirmation_snapshot_2026-02-01.log` e `reports/backfill_booking_confirmation_snapshot_2026-02-01_exec.log`. Script atualizado para respeitar flags de SSL em conexões.
 
 ---
 
 ## Bloco 8 — Padel + Torneios
 **SSOTs canonicos**
 - Torneios com eventId obrigatorio.
+- CalendarBlock/Availability + EventMatchSlot como agenda única de padel (sem calendário paralelo).
+- RuleSetVersion (snapshot) por torneio para congelar regras.
+- Address Service como SSOT de moradas para clubes (addressId).
+- Lifecycle oficial (Draft/Published/Locked/Live/Completed) + transições auditadas.
+- Roles por torneio (árbitro/diretor) e streaming/monitor rico.
+- Páginas públicas por jogo + i18n/SEO por match.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-02-01 — Padel v2 completo: calendário SSOT (CalendarBlock/EventMatchSlot), matchmaking/cron T‑48/T‑24 + waitlist, ruleset versionado, lifecycle/roles, streaming/monitor e páginas públicas por match com i18n.
 
 ---
 
@@ -280,7 +288,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Search/discover read-only.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-02-01 — SearchIndex + discover read-only com CRM/analytics integrados; UI de exploração + search API estável.
 
 ---
 
@@ -288,7 +297,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Secret unico para rotas internas/cron.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-02-01 — `requireInternalSecret` aplicado em todas as rotas internal/cron; heartbeat e coverage de cron ativos com runbook.
 
 ---
 
@@ -296,7 +306,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Runbooks minimos por dominio.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-02-01 — Runbooks + SLO/SLI publicados, DLQ/replay operacional e métricas/alertas documentados.
 
 ---
 
@@ -304,4 +315,5 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Release checklist executavel.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-02-01 — Checklist de release + env gates + infra AWS/SES concluídos; A11y/Performance/Mobile audits executados (reports/lighthouse + reports/axe).

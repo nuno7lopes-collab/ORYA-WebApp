@@ -18,18 +18,53 @@ const logLevels: (Prisma.LogLevel | Prisma.LogDefinition)[] =
     : ["error"];
 
 // Pool e adapter para usar o client engine ("library") com Postgres
-function resolvePgSsl(url: string) {
-  if (process.env.NODE_ENV === "production") return undefined;
+function stripSslOptions(raw: string) {
+  try {
+    const parsed = new URL(raw);
+    const keys = ["sslmode", "ssl", "sslrootcert", "sslcert", "sslkey"];
+    let changed = false;
+    for (const key of keys) {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) return parsed.toString();
+  } catch {
+    // ignore parse errors, return raw
+  }
+  return raw;
+}
+
+function resolvePgSsl(url: string): { ssl: false | { rejectUnauthorized: false } | undefined; connectionString: string } {
+  let sslMode: string | null = null;
+  let host = "";
   try {
     const parsed = new URL(url);
-    const sslMode = parsed.searchParams.get("sslmode");
-    const host = parsed.hostname;
-    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
-    if (sslMode === "disable" || isLocalHost) return false;
+    sslMode = parsed.searchParams.get("sslmode");
+    host = parsed.hostname;
   } catch {
-    // fall through to non-production default
+    // ignore parse errors
   }
-  return { rejectUnauthorized: false };
+
+  const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
+  const forceDisable =
+    process.env.PGSSL_DISABLE === "true" ||
+    process.env.PGSSLMODE === "disable" ||
+    sslMode === "disable" ||
+    isLocalHost;
+  if (forceDisable) {
+    return { ssl: false, connectionString: stripSslOptions(url) };
+  }
+
+  const allowSelfSigned =
+    process.env.PGSSL_ALLOW_SELF_SIGNED === "true" ||
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0";
+  if (process.env.NODE_ENV !== "production" || allowSelfSigned) {
+    return { ssl: { rejectUnauthorized: false }, connectionString: stripSslOptions(url) };
+  }
+
+  return { ssl: undefined, connectionString: url };
 }
 
 function mergeEnvWhere(where: unknown, envValue: string) {
@@ -158,9 +193,10 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createClient(envValue: AppEnv) {
+  const pg = resolvePgSsl(env.dbUrl);
   const pool = new Pool({
-    connectionString: env.dbUrl,
-    ssl: resolvePgSsl(env.dbUrl),
+    connectionString: pg.connectionString,
+    ssl: pg.ssl,
   });
   pool.on("connect", (client) => {
     client.query("select set_config('app.env', $1, true)", [envValue]).catch(() => {});

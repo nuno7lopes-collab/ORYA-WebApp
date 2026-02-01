@@ -13,6 +13,7 @@
  *   - Must run before deploy if cancellation/no-show will rely on snapshots.
  *   - Idempotent: only targets bookings where confirmationSnapshot is null.
  *   - Use --after-id=<id> to resume from a checkpoint.
+ *   - Use PGSSL_DISABLE=true when DATABASE_URL enforces sslmode=require with self-signed certs.
  */
 import { Prisma, PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -27,9 +28,59 @@ if (!connectionString) {
   throw new Error("Missing DATABASE_URL or DIRECT_URL for Prisma connection.");
 }
 
+function stripSslOptions(raw: string) {
+  try {
+    const parsed = new URL(raw);
+    const keys = ["sslmode", "ssl", "sslrootcert", "sslcert", "sslkey"];
+    let changed = false;
+    for (const key of keys) {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) return parsed.toString();
+  } catch {
+    // ignore parse errors, return raw
+  }
+  return raw;
+}
+
+function resolvePoolConfig(raw: string) {
+  let sslMode: string | null = null;
+  let host = "";
+  try {
+    const parsed = new URL(raw);
+    sslMode = parsed.searchParams.get("sslmode");
+    host = parsed.hostname;
+  } catch {
+    // ignore parse errors
+  }
+
+  const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
+  const forceDisable =
+    process.env.PGSSL_DISABLE === "true" ||
+    process.env.PGSSLMODE === "disable" ||
+    sslMode === "disable" ||
+    isLocalHost;
+  if (forceDisable) {
+    return { connectionString: stripSslOptions(raw), ssl: false as const };
+  }
+
+  const allowSelfSigned =
+    process.env.PGSSL_ALLOW_SELF_SIGNED === "true" ||
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0";
+  if (process.env.NODE_ENV !== "production" || allowSelfSigned) {
+    return { connectionString: stripSslOptions(raw), ssl: { rejectUnauthorized: false } };
+  }
+
+  return { connectionString: raw, ssl: undefined };
+}
+
+const poolConfig = resolvePoolConfig(connectionString);
 const pool = new Pool({
-  connectionString,
-  ssl: process.env.NODE_ENV === "production" ? undefined : { rejectUnauthorized: false },
+  connectionString: poolConfig.connectionString,
+  ssl: poolConfig.ssl,
 });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });

@@ -60,9 +60,25 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 
-const MAX_ATTEMPTS = 5;
-const BATCH_SIZE = 5;
+const MAX_ATTEMPTS = Number(process.env.OPERATIONS_MAX_ATTEMPTS || "5");
+const BATCH_MIN_SIZE = Number(process.env.OPERATIONS_BATCH_MIN_SIZE || "10");
+const BATCH_MID_SIZE = Number(process.env.OPERATIONS_BATCH_MID_SIZE || "25");
+const BATCH_MAX_SIZE = Number(process.env.OPERATIONS_BATCH_MAX_SIZE || "50");
+const BATCH_TIME_LIMIT_MS = Number(process.env.OPERATIONS_BATCH_TIME_LIMIT_MS || "350");
 const STALE_OPERATION_LOCK_MS = 15 * 60 * 1000;
+const QUICK_RETRY_DELAYS_MS = (process.env.OPERATIONS_QUICK_RETRY_MS || "5000,15000,60000")
+  .split(",")
+  .map((value) => Number(value.trim()))
+  .filter((value) => Number.isFinite(value) && value > 0);
+const MAX_BACKOFF_MS = Number(process.env.OPERATIONS_MAX_BACKOFF_MS || String(60 * 60 * 1000));
+const PRIORITY_TYPES_DEFAULT =
+  "PROCESS_STRIPE_EVENT,FULFILL_PAYMENT,OUTBOX_EVENT,UPSERT_LEDGER_FROM_PI,UPSERT_LEDGER_FROM_PI_FREE,PROCESS_REFUND_SINGLE,MARK_DISPUTE";
+const PRIORITY_TYPES = new Set(
+  (process.env.OPERATIONS_PRIORITY_TYPES || PRIORITY_TYPES_DEFAULT)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 
 const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
@@ -73,12 +89,58 @@ type OperationRecord = {
   dedupeKey: string;
   status: string;
   attempts: number;
+  firstSeenAt: Date | null;
   payload: Record<string, unknown> | null;
   paymentIntentId: string | null;
   purchaseId: string | null;
   stripeEventId: string | null;
   eventId?: number | null;
 };
+
+type OperationsBatchStats = {
+  backlogCount: number;
+  oldestAgeMs: number | null;
+  batchSize: number;
+  durationMs: number;
+  releasedCount: number;
+};
+
+function chooseBatchSize(backlogCount: number) {
+  if (backlogCount >= 100) return BATCH_MAX_SIZE;
+  if (backlogCount >= 25) return BATCH_MID_SIZE;
+  return BATCH_MIN_SIZE;
+}
+
+function summarizeError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  const errorClass = err instanceof Error ? err.name : "UnknownError";
+  const reasonCode =
+    err && typeof err === "object" && "code" in err && typeof err.code === "string"
+      ? err.code
+      : errorClass;
+  const stack =
+    err instanceof Error && err.stack
+      ? err.stack.split("\n").slice(0, 6).join("\n")
+      : null;
+  return { message, errorClass, reasonCode, stackSummary: stack };
+}
+
+function computeNextRetry(attempts: number) {
+  const jitter = Math.floor(Math.random() * 1000);
+  if (attempts <= QUICK_RETRY_DELAYS_MS.length) {
+    return new Date(Date.now() + QUICK_RETRY_DELAYS_MS[attempts - 1] + jitter);
+  }
+  const exponent = Math.min(6, attempts - QUICK_RETRY_DELAYS_MS.length);
+  const baseDelay = 15 * 60 * 1000;
+  const delay = Math.min(MAX_BACKOFF_MS, baseDelay * Math.pow(2, exponent));
+  return new Date(Date.now() + delay + jitter);
+}
+
+function computeBackoffMs(backlogCount: number, oldestAgeMs: number | null) {
+  if (backlogCount === 0) return 5000;
+  if ((oldestAgeMs ?? 0) >= 5000 || backlogCount >= 50) return 500;
+  return 1000;
+}
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
   if (params.ownerUserId) return `user:${params.ownerUserId}`;
@@ -339,12 +401,47 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const results = await runOperationsBatch();
-  return respondOk(ctx, { processed: results.length, results }, { status: 200 });
+  const batch = await runOperationsBatch();
+  return respondOk(
+    ctx,
+    {
+      processed: batch.results.length,
+      results: batch.results,
+      backoffMs: batch.backoffMs,
+      stats: batch.stats,
+    },
+    { status: 200 },
+  );
+}
+
+async function getOperationsBacklog(now: Date) {
+  const rows = await prisma.$queryRaw<
+    Array<{ backlogCount: number; oldestCreatedAt: Date | null }>
+  >(Prisma.sql`
+    SELECT
+      COUNT(*)::int AS "backlogCount",
+      MIN(created_at) AS "oldestCreatedAt"
+    FROM app_v3.operations
+    WHERE
+      (
+        status = 'PENDING'
+        OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
+      )
+  `);
+  const row = rows[0] ?? { backlogCount: 0, oldestCreatedAt: null };
+  const oldestAgeMs = row.oldestCreatedAt
+    ? Math.max(0, now.getTime() - row.oldestCreatedAt.getTime())
+    : null;
+  return { backlogCount: row.backlogCount ?? 0, oldestAgeMs };
 }
 
 async function claimOperationsBatch(now: Date, batchSize: number) {
   const staleBefore = new Date(now.getTime() - STALE_OPERATION_LOCK_MS);
+  const priorityTypes = Array.from(PRIORITY_TYPES);
+  const prioritySql =
+    priorityTypes.length > 0
+      ? Prisma.sql`CASE WHEN operation_type IN (${Prisma.join(priorityTypes)}) THEN 0 ELSE 1 END`
+      : Prisma.sql`0`;
   return prisma.$transaction(async (tx) => {
     const candidates = await tx.$queryRaw<OperationRecord[]>(Prisma.sql`
       SELECT
@@ -353,6 +450,7 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
         dedupe_key as "dedupeKey",
         status,
         attempts,
+        first_seen_at as "firstSeenAt",
         payload,
         payment_intent_id as "paymentIntentId",
         purchase_id as "purchaseId",
@@ -365,7 +463,7 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
           OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
         )
         AND (locked_at IS NULL OR locked_at <= ${staleBefore})
-      ORDER BY id ASC
+      ORDER BY ${prioritySql}, id ASC
       LIMIT ${batchSize}
       FOR UPDATE SKIP LOCKED
     `);
@@ -377,45 +475,89 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
       where: { id: { in: ids } },
       data: {
         status: "RUNNING",
-        attempts: { increment: 1 },
         lockedAt: now,
         updatedAt: now,
       },
     });
 
-    return candidates.map((row) => ({ ...row, attempts: row.attempts + 1 }));
+    return candidates;
   });
 }
 
 export async function runOperationsBatch() {
   const now = new Date();
-  const pending = await claimOperationsBatch(now, BATCH_SIZE);
+  const backlog = await getOperationsBacklog(now);
+  const batchSize = chooseBatchSize(backlog.backlogCount);
+  const pending = await claimOperationsBatch(now, batchSize);
 
   const results: Array<{ id: number; status: string; error?: string }> = [];
+  const batchStart = Date.now();
+  const releasedIds: number[] = [];
 
   for (const op of pending as OperationRecord[]) {
+    if (Date.now() - batchStart >= BATCH_TIME_LIMIT_MS) {
+      releasedIds.push(op.id);
+      continue;
+    }
+    const attemptNow = new Date();
+    const attempts = op.attempts + 1;
+    await prisma.operation.update({
+      where: { id: op.id },
+      data: { attempts: { increment: 1 }, lockedAt: attemptNow },
+    });
     try {
       await processOperation(op);
       await prisma.operation.update({
         where: { id: op.id },
-        data: { status: "SUCCEEDED", lastError: null, lockedAt: null, nextRetryAt: null },
+        data: {
+          status: "SUCCEEDED",
+          lastError: null,
+          reasonCode: null,
+          errorClass: null,
+          errorStack: null,
+          firstSeenAt: null,
+          lastSeenAt: null,
+          lockedAt: null,
+          nextRetryAt: null,
+        },
       });
       results.push({ id: op.id, status: "SUCCEEDED" });
     } catch (err) {
-      const attempts = op.attempts;
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const { message, errorClass, reasonCode, stackSummary } = summarizeError(err);
       const isDead = attempts >= MAX_ATTEMPTS;
+      const firstSeenAt = op.firstSeenAt ?? attemptNow;
       await prisma.operation.update({
         where: { id: op.id },
         data: {
           status: isDead ? "DEAD_LETTER" : "FAILED",
-          lastError: errorMessage,
+          lastError: message,
+          reasonCode,
+          errorClass,
+          errorStack: stackSummary,
+          firstSeenAt,
+          lastSeenAt: attemptNow,
           lockedAt: null,
-          nextRetryAt: isDead ? null : new Date(Date.now() + 5 * 60 * 1000),
+          nextRetryAt: isDead ? null : computeNextRetry(attempts),
         },
       });
-      results.push({ id: op.id, status: isDead ? "DEAD_LETTER" : "FAILED", error: errorMessage });
+      if (isDead) {
+        logWarn("operations.dead_lettered", {
+          operationId: op.id,
+          operationType: op.operationType,
+          attempts,
+          reasonCode,
+          errorClass,
+        });
+      }
+      results.push({ id: op.id, status: isDead ? "DEAD_LETTER" : "FAILED", error: message });
     }
+  }
+
+  if (releasedIds.length) {
+    await prisma.operation.updateMany({
+      where: { id: { in: releasedIds } },
+      data: { status: "PENDING", lockedAt: null },
+    });
   }
 
   await processNotificationOutboxBatch();
@@ -434,7 +576,23 @@ export async function runOperationsBatch() {
   } catch (err) {
     logError("worker.sweep_processor_fees_failed", err);
   }
-  return results;
+
+  const stats: OperationsBatchStats = {
+    backlogCount: backlog.backlogCount,
+    oldestAgeMs: backlog.oldestAgeMs,
+    batchSize,
+    durationMs: Date.now() - batchStart,
+    releasedCount: releasedIds.length,
+  };
+  if (stats.backlogCount > 0) {
+    logInfo("operations.backlog", stats);
+  }
+
+  return {
+    results,
+    stats,
+    backoffMs: computeBackoffMs(backlog.backlogCount, backlog.oldestAgeMs),
+  };
 }
 
 async function processOperation(op: OperationRecord) {

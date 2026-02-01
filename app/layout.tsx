@@ -85,9 +85,9 @@ export default async function RootLayout({
             <AuthLinkInterceptor />
             <Navbar adminHostHint={isAdminHost} />
             <RecoveryRedirector />
-            <main className="main-shell flex-1 transition-[padding] duration-200">
+            <div className="main-shell flex-1 transition-[padding] duration-200">
               {children}
-            </main>
+            </div>
             <AuthModal />
           </AuthModalProvider>
         </BackgroundShell>

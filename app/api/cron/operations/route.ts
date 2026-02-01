@@ -26,9 +26,18 @@ export async function POST(req: NextRequest) {
 
   const startedAt = new Date();
   try {
-    const results = await runOperationsBatch();
+    const batch = await runOperationsBatch();
     await recordCronHeartbeat("operations", { status: "SUCCESS", startedAt });
-    return respondOk(ctx, { processed: results.length, results }, { status: 200 });
+    return respondOk(
+      ctx,
+      {
+        processed: batch.results.length,
+        results: batch.results,
+        backoffMs: batch.backoffMs,
+        stats: batch.stats,
+      },
+      { status: 200 },
+    );
   } catch (err) {
     await recordCronHeartbeat("operations", { status: "ERROR", startedAt, error: err });
     return respondError(

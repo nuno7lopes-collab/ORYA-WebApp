@@ -1,0 +1,13 @@
+[booking_confirmation_backfill] Found 0 bookings without confirmationSnapshot (limit=200, afterId=none).
+[booking_confirmation_backfill] Summary:
+- scanned=0 updated=0 skipped=0 errors=0
+- missingPolicy=0 missingPricing=0 missingService=0
+- policyHintMissing=0
+- byStatus={}
+[booking_confirmation_backfill] CHECKPOINT batch=1/1 lastId=none scanned=0 updated=0.
+[booking_confirmation_backfill] No more bookings to process in this run.
+[booking_confirmation_backfill] Totals:
+- scanned=0 updated=0 skipped=0 errors=0
+- missingPolicy=0 missingPricing=0 missingService=0
+- policyHintMissing=0
+[booking_confirmation_backfill] VERIFY remaining_without_snapshot=0.

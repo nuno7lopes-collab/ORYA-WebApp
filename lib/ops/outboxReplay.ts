@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 
 const DEFAULT_MAX_REPLAY = 100;
+const DEFAULT_REPLAY_RATE_LIMIT_MS = 30 * 60 * 1000;
 
 export type OutboxReplayResult = {
   ok: true;
@@ -18,7 +19,10 @@ export async function replayOutboxEvents(params: {
   eventIds: string[];
   requestId?: string | null;
   maxReplay?: number;
-}): Promise<OutboxReplayResult | { ok: false; error: string; requestId: string | null; max?: number }> {
+}): Promise<
+  | OutboxReplayResult
+  | { ok: false; error: string; requestId: string | null; max?: number; retryAfterSec?: number }
+> {
   const requestId = params.requestId ?? null;
   const maxReplay = params.maxReplay ?? DEFAULT_MAX_REPLAY;
   const eventIds = Array.from(
@@ -44,6 +48,28 @@ export async function replayOutboxEvents(params: {
         requestId,
         ...(existing.payload as Omit<OutboxReplayResult, "ok" | "requestId">),
       };
+    }
+  }
+
+  const rateLimitMs = Number(
+    process.env.OUTBOX_REPLAY_RATE_LIMIT_MS || DEFAULT_REPLAY_RATE_LIMIT_MS,
+  );
+  if (Number.isFinite(rateLimitMs) && rateLimitMs > 0) {
+    const latestReplay = await prisma.operation.findFirst({
+      where: { operationType: "ADMIN_OUTBOX_REPLAY" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (latestReplay?.createdAt) {
+      const elapsed = Date.now() - latestReplay.createdAt.getTime();
+      if (elapsed < rateLimitMs) {
+        return {
+          ok: false,
+          error: "RATE_LIMITED",
+          requestId,
+          retryAfterSec: Math.max(1, Math.ceil((rateLimitMs - elapsed) / 1000)),
+        };
+      }
     }
   }
 

@@ -27,6 +27,12 @@ Parameters:
       - "false"
   EnableWorker:
     Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+  EnableOutboxSchedule:
+    Type: String
     Default: "false"
     AllowedValues:
       - "true"
@@ -46,7 +52,7 @@ Parameters:
     Default: 1
   WorkerDesiredCount:
     Type: Number
-    Default: 0
+    Default: 1
   TaskCpu:
     Type: String
     Default: "512"
@@ -82,6 +88,7 @@ Conditions:
   HasALB: !Equals [!Ref CreateALB, "true"]
   NoALB: !Equals [!Ref CreateALB, "false"]
   UseWorker: !Equals [!Ref EnableWorker, "true"]
+  UseOutboxSchedule: !And [!Equals [!Ref EnableWorker, "true"], !Equals [!Ref EnableOutboxSchedule, "true"]]
   HasBudgetEmail: !Not [!Equals [!Ref BudgetNotificationEmail, ""]]
   CreateEcr: !Equals [!Ref CreateEcrRepos, "true"]
 
@@ -682,11 +689,7 @@ Resources:
       ServiceName: !Sub "orya-${EnvironmentName}-worker"
       Cluster: !Ref ECSCluster
       DesiredCount: !Ref WorkerDesiredCount
-      CapacityProviderStrategy:
-        - CapacityProvider: FARGATE_SPOT
-          Weight: 2
-        - CapacityProvider: FARGATE
-          Weight: 1
+      LaunchType: FARGATE
       TaskDefinition: !Ref WorkerTaskDefinition
       NetworkConfiguration:
         AwsvpcConfiguration:
@@ -702,7 +705,7 @@ Resources:
 
   EventsRunTaskRole:
     Type: AWS::IAM::Role
-    Condition: UseWorker
+    Condition: UseOutboxSchedule
     Properties:
       RoleName: orya-eventbridge-run-task
       AssumeRolePolicyDocument:
@@ -730,7 +733,7 @@ Resources:
 
   OutboxScheduleRule:
     Type: AWS::Events::Rule
-    Condition: UseWorker
+    Condition: UseOutboxSchedule
     Properties:
       Name: !Sub "orya-${EnvironmentName}-outbox"
       ScheduleExpression: !Ref OutboxSchedule
