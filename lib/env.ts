@@ -51,6 +51,20 @@ function getEnv(key: EnvKey, fallbackKeys: string[] = []): string {
   throw new Error(`Missing env var: ${key}`);
 }
 
+function sanitizePgUrl(raw: string) {
+  try {
+    const parsed = new URL(raw);
+    // Remove unsupported startup params (e.g. options) for Prisma/pg adapters
+    if (parsed.searchParams.has("options")) {
+      parsed.searchParams.delete("options");
+      return parsed.toString();
+    }
+  } catch {
+    // ignore parse errors, return raw
+  }
+  return raw;
+}
+
 function getOptionalUrlEnv(...keys: string[]) {
   for (const key of keys) {
     const value = process.env[key];
@@ -85,7 +99,7 @@ export const env = {
     process.env.AUTH_COOKIE_DOMAIN ??
     process.env.NEXT_PUBLIC_SUPABASE_COOKIE_DOMAIN ??
     "",
-  dbUrl: getEnv("DATABASE_URL"),
+  dbUrl: sanitizePgUrl(getEnv("DATABASE_URL")),
   qrSecretKey: getEnv("QR_SECRET_KEY"),
   resendApiKey: getEnv("RESEND_API_KEY"),
   resendFrom:
