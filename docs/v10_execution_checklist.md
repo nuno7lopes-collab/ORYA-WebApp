@@ -497,10 +497,10 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo (runbooks completos).
 
 - [x] Métricas e Alertas
-  - Estado real: DONE — health inclui contagens críticas + runbook de métricas/alertas + queries CloudWatch.
-  - Evidência: `domain/ops/health.ts:1-50`, `docs/runbooks/metrics-alerts.md:1-60`, `docs/observability/sentry-integration.md:1-40`.
-  - Ação exata: criar alarms no provider (CloudWatch/Sentry).
-  - Risco/Impacto: baixo (instrumentação mínima).
+  - Estado real: DONE — health inclui contagens críticas + runbook de métricas/alertas + budgets/alarms configurados.
+  - Evidência: `domain/ops/health.ts:1-50`, `docs/runbooks/metrics-alerts.md:1-60`, `docs/observability/sentry-integration.md:1-40`, `reports/infra_alerts_2026-02-01.md`.
+  - Ação exata: manter budgets e alarms ativos; validar SNS subscription admin@orya.pt.
+  - Risco/Impacto: baixo (instrumentação mínima + alertas ativos).
 
 ### P2
 - [x] SLO/SLI Definição
