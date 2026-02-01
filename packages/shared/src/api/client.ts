@@ -5,27 +5,29 @@ export type ApiClientOptions = {
   headers?: Record<string, string>;
 };
 
-export const createApiClient = (options: ApiClientOptions = {}) => {
-  const env = getSharedEnv();
-  const baseUrl = options.baseUrl || env.apiBaseUrl;
+export type ApiClient = {
+  request<T>(path: string, init?: RequestInit): Promise<T>;
+};
 
-  const request = async <T>(
-    path: string,
-    init: RequestInit = {},
-  ): Promise<T> => {
+export const createApiClient = (options: ApiClientOptions = {}): ApiClient => {
+  const { apiBaseUrl } = getSharedEnv();
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+  const defaultHeaders = options.headers ?? {};
+
+  const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
     const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
     const headers = {
-      "content-type": "application/json",
-      ...(options.headers || {}),
-      ...(init.headers || {}),
-    } as Record<string, string>;
-
+      "Content-Type": "application/json",
+      ...defaultHeaders,
+      ...(init.headers ?? {}),
+    };
     const res = await fetch(url, { ...init, headers });
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`API ${res.status}: ${text}`);
+      const text = await res.text().catch(() => "");
+      throw new Error(`API ${res.status}: ${text || res.statusText}`);
     }
-    return (await res.json()) as T;
+    const json = await res.json().catch(() => null);
+    return json as T;
   };
 
   return { request };

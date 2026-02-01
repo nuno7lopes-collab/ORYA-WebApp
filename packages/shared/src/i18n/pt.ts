@@ -1,14 +1,12 @@
 export const pt = {
   auth: {
     signInTitle: "Entrar",
+    signIn: "Entrar",
     email: "Email",
     password: "Password",
-    signIn: "Entrar",
-    signOut: "Sair",
   },
   discover: {
     title: "Descobrir",
-    searchPlaceholder: "Procurar eventos",
   },
   tickets: {
     title: "Bilhetes",
