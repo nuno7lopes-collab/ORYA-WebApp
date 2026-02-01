@@ -11,6 +11,10 @@
         "autoIncrement": true
       }
     },
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
     "preview": {
       "channel": "preview",
       "ios": {
