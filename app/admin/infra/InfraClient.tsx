@@ -24,10 +24,12 @@ type ActionResult = {
 };
 
 type InfraCostSummary = {
+  source?: "cost-explorer" | "budgets";
   currency?: string;
   total?: number;
   byService?: Array<{ service: string; amount: number }>;
   daily?: Array<{ date: string; amount: number }>;
+  note?: string;
 };
 
 type InfraUsageSummary = {
@@ -281,7 +283,15 @@ export default function InfraClient() {
           {!cost.loading && !cost.error && !cost.data && <p className="text-xs text-white/60">Sem dados.</p>}
           {cost.data && (
             <div className="space-y-2 text-xs text-white/80">
-              <p>Total MTD: {cost.data.total?.toFixed(2) ?? "-"} {cost.data.currency ?? ""}</p>
+              <p>
+                Total MTD: {cost.data.total?.toFixed(2) ?? "-"} {cost.data.currency ?? ""}
+                {cost.data.source ? (
+                  <span className="ml-2 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-white/60">
+                    {cost.data.source}
+                  </span>
+                ) : null}
+              </p>
+              {cost.data.note && <p className="text-[11px] text-amber-100/70">{cost.data.note}</p>}
               <div className="max-h-40 overflow-auto rounded-lg border border-white/10 bg-white/5 p-2">
                 {(cost.data.byService ?? []).slice(0, 8).map((row) => (
                   <div key={row.service} className="flex items-center justify-between">

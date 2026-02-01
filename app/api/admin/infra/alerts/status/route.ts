@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
 
     const stsClient = new STSClient(getAwsConfig());
-    const budgetsClient = new BudgetsClient(getAwsConfig());
+    const budgetsClient = new BudgetsClient({ ...getAwsConfig(), region: "us-east-1" });
     const cwClient = new CloudWatchClient(getAwsConfig());
 
     const identity = await stsClient.send(new GetCallerIdentityCommand({}));

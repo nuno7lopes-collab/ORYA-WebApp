@@ -190,6 +190,12 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: expandir filtros/paginação se necessário.
   - Risco/Impacto: baixo (visibilidade operacional disponível).
 
+- [x] Infra Tab (Admin — read-only)
+  - Estado real: DONE — visão read-only de custos/uso/alertas usando AWS SDK v3.
+  - Evidência: `app/admin/infra/page.tsx:1-18`, `app/admin/infra/InfraClient.tsx:1-400`, `app/api/admin/infra/cost/summary/route.ts:1-110`, `app/api/admin/infra/usage/summary/route.ts:1-120`, `app/api/admin/infra/alerts/status/route.ts:1-90`, `app/api/admin/infra/status/route.ts:1-90`, `lib/awsSdk.ts:1-22`.
+  - Ação exata: manter `NEXT_PUBLIC_INFRA_READ_ONLY=true` até liberar ações.
+  - Risco/Impacto: baixo (observabilidade administrativa básica).
+
 ### P2
 - [x] Melhorias Futuras (Admin)
   - Estado real: DONE — paginação/filtros básicos + UI resiliente (loading/empty/error) no admin de organizações.
