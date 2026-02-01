@@ -86,3 +86,11 @@ ORYA_CRON_SECRET=*** scripts/healthcheck.sh https://app.orya.pt
 ```bash
 scripts/run-migrations.sh
 ```
+
+### Localhost aliases (admin/app/test)
+Para usar `admin.localhost:3000`, `app.localhost:3000` e `test.localhost:3000` no dev:
+
+```bash
+DRY_RUN=true scripts/setup-localhost-aliases.sh
+sudo scripts/setup-localhost-aliases.sh
+```
