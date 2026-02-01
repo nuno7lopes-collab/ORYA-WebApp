@@ -41,10 +41,25 @@ const baseUrlRaw =
 const baseUrl = baseUrlRaw.replace(/\/+$/, "");
 const url = process.env.WORKER_API_URL || `${baseUrl}/api/cron/operations`;
 const method = (process.env.WORKER_METHOD || "POST").toUpperCase();
-const intervalMs = Number(process.env.WORKER_INTERVAL_MS || "1000");
+const minIntervalMs = Number(process.env.WORKER_INTERVAL_MIN_MS || process.env.WORKER_INTERVAL_MS || "1000");
+const maxIntervalMs = Number(process.env.WORKER_INTERVAL_MAX_MS || "10000");
+const jitterPct = Number(process.env.WORKER_JITTER_PCT || "0.1");
+const jitterMs = Number(process.env.WORKER_JITTER_MS || "0");
+const verbose = process.env.WORKER_VERBOSE === "1" || process.env.WORKER_VERBOSE === "true";
+
+function applyJitter(delayMs) {
+  if (jitterMs > 0) {
+    return delayMs + Math.floor(Math.random() * jitterMs);
+  }
+  if (jitterPct > 0) {
+    return Math.max(0, Math.round(delayMs * (1 + Math.random() * jitterPct)));
+  }
+  return delayMs;
+}
 
 let stopped = false;
 let failureCount = 0;
+let currentIntervalMs = minIntervalMs;
 
 async function tick() {
   if (stopped) return;
@@ -70,9 +85,18 @@ async function tick() {
     } else {
       failureCount = 0;
     }
+
+    if (json?.backoffMs && Number.isFinite(Number(json.backoffMs))) {
+      currentIntervalMs = Math.min(maxIntervalMs, Math.max(minIntervalMs, Number(json.backoffMs)));
+    } else if (json?.processed > 0) {
+      currentIntervalMs = minIntervalMs;
+    } else {
+      currentIntervalMs = Math.min(maxIntervalMs, Math.round(currentIntervalMs * 1.5));
+    }
+    if (verbose) console.log("[worker] next interval", { currentIntervalMs });
   } catch (err) {
     failureCount += 1;
-    const backoffMs = Math.min(30000, intervalMs * Math.pow(2, Math.min(failureCount, 5)));
+    const backoffMs = Math.min(maxIntervalMs, minIntervalMs * Math.pow(2, Math.min(failureCount, 5)));
     const cause = err && typeof err === "object" ? err.cause : null;
     const code = cause && typeof cause === "object" ? cause.code : null;
     const hint =
@@ -80,9 +104,10 @@ async function tick() {
         ? "Servidor indisponível. Confirma se o `npm run dev` está ativo."
         : "Falha a chamar o worker.";
     console.error("[worker] Erro no loop", { message: err?.message || err, hint, backoffMs });
+    currentIntervalMs = backoffMs;
   } finally {
     if (!stopped) {
-      const delay = failureCount > 0 ? Math.min(30000, intervalMs * Math.pow(2, Math.min(failureCount, 5))) : intervalMs;
+      const delay = applyJitter(currentIntervalMs);
       setTimeout(tick, delay);
     }
   }
@@ -94,5 +119,7 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-console.log(`[worker] A correr ${method} ${url} a cada ${intervalMs}ms`);
+console.log(
+  `[worker] A correr ${method} ${url} (interval ${minIntervalMs}ms→${maxIntervalMs}ms)`,
+);
 tick();

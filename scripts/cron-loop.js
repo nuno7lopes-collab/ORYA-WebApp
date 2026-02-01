@@ -64,12 +64,32 @@ function getInterval(name, fallback) {
   return Number.isFinite(num) && num > 0 ? num : fallback;
 }
 
+const jitterPct = Number(process.env.CRON_JITTER_PCT || "0.1");
+const jitterMs = Number(process.env.CRON_JITTER_MS || "0");
+const maxBackoffMs = Number(process.env.CRON_MAX_BACKOFF_MS || "60000");
+const startJitterMs = Number(process.env.CRON_START_JITTER_MS || "1000");
+
+function applyJitter(delayMs) {
+  if (jitterMs > 0) {
+    return delayMs + Math.floor(Math.random() * jitterMs);
+  }
+  if (jitterPct > 0) {
+    return Math.max(0, Math.round(delayMs * (1 + Math.random() * jitterPct)));
+  }
+  return delayMs;
+}
+
+function getStartDelay(intervalMs) {
+  const base = Math.min(Math.max(startJitterMs, 0), intervalMs);
+  return base > 0 ? Math.floor(Math.random() * base) : 0;
+}
+
 const jobs = [
   {
     name: "operations",
     method: "POST",
     path: "/api/cron/operations",
-    intervalMs: getInterval("CRON_OPERATIONS_INTERVAL_MS", 1000),
+    intervalMs: getInterval("CRON_OPERATIONS_INTERVAL_MS", 3000),
   },
   {
     name: "chat-maintenance",
@@ -195,12 +215,13 @@ function makeRunner(job) {
     if (stopped || running) return;
     running = true;
     const url = `${baseUrl}${job.path}`;
+    let json = null;
     try {
       const res = await fetch(url, {
         method: job.method,
         headers: { "X-ORYA-CRON-SECRET": secret },
       });
-      const json = await res.json().catch(() => null);
+      json = await res.json().catch(() => null);
       if (!res.ok || (json && json.ok === false)) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -208,22 +229,29 @@ function makeRunner(job) {
       failureCount = 0;
     } catch (err) {
       failureCount += 1;
-      const backoffMs = Math.min(30000, job.intervalMs * Math.pow(2, Math.min(failureCount, 5)));
+      const backoffMs = Math.min(maxBackoffMs, job.intervalMs * Math.pow(2, Math.min(failureCount, 5)));
       const message = err && typeof err === "object" ? err.message : String(err);
       logJob(job, `error: ${message}`, { backoffMs });
     } finally {
       running = false;
       if (!stopped) {
-        const delay =
-          failureCount > 0
-            ? Math.min(30000, job.intervalMs * Math.pow(2, Math.min(failureCount, 5)))
-            : job.intervalMs;
-        setTimeout(run, delay);
+        let delay = job.intervalMs;
+        if (failureCount > 0) {
+          delay = Math.min(maxBackoffMs, job.intervalMs * Math.pow(2, Math.min(failureCount, 5)));
+        } else if (json?.backoffMs && Number.isFinite(Number(json.backoffMs))) {
+          delay = Math.max(job.intervalMs, Number(json.backoffMs));
+        }
+        setTimeout(run, applyJitter(delay));
       }
     }
   };
 
-  run();
+  const initialDelay = getStartDelay(job.intervalMs);
+  if (initialDelay > 0) {
+    setTimeout(run, initialDelay);
+  } else {
+    run();
+  }
 }
 
 async function start() {
