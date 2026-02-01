@@ -14,11 +14,13 @@ const DOWNLOAD_CONTENT_TYPES = [
 ];
 
 const CANONICAL_ERROR_CODE_BY_STATUS: Record<number, string> = {
+  400: "BAD_REQUEST",
   401: "UNAUTHENTICATED",
   403: "FORBIDDEN",
   404: "NOT_FOUND",
   409: "CONFLICT",
   410: "GONE",
+  413: "PAYLOAD_TOO_LARGE",
   422: "VALIDATION_FAILED",
   429: "THROTTLED",
   500: "INTERNAL_ERROR",
@@ -71,6 +73,10 @@ function isV9Envelope(payload: unknown) {
     return typeof (payload as Record<string, unknown>).errorCode === "string";
   }
   return false;
+}
+
+function isStableErrorCode(code: unknown) {
+  return typeof code === "string" && /^[A-Z0-9_]+$/.test(code);
 }
 
 function normalizePlainResponse(ctx: RequestContext, res: Response) {
@@ -164,9 +170,10 @@ function enforceCanonicalErrorCode(status: number, payload: Record<string, unkno
   const canonical = CANONICAL_ERROR_CODE_BY_STATUS[status];
   if (!canonical) return payload;
   const current = typeof payload.errorCode === "string" ? payload.errorCode : undefined;
-  if (current) return payload;
+  if (current && isStableErrorCode(current)) return payload;
 
   const original =
+    current ??
     (typeof payload.code === "string" ? payload.code : undefined) ??
     (typeof payload.error === "string" ? payload.error : undefined);
 

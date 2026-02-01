@@ -3,6 +3,7 @@ import {
   PadelPairingJoinMode,
   PadelPaymentMode,
   PadelRegistrationStatus,
+  PadelTournamentLifecycleStatus,
   SourceType,
   Prisma,
 } from "@prisma/client";
@@ -20,6 +21,7 @@ type RegistrationCheckParams = {
   registrationStartsAt?: Date | null;
   registrationEndsAt?: Date | null;
   competitionState?: PadelCompetitionState | string | null;
+  lifecycleStatus?: PadelTournamentLifecycleStatus | string | null;
   now?: Date;
 };
 
@@ -61,9 +63,28 @@ export function isCancelledLifecycle(status: DerivedPairingLifecycleStatus | nul
 export function checkPadelRegistrationWindow(params: RegistrationCheckParams): RegistrationCheckResult {
   const { eventStatus, eventStartsAt, registrationStartsAt, registrationEndsAt } = params;
   const now = params.now ?? new Date();
+  const lifecycle =
+    params.lifecycleStatus && typeof params.lifecycleStatus === "string"
+      ? (params.lifecycleStatus.toUpperCase() as PadelTournamentLifecycleStatus)
+      : null;
   const competitionState = isPadelCompetitionState(params.competitionState)
     ? params.competitionState
     : null;
+
+  if (lifecycle && Object.values(PadelTournamentLifecycleStatus).includes(lifecycle)) {
+    if (lifecycle === "DRAFT" || lifecycle === "CANCELLED") {
+      return { ok: false, code: "EVENT_NOT_PUBLISHED" };
+    }
+    if (lifecycle === "LOCKED") {
+      return { ok: false, code: "INSCRIPTIONS_CLOSED" };
+    }
+    if (lifecycle === "LIVE") {
+      return { ok: false, code: "TOURNAMENT_STARTED" };
+    }
+    if (lifecycle === "COMPLETED") {
+      return { ok: false, code: "INSCRIPTIONS_CLOSED" };
+    }
+  }
 
   if (competitionState === "HIDDEN" || competitionState === "CANCELLED") {
     return { ok: false, code: "EVENT_NOT_PUBLISHED" };

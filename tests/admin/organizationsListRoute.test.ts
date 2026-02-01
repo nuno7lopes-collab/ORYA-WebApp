@@ -6,6 +6,10 @@ const prisma = vi.hoisted(() => ({
   organization: {
     findMany: vi.fn(),
   },
+  event: {
+    groupBy: vi.fn(),
+  },
+  $queryRaw: vi.fn(),
 }));
 
 vi.mock("@/lib/admin/auth", () => ({ requireAdminUser }));
@@ -16,6 +20,8 @@ let GET: typeof import("@/app/api/admin/organizacoes/list/route").GET;
 beforeEach(async () => {
   requireAdminUser.mockReset();
   prisma.organization.findMany.mockReset();
+  prisma.event.groupBy.mockReset();
+  prisma.$queryRaw.mockReset();
   vi.resetModules();
   GET = (await import("@/app/api/admin/organizacoes/list/route")).GET;
 });
@@ -62,6 +68,8 @@ describe("admin organizations list route", () => {
         members: [],
       },
     ]);
+    prisma.event.groupBy.mockResolvedValue([]);
+    prisma.$queryRaw.mockResolvedValue([]);
 
     const req = new NextRequest(
       "http://localhost/api/admin/organizacoes/list?status=ACTIVE&q=Club&limit=1",

@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { CrmInteractionSource, CrmInteractionType, EntitlementType, EntitlementStatus } from "@prisma/client";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";
@@ -114,7 +114,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
 
   await prisma.$transaction(async (tx) => {
-    const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
+    const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
     // Evitar conflito por purchaseId já existente: se já existir, atualizamos, senão criamos.
     const existingSummary =
       (purchaseId

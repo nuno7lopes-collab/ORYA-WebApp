@@ -53,6 +53,9 @@ jobs:
       - name: Internal secret gate
         run: npm run gate:internal-secret
 
+      - name: Org context gate
+        run: npm run gate:org-context
+
       - name: Runbook gate
         run: npm run gate:runbooks
 

@@ -23,6 +23,7 @@ import {
   clampDeadlineHours,
   computeSplitDeadlineAt,
   computePartnerLinkExpiresAt,
+  isWithinMatchmakingWindow,
 } from "@/domain/padelDeadlines";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
@@ -182,6 +183,7 @@ async function _POST(req: NextRequest) {
       splitDeadlineHours: true,
       defaultCategoryId: true,
       advancedSettings: true,
+      lifecycleStatus: true,
     },
   });
   if (!config?.padelV2Enabled || config.organizationId !== organizationId) {
@@ -209,10 +211,18 @@ async function _POST(req: NextRequest) {
     registrationStartsAt,
     registrationEndsAt,
     competitionState: advancedSettings.competitionState ?? null,
+    lifecycleStatus: config.lifecycleStatus ?? null,
   });
   if (!registrationCheck.ok) {
     return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });
   }
+
+  const now = new Date();
+  const allowMatchmaking = isWithinMatchmakingWindow(
+    now,
+    event.startsAt ?? null,
+    config.splitDeadlineHours ?? null,
+  );
 
   const [profile] = await Promise.all([
     prisma.profile.findUnique({
@@ -471,9 +481,9 @@ async function _POST(req: NextRequest) {
   if (
     pairingJoinModeRaw === "LOOKING_FOR_PARTNER" &&
     paymentMode === "SPLIT" &&
-    !hasInviteTarget
+    !hasInviteTarget &&
+    allowMatchmaking
   ) {
-    const now = new Date();
     const openPairings = await prisma.padelPairing.findMany({
       where: {
         eventId,

@@ -66,7 +66,7 @@ async function loadCourtCandidates(params: {
 }) {
   const { organizationId, eventId, courtId, startsAt, endsAt, excludeMatchId, excludeBlockId } = params;
   const [blocks, matches, bookings, softBlocks] = await Promise.all([
-    prisma.padelCourtBlock.findMany({
+    prisma.calendarBlock.findMany({
       where: {
         organizationId,
         eventId,
@@ -77,7 +77,7 @@ async function loadCourtCandidates(params: {
       },
       select: { id: true, startAt: true, endAt: true },
     }),
-    prisma.padelMatch.findMany({
+    prisma.eventMatchSlot.findMany({
       where: {
         eventId,
         ...(courtId ? { courtId } : {}),
@@ -214,7 +214,7 @@ async function _GET(req: NextRequest) {
   }
 
   const [blocks, availabilities, matches] = await Promise.all([
-    prisma.padelCourtBlock.findMany({
+    prisma.calendarBlock.findMany({
       where: { organizationId: organization.id, eventId },
       orderBy: [{ startAt: "asc" }],
       select: {
@@ -231,7 +231,7 @@ async function _GET(req: NextRequest) {
         updatedAt: true,
       },
     }),
-    prisma.padelAvailability.findMany({
+    prisma.calendarAvailability.findMany({
       where: { organizationId: organization.id, eventId },
       orderBy: [{ startAt: "asc" }],
       select: {
@@ -247,7 +247,7 @@ async function _GET(req: NextRequest) {
         updatedAt: true,
       },
     }),
-    prisma.padelMatch.findMany({
+    prisma.eventMatchSlot.findMany({
       where: {
         eventId,
         OR: [{ startTime: { not: null } }, { plannedStartAt: { not: null } }],
@@ -439,7 +439,7 @@ async function _POST(req: NextRequest) {
       if (!court) return jsonWrap({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
     }
 
-    const overlappingBlocks = await prisma.padelCourtBlock.findFirst({
+    const overlappingBlocks = await prisma.calendarBlock.findFirst({
       where: {
         organizationId: organization.id,
         eventId: event.id,
@@ -542,7 +542,7 @@ async function _POST(req: NextRequest) {
 
   const emailToCheck = typeof body.playerEmail === "string" ? body.playerEmail.trim().toLowerCase() : null;
   if (playerProfileId || emailToCheck) {
-    const overlappingAvailability = await prisma.padelAvailability.findFirst({
+    const overlappingAvailability = await prisma.calendarAvailability.findFirst({
       where: {
         organizationId: organization.id,
         eventId: event.id,
@@ -563,7 +563,7 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  const availability = await prisma.padelAvailability.create({
+  const availability = await prisma.calendarAvailability.create({
     data: {
       organizationId: organization.id,
       eventId: event.id,
@@ -617,7 +617,7 @@ async function _PATCH(req: NextRequest) {
     const courtId =
       typeof body.courtId === "number" ? body.courtId : typeof body.courtId === "string" ? Number(body.courtId) : undefined;
 
-    const block = await prisma.padelCourtBlock.findFirst({
+    const block = await prisma.calendarBlock.findFirst({
       where: { id: id as number, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, courtId: true, updatedAt: true },
     });
@@ -650,7 +650,7 @@ async function _PATCH(req: NextRequest) {
 
     // Se alterar datas/court, valida sobreposição
     if (startAt && endAt) {
-      const overlapping = await prisma.padelCourtBlock.findFirst({
+      const overlapping = await prisma.calendarBlock.findFirst({
         where: {
           organizationId: organization.id,
           eventId: block.eventId,
@@ -756,7 +756,7 @@ async function _PATCH(req: NextRequest) {
           ? Number(body.playerProfileId)
           : undefined;
 
-    const availability = await prisma.padelAvailability.findFirst({
+    const availability = await prisma.calendarAvailability.findFirst({
       where: { id: id as number, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, playerProfileId: true, playerEmail: true, updatedAt: true },
     });
@@ -790,7 +790,7 @@ async function _PATCH(req: NextRequest) {
     const emailToCheck = typeof body.playerEmail === "string" ? body.playerEmail.trim().toLowerCase() : availability.playerEmail;
 
     if (startAt && endAt && (playerProfileId || emailToCheck)) {
-      const overlapping = await prisma.padelAvailability.findFirst({
+      const overlapping = await prisma.calendarAvailability.findFirst({
         where: {
           organizationId: organization.id,
           eventId: availability.eventId,
@@ -809,7 +809,7 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    const updated = await prisma.padelAvailability.update({
+    const updated = await prisma.calendarAvailability.update({
       where: { id: id as number },
       data: {
         ...(typeof playerProfileId !== "undefined"
@@ -859,7 +859,7 @@ async function _PATCH(req: NextRequest) {
     const courtId =
       typeof body.courtId === "number" ? body.courtId : typeof body.courtId === "string" ? Number(body.courtId) : undefined;
 
-    const match = await prisma.padelMatch.findFirst({
+    const match = await prisma.eventMatchSlot.findFirst({
       where: { id: id as number, event: { organizationId: organization.id } },
       select: {
         id: true,
@@ -949,7 +949,7 @@ async function _PATCH(req: NextRequest) {
     }
 
     if (desiredStart && desiredEnd && (courtId || match.courtId)) {
-      const overlappingMatch = await prisma.padelMatch.findFirst({
+      const overlappingMatch = await prisma.eventMatchSlot.findFirst({
         where: {
           eventId: match.eventId,
           id: { not: id as number },
@@ -977,7 +977,7 @@ async function _PATCH(req: NextRequest) {
         }
       }
 
-      const overlappingBlock = await prisma.padelCourtBlock.findFirst({
+      const overlappingBlock = await prisma.calendarBlock.findFirst({
         where: {
           organizationId: organization.id,
           eventId: match.eventId,
@@ -1009,7 +1009,7 @@ async function _PATCH(req: NextRequest) {
       ];
       const overlappingPlayerMatch =
         pairingConditions.length > 0
-          ? await prisma.padelMatch.findFirst({
+          ? await prisma.eventMatchSlot.findFirst({
               where: {
                 eventId: match.eventId,
                 id: { not: id as number },
@@ -1153,7 +1153,7 @@ async function _DELETE(req: NextRequest) {
   }
 
   if (typeParam === "block") {
-    const exists = await prisma.padelCourtBlock.findFirst({
+    const exists = await prisma.calendarBlock.findFirst({
       where: { id, organizationId: organization.id },
       select: { id: true },
     });
@@ -1179,12 +1179,12 @@ async function _DELETE(req: NextRequest) {
   }
 
   if (typeParam === "availability") {
-    const exists = await prisma.padelAvailability.findFirst({
+    const exists = await prisma.calendarAvailability.findFirst({
       where: { id, organizationId: organization.id },
       select: { id: true },
     });
     if (!exists) return jsonWrap({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
-    await prisma.padelAvailability.delete({ where: { id } });
+    await prisma.calendarAvailability.delete({ where: { id } });
     await recordOrganizationAuditSafe({
       organizationId: organization.id,
       actorUserId: check.userId,

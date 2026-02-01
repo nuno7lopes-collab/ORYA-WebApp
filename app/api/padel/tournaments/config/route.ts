@@ -8,6 +8,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { normalizePadelScoreRules, type PadelScoreRules } from "@/domain/padel/score";
+import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -36,11 +37,12 @@ async function _GET(req: NextRequest) {
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const [config, tournament] = await Promise.all([
+  let [config, tournament] = await Promise.all([
     prisma.padelTournamentConfig.findUnique({
       where: { eventId },
       include: {
         ruleSet: true,
+        ruleSetVersion: true,
         category: true,
       },
     }),
@@ -49,6 +51,34 @@ async function _GET(req: NextRequest) {
       select: { generatedAt: true, generatedByUserId: true },
     }),
   ]);
+
+  if (config?.ruleSetId && !config.ruleSetVersionId) {
+    await prisma.$transaction(async (tx) => {
+      const fresh = await tx.padelTournamentConfig.findUnique({
+        where: { id: config!.id },
+        select: { id: true, ruleSetId: true, ruleSetVersionId: true },
+      });
+      if (!fresh?.ruleSetId || fresh.ruleSetVersionId) return;
+      const version = await ensurePadelRuleSetVersion({
+        tx,
+        tournamentConfigId: fresh.id,
+        ruleSetId: fresh.ruleSetId,
+        actorUserId: user.id,
+      });
+      await tx.padelTournamentConfig.update({
+        where: { id: fresh.id },
+        data: { ruleSetVersionId: version.id },
+      });
+    });
+    config = await prisma.padelTournamentConfig.findUnique({
+      where: { eventId },
+      include: {
+        ruleSet: true,
+        ruleSetVersion: true,
+        category: true,
+      },
+    });
+  }
 
   return jsonWrap(
     {
@@ -414,97 +444,138 @@ async function _POST(req: NextRequest) {
   }
 
   try {
-    const existing = await prisma.padelTournamentConfig.findUnique({
-      where: { eventId },
-      select: {
-        advancedSettings: true,
-        format: true,
-        numberOfCourts: true,
-        ruleSetId: true,
-        defaultCategoryId: true,
-        eligibilityType: true,
-        splitDeadlineHours: true,
-        enabledFormats: true,
-      },
+    const config = await prisma.$transaction(async (tx) => {
+      const existing = await tx.padelTournamentConfig.findUnique({
+        where: { eventId },
+        select: {
+          id: true,
+          advancedSettings: true,
+          format: true,
+          numberOfCourts: true,
+          ruleSetId: true,
+          ruleSetVersionId: true,
+          defaultCategoryId: true,
+          eligibilityType: true,
+          splitDeadlineHours: true,
+          enabledFormats: true,
+        },
+      });
+      const formatEffective = format ?? existing?.format ?? null;
+      if (!formatEffective) {
+        throw new Error("MISSING_FIELDS");
+      }
+
+      // Formatos suportados (alinhados com geração de jogos)
+      const allowedFormats = new Set<padel_format>([
+        padel_format.TODOS_CONTRA_TODOS,
+        padel_format.QUADRO_ELIMINATORIO,
+        padel_format.GRUPOS_ELIMINATORIAS,
+        padel_format.QUADRO_AB,
+        padel_format.DUPLA_ELIMINACAO,
+        padel_format.NON_STOP,
+        padel_format.CAMPEONATO_LIGA,
+      ]);
+      if (!allowedFormats.has(formatEffective)) {
+        throw new Error("FORMAT_NOT_SUPPORTED");
+      }
+
+      const mergedAdvanced = {
+        ...((existing?.advancedSettings as Record<string, unknown>) ?? {}),
+        ...(groupsConfig ? { groupsConfig } : {}),
+        ...(waitlistEnabled !== undefined ? { waitlistEnabled } : {}),
+        ...(registrationStartsAt !== undefined ? { registrationStartsAt } : {}),
+        ...(registrationEndsAt !== undefined ? { registrationEndsAt } : {}),
+        ...(allowSecondCategory !== undefined ? { allowSecondCategory } : {}),
+        ...(maxEntriesTotal !== undefined ? { maxEntriesTotal } : {}),
+        ...(competitionState !== undefined ? { competitionState } : {}),
+        ...(seedRanks !== undefined ? { seedRanks } : {}),
+        ...(scheduleDefaults !== undefined ? { scheduleDefaults } : {}),
+        ...(templateId !== undefined ? { templateId } : {}),
+        ...(tvMonitor !== undefined ? { tvMonitor } : {}),
+        ...(scoreRules !== undefined ? { scoreRules } : {}),
+        ...(featuredMatchId !== undefined ? { featuredMatchId } : {}),
+        ...(goalLimits !== undefined ? { goalLimits } : {}),
+        ...(liveSponsors !== undefined ? { liveSponsors } : {}),
+        formatRequested: formatEffective,
+        formatEffective,
+        generationVersion: "v1-groups-ko",
+      };
+
+      const normalizedFormats = hasEnabledFormats
+        ? (enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? []).map(
+            (f) => f as padel_format,
+          )
+        : undefined;
+
+      const effectiveRuleSetId = hasRuleSetId ? ruleSetId ?? null : existing?.ruleSetId ?? null;
+
+      const createData: Prisma.PadelTournamentConfigUncheckedCreateInput = {
+        eventId,
+        organizationId: organizationIdBody,
+        numberOfCourts: numberOfCourtsParsed ?? existing?.numberOfCourts ?? 1,
+        ruleSetId: effectiveRuleSetId ?? undefined,
+        defaultCategoryId: hasDefaultCategoryId ? defaultCategoryId ?? undefined : existing?.defaultCategoryId ?? undefined,
+        eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
+        splitDeadlineHours: hasSplitDeadlineHours ? splitDeadlineHours ?? undefined : existing?.splitDeadlineHours ?? undefined,
+        enabledFormats: normalizedFormats ?? existing?.enabledFormats ?? undefined,
+        advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
+        format: formatEffective,
+      };
+      const updateData: Prisma.PadelTournamentConfigUncheckedUpdateInput = {
+        ...(hasFormat ? { format: formatEffective } : {}),
+        ...(hasNumberOfCourts && numberOfCourtsParsed !== null ? { numberOfCourts: numberOfCourtsParsed } : {}),
+        ...(hasRuleSetId ? { ruleSetId: effectiveRuleSetId } : {}),
+        ...(hasDefaultCategoryId ? { defaultCategoryId } : {}),
+        ...(hasEligibilityType ? { eligibilityType: eligibilityType || undefined } : {}),
+        ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
+        ...(hasEnabledFormats ? { enabledFormats: normalizedFormats ?? [] } : {}),
+        advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
+      };
+
+      const upserted = await tx.padelTournamentConfig.upsert({
+        where: { eventId },
+        create: createData,
+        update: updateData,
+        select: {
+          id: true,
+          ruleSetId: true,
+          ruleSetVersionId: true,
+        },
+      });
+
+      if (effectiveRuleSetId && (!upserted.ruleSetVersionId || effectiveRuleSetId !== existing?.ruleSetId)) {
+        const version = await ensurePadelRuleSetVersion({
+          tx,
+          tournamentConfigId: upserted.id,
+          ruleSetId: effectiveRuleSetId,
+          actorUserId: user.id,
+        });
+        await tx.padelTournamentConfig.update({
+          where: { id: upserted.id },
+          data: { ruleSetVersionId: version.id },
+        });
+      }
+
+      return tx.padelTournamentConfig.findUnique({
+        where: { id: upserted.id },
+        include: { ruleSet: true, ruleSetVersion: true, category: true },
+      });
     });
-    const formatEffective = format ?? existing?.format ?? null;
-    if (!formatEffective) {
-      return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
+
+    if (!config) {
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
-
-    // Formatos suportados (alinhados com geração de jogos)
-    const allowedFormats = new Set<padel_format>([
-      padel_format.TODOS_CONTRA_TODOS,
-      padel_format.QUADRO_ELIMINATORIO,
-      padel_format.GRUPOS_ELIMINATORIAS,
-      padel_format.QUADRO_AB,
-      padel_format.DUPLA_ELIMINACAO,
-      padel_format.NON_STOP,
-      padel_format.CAMPEONATO_LIGA,
-    ]);
-    if (!allowedFormats.has(formatEffective)) {
-      return jsonWrap({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
-    }
-
-    const mergedAdvanced = {
-      ...((existing?.advancedSettings as Record<string, unknown>) ?? {}),
-      ...(groupsConfig ? { groupsConfig } : {}),
-      ...(waitlistEnabled !== undefined ? { waitlistEnabled } : {}),
-      ...(registrationStartsAt !== undefined ? { registrationStartsAt } : {}),
-      ...(registrationEndsAt !== undefined ? { registrationEndsAt } : {}),
-      ...(allowSecondCategory !== undefined ? { allowSecondCategory } : {}),
-      ...(maxEntriesTotal !== undefined ? { maxEntriesTotal } : {}),
-      ...(competitionState !== undefined ? { competitionState } : {}),
-      ...(seedRanks !== undefined ? { seedRanks } : {}),
-      ...(scheduleDefaults !== undefined ? { scheduleDefaults } : {}),
-      ...(templateId !== undefined ? { templateId } : {}),
-      ...(tvMonitor !== undefined ? { tvMonitor } : {}),
-      ...(scoreRules !== undefined ? { scoreRules } : {}),
-      ...(featuredMatchId !== undefined ? { featuredMatchId } : {}),
-      ...(goalLimits !== undefined ? { goalLimits } : {}),
-      ...(liveSponsors !== undefined ? { liveSponsors } : {}),
-      formatRequested: formatEffective,
-      formatEffective,
-      generationVersion: "v1-groups-ko",
-    };
-
-    const normalizedFormats = hasEnabledFormats
-      ? (enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? []).map(
-          (f) => f as padel_format,
-        )
-      : undefined;
-
-    const createData: Prisma.PadelTournamentConfigUncheckedCreateInput = {
-      eventId,
-      organizationId: organizationIdBody,
-      numberOfCourts: numberOfCourtsParsed ?? existing?.numberOfCourts ?? 1,
-      ruleSetId: hasRuleSetId ? ruleSetId ?? undefined : existing?.ruleSetId ?? undefined,
-      defaultCategoryId: hasDefaultCategoryId ? defaultCategoryId ?? undefined : existing?.defaultCategoryId ?? undefined,
-      eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
-      splitDeadlineHours: hasSplitDeadlineHours ? splitDeadlineHours ?? undefined : existing?.splitDeadlineHours ?? undefined,
-      enabledFormats: normalizedFormats ?? existing?.enabledFormats ?? undefined,
-      advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
-      format: formatEffective,
-    };
-    const updateData: Prisma.PadelTournamentConfigUncheckedUpdateInput = {
-      ...(hasFormat ? { format: formatEffective } : {}),
-      ...(hasNumberOfCourts && numberOfCourtsParsed !== null ? { numberOfCourts: numberOfCourtsParsed } : {}),
-      ...(hasRuleSetId ? { ruleSetId } : {}),
-      ...(hasDefaultCategoryId ? { defaultCategoryId } : {}),
-      ...(hasEligibilityType ? { eligibilityType: eligibilityType || undefined } : {}),
-      ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
-      ...(hasEnabledFormats ? { enabledFormats: normalizedFormats ?? [] } : {}),
-      advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
-    };
-
-    const config = await prisma.padelTournamentConfig.upsert({
-      where: { eventId },
-      create: createData,
-      update: updateData,
-    });
 
     return jsonWrap({ ok: true, config }, { status: 200 });
   } catch (err) {
+    if (err instanceof Error) {
+      if (err.message === "MISSING_FIELDS") {
+        return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
+      }
+      if (err.message === "FORMAT_NOT_SUPPORTED") {
+        return jsonWrap({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
+      }
+    }
     console.error("[padel/tournaments/config][POST]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

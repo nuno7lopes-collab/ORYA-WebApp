@@ -81,6 +81,7 @@ vi.mock("@/lib/prisma", () => {
     create: vi.fn(({ data }: any) => data),
   };
   const outboxEvent = {
+    findUnique: vi.fn(() => null),
     create: vi.fn(({ data }: any) => data),
   };
   const prismaMock = {
@@ -107,7 +108,8 @@ vi.mock("@/lib/stripeClient", () => {
       balance_transaction: id === "ch_1" ? { id: "bt_1", fee: 123 } : null,
     })),
   };
-  return { stripe: { paymentIntents, charges } };
+  const stripe = { paymentIntents, charges };
+  return { stripe, getStripeClient: () => stripe };
 });
 
 const prismaMock = vi.mocked(prisma);

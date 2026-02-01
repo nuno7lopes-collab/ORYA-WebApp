@@ -8,7 +8,7 @@ import {
   TicketStatus,
   Prisma,
 } from "@prisma/client";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
@@ -89,7 +89,7 @@ async function issueTicketOrderEntitlements(
     tx,
   );
 
-  const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
+  const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
   const ownerKey = buildOwnerKey(payment.customerIdentityId ?? order.buyerIdentityId ?? null);
   const snapshot = payment.pricingSnapshotJson as { gross?: number; platformFee?: number; currency?: string } | null;
   const grossTotal = snapshot?.gross ?? 0;
@@ -201,7 +201,7 @@ async function issuePadelRegistrationEntitlements(
   const event = await tx.event.findUnique({ where: { id: eventId } });
   if (!event) throw new Error("EVENT_NOT_FOUND");
 
-  const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
+  const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
   const ownerKey = buildOwnerKey(payment.customerIdentityId ?? registration.buyerIdentityId ?? null);
 
   for (const line of registration.lines) {

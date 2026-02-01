@@ -17,6 +17,10 @@ export type GeoDetailsItem = {
   name: string | null;
   city: string | null;
   address: string | null;
+  addressId?: string | null;
+  canonical?: Record<string, unknown> | null;
+  confidenceScore?: number | null;
+  validationStatus?: string | null;
 };
 
 export type GeoProvider = {

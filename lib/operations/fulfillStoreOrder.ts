@@ -1,16 +1,27 @@
 import Stripe from "stripe";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { CrmInteractionSource, CrmInteractionType, StoreInventoryMovementType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
+import { CrmInteractionSource, CrmInteractionType, EntitlementStatus, EntitlementType, StoreInventoryMovementType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { sendStoreOrderConfirmationEmail } from "@/lib/emailSender";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
 import { logError, logWarn } from "@/lib/observability/logger";
+import { normalizeEmail } from "@/lib/utils/email";
 
 function parseId(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+const DEFAULT_TIMEZONE = "Europe/Lisbon";
+
+function buildOwnerKey(params: { ownerUserId?: string | null; guestEmail?: string | null }) {
+  const { ownerUserId, guestEmail } = params;
+  if (ownerUserId) return `user:${ownerUserId}`;
+  const normalized = normalizeEmail(guestEmail);
+  if (normalized) return `email:${normalized}`;
+  return "unknown";
 }
 
 export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Promise<boolean> {
@@ -28,6 +39,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
       currency: true,
       userId: true,
       customerEmail: true,
+      createdAt: true,
       storeId: true,
       store: { select: { ownerOrganizationId: true } },
     },
@@ -36,26 +48,15 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
     throw new Error("STORE_ORDER_NOT_FOUND");
   }
 
-  if (order.status === StoreOrderStatus.PAID || order.status === StoreOrderStatus.FULFILLED) {
-    if (order.store?.ownerOrganizationId && order.userId) {
-      try {
-        await ingestCrmInteraction({
-          organizationId: order.store.ownerOrganizationId,
-          userId: order.userId,
-          type: CrmInteractionType.STORE_ORDER_PAID,
-          sourceType: CrmInteractionSource.STORE_ORDER,
-          sourceId: order.purchaseId ?? String(order.id),
-          occurredAt: new Date(),
-          amountCents: order.totalCents,
-          currency: order.currency,
-          metadata: { orderId: order.id, storeId: order.storeId },
-        });
-      } catch (err) {
-        logError("fulfill_store_order.crm_interaction_failed", err, { orderId: order.id });
-      }
-    }
-    return true;
-  }
+  const resolvedPurchaseId =
+    (typeof meta.purchaseId === "string" && meta.purchaseId.trim()
+      ? meta.purchaseId.trim()
+      : order.purchaseId) ?? `store_order_${order.id}`;
+  const ownerUserId = order.userId ?? (typeof meta.userId === "string" ? meta.userId : null);
+  const ownerEmail = order.customerEmail ?? (typeof meta.customerEmail === "string" ? meta.customerEmail : null);
+  const ownerKey = buildOwnerKey({ ownerUserId, guestEmail: ownerEmail });
+  const snapshotStartAt = order.createdAt ?? new Date();
+  let paymentApplied = false;
 
   await prisma.$transaction(async (tx) => {
     const orderLines = await tx.storeOrderLine.findMany({
@@ -65,19 +66,73 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
         productId: true,
         variantId: true,
         quantity: true,
+        nameSnapshot: true,
         product: { select: { stockPolicy: true, stockQty: true } },
         variant: { select: { stockQty: true } },
       },
     });
 
-    await tx.storeOrder.update({
-      where: { id: order.id },
+    const updateResult = await tx.storeOrder.updateMany({
+      where: { id: order.id, status: StoreOrderStatus.PENDING },
       data: {
         status: StoreOrderStatus.PAID,
         paymentIntentId: intent.id,
-        purchaseId: typeof meta.purchaseId === "string" && meta.purchaseId.trim() ? meta.purchaseId.trim() : order.purchaseId,
+        purchaseId: resolvedPurchaseId,
       },
     });
+    paymentApplied = updateResult.count > 0;
+    if (!paymentApplied) {
+      await tx.storeOrder.updateMany({
+        where: { id: order.id, paymentIntentId: null },
+        data: { paymentIntentId: intent.id },
+      });
+      await tx.storeOrder.updateMany({
+        where: { id: order.id, OR: [{ purchaseId: null }, { purchaseId: "" }] },
+        data: { purchaseId: resolvedPurchaseId },
+      });
+    }
+
+    for (const line of orderLines) {
+      const quantity = Math.max(1, Number(line.quantity ?? 1));
+      for (let i = 0; i < quantity; i += 1) {
+        await tx.entitlement.upsert({
+          where: {
+            storeOrderLineId_lineItemIndex_ownerKey_type: {
+              storeOrderLineId: line.id,
+              lineItemIndex: i,
+              ownerKey,
+              type: EntitlementType.STORE_ITEM,
+            },
+          },
+          update: {
+            status: EntitlementStatus.ACTIVE,
+            ownerUserId,
+            ownerIdentityId: null,
+            purchaseId: resolvedPurchaseId,
+            snapshotTitle: line.nameSnapshot,
+            snapshotCoverUrl: null,
+            snapshotVenueName: null,
+            snapshotStartAt,
+            snapshotTimezone: DEFAULT_TIMEZONE,
+          },
+          create: {
+            type: EntitlementType.STORE_ITEM,
+            status: EntitlementStatus.ACTIVE,
+            ownerUserId,
+            ownerIdentityId: null,
+            ownerKey,
+            purchaseId: resolvedPurchaseId,
+            storeOrderLineId: line.id,
+            lineItemIndex: i,
+            snapshotTitle: line.nameSnapshot,
+            snapshotCoverUrl: null,
+            snapshotVenueName: null,
+            snapshotStartAt,
+            snapshotTimezone: DEFAULT_TIMEZONE,
+          },
+        });
+      }
+    }
 
     const lineIds = orderLines.map((line) => line.id);
     const existingGrants = await tx.storeDigitalGrant.findMany({
@@ -100,59 +155,61 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
         await tx.storeDigitalGrant.create({
           data: {
             orderLineId: line.id,
-            userId: typeof meta.userId === "string" ? meta.userId : null,
+            userId: ownerUserId ?? null,
             downloadToken: token,
           },
         });
       }
     }
 
-    for (const line of orderLines) {
-      if (!line.productId || !line.product || line.product.stockPolicy !== StoreStockPolicy.TRACKED) continue;
-      if (line.variantId) {
-        const updated = await tx.storeProductVariant.updateMany({
-          where: { id: line.variantId, productId: line.productId, stockQty: { gte: line.quantity } },
+    if (paymentApplied) {
+      for (const line of orderLines) {
+        if (!line.productId || !line.product || line.product.stockPolicy !== StoreStockPolicy.TRACKED) continue;
+        if (line.variantId) {
+          const updated = await tx.storeProductVariant.updateMany({
+            where: { id: line.variantId, productId: line.productId, stockQty: { gte: line.quantity } },
+            data: { stockQty: { decrement: line.quantity } },
+          });
+          if (updated.count === 0) {
+            logWarn("fulfill_store_order.stock_insufficient_variant", {
+              orderId: order.id,
+              productId: line.productId,
+              variantId: line.variantId,
+            });
+            continue;
+          }
+          await tx.storeInventoryMovement.create({
+            data: {
+              productId: line.productId,
+              variantId: line.variantId,
+              movementType: StoreInventoryMovementType.SALE,
+              quantity: line.quantity,
+              reason: `ORDER:${order.id}`,
+            },
+          });
+          continue;
+        }
+
+        const updated = await tx.storeProduct.updateMany({
+          where: { id: line.productId, stockQty: { gte: line.quantity } },
           data: { stockQty: { decrement: line.quantity } },
         });
         if (updated.count === 0) {
-          logWarn("fulfill_store_order.stock_insufficient_variant", {
+          logWarn("fulfill_store_order.stock_insufficient_product", {
             orderId: order.id,
             productId: line.productId,
-            variantId: line.variantId,
           });
           continue;
         }
         await tx.storeInventoryMovement.create({
           data: {
             productId: line.productId,
-            variantId: line.variantId,
             movementType: StoreInventoryMovementType.SALE,
             quantity: line.quantity,
             reason: `ORDER:${order.id}`,
           },
         });
-        continue;
       }
-
-      const updated = await tx.storeProduct.updateMany({
-        where: { id: line.productId, stockQty: { gte: line.quantity } },
-        data: { stockQty: { decrement: line.quantity } },
-      });
-      if (updated.count === 0) {
-        logWarn("fulfill_store_order.stock_insufficient_product", {
-          orderId: order.id,
-          productId: line.productId,
-        });
-        continue;
-      }
-      await tx.storeInventoryMovement.create({
-        data: {
-          productId: line.productId,
-          movementType: StoreInventoryMovementType.SALE,
-          quantity: line.quantity,
-          reason: `ORDER:${order.id}`,
-        },
-      });
     }
 
     if (typeof meta.cartId === "string" && meta.cartId.trim()) {
@@ -170,7 +227,7 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
         userId: order.userId,
         type: CrmInteractionType.STORE_ORDER_PAID,
         sourceType: CrmInteractionSource.STORE_ORDER,
-        sourceId: order.purchaseId ?? String(order.id),
+        sourceId: resolvedPurchaseId,
         occurredAt: new Date(),
         amountCents: order.totalCents,
         currency: order.currency,
@@ -188,11 +245,11 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
   if (promoCodeId) {
     try {
       await applyPromoRedemptionOperation({
-        purchaseId: order.purchaseId ?? (typeof meta.purchaseId === "string" ? meta.purchaseId : null),
+        purchaseId: resolvedPurchaseId,
         paymentIntentId: intent.id,
         promoCodeId,
-        userId: order.userId ?? (typeof meta.userId === "string" ? meta.userId : null),
-        guestEmail: order.customerEmail ?? null,
+        userId: ownerUserId,
+        guestEmail: ownerEmail ?? null,
       });
     } catch (err) {
       logError("fulfill_store_order.apply_promo_failed", err, { orderId: order.id });

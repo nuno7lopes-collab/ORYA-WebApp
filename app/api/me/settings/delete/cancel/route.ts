@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { DsarCaseStatus, DsarCaseType } from "@prisma/client";
 
 async function _POST(_req: NextRequest) {
   try {
@@ -47,6 +48,19 @@ async function _POST(_req: NextRequest) {
     await logAccountEvent({
       userId: user.id,
       type: "account_delete_cancelled",
+    });
+
+    await prisma.dsarCase.updateMany({
+      where: {
+        userId: user.id,
+        type: DsarCaseType.DELETE,
+        status: { in: [DsarCaseStatus.REQUESTED, DsarCaseStatus.IN_PROGRESS] },
+      },
+      data: {
+        status: DsarCaseStatus.REJECTED,
+        completedAt: now,
+        metadata: { action: "account_delete_cancelled" },
+      },
     });
 
     return jsonWrap({ ok: true, status: "ACTIVE" }, { status: 200 });

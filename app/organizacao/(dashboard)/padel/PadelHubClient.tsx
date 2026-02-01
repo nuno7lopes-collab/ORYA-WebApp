@@ -23,6 +23,7 @@ type PadelClub = {
   name: string;
   city: string | null;
   address: string | null;
+  addressId?: string | null;
   kind?: "OWN" | "PARTNER" | null;
   sourceClubId?: number | null;
   locationSource?: "OSM" | "MANUAL" | null;
@@ -72,6 +73,7 @@ type PadelCategory = {
 
 type Player = {
   id: number;
+  userId?: string | null;
   fullName: string;
   email: string | null;
   phone: string | null;
@@ -79,6 +81,21 @@ type Player = {
   isActive: boolean;
   createdAt: string | Date;
   tournamentsCount?: number;
+  profile?: {
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+  } | null;
+  crm?: {
+    id: string;
+    status: string;
+    tags: string[];
+    totalSpentCents: number;
+    totalTournaments: number;
+    lastActivityAt: string | Date | null;
+    marketingOptIn: boolean;
+  } | null;
 };
 
 type OrganizationStaffMember = {
@@ -166,6 +183,22 @@ type PadelEventSummary = {
 type PadelEventsResponse = {
   ok: boolean;
   items?: PadelEventSummary[];
+  error?: string;
+};
+
+type PadelOverviewResponse = {
+  ok: boolean;
+  range?: string;
+  currency?: string | null;
+  totalTickets?: number;
+  totalRevenueCents?: number;
+  grossCents?: number;
+  platformFeeCents?: number;
+  processorFeeCents?: number;
+  feesCents?: number;
+  netRevenueCents?: number;
+  eventsWithSalesCount?: number;
+  activeEventsCount?: number;
   error?: string;
 };
 
@@ -257,6 +290,7 @@ const DEFAULT_FORM = {
   name: "",
   city: "",
   address: "",
+  addressId: "" as string | "",
   locationSource: "MANUAL" as "OSM" | "MANUAL",
   locationProviderId: "",
   locationFormattedAddress: "",
@@ -1036,6 +1070,13 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     fetcher,
     { revalidateOnFocus: false },
   );
+  const { data: padelOverviewRes } = useSWR<PadelOverviewResponse>(
+    organizationId
+      ? `/api/organizacao/estatisticas/overview?range=30d&templateType=PADEL&organizationId=${organizationId}`
+      : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
   const { data: padelConfigRes, mutate: mutatePadelConfig } = useSWR<PadelConfigResponse>(
     eventId ? `/api/padel/tournaments/config?eventId=${eventId}` : null,
     fetcher,
@@ -1202,12 +1243,43 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     () => padelEvents.find((event) => event.id === eventId) || null,
     [padelEvents, eventId],
   );
+  const padelOverview = padelOverviewRes?.ok ? padelOverviewRes : null;
+  const padelOverviewError =
+    padelOverviewRes && padelOverviewRes.ok === false ? padelOverviewRes.error || "Sem acesso a KPIs." : null;
+  const overviewCurrency = padelOverview?.currency || "EUR";
+  const overviewRevenueLabel = padelOverview
+    ? formatCurrency(padelOverview.totalRevenueCents ?? 0, overviewCurrency)
+    : "—";
+  const overviewGrossLabel = padelOverview
+    ? formatCurrency(padelOverview.grossCents ?? 0, overviewCurrency)
+    : "—";
+  const overviewFeesLabel = padelOverview
+    ? formatCurrency(padelOverview.feesCents ?? 0, overviewCurrency)
+    : "—";
 
   const filteredPlayers = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return players;
-    return players.filter((p) => p.fullName.toLowerCase().includes(term) || (p.email || "").toLowerCase().includes(term));
+    return players.filter((p) => {
+      if (p.fullName.toLowerCase().includes(term)) return true;
+      if ((p.email || "").toLowerCase().includes(term)) return true;
+      if ((p.profile?.username || "").toLowerCase().includes(term)) return true;
+      if ((p.crm?.tags || []).some((tag) => tag.toLowerCase().includes(term))) return true;
+      return false;
+    });
   }, [players, search]);
+
+  const quickLinks = useMemo(
+    () => [
+      { label: "Reservas", href: "/organizacao/reservas", desc: "Agenda, aulas e bookings." },
+      { label: "Check-in", href: "/organizacao/scan", desc: "Entradas e QR em tempo real." },
+      { label: "Finanças", href: "/organizacao/clube/caixa", desc: "Receitas e reconciliação." },
+      { label: "CRM", href: "/organizacao/crm/clientes", desc: "Clientes, tags e segmentos." },
+      { label: "Inscrições", href: "/organizacao/inscricoes", desc: "Duplas, pagamentos e status." },
+      { label: "Loja", href: "/organizacao/loja", desc: "Produtos e stock." },
+    ],
+    [],
+  );
 
   const trainers = trainersRes?.items ?? [];
   const trainersError = trainersRes?.ok === false ? trainersRes.error || "Erro ao carregar treinadores." : null;
@@ -1748,12 +1820,18 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
 
   const openNewClubModal = () => {
     const nextKind: ClubKind = operationMode === "CLUB_OWNER" ? "OWN" : "PARTNER";
-    const nextLocationMode = nextKind === "OWN" ? "OSM" : "MANUAL";
+    const nextLocationMode = "OSM";
     setClubForm({
       ...DEFAULT_FORM,
       kind: nextKind,
       courtsCount: nextKind === "OWN" ? "2" : "1",
       locationSource: nextLocationMode,
+      addressId: "",
+      locationProviderId: "",
+      locationFormattedAddress: "",
+      locationComponents: null,
+      latitude: null,
+      longitude: null,
     });
     setClubError(null);
     setClubMessage(null);
@@ -1762,7 +1840,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     setClubLocationQuery("");
     setClubLocationSuggestions([]);
     setClubLocationSearchError(null);
-    setClubLocationConfirmed(nextKind !== "OWN");
+    setClubLocationConfirmed(false);
     setClubModalOpen(true);
   };
 
@@ -1783,6 +1861,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       name: club.name,
       city: club.city || "",
       address: club.address || "",
+      addressId: club.addressId || "",
       locationSource: normalizedSource,
       locationProviderId: club.locationProviderId || "",
       locationFormattedAddress: club.locationFormattedAddress || "",
@@ -1803,7 +1882,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     setClubLocationQuery(club.locationFormattedAddress || club.address || "");
     setClubLocationSuggestions([]);
     setClubLocationSearchError(null);
-    setClubLocationConfirmed(!isOwnClub || (resolvedLocationSource === "OSM" && Boolean(club.locationProviderId)));
+    setClubLocationConfirmed(Boolean(club.addressId));
     setClubModalOpen(true);
   };
 
@@ -1850,8 +1929,9 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       ...prev,
       address: nextAddress || prev.address,
       city: nextCity || prev.city,
+      addressId: details.addressId || prev.addressId,
       locationSource: "OSM",
-      locationProviderId: prev.locationProviderId,
+      locationProviderId: details.providerId || prev.locationProviderId,
       locationFormattedAddress: details.formattedAddress || fallbackLabel || prev.locationFormattedAddress,
       locationComponents: details.components ?? prev.locationComponents,
       latitude: Number.isFinite(details.lat ?? NaN) ? details.lat ?? prev.latitude : prev.latitude,
@@ -1903,6 +1983,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     setClubForm((prev) => ({
       ...prev,
       locationSource: "OSM",
+      addressId: "",
       locationProviderId: item.providerId,
       locationFormattedAddress: item.label,
       locationComponents: null,
@@ -1940,6 +2021,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     setClubForm((prev) => ({
       ...prev,
       locationSource: "OSM",
+      addressId: prev.addressId || "",
       locationProviderId: prev.locationProviderId || "",
     }));
   };
@@ -1961,11 +2043,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       setClubError("Morada obrigatória para clube principal.");
       return;
     }
-    if (isOwnClub && clubForm.locationSource !== "OSM") {
-      setClubError("Seleciona uma morada normalizada antes de guardar.");
-      return;
-    }
-    if (isOwnClub && !clubForm.locationProviderId.trim()) {
+    if (!clubForm.addressId.trim()) {
       setClubError("Seleciona uma morada normalizada antes de guardar.");
       return;
     }
@@ -1991,6 +2069,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
             name: clubForm.name.trim(),
             city: clubForm.city.trim(),
             address: clubForm.address.trim(),
+            addressId: clubForm.addressId || null,
             kind: clubForm.kind,
             sourceClubId: clubForm.sourceClubId,
             locationSource: clubForm.locationSource,
@@ -2086,6 +2165,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
           name: club.name,
           city: club.city,
           address: club.address,
+          addressId: club.addressId ?? null,
           kind: club.kind ?? "OWN",
           locationSource: club.locationSource ?? "MANUAL",
           locationProviderId: club.locationProviderId ?? null,
@@ -2211,6 +2291,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
           name: club.name,
           city: club.city,
           address: club.address,
+          addressId: club.addressId ?? null,
           courtsCount: club.courtsCount,
           isActive: next,
           slug: club.slug,
@@ -2424,6 +2505,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   const isClubOwnerMode = operationMode === "CLUB_OWNER";
   const isOwnClubForm = clubForm.kind === "OWN" || clubForm.isDefault;
   const isPartnerClubForm = clubForm.kind === "PARTNER";
+  const shouldShowLocationBlock = isOwnClubForm || (!clubForm.id && isPartnerClubForm);
   const isClubsTab = activeTab === "clubs";
   const isCourtsTab = activeTab === "courts";
   const showCourtsPanel = isClubsTab || isCourtsTab;
@@ -3042,6 +3124,72 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
             <p className="text-sm font-semibold">Organizo em clubes parceiros</p>
             <p className="text-[12px] text-white/60">Gere clubes parceiros e usa-os em torneios.</p>
           </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[2fr_3fr]">
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">KPIs 30 dias</p>
+              <p className="text-sm text-white/70">Receita, inscrições e atividade do torneio.</p>
+            </div>
+            <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+              Padel
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Receita líquida</p>
+              <p className="text-xl font-semibold text-white">{overviewRevenueLabel}</p>
+              <p className="text-[11px] text-white/60">
+                {padelOverview ? `${padelOverview.totalTickets ?? 0} inscrições` : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Receita bruta</p>
+              <p className="text-xl font-semibold text-white">{overviewGrossLabel}</p>
+              <p className="text-[11px] text-white/60">
+                {padelOverview ? `${padelOverview.eventsWithSalesCount ?? 0} eventos com vendas` : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Taxas</p>
+              <p className="text-xl font-semibold text-white">{overviewFeesLabel}</p>
+              <p className="text-[11px] text-white/60">Plataforma + processamento</p>
+            </div>
+            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Eventos ativos</p>
+              <p className="text-xl font-semibold text-white">
+                {padelOverview ? padelOverview.activeEventsCount ?? 0 : "—"}
+              </p>
+              <p className="text-[11px] text-white/60">Publicados agora</p>
+            </div>
+          </div>
+          {padelOverviewError && (
+            <p className="mt-3 text-[11px] text-amber-200">{padelOverviewError}</p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Atalhos rápidos</p>
+              <p className="text-sm text-white/70">Acesso direto a módulos-chave.</p>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {quickLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="rounded-xl border border-white/12 bg-black/35 px-3 py-3 text-left transition hover:border-white/30 hover:bg-white/5"
+              >
+                <p className="text-sm font-semibold text-white">{link.label}</p>
+                <p className="text-[11px] text-white/60">{link.desc}</p>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -5037,13 +5185,14 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                   <th className="px-3 py-2">Jogador</th>
                   <th className="px-3 py-2">Email</th>
                   <th className="px-3 py-2">Telefone</th>
+                  <th className="px-3 py-2">CRM</th>
                   <th className="px-3 py-2">Torneios</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredPlayers.length === 0 && (
                   <tr>
-                    <td className="px-3 py-3 text-[13px] text-white/60" colSpan={4}>
+                    <td className="px-3 py-3 text-[13px] text-white/60" colSpan={5}>
                       Sem jogadores. A lista aparece com inscrições.
                     </td>
                   </tr>
@@ -5051,13 +5200,57 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                 {filteredPlayers.map((p) => (
                   <tr key={p.id} className="border-t border-white/10">
                     <td className="px-3 py-2 font-semibold text-white">
-                      <div>{p.fullName}</div>
-                      <p className="text-[11px] text-white/60">{p.level || "Sem nível"}</p>
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          src={p.profile?.avatarUrl}
+                          name={p.fullName}
+                          className="h-8 w-8 rounded-full border border-white/10"
+                          textClassName="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/80"
+                        />
+                        <div>
+                          <div>{p.fullName}</div>
+                          <p className="text-[11px] text-white/60">
+                            {[
+                              p.profile?.username ? `@${p.profile.username}` : null,
+                              p.level || "Sem nível",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-2">{p.email || "—"}</td>
                     <td className="px-3 py-2">{p.phone || "—"}</td>
                     <td className="px-3 py-2">
-                    <span className={badge("slate")}>{p.tournamentsCount ?? 0} torneios</span>
+                      {p.crm ? (
+                        <div className="space-y-1">
+                          <Link
+                            href={`/organizacao/crm/clientes/${p.crm.id}`}
+                            className="text-[12px] text-white underline"
+                          >
+                            Abrir CRM
+                          </Link>
+                          <div className="flex flex-wrap gap-1">
+                            {(p.crm.tags || []).slice(0, 3).map((tag) => (
+                              <span key={`${p.crm?.id}-${tag}`} className={badge("slate")}>
+                                {tag}
+                              </span>
+                            ))}
+                            {(p.crm.tags || []).length > 3 && (
+                              <span className={badge("slate")}>+{(p.crm.tags || []).length - 3}</span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-white/60">
+                            {formatCurrency(p.crm.totalSpentCents ?? 0, "EUR")} gasto
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-white/50">Sem CRM</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={badge("slate")}>{p.tournamentsCount ?? 0} torneios</span>
                     </td>
                   </tr>
                 ))}
@@ -5434,14 +5627,20 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                         key={opt.key}
                         type="button"
                         onClick={() => {
-                          const nextMode = opt.key === "OWN" ? "OSM" : "MANUAL";
+                          const nextMode = "OSM";
                           setClubForm((prev) => ({
                             ...prev,
                             kind: opt.key,
                             locationSource: nextMode,
+                            addressId: "",
+                            locationProviderId: "",
+                            locationFormattedAddress: "",
+                            locationComponents: null,
+                            latitude: null,
+                            longitude: null,
                           }));
                           setClubLocationMode(nextMode);
-                          setClubLocationConfirmed(opt.key !== "OWN");
+                          setClubLocationConfirmed(false);
                         }}
                         className={`rounded-full px-3 py-1 transition ${
                           clubForm.kind === opt.key
@@ -5462,7 +5661,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                 disabled={isPartnerClubForm && Boolean(clubForm.id)}
                 className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
               />
-              {isOwnClubForm && (
+              {shouldShowLocationBlock && (
                 <div className="rounded-xl border border-white/12 bg-black/35 p-3 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Morada normalizada</p>
@@ -5486,6 +5685,13 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                         value={clubLocationQuery}
                         onChange={(e) => {
                           setClubLocationQuery(e.target.value);
+                          setClubForm((prev) => ({
+                            ...prev,
+                            addressId: "",
+                            locationProviderId: "",
+                            locationFormattedAddress: "",
+                            locationComponents: null,
+                          }));
                           setClubLocationConfirmed(false);
                         }}
                         placeholder="Pesquisar morada"
@@ -5515,7 +5721,10 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                       {clubLocationDetailsLoading && (
                         <p className="text-[11px] text-white/50">A validar morada...</p>
                       )}
-                      {!clubLocationConfirmed && clubForm.address.trim() && clubForm.city.trim() && (
+                      {!clubLocationConfirmed &&
+                        clubForm.address.trim() &&
+                        clubForm.city.trim() &&
+                        clubForm.addressId && (
                         <button
                           type="button"
                           onClick={() => {
@@ -5553,6 +5762,9 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                           ...prev,
                           city: nextCity,
                           locationFormattedAddress: formatted || prev.locationFormattedAddress,
+                          addressId: "",
+                          locationProviderId: "",
+                          locationComponents: null,
                         };
                       });
                       if (isOwnClubForm) setClubLocationConfirmed(false);
@@ -5577,6 +5789,9 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                         ...prev,
                         address: nextAddress,
                         locationFormattedAddress: formatted || prev.locationFormattedAddress,
+                        addressId: "",
+                        locationProviderId: "",
+                        locationComponents: null,
                       };
                     });
                     if (isOwnClubForm) setClubLocationConfirmed(false);

@@ -1,5 +1,13 @@
 Plano Técnico v10: Auditoria Final e Ação para
 ORYA
+Atualização (2026-01-31):
+- Envelope C‑G5 + requestId/correlationId normalizados (middleware + `withApiEnvelope`).
+- Outbox/Operations com claim winner‑only + recovery/runbook concluídos.
+- Stats admin/org migradas para rollups/entitlements (sem legacy summaries).
+- Gate de org context em CI aplicado + correção de rota crítica.
+- Entitlements para booking/loja adicionados; check‑in mapeado por tipo.
+- DSAR/purge com legal hold mínimo e runbook atualizado.
+
 Contratos de Erro e Observabilidade (Bloco 0)
 Resumo & SSOT: Todo endpoint crítico deve retornar um envelope unificado de resposta/erro incluindo
 requestId  e  correlationId , além de códigos de erro estáveis, garantindo  fail-closed (acesso
@@ -23,8 +31,7 @@ envelope canônico
 -  Ficheiros:
 middleware.ts ,  lib/http/headers.ts ,  lib/http/envelope.ts , todas as rotas
 em app/api/** .
-- Status: Por fazer – Muitas rotas críticas não retornam o envelope completo (falta errorCode , IDs,
-etc.).
+- Status: Feito – Envelope C‑G5 aplicado com requestId/correlationId e errorCode canónico.
 - Instruções: Padronizar a construção de respostas usando o helper. Incluir sempre { ok: <bool>, 
 requestId, correlationId, errorCode, message, retryable, ... } . O requestId  deve
 ser  gerado  no  início  do  request  (middleware)  e  propagado;  o  correlationId  deve  vir  de  x-
@@ -36,8 +43,7 @@ NextResponse.json  direto para usar o wrapper
 organização para garantir fail-closed. 
 Ficheiros: lib/security.ts  (auth), lib/organizationContext.ts , lib/security/
 requireOrgContext.ts  (se existente), rotas em app/api/**  que dependem de org. 
-Status: Implementado parcialmente – Há verificações de auth, mas em alguns casos retornam
-respostas genéricas (ou mesmo silenciam erros). 
+Status: Feito – Fail‑closed aplicado com helpers + gate de org context em CI para evitar drift.
 Instruções: Quando faltar org ou permissões, retornar 401/403 com envelope canônico de erro
 . Por exemplo, se  getActiveOrganizationForUser  falhar, usar  respondError  com
 errorCode  apropriado ( NOT_ORGANIZATION  ou similar) em vez de deixar passar. Garantir
@@ -62,7 +68,7 @@ correlationId .
 
 Ficheiros: lib/observability/logger.ts  ou equivalente (ou onde há console.error
 em APIs). 
-Status: Por fazer – Muitos logs (ex.: em blocos try/catch nas rotas) não mostram IDs de
+Status: Feito – Logs normalizados via `logError/logWarn` com requestId/correlationId.
 requisição. 
 Instruções: 
 Incluir  contexto  nos  logs:  ex.  prefixar
@@ -288,7 +294,7 @@ domain/outbox/consumer.ts
 ou
  app/api/internal/worker/operations/
 route.ts  (onde quer que o worker busque eventos).
-- Status: Por fazer – Não há evidência de FOR UPDATE SKIP LOCKED  ou similar atualmente.
+- Status: Feito – Claim winner‑only com FOR UPDATE SKIP LOCKED + recovery via reconcile.
 -  Instruções: Usar  estratégia  de  SELECT...FOR  UPDATE  SKIP  LOCKED:  marcar  eventos  com  um
 processingToken  único por worker. Por exemplo, adicionar campo processingToken  no outbox;
 no worker, fazer update atômico definindo esse token para N eventos por batch
@@ -563,7 +569,7 @@ estatísticas utilizando as novas fontes de dados (EventLog, rollups).
 app/api/organizacao/estatisticas/overview/route.ts ,
  /time-series/
 route.ts .
-- Status: Por fazer – Atualmente possivelmente calculam a partir de SaleSummary (incompleto).
+- Status: Feito – overview/time-series migrados para rollups/entitlements (sem legacy summaries).
 - Instruções: Para overview: podemos fornecer indicadores básicos, como totalTickets, totalRevenue e
 contagem de eventos ativos, já calculados via queries no prisma
 . Confirmar se esses cálculos
@@ -582,7 +588,7 @@ cumpre o fallback resiliente
 list  para listar organizações ativas. 
 Ficheiros: app/api/admin/organizacoes/list/route.ts , correspondente UI em app/
 admin/organizacoes/page.tsx . 
-Status: Por fazer – Era legacy (provavelmente retornava 410). 
+Status: Feito – rota admin ativa com contagens/revenue + envelope canónico. 
 Instruções: Implementação simples: query em  prisma.organization  pegando id, nome,
 email oficial verificado (sinalização), talvez número de membros. Retornar em envelope padrão.
 Na UI admin, mostrar uma tabela com essas orgs, indicando quais estão com email verificado,
@@ -604,8 +610,7 @@ modo de pagamentos (ex.: se Stripe conectado ou não). Isso fornece ao admin pla
 visão geral e cumpre a necessidade mínima sem a antiga dependencia de stats complexas. 
 (P1) Ops  Feed  (Admin  Dashboard): Introduzir  uma  seção  no  admin  que  exiba  eventos
 operacionais relevantes (audit trail). 
-Status: Por fazer – O EventLog existe (registra interna e possivelmente para org ops feed), mas
-não há UI consolidada. 
+Status: Feito – ops feed disponível e consumido no admin. 
 Instruções: Criar,  se  possível,  uma  página  admin  “Ops”  ou  usar  a  mesma  /admin/
 organizacoes  para  listar  atividades  recentes:  p.ex.,  últimos  eventos  criados,  últimos
 pagamentos  processados,  etc.  Isso  pode  ser  consultado  via  domain/opsFeed  (que
@@ -692,7 +697,7 @@ centralizadas (em vez de duplicação).
 -  Ficheiros:
 lib/organizationRbac.ts ,  lib/organizationMemberAccess.ts ,  app/api/
 organizacao/**  (rotas de recurso dentro de orgs).
-- Status: Parcial – Helpers existem, mas pode haver rotas antigas checando permissões “na unha”.
+- Status: Feito – Helpers aplicados + gate CI (org context) para prevenir checks ad‑hoc.
 -  Instruções: Procurar padrões antiquíssimos, ex.:  if (user.id !== org.ownerId)  ou queries
 diretas de membros. Substituir por funções como ensureOrgMemberHasAccess(userId, orgId, 
 requiredRole)  definidas num só lugar. Implementar em organizationRbac.ts  funções do tipo
@@ -710,7 +715,7 @@ header de org (como já está acontecendo via resolveOrganizationIdFromRequest(r
 ). Checar implementações divergentes e alinhar. Exemplo: se alguma rota ainda espera ?
 orgId=  no query, migrar para usar organizationContext . 
 (P1) Remover Bypass/Hacks: Garantir que não exista bypass de validação. 
-Status: Por fazer – Isto é mais inspeção: ex., algum dev pode ter inserido // TODO: remove 
+Status: Feito – Gate de org context + guardrails reduziram bypass; manter inspeção periódica. 
 before prod  concedendo acesso em dev. 
 Instruções: Buscar no código por quaisquer flags do tipo if (process.env.NODE_ENV !== 
 'production')  em  trechos  de  auth,  ou  variáveis  como  BYPASS_RBAC .  Remover
@@ -1324,14 +1329,8 @@ Análise do Código (develop):
 entrega de emails transacionais está configurada através de Resend API e é acionada por outbox
 events. Por exemplo, ao criar uma reserva, deve existir outbox de “BookingConfirmationEmail”. Como
 isso foi concluído no v9, acreditamos que funciona (mas testar alguns fluxos para ver se email chega).
-- Consentimentos: Não vimos evidências claras de uma tabela de consent (talvez PlatformSetting
-ou UserConsent ). Pode ser que ainda não implementaram explicitamente e estão apenas mostrando
-um “Aceito os termos” no registro (que pode não estar salvando nada concreto além de um flag no
-user). Precisamos verificar.
-- Deleção de conta: Observamos rotas app/api/me/settings/delete/cancel  nos orfãos
-. Isso
-sugere um fluxo de deleção: talvez um usuário requisita deleção (marcando algum campo), recebe
-email, e pode cancelar via endpoint. Mas pode não estar completo.
+- Consentimentos: Existe tabela UserConsent + endpoints user/org; ingest CRM respeita consentimentos.
+- Deleção de conta: Fluxo completo com agendamento/cancelamento + purge admin (DSAR).
 - Sessão: O login/registro dependem do Supabase Auth. A gestão de sessão (logout, refresh) é delegada
 ao Supabase libraries. Em geral, isso deve estar funcionando, mas é bom checar se token de refresh e
 expiração estão config.
@@ -1345,16 +1344,14 @@ Plano de Ação:
 usuário.
 -  Ficheiros: fluxos  de  registro  ( app/api/auth/signup ?),  base  de  dados  (talvez  adicionar
 acceptedTermsAt  em User).
--  Status: Possivelmente faltando – Se não há, devemos adicionar pelo menos um timestamp ao criar
-usuário indicando aceite de termos.
+-  Status: Feito – consentimentos persistidos (UserConsent) com endpoints ativos.
 - Instruções: Na tela de registro, incluir checkbox “Li e aceito os Termos e Política”. No backend, ao criar
 usuário (após supabase auth), salvar em User.profile  (ou tabela própria) a data de aceitação. Para
 marketing opt-in, se desejado, também salvar preferência. Essas flags serão úteis para compliance. 
 (P0) Deleção de Conta: Finalizar o fluxo de deleção com confirmação. 
 Ficheiros: app/api/me/settings/delete/request/route.ts  (hipotético), .../cancel/
 route.ts . 
-Status: Parcial – Vemos cancel  endpoint, provavelmente há um request  endpoint que
-marca o usuário para deleção. Talvez integrada com Supabase user deletion. 
+Status: Feito – delete/cancel + purge admin com registo de DSAR. 
 Instruções: Assegurar que, quando usuário pede deleção, criamos registro (ex.: em 
 UserDeletionRequest ) com token e enviamos email de confirmação. Se confirmar (via link
 que chama /delete/confirm?token=), então: 
@@ -1502,7 +1499,7 @@ Plano de Ação:
 - (P0) Helper Unificado de Secret: Implementar uma função util requireInternalSecret(req)  em
 lib/security/requireInternalSecret.ts  e usar em todas as rotas internas/cron.
 - Ficheiros: Todas em app/api/internal/**  e app/api/cron/** .
-- Status: Por fazer – Pode ser que algumas rotas têm check manual.
+- Status: Feito – requireInternalSecret aplicado em internal/cron.
 - Instruções: Criar requireInternalSecret(req: NextRequest): boolean  que verifica header
 x-orya-internal-key  (ou nome padronizado) e compara com o segredo do env. Em cada rota
 internal/cron,  no  início,  fazer:
@@ -1513,7 +1510,7 @@ SECRET ). Atualizar documentação ou comentários para lembrar de configurar se
 (por ex., se chamamos via curl no cron, usar header correto). 
 (P0) Refatorar Rotas Existentes: Substituir qualquer outro método de auth interna pelo novo
 helper. 
-Status: Por fazer – Pesquisar no código se existem variáveis diferentes, ex.: alguns podem
+Status: Feito – auth interna padronizada por helper e guardrails.
 esperar ?secret=  query param. 
 Instruções: Uniformizar: somente via header (mais seguro que query). Excluir tolerância a query
 param ou outros secrets. Dica: procurar por process.env  dentro de rotas internas para ver
@@ -1843,8 +1840,6 @@ file://file_000000006d0471f488bcdbd1cef5eead
 paymentIntent.ts
 https://github.com/nuno7lopes-collab/ORYA-WebApp/blob/b7e630f81b66dc8b19d8b771f80b123d4b4c911f/domain/finance/
 paymentIntent.ts
-v9_closeout.md
-file://file_00000000d0e471f4a9564d752e3cd82a
 OUTBOX_CLAIM_HARDENING.md
 https://github.com/kinnon13/yalls-foundry/blob/9fbceaf3b5743db7bcd1c5bc682566ee9a658466/
 OUTBOX_CLAIM_HARDENING.md

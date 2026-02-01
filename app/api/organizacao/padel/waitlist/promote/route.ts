@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     prisma.event.findUnique({ where: { id: eventId }, select: { startsAt: true, status: true } }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId },
-      select: { advancedSettings: true, splitDeadlineHours: true },
+      select: { advancedSettings: true, splitDeadlineHours: true, lifecycleStatus: true },
     }),
   ]);
   if (!event || !config) {
@@ -144,6 +144,7 @@ export async function POST(req: NextRequest) {
     registrationStartsAt,
     registrationEndsAt,
     competitionState: advanced.competitionState ?? null,
+    lifecycleStatus: config.lifecycleStatus ?? null,
   });
   if (!registrationCheck.ok) {
     return fail(409, registrationCheck.code);

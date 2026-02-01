@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
+import { formatDate, formatTime, t } from "@/lib/i18n";
 
 type StandingsRow = {
   pairingId: number;
@@ -43,18 +44,18 @@ type MatchesResponse = { ok?: boolean; items?: Match[] };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-const pairingName = (pairing?: Pairing | null) => {
+const pairingName = (pairing?: Pairing | null, locale?: string | null) => {
   if (!pairing) return "—";
   const names = (pairing.slots || [])
     .map((s) => s.playerProfile?.displayName || s.playerProfile?.fullName)
     .filter(Boolean) as string[];
-  return names.length ? names.join(" / ") : "Dupla incompleta";
+  return names.length ? names.join(" / ") : t("pairingIncomplete", locale);
 };
 
-const formatScoreLabel = (match: Match) => {
+const formatScoreLabel = (match: Match, locale?: string | null) => {
   const score = (match.score || {}) as Record<string, unknown>;
-  if (score.disputeStatus === "OPEN") return "Em disputa";
-  if (score.delayStatus === "DELAYED") return "Atrasado";
+  if (score.disputeStatus === "OPEN") return t("scoreDispute", locale);
+  if (score.delayStatus === "DELAYED") return t("scoreDelayed", locale);
   if (match.scoreSets?.length) {
     return match.scoreSets.map((s) => `${s.teamA}-${s.teamB}`).join(", ");
   }
@@ -66,34 +67,36 @@ const formatScoreLabel = (match: Match) => {
         : score.resultType === "INJURY"
           ? "INJURY"
           : null;
-  if (resultType === "WALKOVER") return "WO";
-  if (resultType === "RETIREMENT") return "Desistência";
-  if (resultType === "INJURY") return "Lesão";
+  if (resultType === "WALKOVER") return t("scoreWalkover", locale);
+  if (resultType === "RETIREMENT") return t("scoreRetirement", locale);
+  if (resultType === "INJURY") return t("scoreInjury", locale);
   return "—";
 };
 
-const toDateKey = (value: string | Date) => {
+const toDateKey = (value: string | Date, locale?: string | null, timezone?: string | null) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-  });
+  return formatDate(d, locale, timezone);
 };
 
-const toTimeLabel = (value: string | Date) => {
+const toTimeLabel = (value: string | Date, locale?: string | null, timezone?: string | null) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+  return formatTime(d, locale, timezone);
 };
 
 export default function PadelPublicTablesClient({
   eventId,
+  eventSlug,
   initialStandings,
+  locale,
+  timezone,
 }: {
   eventId: number;
+  eventSlug: string;
   initialStandings: Record<string, StandingsRow[]>;
+  locale?: string | null;
+  timezone?: string | null;
 }) {
   const [realtimeActive, setRealtimeActive] = useState(false);
   const refreshInterval = realtimeActive ? 0 : 30000;
@@ -158,11 +161,11 @@ export default function PadelPublicTablesClient({
   const pairingNameMap = useMemo(() => {
     const map = new Map<number, string>();
     matches.forEach((match) => {
-      if (match.pairingA?.id) map.set(match.pairingA.id, pairingName(match.pairingA));
-      if (match.pairingB?.id) map.set(match.pairingB.id, pairingName(match.pairingB));
+      if (match.pairingA?.id) map.set(match.pairingA.id, pairingName(match.pairingA, locale));
+      if (match.pairingB?.id) map.set(match.pairingB.id, pairingName(match.pairingB, locale));
     });
     return map;
-  }, [matches]);
+  }, [matches, locale]);
 
   const koRounds = useMemo(() => {
     const koMatches = matches.filter((m) => m.roundType === "KNOCKOUT");
@@ -194,10 +197,10 @@ export default function PadelPublicTablesClient({
         return {
           id: m.id,
           start: date,
-          label: `${pairingName(m.pairingA)} vs ${pairingName(m.pairingB)}`,
+          label: `${pairingName(m.pairingA, locale)} vs ${pairingName(m.pairingB, locale)}`,
           court: m.courtName || (m.courtNumber ? `Quadra ${m.courtNumber}` : ""),
           status: m.status,
-          score: formatScoreLabel(m),
+          score: formatScoreLabel(m, locale),
         };
       })
       .filter(Boolean) as Array<{
@@ -212,26 +215,26 @@ export default function PadelPublicTablesClient({
     rows.sort((a, b) => a.start.getTime() - b.start.getTime());
     const grouped = new Map<string, typeof rows>();
     rows.forEach((row) => {
-      const key = toDateKey(row.start);
+      const key = toDateKey(row.start, locale, timezone);
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key)!.push(row);
     });
     return Array.from(grouped.entries());
-  }, [matches]);
+  }, [matches, locale, timezone]);
 
   return (
     <div className="mt-6 space-y-6">
       <div className="space-y-3">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Grupos</p>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{t("standings", locale)}</p>
         {standingsGroups.length === 0 && (
-          <p className="text-[12px] text-white/60">Classificações ainda não disponíveis.</p>
+          <p className="text-[12px] text-white/60">{t("noStandings", locale)}</p>
         )}
         <div className="grid gap-4">
           {standingsGroups.map(([label, rows]) => (
             <div key={label} className="rounded-2xl border border-white/12 bg-black/40 p-4">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-white/90">{label || "Grupo"}</span>
-                <span className="text-[11px] text-white/60">{rows.length} duplas</span>
+                <span className="text-sm font-semibold text-white/90">{label || t("groupLabel", locale)}</span>
+                <span className="text-[11px] text-white/60">{rows.length} {t("pairing", locale)}</span>
               </div>
               <div className="mt-3 space-y-2">
                 {rows.map((row, idx) => (
@@ -242,11 +245,11 @@ export default function PadelPublicTablesClient({
                     <div className="flex items-center gap-3">
                       <span className="w-5 text-[11px] text-white/50">{idx + 1}</span>
                       <span className="text-sm text-white/90">
-                        {pairingNameMap.get(row.pairingId) ?? `Dupla #${row.pairingId}`}
+                        {pairingNameMap.get(row.pairingId) ?? `${t("pairing", locale)} #${row.pairingId}`}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-white/70">
-                      <span className="rounded-full border border-white/15 px-2 py-1">{row.points} pts</span>
+                      <span className="rounded-full border border-white/15 px-2 py-1">{row.points} {t("pointsShort", locale)}</span>
                       <span>
                         {row.wins}-{row.losses}
                       </span>
@@ -260,8 +263,8 @@ export default function PadelPublicTablesClient({
       </div>
 
       <div className="space-y-3">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Eliminatórias</p>
-        {koRounds.length === 0 && <p className="text-[12px] text-white/60">Quadro ainda não publicado.</p>}
+        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{t("bracket", locale)}</p>
+        {koRounds.length === 0 && <p className="text-[12px] text-white/60">{t("noBracket", locale)}</p>}
         {koRounds.length > 0 && (
           <div className="flex gap-4 overflow-x-auto pb-2">
             {koRounds.map(([roundLabel, games]) => (
@@ -273,10 +276,10 @@ export default function PadelPublicTablesClient({
                 <div className="mt-2 space-y-2">
                   {games.map((game) => (
                     <div key={game.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
-                      <p className="font-semibold text-white/90">{pairingName(game.pairingA)}</p>
-                      <p className="font-semibold text-white/90">{pairingName(game.pairingB)}</p>
+                      <p className="font-semibold text-white/90">{pairingName(game.pairingA, locale)}</p>
+                      <p className="font-semibold text-white/90">{pairingName(game.pairingB, locale)}</p>
                       <div className="mt-1 flex items-center justify-between text-[11px] text-white/60">
-                        <span>{formatScoreLabel(game)}</span>
+                        <span>{formatScoreLabel(game, locale)}</span>
                         <span>{game.status}</span>
                       </div>
                     </div>
@@ -289,22 +292,28 @@ export default function PadelPublicTablesClient({
       </div>
 
       <div className="space-y-3">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Calendário</p>
-        {scheduleRows.length === 0 && <p className="text-[12px] text-white/60">Sem horários publicados.</p>}
+        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{t("calendarTitle", locale)}</p>
+        {scheduleRows.length === 0 && <p className="text-[12px] text-white/60">{t("noMatches", locale)}</p>}
         {scheduleRows.map(([day, rows]) => (
           <div key={day} className="rounded-2xl border border-white/12 bg-black/40 p-4 space-y-2">
             <p className="text-sm font-semibold text-white/90">{day}</p>
             {rows.map((row) => (
               <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/75">
                 <div>
-                  <p className="text-white/90">{row.label}</p>
+                  {eventSlug ? (
+                    <a href={`/eventos/${eventSlug}/jogos/${row.id}`} className="text-white/90 underline">
+                      {row.label}
+                    </a>
+                  ) : (
+                    <p className="text-white/90">{row.label}</p>
+                  )}
                   <p className="text-[11px] text-white/60">
                     {row.court ? `${row.court} · ` : ""}
-                    {row.score !== "—" ? `Resultado: ${row.score}` : "Por jogar"}
+                    {row.score !== "—" ? `${t("resultLabel", locale)}: ${row.score}` : t("pendingLabel", locale)}
                   </p>
                 </div>
                 <span className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white/70">
-                  {toTimeLabel(row.start)}
+                  {toTimeLabel(row.start, locale, timezone)}
                 </span>
               </div>
             ))}

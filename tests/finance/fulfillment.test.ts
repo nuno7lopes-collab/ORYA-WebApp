@@ -46,6 +46,7 @@ vi.mock("@prisma/client", async () => {
 
 vi.mock("@/lib/checkin/accessPolicy", () => ({
   getLatestPolicyVersionForEvent: vi.fn().mockResolvedValue(null),
+  requireLatestPolicyVersionForEvent: vi.fn().mockResolvedValue(1),
 }));
 
 import {

@@ -204,7 +204,7 @@ async function loadSoftBlockExistingCandidates(params: {
         },
         select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
-      prisma.padelCourtBlock.findMany({
+      prisma.calendarBlock.findMany({
         where: {
           organizationId,
           courtId: scopeId,
@@ -213,7 +213,7 @@ async function loadSoftBlockExistingCandidates(params: {
         },
         select: { id: true, startAt: true, endAt: true },
       }),
-      prisma.padelMatch.findMany({
+      prisma.eventMatchSlot.findMany({
         where: {
           event: { organizationId },
           courtId: scopeId,

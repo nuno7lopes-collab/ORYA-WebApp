@@ -30,8 +30,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `domain/outbox/**`, `domain/eventLog/**` (correlationId)
 - `lib/security.ts` (auth fail-closed)
 
-**Status**: TODO (implementacao em curso)
-**DONE (data/commit/nota)**: 2026-01-29 — Envelope aplicado em rotas de reservas + tournaments (inclui matches/participants/rules/sponsors); runbooks de requestId e reconcile de pagamentos adicionados; mapping marcado com INTERNAL_ONLY onde nao ha UI web.
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-31 — Middleware reintroduzido para requestId/correlationId em todas as respostas; `withApiEnvelope` normaliza códigos instáveis (canonical por status) e headers globais garantidos; gates mantêm shape C-G5.
 
 ---
 
@@ -94,8 +94,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `app/api/internal/outbox/replay/route.ts`
 - `app/api/internal/outbox/dlq/route.ts`
 
-**Status**: TODO
-**DONE (data/commit/nota)**: —
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-31 — Claim winner-only com `FOR UPDATE SKIP LOCKED` + `locked_at` no worker; recovery via `/api/internal/reconcile`; runbook de operations publicado.
 
 ---
 
@@ -168,8 +168,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `domain/opsFeed/**`
 - `domain/eventLog/**`
 
-**Status**: TODO
-**DONE (data/commit/nota)**: —
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-31 — Estatísticas migradas para rollups v9 (org overview + time-series); admin org list expõe contagens/revenue; UI resiliente sem legacy summaries.
 
 ---
 
@@ -188,8 +188,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - `lib/organizationRbac.ts`
 - `lib/organizationContext.ts`
 
-**Status**: TODO
-**DONE (data/commit/nota)**: —
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-31 — Gate `scripts/v9_org_context_gate.mjs` (bypass=0) + org context helpers auditados nas rotas.
 
 ---
 
@@ -262,7 +262,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Entitlement como prova de acesso.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-31 — Entitlements emitidos para tickets/padel/booking + loja (STORE_ITEM); revenda rebinda owner/purchaseId; check-in mantém mapping por tipo.
 
 ---
 
@@ -270,7 +271,8 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 **SSOTs canonicos**
 - Consentimentos explicitos.
 
-**Status**: TODO
+**Status**: DONE
+**DONE (data/commit/nota)**: 2026-01-31 — DSAR ativo (export + tracking + delete/purge), legal hold mínimo registado em purge e runbook com retenção/responsabilidades.
 
 ---
 

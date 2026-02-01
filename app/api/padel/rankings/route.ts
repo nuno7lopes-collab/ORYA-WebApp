@@ -13,6 +13,7 @@ import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
 
 const DEFAULT_LIMIT = 50;
 const clampLimit = (raw: string | null) => {
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest) {
       select: {
         status: true,
         locationCity: true,
-        padelTournamentConfig: { select: { advancedSettings: true } },
+        padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
         accessPolicies: {
           orderBy: { policyVersion: "desc" },
           take: 1,
@@ -76,6 +77,7 @@ export async function GET(req: NextRequest) {
     const competitionState = resolvePadelCompetitionState({
       eventStatus: event.status,
       competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+      lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
     });
     const isPublicEvent =
       isPublicAccessMode(accessMode) &&
@@ -224,16 +226,10 @@ export async function POST(req: NextRequest) {
   });
   if (!organization) return fail(ctx, 403, "NO_ORGANIZATION");
 
-  const config = await prisma.padelTournamentConfig.findUnique({
-    where: { eventId },
-    select: { ruleSetId: true },
-  });
-  const ruleSet = config?.ruleSetId
-    ? await prisma.padelRuleSet.findUnique({ where: { id: config.ruleSetId } })
-    : null;
-  const pointsTable: PadelPointsTable = (ruleSet?.pointsTable as any) || { WIN: 3, LOSS: 0 };
+  const ruleSnapshot = await resolvePadelRuleSetSnapshotForEvent({ eventId });
+  const pointsTable: PadelPointsTable = (ruleSnapshot.pointsTable as any) || { WIN: 3, LOSS: 0 };
 
-  const matches = await prisma.padelMatch.findMany({
+  const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId, status: "DONE" },
     include: {
       pairingA: { select: { slots: { select: { playerProfileId: true, profileId: true } } } },

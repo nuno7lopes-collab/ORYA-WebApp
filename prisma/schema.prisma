@@ -72,6 +72,7 @@ model Profile {
   padelPairingsPlayer1                                             PadelPairing[]          @relation("PadelPairingPlayer1")
   padelPairingsPlayer2                                             PadelPairing[]          @relation("PadelPairingPlayer2")
   padelWaitlistEntries                                             PadelWaitlistEntry[]
+  padelTournamentRoleAssignments                                  PadelTournamentRoleAssignment[]
   tournamentEntries                                                TournamentEntry[]
   organizationFormSubmissions                                      OrganizationFormSubmission[]
   tournamentsGenerated                                             Tournament[]            @relation("TournamentGeneratedBy")
@@ -111,6 +112,7 @@ model Profile {
   storeCarts                                                       StoreCart[]
   storeOrders                                                      StoreOrder[]
   storeDigitalGrants                                               StoreDigitalGrant[]
+  dsarCases                                                        DsarCase[]
   promoCodesPromoted                                               PromoCode[]            @relation("PromoCodePromoter")
   activeOrganization                                               Organization?          @relation("ProfileActiveOrganization", fields: [activeOrganizationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
@@ -241,10 +243,12 @@ model Organization {
   reservationResources    ReservationResource[]
   padelRuleSets           PadelRuleSet[]                  @relation("OrganizationPadelRuleSets")
   padelTournaments        PadelTournamentConfig[]
+  padelTournamentRoleAssignments PadelTournamentRoleAssignment[]
   padelCourtBlocks        CalendarBlock[]
   padelAvailabilities     CalendarAvailability[]
   padelWaitlistEntries    PadelWaitlistEntry[]
   organizationPolicies    OrganizationPolicy[]
+  refundPolicyVersions    RefundPolicyVersion[]
   services                Service[]
   bookings                Booking[]
   chatThreads             ChatThread[]
@@ -726,6 +730,7 @@ model StoreOrderLine {
   variant          StoreProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
   orderBundle      StoreOrderBundle? @relation(fields: [orderBundleId], references: [id], onDelete: SetNull)
   digitalGrants    StoreDigitalGrant[]
+  entitlements     Entitlement[]
 
   @@index([orderId], map: "store_order_lines_order_idx")
   @@index([productId], map: "store_order_lines_product_idx")
@@ -1658,10 +1663,11 @@ model Event {
   payoutMode                        PayoutMode              @default(ORGANIZATION) @map("payout_mode")
   organization                         Organization?              @relation(fields: [organizationId], references: [id])
   notifications                     Notification[]          @relation("NotificationEvent")
-  padelMatches                      PadelMatch[]
+  eventMatchSlots                  EventMatchSlot[]
   padelPairings                     PadelPairing[]
   padelRankingEntries               PadelRankingEntry[]
   padelTournamentConfig             PadelTournamentConfig?
+  padelTournamentRoleAssignments    PadelTournamentRoleAssignment[]
   padelCategoryLinks                PadelEventCategoryLink[]
   padelCourtBlocks                  CalendarBlock[]
   padelAvailabilities               CalendarAvailability[]
@@ -1679,6 +1685,7 @@ model Event {
   padelRegistrations                PadelRegistration[]
   saleSummaries                     SaleSummary[]
   saleLines                         SaleLine[]
+  refundPolicyVersions              RefundPolicyVersion[]
 
   @@index([type, status])
   @@index([ownerUserId])
@@ -2545,7 +2552,7 @@ model PadelClubCourt {
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   club         PadelClub @relation(fields: [padelClubId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   calendarBlocks CalendarBlock[]
-  matches       PadelMatch[]     @relation("PadelMatchCourt")
+  eventMatchSlots EventMatchSlot[]     @relation("EventMatchSlotCourt")
   availabilities Availability[]
   bookings       Booking[]
 
@@ -2589,7 +2596,7 @@ model PadelCategory {
   createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization         Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  matches           PadelMatch[]
+  matchSlots        EventMatchSlot[]
   pairings          PadelPairing[]
   tournamentConfigs PadelTournamentConfig[]
   tournamentEntries TournamentEntry[]
@@ -2662,8 +2669,9 @@ model PadelRuleSetVersion {
   year               Int?
   createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   createdByUserId    String?      @map("created_by_user_id") @db.Uuid
-  tournamentConfig   PadelTournamentConfig @relation(fields: [tournamentConfigId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tournamentConfig   PadelTournamentConfig @relation("PadelTournamentRuleSetVersions", fields: [tournamentConfigId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   sourceRuleSet      PadelRuleSet? @relation(fields: [sourceRuleSetId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  currentForTournaments PadelTournamentConfig[] @relation("PadelTournamentRuleSetVersionCurrent")
 
   @@unique([tournamentConfigId, version], map: "padel_rule_set_versions_config_version_uq")
   @@index([tournamentConfigId], map: "padel_rule_set_versions_config_idx")
@@ -2704,8 +2712,8 @@ model PadelTournamentConfig {
   organization          Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   club               PadelClub?           @relation(fields: [padelClubId], references: [id], onUpdate: NoAction)
   ruleSet            PadelRuleSet?        @relation(fields: [ruleSetId], references: [id], onUpdate: NoAction)
-  ruleSetVersion     PadelRuleSetVersion? @relation(fields: [ruleSetVersionId], references: [id], onUpdate: NoAction)
-  roleAssignments    PadelTournamentRoleAssignment[]
+  ruleSetVersion     PadelRuleSetVersion? @relation("PadelTournamentRuleSetVersionCurrent", fields: [ruleSetVersionId], references: [id], onUpdate: NoAction)
+  ruleSetVersions    PadelRuleSetVersion[] @relation("PadelTournamentRuleSetVersions")
 
   @@index([padelClubId], map: "padel_tournament_configs_padel_club_idx")
   @@index([ruleSetVersionId], map: "padel_tournament_configs_rule_set_version_idx")
@@ -2821,9 +2829,9 @@ model PadelPairing {
   secondChargePaymentIntentId String?                     @map("second_charge_payment_intent_id")
   createdAt                   DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  matchesA                    PadelMatch[]                @relation("MatchPairingA")
-  matchesB                    PadelMatch[]                @relation("MatchPairingB")
-  matchesWinner               PadelMatch[]                @relation("MatchWinnerPairing")
+  matchSlotsA                 EventMatchSlot[]            @relation("MatchPairingA")
+  matchSlotsB                 EventMatchSlot[]            @relation("MatchPairingB")
+  matchSlotsWinner            EventMatchSlot[]            @relation("MatchWinnerPairing")
   slots                       PadelPairingSlot[]
   category                    PadelCategory?              @relation(fields: [categoryId], references: [id])
   createdByTicket             Ticket?                     @relation("PadelPairingCreatedByTicket", fields: [createdByTicketId], references: [id], map: "padel_pairings_created_ticket_fkey")
@@ -2992,7 +3000,7 @@ model PadelPairingSlot {
 }
 
 /// Jogos
-model PadelMatch {
+model EventMatchSlot {
   env                     String                         @default("prod")
   id              Int                @id @default(autoincrement())
   eventId         Int                @map("event_id")
@@ -3019,7 +3027,7 @@ model PadelMatch {
   courtName       String?            @map("court_name")
   category        PadelCategory?     @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
   event           Event              @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  court           PadelClubCourt?    @relation("PadelMatchCourt", fields: [courtId], references: [id], onUpdate: NoAction, onDelete: SetNull, map: "padel_matches_court_fk")
+  court           PadelClubCourt?    @relation("EventMatchSlotCourt", fields: [courtId], references: [id], onUpdate: NoAction, onDelete: SetNull, map: "padel_matches_court_fk")
   pairingA        PadelPairing?      @relation("MatchPairingA", fields: [pairingAId], references: [id], onUpdate: NoAction, map: "padel_matches_pairing_a_fk")
   pairingB        PadelPairing?      @relation("MatchPairingB", fields: [pairingBId], references: [id], onUpdate: NoAction, map: "padel_matches_pairing_b_fk")
   winnerPairing   PadelPairing?      @relation("MatchWinnerPairing", fields: [winnerPairingId], references: [id], onUpdate: NoAction, map: "padel_matches_winner_fk")
@@ -3703,6 +3711,7 @@ model Booking {
   policyRef       BookingPolicyRef?
   review          ServiceReview?
   creditLedger    ServiceCreditLedger[]
+  entitlements    Entitlement[]
 
   @@index([serviceId])
   @@index([organizationId])

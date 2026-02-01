@@ -12,6 +12,7 @@ import {
   PadelRegistrationStatus,
 } from "@prisma/client";
 import { transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
+import { queueOffsessionActionRequired } from "@/domain/notifications/splitPayments";
 
 export async function attemptPadelSecondChargeForPairing(params: { pairingId: number; now?: Date }) {
   const now = params.now ?? new Date();
@@ -239,6 +240,9 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
         graceUntilAt: computeGraceUntil(now),
       },
     });
+    if (pairing.player1UserId) {
+      await queueOffsessionActionRequired(pairing.id, [pairing.player1UserId]).catch(() => null);
+    }
     return { ok: true, code: "REQUIRES_ACTION" } as const;
   }
 

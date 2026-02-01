@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
-import { getGeoProvider } from "@/lib/geo/provider";
+import { getGeoProvider, resolveGeoSourceProvider } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
+import { upsertAddressFromGeoDetails } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
@@ -58,8 +59,23 @@ async function _GET(req: NextRequest) {
     if (!item) {
       return jsonWrap({ ok: false, error: "Localização não encontrada." }, { status: 404 });
     }
-    setCache(cacheKey, item, CACHE_TTL_MS);
-    return jsonWrap({ ok: true, item }, { headers: { "Cache-Control": "public, max-age=600" } });
+    const providerSource = resolveGeoSourceProvider("reverse");
+    const resolved = await upsertAddressFromGeoDetails({ details: item, provider: providerSource });
+    if (!resolved.ok) {
+      return jsonWrap({ ok: false, error: "Falha no reverse geocode." }, { status: 502 });
+    }
+    const payload = {
+      ...item,
+      formattedAddress: resolved.address.formattedAddress,
+      lat: resolved.address.latitude,
+      lng: resolved.address.longitude,
+      addressId: resolved.address.id,
+      canonical: resolved.address.canonical as Record<string, unknown>,
+      confidenceScore: resolved.address.confidenceScore,
+      validationStatus: resolved.address.validationStatus,
+    };
+    setCache(cacheKey, payload, CACHE_TTL_MS);
+    return jsonWrap({ ok: true, item: payload }, { headers: { "Cache-Control": "public, max-age=600" } });
   } catch (err) {
     console.error("[geo/reverse] erro", err);
     return jsonWrap({ ok: false, error: "Falha no reverse geocode." }, { status: 502 });

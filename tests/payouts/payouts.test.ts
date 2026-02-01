@@ -55,7 +55,7 @@ vi.mock("@/lib/stripeClient", () => {
     accounts: { retrieve: vi.fn() },
     transfers: { create: vi.fn() },
   };
-  return { stripe };
+  return { stripe, getStripeClient: () => stripe };
 });
 
 vi.mock("@/lib/operations/enqueue", () => ({

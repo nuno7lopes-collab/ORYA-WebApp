@@ -260,20 +260,22 @@ export async function PATCH(req: NextRequest) {
         const scopeOrgIds = targetGroup.scopeOrgIds ?? [];
         const hasMultipleScopes = targetGroup.scopeAllOrgs || scopeOrgIds.length > 1;
         if (hasMultipleScopes && targetGroup.role !== role) {
-          await tx.organizationGroupMemberOrganizationOverride.upsert({
-            where: {
-              groupMemberId_organizationId: {
-                groupMemberId: targetGroup.id,
-                organizationId,
-              },
-            },
-            update: { roleOverride: role as OrganizationMemberRole, revokedAt: null },
-            create: {
-              groupMemberId: targetGroup.id,
-              organizationId,
-              roleOverride: role as OrganizationMemberRole,
-            },
+          const updated = await tx.organizationGroupMemberOrganizationOverride.updateMany({
+            where: { groupMemberId: targetGroup.id, organizationId },
+            data: { roleOverride: role as OrganizationMemberRole, revokedAt: null },
           });
+          if (updated.count === 0) {
+            await tx.organizationGroupMemberOrganizationOverride.createMany({
+              data: [
+                {
+                  groupMemberId: targetGroup.id,
+                  organizationId,
+                  roleOverride: role as OrganizationMemberRole,
+                },
+              ],
+              skipDuplicates: true,
+            });
+          }
         } else {
           await tx.organizationGroupMember.update({
             where: { id: targetGroup.id },

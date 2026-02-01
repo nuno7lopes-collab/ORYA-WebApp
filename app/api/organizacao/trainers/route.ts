@@ -360,20 +360,22 @@ export async function POST(req: NextRequest) {
         const scopeOrgIds = targetGroup.scopeOrgIds ?? [];
         const hasMultipleScopes = targetGroup.scopeAllOrgs || scopeOrgIds.length > 1;
         if (hasMultipleScopes && targetGroup.role !== OrganizationMemberRole.TRAINER) {
-          await prisma.organizationGroupMemberOrganizationOverride.upsert({
-            where: {
-              groupMemberId_organizationId: {
-                groupMemberId: targetGroup.id,
-                organizationId: organization.id,
-              },
-            },
-            update: { roleOverride: OrganizationMemberRole.TRAINER, revokedAt: null },
-            create: {
-              groupMemberId: targetGroup.id,
-              organizationId: organization.id,
-              roleOverride: OrganizationMemberRole.TRAINER,
-            },
+          const updated = await prisma.organizationGroupMemberOrganizationOverride.updateMany({
+            where: { groupMemberId: targetGroup.id, organizationId: organization.id },
+            data: { roleOverride: OrganizationMemberRole.TRAINER, revokedAt: null },
           });
+          if (updated.count === 0) {
+            await prisma.organizationGroupMemberOrganizationOverride.createMany({
+              data: [
+                {
+                  groupMemberId: targetGroup.id,
+                  organizationId: organization.id,
+                  roleOverride: OrganizationMemberRole.TRAINER,
+                },
+              ],
+              skipDuplicates: true,
+            });
+          }
         } else {
           await prisma.organizationGroupMember.update({
             where: { id: targetGroup.id },

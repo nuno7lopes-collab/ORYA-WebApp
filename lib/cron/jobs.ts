@@ -50,6 +50,27 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/padel/expire",
   },
   {
+    key: "padel-matchmaking",
+    envIntervalMs: "CRON_PADEL_MATCHMAKING_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/padel/matchmaking",
+  },
+  {
+    key: "padel-split-reminders",
+    envIntervalMs: "CRON_PADEL_SPLIT_REMINDERS_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/padel/split-reminders",
+  },
+  {
+    key: "padel-waitlist",
+    envIntervalMs: "CRON_PADEL_WAITLIST_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/padel/waitlist",
+  },
+  {
     key: "padel-reminders",
     envIntervalMs: "CRON_PADEL_REMINDERS_INTERVAL_MS",
     defaultIntervalMs: 300_000,

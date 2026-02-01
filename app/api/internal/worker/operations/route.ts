@@ -36,7 +36,7 @@ import { processNotificationOutboxBatch } from "@/domain/notifications/outboxPro
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
 import { normalizeEmail } from "@/lib/utils/email";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger";
 import { handleStripeWebhook } from "@/domain/finance/webhook";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
@@ -62,6 +62,7 @@ import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 5;
+const STALE_OPERATION_LOCK_MS = 15 * 60 * 1000;
 
 const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
@@ -342,32 +343,38 @@ export async function POST(req: NextRequest) {
   return respondOk(ctx, { processed: results.length, results }, { status: 200 });
 }
 
-export async function runOperationsBatch() {
-  const now = new Date();
-  const pending = await prisma.operation.findMany({
-    where: {
-      OR: [
-        { status: "PENDING" },
-        { status: "FAILED", nextRetryAt: { lte: now } },
-      ],
-    },
-    orderBy: { id: "asc" },
-    take: BATCH_SIZE,
-  });
+async function claimOperationsBatch(now: Date, batchSize: number) {
+  const staleBefore = new Date(now.getTime() - STALE_OPERATION_LOCK_MS);
+  return prisma.$transaction(async (tx) => {
+    const candidates = await tx.$queryRaw<OperationRecord[]>(Prisma.sql`
+      SELECT
+        id,
+        operation_type as "operationType",
+        dedupe_key as "dedupeKey",
+        status,
+        attempts,
+        payload,
+        payment_intent_id as "paymentIntentId",
+        purchase_id as "purchaseId",
+        stripe_event_id as "stripeEventId",
+        event_id as "eventId"
+      FROM app_v3.operations
+      WHERE
+        (
+          status = 'PENDING'
+          OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
+        )
+        AND (locked_at IS NULL OR locked_at <= ${staleBefore})
+      ORDER BY id ASC
+      LIMIT ${batchSize}
+      FOR UPDATE SKIP LOCKED
+    `);
 
-  const results: Array<{ id: number; status: string; error?: string }> = [];
+    if (!candidates.length) return [] as OperationRecord[];
 
-  for (const op of pending as OperationRecord[]) {
-    const now = new Date();
-    const claim = await prisma.operation.updateMany({
-      where: {
-        id: op.id,
-        lockedAt: null,
-        OR: [
-          { status: "PENDING" },
-          { status: "FAILED", nextRetryAt: { lte: now } },
-        ],
-      },
+    const ids = candidates.map((row) => row.id);
+    await tx.operation.updateMany({
+      where: { id: { in: ids } },
       data: {
         status: "RUNNING",
         attempts: { increment: 1 },
@@ -375,8 +382,18 @@ export async function runOperationsBatch() {
         updatedAt: now,
       },
     });
-    if (claim.count === 0) continue;
 
+    return candidates.map((row) => ({ ...row, attempts: row.attempts + 1 }));
+  });
+}
+
+export async function runOperationsBatch() {
+  const now = new Date();
+  const pending = await claimOperationsBatch(now, BATCH_SIZE);
+
+  const results: Array<{ id: number; status: string; error?: string }> = [];
+
+  for (const op of pending as OperationRecord[]) {
     try {
       await processOperation(op);
       await prisma.operation.update({
@@ -385,7 +402,7 @@ export async function runOperationsBatch() {
       });
       results.push({ id: op.id, status: "SUCCEEDED" });
     } catch (err) {
-      const attempts = op.attempts + 1;
+      const attempts = op.attempts;
       const errorMessage = err instanceof Error ? err.message : String(err);
       const isDead = attempts >= MAX_ATTEMPTS;
       await prisma.operation.update({
@@ -963,7 +980,7 @@ async function processUpsertLedger(op: OperationRecord) {
       let feeRemainder = platformFeeForLine - basePlatformFee * Math.max(1, qty);
 
       const typeTickets = ticketsByType.get(line.ticketTypeId) ?? new Map();
-      const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
+      const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
       let createdCount = 0;
 
       for (let i = 0; i < qty; i++) {

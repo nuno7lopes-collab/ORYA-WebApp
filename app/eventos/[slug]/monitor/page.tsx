@@ -37,7 +37,7 @@ export default async function PadelMonitorPage({ params, searchParams }: PagePro
       title: true,
       status: true,
       timezone: true,
-      padelTournamentConfig: { select: { advancedSettings: true } },
+      padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
       accessPolicies: {
         orderBy: { policyVersion: "desc" },
         take: 1,
@@ -50,6 +50,7 @@ export default async function PadelMonitorPage({ params, searchParams }: PagePro
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+    lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
   });
   const accessMode = resolveEventAccessMode(event.accessPolicies?.[0], EventAccessMode.INVITE_ONLY);
   const isPublicEvent =
@@ -63,7 +64,7 @@ export default async function PadelMonitorPage({ params, searchParams }: PagePro
     sponsors?: string[];
   };
 
-  const matches = await prisma.padelMatch.findMany({
+  const matches = await prisma.eventMatchSlot.findMany({
     where: {
       eventId: event.id,
       OR: [{ plannedStartAt: { not: null } }, { startTime: { not: null } }],

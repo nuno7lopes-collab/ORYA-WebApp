@@ -12,36 +12,27 @@
  *   SEED_ENV=prod|test
  */
 
-const fs = require("fs");
-const path = require("path");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 
-function loadEnvFile(file) {
-  if (!fs.existsSync(file)) return;
-  const content = fs.readFileSync(file, "utf8");
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let val = trimmed.slice(eq + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    if (!(key in process.env)) {
-      process.env[key] = val;
-    }
+require("./load-env");
+
+function resolveDbUrl() {
+  const raw = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    parsed.searchParams.delete("options");
+    return parsed.toString();
+  } catch {
+    return raw;
   }
 }
 
-loadEnvFile(path.join(process.cwd(), ".env.local"));
-loadEnvFile(path.join(process.cwd(), ".env"));
-
-if (!process.env.DATABASE_URL) {
-  console.error("Falta DATABASE_URL no ambiente.");
+const dbUrl = resolveDbUrl();
+if (!dbUrl) {
+  console.error("Falta DATABASE_URL (ou DIRECT_URL) no ambiente.");
   process.exit(1);
 }
 
@@ -54,7 +45,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbUrl,
   ssl: process.env.NODE_ENV === "production" ? undefined : { rejectUnauthorized: false },
 });
 pool.on("connect", (client) => {

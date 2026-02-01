@@ -98,7 +98,7 @@ async function _POST(req: NextRequest) {
     }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId: pairing.eventId },
-      select: { advancedSettings: true },
+      select: { advancedSettings: true, lifecycleStatus: true },
     }),
   ]);
   if (!event) {
@@ -123,6 +123,7 @@ async function _POST(req: NextRequest) {
     registrationStartsAt,
     registrationEndsAt,
     competitionState: advanced.competitionState ?? null,
+    lifecycleStatus: windowConfig?.lifecycleStatus ?? null,
   });
   if (!registrationCheck.ok) {
     return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });

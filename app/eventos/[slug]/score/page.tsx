@@ -32,7 +32,7 @@ export default async function PadelScorePage({ params, searchParams }: PageProps
         take: 1,
         select: { mode: true },
       },
-      padelTournamentConfig: { select: { advancedSettings: true } },
+      padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
     },
   });
   if (!event) notFound();
@@ -40,6 +40,7 @@ export default async function PadelScorePage({ params, searchParams }: PageProps
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+    lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
   });
   const accessMode = resolveEventAccessMode(event.accessPolicies?.[0], EventAccessMode.INVITE_ONLY);
   const isPublicEvent =
@@ -48,7 +49,7 @@ export default async function PadelScorePage({ params, searchParams }: PageProps
     competitionState === "PUBLIC";
   if (!isPublicEvent) notFound();
 
-  const matches = await prisma.padelMatch.findMany({
+  const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId: event.id },
     include: {
       court: { select: { name: true } },

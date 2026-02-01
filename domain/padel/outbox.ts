@@ -4,6 +4,7 @@ import { queueMatchChanged, queueMatchResult, queueNextOpponent, queueChampion, 
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { computePadelStandingsByGroup, normalizePadelPointsTable, normalizePadelTieBreakRules } from "@/domain/padel/standings";
+import { getPadelRuleSetSnapshot } from "@/domain/padel/ruleSetSnapshot";
 import { advancePadelKnockoutWinner, extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutAdvance";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
@@ -100,7 +101,7 @@ async function handleAutoScheduleRequested(payload: AutoScheduleRequestedPayload
 
 async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
   if (!payload?.matchId) return { ok: false, code: "MATCH_ID_REQUIRED" } as const;
-  const match = await prisma.padelMatch.findUnique({
+  const match = await prisma.eventMatchSlot.findUnique({
     where: { id: payload.matchId },
     include: { event: { select: { id: true, organizationId: true, startsAt: true, endsAt: true, padelTournamentConfig: { select: { padelClubId: true, partnerClubIds: true, advancedSettings: true } } } } },
   });
@@ -146,7 +147,7 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
           })
         : [];
       const [scheduledMatches, unscheduledMatches] = await Promise.all([
-        prisma.padelMatch.findMany({
+        prisma.eventMatchSlot.findMany({
           where: {
             eventId: match.event.id,
             OR: [{ startTime: { not: null } }, { plannedStartAt: { not: null } }],
@@ -162,7 +163,7 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
             pairingBId: true,
           },
         }),
-        prisma.padelMatch.findMany({
+        prisma.eventMatchSlot.findMany({
           where: { id: match.id },
           select: {
             id: true,
@@ -205,11 +206,11 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
       });
 
       const [availabilities, courtBlocks] = await Promise.all([
-        prisma.padelAvailability.findMany({
+        prisma.calendarAvailability.findMany({
           where: { eventId: match.event.id, organizationId: match.event.organizationId },
           select: { playerProfileId: true, playerEmail: true, startAt: true, endAt: true },
         }),
-        prisma.padelCourtBlock.findMany({
+        prisma.calendarBlock.findMany({
           where: { eventId: match.event.id, organizationId: match.event.organizationId },
           select: { courtId: true, startAt: true, endAt: true },
         }),
@@ -290,7 +291,7 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
 
 async function handleMatchUpdated(payload: MatchUpdatedPayload) {
   if (!payload?.matchId) return { ok: false, code: "MATCH_ID_REQUIRED" } as const;
-  const updated = await prisma.padelMatch.findUnique({
+  const updated = await prisma.eventMatchSlot.findUnique({
     where: { id: payload.matchId },
     include: {
       event: {
@@ -332,7 +333,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
         where: { eventId: updated.eventId },
         select: { format: true },
       });
-      const koMatches = await prisma.padelMatch.findMany({
+      const koMatches = await prisma.eventMatchSlot.findMany({
         where: {
           eventId: updated.eventId,
           roundType: "KNOCKOUT",
@@ -640,7 +641,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
   };
 
   const notifyNextMatch = async (pairingId: number) => {
-    const nextMatch = await prisma.padelMatch.findFirst({
+    const nextMatch = await prisma.eventMatchSlot.findFirst({
       where: {
         eventId: updated.eventId,
         status: "PENDING",
@@ -723,9 +724,9 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     const [config, groupMatches] = await Promise.all([
       prisma.padelTournamentConfig.findUnique({
         where: { eventId: updated.eventId },
-        select: { ruleSetId: true, advancedSettings: true, format: true },
+        select: { ruleSetId: true, ruleSetVersionId: true, advancedSettings: true, format: true },
       }),
-      prisma.padelMatch.findMany({
+      prisma.eventMatchSlot.findMany({
         where: {
           eventId: updated.eventId,
           roundType: "GROUPS",
@@ -747,11 +748,12 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
       (m) => m.status === "DONE" || m.status === "CANCELLED",
     );
     if (allClosed) {
-      const ruleSet = config?.ruleSetId
-        ? await prisma.padelRuleSet.findUnique({ where: { id: config.ruleSetId } })
-        : null;
-      const pointsTable = normalizePadelPointsTable(ruleSet?.pointsTable);
-      const tieBreakRules = normalizePadelTieBreakRules(ruleSet?.tieBreakRules);
+      const ruleSnapshot = await getPadelRuleSetSnapshot({
+        ruleSetId: config?.ruleSetId ?? null,
+        ruleSetVersionId: config?.ruleSetVersionId ?? null,
+      });
+      const pointsTable = normalizePadelPointsTable(ruleSnapshot.pointsTable);
+      const tieBreakRules = normalizePadelTieBreakRules(ruleSnapshot.tieBreakRules);
       const standingsByGroup = computePadelStandingsByGroup(groupMatches, pointsTable, tieBreakRules);
       const standings = standingsByGroup[updated.groupLabel] ?? [];
       const groupsConfig = (config?.advancedSettings as { groupsConfig?: { qualifyPerGroup?: number | null } } | null)
@@ -817,7 +819,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
 
     if (allClosed) {
       const [allGroupMatches, existingKo, categoryLink] = await Promise.all([
-        prisma.padelMatch.findMany({
+        prisma.eventMatchSlot.findMany({
           where: {
             eventId: updated.eventId,
             roundType: "GROUPS",
@@ -825,7 +827,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
           },
           select: { id: true, status: true },
         }),
-        prisma.padelMatch.findFirst({
+        prisma.eventMatchSlot.findFirst({
           where: {
             eventId: updated.eventId,
             roundType: "KNOCKOUT",

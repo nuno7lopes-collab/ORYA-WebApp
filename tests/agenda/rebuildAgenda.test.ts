@@ -17,8 +17,8 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     softBlock: { findMany: mocks.softBlockFindMany },
     booking: { findMany: mocks.bookingFindMany },
-    padelMatch: { findMany: mocks.matchFindMany },
-    padelCourtBlock: { findMany: mocks.hardBlockFindMany },
+    eventMatchSlot: { findMany: mocks.matchFindMany },
+    calendarBlock: { findMany: mocks.hardBlockFindMany },
     agendaItem: {
       findMany: mocks.agendaFindMany,
       upsert: mocks.agendaUpsert,

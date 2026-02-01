@@ -13,6 +13,7 @@ import {
 } from "@/domain/padel/standings";
 import { autoAdvancePadelByes } from "@/domain/padel/knockoutAdvance";
 import { normalizePadelScoreRules } from "@/domain/padel/score";
+import { getPadelRuleSetSnapshot } from "@/domain/padel/ruleSetSnapshot";
 
 const MATCH_SYSTEM_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const MATCH_GENERATED_EVENT = "PADEL_MATCH_GENERATED";
@@ -143,7 +144,7 @@ function roundRobinSchedule(ids: Array<number | null>) {
 }
 
 async function createMatchList(params: {
-  matches: Array<Prisma.PadelMatchCreateManyInput>;
+  matches: Array<Prisma.EventMatchSlotCreateManyInput>;
   eventId: number;
   organizationId: number;
   actorUserId: string | null;
@@ -206,7 +207,7 @@ export async function autoGeneratePadelMatches({
   const matchCategoryFilter = resolvedCategoryId ? { categoryId: resolvedCategoryId } : {};
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
-    select: { numberOfCourts: true, advancedSettings: true, format: true, ruleSetId: true },
+    select: { numberOfCourts: true, advancedSettings: true, format: true, ruleSetId: true, ruleSetVersionId: true },
   });
   const advanced = (config?.advancedSettings || {}) as {
     courtsFromClubs?: Array<{
@@ -346,7 +347,7 @@ export async function autoGeneratePadelMatches({
   const rngFor = (tag: string) => seededRng(hashSeed(`${seedHash}|${tag}`));
 
   if (formatEffective === "GRUPOS_ELIMINATORIAS" && phaseEffective !== "KNOCKOUT") {
-    const existingGroupMatch = await prisma.padelMatch.findFirst({
+    const existingGroupMatch = await prisma.eventMatchSlot.findFirst({
       where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
       select: { id: true },
     });
@@ -355,7 +356,7 @@ export async function autoGeneratePadelMatches({
         return { ok: false, error: "GROUPS_ALREADY_GENERATED" };
       }
       if (existingPolicy === "replace") {
-        const existingMatches = await prisma.padelMatch.findMany({
+        const existingMatches = await prisma.eventMatchSlot.findMany({
           where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
           select: { id: true },
         });
@@ -434,7 +435,7 @@ export async function autoGeneratePadelMatches({
     const maxQualify = Math.max(...groups.map((g) => g.length));
     if (qualifyPerGroup > maxQualify) return { ok: false, error: "QUALIFY_EXCEEDS_GROUP_SIZE" };
 
-    const matchesToCreate: Prisma.PadelMatchCreateManyInput[] = [];
+    const matchesToCreate: Prisma.EventMatchSlotCreateManyInput[] = [];
     groups.forEach((groupIds, groupIdx) => {
       const label = String.fromCharCode("A".charCodeAt(0) + groupIdx);
       const rounds = roundRobinSchedule(groupIds);
@@ -504,7 +505,7 @@ export async function autoGeneratePadelMatches({
   }
 
   if (formatEffective === "GRUPOS_ELIMINATORIAS" && phaseEffective === "KNOCKOUT") {
-    const existingKo = await prisma.padelMatch.findFirst({
+    const existingKo = await prisma.eventMatchSlot.findFirst({
       where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
       select: { id: true },
     });
@@ -513,7 +514,7 @@ export async function autoGeneratePadelMatches({
         return { ok: false, error: "KNOCKOUT_ALREADY_GENERATED" };
       }
       if (existingPolicy === "replace") {
-        const existingMatches = await prisma.padelMatch.findMany({
+        const existingMatches = await prisma.eventMatchSlot.findMany({
           where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
           select: { id: true },
         });
@@ -528,7 +529,7 @@ export async function autoGeneratePadelMatches({
       }
     }
 
-    const groupMatches = await prisma.padelMatch.findMany({
+    const groupMatches = await prisma.eventMatchSlot.findMany({
       where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
       select: {
         id: true,
@@ -544,11 +545,12 @@ export async function autoGeneratePadelMatches({
     const pending = groupMatches.some((m) => m.status !== "DONE" && m.status !== "CANCELLED");
     if (pending && !allowIncomplete) return { ok: false, error: "GROUPS_NOT_FINISHED" };
 
-    const ruleSet = config?.ruleSetId
-      ? await prisma.padelRuleSet.findUnique({ where: { id: config.ruleSetId } })
-      : null;
-    const pointsTable = normalizePadelPointsTable(ruleSet?.pointsTable);
-    const tieBreakRules = normalizePadelTieBreakRules(ruleSet?.tieBreakRules);
+    const ruleSnapshot = await getPadelRuleSetSnapshot({
+      ruleSetId: config?.ruleSetId ?? null,
+      ruleSetVersionId: config?.ruleSetVersionId ?? null,
+    });
+    const pointsTable = normalizePadelPointsTable(ruleSnapshot.pointsTable);
+    const tieBreakRules = normalizePadelTieBreakRules(ruleSnapshot.tieBreakRules);
     const standingsByGroup = computePadelStandingsByGroup(groupMatches, pointsTable, tieBreakRules);
 
     const cfg = (advanced.groupsConfig ?? {}) as GroupsConfig;
@@ -672,7 +674,7 @@ export async function autoGeneratePadelMatches({
         }));
     if (koPairs.length === 0) return { ok: false, error: "NO_KO_MATCHES" };
 
-    const matchCreateData: Prisma.PadelMatchCreateManyInput[] = [];
+    const matchCreateData: Prisma.EventMatchSlotCreateManyInput[] = [];
     const firstRoundLabel =
       koPairs.length === 1 ? "FINAL" : koPairs.length === 2 ? "SEMIFINAL" : koPairs.length === 4 ? "QUARTERFINAL" : `R${koPairs.length * 2}`;
     koPairs.forEach((p, idx) => {
@@ -727,7 +729,7 @@ export async function autoGeneratePadelMatches({
       organizationId: organizationId,
       actorUserId,
     });
-    const koMatches = await prisma.padelMatch.findMany({
+    const koMatches = await prisma.eventMatchSlot.findMany({
       where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
       select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
       orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
@@ -798,7 +800,7 @@ export async function autoGeneratePadelMatches({
     };
   }
 
-  const existingAnyMatch = await prisma.padelMatch.findFirst({
+  const existingAnyMatch = await prisma.eventMatchSlot.findFirst({
     where: { eventId, ...matchCategoryFilter },
     select: { id: true },
   });
@@ -807,7 +809,7 @@ export async function autoGeneratePadelMatches({
       return { ok: false, error: "MATCHES_ALREADY_EXIST" };
     }
     if (existingPolicy === "replace") {
-      const existingMatches = await prisma.padelMatch.findMany({
+      const existingMatches = await prisma.eventMatchSlot.findMany({
         where: { eventId, ...matchCategoryFilter },
         select: { id: true },
       });
@@ -833,7 +835,7 @@ export async function autoGeneratePadelMatches({
     return prefix ? `${prefix}${base}` : base;
   };
   const bracketPrefix = formatEffective === "QUADRO_AB" || isDoubleElim ? "A " : "";
-  const matchCreateData: Prisma.PadelMatchCreateManyInput[] = [];
+  const matchCreateData: Prisma.EventMatchSlotCreateManyInput[] = [];
 
   if (isKnockout) {
     const bracketSize = Math.pow(2, Math.ceil(Math.log2(drawPairingIds.length)));
@@ -1017,7 +1019,7 @@ export async function autoGeneratePadelMatches({
     actorUserId,
   });
   if (isKnockout) {
-    const koMatches = await prisma.padelMatch.findMany({
+    const koMatches = await prisma.eventMatchSlot.findMany({
       where: { eventId, roundType: "KNOCKOUT", ...matchCategoryFilter },
       select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
       orderBy: [{ roundLabel: "asc" }, { id: "asc" }],

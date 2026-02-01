@@ -16,7 +16,7 @@ import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEnt
 import { queuePartnerPaid } from "@/domain/notifications/splitPayments";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { logError } from "@/lib/observability/logger";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
@@ -277,7 +277,7 @@ export async function fulfillPadelSplitIntent(intent: IntentLike, stripeFeeForIn
       });
     }
 
-    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
+    const policyVersionApplied = await requireLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = ownerUserId
       ? `user:${ownerUserId}`
       : ownerIdentityId

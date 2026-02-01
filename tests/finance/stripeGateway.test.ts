@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 
-vi.mock("@/lib/stripeClient", () => ({
-  stripe: {
+vi.mock("@/lib/stripeClient", () => {
+  const stripe = {
     paymentIntents: {
       create: vi.fn(),
       retrieve: vi.fn(),
@@ -27,8 +27,9 @@ vi.mock("@/lib/stripeClient", () => ({
     webhooks: {
       constructEvent: vi.fn(),
     },
-  },
-}));
+  };
+  return { stripe, getStripeClient: () => stripe };
+});
 
 let paymentIntentCreate: ReturnType<typeof vi.fn>;
 

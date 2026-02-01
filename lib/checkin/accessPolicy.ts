@@ -52,6 +52,8 @@ export function resolveCheckinMethodForEntitlement(type: EntitlementType): Check
       return CheckinMethod.QR_TICKET;
     case EntitlementType.PADEL_ENTRY:
       return CheckinMethod.QR_REGISTRATION;
+    case EntitlementType.SERVICE_BOOKING:
+      return CheckinMethod.QR_BOOKING;
     default:
       return null;
   }
@@ -73,6 +75,17 @@ export async function getLatestPolicyVersionForEvent(
 ) {
   const policy = await getLatestPolicyForEvent(eventId, client);
   return policy?.policyVersion ?? null;
+}
+
+export async function requireLatestPolicyVersionForEvent(
+  eventId: number,
+  client: PolicyClient = prisma,
+) {
+  const policyVersion = await getLatestPolicyVersionForEvent(eventId, client);
+  if (!policyVersion || policyVersion <= 0) {
+    throw new Error("POLICY_VERSION_REQUIRED");
+  }
+  return policyVersion;
 }
 
 export async function getPolicyByVersion(
@@ -99,7 +112,7 @@ export async function resolvePolicyForCheckin(
   if (!latest) {
     return { ok: true as const, policy: null };
   }
-  if (policyVersionApplied == null) {
+  if (policyVersionApplied == null || policyVersionApplied <= 0) {
     return { ok: false as const, reason: "POLICY_VERSION_REQUIRED", policy: latest };
   }
   const policy = await getPolicyByVersion(eventId, policyVersionApplied, client);

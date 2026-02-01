@@ -5,7 +5,7 @@ import { getStripeBaseFees } from "@/lib/platformSettings";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
-import { CrmInteractionSource, CrmInteractionType, type Prisma } from "@prisma/client";
+import { CrmInteractionSource, CrmInteractionType, EntitlementStatus, EntitlementType, SourceType, type Prisma } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { logError } from "@/lib/observability/logger";
 import {
@@ -42,6 +42,98 @@ const extractSnapshotCreatedAt = (snapshot: unknown, fallback: Date) => {
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 };
+
+const DEFAULT_TIMEZONE = "Europe/Lisbon";
+
+function buildOwnerKey(userId: string | null) {
+  return userId ? `user:${userId}` : "unknown";
+}
+
+async function resolveBookingPurchaseId(params: {
+  tx: Prisma.TransactionClient;
+  intent: Stripe.PaymentIntent;
+  bookingId: number;
+}) {
+  const { tx, intent, bookingId } = params;
+  const metaPurchaseId =
+    typeof intent.metadata?.purchaseId === "string" ? intent.metadata.purchaseId.trim() : "";
+  if (metaPurchaseId) return metaPurchaseId;
+
+  const eventRow = await tx.paymentEvent.findFirst({
+    where: { stripePaymentIntentId: intent.id },
+    select: { purchaseId: true },
+  });
+  if (eventRow?.purchaseId) return eventRow.purchaseId;
+
+  const payment = await tx.payment.findFirst({
+    where: { sourceType: SourceType.BOOKING, sourceId: String(bookingId) },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  if (payment?.id) return payment.id;
+
+  return `booking_${bookingId}_v1`;
+}
+
+async function upsertBookingEntitlement(params: {
+  tx: Prisma.TransactionClient;
+  booking: {
+    id: number;
+    startsAt: Date;
+    snapshotTimezone?: string | null;
+    locationText?: string | null;
+    service?: { title: string; coverImageUrl: string | null; defaultLocationText: string | null } | null;
+  };
+  purchaseId: string;
+  ownerUserId: string | null;
+}) {
+  const { tx, booking, purchaseId, ownerUserId } = params;
+  if (!ownerUserId) return;
+  const ownerKey = buildOwnerKey(ownerUserId);
+  const snapshotTitle = booking.service?.title ?? `Reserva ${booking.id}`;
+  const snapshotCoverUrl = booking.service?.coverImageUrl ?? null;
+  const snapshotVenueName = booking.locationText ?? booking.service?.defaultLocationText ?? null;
+  const snapshotTimezone = booking.snapshotTimezone ?? DEFAULT_TIMEZONE;
+
+  await tx.entitlement.upsert({
+    where: {
+      bookingId_lineItemIndex_ownerKey_type: {
+        bookingId: booking.id,
+        lineItemIndex: 0,
+        ownerKey,
+        type: EntitlementType.SERVICE_BOOKING,
+      },
+    },
+    update: {
+      status: EntitlementStatus.ACTIVE,
+      ownerUserId,
+      ownerIdentityId: null,
+      purchaseId,
+      snapshotTitle,
+      snapshotCoverUrl,
+      snapshotVenueName,
+      snapshotStartAt: booking.startsAt,
+      snapshotTimezone,
+      policyVersionApplied: 0,
+    },
+    create: {
+      type: EntitlementType.SERVICE_BOOKING,
+      status: EntitlementStatus.ACTIVE,
+      ownerUserId,
+      ownerIdentityId: null,
+      ownerKey,
+      purchaseId,
+      bookingId: booking.id,
+      lineItemIndex: 0,
+      snapshotTitle,
+      snapshotCoverUrl,
+      snapshotVenueName,
+      snapshotStartAt: booking.startsAt,
+      snapshotTimezone,
+      policyVersionApplied: 0,
+    },
+  });
+}
 
 async function ensureConfirmationSnapshot(params: {
   tx: Prisma.TransactionClient;
@@ -235,6 +327,16 @@ export async function fulfillServiceBookingIntent(
             userId: true,
             availabilityId: true,
             paymentIntentId: true,
+            startsAt: true,
+            snapshotTimezone: true,
+            locationText: true,
+            service: {
+              select: {
+                title: true,
+                coverImageUrl: true,
+                defaultLocationText: true,
+              },
+            },
           },
         });
 
@@ -255,6 +357,18 @@ export async function fulfillServiceBookingIntent(
           now,
           policyIdHint: policyId,
           paymentMeta,
+        });
+
+        const purchaseIdResolved = await resolveBookingPurchaseId({
+          tx,
+          intent,
+          bookingId: booking.id,
+        });
+        await upsertBookingEntitlement({
+          tx,
+          booking,
+          purchaseId: purchaseIdResolved,
+          ownerUserId: userId ?? booking.userId,
         });
 
         const existingTransaction = await tx.transaction.findFirst({
@@ -310,6 +424,7 @@ export async function fulfillServiceBookingIntent(
             include: {
               availability: true,
               policyRef: { select: { policyId: true } },
+              service: { select: { title: true, coverImageUrl: true, defaultLocationText: true } },
             },
           })
         : null;
@@ -357,6 +472,7 @@ export async function fulfillServiceBookingIntent(
           include: {
             availability: true,
             policyRef: { select: { policyId: true } },
+            service: { select: { title: true, coverImageUrl: true, defaultLocationText: true } },
           },
         });
       }
@@ -411,6 +527,18 @@ export async function fulfillServiceBookingIntent(
           now,
           policyIdHint: policyId,
           paymentMeta,
+        });
+
+        const purchaseIdResolved = await resolveBookingPurchaseId({
+          tx,
+          intent,
+          bookingId: booking.id,
+        });
+        await upsertBookingEntitlement({
+          tx,
+          booking,
+          purchaseId: purchaseIdResolved,
+          ownerUserId: userId ?? booking.userId,
         });
       }
       const existingTransaction = await tx.transaction.findFirst({

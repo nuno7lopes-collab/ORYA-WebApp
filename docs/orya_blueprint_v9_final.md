@@ -8,11 +8,11 @@ ORYA — Blueprint Final v9 (SSOT)
 
 ## Estado de Implementação (NÃO-NORMATIVO)
 
-O estado real de execução (slices + gates) é rastreado em `docs/v8_kickoff.md` e no closeout `docs/v9_closeout.md`.  
+O estado real de execução (slices + gates) é rastreado em `docs/v10_execution_checklist.md` e no registo `docs/v9_ssot_registry.md`.  
 Este blueprint é normativo/arquitetural; não é fonte de status de execução.
 Fechado = decisões finais; implementação ainda em curso — ver status.
 
-Migrations: ver `docs/v9_closeout.md`.
+Migrations: ver `docs/v9_ssot_registry.md` e `prisma/migrations/`.
 
 ## Executive Summary (NÃO-NORMATIVO)
 - A ORYA é uma plataforma integrada de descoberta + operações com módulos verticais (Eventos/Reservas/Padel/Loja/Serviços) sobre serviços horizontais canónicos.

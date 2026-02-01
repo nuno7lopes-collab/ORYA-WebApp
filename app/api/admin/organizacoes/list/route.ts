@@ -4,7 +4,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
 import { logError } from "@/lib/observability/logger";
-import { OrganizationStatus, OrgType } from "@prisma/client";
+import { AnalyticsDimensionKey, AnalyticsMetricKey, EntitlementType, OrganizationStatus, OrgType, Prisma as PrismaTypes } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 
 const MAX_LIMIT = 200;
@@ -124,6 +124,40 @@ async function _GET(req: NextRequest) {
     const hasMore = organizations.length > limit;
     const slice = organizations.slice(0, limit);
     const nextCursor = hasMore && slice.length > 0 ? encodeCursor(slice[slice.length - 1]) : null;
+    const orgIds = slice.map((org) => org.id);
+    const eventsCounts = orgIds.length
+      ? await prisma.event.groupBy({
+          by: ["organizationId"],
+          where: { organizationId: { in: orgIds } },
+          _count: { _all: true },
+        })
+      : [];
+    const eventsCountMap = new Map(eventsCounts.map((row) => [row.organizationId, row._count._all ?? 0]));
+
+    const ticketsRows = orgIds.length
+      ? await prisma.$queryRaw<{ organization_id: number; total: bigint }[]>(PrismaTypes.sql`
+          SELECT ev.organization_id, COUNT(*)::bigint AS total
+          FROM app_v3.entitlements ent
+          JOIN app_v3.events ev ON ev.id = ent.event_id
+          WHERE ev.organization_id IN (${PrismaTypes.join(orgIds)})
+            AND ent.type IN (${PrismaTypes.join([EntitlementType.EVENT_TICKET, EntitlementType.PADEL_ENTRY])})
+          GROUP BY ev.organization_id
+        `)
+      : [];
+    const ticketsMap = new Map(ticketsRows.map((row) => [row.organization_id, Number(row.total ?? 0)]));
+
+    const revenueRows = orgIds.length
+      ? await prisma.$queryRaw<{ organization_id: number; total: bigint }[]>(PrismaTypes.sql`
+          SELECT organization_id, SUM(value)::bigint AS total
+          FROM app_v3.analytics_rollups
+          WHERE organization_id IN (${PrismaTypes.join(orgIds)})
+            AND metric_key = ${AnalyticsMetricKey.NET_TO_ORG}
+            AND dimension_key = ${AnalyticsDimensionKey.CURRENCY}
+          GROUP BY organization_id
+        `)
+      : [];
+    const revenueMap = new Map(revenueRows.map((row) => [row.organization_id, Number(row.total ?? 0)]));
+
     const normalized = slice.map((org) => {
       const ownerUser = org.members[0]?.user ?? null;
       return {
@@ -145,9 +179,9 @@ async function _GET(req: NextRequest) {
               email: ownerUser.users?.email ?? null,
             }
           : null,
-        eventsCount: null,
-        totalTickets: null,
-        totalRevenueCents: null,
+        eventsCount: eventsCountMap.get(org.id) ?? 0,
+        totalTickets: ticketsMap.get(org.id) ?? 0,
+        totalRevenueCents: revenueMap.get(org.id) ?? 0,
       };
     });
 

@@ -416,7 +416,7 @@ export async function deliverNotificationOutboxItem(item: {
   if (item.notificationType === "MATCH_CHANGED") {
     const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
     if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
-    const match = await prisma.padelMatch.findUnique({
+    const match = await prisma.eventMatchSlot.findUnique({
       where: { id: matchId },
       include: {
         event: { select: { id: true, title: true, slug: true, organizationId: true, timezone: true } },
@@ -460,7 +460,7 @@ export async function deliverNotificationOutboxItem(item: {
   if (item.notificationType === "MATCH_RESULT") {
     const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
     if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
-    const match = await prisma.padelMatch.findUnique({
+    const match = await prisma.eventMatchSlot.findUnique({
       where: { id: matchId },
       include: {
         event: { select: { id: true, title: true, slug: true, organizationId: true } },
@@ -495,7 +495,7 @@ export async function deliverNotificationOutboxItem(item: {
   if (item.notificationType === "NEXT_OPPONENT") {
     const matchId = typeof payload.matchId === "number" ? payload.matchId : Number(payload.matchId);
     if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
-    const match = await prisma.padelMatch.findUnique({
+    const match = await prisma.eventMatchSlot.findUnique({
       where: { id: matchId },
       include: { event: { select: { id: true, title: true, slug: true, organizationId: true } } },
     });

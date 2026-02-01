@@ -33,7 +33,7 @@ vi.mock("@/lib/prisma", () => {
     findMany: vi.fn(),
   };
   const organizationGroupMemberOrganizationOverride = {
-    findUnique: vi.fn(),
+    findFirst: vi.fn(),
   };
   const prisma = {
     profile,
@@ -59,7 +59,7 @@ describe("organization context", () => {
     prismaMock.profile.update.mockReset();
     prismaMock.organization.findUnique.mockReset();
     prismaMock.organizationGroupMember.findMany.mockReset();
-    prismaMock.organizationGroupMemberOrganizationOverride.findUnique.mockReset();
+    prismaMock.organizationGroupMemberOrganizationOverride.findFirst.mockReset();
     recordOutboxMock.mockResolvedValue({ eventId: "evt-1" } as any);
   });
 
@@ -133,7 +133,7 @@ describe("organization context", () => {
         },
       } as any,
     ]);
-    prismaMock.organizationGroupMemberOrganizationOverride.findUnique.mockResolvedValue(null);
+    prismaMock.organizationGroupMemberOrganizationOverride.findFirst.mockResolvedValue(null);
 
     const result = await getActiveOrganizationForUser("user-4", { allowFallback: true });
     expect(result.organization?.id).toBe(22);

@@ -2,7 +2,7 @@ import { describe, it } from "vitest";
 import { execSync } from "child_process";
 
 const COMMAND =
-  "rg -n \"\\b(prisma|tx)\\.(padelCourtBlock|padelMatch|booking|softBlock)\\.(create|update|upsert|delete|deleteMany|updateMany|createMany)\" app/api domain -S";
+  "rg -n \"\\b(prisma|tx)\\.(calendarBlock|eventMatchSlot|booking|softBlock)\\.(create|update|upsert|delete|deleteMany|updateMany|createMany)\" app/api domain -S";
 
 const ALLOWLIST = new Set([
   "domain/hardBlocks/commands.ts",

@@ -98,6 +98,23 @@ export function respondPlainText(ctx: RequestContextLike, text: string, init?: R
   return new Response(text, { ...init, headers });
 }
 
+const CANONICAL_ERROR_CODE_BY_STATUS: Record<number, string> = {
+  400: "BAD_REQUEST",
+  401: "UNAUTHENTICATED",
+  403: "FORBIDDEN",
+  404: "NOT_FOUND",
+  409: "CONFLICT",
+  410: "GONE",
+  413: "PAYLOAD_TOO_LARGE",
+  422: "VALIDATION_FAILED",
+  429: "THROTTLED",
+  500: "INTERNAL_ERROR",
+};
+
+function isStableErrorCode(code: unknown) {
+  return typeof code === "string" && /^[A-Z0-9_]+$/.test(code);
+}
+
 function normalizeLegacySuccess(payload: Record<string, unknown>) {
   if ("result" in payload) return (payload as { result: unknown }).result;
   if ("data" in payload) return (payload as { data: unknown }).data;
@@ -158,14 +175,22 @@ export function respondLegacy(
     if (legacy.ok === false) {
       const { errorCode, message, retryable, nextAction, details } =
         normalizeLegacyError(legacy);
+      const status = typeof init?.status === "number" ? init.status : undefined;
+      const canonical = status ? CANONICAL_ERROR_CODE_BY_STATUS[status] : undefined;
+      const shouldCanonicalize = canonical && !isStableErrorCode(errorCode);
+      const normalizedErrorCode = shouldCanonicalize ? canonical : errorCode;
+      const normalizedDetails =
+        shouldCanonicalize && errorCode && errorCode !== canonical
+          ? { ...(details ?? {}), originalCode: errorCode }
+          : details;
       return respondError(
         ctx,
         {
-          errorCode,
+          errorCode: normalizedErrorCode,
           message,
           retryable,
           ...(nextAction ? { nextAction } : {}),
-          ...(details ? { details } : {}),
+          ...(normalizedDetails ? { details: normalizedDetails } : {}),
         },
         init,
       );

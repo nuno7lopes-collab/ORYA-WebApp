@@ -260,7 +260,7 @@ async function _POST(req: NextRequest) {
   }
 
   {
-    const unscheduledMatchesRaw = await prisma.padelMatch.findMany({
+    const unscheduledMatchesRaw = await prisma.eventMatchSlot.findMany({
       where: {
         eventId: event.id,
         status: "PENDING",
@@ -351,7 +351,7 @@ async function _POST(req: NextRequest) {
       return a.id - b.id;
     });
 
-    const scheduledMatches = await prisma.padelMatch.findMany({
+    const scheduledMatches = await prisma.eventMatchSlot.findMany({
       where: {
         eventId: event.id,
         OR: [{ plannedStartAt: { not: null } }, { startTime: { not: null } }],
@@ -409,12 +409,12 @@ async function _POST(req: NextRequest) {
       });
     });
 
-    const availabilities = await prisma.padelAvailability.findMany({
+    const availabilities = await prisma.calendarAvailability.findMany({
       where: { eventId: event.id, organizationId: organization.id },
       select: { playerProfileId: true, playerEmail: true, startAt: true, endAt: true },
     });
 
-    const courtBlocks = await prisma.padelCourtBlock.findMany({
+    const courtBlocks = await prisma.calendarBlock.findMany({
       where: { eventId: event.id, organizationId: organization.id },
       select: { id: true, courtId: true, startAt: true, endAt: true },
     });

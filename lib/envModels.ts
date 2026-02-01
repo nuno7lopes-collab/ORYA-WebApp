@@ -84,7 +84,7 @@ export const ENV_MODELS = new Set([
   'PadelClubCourt',
   'PadelClubStaff',
   'PadelEventCategoryLink',
-  'PadelMatch',
+  'EventMatchSlot',
   'PadelPairing',
   'PadelPairingHold',
   'PadelPairingSlot',

@@ -24,7 +24,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const match = await prisma.padelMatch.findUnique({
+  const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
     select: {
       id: true,

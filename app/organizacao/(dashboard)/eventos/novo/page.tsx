@@ -431,6 +431,11 @@ export default function NewOrganizationEventPage({
   const freeTicketPlaceholder = isPadelPreset ? "Inscrição" : "Entrada";
   const freeTicketLabel = isPadelPreset ? "Inscrição grátis" : "Entrada grátis";
   const detailBasePath = isPadelPreset ? "/organizacao/torneios" : "/organizacao/eventos";
+  const isPadelWizard = forcePreset === "padel";
+  const wizardTitle = isPadelWizard ? "Criar torneio de padel" : `Criar novo ${primaryLabel}`;
+  const wizardSubtitle = isPadelWizard
+    ? "Assistente dedicado para definir clube, courts, categorias, inscrições e regras."
+    : null;
   const coverSuggestions = useMemo(
     () => getEventCoverSuggestionIds({ templateType: templateHint, primaryModule }),
     [templateHint, primaryModule],
@@ -2672,7 +2677,8 @@ export default function NewOrganizationEventPage({
     return (
       <div className="w-full py-8">
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
-          <h1 className="text-2xl font-semibold">Criar novo {primaryLabel}</h1>
+          <h1 className="text-2xl font-semibold">{wizardTitle}</h1>
+          {wizardSubtitle && <p className="text-sm text-white/70">{wizardSubtitle}</p>}
           <p className="text-white/70">Inicia sessão para criar {primaryLabelPlural}.</p>
           <button
             type="button"
@@ -2690,7 +2696,8 @@ export default function NewOrganizationEventPage({
     return (
       <div className="w-full py-8">
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
-          <h1 className="text-2xl font-semibold">Criar novo {primaryLabel}</h1>
+          <h1 className="text-2xl font-semibold">{wizardTitle}</h1>
+          {wizardSubtitle && <p className="text-sm text-white/70">{wizardSubtitle}</p>}
           <p className="text-white/70">Ativa o perfil para criar {primaryLabelPlural}.</p>
           <Link
             href="/organizacao"
@@ -4080,6 +4087,14 @@ export default function NewOrganizationEventPage({
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {isPadelWizard && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-white/50">Assistente Padel</div>
+              <h1 className="mt-2 text-2xl font-semibold">{wizardTitle}</h1>
+              {wizardSubtitle && <p className="mt-2 text-sm text-white/70">{wizardSubtitle}</p>}
             </div>
           )}
 

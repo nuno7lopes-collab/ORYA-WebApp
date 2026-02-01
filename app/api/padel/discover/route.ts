@@ -149,7 +149,7 @@ async function _GET(req: NextRequest) {
         ticketTypes: { select: { price: true, status: true } },
         organization: { select: { publicName: true, username: true } },
         padelTournamentConfig: {
-          select: { format: true, eligibilityType: true, padelClubId: true, advancedSettings: true },
+          select: { format: true, eligibilityType: true, padelClubId: true, advancedSettings: true, lifecycleStatus: true },
         },
         padelCategoryLinks: {
           where: { isEnabled: true },
@@ -163,6 +163,7 @@ async function _GET(req: NextRequest) {
       const competitionState = resolvePadelCompetitionState({
         eventStatus: event.status,
         competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+        lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
       });
       return competitionState === "DEVELOPMENT" || competitionState === "PUBLIC";
     });

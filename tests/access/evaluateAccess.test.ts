@@ -6,7 +6,10 @@ const prismaMock = vi.hoisted(() => ({
 const getLatestPolicyForEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/checkin/accessPolicy", () => ({ getLatestPolicyForEvent }));
+vi.mock("@/lib/checkin/accessPolicy", () => ({
+  getLatestPolicyForEvent,
+  requireLatestPolicyVersionForEvent: vi.fn().mockResolvedValue(1),
+}));
 
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 

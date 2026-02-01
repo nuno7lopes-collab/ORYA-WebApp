@@ -4,7 +4,8 @@ const BEFORE_EVENT_DEADLINE_HOURS = 24;
 const MIN_LINK_MINUTES = 15;
 const MAX_LINK_MINUTES = 30;
 const DEFAULT_LINK_MINUTES = 30;
-const GRACE_HOURS = 24;
+const GRACE_HOURS = 1;
+const MATCHMAKING_CLOSE_HOURS = 24;
 
 export function clampDeadlineHours(raw?: number | null): number {
   const base = typeof raw === "number" && !Number.isNaN(raw) ? raw : MIN_DEADLINE_HOURS;
@@ -27,7 +28,7 @@ export function computeSplitDeadlineAt(
     return inviteDeadline;
   }
   const eventDeadline = new Date(eventStartsAt.getTime() - BEFORE_EVENT_DEADLINE_HOURS * 60 * 60 * 1000);
-  return new Date(Math.min(inviteDeadline.getTime(), eventDeadline.getTime()));
+  return eventDeadline;
 }
 
 export function clampLinkMinutes(raw?: number | null): number {
@@ -42,4 +43,25 @@ export function computePartnerLinkExpiresAt(now: Date, minutes?: number | null):
 
 export function computeGraceUntil(now: Date): Date {
   return new Date(now.getTime() + GRACE_HOURS * 60 * 60 * 1000);
+}
+
+export function computeMatchmakingWindow(
+  eventStartsAt: Date | null,
+  splitDeadlineHours?: number | null,
+) {
+  if (!eventStartsAt || Number.isNaN(eventStartsAt.getTime())) return null;
+  const openHours = clampDeadlineHours(splitDeadlineHours);
+  const openAt = new Date(eventStartsAt.getTime() - openHours * 60 * 60 * 1000);
+  const closeAt = new Date(eventStartsAt.getTime() - MATCHMAKING_CLOSE_HOURS * 60 * 60 * 1000);
+  return { openAt, closeAt };
+}
+
+export function isWithinMatchmakingWindow(
+  now: Date,
+  eventStartsAt: Date | null,
+  splitDeadlineHours?: number | null,
+) {
+  const window = computeMatchmakingWindow(eventStartsAt, splitDeadlineHours);
+  if (!window) return false;
+  return now >= window.openAt && now <= window.closeAt;
 }

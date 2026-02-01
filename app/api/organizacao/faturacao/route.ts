@@ -3,7 +3,10 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
-import { PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule, PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(_req: NextRequest) {
@@ -11,15 +14,24 @@ async function _GET(_req: NextRequest) {
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const memberships = await prisma.organizationMember.findMany({
-    where: { userId: data.user.id, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
-    select: { organizationId: true },
+  const organizationId = resolveOrganizationIdFromRequest(_req);
+  const { organization, membership } = await getActiveOrganizationForUser(data.user.id, {
+    organizationId: organizationId ?? undefined,
   });
-  const organizationIds = memberships.map((m) => m.organizationId);
-  if (organizationIds.length === 0) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+
+  const access = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: data.user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.FINANCEIRO,
+    required: "VIEW",
+  });
+  if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const events = await prisma.event.findMany({
-    where: { organizationId: { in: organizationIds } },
+    where: { organizationId: organization.id },
     select: {
       id: true,
       title: true,

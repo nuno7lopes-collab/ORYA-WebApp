@@ -1,6 +1,6 @@
 # V9 Close Checklist (Generated)
 
-Generated: 2026-01-29
+Generated: 2026-01-31
 Regenerate with: `node scripts/v9_generate_checklist.mjs`
 
 ## Source: docs/v9_close_plan.md
@@ -10,568 +10,574 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L6: - Cada bloco é **deployavel** e tem Definition of Done objetiva.
 - [TODO] L7: - Todas as verificacoes sao auditaveis por paths/rg/tests.
 - [TODO] L8: - A normalizacao final e registada no `docs/v9_ssot_registry.md`.
-- [N/A] L10: ---
-- [N/A] L12: ## Primeira Semana (Top-5 Drifts) — Plano de Execucao
-- [N/A] L14: ### Drift 1 (Bloco 1) — PaymentIntent fora do fluxo canonico
-- [N/A] L15: **Entrypoints que criam PaymentIntent (lista exata)**
-- [TODO] L16: - `app/api/payments/intent/route.ts` (canonico esperado)
-- [TODO] L17: - `app/api/store/checkout/route.ts`
-- [TODO] L18: - `app/api/servicos/[id]/checkout/route.ts`
-- [TODO] L19: - `app/api/servicos/[id]/creditos/checkout/route.ts`
-- [TODO] L20: - `app/api/organizacao/reservas/[id]/checkout/route.ts`
-- [TODO] L21: - `domain/padelSecondCharge.ts`
-- [TODO] L22: - `domain/finance/gateway/stripeGateway.ts` (gateway canonicamente permitido)
-- [N/A] L24: **Plano**
-- [TODO] L25: - Definir SSOT unico: `/api/payments/intent` + `domain/finance/checkout.ts`.
-- [TODO] L26: - Bloquear/elimitar criacao direta de PI fora do fluxo canonico (refactor entrypoints acima).
-- [TODO] L27: - Garantir idempotencia unificada: `purchaseId` + `idempotencyKey` canonica (checkoutKey).
-- [TODO] L28: - Validar que todos os fluxos retornam o mesmo envelope + requestId.
-- [N/A] L30: ### Drift 2 (Bloco 4) — Admin/Stats legacy 410
-- [N/A] L31: **Entrypoints afetados**
-- [TODO] L32: - `app/api/admin/organizacoes/list/route.ts` (410)
-- [TODO] L33: - `app/api/organizacao/estatisticas/overview/route.ts` (410)
-- [TODO] L34: - `app/api/organizacao/estatisticas/time-series/route.ts` (410)
-- [TODO] L35: - UI: `app/admin/organizacoes/page.tsx`, `app/organizacao/estatisticas/page.tsx`
-- [N/A] L37: **Plano**
-- [TODO] L38: - Substituir legacy stats por fontes atuais (EventLog/Ops Feed/Rollups v9).
-- [TODO] L39: - UI nao pode falhar se stats estiverem incompletas (fallback resiliente).
-- [TODO] L40: - Endpoints admin retornam dados minimos + envelope canonico.
-- [N/A] L42: ### Drift 3 (Bloco 2) — Outbox sem claim/lock explicito
-- [N/A] L43: **Entrypoints afetados**
-- [TODO] L44: - `domain/outbox/**`
-- [TODO] L45: - `app/api/internal/worker/operations/route.ts`
-- [TODO] L46: - `app/api/internal/outbox/replay/route.ts`
-- [TODO] L47: - `app/api/internal/outbox/dlq/route.ts`
-- [TODO] L48: - `app/api/internal/reprocess/**`
-- [TODO] L49: - `app/api/cron/operations/route.ts`
-- [N/A] L51: **Plano**
-- [TODO] L52: - Definir estrategia de claim: select + lock + winner-only (SKIP LOCKED ou equivalente).
-- [TODO] L53: - Definir regra de crash recovery (reconciliation guard).
-- [TODO] L54: - Garantir publishedAt apenas em sucesso, sem loop.
-- [TODO] L55: - Runbook DLQ/replay obrigatorio.
-- [N/A] L57: ### Drift 4 (Bloco 3) — Email oficial disperso
-- [N/A] L58: **Entrypoints afetados**
-- [TODO] L59: - `app/api/organizacao/organizations/settings/official-email/route.ts`
-- [TODO] L60: - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
-- [TODO] L61: - `app/api/admin/organizacoes/verify-platform-email/route.ts`
-- [TODO] L62: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`
-- [N/A] L64: **Plano**
-- [TODO] L65: - Regra unica de normalizacao: `lib/organizationOfficialEmail.ts` (NFKC + lowercase + trim).
-- [TODO] L66: - SSOT de verificado: `officialEmailVerifiedAt` nao null.
-- [TODO] L67: - Enforcement em todas as acoes criticas (servicos, payouts, exports).
-- [TODO] L68: - Banir fallbacks "fake verified" em UI/admin.
-- [N/A] L70: ### Drift 5 (Bloco 12) — Secrets internos divergentes
-- [N/A] L71: **Entrypoints afetados**
-- [TODO] L72: - Todas as rotas em `app/api/internal/**`
-- [TODO] L73: - Todas as rotas em `app/api/cron/**`
-- [N/A] L75: **Plano**
-- [TODO] L76: - Escolher um helper canonico (ex.: `lib/security/requireInternalSecret.ts`).
-- [TODO] L77: - Refactor de todas as rotas internas/cron para usar o mesmo helper.
-- [TODO] L78: - Garantir que UI nunca usa secret (usar server actions/proxy).
-- [N/A] L80: ---
-- [N/A] L82: ## Bloco 0 — Contratos de Erro + Envelope + Fail-Closed (Baseline)
-- [N/A] L84: ### Objetivo
-- [TODO] L85: - Unificar envelope de resposta/erro com requestId/correlationId.
-- [TODO] L86: - Garantir fail-closed em todos os endpoints criticos.
-- [TODO] L87: - Establish baseline de observabilidade.
-- [N/A] L89: ### Scope exato (paths + UI)
-- [TODO] L90: - `app/api/**`
-- [TODO] L91: - `middleware.ts`
-- [TODO] L92: - `lib/observability/**`, `lib/utils/**`, `lib/validation/**`
-- [TODO] L93: - UI: `app/components/checkout/**`, `app/organizacao/**`, `app/admin/**`
-- [N/A] L95: ### SSOT / Invariantes do blueprint
-- [TODO] L96: - I1 SSOT, I6 Idempotencia, I7 Async explicito, I9 Fail-closed
-- [TODO] L97: - C-G5 Error Envelope Standard, C-G7 Observability
-- [N/A] L99: ### Entrypoints end-to-end
-- [N/A] L100: **UI pages**
-- [TODO] L101: - `app/components/checkout/**`
-- [TODO] L102: - `app/organizacao/(dashboard)/**`
-- [TODO] L103: - `app/admin/**`
-- [N/A] L105: **API routes**
-- [TODO] L106: - Todas as rotas em `app/api/**` (com foco nos fluxos P0)
-- [N/A] L108: **P0 endpoints (Money & Infra) — inventario de auditoria (paths reais)**
-- [TODO] L109: - Payments/checkout: `app/api/payments/intent/route.ts`, `app/api/checkout/status/route.ts`, `app/api/store/checkout/route.ts`, `app/api/store/checkout/prefill/route.ts`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
-- [TODO] L110: - Refunds/disputes: `app/api/admin/payments/refund/route.ts`, `app/api/admin/payments/dispute/route.ts`, `app/api/admin/payments/reprocess/route.ts`, `app/api/admin/refunds/list/route.ts`, `app/api/admin/refunds/retry/route.ts`, `app/api/organizacao/refunds/list/route.ts`
-- [TODO] L111: - Payouts: `app/api/organizacao/payouts/status/route.ts`, `app/api/organizacao/payouts/list/route.ts`, `app/api/organizacao/payouts/summary/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/webhook/route.ts`, `app/api/admin/payouts/list/route.ts`, `app/api/admin/payouts/[id]/route.ts`, `app/api/admin/payouts/[id]/block/route.ts`, `app/api/admin/payouts/[id]/unblock/route.ts`, `app/api/admin/payouts/[id]/cancel/route.ts`, `app/api/admin/payouts/[id]/force-release/route.ts`
-- [TODO] L112: - Webhooks: `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`
-- [TODO] L113: - Internal ops/outbox: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/purchase/route.ts`, `app/api/internal/reprocess/payment-intent/route.ts`, `app/api/internal/reprocess/stripe-event/route.ts`, `app/api/internal/outbox/dlq/route.ts`, `app/api/internal/outbox/replay/route.ts`, `app/api/internal/worker/operations/route.ts`, `app/api/internal/checkout/timeline/route.ts`
-- [TODO] L114: - Internal allow/reason: `app/api/internal/checkin/consume/route.ts`
-- [TODO] L115: - Cron criticos: `app/api/cron/operations/route.ts`, `app/api/cron/payouts/release/route.ts`
-- [N/A] L117: **Jobs/cron/internal**
-- [TODO] L118: - `app/api/internal/**`
-- [TODO] L119: - `app/api/cron/**`
-- [N/A] L121: **Webhooks**
-- [TODO] L122: - `app/api/stripe/webhook/route.ts`
-- [N/A] L124: **Consumers/outbox processors**
-- [TODO] L125: - `domain/outbox/**`
-- [TODO] L126: - `domain/ops/**`
-- [TODO] L127: - `domain/eventLog/**`
-- [N/A] L129: ### Checklist de fecho
-- [TODO] L130: - [ ] **DECISAO**: envelope C-G5 + extensao `requestId` (contrato HTTP) confirmada.
-- [TODO] L131: - [ ] **EXISTE** envelope canonico: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data? }`.
-- [TODO] L132: - [ ] **REMOVER** respostas sem `errorCode`/`correlationId`/`requestId` em endpoints criticos.
-- [TODO] L133: - [ ] **WEBHOOKS**: erros de signature/secret invalid/missing retornam `text/plain` com headers `x-orya-request-id` e `x-orya-correlation-id`.
-- [TODO] L134: - [ ] **ALLOW/REASON**: endpoints com `allow/reasonCode` usam envelope + `data`.
-- [TODO] L135: - [ ] **FAIL-CLOSED**: auth/org context invalido retorna 401/403 com envelope canonico.
-- [TODO] L136: - [ ] **AJUSTAR** schema/Prisma se resposta exige campos novos.
-- [TODO] L137: - [ ] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
-- [TODO] L138: - [ ] **LOGS**: requestId/correlationId em logs de erro.
-- [N/A] L140: ### Criterios de DONE (producao)
-- [TODO] L141: - 100% das rotas criticas devolvem envelope canonico.
-- [TODO] L142: - Headers `x-orya-request-id` e `x-orya-correlation-id` presentes em todas as respostas HTTP.
-- [TODO] L143: - Runbook explica como localizar requestId e recuperar (replay/rollback).
-- [TODO] L144: - Em producao, falhas recuperaveis nao ficam sem nextAction.
-- [N/A] L146: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L147: - Drift entre rotas antigas/novas → aplicar helper canonico.
-- [TODO] L148: - Erros silenciosos sem requestId → padronizar middleware.
-- [N/A] L150: ### Guardrails (rg/tests/CI)
-- [TODO] L151: - `rg -n "NextResponse.json\(\{ ok: false" app/api -S` (verificar shape)
-- [TODO] L152: - `npx vitest run tests/access tests/ops`
-- [TODO] L153: - CI gate: falha se erro sem `code`/`requestId` em rotas P0.
-- [N/A] L155: ### Runbooks/Operabilidade
-- [TODO] L156: - Runbook: "Erro 4xx/5xx → encontrar requestId → logs → replay/rollback".
-- [N/A] L158: ---
-- [N/A] L160: ## Bloco 1 — Payments/Checkout/Ledger/Webhooks/Refunds/Reconciliation/Outbox
-- [N/A] L162: ### Objetivo
-- [TODO] L163: - Checkout idempotente e unico por SSOT financeiro.
-- [TODO] L164: - Ledger append-only e deterministico.
-- [TODO] L165: - Webhooks, refunds e reconciliation robustos.
-- [N/A] L167: ### Scope exato (paths + UI)
-- [TODO] L168: - API: `app/api/payments/intent/route.ts`, `app/api/stripe/webhook/route.ts`, `app/api/checkout/status/route.ts`
-- [TODO] L169: - API: `app/api/store/checkout/**`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
-- [TODO] L170: - Internal: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/**`
-- [TODO] L171: - Domain: `domain/finance/**`, `domain/outbox/**`, `domain/ops/**`
-- [TODO] L172: - UI: `app/components/checkout/**`, `app/eventos/[slug]/page.tsx`, `app/[username]/loja/**`, `app/resale/[id]/page.tsx`, `app/organizacao/(dashboard)/reservas/page.tsx`, `app/[username]/_components/ReservasBookingClient.tsx`
-- [N/A] L174: ### SSOT / Invariantes do blueprint
-- [TODO] L175: - I2 Ledger append-only, I3 Payments state machine, I6 Idempotencia
-- [TODO] L176: - Payment+Ledger SSOT; PaymentEvent/SaleSummary = read-model
-- [N/A] L178: ### Entrypoints end-to-end
-- [N/A] L179: **UI pages**
-- [TODO] L180: - `app/components/checkout/**` (Step2Pagamento/Step3Sucesso)
-- [TODO] L181: - `app/eventos/[slug]/page.tsx`
-- [TODO] L182: - `app/[username]/loja/page.tsx`, `app/[username]/loja/carrinho/page.tsx`, `app/[username]/loja/produto/[slug]/page.tsx`
-- [TODO] L183: - `app/resale/[id]/page.tsx`
-- [TODO] L184: - `app/organizacao/(dashboard)/reservas/page.tsx`
-- [N/A] L186: **API routes**
-- [TODO] L187: - `/api/payments/intent`
-- [TODO] L188: - `/api/stripe/webhook`
-- [TODO] L189: - `/api/checkout/status`
-- [TODO] L190: - `/api/store/checkout` + `/api/store/checkout/prefill`
-- [TODO] L191: - `/api/servicos/[id]/checkout`
-- [TODO] L192: - `/api/servicos/[id]/creditos/checkout`
-- [TODO] L193: - `/api/organizacao/reservas/[id]/checkout`
-- [TODO] L194: - `/api/padel/pairings/[id]/checkout`
-- [N/A] L196: **Jobs/cron/internal**
-- [TODO] L197: - `/api/internal/reconcile`
-- [TODO] L198: - `/api/internal/reprocess/purchase`
-- [TODO] L199: - `/api/internal/reprocess/payment-intent`
-- [TODO] L200: - `/api/internal/reprocess/stripe-event`
-- [N/A] L202: **Webhooks**
-- [TODO] L203: - `/api/stripe/webhook`
-- [N/A] L205: **Consumers/outbox processors**
-- [TODO] L206: - `domain/finance/outbox.ts`
-- [TODO] L207: - `domain/finance/readModelConsumer.ts`
-- [TODO] L208: - `domain/ops/*` (fulfillment/ledger upserts)
-- [N/A] L210: ### Checklist de fecho
-- [DONE] L211: - [x] **EXISTE** fluxo canonico de PI: `/api/payments/intent` + `domain/finance/checkout.ts`.
-- [DONE] L212: - [x] **REMOVER** criacao direta de PI nos endpoints paralelos (store/servicos/reservas).
-- [DONE] L213: - [x] **PR1** entrypoints P0 usam `ensurePaymentIntent` + `createCheckout` e `purchaseId` deterministico (sem `Date.now`).
-- [DONE] L214: - [x] **FAIL-CLOSED**: Stripe connect nao pronto → 4xx com code.
-- [DONE] L215: - [x] **AJUSTAR** schema/Prisma para alinhar PaymentEvent/Payment/SaleSummary.
-- [DONE] L216: - [x] **IDEMPOTENCIA**: dedupeKey baseada em `purchaseId` (checkoutKey).
-- [DONE] L217: - [x] **ERROS** com envelope canonico + requestId.
-- [DONE] L218: - [x] **LOGS**: correlacao `paymentIntentId` + `purchaseId`.
-- [N/A] L220: ### Criterios de DONE (producao)
-- [TODO] L221: - Todos os entrypoints criam PI via fluxo canonico.
-- [TODO] L222: - Se falhar em producao: runbook permite reprocess/replay sem duplos charges.
-- [TODO] L223: - Reconcile/rollback documentado com comandos internos.
-- [N/A] L225: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L226: - Drift de idempotencia entre fluxos → consolidar em helper unico.
-- [TODO] L227: - Read-models usados como SSOT → bloquear writes fora do consumer.
-- [N/A] L229: ### Guardrails (rg/tests/CI)
-- [TODO] L230: - `rg -n "stripe\.paymentIntents\.create" app lib domain -S -g '!domain/finance/gateway/**'`
-- [TODO] L231: - `rg -n "ledgerEntry\.(update|delete)" app lib domain -S`
-- [TODO] L232: - `rg -n "purchaseId\s*=.*Date\.now\(" app/api/servicos/[id]/checkout/route.ts app/api/servicos/[id]/creditos/checkout/route.ts app/api/organizacao/reservas/[id]/checkout/route.ts app/api/store/checkout/route.ts domain/padelSecondCharge.ts -S`
-- [TODO] L233: - `npx vitest run tests/finance tests/outbox tests/ops tests/entitlements`
-- [TODO] L234: - CI gate: falha se PI criado fora do gateway.
-- [N/A] L236: ### Runbooks/Operabilidade
-- [TODO] L237: - Runbook: "Checkout 409/500", "Reprocess PI", "Reconcile Stripe Event".
-- [N/A] L239: ---
-- [N/A] L241: ## Bloco 2 — Outbox/Workers/Operations
-- [N/A] L243: ### Objetivo
-- [TODO] L244: - Outbox winner-only, sem double-publish.
-- [TODO] L245: - Workers idempotentes, com replay seguro.
-- [TODO] L246: - Crash recovery fechado.
-- [N/A] L248: ### Scope exato (paths + UI)
-- [TODO] L249: - `domain/outbox/**`, `domain/ops/**`, `domain/eventLog/**`
-- [TODO] L250: - `app/api/internal/worker/operations/route.ts`
-- [TODO] L251: - `app/api/internal/outbox/replay/route.ts`, `app/api/internal/outbox/dlq/route.ts`
-- [TODO] L252: - `app/api/internal/reprocess/**`
-- [TODO] L253: - `app/api/cron/operations/route.ts`
-- [N/A] L255: ### SSOT / Invariantes do blueprint
-- [TODO] L256: - I7 Async explicito, I6 Idempotencia
-- [TODO] L257: - Outbox append-only; publishedAt apenas em sucesso
-- [N/A] L259: ### Entrypoints end-to-end
-- [N/A] L260: **UI pages**
-- [TODO] L261: - N/A (operacional)
-- [N/A] L263: **API routes**
-- [TODO] L264: - `/api/internal/worker/operations`
-- [TODO] L265: - `/api/internal/outbox/replay`
-- [TODO] L266: - `/api/internal/outbox/dlq`
-- [TODO] L267: - `/api/internal/reprocess/*`
-- [N/A] L269: **Jobs/cron/internal**
-- [TODO] L270: - `/api/cron/operations`
-- [N/A] L272: **Webhooks**
-- [TODO] L273: - N/A
-- [N/A] L275: **Consumers/outbox processors**
-- [TODO] L276: - `domain/outbox/producer.ts`
-- [TODO] L277: - `domain/outbox/publisher.ts`
-- [TODO] L278: - `domain/opsFeed/consumer.ts`
-- [N/A] L280: ### Checklist de fecho
-- [TODO] L281: - [ ] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
-- [TODO] L282: - [ ] **REMOVER** processamento concorrente sem dedupe.
-- [TODO] L283: - [ ] **FAIL-CLOSED**: worker sem secret nao executa.
-- [TODO] L284: - [ ] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
-- [TODO] L285: - [ ] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
-- [TODO] L286: - [ ] **ERROS** canonicos em replay/dlq.
-- [TODO] L287: - [ ] **LOGS** com correlationId.
-- [N/A] L289: ### Criterios de DONE (producao)
-- [TODO] L290: - Double-publish = 0 (provado por testes + logs).
-- [TODO] L291: - Runbook permite replay seguro apos crash.
-- [N/A] L293: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L294: - Concurrency sem lock → adotar SKIP LOCKED/claim seguro.
-- [N/A] L296: ### Guardrails (rg/tests/CI)
-- [TODO] L297: - `rg -n "outbox.*create" app/api -S -g '!domain/outbox/**'`
-- [TODO] L298: - `npx vitest run tests/outbox tests/ops`
-- [TODO] L299: - CI gate: falha se eventos forem processados fora do consumer.
-- [N/A] L301: ### Runbooks/Operabilidade
-- [TODO] L302: - Runbook: "DLQ triage", "Replay seguro", "Worker crash recovery".
-- [N/A] L304: ---
-- [N/A] L306: ## Bloco 3 — Email Oficial da Organizacao (Normalizacao + Verificacao + Enforcement)
-- [N/A] L308: ### Objetivo
-- [TODO] L309: - Email oficial unico, normalizado e verificado em toda a app.
-- [TODO] L310: - Enforcement consistente em acoes criticas.
-- [TODO] L311: - UX sem drift (refetch imediato).
-- [N/A] L313: ### Scope exato (paths + UI)
-- [TODO] L314: - DB: `prisma/schema.prisma` (Organization.official_email, Organization.official_email_verified_at, organization_official_email_requests)
-- [TODO] L315: - API: `app/api/organizacao/organizations/settings/official-email/route.ts`
-- [TODO] L316: - API: `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
-- [TODO] L317: - API: `app/api/admin/organizacoes/verify-platform-email/route.ts`
-- [TODO] L318: - API: `app/api/admin/config/platform-email/route.ts`
-- [TODO] L319: - API (enforcement): `app/api/organizacao/me/route.ts`, `app/api/organizacao/servicos/route.ts`, `app/api/organizacao/promo/route.ts`, `app/api/organizacao/loja/route.ts`, `app/api/organizacao/policies/route.ts`, `app/api/organizacao/checkin/route.ts`, `app/api/organizacao/finance/exports/fees/route.ts`, `app/api/organizacao/finance/exports/ledger/route.ts`, `app/api/organizacao/finance/exports/payouts/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/organizations/members/route.ts`, `app/api/organizacao/organizations/members/invites/route.ts`, `app/api/organizacao/events/update/route.ts`, `app/api/organizacao/events/[id]/invites/route.ts`, `app/api/organizacao/events/[id]/invite-token/route.ts`, `app/api/organizacao/tournaments/**`
-- [TODO] L320: - Libs: `lib/organizationOfficialEmail.ts`, `lib/organizationWriteAccess.ts`, `lib/organizationContext.ts`, `lib/organizationPayments.ts`, `lib/loja/access.ts`, `lib/reservas/access.ts`, `lib/crm/campaignSend.ts`, `lib/payments/releaseWorker.ts`, `lib/platformSettings.ts`, `lib/http/requestContext.ts`
-- [TODO] L321: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/(dashboard)/settings/verify/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`, `app/organizacao/OrganizationDashboardShell.tsx`, `app/organizacao/DashboardClient.tsx`, `app/organizacao/(dashboard)/eventos/novo/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`
-- [N/A] L323: ### SSOT / Invariantes do blueprint
-- [TODO] L324: - I1 SSOT, I9 Fail-closed
-- [TODO] L325: - `officialEmail` + `officialEmailVerifiedAt` canonicamente verificado
-- [N/A] L327: ### Entrypoints end-to-end
-- [N/A] L328: **UI pages**
-- [TODO] L329: - `app/organizacao/(dashboard)/settings/page.tsx`
-- [TODO] L330: - `app/organizacao/(dashboard)/settings/verify/page.tsx`
-- [TODO] L331: - `app/organizacao/OrganizationTopBar.tsx`
-- [TODO] L332: - `app/organizacao/OrganizationDashboardShell.tsx`
-- [TODO] L333: - `app/organizacao/DashboardClient.tsx`
-- [TODO] L334: - `app/organizacao/(dashboard)/eventos/novo/page.tsx`
-- [TODO] L335: - `app/admin/organizacoes/page.tsx`
-- [TODO] L336: - `app/[username]/page.tsx`
-- [N/A] L338: **API routes**
-- [TODO] L339: - `/api/organizacao/organizations/settings/official-email`
-- [TODO] L340: - `/api/organizacao/organizations/settings/official-email/confirm`
-- [TODO] L341: - `/api/admin/organizacoes/verify-platform-email`
-- [TODO] L342: - `/api/organizacao/me`
-- [TODO] L343: - `/api/organizacao/servicos`
-- [TODO] L344: - `/api/organizacao/promo`
-- [TODO] L345: - `/api/organizacao/loja`
-- [TODO] L346: - `/api/organizacao/policies`
-- [TODO] L347: - `/api/organizacao/checkin`
-- [TODO] L348: - `/api/organizacao/finance/exports/fees`
-- [TODO] L349: - `/api/organizacao/finance/exports/ledger`
-- [TODO] L350: - `/api/organizacao/finance/exports/payouts`
-- [TODO] L351: - `/api/organizacao/payouts/connect`
-- [TODO] L352: - `/api/organizacao/payouts/settings`
-- [TODO] L353: - `/api/organizacao/organizations/members`
-- [TODO] L354: - `/api/organizacao/organizations/members/invites`
-- [TODO] L355: - `/api/organizacao/events/update`
-- [TODO] L356: - `/api/organizacao/events/[id]/invites`
-- [TODO] L357: - `/api/organizacao/events/[id]/invite-token`
-- [TODO] L358: - `/api/organizacao/tournaments/*`
-- [N/A] L360: **Jobs/cron/internal**
-- [TODO] L361: - N/A
-- [N/A] L363: **Webhooks**
-- [TODO] L364: - N/A
-- [N/A] L366: **Consumers/outbox processors**
-- [TODO] L367: - N/A
-- [N/A] L369: ### Checklist de fecho
-- [DONE] L370: - [x] **NORMALIZACAO** unica (NFKC + lowercase + trim) via `lib/organizationOfficialEmail.ts`.
-- [DONE] L371: - [x] **REMOVER** fallbacks/hacks em UI/admin (ex: `app/organizacao/(dashboard)/settings/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`).
-- [DONE] L372: - [x] **FAIL-CLOSED**: acoes criticas bloqueadas sem `officialEmailVerifiedAt` (via `ensureOrganizationEmailVerified`/`requireOfficialEmailVerified`).
-- [DONE] L373: - [x] **ALLOWLIST** minima sem gate (org create/switch/become, webhooks, setup email oficial).
-- [DONE] L374: - [x] **PLATFORM EMAIL** SSOT em `platform_settings` + helper `getPlatformOfficialEmail()` + endpoints admin config.
-- [DONE] L375: - [x] **REQUEST/CONFIRM**: resposta 200 ok com `status:"VERIFIED"` quando já verificado; requestId/correlationId em payload+headers.
-- [DONE] L376: - [x] **LOGS** sem PII (usar `maskEmailForLog`).
-- [DONE] L377: - [x] **TESTES/GATES**: `npx vitest run tests/access tests/rbac tests/ops` + rg guardrails.
-- [N/A] L379: ### Criterios de DONE (producao)
-- [TODO] L380: - Nenhuma pagina mostra "nao verificado" quando esta verificado.
-- [TODO] L381: - Se falhar, runbook de reenvio/confirmacao recupera em minutos.
-- [N/A] L383: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L384: - Divergencia UI/API → alinhar org context e refetch.
-- [N/A] L386: ### Guardrails (rg/tests/CI)
-- [TODO] L387: - `rg -n "contactEmailFromAccount|new Date\\(\\)\\.toISOString\\(\\)" app -S`
-- [TODO] L388: - `rg -n "\\.toLowerCase\\(\\)|\\.trim\\(\\)" app lib domain -S` (apenas onde nao e email oficial)
-- [TODO] L389: - `rg -n "officialEmailVerifiedAt" app lib domain -S`
-- [TODO] L390: - `npx vitest run tests/access tests/rbac tests/ops`
-- [TODO] L391: - CI gate: falha se endpoint critico nao valida email verificado.
-- [N/A] L393: ### Runbooks/Operabilidade
-- [TODO] L394: - Runbook: "Enviar verificacao", "Confirmar/Revogar", "Revalidar".
-- [N/A] L396: ---
-- [N/A] L398: ## Bloco 4 — Admin Org Control Center + Ops Feed
-- [N/A] L400: ### Objetivo
-- [TODO] L401: - Admin console operavel sem legacy stats.
-- [TODO] L402: - Acoes admin auditaveis e resilientes.
-- [TODO] L403: - Ops Feed como fonte unica de operacoes.
-- [N/A] L405: ### Scope exato (paths + UI)
-- [TODO] L406: - UI: `app/admin/**`, `app/admin/organizacoes/page.tsx`
-- [TODO] L407: - API: `app/api/admin/**`
-- [TODO] L408: - API ops: `app/api/internal/ops/**`
-- [TODO] L409: - Domain: `domain/opsFeed/**`, `domain/eventLog/**`
-- [N/A] L411: ### SSOT / Invariantes do blueprint
-- [TODO] L412: - I1 SSOT, I7 Observability, I9 Fail-closed
-- [TODO] L413: - EventLog como fonte unica para Ops Feed
-- [N/A] L415: ### Entrypoints end-to-end
-- [N/A] L416: **UI pages**
-- [TODO] L417: - `app/admin/organizacoes/page.tsx`
-- [TODO] L418: - `app/admin/page.tsx`
-- [N/A] L420: **API routes**
-- [TODO] L421: - `/api/admin/organizacoes/list`
-- [TODO] L422: - `/api/admin/organizacoes/update-status`
-- [TODO] L423: - `/api/admin/organizacoes/update-payments-mode`
-- [TODO] L424: - `/api/admin/organizacoes/verify-platform-email`
-- [TODO] L425: - `/api/admin/payments/*`, `/api/admin/payouts/*`, `/api/admin/refunds/*`
-- [N/A] L427: **Jobs/cron/internal**
-- [TODO] L428: - `/api/internal/ops/*`
-- [N/A] L430: **Webhooks**
-- [TODO] L431: - N/A
-- [N/A] L433: **Consumers/outbox processors**
-- [TODO] L434: - `domain/opsFeed/consumer.ts`
-- [N/A] L436: ### Checklist de fecho
-- [TODO] L437: - [ ] **EXISTE** lista de orgs funcional (sem 410/LEGACY_STATS_DISABLED).
-- [TODO] L438: - [ ] **REMOVER** dependencia de legacy stats.
-- [TODO] L439: - [ ] **FAIL-CLOSED**: admin sem role retorna 403 com envelope canonico.
-- [TODO] L440: - [ ] **AJUSTAR** schema/queries para usar read-models v9.
-- [TODO] L441: - [ ] **IDEMPOTENCIA**: acoes admin com requestId/correlationId.
-- [TODO] L442: - [ ] **ERROS** canonicos + requestId no UI.
-- [TODO] L443: - [ ] **LOGS** sem payload sensivel.
-- [DONE] L444: - [x] **UI** admin para configurar platform email (consome `/api/admin/config/platform-email`).
-- [N/A] L446: ### Criterios de DONE (producao)
-- [TODO] L447: - Admin console operavel end-to-end.
-- [TODO] L448: - Se falhar em producao: runbook para regressar a dados minimos e recuperar.
-- [N/A] L450: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L451: - UI depende de stats legacy → substituir por ops feed/rollups.
-- [N/A] L453: ### Guardrails (rg/tests/CI)
-- [TODO] L454: - `rg -n "LEGACY_STATS_DISABLED" app/api -S`
-- [TODO] L455: - `npx vitest run tests/ops tests/audit`
-- [TODO] L456: - CI gate: bloqueia se admin retorna 410.
-- [N/A] L458: ### Runbooks/Operabilidade
-- [TODO] L459: - Runbook: "Admin actions + rollback", "Ops Feed triage".
-- [N/A] L461: ---
-- [N/A] L463: ## Bloco 5 — RBAC / Org Context / Members / Owners
-- [N/A] L465: ### Objetivo
-- [TODO] L466: - Zero bypass de RBAC e org context.
-- [TODO] L467: - Helpers canonicos usados em todas as rotas sensiveis.
-- [N/A] L469: ### Scope exato (paths + UI)
-- [TODO] L470: - `lib/organizationRbac.ts`, `lib/organizationContext.ts`, `lib/organizationMemberAccess.ts`
-- [TODO] L471: - `app/api/organizacao/organizations/**`
-- [TODO] L472: - `app/api/organizacao/me/route.ts`
-- [TODO] L473: - UI: `app/organizacao/**`
-- [N/A] L475: ### SSOT / Invariantes do blueprint
-- [TODO] L476: - I5 Org Context explicito, I9 Fail-closed
-- [N/A] L478: ### Entrypoints end-to-end
-- [N/A] L479: **UI pages**
-- [TODO] L480: - `app/organizacao/(dashboard)/**`
-- [N/A] L482: **API routes**
-- [TODO] L483: - `/api/organizacao/organizations/members`
-- [TODO] L484: - `/api/organizacao/organizations/members/invites`
-- [TODO] L485: - `/api/organizacao/organizations/owner/*`
-- [TODO] L486: - `/api/organizacao/me`
-- [N/A] L488: **Jobs/cron/internal**
-- [TODO] L489: - N/A
-- [N/A] L491: **Webhooks**
-- [TODO] L492: - N/A
-- [N/A] L494: **Consumers/outbox processors**
-- [TODO] L495: - N/A
-- [N/A] L497: ### Checklist de fecho
-- [TODO] L498: - [ ] **EXISTE** helper unico para RBAC.
-- [TODO] L499: - [ ] **REMOVER** checks manuais (ownerId direto, findFirst ad-hoc).
-- [TODO] L500: - [ ] **FAIL-CLOSED**: org context invalido → 403.
-- [TODO] L501: - [ ] **IDEMPOTENCIA**: owner transfer sem duplicar estado.
-- [TODO] L502: - [ ] **ERROS** canonicos + requestId.
-- [N/A] L504: ### Criterios de DONE (producao)
-- [TODO] L505: - `rg` bypass = 0 e testes RBAC verdes.
-- [N/A] L507: ### Guardrails (rg/tests/CI)
-- [TODO] L508: - `rg -n "organizationMember\.findFirst|ownerId\s*=" app lib domain tests -S`
-- [TODO] L509: - `npx vitest run tests/rbac tests/access`
-- [N/A] L511: ### Runbooks/Operabilidade
-- [TODO] L512: - Runbook: "RBAC fail-closed + debug".
-- [N/A] L514: ---
-- [N/A] L516: ## Bloco 6 — Eventos (Create/Edit/Publish/Invites/Covers/Maps)
-- [N/A] L518: ### Objetivo
-- [TODO] L519: - Eventos completos, sem drift entre UI/API.
-- [TODO] L520: - Convites e acesso consistentes com policy v9.
-- [TODO] L521: - "Gratuito" derivado por pricingMode + ticket prices (Event.isFree = legacy read-model).
-- [N/A] L523: ### Scope exato (paths + UI)
-- [TODO] L524: - `app/api/organizacao/events/**`
-- [TODO] L525: - `app/eventos/**`
-- [TODO] L526: - `app/organizacao/(dashboard)/eventos/**`
-- [TODO] L527: - `app/descobrir/_lib/discoverData.ts`
-- [TODO] L528: - `domain/events/**`, `lib/events.ts`, `lib/eventCover.ts`, `lib/maps/**`
-- [TODO] L529: - `scripts/backfill_event_access_policy.ts`
-- [N/A] L531: ### Entrypoints end-to-end
-- [N/A] L532: **UI pages**
-- [TODO] L533: - `app/eventos/[slug]/page.tsx`
-- [TODO] L534: - `app/organizacao/(dashboard)/eventos/**`
-- [N/A] L536: **API routes**
-- [TODO] L537: - `/api/organizacao/events/create`
-- [TODO] L538: - `/api/organizacao/events/update`
-- [TODO] L539: - `/api/organizacao/events/list`
-- [TODO] L540: - `/api/organizacao/events/[id]/invites`
-- [TODO] L541: - `/api/organizacao/events/[id]/invite-token`
-- [TODO] L542: - `/api/organizacao/events/[id]/attendees`
-- [N/A] L544: **Consumers/outbox processors**
-- [TODO] L545: - `domain/events/**` consumers (quando existirem)
-- [N/A] L547: ### Checklist de fecho
-- [TODO] L548: - [ ] **EXISTE** EventAccessPolicy canonica (create/update) + policyVersionApplied estavel.
-- [TODO] L549: - [ ] **INVITES**: inviteToken resolve para eventInviteId (public endpoints) sem tocar payments core.
-- [TODO] L550: - [ ] **LEGACY**: flags de acesso legacy removidas de UI/API reads (RG guardrail).
-- [TODO] L551: - [ ] **GRATUITO**: deriveIsFreeEvent usado em discover/cards/search; Event.isFree = read-only.
-- [TODO] L552: - [ ] **FAIL-CLOSED**: mapas sem creds em PROD → erro explicito.
-- [N/A] L554: ### DONE criteria (Bloco 6)
-- [TODO] L555: - Create/Edit/Publish OK (UI + API).
-- [TODO] L556: - Invites (token/check) OK com accessGrant/eventInviteId.
-- [TODO] L557: - Discover listing OK com deriveIsFreeEvent.
-- [TODO] L558: - Check-in resolve policy por policyVersionApplied.
-- [TODO] L559: - Covers picker OK.
-- [TODO] L560: - Apple Maps token fail-closed OK.
-- [N/A] L562: ### Guardrails (rg/tests/CI)
-- [TODO] L563: - `npm run db:gates:offline`
-- [TODO] L564: - `npx vitest run tests/invites tests/access tests/checkin tests/search tests/ops`
-- [TODO] L565: - `rg -n "inviteOnly|publicAccessMode|participantAccessMode|publicTicketTypeIds|Event\\.isFree" app -S`
-- [TODO] L566: - `rg -n "\\.isFree\\b" app domain -S`
-- [TODO] L567: - (Se tocar em searchIndex) `npx vitest run tests/searchIndex`
-- [N/A] L569: ### Runbooks/Operabilidade
-- [TODO] L570: - Runbook: "Event publish/rollback".
-- [TODO] L571: - Backfill policy (obrigatorio antes de deploy):
-- [TODO] L572:   - Dry-run: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts --dry-run --limit=100`
-- [TODO] L573:   - Execucao: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts`
-- [TODO] L574:   - Esperado: output com contagem por mode/source + warnings de default/restricoes.
-- [N/A] L576: ---
-- [N/A] L578: ## Bloco 7 — Reservas / Agenda / Servicos / Softblocks
-- [N/A] L580: ### Objetivo
-- [TODO] L581: - Agenda deterministica com prioridades.
-- [TODO] L582: - Reservas e servicos consistentes.
-- [N/A] L584: ### Scope exato (paths + UI)
-- [TODO] L585: - `domain/agenda/**`, `domain/softBlocks/**`
-- [TODO] L586: - `app/api/organizacao/reservas/**`, `app/api/servicos/**`, `app/api/me/reservas/**`
-- [TODO] L587: - UI: `app/[username]/_components/ReservasBookingClient.tsx`
-- [N/A] L589: ### Entrypoints end-to-end
-- [N/A] L590: **API routes**
-- [TODO] L591: - `/api/organizacao/reservas/*`
-- [TODO] L592: - `/api/servicos/*`
-- [N/A] L594: **Consumers/outbox processors**
-- [TODO] L595: - `domain/agendaReadModel/**`
-- [N/A] L597: ### Guardrails (rg/tests/CI)
-- [TODO] L598: - `npx vitest run tests/agenda tests/outbox tests/ops`
-- [N/A] L600: ### PR1 — BookingConfirmationSnapshot v9 (DONE)
-- [TODO] L601: - Snapshot imutavel e versionado persistido no momento de confirmar.
-- [TODO] L602: - SSOT: `lib/reservas/confirmationSnapshot.ts`
-- [TODO] L603: - Pontos de confirmacao: `lib/reservas/confirmBooking.ts`, `lib/operations/fulfillServiceBooking.ts`
-- [N/A] L605: ### PR2 — Cancel/Refund/No-Show por snapshot + backfill (DONE)
-- [TODO] L606: - Cancelamento e no-show leem sempre `booking.confirmationSnapshot` (fail closed se faltar).
-- [TODO] L607: - Refund calcula por snapshot (policy + pricing), nunca por policy live.
-- [TODO] L608: - Entrypoints fechados:
-- [TODO] L609:   - `app/api/me/reservas/[id]/cancel/route.ts`
-- [TODO] L610:   - `app/api/organizacao/reservas/[id]/cancel/route.ts`
-- [TODO] L611:   - `app/api/organizacao/reservas/[id]/no-show/route.ts`
-- [TODO] L612: - Snapshot timezone exposto para representacao:
-- [TODO] L613:   - `app/api/me/reservas/route.ts`
-- [TODO] L614: - Backfill dedicado:
-- [TODO] L615:   - `scripts/backfill_booking_confirmation_snapshot.ts`
-- [TODO] L616:   - SSOT helper: `lib/reservas/backfillConfirmationSnapshot.ts`
-- [N/A] L618: ### Backfill obrigatorio antes de deploy (PR2)
-- [TODO] L619: - Dry-run (recomendado primeiro):
-- [TODO] L620:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --dry-run --limit=200`
-- [TODO] L621: - Execucao limitada (iterar por lotes):
-- [TODO] L622:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --limit=200`
-- [TODO] L623: - Esperado:
-- [TODO] L624:   - Contagens por status, `updated`, `skipped`, e warnings para snapshots nao resolvidos.
-- [N/A] L626: ---
-- [N/A] L628: ## Bloco 8 — Padel + Torneios
-- [N/A] L630: ### Scope exato (paths + UI)
-- [TODO] L631: - `app/api/padel/**`, `app/api/organizacao/tournaments/**`
-- [TODO] L632: - `domain/padel/**`, `domain/tournaments/**`
-- [N/A] L634: ### Guardrails (rg/tests/CI)
-- [TODO] L635: - `npx vitest run tests/padel tests/tournaments tests/outbox`
-- [N/A] L637: ---
-- [N/A] L639: ## Bloco 9 — Loja / Tickets / Check-in / Entitlements
-- [N/A] L641: ### Scope exato (paths + UI)
-- [TODO] L642: - `app/api/store/**`, `app/api/tickets/**`, `app/api/checkin/**`, `app/api/organizacao/checkin/**`
-- [TODO] L643: - `domain/entitlements/**`
-- [TODO] L644: - UI: `app/[username]/loja/**`, `app/me/loja/**`
-- [N/A] L646: ### Guardrails (rg/tests/CI)
-- [TODO] L647: - `npx vitest run tests/entitlements tests/checkin tests/finance`
-- [N/A] L649: ---
-- [N/A] L651: ## Bloco 10 — Users / Sessao / Perfil / Privacidade / Consentimentos / Notifs
-- [N/A] L653: ### Scope exato (paths + UI)
-- [TODO] L654: - `app/api/me/**`, `domain/location/**`, `domain/notifications/**`
-- [N/A] L656: ### Guardrails (rg/tests/CI)
-- [TODO] L657: - `npx vitest run tests/location tests/notifications tests/access`
-- [N/A] L659: ---
-- [N/A] L661: ## Bloco 11 — Search / Discover / SearchIndex / Analytics / CRM
-- [N/A] L663: ### Scope exato (paths + UI)
-- [TODO] L664: - `app/api/explorar/list/route.ts`
-- [TODO] L665: - `domain/search/**`, `domain/searchIndex/**`, `domain/analytics/**`
-- [TODO] L666: - `app/api/internal/analytics/rollup/route.ts`
-- [TODO] L667: - `app/api/internal/crm/**`, `app/api/cron/crm/**`
-- [N/A] L669: ### Guardrails (rg/tests/CI)
-- [TODO] L670: - `npx vitest run tests/search tests/searchIndex tests/analytics`
-- [N/A] L672: ---
-- [N/A] L674: ## Bloco 12 — Cron / Jobs / Internal Routes + Secrets
-- [N/A] L676: ### Scope exato (paths + UI)
-- [TODO] L677: - `app/api/cron/**`
-- [TODO] L678: - `app/api/internal/**`
-- [N/A] L680: ### Guardrails (rg/tests/CI)
-- [TODO] L681: - `rg -n "X-ORYA-CRON-SECRET" app/api/internal app/api/cron -S`
-- [TODO] L682: - `npx vitest run tests/ops`
-- [N/A] L684: ---
-- [N/A] L686: ## Bloco 13 — Observabilidade + Runbooks + DLQ/Replay + SLOs
-- [N/A] L688: ### Scope exato (paths + UI)
-- [TODO] L689: - `lib/observability/**`, `domain/opsFeed/**`
-- [TODO] L690: - `app/api/internal/ops/**`, `app/api/internal/outbox/*`
-- [TODO] L691: - `docs/runbooks/**`
-- [N/A] L693: ### Guardrails (rg/tests/CI)
-- [TODO] L694: - `npx vitest run tests/ops tests/audit`
-- [N/A] L696: ---
-- [N/A] L698: ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
-- [N/A] L700: ### Scope exato (paths + UI)
-- [TODO] L701: - `docs/v9_closeout.md`, `docs/orya_blueprint_v9_final.md`, `docs/runbooks/**`
-- [TODO] L702: - `lib/env.ts`, `next.config.ts`, `fly.worker.toml`, `Dockerfile.worker`
-- [N/A] L704: ### Guardrails (rg/tests/CI)
-- [TODO] L705: - `npx vitest run tests/apple tests/maps tests/push`
-- [N/A] L707: ---
-- [N/A] L709: ## Repo-wide audit checklist
-- [TODO] L710: - [ ] Checkout/Payments (entrypoints + webhooks + idempotencia)
-- [TODO] L711: - [ ] Org settings/email (normalizacao + verificado)
-- [TODO] L712: - [ ] Admin control center (sem legacy stats)
-- [TODO] L713: - [ ] Members/RBAC/Owners (rg bypass = 0)
-- [TODO] L714: - [ ] Outbox/Workers (winner-only + replay)
-- [TODO] L715: - [ ] Eventos (create/edit/publish/invites/covers/maps)
-- [TODO] L716: - [ ] Reservas/Agenda/Servicos/Softblocks
-- [TODO] L717: - [ ] Padel/Torneios
-- [TODO] L718: - [ ] Loja/Tickets/Check-in/Entitlements
-- [TODO] L719: - [ ] Users/Sessao/Privacidade/Consentimentos
-- [TODO] L720: - [ ] Search/Discover/Analytics/CRM
-- [TODO] L721: - [ ] Cron/Internal routes + secrets
-- [TODO] L722: - [ ] Observabilidade/Runbooks
-- [TODO] L723: - [ ] Go-live (env sanity + App Store)
+- [N/A] L10: ## Status update (2026-01-31)
+- [TODO] L11: - Bloco 0: envelope C‑G5 + requestId/correlationId concluído.
+- [TODO] L12: - Bloco 2: claim winner‑only + recovery/runbook concluídos.
+- [TODO] L13: - Bloco 4: stats migradas para rollups/entitlements (sem legacy summaries).
+- [TODO] L14: - Bloco 5: gate de org context aplicado em CI + correções de rota crítica.
+- [TODO] L15: - Bloco 9/10: entitlements (tickets/padel/booking/loja) e DSAR/retention concluídos.
+- [N/A] L17: ---
+- [N/A] L19: ## Primeira Semana (Top-5 Drifts) — Plano de Execucao
+- [N/A] L21: ### Drift 1 (Bloco 1) — PaymentIntent fora do fluxo canonico
+- [N/A] L22: **Entrypoints que criam PaymentIntent (lista exata)**
+- [TODO] L23: - `app/api/payments/intent/route.ts` (canonico esperado)
+- [TODO] L24: - `app/api/store/checkout/route.ts`
+- [TODO] L25: - `app/api/servicos/[id]/checkout/route.ts`
+- [TODO] L26: - `app/api/servicos/[id]/creditos/checkout/route.ts`
+- [TODO] L27: - `app/api/organizacao/reservas/[id]/checkout/route.ts`
+- [TODO] L28: - `domain/padelSecondCharge.ts`
+- [TODO] L29: - `domain/finance/gateway/stripeGateway.ts` (gateway canonicamente permitido)
+- [N/A] L31: **Plano**
+- [TODO] L32: - Definir SSOT unico: `/api/payments/intent` + `domain/finance/checkout.ts`.
+- [TODO] L33: - Bloquear/elimitar criacao direta de PI fora do fluxo canonico (refactor entrypoints acima).
+- [TODO] L34: - Garantir idempotencia unificada: `purchaseId` + `idempotencyKey` canonica (checkoutKey).
+- [TODO] L35: - Validar que todos os fluxos retornam o mesmo envelope + requestId.
+- [N/A] L37: ### Drift 2 (Bloco 4) — Admin/Stats legacy 410
+- [N/A] L38: **Entrypoints afetados**
+- [TODO] L39: - `app/api/admin/organizacoes/list/route.ts` (410)
+- [TODO] L40: - `app/api/organizacao/estatisticas/overview/route.ts` (410)
+- [TODO] L41: - `app/api/organizacao/estatisticas/time-series/route.ts` (410)
+- [TODO] L42: - UI: `app/admin/organizacoes/page.tsx`, `app/organizacao/estatisticas/page.tsx`
+- [N/A] L44: **Plano**
+- [TODO] L45: - Substituir legacy stats por fontes atuais (EventLog/Ops Feed/Rollups v9).
+- [TODO] L46: - UI nao pode falhar se stats estiverem incompletas (fallback resiliente).
+- [TODO] L47: - Endpoints admin retornam dados minimos + envelope canonico.
+- [N/A] L49: ### Drift 3 (Bloco 2) — Outbox sem claim/lock explicito
+- [N/A] L50: **Entrypoints afetados**
+- [TODO] L51: - `domain/outbox/**`
+- [TODO] L52: - `app/api/internal/worker/operations/route.ts`
+- [TODO] L53: - `app/api/internal/outbox/replay/route.ts`
+- [TODO] L54: - `app/api/internal/outbox/dlq/route.ts`
+- [TODO] L55: - `app/api/internal/reprocess/**`
+- [TODO] L56: - `app/api/cron/operations/route.ts`
+- [N/A] L58: **Plano**
+- [TODO] L59: - Definir estrategia de claim: select + lock + winner-only (SKIP LOCKED ou equivalente).
+- [TODO] L60: - Definir regra de crash recovery (reconciliation guard).
+- [TODO] L61: - Garantir publishedAt apenas em sucesso, sem loop.
+- [TODO] L62: - Runbook DLQ/replay obrigatorio.
+- [N/A] L64: ### Drift 4 (Bloco 3) — Email oficial disperso
+- [N/A] L65: **Entrypoints afetados**
+- [TODO] L66: - `app/api/organizacao/organizations/settings/official-email/route.ts`
+- [TODO] L67: - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
+- [TODO] L68: - `app/api/admin/organizacoes/verify-platform-email/route.ts`
+- [TODO] L69: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`
+- [N/A] L71: **Plano**
+- [TODO] L72: - Regra unica de normalizacao: `lib/organizationOfficialEmail.ts` (NFKC + lowercase + trim).
+- [TODO] L73: - SSOT de verificado: `officialEmailVerifiedAt` nao null.
+- [TODO] L74: - Enforcement em todas as acoes criticas (servicos, payouts, exports).
+- [TODO] L75: - Banir fallbacks "fake verified" em UI/admin.
+- [N/A] L77: ### Drift 5 (Bloco 12) — Secrets internos divergentes
+- [N/A] L78: **Entrypoints afetados**
+- [TODO] L79: - Todas as rotas em `app/api/internal/**`
+- [TODO] L80: - Todas as rotas em `app/api/cron/**`
+- [N/A] L82: **Plano**
+- [TODO] L83: - Escolher um helper canonico (ex.: `lib/security/requireInternalSecret.ts`).
+- [TODO] L84: - Refactor de todas as rotas internas/cron para usar o mesmo helper.
+- [TODO] L85: - Garantir que UI nunca usa secret (usar server actions/proxy).
+- [N/A] L87: ---
+- [N/A] L89: ## Bloco 0 — Contratos de Erro + Envelope + Fail-Closed (Baseline)
+- [N/A] L91: ### Objetivo
+- [TODO] L92: - Unificar envelope de resposta/erro com requestId/correlationId.
+- [TODO] L93: - Garantir fail-closed em todos os endpoints criticos.
+- [TODO] L94: - Establish baseline de observabilidade.
+- [N/A] L96: ### Scope exato (paths + UI)
+- [TODO] L97: - `app/api/**`
+- [TODO] L98: - `middleware.ts`
+- [TODO] L99: - `lib/observability/**`, `lib/utils/**`, `lib/validation/**`
+- [TODO] L100: - UI: `app/components/checkout/**`, `app/organizacao/**`, `app/admin/**`
+- [N/A] L102: ### SSOT / Invariantes do blueprint
+- [TODO] L103: - I1 SSOT, I6 Idempotencia, I7 Async explicito, I9 Fail-closed
+- [TODO] L104: - C-G5 Error Envelope Standard, C-G7 Observability
+- [N/A] L106: ### Entrypoints end-to-end
+- [N/A] L107: **UI pages**
+- [TODO] L108: - `app/components/checkout/**`
+- [TODO] L109: - `app/organizacao/(dashboard)/**`
+- [TODO] L110: - `app/admin/**`
+- [N/A] L112: **API routes**
+- [TODO] L113: - Todas as rotas em `app/api/**` (com foco nos fluxos P0)
+- [N/A] L115: **P0 endpoints (Money & Infra) — inventario de auditoria (paths reais)**
+- [TODO] L116: - Payments/checkout: `app/api/payments/intent/route.ts`, `app/api/checkout/status/route.ts`, `app/api/store/checkout/route.ts`, `app/api/store/checkout/prefill/route.ts`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
+- [TODO] L117: - Refunds/disputes: `app/api/admin/payments/refund/route.ts`, `app/api/admin/payments/dispute/route.ts`, `app/api/admin/payments/reprocess/route.ts`, `app/api/admin/refunds/list/route.ts`, `app/api/admin/refunds/retry/route.ts`, `app/api/organizacao/refunds/list/route.ts`
+- [TODO] L118: - Payouts: `app/api/organizacao/payouts/status/route.ts`, `app/api/organizacao/payouts/list/route.ts`, `app/api/organizacao/payouts/summary/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/webhook/route.ts`, `app/api/admin/payouts/list/route.ts`, `app/api/admin/payouts/[id]/route.ts`, `app/api/admin/payouts/[id]/block/route.ts`, `app/api/admin/payouts/[id]/unblock/route.ts`, `app/api/admin/payouts/[id]/cancel/route.ts`, `app/api/admin/payouts/[id]/force-release/route.ts`
+- [TODO] L119: - Webhooks: `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`
+- [TODO] L120: - Internal ops/outbox: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/purchase/route.ts`, `app/api/internal/reprocess/payment-intent/route.ts`, `app/api/internal/reprocess/stripe-event/route.ts`, `app/api/internal/outbox/dlq/route.ts`, `app/api/internal/outbox/replay/route.ts`, `app/api/internal/worker/operations/route.ts`, `app/api/internal/checkout/timeline/route.ts`
+- [TODO] L121: - Internal allow/reason: `app/api/internal/checkin/consume/route.ts`
+- [TODO] L122: - Cron criticos: `app/api/cron/operations/route.ts`, `app/api/cron/payouts/release/route.ts`
+- [N/A] L124: **Jobs/cron/internal**
+- [TODO] L125: - `app/api/internal/**`
+- [TODO] L126: - `app/api/cron/**`
+- [N/A] L128: **Webhooks**
+- [TODO] L129: - `app/api/stripe/webhook/route.ts`
+- [N/A] L131: **Consumers/outbox processors**
+- [TODO] L132: - `domain/outbox/**`
+- [TODO] L133: - `domain/ops/**`
+- [TODO] L134: - `domain/eventLog/**`
+- [N/A] L136: ### Checklist de fecho
+- [TODO] L137: - [ ] **DECISAO**: envelope C-G5 + extensao `requestId` (contrato HTTP) confirmada.
+- [TODO] L138: - [ ] **EXISTE** envelope canonico: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data? }`.
+- [TODO] L139: - [ ] **REMOVER** respostas sem `errorCode`/`correlationId`/`requestId` em endpoints criticos.
+- [TODO] L140: - [ ] **WEBHOOKS**: erros de signature/secret invalid/missing retornam `text/plain` com headers `x-orya-request-id` e `x-orya-correlation-id`.
+- [TODO] L141: - [ ] **ALLOW/REASON**: endpoints com `allow/reasonCode` usam envelope + `data`.
+- [TODO] L142: - [ ] **FAIL-CLOSED**: auth/org context invalido retorna 401/403 com envelope canonico.
+- [TODO] L143: - [ ] **AJUSTAR** schema/Prisma se resposta exige campos novos.
+- [TODO] L144: - [ ] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
+- [TODO] L145: - [ ] **LOGS**: requestId/correlationId em logs de erro.
+- [N/A] L147: ### Criterios de DONE (producao)
+- [TODO] L148: - 100% das rotas criticas devolvem envelope canonico.
+- [TODO] L149: - Headers `x-orya-request-id` e `x-orya-correlation-id` presentes em todas as respostas HTTP.
+- [TODO] L150: - Runbook explica como localizar requestId e recuperar (replay/rollback).
+- [TODO] L151: - Em producao, falhas recuperaveis nao ficam sem nextAction.
+- [N/A] L153: ### Riscos/Drifts conhecidos + mitigacao
+- [TODO] L154: - Drift entre rotas antigas/novas → aplicar helper canonico.
+- [TODO] L155: - Erros silenciosos sem requestId → padronizar middleware.
+- [N/A] L157: ### Guardrails (rg/tests/CI)
+- [TODO] L158: - `rg -n "NextResponse.json\(\{ ok: false" app/api -S` (verificar shape)
+- [TODO] L159: - `npx vitest run tests/access tests/ops`
+- [TODO] L160: - CI gate: falha se erro sem `code`/`requestId` em rotas P0.
+- [N/A] L162: ### Runbooks/Operabilidade
+- [TODO] L163: - Runbook: "Erro 4xx/5xx → encontrar requestId → logs → replay/rollback".
+- [N/A] L165: ---
+- [N/A] L167: ## Bloco 1 — Payments/Checkout/Ledger/Webhooks/Refunds/Reconciliation/Outbox
+- [N/A] L169: ### Objetivo
+- [TODO] L170: - Checkout idempotente e unico por SSOT financeiro.
+- [TODO] L171: - Ledger append-only e deterministico.
+- [TODO] L172: - Webhooks, refunds e reconciliation robustos.
+- [N/A] L174: ### Scope exato (paths + UI)
+- [TODO] L175: - API: `app/api/payments/intent/route.ts`, `app/api/stripe/webhook/route.ts`, `app/api/checkout/status/route.ts`
+- [TODO] L176: - API: `app/api/store/checkout/**`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
+- [TODO] L177: - Internal: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/**`
+- [TODO] L178: - Domain: `domain/finance/**`, `domain/outbox/**`, `domain/ops/**`
+- [TODO] L179: - UI: `app/components/checkout/**`, `app/eventos/[slug]/page.tsx`, `app/[username]/loja/**`, `app/resale/[id]/page.tsx`, `app/organizacao/(dashboard)/reservas/page.tsx`, `app/[username]/_components/ReservasBookingClient.tsx`
+- [N/A] L181: ### SSOT / Invariantes do blueprint
+- [TODO] L182: - I2 Ledger append-only, I3 Payments state machine, I6 Idempotencia
+- [TODO] L183: - Payment+Ledger SSOT; PaymentEvent/SaleSummary = read-model
+- [N/A] L185: ### Entrypoints end-to-end
+- [N/A] L186: **UI pages**
+- [TODO] L187: - `app/components/checkout/**` (Step2Pagamento/Step3Sucesso)
+- [TODO] L188: - `app/eventos/[slug]/page.tsx`
+- [TODO] L189: - `app/[username]/loja/page.tsx`, `app/[username]/loja/carrinho/page.tsx`, `app/[username]/loja/produto/[slug]/page.tsx`
+- [TODO] L190: - `app/resale/[id]/page.tsx`
+- [TODO] L191: - `app/organizacao/(dashboard)/reservas/page.tsx`
+- [N/A] L193: **API routes**
+- [TODO] L194: - `/api/payments/intent`
+- [TODO] L195: - `/api/stripe/webhook`
+- [TODO] L196: - `/api/checkout/status`
+- [TODO] L197: - `/api/store/checkout` + `/api/store/checkout/prefill`
+- [TODO] L198: - `/api/servicos/[id]/checkout`
+- [TODO] L199: - `/api/servicos/[id]/creditos/checkout`
+- [TODO] L200: - `/api/organizacao/reservas/[id]/checkout`
+- [TODO] L201: - `/api/padel/pairings/[id]/checkout`
+- [N/A] L203: **Jobs/cron/internal**
+- [TODO] L204: - `/api/internal/reconcile`
+- [TODO] L205: - `/api/internal/reprocess/purchase`
+- [TODO] L206: - `/api/internal/reprocess/payment-intent`
+- [TODO] L207: - `/api/internal/reprocess/stripe-event`
+- [N/A] L209: **Webhooks**
+- [TODO] L210: - `/api/stripe/webhook`
+- [N/A] L212: **Consumers/outbox processors**
+- [TODO] L213: - `domain/finance/outbox.ts`
+- [TODO] L214: - `domain/finance/readModelConsumer.ts`
+- [TODO] L215: - `domain/ops/*` (fulfillment/ledger upserts)
+- [N/A] L217: ### Checklist de fecho
+- [DONE] L218: - [x] **EXISTE** fluxo canonico de PI: `/api/payments/intent` + `domain/finance/checkout.ts`.
+- [DONE] L219: - [x] **REMOVER** criacao direta de PI nos endpoints paralelos (store/servicos/reservas).
+- [DONE] L220: - [x] **PR1** entrypoints P0 usam `ensurePaymentIntent` + `createCheckout` e `purchaseId` deterministico (sem `Date.now`).
+- [DONE] L221: - [x] **FAIL-CLOSED**: Stripe connect nao pronto → 4xx com code.
+- [DONE] L222: - [x] **AJUSTAR** schema/Prisma para alinhar PaymentEvent/Payment/SaleSummary.
+- [DONE] L223: - [x] **IDEMPOTENCIA**: dedupeKey baseada em `purchaseId` (checkoutKey).
+- [DONE] L224: - [x] **ERROS** com envelope canonico + requestId.
+- [DONE] L225: - [x] **LOGS**: correlacao `paymentIntentId` + `purchaseId`.
+- [N/A] L227: ### Criterios de DONE (producao)
+- [TODO] L228: - Todos os entrypoints criam PI via fluxo canonico.
+- [TODO] L229: - Se falhar em producao: runbook permite reprocess/replay sem duplos charges.
+- [TODO] L230: - Reconcile/rollback documentado com comandos internos.
+- [N/A] L232: ### Riscos/Drifts conhecidos + mitigacao
+- [TODO] L233: - Drift de idempotencia entre fluxos → consolidar em helper unico.
+- [TODO] L234: - Read-models usados como SSOT → bloquear writes fora do consumer.
+- [N/A] L236: ### Guardrails (rg/tests/CI)
+- [TODO] L237: - `rg -n "stripe\.paymentIntents\.create" app lib domain -S -g '!domain/finance/gateway/**'`
+- [TODO] L238: - `rg -n "ledgerEntry\.(update|delete)" app lib domain -S`
+- [TODO] L239: - `rg -n "purchaseId\s*=.*Date\.now\(" app/api/servicos/[id]/checkout/route.ts app/api/servicos/[id]/creditos/checkout/route.ts app/api/organizacao/reservas/[id]/checkout/route.ts app/api/store/checkout/route.ts domain/padelSecondCharge.ts -S`
+- [TODO] L240: - `npx vitest run tests/finance tests/outbox tests/ops tests/entitlements`
+- [TODO] L241: - CI gate: falha se PI criado fora do gateway.
+- [N/A] L243: ### Runbooks/Operabilidade
+- [TODO] L244: - Runbook: "Checkout 409/500", "Reprocess PI", "Reconcile Stripe Event".
+- [N/A] L246: ---
+- [N/A] L248: ## Bloco 2 — Outbox/Workers/Operations
+- [N/A] L250: ### Objetivo
+- [TODO] L251: - Outbox winner-only, sem double-publish.
+- [TODO] L252: - Workers idempotentes, com replay seguro.
+- [TODO] L253: - Crash recovery fechado.
+- [N/A] L255: ### Scope exato (paths + UI)
+- [TODO] L256: - `domain/outbox/**`, `domain/ops/**`, `domain/eventLog/**`
+- [TODO] L257: - `app/api/internal/worker/operations/route.ts`
+- [TODO] L258: - `app/api/internal/outbox/replay/route.ts`, `app/api/internal/outbox/dlq/route.ts`
+- [TODO] L259: - `app/api/internal/reprocess/**`
+- [TODO] L260: - `app/api/cron/operations/route.ts`
+- [N/A] L262: ### SSOT / Invariantes do blueprint
+- [TODO] L263: - I7 Async explicito, I6 Idempotencia
+- [TODO] L264: - Outbox append-only; publishedAt apenas em sucesso
+- [N/A] L266: ### Entrypoints end-to-end
+- [N/A] L267: **UI pages**
+- [TODO] L268: - N/A (operacional)
+- [N/A] L270: **API routes**
+- [TODO] L271: - `/api/internal/worker/operations`
+- [TODO] L272: - `/api/internal/outbox/replay`
+- [TODO] L273: - `/api/internal/outbox/dlq`
+- [TODO] L274: - `/api/internal/reprocess/*`
+- [N/A] L276: **Jobs/cron/internal**
+- [TODO] L277: - `/api/cron/operations`
+- [N/A] L279: **Webhooks**
+- [TODO] L280: - N/A
+- [N/A] L282: **Consumers/outbox processors**
+- [TODO] L283: - `domain/outbox/producer.ts`
+- [TODO] L284: - `domain/outbox/publisher.ts`
+- [TODO] L285: - `domain/opsFeed/consumer.ts`
+- [N/A] L287: ### Checklist de fecho
+- [TODO] L288: - [ ] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
+- [TODO] L289: - [ ] **REMOVER** processamento concorrente sem dedupe.
+- [TODO] L290: - [ ] **FAIL-CLOSED**: worker sem secret nao executa.
+- [TODO] L291: - [ ] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
+- [TODO] L292: - [ ] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
+- [TODO] L293: - [ ] **ERROS** canonicos em replay/dlq.
+- [TODO] L294: - [ ] **LOGS** com correlationId.
+- [N/A] L296: ### Criterios de DONE (producao)
+- [TODO] L297: - Double-publish = 0 (provado por testes + logs).
+- [TODO] L298: - Runbook permite replay seguro apos crash.
+- [N/A] L300: ### Riscos/Drifts conhecidos + mitigacao
+- [TODO] L301: - Concurrency sem lock → adotar SKIP LOCKED/claim seguro.
+- [N/A] L303: ### Guardrails (rg/tests/CI)
+- [TODO] L304: - `rg -n "outbox.*create" app/api -S -g '!domain/outbox/**'`
+- [TODO] L305: - `npx vitest run tests/outbox tests/ops`
+- [TODO] L306: - CI gate: falha se eventos forem processados fora do consumer.
+- [N/A] L308: ### Runbooks/Operabilidade
+- [TODO] L309: - Runbook: "DLQ triage", "Replay seguro", "Worker crash recovery".
+- [N/A] L311: ---
+- [N/A] L313: ## Bloco 3 — Email Oficial da Organizacao (Normalizacao + Verificacao + Enforcement)
+- [N/A] L315: ### Objetivo
+- [TODO] L316: - Email oficial unico, normalizado e verificado em toda a app.
+- [TODO] L317: - Enforcement consistente em acoes criticas.
+- [TODO] L318: - UX sem drift (refetch imediato).
+- [N/A] L320: ### Scope exato (paths + UI)
+- [TODO] L321: - DB: `prisma/schema.prisma` (Organization.official_email, Organization.official_email_verified_at, organization_official_email_requests)
+- [TODO] L322: - API: `app/api/organizacao/organizations/settings/official-email/route.ts`
+- [TODO] L323: - API: `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
+- [TODO] L324: - API: `app/api/admin/organizacoes/verify-platform-email/route.ts`
+- [TODO] L325: - API: `app/api/admin/config/platform-email/route.ts`
+- [TODO] L326: - API (enforcement): `app/api/organizacao/me/route.ts`, `app/api/organizacao/servicos/route.ts`, `app/api/organizacao/promo/route.ts`, `app/api/organizacao/loja/route.ts`, `app/api/organizacao/policies/route.ts`, `app/api/organizacao/checkin/route.ts`, `app/api/organizacao/finance/exports/fees/route.ts`, `app/api/organizacao/finance/exports/ledger/route.ts`, `app/api/organizacao/finance/exports/payouts/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/organizations/members/route.ts`, `app/api/organizacao/organizations/members/invites/route.ts`, `app/api/organizacao/events/update/route.ts`, `app/api/organizacao/events/[id]/invites/route.ts`, `app/api/organizacao/events/[id]/invite-token/route.ts`, `app/api/organizacao/tournaments/**`
+- [TODO] L327: - Libs: `lib/organizationOfficialEmail.ts`, `lib/organizationWriteAccess.ts`, `lib/organizationContext.ts`, `lib/organizationPayments.ts`, `lib/loja/access.ts`, `lib/reservas/access.ts`, `lib/crm/campaignSend.ts`, `lib/payments/releaseWorker.ts`, `lib/platformSettings.ts`, `lib/http/requestContext.ts`
+- [TODO] L328: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/(dashboard)/settings/verify/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`, `app/organizacao/OrganizationDashboardShell.tsx`, `app/organizacao/DashboardClient.tsx`, `app/organizacao/(dashboard)/eventos/novo/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`
+- [N/A] L330: ### SSOT / Invariantes do blueprint
+- [TODO] L331: - I1 SSOT, I9 Fail-closed
+- [TODO] L332: - `officialEmail` + `officialEmailVerifiedAt` canonicamente verificado
+- [N/A] L334: ### Entrypoints end-to-end
+- [N/A] L335: **UI pages**
+- [TODO] L336: - `app/organizacao/(dashboard)/settings/page.tsx`
+- [TODO] L337: - `app/organizacao/(dashboard)/settings/verify/page.tsx`
+- [TODO] L338: - `app/organizacao/OrganizationTopBar.tsx`
+- [TODO] L339: - `app/organizacao/OrganizationDashboardShell.tsx`
+- [TODO] L340: - `app/organizacao/DashboardClient.tsx`
+- [TODO] L341: - `app/organizacao/(dashboard)/eventos/novo/page.tsx`
+- [TODO] L342: - `app/admin/organizacoes/page.tsx`
+- [TODO] L343: - `app/[username]/page.tsx`
+- [N/A] L345: **API routes**
+- [TODO] L346: - `/api/organizacao/organizations/settings/official-email`
+- [TODO] L347: - `/api/organizacao/organizations/settings/official-email/confirm`
+- [TODO] L348: - `/api/admin/organizacoes/verify-platform-email`
+- [TODO] L349: - `/api/organizacao/me`
+- [TODO] L350: - `/api/organizacao/servicos`
+- [TODO] L351: - `/api/organizacao/promo`
+- [TODO] L352: - `/api/organizacao/loja`
+- [TODO] L353: - `/api/organizacao/policies`
+- [TODO] L354: - `/api/organizacao/checkin`
+- [TODO] L355: - `/api/organizacao/finance/exports/fees`
+- [TODO] L356: - `/api/organizacao/finance/exports/ledger`
+- [TODO] L357: - `/api/organizacao/finance/exports/payouts`
+- [TODO] L358: - `/api/organizacao/payouts/connect`
+- [TODO] L359: - `/api/organizacao/payouts/settings`
+- [TODO] L360: - `/api/organizacao/organizations/members`
+- [TODO] L361: - `/api/organizacao/organizations/members/invites`
+- [TODO] L362: - `/api/organizacao/events/update`
+- [TODO] L363: - `/api/organizacao/events/[id]/invites`
+- [TODO] L364: - `/api/organizacao/events/[id]/invite-token`
+- [TODO] L365: - `/api/organizacao/tournaments/*`
+- [N/A] L367: **Jobs/cron/internal**
+- [TODO] L368: - N/A
+- [N/A] L370: **Webhooks**
+- [TODO] L371: - N/A
+- [N/A] L373: **Consumers/outbox processors**
+- [TODO] L374: - N/A
+- [N/A] L376: ### Checklist de fecho
+- [DONE] L377: - [x] **NORMALIZACAO** unica (NFKC + lowercase + trim) via `lib/organizationOfficialEmail.ts`.
+- [DONE] L378: - [x] **REMOVER** fallbacks/hacks em UI/admin (ex: `app/organizacao/(dashboard)/settings/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`).
+- [DONE] L379: - [x] **FAIL-CLOSED**: acoes criticas bloqueadas sem `officialEmailVerifiedAt` (via `ensureOrganizationEmailVerified`/`requireOfficialEmailVerified`).
+- [DONE] L380: - [x] **ALLOWLIST** minima sem gate (org create/switch/become, webhooks, setup email oficial).
+- [DONE] L381: - [x] **PLATFORM EMAIL** SSOT em `platform_settings` + helper `getPlatformOfficialEmail()` + endpoints admin config.
+- [DONE] L382: - [x] **REQUEST/CONFIRM**: resposta 200 ok com `status:"VERIFIED"` quando já verificado; requestId/correlationId em payload+headers.
+- [DONE] L383: - [x] **LOGS** sem PII (usar `maskEmailForLog`).
+- [DONE] L384: - [x] **TESTES/GATES**: `npx vitest run tests/access tests/rbac tests/ops` + rg guardrails.
+- [N/A] L386: ### Criterios de DONE (producao)
+- [TODO] L387: - Nenhuma pagina mostra "nao verificado" quando esta verificado.
+- [TODO] L388: - Se falhar, runbook de reenvio/confirmacao recupera em minutos.
+- [N/A] L390: ### Riscos/Drifts conhecidos + mitigacao
+- [TODO] L391: - Divergencia UI/API → alinhar org context e refetch.
+- [N/A] L393: ### Guardrails (rg/tests/CI)
+- [TODO] L394: - `rg -n "contactEmailFromAccount|new Date\\(\\)\\.toISOString\\(\\)" app -S`
+- [TODO] L395: - `rg -n "\\.toLowerCase\\(\\)|\\.trim\\(\\)" app lib domain -S` (apenas onde nao e email oficial)
+- [TODO] L396: - `rg -n "officialEmailVerifiedAt" app lib domain -S`
+- [TODO] L397: - `npx vitest run tests/access tests/rbac tests/ops`
+- [TODO] L398: - CI gate: falha se endpoint critico nao valida email verificado.
+- [N/A] L400: ### Runbooks/Operabilidade
+- [TODO] L401: - Runbook: "Enviar verificacao", "Confirmar/Revogar", "Revalidar".
+- [N/A] L403: ---
+- [N/A] L405: ## Bloco 4 — Admin Org Control Center + Ops Feed
+- [N/A] L407: ### Objetivo
+- [TODO] L408: - Admin console operavel sem legacy stats.
+- [TODO] L409: - Acoes admin auditaveis e resilientes.
+- [TODO] L410: - Ops Feed como fonte unica de operacoes.
+- [N/A] L412: ### Scope exato (paths + UI)
+- [TODO] L413: - UI: `app/admin/**`, `app/admin/organizacoes/page.tsx`
+- [TODO] L414: - API: `app/api/admin/**`
+- [TODO] L415: - API ops: `app/api/internal/ops/**`
+- [TODO] L416: - Domain: `domain/opsFeed/**`, `domain/eventLog/**`
+- [N/A] L418: ### SSOT / Invariantes do blueprint
+- [TODO] L419: - I1 SSOT, I7 Observability, I9 Fail-closed
+- [TODO] L420: - EventLog como fonte unica para Ops Feed
+- [N/A] L422: ### Entrypoints end-to-end
+- [N/A] L423: **UI pages**
+- [TODO] L424: - `app/admin/organizacoes/page.tsx`
+- [TODO] L425: - `app/admin/page.tsx`
+- [N/A] L427: **API routes**
+- [TODO] L428: - `/api/admin/organizacoes/list`
+- [TODO] L429: - `/api/admin/organizacoes/update-status`
+- [TODO] L430: - `/api/admin/organizacoes/update-payments-mode`
+- [TODO] L431: - `/api/admin/organizacoes/verify-platform-email`
+- [TODO] L432: - `/api/admin/payments/*`, `/api/admin/payouts/*`, `/api/admin/refunds/*`
+- [N/A] L434: **Jobs/cron/internal**
+- [TODO] L435: - `/api/internal/ops/*`
+- [N/A] L437: **Webhooks**
+- [TODO] L438: - N/A
+- [N/A] L440: **Consumers/outbox processors**
+- [TODO] L441: - `domain/opsFeed/consumer.ts`
+- [N/A] L443: ### Checklist de fecho
+- [TODO] L444: - [ ] **EXISTE** lista de orgs funcional (sem 410/LEGACY_STATS_DISABLED).
+- [TODO] L445: - [ ] **REMOVER** dependencia de legacy stats.
+- [TODO] L446: - [ ] **FAIL-CLOSED**: admin sem role retorna 403 com envelope canonico.
+- [TODO] L447: - [ ] **AJUSTAR** schema/queries para usar read-models v9.
+- [TODO] L448: - [ ] **IDEMPOTENCIA**: acoes admin com requestId/correlationId.
+- [TODO] L449: - [ ] **ERROS** canonicos + requestId no UI.
+- [TODO] L450: - [ ] **LOGS** sem payload sensivel.
+- [DONE] L451: - [x] **UI** admin para configurar platform email (consome `/api/admin/config/platform-email`).
+- [N/A] L453: ### Criterios de DONE (producao)
+- [TODO] L454: - Admin console operavel end-to-end.
+- [TODO] L455: - Se falhar em producao: runbook para regressar a dados minimos e recuperar.
+- [N/A] L457: ### Riscos/Drifts conhecidos + mitigacao
+- [TODO] L458: - UI depende de stats legacy → substituir por ops feed/rollups.
+- [N/A] L460: ### Guardrails (rg/tests/CI)
+- [TODO] L461: - `rg -n "LEGACY_STATS_DISABLED" app/api -S`
+- [TODO] L462: - `npx vitest run tests/ops tests/audit`
+- [TODO] L463: - CI gate: bloqueia se admin retorna 410.
+- [N/A] L465: ### Runbooks/Operabilidade
+- [TODO] L466: - Runbook: "Admin actions + rollback", "Ops Feed triage".
+- [N/A] L468: ---
+- [N/A] L470: ## Bloco 5 — RBAC / Org Context / Members / Owners
+- [N/A] L472: ### Objetivo
+- [TODO] L473: - Zero bypass de RBAC e org context.
+- [TODO] L474: - Helpers canonicos usados em todas as rotas sensiveis.
+- [N/A] L476: ### Scope exato (paths + UI)
+- [TODO] L477: - `lib/organizationRbac.ts`, `lib/organizationContext.ts`, `lib/organizationMemberAccess.ts`
+- [TODO] L478: - `app/api/organizacao/organizations/**`
+- [TODO] L479: - `app/api/organizacao/me/route.ts`
+- [TODO] L480: - UI: `app/organizacao/**`
+- [N/A] L482: ### SSOT / Invariantes do blueprint
+- [TODO] L483: - I5 Org Context explicito, I9 Fail-closed
+- [N/A] L485: ### Entrypoints end-to-end
+- [N/A] L486: **UI pages**
+- [TODO] L487: - `app/organizacao/(dashboard)/**`
+- [N/A] L489: **API routes**
+- [TODO] L490: - `/api/organizacao/organizations/members`
+- [TODO] L491: - `/api/organizacao/organizations/members/invites`
+- [TODO] L492: - `/api/organizacao/organizations/owner/*`
+- [TODO] L493: - `/api/organizacao/me`
+- [N/A] L495: **Jobs/cron/internal**
+- [TODO] L496: - N/A
+- [N/A] L498: **Webhooks**
+- [TODO] L499: - N/A
+- [N/A] L501: **Consumers/outbox processors**
+- [TODO] L502: - N/A
+- [N/A] L504: ### Checklist de fecho
+- [TODO] L505: - [ ] **EXISTE** helper unico para RBAC.
+- [TODO] L506: - [ ] **REMOVER** checks manuais (ownerId direto, findFirst ad-hoc).
+- [TODO] L507: - [ ] **FAIL-CLOSED**: org context invalido → 403.
+- [TODO] L508: - [ ] **IDEMPOTENCIA**: owner transfer sem duplicar estado.
+- [TODO] L509: - [ ] **ERROS** canonicos + requestId.
+- [N/A] L511: ### Criterios de DONE (producao)
+- [TODO] L512: - `rg` bypass = 0 e testes RBAC verdes.
+- [N/A] L514: ### Guardrails (rg/tests/CI)
+- [TODO] L515: - `rg -n "organizationMember\.findFirst|ownerId\s*=" app lib domain tests -S`
+- [TODO] L516: - `npx vitest run tests/rbac tests/access`
+- [N/A] L518: ### Runbooks/Operabilidade
+- [TODO] L519: - Runbook: "RBAC fail-closed + debug".
+- [N/A] L521: ---
+- [N/A] L523: ## Bloco 6 — Eventos (Create/Edit/Publish/Invites/Covers/Maps)
+- [N/A] L525: ### Objetivo
+- [TODO] L526: - Eventos completos, sem drift entre UI/API.
+- [TODO] L527: - Convites e acesso consistentes com policy v9.
+- [TODO] L528: - "Gratuito" derivado por pricingMode + ticket prices (Event.isFree = legacy read-model).
+- [N/A] L530: ### Scope exato (paths + UI)
+- [TODO] L531: - `app/api/organizacao/events/**`
+- [TODO] L532: - `app/eventos/**`
+- [TODO] L533: - `app/organizacao/(dashboard)/eventos/**`
+- [TODO] L534: - `app/descobrir/_lib/discoverData.ts`
+- [TODO] L535: - `domain/events/**`, `lib/events.ts`, `lib/eventCover.ts`, `lib/maps/**`
+- [TODO] L536: - `scripts/backfill_event_access_policy.ts`
+- [N/A] L538: ### Entrypoints end-to-end
+- [N/A] L539: **UI pages**
+- [TODO] L540: - `app/eventos/[slug]/page.tsx`
+- [TODO] L541: - `app/organizacao/(dashboard)/eventos/**`
+- [N/A] L543: **API routes**
+- [TODO] L544: - `/api/organizacao/events/create`
+- [TODO] L545: - `/api/organizacao/events/update`
+- [TODO] L546: - `/api/organizacao/events/list`
+- [TODO] L547: - `/api/organizacao/events/[id]/invites`
+- [TODO] L548: - `/api/organizacao/events/[id]/invite-token`
+- [TODO] L549: - `/api/organizacao/events/[id]/attendees`
+- [N/A] L551: **Consumers/outbox processors**
+- [TODO] L552: - `domain/events/**` consumers (quando existirem)
+- [N/A] L554: ### Checklist de fecho
+- [TODO] L555: - [ ] **EXISTE** EventAccessPolicy canonica (create/update) + policyVersionApplied estavel.
+- [TODO] L556: - [ ] **INVITES**: inviteToken resolve para eventInviteId (public endpoints) sem tocar payments core.
+- [TODO] L557: - [ ] **LEGACY**: flags de acesso legacy removidas de UI/API reads (RG guardrail).
+- [TODO] L558: - [ ] **GRATUITO**: deriveIsFreeEvent usado em discover/cards/search; Event.isFree = read-only.
+- [TODO] L559: - [ ] **FAIL-CLOSED**: mapas sem creds em PROD → erro explicito.
+- [N/A] L561: ### DONE criteria (Bloco 6)
+- [TODO] L562: - Create/Edit/Publish OK (UI + API).
+- [TODO] L563: - Invites (token/check) OK com accessGrant/eventInviteId.
+- [TODO] L564: - Discover listing OK com deriveIsFreeEvent.
+- [TODO] L565: - Check-in resolve policy por policyVersionApplied.
+- [TODO] L566: - Covers picker OK.
+- [TODO] L567: - Apple Maps token fail-closed OK.
+- [N/A] L569: ### Guardrails (rg/tests/CI)
+- [TODO] L570: - `npm run db:gates:offline`
+- [TODO] L571: - `npx vitest run tests/invites tests/access tests/checkin tests/search tests/ops`
+- [TODO] L572: - `rg -n "inviteOnly|publicAccessMode|participantAccessMode|publicTicketTypeIds|Event\\.isFree" app -S`
+- [TODO] L573: - `rg -n "\\.isFree\\b" app domain -S`
+- [TODO] L574: - (Se tocar em searchIndex) `npx vitest run tests/searchIndex`
+- [N/A] L576: ### Runbooks/Operabilidade
+- [TODO] L577: - Runbook: "Event publish/rollback".
+- [TODO] L578: - Backfill policy (obrigatorio antes de deploy):
+- [TODO] L579:   - Dry-run: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts --dry-run --limit=100`
+- [TODO] L580:   - Execucao: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts`
+- [TODO] L581:   - Esperado: output com contagem por mode/source + warnings de default/restricoes.
+- [N/A] L583: ---
+- [N/A] L585: ## Bloco 7 — Reservas / Agenda / Servicos / Softblocks
+- [N/A] L587: ### Objetivo
+- [TODO] L588: - Agenda deterministica com prioridades.
+- [TODO] L589: - Reservas e servicos consistentes.
+- [N/A] L591: ### Scope exato (paths + UI)
+- [TODO] L592: - `domain/agenda/**`, `domain/softBlocks/**`
+- [TODO] L593: - `app/api/organizacao/reservas/**`, `app/api/servicos/**`, `app/api/me/reservas/**`
+- [TODO] L594: - UI: `app/[username]/_components/ReservasBookingClient.tsx`
+- [N/A] L596: ### Entrypoints end-to-end
+- [N/A] L597: **API routes**
+- [TODO] L598: - `/api/organizacao/reservas/*`
+- [TODO] L599: - `/api/servicos/*`
+- [N/A] L601: **Consumers/outbox processors**
+- [TODO] L602: - `domain/agendaReadModel/**`
+- [N/A] L604: ### Guardrails (rg/tests/CI)
+- [TODO] L605: - `npx vitest run tests/agenda tests/outbox tests/ops`
+- [N/A] L607: ### PR1 — BookingConfirmationSnapshot v9 (DONE)
+- [TODO] L608: - Snapshot imutavel e versionado persistido no momento de confirmar.
+- [TODO] L609: - SSOT: `lib/reservas/confirmationSnapshot.ts`
+- [TODO] L610: - Pontos de confirmacao: `lib/reservas/confirmBooking.ts`, `lib/operations/fulfillServiceBooking.ts`
+- [N/A] L612: ### PR2 — Cancel/Refund/No-Show por snapshot + backfill (DONE)
+- [TODO] L613: - Cancelamento e no-show leem sempre `booking.confirmationSnapshot` (fail closed se faltar).
+- [TODO] L614: - Refund calcula por snapshot (policy + pricing), nunca por policy live.
+- [TODO] L615: - Entrypoints fechados:
+- [TODO] L616:   - `app/api/me/reservas/[id]/cancel/route.ts`
+- [TODO] L617:   - `app/api/organizacao/reservas/[id]/cancel/route.ts`
+- [TODO] L618:   - `app/api/organizacao/reservas/[id]/no-show/route.ts`
+- [TODO] L619: - Snapshot timezone exposto para representacao:
+- [TODO] L620:   - `app/api/me/reservas/route.ts`
+- [TODO] L621: - Backfill dedicado:
+- [TODO] L622:   - `scripts/backfill_booking_confirmation_snapshot.ts`
+- [TODO] L623:   - SSOT helper: `lib/reservas/backfillConfirmationSnapshot.ts`
+- [N/A] L625: ### Backfill obrigatorio antes de deploy (PR2)
+- [TODO] L626: - Dry-run (recomendado primeiro):
+- [TODO] L627:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --dry-run --limit=200`
+- [TODO] L628: - Execucao limitada (iterar por lotes):
+- [TODO] L629:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --limit=200`
+- [TODO] L630: - Esperado:
+- [TODO] L631:   - Contagens por status, `updated`, `skipped`, e warnings para snapshots nao resolvidos.
+- [N/A] L633: ---
+- [N/A] L635: ## Bloco 8 — Padel + Torneios
+- [N/A] L637: ### Scope exato (paths + UI)
+- [TODO] L638: - `app/api/padel/**`, `app/api/organizacao/tournaments/**`
+- [TODO] L639: - `domain/padel/**`, `domain/tournaments/**`
+- [N/A] L641: ### Guardrails (rg/tests/CI)
+- [TODO] L642: - `npx vitest run tests/padel tests/tournaments tests/outbox`
+- [N/A] L644: ---
+- [N/A] L646: ## Bloco 9 — Loja / Tickets / Check-in / Entitlements
+- [N/A] L648: ### Scope exato (paths + UI)
+- [TODO] L649: - `app/api/store/**`, `app/api/tickets/**`, `app/api/checkin/**`, `app/api/organizacao/checkin/**`
+- [TODO] L650: - `domain/entitlements/**`
+- [TODO] L651: - UI: `app/[username]/loja/**`, `app/me/loja/**`
+- [N/A] L653: ### Guardrails (rg/tests/CI)
+- [TODO] L654: - `npx vitest run tests/entitlements tests/checkin tests/finance`
+- [N/A] L656: ---
+- [N/A] L658: ## Bloco 10 — Users / Sessao / Perfil / Privacidade / Consentimentos / Notifs
+- [N/A] L660: ### Scope exato (paths + UI)
+- [TODO] L661: - `app/api/me/**`, `domain/location/**`, `domain/notifications/**`
+- [N/A] L663: ### Guardrails (rg/tests/CI)
+- [TODO] L664: - `npx vitest run tests/location tests/notifications tests/access`
+- [N/A] L666: ---
+- [N/A] L668: ## Bloco 11 — Search / Discover / SearchIndex / Analytics / CRM
+- [N/A] L670: ### Scope exato (paths + UI)
+- [TODO] L671: - `app/api/explorar/list/route.ts`
+- [TODO] L672: - `domain/search/**`, `domain/searchIndex/**`, `domain/analytics/**`
+- [TODO] L673: - `app/api/internal/analytics/rollup/route.ts`
+- [TODO] L674: - `app/api/internal/crm/**`, `app/api/cron/crm/**`
+- [N/A] L676: ### Guardrails (rg/tests/CI)
+- [TODO] L677: - `npx vitest run tests/search tests/searchIndex tests/analytics`
+- [N/A] L679: ---
+- [N/A] L681: ## Bloco 12 — Cron / Jobs / Internal Routes + Secrets
+- [N/A] L683: ### Scope exato (paths + UI)
+- [TODO] L684: - `app/api/cron/**`
+- [TODO] L685: - `app/api/internal/**`
+- [N/A] L687: ### Guardrails (rg/tests/CI)
+- [TODO] L688: - `rg -n "X-ORYA-CRON-SECRET" app/api/internal app/api/cron -S`
+- [TODO] L689: - `npx vitest run tests/ops`
+- [N/A] L691: ---
+- [N/A] L693: ## Bloco 13 — Observabilidade + Runbooks + DLQ/Replay + SLOs
+- [N/A] L695: ### Scope exato (paths + UI)
+- [TODO] L696: - `lib/observability/**`, `domain/opsFeed/**`
+- [TODO] L697: - `app/api/internal/ops/**`, `app/api/internal/outbox/*`
+- [TODO] L698: - `docs/runbooks/**`
+- [N/A] L700: ### Guardrails (rg/tests/CI)
+- [TODO] L701: - `npx vitest run tests/ops tests/audit`
+- [N/A] L703: ---
+- [N/A] L705: ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
+- [N/A] L707: ### Scope exato (paths + UI)
+- [TODO] L708: - `docs/v9_ssot_registry.md`, `docs/v10_execution_checklist.md`, `docs/orya_blueprint_v9_final.md`, `docs/runbooks/**`
+- [TODO] L709: - `lib/env.ts`, `next.config.ts`, `fly.worker.toml`, `Dockerfile.worker`
+- [N/A] L711: ### Guardrails (rg/tests/CI)
+- [TODO] L712: - `npx vitest run tests/apple tests/maps tests/push`
+- [N/A] L714: ---
+- [N/A] L716: ## Repo-wide audit checklist
+- [TODO] L717: - [ ] Checkout/Payments (entrypoints + webhooks + idempotencia)
+- [TODO] L718: - [ ] Org settings/email (normalizacao + verificado)
+- [TODO] L719: - [ ] Admin control center (sem legacy stats)
+- [TODO] L720: - [ ] Members/RBAC/Owners (rg bypass = 0)
+- [TODO] L721: - [ ] Outbox/Workers (winner-only + replay)
+- [TODO] L722: - [ ] Eventos (create/edit/publish/invites/covers/maps)
+- [TODO] L723: - [ ] Reservas/Agenda/Servicos/Softblocks
+- [TODO] L724: - [ ] Padel/Torneios
+- [TODO] L725: - [ ] Loja/Tickets/Check-in/Entitlements
+- [TODO] L726: - [ ] Users/Sessao/Privacidade/Consentimentos
+- [TODO] L727: - [ ] Search/Discover/Analytics/CRM
+- [TODO] L728: - [ ] Cron/Internal routes + secrets
+- [TODO] L729: - [ ] Observabilidade/Runbooks
+- [TODO] L730: - [ ] Go-live (env sanity + App Store)
 
 ## Source: docs/v9_ssot_registry.md
 - [N/A] L1: # V9 SSOT & Normalization Registry (Done Log)
@@ -599,8 +605,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L29: - `app/api/**` (uso do envelope)
 - [TODO] L30: - `domain/outbox/**`, `domain/eventLog/**` (correlationId)
 - [TODO] L31: - `lib/security.ts` (auth fail-closed)
-- [TODO] L33: **Status**: TODO (implementacao em curso)
-- [N/A] L34: **DONE (data/commit/nota)**: 2026-01-29 — Envelope aplicado em rotas de reservas + tournaments (inclui matches/participants/rules/sponsors); runbooks de requestId e reconcile de pagamentos adicionados; mapping marcado com INTERNAL_ONLY onde nao ha UI web.
+- [DONE] L33: **Status**: DONE
+- [N/A] L34: **DONE (data/commit/nota)**: 2026-01-31 — Middleware reintroduzido para requestId/correlationId em todas as respostas; `withApiEnvelope` normaliza códigos instáveis (canonical por status) e headers globais garantidos; gates mantêm shape C-G5.
 - [N/A] L36: ---
 - [N/A] L38: ## Bloco 1 — Payments/Checkout/Ledger/Webhooks/Refunds/Reconciliation/Outbox
 - [N/A] L39: **SSOTs canonicos**
@@ -651,8 +657,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L93: - `app/api/internal/worker/operations/route.ts`
 - [TODO] L94: - `app/api/internal/outbox/replay/route.ts`
 - [TODO] L95: - `app/api/internal/outbox/dlq/route.ts`
-- [TODO] L97: **Status**: TODO
-- [N/A] L98: **DONE (data/commit/nota)**: —
+- [DONE] L97: **Status**: DONE
+- [N/A] L98: **DONE (data/commit/nota)**: 2026-01-31 — Claim winner-only com `FOR UPDATE SKIP LOCKED` + `locked_at` no worker; recovery via `/api/internal/reconcile`; runbook de operations publicado.
 - [N/A] L100: ---
 - [N/A] L102: ## Bloco 3 — Email Oficial da Organizacao
 - [N/A] L103: **SSOTs canonicos**
@@ -712,8 +718,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [TODO] L167: - `app/admin/**`
 - [TODO] L168: - `domain/opsFeed/**`
 - [TODO] L169: - `domain/eventLog/**`
-- [TODO] L171: **Status**: TODO
-- [N/A] L172: **DONE (data/commit/nota)**: —
+- [DONE] L171: **Status**: DONE
+- [N/A] L172: **DONE (data/commit/nota)**: 2026-01-31 — Estatísticas migradas para rollups v9 (org overview + time-series); admin org list expõe contagens/revenue; UI resiliente sem legacy summaries.
 - [N/A] L174: ---
 - [N/A] L176: ## Bloco 5 — RBAC / Org Context / Members / Owners
 - [N/A] L177: **SSOTs canonicos**
@@ -726,8 +732,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L187: **Referencias de codigo**
 - [TODO] L188: - `lib/organizationRbac.ts`
 - [TODO] L189: - `lib/organizationContext.ts`
-- [TODO] L191: **Status**: TODO
-- [N/A] L192: **DONE (data/commit/nota)**: —
+- [DONE] L191: **Status**: DONE
+- [N/A] L192: **DONE (data/commit/nota)**: 2026-01-31 — Gate `scripts/v9_org_context_gate.mjs` (bypass=0) + org context helpers auditados nas rotas.
 - [N/A] L194: ---
 - [N/A] L196: ## Bloco 6 — Eventos
 - [N/A] L197: **SSOTs canonicos**
@@ -784,32 +790,34 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L261: ## Bloco 9 — Loja / Tickets / Check-in / Entitlements
 - [N/A] L262: **SSOTs canonicos**
 - [TODO] L263: - Entitlement como prova de acesso.
-- [TODO] L265: **Status**: TODO
-- [N/A] L267: ---
-- [N/A] L269: ## Bloco 10 — Users / Sessao / Perfil / Privacidade / Consentimentos / Notifs
-- [N/A] L270: **SSOTs canonicos**
-- [TODO] L271: - Consentimentos explicitos.
-- [TODO] L273: **Status**: TODO
-- [N/A] L275: ---
-- [N/A] L277: ## Bloco 11 — Search / Discover / SearchIndex / Analytics / CRM
-- [N/A] L278: **SSOTs canonicos**
-- [TODO] L279: - Search/discover read-only.
-- [TODO] L281: **Status**: TODO
-- [N/A] L283: ---
-- [N/A] L285: ## Bloco 12 — Cron / Jobs / Internal Routes + Secrets
-- [N/A] L286: **SSOTs canonicos**
-- [TODO] L287: - Secret unico para rotas internas/cron.
-- [TODO] L289: **Status**: TODO
-- [N/A] L291: ---
-- [N/A] L293: ## Bloco 13 — Observabilidade + Runbooks + DLQ/Replay + SLOs
-- [N/A] L294: **SSOTs canonicos**
-- [TODO] L295: - Runbooks minimos por dominio.
-- [TODO] L297: **Status**: TODO
-- [N/A] L299: ---
-- [N/A] L301: ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
-- [N/A] L302: **SSOTs canonicos**
-- [TODO] L303: - Release checklist executavel.
-- [TODO] L305: **Status**: TODO
+- [DONE] L265: **Status**: DONE
+- [N/A] L266: **DONE (data/commit/nota)**: 2026-01-31 — Entitlements emitidos para tickets/padel/booking + loja (STORE_ITEM); revenda rebinda owner/purchaseId; check-in mantém mapping por tipo.
+- [N/A] L268: ---
+- [N/A] L270: ## Bloco 10 — Users / Sessao / Perfil / Privacidade / Consentimentos / Notifs
+- [N/A] L271: **SSOTs canonicos**
+- [TODO] L272: - Consentimentos explicitos.
+- [DONE] L274: **Status**: DONE
+- [N/A] L275: **DONE (data/commit/nota)**: 2026-01-31 — DSAR ativo (export + tracking + delete/purge), legal hold mínimo registado em purge e runbook com retenção/responsabilidades.
+- [N/A] L277: ---
+- [N/A] L279: ## Bloco 11 — Search / Discover / SearchIndex / Analytics / CRM
+- [N/A] L280: **SSOTs canonicos**
+- [TODO] L281: - Search/discover read-only.
+- [TODO] L283: **Status**: TODO
+- [N/A] L285: ---
+- [N/A] L287: ## Bloco 12 — Cron / Jobs / Internal Routes + Secrets
+- [N/A] L288: **SSOTs canonicos**
+- [TODO] L289: - Secret unico para rotas internas/cron.
+- [TODO] L291: **Status**: TODO
+- [N/A] L293: ---
+- [N/A] L295: ## Bloco 13 — Observabilidade + Runbooks + DLQ/Replay + SLOs
+- [N/A] L296: **SSOTs canonicos**
+- [TODO] L297: - Runbooks minimos por dominio.
+- [TODO] L299: **Status**: TODO
+- [N/A] L301: ---
+- [N/A] L303: ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
+- [N/A] L304: **SSOTs canonicos**
+- [TODO] L305: - Release checklist executavel.
+- [TODO] L307: **Status**: TODO
 
 ## Source: docs/orya_blueprint_v9_final.md
 - [N/A] L1: ORYA — Blueprint Final v9 (SSOT)
@@ -819,10 +827,10 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L6: **Autoridade (SSOT):** Este documento substitui **todas** as versões anteriores (incl. v7/v8 e drafts) e é a única fonte normativa.
 - [N/A] L7: **Regra de conflito:** em caso de divergência interna, prevalecem as secções marcadas como **FECHADO** (e, se persistir, prevalece a secção mais específica do domínio).
 - [N/A] L9: ## Estado de Implementação (NÃO-NORMATIVO)
-- [N/A] L11: O estado real de execução (slices + gates) é rastreado em `docs/v8_kickoff.md` e no closeout `docs/v9_closeout.md`.
+- [N/A] L11: O estado real de execução (slices + gates) é rastreado em `docs/v10_execution_checklist.md` e no registo `docs/v9_ssot_registry.md`.
 - [N/A] L12: Este blueprint é normativo/arquitetural; não é fonte de status de execução.
 - [N/A] L13: Fechado = decisões finais; implementação ainda em curso — ver status.
-- [N/A] L15: Migrations: ver `docs/v9_closeout.md`.
+- [N/A] L15: Migrations: ver `docs/v9_ssot_registry.md` e `prisma/migrations/`.
 - [N/A] L17: ## Executive Summary (NÃO-NORMATIVO)
 - [TODO] L18: - A ORYA é uma plataforma integrada de descoberta + operações com módulos verticais (Eventos/Reservas/Padel/Loja/Serviços) sobre serviços horizontais canónicos.
 - [TODO] L19: - Invariantes: SSOT por domínio (Payment+Ledger, Entitlement, Identity), ledger append‑only, e idempotência obrigatória em operações com side‑effects.

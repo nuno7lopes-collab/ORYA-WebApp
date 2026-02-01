@@ -1,6 +1,6 @@
 # v10 Execution Checklist (FINAL) — ORYA
 
-Atualizado: 2026-01-30
+Atualizado: 2026-01-31
 Fonte de verdade: `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md` + `docs/orya_blueprint_v9_final.md` + `docs/v9_ssot_registry.md` + `docs/v9_close_plan.md` + `docs/v9_close_checklist.md` + `docs/envs_required.md`
 Legenda estado: DONE | PARTIAL | TODO | N/A
 
@@ -9,8 +9,10 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ## Auditoria (primeiro sweep)
 - `app/api/**/route.ts` usa `withApiEnvelope` ou `respondOk/respondError` (script de varredura sem faltas).
 - `app/api/internal/**` + `app/api/cron/**` usam `requireInternalSecret` (script de varredura sem faltas).
-- Verificações locais (2026-01-30): `npm run typecheck`, `npm run lint`, `npm run test:coverage` **PASS**.
-  - Evidência: `reports/p1_closeout_2026-01-29.md` (secção Tests).
+- Verificações locais (2026-01-31): `npm run db:gates:offline` + `npx vitest run tests/finance tests/fiscal tests/outbox tests/ops tests/notifications tests/analytics` **FAIL** (3 testes).
+  - Falhas: mock Stripe (`getStripeClient`) afeta `stripeGateway/refundService/reconciliationSweep`.
+  - Evidência: output local 2026-01-31 (ver console).
+- Ops endpoints (2026-01-31): chamadas internas com `X-ORYA-CRON-SECRET` retornaram 403 (secret/env mismatch).
 
 ---
 
@@ -207,7 +209,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo.
 
 - [x] Propagação de orgId no Contexto
-  - Estado real: DONE — orgId resolvido via helpers e validado com `getActiveOrganizationForUser`.
+  - Estado real: DONE — orgId resolvido via helpers e validado com `getActiveOrganizationForUser`; gate CI cobre rotas `app/api/organizacao/**`.
   - Evidência: `lib/organizationId.ts:83-145`, `lib/organizationContext.ts:128-175`, `app/api/organizacao/loja/overview/route.ts:10-70`.
   - Ação exata: manter fail-closed quando orgId faltar.
   - Risco/Impacto: baixo.
@@ -265,7 +267,6 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Itens futuros (maps/legacy/access extras)
   - Estado real: N/A — backlog pós go-live (não afeta fluxo core).
-  - Evidência: `docs/v10_blocks_7_11_tracking.md:3-26`.
   - Ação exata: reavaliar após estabilização do go-live.
   - Risco/Impacto: baixo (funcionalidades acessórias fora do MVP).
 
@@ -309,7 +310,6 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ### P2
 - [x] Melhorias Futuras (Reservas/Serviços)
   - Estado real: N/A — backlog explícito pós go-live (sem impacto no fluxo core).
-  - Evidência: `docs/v10_blocks_7_11_tracking.md:3-26`.
   - Ação exata: reavaliar após execução do backfill e feedback de uso.
   - Risco/Impacto: baixo (funcionalidades avançadas fora do MVP).
 
@@ -356,7 +356,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 ### P0
 - [x] Emissão de Tickets & Entitlements (fim-a-fim)
-  - Estado real: DONE — emissão via worker + entitlements ativos; E2E validado.
+  - Estado real: DONE — emissão via worker + entitlements ativos; inclui booking/loja (SERVICE_BOOKING/STORE_ITEM).
   - Evidência: `app/api/internal/worker/operations/route.ts:860-1045`, `app/api/stripe/webhook/route.ts:760-980`, `reports/e2e_p0_2026-01-29.md`.
   - Ação exata: manter monitorização de fulfillment.
   - Risco/Impacto: baixo.
@@ -399,7 +399,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Risco/Impacto: baixo.
 
 - [x] Deleção de Conta
-  - Estado real: DONE — fluxo de delete + cancelamento disponíveis.
+  - Estado real: DONE — fluxo de delete + cancelamento disponíveis; purge registra legal hold mínimo.
   - Evidência: `app/api/me/settings/delete/route.ts:20-120`, `app/api/me/settings/delete/cancel/route.ts:1-80`.
   - Ação exata: manter limpeza periódica conforme política.
   - Risco/Impacto: baixo.
@@ -585,6 +585,5 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 - [ ] Padrões UX Avançados / Teste de Usabilidade
   - Estado real: N/A — backlog pós go-live (melhoria incremental).
-  - Evidência: `docs/v10_blocks_7_11_tracking.md:3-26`.
   - Ação exata: reavaliar com feedback de uso.
   - Risco/Impacto: baixo (UX avançada adiada).

@@ -9,7 +9,7 @@ vi.mock("@/lib/organizationAudit", () => ({
 let matchState: any = null;
 
 vi.mock("@/lib/prisma", () => {
-  const padelMatch = {
+  const eventMatchSlot = {
     update: vi.fn(({ data }: any) => {
       matchState = {
         ...matchState,
@@ -38,7 +38,7 @@ vi.mock("@/lib/prisma", () => {
     })),
   };
   const prisma = {
-    padelMatch,
+    eventMatchSlot,
     outboxEvent,
     eventLog,
     $transaction: async (fn: any) => fn(prisma),
@@ -66,8 +66,8 @@ describe("padel outbox consumer", () => {
         padelTournamentConfig: { padelClubId: null, partnerClubIds: [], advancedSettings: {} },
       },
     };
-    prismaMock.padelMatch.update.mockClear();
-    prismaMock.padelMatch.findUnique.mockClear();
+    prismaMock.eventMatchSlot.update.mockClear();
+    prismaMock.eventMatchSlot.findUnique.mockClear();
   });
 
   it("auto schedule aplica updates e é idempotente", async () => {

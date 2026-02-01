@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { DsarCaseStatus, DsarCaseType } from "@prisma/client";
 
 async function _POST() {
   try {
@@ -62,6 +63,44 @@ async function _POST() {
         visibility: "PRIVATE",
       },
     });
+
+    const existingCase = await prisma.dsarCase.findFirst({
+      where: {
+        userId: user.id,
+        type: DsarCaseType.DELETE,
+        status: { in: [DsarCaseStatus.REQUESTED, DsarCaseStatus.IN_PROGRESS] },
+      },
+      orderBy: { requestedAt: "desc" },
+      select: { id: true },
+    });
+
+    if (existingCase) {
+      await prisma.dsarCase.update({
+        where: { id: existingCase.id },
+        data: {
+          status: DsarCaseStatus.REQUESTED,
+          dueAt: scheduled,
+          metadata: {
+            action: "account_delete_requested",
+            scheduledFor: scheduled.toISOString(),
+          },
+        },
+      });
+    } else {
+      await prisma.dsarCase.create({
+        data: {
+          userId: user.id,
+          type: DsarCaseType.DELETE,
+          status: DsarCaseStatus.REQUESTED,
+          requestedAt: now,
+          dueAt: scheduled,
+          metadata: {
+            action: "account_delete_requested",
+            scheduledFor: scheduled.toISOString(),
+          },
+        },
+      });
+    }
 
     await logAccountEvent({
       userId: user.id,

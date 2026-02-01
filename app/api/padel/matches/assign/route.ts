@@ -37,7 +37,7 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "DUPLICATE_PAIRING" }, { status: 400 });
   }
 
-  const match = await prisma.padelMatch.findUnique({
+  const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
     select: {
       id: true,
@@ -67,7 +67,7 @@ async function _POST(req: NextRequest) {
   if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const matchCategoryFilter = match.categoryId ? { categoryId: match.categoryId } : {};
-  const started = await prisma.padelMatch.findFirst({
+  const started = await prisma.eventMatchSlot.findFirst({
     where: {
       eventId: match.eventId,
       roundType: "KNOCKOUT",
@@ -99,7 +99,7 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "PAIRING_INVALID" }, { status: 409 });
     }
 
-    const conflict = await prisma.padelMatch.findFirst({
+    const conflict = await prisma.eventMatchSlot.findFirst({
       where: {
         eventId: match.eventId,
         roundType: "KNOCKOUT",
@@ -115,7 +115,7 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  const data: Prisma.PadelMatchUncheckedUpdateInput = {
+  const data: Prisma.EventMatchSlotUncheckedUpdateInput = {
     pairingAId: pairingAId ?? null,
     pairingBId: pairingBId ?? null,
     winnerPairingId: null,

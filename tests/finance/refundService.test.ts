@@ -5,13 +5,14 @@ import { RefundReason } from "@prisma/client";
 
 const stripeRefundCreate = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/stripeClient", () => ({
-  stripe: {
+vi.mock("@/lib/stripeClient", () => {
+  const stripe = {
     refunds: {
       create: stripeRefundCreate,
     },
-  },
-}));
+  };
+  return { stripe, getStripeClient: () => stripe };
+});
 
 const recordOutboxEvent = vi.hoisted(() => vi.fn(() => ({ eventId: "evt_1" })));
 const appendEventLog = vi.hoisted(() => vi.fn(() => ({})));

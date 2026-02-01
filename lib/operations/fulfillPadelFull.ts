@@ -15,7 +15,7 @@ import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEnt
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { logError } from "@/lib/observability/logger";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 
@@ -201,7 +201,7 @@ export async function fulfillPadelFullIntent(intent: IntentLike): Promise<boolea
       },
     });
 
-    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
+    const policyVersionApplied = await requireLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = ownerUserId
       ? `user:${ownerUserId}`
       : ownerIdentityId

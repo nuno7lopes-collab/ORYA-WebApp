@@ -8,10 +8,13 @@ import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
 import EventAttendeesPanel from "./EventAttendeesPanel";
+import PadelTournamentLifecyclePanel from "./PadelTournamentLifecyclePanel";
+import PadelTournamentRolesPanel from "./PadelTournamentRolesPanel";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { cn } from "@/lib/utils";
 import { getEventLocationDisplay } from "@/lib/location/eventLocation";
+import { TOURNAMENT_LIFECYCLE_LABELS, TOURNAMENT_LIFECYCLE_ORDER } from "@/domain/padel/tournamentLifecycle";
 
 type PageProps = {
   params: Promise<{
@@ -66,6 +69,7 @@ type EventWithTickets = {
     club?: { name: string; city: string | null; address: string | null } | null;
     partnerClubIds?: number[];
     advancedSettings?: Record<string, unknown> | null;
+    lifecycleStatus?: string | null;
   } | null;
 };
 
@@ -218,7 +222,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     padelPairingsByCategoryMap.set(row.categoryId ?? null, row._count._all);
   });
   const padelMatchesCount = isPadelEvent
-    ? await prisma.padelMatch.count({
+    ? await prisma.eventMatchSlot.count({
         where: {
           eventId: event.id,
           status: { not: "CANCELLED" },
@@ -284,14 +288,18 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     format: "webp",
   });
 
+  const padelLifecycleStatus = event.padelTournamentConfig?.lifecycleStatus ?? null;
   const tournamentState =
-    event.status === "CANCELLED"
-      ? "Cancelado"
-      : event.status === "FINISHED"
-        ? "Terminado"
-      : event.status === "DRAFT"
-        ? "Oculto"
-        : "Público";
+    isPadelEvent && padelLifecycleStatus
+      ? TOURNAMENT_LIFECYCLE_LABELS[padelLifecycleStatus as keyof typeof TOURNAMENT_LIFECYCLE_LABELS] ??
+        padelLifecycleStatus
+      : event.status === "CANCELLED"
+        ? "Cancelado"
+        : event.status === "FINISHED"
+          ? "Terminado"
+          : event.status === "DRAFT"
+            ? "Oculto"
+            : "Público";
 
   const partnerClubs =
     event.padelTournamentConfig?.partnerClubIds?.length
@@ -425,12 +433,22 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
   const generateMatchesHref = isPadelEvent ? "#padel-torneio" : null;
 
-  const timeline = [
-    { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
-    { key: "INSCRICOES", label: "Inscrições", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
-    { key: "PUBLICO", label: "Público", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
-    { key: "TERMINADO", label: "Terminado", active: event.status === "FINISHED", done: event.status === "FINISHED" },
-  ];
+  const timeline = isPadelEvent && padelLifecycleStatus
+    ? TOURNAMENT_LIFECYCLE_ORDER.map((key, idx) => {
+        const currentIndex = TOURNAMENT_LIFECYCLE_ORDER.indexOf(padelLifecycleStatus as any);
+        return {
+          key,
+          label: TOURNAMENT_LIFECYCLE_LABELS[key],
+          active: padelLifecycleStatus === key,
+          done: currentIndex > idx && currentIndex !== -1,
+        };
+      })
+    : [
+        { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
+        { key: "INSCRICOES", label: "Inscrições", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
+        { key: "PUBLICO", label: "Público", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
+        { key: "TERMINADO", label: "Terminado", active: event.status === "FINISHED", done: event.status === "FINISHED" },
+      ];
 
   return (
     <div className={cn("w-full space-y-7 py-8 text-white")}>
@@ -754,6 +772,13 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           </div>
         </div>
       </div>
+
+      {isPadelEvent && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <PadelTournamentLifecyclePanel eventId={event.id} />
+          <PadelTournamentRolesPanel eventId={event.id} />
+        </div>
+      )}
 
       <section className="rounded-2xl border border-white/12 bg-black/40 backdrop-blur-xl p-5 space-y-4">
         <div className="flex items-center justify-between gap-2">

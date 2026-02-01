@@ -115,7 +115,7 @@ async function _POST(req: NextRequest) {
     );
   }
 
-  const matches = await prisma.padelMatch.findMany({
+  const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId, ...matchCategoryFilter },
     orderBy: [{ startTime: "asc" }, { id: "asc" }],
   });

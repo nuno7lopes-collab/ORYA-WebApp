@@ -268,7 +268,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           ruleSet: { select: { tieBreakRules: true, pointsTable: true } },
         },
       }),
-      prisma.padelMatch.findMany({
+      prisma.eventMatchSlot.findMany({
         where: { eventId: event.id },
         select: {
           id: true,

@@ -15,6 +15,7 @@ import {
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { logError } from "@/lib/observability/logger";
+import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
 
 async function _GET(req: NextRequest) {
   try {
@@ -34,7 +35,7 @@ async function _GET(req: NextRequest) {
       select: {
         organizationId: true,
         status: true,
-        padelTournamentConfig: { select: { ruleSetId: true, advancedSettings: true } },
+        padelTournamentConfig: { select: { ruleSetId: true, advancedSettings: true, lifecycleStatus: true } },
         accessPolicies: {
           orderBy: { policyVersion: "desc" },
           take: 1,
@@ -56,6 +57,7 @@ async function _GET(req: NextRequest) {
     const competitionState = resolvePadelCompetitionState({
       eventStatus: event.status,
       competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+      lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
     });
     const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
     const isPublicEvent =
@@ -72,15 +74,11 @@ async function _GET(req: NextRequest) {
       if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
     }
 
-    const ruleSet = event.padelTournamentConfig?.ruleSetId
-      ? await prisma.padelRuleSet.findUnique({
-          where: { id: event.padelTournamentConfig.ruleSetId },
-        })
-      : null;
-    const pointsTable: PadelPointsTable = normalizePadelPointsTable(ruleSet?.pointsTable);
-    const tieBreakRules = normalizePadelTieBreakRules(ruleSet?.tieBreakRules);
+    const ruleSnapshot = await resolvePadelRuleSetSnapshotForEvent({ eventId });
+    const pointsTable: PadelPointsTable = normalizePadelPointsTable(ruleSnapshot.pointsTable);
+    const tieBreakRules = normalizePadelTieBreakRules(ruleSnapshot.tieBreakRules);
 
-    const matches = await prisma.padelMatch.findMany({
+    const matches = await prisma.eventMatchSlot.findMany({
       where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
       select: {
         id: true,

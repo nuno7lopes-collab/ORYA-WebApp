@@ -1,16 +1,18 @@
 // app/api/organizacao/estatisticas/time-series/route.ts
-// Série temporal de vendas (V9).
+// Série temporal de vendas (V9) — rollups + ledger.
 
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EventTemplateType, Prisma, SaleSummaryStatus, OrganizationModule } from "@prisma/client";
+import { EventTemplateType, OrganizationModule, AnalyticsDimensionKey, AnalyticsMetricKey, EntitlementType, SourceType } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { Prisma } from "@prisma/client";
+
+const LISBON_TZ = "Europe/Lisbon";
 
 function parseRangeParams(url: URL) {
   const range = url.searchParams.get("range");
@@ -60,8 +62,110 @@ function parseRangeParams(url: URL) {
 }
 
 function formatDayKey(date: Date) {
-  // YYYY-MM-DD
   return date.toISOString().slice(0, 10);
+}
+
+function toUtcDate(value: Date) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+
+function buildDateKeys(from: Date | null, to: Date | null) {
+  if (!from || !to) return [] as string[];
+  const start = toUtcDate(from);
+  const end = toUtcDate(to);
+  const keys: string[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    keys.push(formatDayKey(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return keys;
+}
+
+function pickCurrency(values: Array<string | null>, preferred?: string | null) {
+  const normalized = values.filter((v): v is string => Boolean(v));
+  if (preferred && normalized.includes(preferred)) return preferred;
+  if (normalized.includes("EUR")) return "EUR";
+  return normalized[0] ?? null;
+}
+
+type LedgerAggregateRow = {
+  bucket_date: string;
+  currency: string;
+  gross: number;
+  platform_fees: number;
+  processor_fees: number;
+  net_to_org: number;
+};
+
+type EntitlementBucket = { bucket_date: string; total: number };
+
+async function fetchEntitlementBuckets(params: {
+  organizationId: number;
+  entitlementType: EntitlementType;
+  eventId?: number | null;
+  includeTemplateType?: EventTemplateType | null;
+  excludeTemplateType?: EventTemplateType | null;
+  from: Date | null;
+  to: Date | null;
+}) {
+  const { organizationId, entitlementType, eventId, includeTemplateType, excludeTemplateType, from, to } = params;
+  const dateFilter =
+    from || to
+      ? Prisma.sql`AND ent.created_at BETWEEN ${from ?? new Date(0)} AND ${to ?? new Date()}`
+      : Prisma.empty;
+  const eventFilter = typeof eventId === "number" ? Prisma.sql`AND ent.event_id = ${eventId}` : Prisma.empty;
+  const templateFilterSql = includeTemplateType
+    ? Prisma.sql`AND ev.template_type = ${includeTemplateType}`
+    : excludeTemplateType
+      ? Prisma.sql`AND ev.template_type != ${excludeTemplateType}`
+      : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<EntitlementBucket[]>(Prisma.sql`
+    SELECT
+      (ent.created_at AT TIME ZONE ${LISBON_TZ})::date AS bucket_date,
+      COUNT(*)::int AS total
+    FROM app_v3.entitlements ent
+    JOIN app_v3.events ev ON ev.id = ent.event_id
+    WHERE ev.organization_id = ${organizationId}
+      AND ent.type = ${entitlementType}
+      ${eventFilter}
+      ${templateFilterSql}
+      ${dateFilter}
+    GROUP BY bucket_date
+  `);
+  return rows;
+}
+
+async function fetchLedgerBuckets(params: {
+  organizationId: number;
+  sourceType: SourceType;
+  sourceId: string;
+  from: Date | null;
+  to: Date | null;
+}) {
+  const { organizationId, sourceType, sourceId, from, to } = params;
+  const dateFilter =
+    from || to
+      ? Prisma.sql`AND (le.created_at AT TIME ZONE ${LISBON_TZ})::date BETWEEN ${from ?? new Date(0)}::date AND ${to ?? new Date()}::date`
+      : Prisma.empty;
+
+  return prisma.$queryRaw<LedgerAggregateRow[]>(Prisma.sql`
+    SELECT
+      (le.created_at AT TIME ZONE ${LISBON_TZ})::date AS bucket_date,
+      le.currency AS currency,
+      SUM(CASE WHEN le.entry_type = 'GROSS' THEN le.amount ELSE 0 END) AS gross,
+      SUM(CASE WHEN le.entry_type = 'PLATFORM_FEE' THEN -le.amount ELSE 0 END) AS platform_fees,
+      SUM(CASE WHEN le.entry_type IN ('PROCESSOR_FEES_FINAL','PROCESSOR_FEES_ADJUSTMENT') THEN -le.amount ELSE 0 END) AS processor_fees,
+      SUM(le.amount) AS net_to_org
+    FROM app_v3.ledger_entries le
+    JOIN app_v3.payments p ON p.id = le.payment_id
+    WHERE p.organization_id = ${organizationId}
+      AND le.source_type = ${sourceType}
+      AND le.source_id = ${sourceId}
+      ${dateFilter}
+    GROUP BY bucket_date, le.currency
+  `);
 }
 
 async function _GET(req: NextRequest) {
@@ -73,17 +177,11 @@ async function _GET(req: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (authError) {
-      console.error(
-        "[organização/time-series] Erro ao obter utilizador:",
-        authError
-      );
+      console.error("[organização/time-series] Erro ao obter utilizador:", authError);
     }
 
     if (!user) {
-      return jsonWrap(
-        { ok: false, error: "UNAUTHENTICATED" },
-        { status: 401 }
-      );
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const url = new URL(req.url);
@@ -107,26 +205,17 @@ async function _GET(req: NextRequest) {
       excludeTemplateType && Object.values(EventTemplateType).includes(excludeTemplateType as EventTemplateType)
         ? (excludeTemplateType as EventTemplateType)
         : null;
-    const eventTemplateFilter: Prisma.EventWhereInput = parsedTemplateType
-      ? { templateType: parsedTemplateType }
-      : parsedExcludeTemplateType
-        ? { NOT: { templateType: parsedExcludeTemplateType } }
-        : {};
     const isPadelScope = parsedTemplateType === EventTemplateType.PADEL;
 
     let eventId: number | null = null;
     if (eventIdParam) {
       const parsed = Number(eventIdParam);
       if (Number.isNaN(parsed)) {
-        return jsonWrap(
-          { ok: false, error: "INVALID_EVENT_ID" },
-          { status: 400 }
-        );
+        return jsonWrap({ ok: false, error: "INVALID_EVENT_ID" }, { status: 400 });
       }
       eventId = parsed;
     }
 
-    // 1) Garantir que o user é um organização ativo com permissões de gestão
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
@@ -148,139 +237,115 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
-    // 2) Preferir fonte de verdade: legacy summaries (desativado no v7)
-    const createdAtFilter: Prisma.DateTimeFilter<"SaleSummary"> = {};
-    if (from) createdAtFilter.gte = from;
-    if (to) createdAtFilter.lte = to;
+    const fromDate = from ? toUtcDate(from) : null;
+    const toDate = to ? toUtcDate(to) : null;
 
-    const saleSummaries = await prisma.saleSummary.findMany({
-      where: {
-        ...(Object.keys(createdAtFilter).length > 0
-          ? { createdAt: createdAtFilter }
-          : {}),
-        status: SaleSummaryStatus.PAID,
-        event: {
+    const moduleValue = isPadelScope ? "TORNEIOS" : "EVENTOS";
+    const entitlementType = isPadelScope ? EntitlementType.PADEL_ENTRY : EntitlementType.EVENT_TICKET;
+
+    const pointsMap = new Map<
+      string,
+      {
+        gross: number;
+        platform: number;
+        processor: number;
+        net: number;
+        currency: string | null;
+      }
+    >();
+
+    if (eventId) {
+      const sourceType = isPadelScope ? SourceType.PADEL_REGISTRATION : SourceType.TICKET_ORDER;
+      const ledgerRows = await fetchLedgerBuckets({
+        organizationId: organization.id,
+        sourceType,
+        sourceId: String(eventId),
+        from: fromDate,
+        to: toDate,
+      });
+
+      for (const row of ledgerRows) {
+        const key = row.bucket_date;
+        pointsMap.set(key, {
+          gross: Number(row.gross ?? 0),
+          platform: Number(row.platform_fees ?? 0),
+          processor: Number(row.processor_fees ?? 0),
+          net: Number(row.net_to_org ?? 0),
+          currency: row.currency ?? null,
+        });
+      }
+    } else {
+      const rollupRows = await prisma.analyticsRollup.findMany({
+        where: {
           organizationId: organization.id,
-          ...eventTemplateFilter,
+          dimensionKey: AnalyticsDimensionKey.MODULE,
+          dimensionValue: moduleValue,
+          ...(fromDate || toDate
+            ? {
+                bucketDate: {
+                  ...(fromDate ? { gte: fromDate } : {}),
+                  ...(toDate ? { lte: toDate } : {}),
+                },
+              }
+            : {}),
         },
-        eventId: eventId ?? undefined,
-      },
-      select: {
-        createdAt: true,
-        netCents: true,
-        subtotalCents: true,
-        discountCents: true,
-        platformFeeCents: true,
-        currency: true,
-        lines: {
-          select: {
-            quantity: true,
-          },
-        },
-      },
+        select: { bucketDate: true, metricKey: true, value: true },
+      });
+
+      for (const row of rollupRows) {
+        const key = formatDayKey(row.bucketDate);
+        const current = pointsMap.get(key) ?? { gross: 0, platform: 0, processor: 0, net: 0, currency: null };
+        if (row.metricKey === AnalyticsMetricKey.GROSS) current.gross += row.value;
+        if (row.metricKey === AnalyticsMetricKey.PLATFORM_FEES) current.platform += row.value;
+        if (row.metricKey === AnalyticsMetricKey.PROCESSOR_FEES) current.processor += row.value;
+        if (row.metricKey === AnalyticsMetricKey.NET_TO_ORG) current.net += row.value;
+        pointsMap.set(key, current);
+      }
+    }
+
+    const entitlementRows = await fetchEntitlementBuckets({
+      organizationId: organization.id,
+      entitlementType,
+      eventId,
+      includeTemplateType: parsedTemplateType,
+      excludeTemplateType: parsedExcludeTemplateType,
+      from: fromDate,
+      to: toDate,
+    });
+    const ticketsMap = new Map<string, number>();
+    for (const row of entitlementRows) {
+      ticketsMap.set(row.bucket_date, Number(row.total ?? 0));
+    }
+
+    const currency = pickCurrency(
+      Array.from(pointsMap.values()).map((item) => item.currency),
+    );
+
+    const dateKeys = buildDateKeys(fromDate, toDate);
+    const keys = dateKeys.length ? dateKeys : Array.from(new Set([...pointsMap.keys(), ...ticketsMap.keys()])).sort();
+
+    const points = keys.map((key) => {
+      const metrics = pointsMap.get(key) ?? { gross: 0, platform: 0, processor: 0, net: 0, currency: null };
+      const tickets = ticketsMap.get(key) ?? 0;
+      const fees = metrics.platform + metrics.processor;
+      return {
+        date: key,
+        tickets,
+        revenueCents: metrics.net,
+        grossCents: metrics.gross,
+        discountCents: 0,
+        platformFeeCents: metrics.platform,
+        processorFeeCents: metrics.processor,
+        feesCents: fees,
+        netCents: metrics.net,
+        currency: metrics.currency ?? currency,
+      };
     });
 
-    type DayBucket = {
-      date: string; // YYYY-MM-DD
-      tickets: number;
-      revenueCents: number;
-      grossCents: number;
-      discountCents: number;
-      platformFeeCents: number;
-      currency: string | null;
-    };
-
-    const buckets: Record<string, DayBucket> = {};
-
-    for (const s of saleSummaries) {
-      const key = formatDayKey(s.createdAt);
-      if (!buckets[key]) {
-        buckets[key] = {
-          date: key,
-          tickets: 0,
-          revenueCents: 0,
-          grossCents: 0,
-          discountCents: 0,
-          platformFeeCents: 0,
-          currency: s.currency ?? null,
-        };
-      }
-      if (!isPadelScope) {
-        const qty = s.lines.reduce(
-          (acc: number, l: { quantity: number | null }) => acc + (l.quantity ?? 0),
-          0,
-        );
-        buckets[key].tickets += qty;
-      }
-      buckets[key].revenueCents += s.netCents ?? 0;
-      buckets[key].grossCents += s.subtotalCents ?? 0;
-      buckets[key].discountCents += s.discountCents ?? 0;
-      buckets[key].platformFeeCents += s.platformFeeCents ?? 0;
-    }
-
-    if (isPadelScope) {
-      const pairingCreatedFilter: Prisma.DateTimeFilter<"PadelPairing"> = {};
-      if (from) pairingCreatedFilter.gte = from;
-      if (to) pairingCreatedFilter.lte = to;
-      const pairings = await prisma.padelPairing.findMany({
-        where: {
-          pairingStatus: { not: "CANCELLED" },
-          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
-          ...(Object.keys(pairingCreatedFilter).length > 0
-            ? { createdAt: pairingCreatedFilter }
-            : {}),
-          ...(eventId ? { eventId } : {}),
-          event: {
-            organizationId: organization.id,
-            ...eventTemplateFilter,
-          },
-        },
-        select: { createdAt: true },
-      });
-      pairings.forEach((pairing) => {
-        const key = formatDayKey(pairing.createdAt);
-        if (!buckets[key]) {
-          buckets[key] = {
-            date: key,
-            tickets: 0,
-            revenueCents: 0,
-            grossCents: 0,
-            discountCents: 0,
-            platformFeeCents: 0,
-            currency: null,
-          };
-        }
-        buckets[key].tickets += 1;
-      });
-    }
-
-    const points = Object.values(buckets).sort((a, b) =>
-      a.date.localeCompare(b.date)
-    );
-
-    return jsonWrap(
-      {
-        ok: true,
-        range: {
-          from: from ? from.toISOString() : null,
-          to: to ? to.toISOString() : null,
-        },
-        points: points.map((p) => ({
-          ...p,
-          netCents: p.revenueCents,
-        })),
-      },
-      { status: 200 }
-    );
+    return jsonWrap({ ok: true, points, currency });
   } catch (error) {
-    console.error(
-      "[organização/time-series] Erro interno ao gerar série temporal:",
-      error
-    );
-    return jsonWrap(
-      { ok: false, error: "INTERNAL_ERROR" },
-      { status: 500 }
-    );
+    console.error("[organização/time-series] Erro inesperado:", error);
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 export const GET = withApiEnvelope(_GET);

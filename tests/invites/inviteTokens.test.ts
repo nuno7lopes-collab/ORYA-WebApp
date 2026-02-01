@@ -9,7 +9,10 @@ const inviteToken = vi.hoisted(() => ({
 const getLatestPolicyForEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/prisma", () => ({ prisma: { inviteToken } }));
-vi.mock("@/lib/checkin/accessPolicy", () => ({ getLatestPolicyForEvent }));
+vi.mock("@/lib/checkin/accessPolicy", () => ({
+  getLatestPolicyForEvent,
+  requireLatestPolicyVersionForEvent: vi.fn().mockResolvedValue(1),
+}));
 
 import { issueInviteToken, consumeInviteToken, hashInviteToken } from "@/lib/invites/inviteTokens";
 

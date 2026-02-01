@@ -1070,7 +1070,7 @@ function OrganizacaoPageInner({
     const grossEuros = (overview?.grossCents ?? overview?.totalRevenueCents ?? 0) / 100;
     const netEuros = (overview?.netRevenueCents ?? overview?.totalRevenueCents ?? 0) / 100;
     const discountEuros = (overview?.discountCents ?? 0) / 100;
-    const feeEuros = (overview?.platformFeeCents ?? 0) / 100;
+    const feeEuros = (overview?.feesCents ?? overview?.platformFeeCents ?? 0) / 100;
     return [
       {
         label: `${salesUnitLabel} 30d`,
@@ -1441,7 +1441,7 @@ function OrganizacaoPageInner({
 
   const formatEuros = (val: number) => `${(val / 100).toFixed(2)} €`;
 
-  const extractFees = (p: TimeSeriesPoint) => p.platformFeeCents ?? p.feesCents ?? 0;
+  const extractFees = (p: TimeSeriesPoint) => p.feesCents ?? p.platformFeeCents ?? 0;
 
   const normalizePoint = (p: TimeSeriesPoint) => {
     const netCents = p.netCents ?? p.revenueCents ?? 0;

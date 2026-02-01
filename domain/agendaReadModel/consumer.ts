@@ -191,7 +191,7 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     const hardBlockId = Number(sourceId);
     if (!Number.isFinite(hardBlockId)) return { ok: false, code: "HARD_BLOCK_ID_INVALID" };
     if (!title || !startsAt || !endsAt || !status) {
-      const hardBlock = await prisma.padelCourtBlock.findUnique({
+      const hardBlock = await prisma.calendarBlock.findUnique({
         where: { id: hardBlockId },
         select: { id: true, startAt: true, endAt: true, label: true, organizationId: true },
       });
@@ -216,7 +216,7 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     const matchId = Number(sourceId);
     if (!Number.isFinite(matchId)) return { ok: false, code: "MATCH_ID_INVALID" };
     if (!title || !startsAt || !endsAt || !status) {
-      const match = await prisma.padelMatch.findUnique({
+      const match = await prisma.eventMatchSlot.findUnique({
         where: { id: matchId },
         select: { id: true, plannedStartAt: true, plannedEndAt: true, plannedDurationMinutes: true, startTime: true, courtId: true },
       });
@@ -593,7 +593,7 @@ export async function rebuildAgendaItems(params?: {
 
     await forEachBatch<MatchRow>(
       (cursor) =>
-        prisma.padelMatch.findMany({
+        prisma.eventMatchSlot.findMany({
           where: {
             event: { organizationId: orgId },
             OR: [{ plannedStartAt: { not: null } }, { startTime: { not: null } }],
@@ -632,7 +632,7 @@ export async function rebuildAgendaItems(params?: {
 
     await forEachBatch<CourtBlockRow>(
       (cursor) =>
-        prisma.padelCourtBlock.findMany({
+        prisma.calendarBlock.findMany({
           where: { organizationId: orgId },
           orderBy: { id: "asc" },
           take: batchSize,

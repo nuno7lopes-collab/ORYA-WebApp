@@ -78,7 +78,7 @@ async function _GET(req: NextRequest) {
             locationName: true,
             locationCity: true,
             coverImageUrl: true,
-            padelTournamentConfig: { select: { advancedSettings: true } },
+            padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
           },
         },
       },
@@ -106,6 +106,7 @@ async function _GET(req: NextRequest) {
         registrationStartsAt,
         registrationEndsAt,
         competitionState: advanced.competitionState ?? null,
+        lifecycleStatus: pairing.event.padelTournamentConfig?.lifecycleStatus ?? null,
       });
       return check.ok;
     });

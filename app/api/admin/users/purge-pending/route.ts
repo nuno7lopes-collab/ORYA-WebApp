@@ -7,6 +7,23 @@ import { clearUsernameForOwner } from "@/lib/globalUsernames";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
+import { DsarCaseStatus, DsarCaseType, SaleSummaryStatus, TicketStatus } from "@prisma/client";
+
+async function resolveLegalHold(userId: string) {
+  const [disputedTickets, disputedSales] = await Promise.all([
+    prisma.ticket.count({ where: { ownerUserId: userId, status: TicketStatus.DISPUTED } }),
+    prisma.saleSummary.count({
+      where: {
+        status: SaleSummaryStatus.DISPUTED,
+        OR: [{ ownerUserId: userId }, { userId }],
+      },
+    }),
+  ]);
+  const reasons: string[] = [];
+  if (disputedTickets > 0) reasons.push("DISPUTED_TICKETS");
+  if (disputedSales > 0) reasons.push("DISPUTED_SALES");
+  return { active: reasons.length > 0, reasons };
+}
 
 async function _POST(req: NextRequest) {
   try {
@@ -29,6 +46,7 @@ async function _POST(req: NextRequest) {
 
     for (const profile of pending) {
       try {
+        const legalHold = await resolveLegalHold(profile.id);
         await prisma.$transaction(async (tx) => {
           await tx.profile.update({
             where: { id: profile.id },
@@ -52,12 +70,46 @@ async function _POST(req: NextRequest) {
           await tx.organizationMember.deleteMany({
             where: { userId: profile.id },
           });
+
+          await tx.notification.deleteMany({ where: { userId: profile.id } });
+          await tx.notificationPreference.deleteMany({ where: { userId: profile.id } });
+
+          await tx.storeOrder.updateMany({
+            where: { userId: profile.id },
+            data: {
+              customerEmail: null,
+              customerName: "Conta apagada",
+              customerPhone: null,
+              notes: null,
+            },
+          });
+          await tx.storeOrderAddress.deleteMany({
+            where: { order: { userId: profile.id } },
+          });
         });
 
         await logAccountEvent({
           userId: profile.id,
           type: "account_delete_completed",
-          metadata: { reason: "scheduled_purge" },
+          metadata: { reason: "scheduled_purge", legalHold: legalHold.active, legalHoldReasons: legalHold.reasons },
+        });
+
+        await prisma.dsarCase.updateMany({
+          where: {
+            userId: profile.id,
+            type: DsarCaseType.DELETE,
+            status: { in: [DsarCaseStatus.REQUESTED, DsarCaseStatus.IN_PROGRESS] },
+          },
+          data: {
+            status: DsarCaseStatus.COMPLETED,
+            completedAt: now,
+            metadata: {
+              action: "account_delete_completed",
+              reason: "scheduled_purge",
+              legalHold: legalHold.active,
+              legalHoldReasons: legalHold.reasons,
+            },
+          },
         });
 
         try {

@@ -2,12 +2,13 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { LocationSource, OrganizationMemberRole, PadelClubKind, Prisma } from "@prisma/client";
+import { AddressSourceProvider, LocationSource, OrganizationMemberRole, PadelClubKind, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { PORTUGAL_CITIES } from "@/config/cities";
+import { createManualAddress } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -24,6 +25,26 @@ function normalizeSlug(raw: string | null | undefined) {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 }
+
+const asRecord = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
+  const record = asRecord(canonical);
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+};
+
+const mapAddressProviderToLocationSource = (provider?: AddressSourceProvider | null) => {
+  if (!provider || provider === AddressSourceProvider.MANUAL) return LocationSource.MANUAL;
+  return LocationSource.OSM;
+};
 
 async function generateUniqueSlug(base: string, organizationId: number, excludeId?: number | null) {
   if (!base) return "";
@@ -97,6 +118,8 @@ async function _POST(req: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const city = typeof body.city === "string" ? body.city.trim() : "";
   const address = typeof body.address === "string" ? body.address.trim() : "";
+  const addressIdRaw = typeof body.addressId === "string" ? body.addressId.trim() : "";
+  const addressIdInput = addressIdRaw || null;
   const kindRaw = typeof body.kind === "string" ? body.kind.trim().toUpperCase() : "";
   const requestedKind = CLUB_KINDS.has(kindRaw) ? kindRaw : null;
   const sourceClubIdRaw =
@@ -144,6 +167,7 @@ async function _POST(req: NextRequest) {
           name: true,
           city: true,
           address: true,
+          addressId: true,
           kind: true,
           sourceClubId: true,
           locationSource: true,
@@ -164,22 +188,105 @@ async function _POST(req: NextRequest) {
   const existingKind = existing?.kind ? String(existing.kind).toUpperCase() : null;
   const kind = ((existingKind && CLUB_KINDS.has(existingKind) ? existingKind : requestedKind) ?? "OWN") as PadelClubKind;
   const isPartner = kind === "PARTNER";
+  const sourceClubIdCandidate = Number.isFinite(sourceClubIdRaw as number)
+    ? Math.floor(sourceClubIdRaw as number)
+    : null;
+  const sourceClub = isPartner && sourceClubIdCandidate
+    ? await prisma.padelClub.findFirst({
+        where: { id: sourceClubIdCandidate, deletedAt: null, isActive: true },
+        select: {
+          id: true,
+          addressId: true,
+          address: true,
+          city: true,
+          latitude: true,
+          longitude: true,
+          locationFormattedAddress: true,
+          locationProviderId: true,
+          locationComponents: true,
+          locationSource: true,
+        },
+      })
+    : null;
+
+  let resolvedAddressId = addressIdInput ?? sourceClub?.addressId ?? existing?.addressId ?? null;
+  let resolvedAddressRecord = resolvedAddressId
+    ? await prisma.address.findUnique({ where: { id: resolvedAddressId } })
+    : null;
+
+  if (!resolvedAddressRecord && !resolvedAddressId) {
+    const manualFormatted = address || sourceClub?.address || existing?.address || "";
+    const manualLat =
+      typeof latitudeRaw === "number" && Number.isFinite(latitudeRaw)
+        ? latitudeRaw
+        : sourceClub?.latitude ?? existing?.latitude ?? null;
+    const manualLng =
+      typeof longitudeRaw === "number" && Number.isFinite(longitudeRaw)
+        ? longitudeRaw
+        : sourceClub?.longitude ?? existing?.longitude ?? null;
+    if (manualFormatted && manualLat != null && manualLng != null) {
+      const manualAddress = await createManualAddress({
+        formattedAddress: manualFormatted,
+        canonical: sourceClub?.locationComponents ?? existing?.locationComponents ?? null,
+        latitude: manualLat,
+        longitude: manualLng,
+      });
+      if (manualAddress.ok) {
+        resolvedAddressRecord = manualAddress.address;
+        resolvedAddressId = manualAddress.address.id;
+      }
+    }
+  }
+
+  if (resolvedAddressId && !resolvedAddressRecord) {
+    return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
+  }
+
   const resolvedName = name || existing?.name || "";
-  const resolvedCity = city || existing?.city || "";
-  const resolvedAddress = address || existing?.address || "";
-  const locationSource = (
-    (locationSourceInput ?? (existing?.locationSource ? String(existing.locationSource).toUpperCase() : null)) ??
-    (isPartner ? "MANUAL" : "OSM")
-  ) as LocationSource;
-  const locationProviderId = locationProviderIdRaw || existing?.locationProviderId || null;
+  const resolvedCity =
+    pickCanonicalField(resolvedAddressRecord?.canonical ?? null, "city", "addressLine2") ||
+    city ||
+    sourceClub?.city ||
+    existing?.city ||
+    "";
+  const resolvedAddress =
+    resolvedAddressRecord?.formattedAddress ||
+    pickCanonicalField(resolvedAddressRecord?.canonical ?? null, "addressLine1") ||
+    address ||
+    sourceClub?.address ||
+    existing?.address ||
+    "";
+  const locationSource =
+    resolvedAddressRecord
+      ? mapAddressProviderToLocationSource(resolvedAddressRecord.sourceProvider)
+      : ((locationSourceInput ?? (existing?.locationSource ? String(existing.locationSource).toUpperCase() : null)) ??
+          (isPartner ? "MANUAL" : "OSM")) as LocationSource;
+  const locationProviderId =
+    resolvedAddressRecord?.sourceProviderPlaceId ||
+    locationProviderIdRaw ||
+    sourceClub?.locationProviderId ||
+    existing?.locationProviderId ||
+    null;
   const composedFormatted = [resolvedAddress, resolvedCity].filter(Boolean).join(", ");
   const locationFormattedAddress =
-    locationFormattedAddressRaw || composedFormatted || existing?.locationFormattedAddress || null;
-  const locationComponents = locationComponentsRaw ?? existing?.locationComponents ?? null;
+    resolvedAddressRecord?.formattedAddress ||
+    locationFormattedAddressRaw ||
+    sourceClub?.locationFormattedAddress ||
+    composedFormatted ||
+    existing?.locationFormattedAddress ||
+    null;
+  const locationComponents =
+    (resolvedAddressRecord?.canonical as Record<string, unknown> | null) ??
+    locationComponentsRaw ??
+    sourceClub?.locationComponents ??
+    existing?.locationComponents ??
+    null;
   const latitude =
-    typeof latitudeRaw === "number" && Number.isFinite(latitudeRaw) ? latitudeRaw : existing?.latitude ?? null;
+    resolvedAddressRecord?.latitude ??
+    (typeof latitudeRaw === "number" && Number.isFinite(latitudeRaw) ? latitudeRaw : sourceClub?.latitude ?? existing?.latitude ?? null);
   const longitude =
-    typeof longitudeRaw === "number" && Number.isFinite(longitudeRaw) ? longitudeRaw : existing?.longitude ?? null;
+    resolvedAddressRecord?.longitude ??
+    (typeof longitudeRaw === "number" && Number.isFinite(longitudeRaw) ? longitudeRaw : sourceClub?.longitude ?? existing?.longitude ?? null);
 
   if (!resolvedName || resolvedName.length < 3) {
     return jsonWrap({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });
@@ -192,20 +299,17 @@ async function _POST(req: NextRequest) {
     );
   }
 
+  if (!resolvedAddressId) {
+    return jsonWrap(
+      { ok: false, error: "Seleciona uma morada normalizada antes de guardar." },
+      { status: 400 },
+    );
+  }
   if (!isPartner && !resolvedCity.trim()) {
     return jsonWrap({ ok: false, error: "Cidade obrigatória para clube principal." }, { status: 400 });
   }
   if (!isPartner && !resolvedAddress.trim()) {
     return jsonWrap({ ok: false, error: "Morada obrigatória para clube principal." }, { status: 400 });
-  }
-  if (!isPartner && locationSource !== "OSM") {
-    return jsonWrap(
-      { ok: false, error: "Morada normalizada obrigatória. Usa a pesquisa para confirmar." },
-      { status: 400 },
-    );
-  }
-  if (!isPartner && !locationProviderId) {
-    return jsonWrap({ ok: false, error: "Seleciona uma morada normalizada antes de guardar." }, { status: 400 });
   }
   if (isPartner && sourceClubIdRaw && !Number.isFinite(sourceClubIdRaw)) {
     return jsonWrap({ ok: false, error: "Clube parceiro inválido." }, { status: 400 });
@@ -219,26 +323,17 @@ async function _POST(req: NextRequest) {
   const safeIsDefault = !isPartner && isActive ? isDefault : false;
 
   try {
-    if (isPartner && !existing && Number.isFinite(sourceClubIdRaw)) {
-      const source = await prisma.padelClub.findFirst({
-        where: { id: Math.floor(sourceClubIdRaw as number), deletedAt: null, isActive: true },
-        select: { id: true },
-      });
-      if (!source) {
-        return jsonWrap(
-          { ok: false, error: "Clube parceiro indisponível ou inexistente." },
-          { status: 400 },
-        );
-      }
+    if (isPartner && !existing && sourceClubIdCandidate && !sourceClub) {
+      return jsonWrap(
+        { ok: false, error: "Clube parceiro indisponível ou inexistente." },
+        { status: 400 },
+      );
     }
 
     const slug = baseSlug ? await generateUniqueSlug(baseSlug, organization.id, id) : null;
-    const sourceClubId =
-      isPartner && Number.isFinite(sourceClubIdRaw)
-        ? Math.floor(sourceClubIdRaw as number)
-        : isPartner
-          ? existing?.sourceClubId ?? null
-          : null;
+    const sourceClubId = isPartner
+      ? sourceClubIdCandidate ?? existing?.sourceClubId ?? null
+      : null;
 
     const updateData: Prisma.PadelClubUncheckedUpdateInput = isPartner && existing
       ? {
@@ -250,6 +345,7 @@ async function _POST(req: NextRequest) {
           shortName: resolvedName,
           city: resolvedCity || null,
           address: resolvedAddress || null,
+          addressId: resolvedAddressId,
           courtsCount,
           hours: null,
           favoriteCategoryIds: [] as number[],
@@ -271,6 +367,7 @@ async function _POST(req: NextRequest) {
       shortName: resolvedName,
       city: resolvedCity || null,
       address: resolvedAddress || null,
+      addressId: resolvedAddressId,
       courtsCount,
       hours: null,
       favoriteCategoryIds: [] as number[],

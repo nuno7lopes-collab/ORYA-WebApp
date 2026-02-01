@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     select: {
       organizationId: true,
       status: true,
-      padelTournamentConfig: { select: { advancedSettings: true } },
+      padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
       accessPolicies: {
         orderBy: { policyVersion: "desc" },
         take: 1,
@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+    lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
   });
   const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
   const isPublicEvent =
@@ -86,7 +87,7 @@ export async function GET(req: NextRequest) {
     if (!organization) return fail(ctx, 403, "FORBIDDEN");
   }
 
-  const matches = await prisma.padelMatch.findMany({
+  const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId, ...matchCategoryFilter },
     include: {
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
@@ -140,7 +141,7 @@ export async function POST(req: NextRequest) {
     return fail(ctx, 400, "INVALID_START_AT");
   }
 
-  const match = await prisma.padelMatch.findUnique({
+  const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
     include: { event: { select: { organizationId: true } } },
   });

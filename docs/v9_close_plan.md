@@ -7,6 +7,13 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Todas as verificacoes sao auditaveis por paths/rg/tests.
 - A normalizacao final e registada no `docs/v9_ssot_registry.md`.
 
+## Status update (2026-01-31)
+- Bloco 0: envelope C‑G5 + requestId/correlationId concluído.
+- Bloco 2: claim winner‑only + recovery/runbook concluídos.
+- Bloco 4: stats migradas para rollups/entitlements (sem legacy summaries).
+- Bloco 5: gate de org context aplicado em CI + correções de rota crítica.
+- Bloco 9/10: entitlements (tickets/padel/booking/loja) e DSAR/retention concluídos.
+
 ---
 
 ## Primeira Semana (Top-5 Drifts) — Plano de Execucao
@@ -698,7 +705,7 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
 
 ### Scope exato (paths + UI)
-- `docs/v9_closeout.md`, `docs/orya_blueprint_v9_final.md`, `docs/runbooks/**`
+- `docs/v9_ssot_registry.md`, `docs/v10_execution_checklist.md`, `docs/orya_blueprint_v9_final.md`, `docs/runbooks/**`
 - `lib/env.ts`, `next.config.ts`, `fly.worker.toml`, `Dockerfile.worker`
 
 ### Guardrails (rg/tests/CI)

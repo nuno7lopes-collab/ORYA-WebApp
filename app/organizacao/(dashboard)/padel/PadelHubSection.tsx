@@ -26,6 +26,7 @@ type PadelClub = {
 
 type Player = {
   id: number;
+  userId?: string | null;
   fullName: string;
   email: string | null;
   phone: string | null;
@@ -33,6 +34,21 @@ type Player = {
   isActive: boolean;
   createdAt: string | Date;
   tournamentsCount?: number;
+  profile?: {
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+  } | null;
+  crm?: {
+    id: string;
+    status: string;
+    tags: string[];
+    totalSpentCents: number;
+    totalTournaments: number;
+    lastActivityAt: string | Date | null;
+    marketingOptIn: boolean;
+  } | null;
 };
 
 type PadelHubResponse<T> = {

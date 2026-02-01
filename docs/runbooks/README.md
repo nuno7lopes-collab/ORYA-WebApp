@@ -15,9 +15,11 @@ Objetivo: ponto unico para runbooks operacionais.
 - `docs/runbooks/operability-checklist.md`
 - `docs/runbooks/payments-refunds.md`
 - `docs/runbooks/checkin.md`
+- `docs/runbooks/dsar.md`
 - `docs/runbooks/reservas.md`
 - `docs/runbooks/notifications.md`
 - `docs/runbooks/metrics-alerts.md`
+- `docs/runbooks/operations-recovery.md`
 - `docs/runbooks/payments-incident.md`
 - `docs/runbooks/cron-recovery.md`
 - `docs/runbooks/db-migrations.md`

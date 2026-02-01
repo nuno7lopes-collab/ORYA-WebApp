@@ -25,8 +25,17 @@ export async function queuePairingInvite(params: {
   }
 }
 
-export async function queuePairingReminder(pairingId: number, targetUserId: string) {
-  return notifyPairingReminder({ pairingId, targetUserId });
+export async function queuePairingReminder(
+  pairingId: number,
+  targetUserId: string,
+  params?: { stage?: string | null; deadlineAt?: string | null },
+) {
+  return notifyPairingReminder({
+    pairingId,
+    targetUserId,
+    stage: params?.stage ?? null,
+    deadlineAt: params?.deadlineAt ?? null,
+  });
 }
 
 export async function queuePartnerPaid(pairingId: number, captainUserId: string, partnerUserId?: string) {

@@ -1,0 +1,16 @@
+{
+  "Comment": "Add SES inbound MX for orya.pt",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "orya.pt.",
+        "Type": "MX",
+        "TTL": 300,
+        "ResourceRecords": [
+          { "Value": "10 inbound-smtp.eu-west-1.amazonaws.com." }
+        ]
+      }
+    }
+  ]
+}

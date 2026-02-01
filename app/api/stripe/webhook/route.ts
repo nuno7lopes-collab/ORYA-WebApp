@@ -56,7 +56,7 @@ import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import {
   queuePartnerPaid,
   queueDeadlineExpired,
@@ -1467,7 +1467,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
       data: { saleSummaryId: sale.id },
     });
 
-    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
+    const policyVersionApplied = await requireLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = userId ? `user:${userId}` : "unknown";
     const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     await tx.entitlement.upsert({
@@ -1995,7 +1995,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
       },
     });
 
-    const policyVersionApplied = await getLatestPolicyVersionForEvent(eventId, tx);
+    const policyVersionApplied = await requireLatestPolicyVersionForEvent(eventId, tx);
     const ownerKey = userId ? `user:${userId}` : "unknown";
     const entitlementPurchaseId = sale.purchaseId ?? sale.paymentIntentId ?? intent.id;
     const entitlementBase = {

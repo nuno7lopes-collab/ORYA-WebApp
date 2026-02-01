@@ -7,6 +7,8 @@ import {
   type Prisma,
 } from "@prisma/client";
 import { attemptPadelSecondChargeForPairing } from "@/domain/padelSecondCharge";
+import { enqueueOperation } from "@/lib/operations/enqueue";
+import { refundKey } from "@/lib/stripe/idempotency";
 
 type PadelRegistrationOutboxPayload = {
   registrationId?: string;
@@ -67,6 +69,12 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
   const reason = typeof payload.reason === "string" ? payload.reason : null;
   const guaranteeStatus = resolveGuaranteeStatusForExpiry(reason);
   const pairingId = pairing.id;
+  const eventId = registration.eventId;
+  const organizationId = registration.organizationId;
+  const paidTickets = pairing.slots
+    .filter((slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID && slot.ticket)
+    .map((slot) => slot.ticket!)
+    .filter(Boolean);
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.padelPairingSlot.updateMany({
@@ -107,6 +115,37 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
       data: { status: "CANCELLED" },
     });
   });
+
+  await Promise.all(
+    paidTickets.map((ticket) => {
+      const purchaseId = ticket.purchaseId ?? null;
+      if (!purchaseId) return Promise.resolve(null);
+      return enqueueOperation({
+        operationType: "PROCESS_REFUND_SINGLE",
+        dedupeKey: refundKey(purchaseId),
+        correlations: {
+          eventId,
+          organizationId,
+          pairingId,
+          purchaseId,
+          paymentIntentId: ticket.stripePaymentIntentId ?? null,
+        },
+        payload: {
+          eventId,
+          purchaseId,
+          paymentIntentId: ticket.stripePaymentIntentId ?? null,
+          reason: "CANCELLED",
+          refundedBy: "system",
+          auditPayload: {
+            pairingId,
+            registrationId: registration.id,
+            reason,
+            source: "PADREG_EXPIRED",
+          },
+        },
+      });
+    }),
+  );
 
   return { ok: true, code: "EXPIRED" } as const;
 }

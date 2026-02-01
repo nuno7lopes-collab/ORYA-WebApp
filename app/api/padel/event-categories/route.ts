@@ -113,7 +113,7 @@ async function cancelCategoryActivity(params: { eventId: number; categoryId: num
       where: { pairing: { eventId, categoryId }, status: "ACTIVE" },
       data: { status: "CANCELLED" },
     });
-    const matches = await tx.padelMatch.findMany({
+    const matches = await tx.eventMatchSlot.findMany({
       where: { eventId, categoryId },
       select: { id: true },
     });

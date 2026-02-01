@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { PaymentEventSource } from "@prisma/client";
+import { EntitlementStatus, PaymentEventSource } from "@prisma/client";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
@@ -56,9 +56,26 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
         where: { id: resale.ticketId },
         data: {
           userId: buyerUserId,
+          ownerUserId: buyerUserId,
+          ownerIdentityId: null,
           status: "ACTIVE",
         },
       });
+
+      const ownerKey = `user:${buyerUserId}`;
+      const updated = await tx.entitlement.updateMany({
+        where: { ticketId: resale.ticketId },
+        data: {
+          ownerUserId: buyerUserId,
+          ownerIdentityId: null,
+          ownerKey,
+          purchaseId: purchaseId ?? undefined,
+          status: EntitlementStatus.ACTIVE,
+        },
+      });
+      if (updated.count === 0) {
+        logWarn("fulfill_resale.entitlement_missing", { resaleId, ticketId, buyerUserId });
+      }
 
       const paymentEventKey = purchaseId ?? intent.id;
       await paymentEventRepo(tx).upsert({

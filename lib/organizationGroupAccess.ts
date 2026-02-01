@@ -40,8 +40,8 @@ export async function resolveGroupMemberForOrg(params: {
   const scopeOk = member.scopeAllOrgs || (member.scopeOrgIds ?? []).includes(organizationId);
   if (!scopeOk) return null;
 
-  const override = await db.organizationGroupMemberOrganizationOverride.findUnique({
-    where: { groupMemberId_organizationId: { groupMemberId: member.id, organizationId } },
+  const override = await db.organizationGroupMemberOrganizationOverride.findFirst({
+    where: { groupMemberId: member.id, organizationId },
     select: { roleOverride: true, revokedAt: true },
   });
   if (override?.revokedAt) return null;
@@ -120,20 +120,23 @@ export async function revokeGroupMemberForOrg(params: {
   if (!targetGroup) return;
 
   if (targetGroup.scopeAllOrgs) {
-    await db.organizationGroupMemberOrganizationOverride.upsert({
-      where: {
-        groupMemberId_organizationId: {
-          groupMemberId: targetGroup.id,
-          organizationId,
-        },
-      },
-      update: { revokedAt: new Date() },
-      create: {
-        groupMemberId: targetGroup.id,
-        organizationId,
-        revokedAt: new Date(),
-      },
+    const revokedAt = new Date();
+    const updated = await db.organizationGroupMemberOrganizationOverride.updateMany({
+      where: { groupMemberId: targetGroup.id, organizationId },
+      data: { revokedAt },
     });
+    if (updated.count === 0) {
+      await db.organizationGroupMemberOrganizationOverride.createMany({
+        data: [
+          {
+            groupMemberId: targetGroup.id,
+            organizationId,
+            revokedAt,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    }
     return;
   }
 

@@ -414,7 +414,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
   let padelRecent: typeof padelMatches = [];
 
   try {
-    const matchRows = await prisma.padelMatch.findMany({
+    const matchRows = await prisma.eventMatchSlot.findMany({
       where: {
         OR: [
           { pairingA: { slots: { some: { profileId: resolvedProfile.id } } } },
@@ -471,7 +471,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
   let currentWinStreak = 0;
 
   try {
-    const statsRows = await prisma.padelMatch.findMany({
+    const statsRows = await prisma.eventMatchSlot.findMany({
       where: {
         status: "DONE",
         OR: [

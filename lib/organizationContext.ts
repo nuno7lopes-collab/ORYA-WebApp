@@ -227,8 +227,8 @@ export const getActiveOrganizationForUser = cache(
       for (const org of orgs) {
         const scopeOk = member.scopeAllOrgs || (member.scopeOrgIds ?? []).includes(org.id);
         if (!scopeOk) continue;
-        const override = await prisma.organizationGroupMemberOrganizationOverride.findUnique({
-          where: { groupMemberId_organizationId: { groupMemberId: member.id, organizationId: org.id } },
+        const override = await prisma.organizationGroupMemberOrganizationOverride.findFirst({
+          where: { groupMemberId: member.id, organizationId: org.id },
           select: { roleOverride: true, revokedAt: true },
         });
         if (override?.revokedAt) continue;

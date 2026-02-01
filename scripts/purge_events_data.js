@@ -65,7 +65,7 @@ async function main() {
     data: { createdByTicketId: null },
   });
 
-  await runDelete("PadelMatch", () => prisma.padelMatch.deleteMany());
+  await runDelete("EventMatchSlot", () => prisma.eventMatchSlot.deleteMany());
   await runDelete("PadelPairingHold", () => prisma.padelPairingHold.deleteMany());
   await runDelete("PadelWaitlistEntry", () => prisma.padelWaitlistEntry.deleteMany());
   await runDelete("TournamentEntry", () => prisma.tournamentEntry.deleteMany());
@@ -97,8 +97,8 @@ async function main() {
   await runDelete("PendingPayout", () => prisma.pendingPayout.deleteMany());
   await runDelete("Transaction", () => prisma.transaction.deleteMany());
 
-  await runDelete("PadelAvailability", () => prisma.padelAvailability.deleteMany());
-  await runDelete("PadelCourtBlock", () => prisma.padelCourtBlock.deleteMany());
+  await runDelete("CalendarAvailability", () => prisma.calendarAvailability.deleteMany());
+  await runDelete("CalendarBlock", () => prisma.calendarBlock.deleteMany());
   await runDelete("PadelRankingEntry", () => prisma.padelRankingEntry.deleteMany());
   await runDelete("PadelTournamentConfig", () => prisma.padelTournamentConfig.deleteMany());
   await runDelete("PadelEventCategoryLink", () => prisma.padelEventCategoryLink.deleteMany());

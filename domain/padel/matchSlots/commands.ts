@@ -109,7 +109,7 @@ export async function applyMatchSlotUpdate(input: {
     startTime?: Date | null;
     courtId?: number | null;
   };
-  data?: Prisma.PadelMatchUpdateInput;
+  data?: Prisma.EventMatchSlotUpdateInput;
   emitOutbox?: { eventType: string; payload: Prisma.InputJsonValue } | null;
   tx?: Prisma.TransactionClient;
 }): Promise<MatchSlotResult<{ match: MatchSlotSnapshot; eventLogId: string }>> {
@@ -118,7 +118,7 @@ export async function applyMatchSlotUpdate(input: {
   if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
 
   const run = async (tx: Prisma.TransactionClient) => {
-    const existing = await tx.padelMatch.findUnique({
+    const existing = await tx.eventMatchSlot.findUnique({
       where: { id: matchId },
       select: {
         id: true,
@@ -173,7 +173,7 @@ export async function applyMatchSlotUpdate(input: {
       }
     }
 
-    const updateData: Prisma.PadelMatchUpdateInput = {
+    const updateData: Prisma.EventMatchSlotUpdateInput = {
       ...(input.data ?? {}),
       ...(schedule
         ? {
@@ -196,7 +196,7 @@ export async function applyMatchSlotUpdate(input: {
       courtId: existing.courtId ?? null,
     });
 
-    const updated = await tx.padelMatch.update({
+    const updated = await tx.eventMatchSlot.update({
       where: { id: matchId },
       data: updateData,
       select: {
@@ -317,7 +317,7 @@ export async function createMatchSlot(input: {
   actorUserId: string | null;
   correlationId?: string | null;
   causationId?: string | null;
-  data: Prisma.PadelMatchCreateInput | Prisma.PadelMatchUncheckedCreateInput;
+  data: Prisma.EventMatchSlotCreateInput | Prisma.EventMatchSlotUncheckedCreateInput;
   eventType?: string;
   tx?: Prisma.TransactionClient;
 }): Promise<MatchSlotResult<{ match: MatchSlotSnapshot; eventLogId: string }>> {
@@ -327,14 +327,14 @@ export async function createMatchSlot(input: {
   const run = async (tx: Prisma.TransactionClient) => {
     const eventId =
       "event" in input.data && typeof input.data.event === "object" && input.data.event && "connect" in input.data.event
-        ? Number((input.data.event as Prisma.EventCreateNestedOneWithoutPadelMatchesInput).connect?.id)
-        : Number((input.data as Prisma.PadelMatchUncheckedCreateInput).eventId ?? NaN);
+        ? Number((input.data.event as Prisma.EventCreateNestedOneWithoutEventMatchSlotsInput).connect?.id)
+        : Number((input.data as Prisma.EventMatchSlotUncheckedCreateInput).eventId ?? NaN);
     if (!Number.isFinite(eventId)) return { ok: false as const, error: "INVALID_EVENT" };
 
     const event = await tx.event.findFirst({ where: { id: eventId, organizationId }, select: { id: true } });
     if (!event) return { ok: false as const, error: "EVENT_NOT_FOUND" };
 
-    const created = await tx.padelMatch.create({
+    const created = await tx.eventMatchSlot.create({
       data: input.data,
       select: {
         id: true,
@@ -440,7 +440,7 @@ export async function deleteMatchSlot(input: {
   if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
 
   const run = async (tx: Prisma.TransactionClient) => {
-    const existing = await tx.padelMatch.findUnique({
+    const existing = await tx.eventMatchSlot.findUnique({
       where: { id: matchId },
       select: {
         id: true,
@@ -456,7 +456,7 @@ export async function deleteMatchSlot(input: {
     if (!existing || !existing.event?.organizationId) return { ok: false as const, error: "MATCH_NOT_FOUND" };
     if (existing.event.organizationId !== organizationId) return { ok: false as const, error: "ORG_MISMATCH" };
 
-    await tx.padelMatch.delete({ where: { id: existing.id } });
+    await tx.eventMatchSlot.delete({ where: { id: existing.id } });
 
     const scheduleSnapshot = computeScheduleSnapshot({
       plannedStartAt: existing.plannedStartAt ?? null,
@@ -549,7 +549,7 @@ export async function deleteMatchSlotsByEvent(input: {
   if (!Number.isFinite(eventId)) return { ok: false, error: "INVALID_EVENT" };
 
   const run = async (tx: Prisma.TransactionClient) => {
-    const matches = await tx.padelMatch.findMany({
+    const matches = await tx.eventMatchSlot.findMany({
       where: { eventId },
       select: { id: true, eventId: true, plannedStartAt: true, plannedEndAt: true, plannedDurationMinutes: true, startTime: true, courtId: true },
     });
@@ -623,7 +623,7 @@ export async function deleteMatchSlotsByEvent(input: {
     }
 
     if (matches.length) {
-      await tx.padelMatch.deleteMany({ where: { eventId } });
+      await tx.eventMatchSlot.deleteMany({ where: { eventId } });
     }
 
     return { ok: true as const, data: { deleted: matches.length } };

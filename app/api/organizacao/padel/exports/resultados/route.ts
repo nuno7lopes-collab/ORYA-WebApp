@@ -40,7 +40,7 @@ async function _GET(req: NextRequest) {
   });
   if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const matches = await prisma.padelMatch.findMany({
+  const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId },
     include: {
       category: { select: { label: true } },

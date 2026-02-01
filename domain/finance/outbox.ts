@@ -28,7 +28,7 @@ import {
   parsePendingPayoutMetadata,
   unblockPendingPayout,
 } from "@/lib/payments/pendingPayout";
-import { getLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { ensurePadelPlayerProfileId, upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
@@ -950,7 +950,7 @@ async function processPadelFreeCheckout(data: FreeCheckoutPayload & { purchaseId
         data: { saleSummaryId: saleSummary.id },
       });
 
-      const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
+      const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
       const ownerKey = `user:${ownerUserId}`;
       const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
       if (!entitlementPurchaseId) {
@@ -1189,7 +1189,7 @@ async function processPadelFreeCheckout(data: FreeCheckoutPayload & { purchaseId
         data: { saleSummaryId: saleSummary.id },
       });
 
-      const policyVersionApplied = await getLatestPolicyVersionForEvent(event.id, tx);
+      const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
       const ownerKey = `user:${userId}`;
       const entitlementPurchaseId = saleSummary.purchaseId ?? saleSummary.paymentIntentId;
       if (!entitlementPurchaseId) {

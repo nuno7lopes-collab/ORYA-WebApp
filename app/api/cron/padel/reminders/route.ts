@@ -53,7 +53,7 @@ async function _POST(req: NextRequest) {
   const windowStart = new Date(now.getTime() + (REMINDER_MINUTES - WINDOW_MINUTES) * 60 * 1000);
   const windowEnd = new Date(now.getTime() + (REMINDER_MINUTES + WINDOW_MINUTES) * 60 * 1000);
 
-  const matches = (await prisma.padelMatch.findMany({
+  const matches = (await prisma.eventMatchSlot.findMany({
     where: {
       status: "PENDING",
       pairingAId: { not: null },
@@ -92,7 +92,7 @@ async function _POST(req: NextRequest) {
         },
       },
     },
-  })) as Prisma.PadelMatchGetPayload<{
+  })) as Prisma.EventMatchSlotGetPayload<{
     include: {
       event: { select: { id: true; title: true; slug: true; organizationId: true; timezone: true } };
       court: { select: { name: true } };

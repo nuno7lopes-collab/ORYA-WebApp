@@ -30,6 +30,7 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { EventAccessMode } from "@prisma/client";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { resolveLocale } from "@/lib/i18n";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -208,6 +209,15 @@ export default async function EventPage({
 }) {
   const { slug } = await params;
   const resolvedSearchParams = await Promise.resolve(searchParams);
+  const headersList = await headers();
+  const langParam =
+    typeof resolvedSearchParams?.lang === "string"
+      ? resolvedSearchParams.lang
+      : Array.isArray(resolvedSearchParams?.lang)
+        ? resolvedSearchParams?.lang?.[0]
+        : null;
+  const acceptLanguage = headersList.get("accept-language");
+  const locale = resolveLocale(langParam ?? (acceptLanguage ? acceptLanguage.split(",")[0] : null));
 
   if (!slug) {
     return notFound();
@@ -400,6 +410,7 @@ export default async function EventPage({
   const padelCompetitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
     competitionState: padelAdvanced.competitionState ?? null,
+    lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
   });
   const padelRegistrationStartsAt =
     padelAdvanced.registrationStartsAt && !Number.isNaN(new Date(padelAdvanced.registrationStartsAt).getTime())
@@ -417,6 +428,7 @@ export default async function EventPage({
           registrationStartsAt: padelRegistrationStartsAt,
           registrationEndsAt: padelRegistrationEndsAt,
           competitionState: padelCompetitionState,
+          lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
         })
       : { ok: true as const };
   const padelRegistrationMessage = !padelRegistrationCheck.ok
@@ -626,7 +638,6 @@ export default async function EventPage({
         ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
         : "border-yellow-400/40 bg-yellow-500/15 text-yellow-100";
 
-  const headersList = await headers();
   const protocol = headersList.get("x-forwarded-proto") ?? "http";
   const host = headersList.get("host");
   const baseUrl = host ? `${protocol}://${host}` : null;
@@ -1139,7 +1150,10 @@ export default async function EventPage({
 
                 <PadelPublicTablesClient
                   eventId={event.id}
+                  eventSlug={event.slug}
                   initialStandings={padelStandings}
+                  locale={locale}
+                  timezone={safeTimezone}
                 />
               </section>
             )}

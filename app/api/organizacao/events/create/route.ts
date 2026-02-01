@@ -11,6 +11,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { clampDeadlineHours } from "@/domain/padelDeadlines";
 import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
+import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -752,7 +753,7 @@ export async function POST(req: NextRequest) {
         baseAdvanced.scoreRules = DEFAULT_PADEL_SCORE_RULES;
       }
       try {
-        await prisma.padelTournamentConfig.upsert({
+        const config = await prisma.padelTournamentConfig.upsert({
           where: { eventId: event.id },
           create: {
             eventId: event.id,
@@ -781,6 +782,27 @@ export async function POST(req: NextRequest) {
             advancedSettings: { ...baseAdvanced, courtIds, staffIds },
           },
         });
+        if (config.ruleSetId) {
+          await prisma.$transaction(async (tx) => {
+            const fresh = await tx.padelTournamentConfig.findUnique({
+              where: { id: config.id },
+              select: { id: true, ruleSetId: true, ruleSetVersionId: true },
+            });
+            if (!fresh?.ruleSetId) return;
+            if (!fresh.ruleSetVersionId) {
+              const version = await ensurePadelRuleSetVersion({
+                tx,
+                tournamentConfigId: fresh.id,
+                ruleSetId: fresh.ruleSetId,
+                actorUserId: user.id,
+              });
+              await tx.padelTournamentConfig.update({
+                where: { id: fresh.id },
+                data: { ruleSetVersionId: version.id },
+              });
+            }
+          });
+        }
       } catch (padelErr) {
         console.warn("[organização/events/create] padel config falhou", padelErr);
       }

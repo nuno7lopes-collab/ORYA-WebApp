@@ -5,6 +5,8 @@ const dotenv = require("dotenv");
 const root = process.cwd();
 const envPath = path.join(root, ".env");
 const envLocalPath = path.join(root, ".env.local");
+const secretsPath = process.env.ORYA_SECRETS_FILE || "/tmp/orya-prod-secrets.json";
+const secretsEnv = (process.env.ORYA_SECRETS_ENV || "prod").toLowerCase();
 
 function applyEnvFile(filePath, options = { override: false, onlyIfUnset: true }) {
   if (!fs.existsSync(filePath)) return {};
@@ -43,3 +45,46 @@ if (fs.existsSync(envLocalPath)) {
     }
   }
 }
+
+// Optional: load defaults from /tmp/orya-prod-secrets.json (for local scripts only)
+function loadSecretsDefaults() {
+  if (!fs.existsSync(secretsPath)) return;
+  let raw;
+  try {
+    raw = fs.readFileSync(secretsPath, "utf8");
+  } catch {
+    return;
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return;
+  }
+
+  const flat = [];
+  function walk(prefix, value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [k, v] of Object.entries(value)) {
+        walk(prefix ? `${prefix}/${k}` : k, v);
+      }
+    } else {
+      flat.push([prefix, value]);
+    }
+  }
+  walk("", data);
+
+  const token = `/orya/${secretsEnv}/`;
+  for (const [pathKey, value] of flat) {
+    if (typeof value !== "string") continue;
+    if (!pathKey.includes(token)) continue;
+    if (!value.trim()) continue;
+    if (value.trim().startsWith("REPLACE_ME")) continue;
+    const envKey = pathKey.split("/").slice(-1)[0];
+    if (!process.env[envKey] || String(process.env[envKey]).trim() === "") {
+      process.env[envKey] = value;
+    }
+  }
+}
+
+loadSecretsDefaults();

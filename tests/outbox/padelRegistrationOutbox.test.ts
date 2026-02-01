@@ -8,10 +8,14 @@ import {
 } from "@prisma/client";
 import { handlePadelRegistrationOutboxEvent } from "@/domain/padelRegistrationOutbox";
 import { attemptPadelSecondChargeForPairing } from "@/domain/padelSecondCharge";
+import { enqueueOperation } from "@/lib/operations/enqueue";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("@/domain/padelSecondCharge", () => ({
   attemptPadelSecondChargeForPairing: vi.fn(async () => ({ ok: true })),
+}));
+vi.mock("@/lib/operations/enqueue", () => ({
+  enqueueOperation: vi.fn(async () => null),
 }));
 
 let pairingState: any = null;
@@ -52,6 +56,7 @@ vi.mock("@/lib/prisma", () => {
 
 const prismaMock = vi.mocked(prisma);
 const secondChargeMock = vi.mocked(attemptPadelSecondChargeForPairing);
+const enqueueMock = vi.mocked(enqueueOperation);
 
 describe("padel registration outbox consumer", () => {
   beforeEach(() => {
@@ -62,13 +67,15 @@ describe("padel registration outbox consumer", () => {
       slots: [
         {
           paymentStatus: PadelPairingPaymentStatus.PAID,
-          ticket: { id: "t1" },
+          ticket: { id: "t1", purchaseId: "pur_1", stripePaymentIntentId: "pi_1" },
         },
       ],
     };
     registrationState = {
       id: "reg_1",
       status: PadelRegistrationStatus.CONFIRMED,
+      organizationId: 1,
+      eventId: 99,
       pairingId: 10,
       pairing: pairingState,
     };
@@ -77,6 +84,7 @@ describe("padel registration outbox consumer", () => {
     prismaMock.padelPairingHold.updateMany.mockClear();
     prismaMock.ticket.update.mockClear();
     secondChargeMock.mockClear();
+    enqueueMock.mockClear();
   });
 
   it("sync lifecycle status e é idempotente", async () => {
@@ -119,5 +127,6 @@ describe("padel registration outbox consumer", () => {
         }),
       }),
     );
+    expect(enqueueMock).toHaveBeenCalled();
   });
 });

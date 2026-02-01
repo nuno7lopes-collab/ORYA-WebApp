@@ -181,7 +181,7 @@ async function _POST(req: Request) {
         await tx.tournament.deleteMany({ where: { id: { in: tournamentIds } } });
       }
 
-      await tx.padelAvailability.deleteMany({ where: { eventId } });
+      await tx.calendarAvailability.deleteMany({ where: { eventId } });
       const hardBlocksRes = await deleteHardBlocksByEvent({
         organizationId,
         eventId,

@@ -104,7 +104,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const config = await prisma.padelTournamentConfig.findUnique({
       where: { eventId: pairing.eventId },
-      select: { advancedSettings: true, splitDeadlineHours: true },
+      select: { advancedSettings: true, splitDeadlineHours: true, lifecycleStatus: true },
     });
     const event = await prisma.event.findUnique({
       where: { id: pairing.eventId },
@@ -136,6 +136,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         registrationStartsAt,
         registrationEndsAt,
         competitionState: advanced.competitionState ?? null,
+        lifecycleStatus: config?.lifecycleStatus ?? null,
       });
       if (registrationCheck.ok) {
         await prisma.$transaction((tx) =>

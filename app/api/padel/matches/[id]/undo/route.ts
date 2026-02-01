@@ -42,7 +42,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         ? Number(body.eventId)
         : null;
 
-  const match = await prisma.padelMatch.findUnique({
+  const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
     include: { event: { select: { id: true, organizationId: true } } },
   });
@@ -100,7 +100,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         where: { eventId: match.eventId },
         select: { format: true },
       }),
-      prisma.padelMatch.findMany({
+      prisma.eventMatchSlot.findMany({
         where: {
           eventId: match.eventId,
           roundType: "KNOCKOUT",
@@ -248,7 +248,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const updated = await prisma.$transaction(async (tx) => {
     for (const target of updateDownstream) {
       if (!target.clearA && !target.clearB) continue;
-      const data: Prisma.PadelMatchUncheckedUpdateInput = {};
+      const data: Prisma.EventMatchSlotUncheckedUpdateInput = {};
       if (target.clearA) data.pairingAId = null;
       if (target.clearB) data.pairingBId = null;
       if (target.clearA || target.clearB) data.winnerPairingId = null;

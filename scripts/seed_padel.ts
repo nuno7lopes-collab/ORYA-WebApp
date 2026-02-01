@@ -752,7 +752,7 @@ async function main() {
     pairingsByCategory.push({ categoryId: category.id, pairingIds: pairings.map((p) => p.id) });
   }
 
-  const matchCreateData: Prisma.PadelMatchCreateManyInput[] = [];
+  const matchCreateData: Prisma.EventMatchSlotCreateManyInput[] = [];
   const groupedPairings = pairingsByCategory;
 
   groupedPairings.forEach((group) => {
@@ -782,10 +782,10 @@ async function main() {
   });
 
   if (matchCreateData.length > 0) {
-    await prisma.padelMatch.createMany({ data: matchCreateData });
+    await prisma.eventMatchSlot.createMany({ data: matchCreateData });
   }
 
-  const matches = await prisma.padelMatch.findMany({
+  const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId: event.id },
     select: {
       id: true,
@@ -871,7 +871,7 @@ async function main() {
   if (scheduleResult.scheduled.length > 0) {
     await prisma.$transaction(
       scheduleResult.scheduled.map((update) =>
-        prisma.padelMatch.update({
+        prisma.eventMatchSlot.update({
           where: { id: update.matchId },
           data: {
             plannedStartAt: update.start,

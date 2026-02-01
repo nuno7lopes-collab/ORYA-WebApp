@@ -42,7 +42,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "INVALID_REASON" }, { status: 400 });
   }
 
-  const match = await prisma.padelMatch.findUnique({
+  const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
     include: {
       event: {

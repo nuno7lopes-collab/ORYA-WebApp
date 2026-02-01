@@ -68,7 +68,7 @@ export async function createHardBlock(input: {
     });
     if (!event) return { ok: false as const, error: "EVENT_NOT_FOUND" };
 
-    const block = await tx.padelCourtBlock.create({
+    const block = await tx.calendarBlock.create({
       data: {
         organizationId,
         eventId,
@@ -168,7 +168,7 @@ export async function updateHardBlock(input: {
   if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
 
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.padelCourtBlock.findFirst({
+    const existing = await tx.calendarBlock.findFirst({
       where: { id: hardBlockId, organizationId },
       select: {
         id: true,
@@ -189,7 +189,7 @@ export async function updateHardBlock(input: {
     const nextEnd = input.endAt ?? existing.endAt;
     if (!isValidInterval(nextStart, nextEnd)) return { ok: false as const, error: "INVALID_INTERVAL" };
 
-    const updated = await tx.padelCourtBlock.update({
+    const updated = await tx.calendarBlock.update({
       where: { id: existing.id },
       data: {
         ...(typeof input.padelClubId !== "undefined" ? { padelClubId: normalizeOptionalInt(input.padelClubId) } : {}),
@@ -276,13 +276,13 @@ export async function deleteHardBlock(input: {
   if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
 
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.padelCourtBlock.findFirst({
+    const existing = await tx.calendarBlock.findFirst({
       where: { id: hardBlockId, organizationId },
       select: { id: true, eventId: true, padelClubId: true, courtId: true, startAt: true, endAt: true, label: true, kind: true, note: true },
     });
     if (!existing) return { ok: false as const, error: "NOT_FOUND" };
 
-    await tx.padelCourtBlock.delete({ where: { id: existing.id } });
+    await tx.calendarBlock.delete({ where: { id: existing.id } });
 
     const eventLogId = crypto.randomUUID();
     const title = buildTitle(existing.label ?? null);
@@ -348,7 +348,7 @@ export async function deleteHardBlocksByEvent(input: {
 
   const tx = input.tx ?? prisma;
 
-  const blocks = await tx.padelCourtBlock.findMany({
+  const blocks = await tx.calendarBlock.findMany({
     where: { organizationId, eventId },
     select: { id: true, eventId: true, padelClubId: true, courtId: true, startAt: true, endAt: true, label: true, kind: true, note: true },
   });
@@ -403,7 +403,7 @@ export async function deleteHardBlocksByEvent(input: {
   }
 
   if (blocks.length) {
-    await tx.padelCourtBlock.deleteMany({ where: { organizationId, eventId } });
+    await tx.calendarBlock.deleteMany({ where: { organizationId, eventId } });
   }
 
   return { ok: true as const, data: { deleted: blocks.length } };

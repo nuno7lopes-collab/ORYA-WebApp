@@ -31,7 +31,42 @@ async function _GET(req: NextRequest) {
     orderBy: [{ createdAt: "desc" }],
   });
 
-  return jsonWrap({ ok: true, items: players }, { status: 200 });
+  const userIds = Array.from(
+    new Set(players.map((player) => player.userId).filter((id): id is string => Boolean(id))),
+  );
+
+  const [profiles, crmCustomers] = userIds.length
+    ? await Promise.all([
+        prisma.profile.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, username: true, fullName: true, avatarUrl: true },
+        }),
+        prisma.crmCustomer.findMany({
+          where: { organizationId: organization.id, userId: { in: userIds } },
+          select: {
+            id: true,
+            userId: true,
+            status: true,
+            tags: true,
+            totalSpentCents: true,
+            totalTournaments: true,
+            lastActivityAt: true,
+            marketingOptIn: true,
+          },
+        }),
+      ])
+    : [[], []];
+
+  const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+  const crmMap = new Map(crmCustomers.map((customer) => [customer.userId, customer]));
+
+  const items = players.map((player) => ({
+    ...player,
+    profile: player.userId ? profileMap.get(player.userId) ?? null : null,
+    crm: player.userId ? crmMap.get(player.userId) ?? null : null,
+  }));
+
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
 
 async function _POST(req: NextRequest) {

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { PadelMatch, Prisma, SourceType } from "@prisma/client";
+import { EventMatchSlot, Prisma, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
@@ -93,20 +93,20 @@ async function recordMatchEvent(params: {
 export async function createPadelMatch(
   input: MatchCommandBase &
     MatchCommandTx & {
-      data: Prisma.PadelMatchCreateInput | Prisma.PadelMatchUncheckedCreateInput;
-      select?: Prisma.PadelMatchSelect;
-      include?: Prisma.PadelMatchInclude;
+      data: Prisma.EventMatchSlotCreateInput | Prisma.EventMatchSlotUncheckedCreateInput;
+      select?: Prisma.EventMatchSlotSelect;
+      include?: Prisma.EventMatchSlotInclude;
     },
-): Promise<MatchCommandResult<PadelMatch>> {
+): Promise<MatchCommandResult<EventMatchSlot>> {
   const eventType = input.eventType ?? DEFAULT_CREATED_EVENT;
   const outboxEventType = input.outboxEventType ?? eventType;
 
   return withTx(input.tx, async (tx) => {
-    const created = (await tx.padelMatch.create({
+    const created = (await tx.eventMatchSlot.create({
       data: input.data,
       ...(input.select ? { select: input.select } : {}),
       ...(input.include ? { include: input.include } : {}),
-    })) as PadelMatch;
+    })) as EventMatchSlot;
 
     const outboxEventId = await recordMatchEvent({
       tx,
@@ -131,22 +131,22 @@ export async function updatePadelMatch(
   input: MatchCommandBase &
     MatchCommandTx & {
       matchId: number;
-      data: Prisma.PadelMatchUpdateInput | Prisma.PadelMatchUncheckedUpdateInput;
+      data: Prisma.EventMatchSlotUpdateInput | Prisma.EventMatchSlotUncheckedUpdateInput;
       beforeStatus?: string | null;
-      select?: Prisma.PadelMatchSelect;
-      include?: Prisma.PadelMatchInclude;
+      select?: Prisma.EventMatchSlotSelect;
+      include?: Prisma.EventMatchSlotInclude;
     },
-): Promise<MatchCommandResult<PadelMatch>> {
+): Promise<MatchCommandResult<EventMatchSlot>> {
   const eventType = input.eventType ?? DEFAULT_UPDATED_EVENT;
   const outboxEventType = input.outboxEventType ?? eventType;
 
   return withTx(input.tx, async (tx) => {
-    const updated = (await tx.padelMatch.update({
+    const updated = (await tx.eventMatchSlot.update({
       where: { id: input.matchId },
       data: input.data,
       ...(input.select ? { select: input.select } : {}),
       ...(input.include ? { include: input.include } : {}),
-    })) as PadelMatch;
+    })) as EventMatchSlot;
 
     const outboxEventId = await recordMatchEvent({
       tx,
@@ -178,7 +178,7 @@ export async function deletePadelMatch(
   const outboxEventType = input.outboxEventType ?? eventType;
 
   return withTx(input.tx, async (tx) => {
-    await tx.padelMatch.delete({ where: { id: input.matchId } });
+    await tx.eventMatchSlot.delete({ where: { id: input.matchId } });
 
     const outboxEventId = await recordMatchEvent({
       tx,

@@ -30,7 +30,7 @@ export default async function WidgetInscricoesPage({ searchParams }: PageProps) 
         take: 1,
         select: { mode: true },
       },
-      padelTournamentConfig: { select: { advancedSettings: true } },
+      padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
     },
   });
   if (!event) {
@@ -44,6 +44,7 @@ export default async function WidgetInscricoesPage({ searchParams }: PageProps) 
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,
     competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+    lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
   });
   const accessMode = resolveEventAccessMode(event.accessPolicies?.[0], EventAccessMode.INVITE_ONLY);
   const isPublicEvent =

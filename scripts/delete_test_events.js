@@ -302,7 +302,7 @@ async function main() {
       sql: `DELETE FROM app_v3.padel_pairing_holds WHERE event_id = $1`,
     },
     {
-      label: "PadelMatch",
+      label: "EventMatchSlot",
       sql: `DELETE FROM app_v3.padel_matches WHERE event_id = $1`,
     },
     {
@@ -405,11 +405,11 @@ async function main() {
       sql: `DELETE FROM app_v3.event_access_policies WHERE event_id = $1`,
     },
     {
-      label: "PadelAvailability",
+      label: "CalendarAvailability",
       sql: `DELETE FROM app_v3.padel_availabilities WHERE event_id = $1`,
     },
     {
-      label: "PadelCourtBlock",
+      label: "CalendarBlock",
       sql: `DELETE FROM app_v3.padel_court_blocks WHERE event_id = $1`,
     },
     {

@@ -156,7 +156,7 @@ async function _GET(req: NextRequest) {
           },
         },
       }),
-      prisma.padelMatch.findMany({
+      prisma.eventMatchSlot.findMany({
         where: {
           AND: [
             {

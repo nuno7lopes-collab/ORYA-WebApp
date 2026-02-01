@@ -1,31 +1,89 @@
 // app/api/organizacao/estatisticas/overview/route.ts
-// Estatísticas de organização (overview) — V9.
+// Estatísticas de organização (overview) — V9 (rollups + entitlements).
 
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EventStatus, EventTemplateType, OrganizationModule, Prisma, SaleSummaryStatus } from "@prisma/client";
+import { EventStatus, EventTemplateType, OrganizationModule, AnalyticsDimensionKey, AnalyticsMetricKey, EntitlementType } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { Prisma } from "@prisma/client";
 
-/**
- * F6 – Estatísticas do organização (overview)
- *
- * GET /api/organizacao/estatisticas/overview
- *
- * Query params opcionais:
- *  - range: "7d" | "30d" | "all" (default: "30d")
- *
- * Devolve um resumo com:
- *  - totalTickets: nº de bilhetes vendidos no período
- *  - totalRevenueCents: soma de pricePaid no período
- *  - eventsWithSalesCount: nº de eventos com pelo menos 1 venda no período
- *  - activeEventsCount: nº de eventos publicados do organização (no geral)
- */
+const LISBON_TZ = "Europe/Lisbon";
+
+function toUtcDate(value: Date) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+
+function parseRange(range: string | null) {
+  const now = new Date();
+  if (!range || range === "30d") {
+    return { from: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), to: now };
+  }
+  if (range === "7d") {
+    return { from: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), to: now };
+  }
+  if (range === "all") {
+    return { from: null as Date | null, to: null as Date | null };
+  }
+  return { from: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), to: now };
+}
+
+function pickCurrency(values: Array<string | null>, preferred?: string | null) {
+  const normalized = values.filter((v): v is string => Boolean(v));
+  if (preferred && normalized.includes(preferred)) return preferred;
+  if (normalized.includes("EUR")) return "EUR";
+  return normalized[0] ?? null;
+}
+
+async function getEntitlementStats(params: {
+  organizationId: number;
+  entitlementType: EntitlementType;
+  includeTemplateType?: EventTemplateType | null;
+  excludeTemplateType?: EventTemplateType | null;
+  fromDate: Date | null;
+  toDate: Date | null;
+}) {
+  const { organizationId, entitlementType, includeTemplateType, excludeTemplateType, fromDate, toDate } = params;
+  const dateFilter =
+    fromDate || toDate
+      ? Prisma.sql`AND ent.created_at BETWEEN ${fromDate ?? new Date(0)} AND ${toDate ?? new Date()}`
+      : Prisma.empty;
+
+  const templateFilterSql = includeTemplateType
+    ? Prisma.sql`AND ev.template_type = ${includeTemplateType}`
+    : excludeTemplateType
+      ? Prisma.sql`AND ev.template_type != ${excludeTemplateType}`
+      : Prisma.empty;
+
+  const [totalRow] = await prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`
+    SELECT COUNT(*)::bigint AS total
+    FROM app_v3.entitlements ent
+    JOIN app_v3.events ev ON ev.id = ent.event_id
+    WHERE ev.organization_id = ${organizationId}
+      AND ent.type = ${entitlementType}
+      ${templateFilterSql}
+      ${dateFilter}
+  `);
+
+  const [eventsRow] = await prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`
+    SELECT COUNT(DISTINCT ent.event_id)::bigint AS total
+    FROM app_v3.entitlements ent
+    JOIN app_v3.events ev ON ev.id = ent.event_id
+    WHERE ev.organization_id = ${organizationId}
+      AND ent.type = ${entitlementType}
+      ${templateFilterSql}
+      ${dateFilter}
+  `);
+
+  return {
+    totalTickets: Number(totalRow?.total ?? 0),
+    eventsWithSalesCount: Number(eventsRow?.total ?? 0),
+  };
+}
 
 async function _GET(req: NextRequest) {
   try {
@@ -40,10 +98,7 @@ async function _GET(req: NextRequest) {
     }
 
     if (!user) {
-      return jsonWrap(
-        { ok: false, error: "UNAUTHENTICATED" },
-        { status: 401 },
-      );
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
     const url = new URL(req.url);
@@ -58,9 +113,10 @@ async function _GET(req: NextRequest) {
       typeof excludeTemplateTypeParam === "string" && excludeTemplateTypeParam.trim()
         ? excludeTemplateTypeParam.trim().toUpperCase()
         : null;
-    const parsedTemplateType = templateType && Object.values(EventTemplateType).includes(templateType as EventTemplateType)
-      ? (templateType as EventTemplateType)
-      : null;
+    const parsedTemplateType =
+      templateType && Object.values(EventTemplateType).includes(templateType as EventTemplateType)
+        ? (templateType as EventTemplateType)
+        : null;
     const parsedExcludeTemplateType =
       excludeTemplateType && Object.values(EventTemplateType).includes(excludeTemplateType as EventTemplateType)
         ? (excludeTemplateType as EventTemplateType)
@@ -93,94 +149,64 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
-    // Cálculo do intervalo temporal
-    let fromDate: Date | undefined;
-    let toDate: Date | undefined;
+    const { from, to } = parseRange(range);
+    const fromDate = from ? toUtcDate(from) : null;
+    const toDate = to ? toUtcDate(to) : null;
 
-    const now = new Date();
-
-    if (range === "7d") {
-      fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      toDate = now;
-    } else if (range === "30d") {
-      fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      toDate = now;
-    } else {
-      // "all" -> sem filtro de datas
-      fromDate = undefined;
-      toDate = undefined;
-    }
-
-    // Fonte preferencial: legacy summaries (desativado no v7)
-    const createdAtFilter: Prisma.DateTimeFilter<"SaleSummary"> = {};
-    if (fromDate) createdAtFilter.gte = fromDate;
-    if (toDate) createdAtFilter.lte = toDate;
-
-    const summaries = await prisma.saleSummary.findMany({
+    const moduleValue = isPadelScope ? "TORNEIOS" : "EVENTOS";
+    const rollupRows = await prisma.analyticsRollup.findMany({
       where: {
-        ...(Object.keys(createdAtFilter).length > 0
-          ? { createdAt: createdAtFilter }
+        organizationId: organization.id,
+        dimensionKey: AnalyticsDimensionKey.MODULE,
+        dimensionValue: moduleValue,
+        ...(fromDate || toDate
+          ? {
+              bucketDate: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
           : {}),
-        status: SaleSummaryStatus.PAID,
-        event: {
-          organizationId: organization.id,
-          ...eventTemplateFilter,
-        },
       },
-      select: {
-        id: true,
-        eventId: true,
-        netCents: true,
-        discountCents: true,
-        platformFeeCents: true,
-        subtotalCents: true,
-        lines: {
-          select: { quantity: true },
-        },
-      },
+      select: { metricKey: true, value: true },
     });
 
-    let totalTickets = summaries.reduce(
-      (acc, s) =>
-        acc +
-        s.lines.reduce(
-          (q: number, l: { quantity: number | null }) => q + (l.quantity ?? 0),
-          0,
-        ),
-      0,
+    const metrics = rollupRows.reduce(
+      (acc, row) => {
+        acc[row.metricKey] = (acc[row.metricKey] ?? 0) + row.value;
+        return acc;
+      },
+      {} as Record<string, number>,
     );
-    const grossCents = summaries.reduce((acc, s) => acc + (s.subtotalCents ?? 0), 0);
-    const discountCents = summaries.reduce((acc, s) => acc + (s.discountCents ?? 0), 0);
-    const platformFeeCents = summaries.reduce(
-      (acc, s) => acc + (s.platformFeeCents ?? 0),
-      0,
-    );
-    const netRevenueCents = summaries.reduce((acc, s) => acc + (s.netCents ?? 0), 0);
 
-    let eventsWithSalesCount = new Set(summaries.map((s) => s.eventId)).size;
-    if (isPadelScope) {
-      const pairingCreatedFilter: Prisma.DateTimeFilter<"PadelPairing"> = {};
-      if (fromDate) pairingCreatedFilter.gte = fromDate;
-      if (toDate) pairingCreatedFilter.lte = toDate;
-      const pairings = await prisma.padelPairing.findMany({
-        where: {
-          pairingStatus: { not: "CANCELLED" },
-          ...ACTIVE_PAIRING_REGISTRATION_WHERE,
-          ...(Object.keys(pairingCreatedFilter).length > 0
-            ? { createdAt: pairingCreatedFilter }
-            : {}),
-          event: {
-            organizationId: organization.id,
-            ...eventTemplateFilter,
-          },
-        },
-        select: { eventId: true },
-      });
-      totalTickets = pairings.length;
-      eventsWithSalesCount = new Set(pairings.map((pairing) => pairing.eventId)).size;
-    }
+    const currencyRows = await prisma.analyticsRollup.findMany({
+      where: {
+        organizationId: organization.id,
+        dimensionKey: AnalyticsDimensionKey.CURRENCY,
+        ...(fromDate || toDate
+          ? {
+              bucketDate: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : {}),
+      },
+      select: { dimensionValue: true },
+      distinct: ["dimensionValue"],
+    });
+    const currency = pickCurrency(currencyRows.map((row) => row.dimensionValue));
 
-    // Contar eventos publicados do organização (no geral, não só no período)
+    const entitlementType = isPadelScope ? EntitlementType.PADEL_ENTRY : EntitlementType.EVENT_TICKET;
+    const entitlementStats = await getEntitlementStats({
+      organizationId: organization.id,
+      entitlementType,
+      includeTemplateType: parsedTemplateType,
+      excludeTemplateType: parsedExcludeTemplateType,
+      fromDate,
+      toDate,
+    });
+
     const activeEventsCount = await prisma.event.count({
       where: {
         organizationId: organization.id,
@@ -189,27 +215,33 @@ async function _GET(req: NextRequest) {
       },
     });
 
+    const grossCents = metrics[AnalyticsMetricKey.GROSS] ?? 0;
+    const platformFeeCents = metrics[AnalyticsMetricKey.PLATFORM_FEES] ?? 0;
+    const processorFeeCents = metrics[AnalyticsMetricKey.PROCESSOR_FEES] ?? 0;
+    const netRevenueCents = metrics[AnalyticsMetricKey.NET_TO_ORG] ?? 0;
+    const feesCents = platformFeeCents + processorFeeCents;
+
     return jsonWrap(
       {
         ok: true,
         range,
-        totalTickets,
+        currency,
+        totalTickets: entitlementStats.totalTickets,
         totalRevenueCents: netRevenueCents,
         grossCents,
-        discountCents,
+        discountCents: 0,
         platformFeeCents,
+        processorFeeCents,
+        feesCents,
         netRevenueCents,
-        eventsWithSalesCount,
+        eventsWithSalesCount: entitlementStats.eventsWithSalesCount,
         activeEventsCount,
       },
       { status: 200 },
     );
   } catch (error) {
     console.error("[organização/overview] Erro inesperado:", error);
-    return jsonWrap(
-      { ok: false, error: "INTERNAL_ERROR" },
-      { status: 500 },
-    );
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
 export const GET = withApiEnvelope(_GET);

@@ -66,11 +66,17 @@ export async function notifyPairingInviteSent(params: {
   });
 }
 
-export async function notifyPairingReminder(params: { pairingId: number; targetUserId: string }) {
-  const dedupeKey = buildDedupe("PAIRING_REMINDER", [params.pairingId, params.targetUserId]);
+export async function notifyPairingReminder(params: {
+  pairingId: number;
+  targetUserId: string;
+  stage?: string | null;
+  deadlineAt?: string | null;
+}) {
+  const stage = params.stage?.trim() || "GENERIC";
+  const dedupeKey = buildDedupe("PAIRING_REMINDER", [stage, params.pairingId, params.targetUserId]);
   return queue("PAIRING_REMINDER", dedupeKey, {
     userId: params.targetUserId,
-    payload: { pairingId: params.pairingId },
+    payload: { pairingId: params.pairingId, stage, deadlineAt: params.deadlineAt ?? null },
     templateVersion: "v1",
   });
 }
