@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 vi.mock("@/lib/prisma", () => {
   const organization = { findUnique: vi.fn() };
-  const organizationGroupMember = { findUnique: vi.fn() };
+  const organizationGroupMember = { findFirst: vi.fn() };
   const organizationGroupMemberOrganizationOverride = { findFirst: vi.fn() };
   return { prisma: { organization, organizationGroupMember, organizationGroupMemberOrganizationOverride } };
 });
@@ -14,13 +14,13 @@ const prismaMock = vi.mocked(prisma);
 describe("organization group access", () => {
   beforeEach(() => {
     prismaMock.organization.findUnique.mockReset();
-    prismaMock.organizationGroupMember.findUnique.mockReset();
+    prismaMock.organizationGroupMember.findFirst.mockReset();
     prismaMock.organizationGroupMemberOrganizationOverride.findFirst.mockReset();
   });
 
   it("membro de filial não acede a outra filial", async () => {
     prismaMock.organization.findUnique.mockResolvedValue({ groupId: 10 } as any);
-    prismaMock.organizationGroupMember.findUnique.mockResolvedValue({
+    prismaMock.organizationGroupMember.findFirst.mockResolvedValue({
       id: "gm_1",
       role: "STAFF",
       rolePack: null,
@@ -35,7 +35,7 @@ describe("organization group access", () => {
 
   it("role mãe com scope ALL_ORGS acede a todas as filiais", async () => {
     prismaMock.organization.findUnique.mockResolvedValue({ groupId: 10 } as any);
-    prismaMock.organizationGroupMember.findUnique.mockResolvedValue({
+    prismaMock.organizationGroupMember.findFirst.mockResolvedValue({
       id: "gm_2",
       role: "ADMIN",
       rolePack: null,
@@ -50,7 +50,7 @@ describe("organization group access", () => {
 
   it("sem membership -> 403 (null)", async () => {
     prismaMock.organization.findUnique.mockResolvedValue({ groupId: 10 } as any);
-    prismaMock.organizationGroupMember.findUnique.mockResolvedValue(null as any);
+    prismaMock.organizationGroupMember.findFirst.mockResolvedValue(null as any);
 
     const access = await resolveGroupMemberForOrg({ organizationId: 1, userId: "u3" });
     expect(access).toBeNull();
@@ -58,7 +58,7 @@ describe("organization group access", () => {
 
   it("override revokedAt bloqueia acesso", async () => {
     prismaMock.organization.findUnique.mockResolvedValue({ groupId: 10 } as any);
-    prismaMock.organizationGroupMember.findUnique.mockResolvedValue({
+    prismaMock.organizationGroupMember.findFirst.mockResolvedValue({
       id: "gm_3",
       role: "STAFF",
       rolePack: null,
@@ -76,7 +76,7 @@ describe("organization group access", () => {
 
   it("override por filial altera role efetivo", async () => {
     prismaMock.organization.findUnique.mockResolvedValue({ groupId: 10 } as any);
-    prismaMock.organizationGroupMember.findUnique.mockResolvedValue({
+    prismaMock.organizationGroupMember.findFirst.mockResolvedValue({
       id: "gm_4",
       role: "STAFF",
       rolePack: null,

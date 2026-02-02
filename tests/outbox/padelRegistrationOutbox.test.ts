@@ -43,12 +43,20 @@ vi.mock("@/lib/prisma", () => {
   const ticket = {
     update: vi.fn(() => ({ id: "t1" })),
   };
+  const payment = {
+    findMany: vi.fn(() => []),
+  };
+  const paymentEvent = {
+    findMany: vi.fn(() => []),
+  };
   const prisma = {
     padelRegistration,
     padelPairing,
     padelPairingSlot,
     padelPairingHold,
     ticket,
+    payment,
+    paymentEvent,
     $transaction: async (fn: any) => fn(prisma),
   };
   return { prisma };
@@ -83,6 +91,8 @@ describe("padel registration outbox consumer", () => {
     prismaMock.padelPairingSlot.updateMany.mockClear();
     prismaMock.padelPairingHold.updateMany.mockClear();
     prismaMock.ticket.update.mockClear();
+    prismaMock.payment.findMany.mockClear();
+    prismaMock.paymentEvent.findMany.mockClear();
     secondChargeMock.mockClear();
     enqueueMock.mockClear();
   });

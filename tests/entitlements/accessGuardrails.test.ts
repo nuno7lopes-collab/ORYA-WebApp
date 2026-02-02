@@ -27,6 +27,7 @@ describe("access entitlement guardrails", () => {
         "-g '!lib/operations/fulfillPaid.ts'",
         "-g '!lib/operations/fulfillPadelSplit.ts'",
         "-g '!lib/operations/fulfillPadelFull.ts'",
+        "-g '!lib/operations/fulfillPadelRegistration.ts'",
         "-g '!lib/operations/fulfillStoreOrder.ts'",
         "-g '!lib/operations/fulfillResale.ts'",
         "-g '!lib/operations/fulfillServiceBooking.ts'",
