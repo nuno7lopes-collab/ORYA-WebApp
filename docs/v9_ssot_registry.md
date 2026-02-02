@@ -81,7 +81,7 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 - Worker idempotente e replay seguro.
 
 **Contratos finais**
-- Claim/winner rule (TBD): select + lock (SKIP LOCKED ou equivalente).
+- Claim/winner rule: select + lock (SKIP LOCKED ou equivalente).
 - DLQ payload minimo + motivo.
 
 **Normalizacoes obrigatorias**

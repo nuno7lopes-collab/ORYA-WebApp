@@ -7,7 +7,7 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Todas as verificacoes sao auditaveis por paths/rg/tests.
 - A normalizacao final e registada no `docs/v9_ssot_registry.md`.
 
-## Status update (2026-02-01)
+## Status update (2026-02-02)
 - Bloco 0: envelope C‑G5 + requestId/correlationId concluído.
 - Bloco 2: claim winner‑only + recovery/runbook concluídos.
 - Bloco 4: stats migradas para rollups/entitlements (sem legacy summaries).
@@ -16,6 +16,7 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Bloco 8: padel + torneios fechados (ruleset snapshot, lifecycle, matchmaking/cron, calendário SSOT).
 - Bloco 9/10: entitlements (tickets/padel/booking/loja) e DSAR/retention concluídos.
 - Bloco 11/12/13/14: search/cron/observabilidade/go-live fechados (a11y/perf/mobile report).
+- F2/F3: backlog explícito (não bloqueia F1).
 
 ---
 

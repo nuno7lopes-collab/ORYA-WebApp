@@ -25,9 +25,8 @@ async function resolvePost(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return {
-      error: jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 }) ?? new Response(null, { status: 401 }),
-    };
+    const error = jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 }) as Response;
+    return { error };
   }
 
   const post = await prisma.padelCommunityPost.findUnique({
@@ -35,7 +34,8 @@ async function resolvePost(
     select: { id: true, organizationId: true },
   });
   if (!post) {
-    return { error: jsonWrap({ ok: false, error: "POST_NOT_FOUND" }, { status: 404 }) ?? new Response(null, { status: 404 }) };
+    const error = jsonWrap({ ok: false, error: "POST_NOT_FOUND" }, { status: 404 }) as Response;
+    return { error };
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
@@ -43,7 +43,8 @@ async function resolvePost(
     roles,
   });
   if (!organization) {
-    return { error: jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 }) ?? new Response(null, { status: 403 }) };
+    const error = jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 }) as Response;
+    return { error };
   }
 
   return { organization, userId: user.id, post };

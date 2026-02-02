@@ -45,6 +45,7 @@ Arquivo*.zip
 Arquivo.zip
 11.7.0
 .cache/
+.expo/
 
 # nested web app artifacts
 /web/.next/

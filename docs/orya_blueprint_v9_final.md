@@ -3456,6 +3456,14 @@ FASE 1 — MVP “Robusto” (higienização + base certa + operação premium e
 
 Objetivo: eliminar verdades duplicadas, fechar contratos, ter Reservas/Finanças/Padel/Check-in a funcionar como relógio, com UX premium e custos controlados.
 
+Status F1 (2026-02-02): DONE
+- [x] Contratos SSOT aplicados (Financas/Reservas/Padel/Check-in/Address).
+- [x] Envelope C-G5 + requestId/correlationId + fail-closed em rotas criticas.
+- [x] Outbox/Workers winner-only com SKIP LOCKED + replay seguro.
+- [x] Padel F1 fechado: wizard dedicado, ruleset versionado, split 48/24, matchmaking, calendario SSOT, interclubes, comunidade.
+- [x] C6: Padel nao cria bilhetes; pagamentos via Financas.
+- F2/F3 permanecem backlog (nao bloqueiam F1).
+
 F1-A) Base técnica e contratos (ordem por módulos)
 	1.	EventBus + EventLog + Idempotência
 	•	implementar pub/sub interno + idempotência por evento
@@ -4052,6 +4060,7 @@ Any new feature MUST be evaluated against this threat model.
 
 
 ANEXO A — Padel (Plano de Excelência)
+Status Padel (2026-02-02): DONE (F1). F2/F3 mantidos como backlog explicito.
 
 **Nota de integração:** este anexo detalha o vertical Padel. Tudo o que for pagamento, identidade, entitlements, refunds, RBAC, endereços e notificações **obedece** às decisões e SSOTs do blueprint principal (v9). Se houver conflito, vence o blueprint.
 
