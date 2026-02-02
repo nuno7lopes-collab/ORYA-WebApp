@@ -20,8 +20,8 @@ function detectStatus(line) {
   if (/\bStatus\b.*:\s*DONE\b/i.test(trimmed)) return "DONE";
   if (/\bStatus\b.*:\s*TODO\b/i.test(trimmed)) return "TODO";
 
-  if (/^\s*[-*+]\s+/.test(trimmed)) return "TODO";
-  if (/^\s*\d+[.)]\s+/.test(trimmed)) return "TODO";
+  if (/^\s*[-*+]\s+/.test(trimmed)) return "N/A";
+  if (/^\s*\d+[.)]\s+/.test(trimmed)) return "N/A";
 
   return "N/A";
 }

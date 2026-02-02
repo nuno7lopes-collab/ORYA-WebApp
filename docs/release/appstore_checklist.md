@@ -1,36 +1,37 @@
-# App Store Release Checklist (Mobile)
+# App Store Readiness + Submission Runbook
 
-## Build and signing
-- [ ] Version and build number bumped.
-- [ ] Bundle identifier correct for production.
-- [ ] Code signing certificates valid (distribution).
-- [ ] Provisioning profiles updated (App Store).
-- [ ] Universal links domains configured.
+Atualizado: 2026-02-02
 
-## App metadata
-- [ ] App name, subtitle, and keywords updated.
-- [ ] Description and whats-new text updated.
-- [ ] Screenshots updated for all target devices.
-- [ ] App icon and marketing icon updated.
+## Estado atual (infra/plataforma)
+- [x] Apple Developer readiness concluído para F1 (sem mudanças de infraestrutura pendentes).
+- [x] Universal links e Apple domain association publicados em `.well-known`.
+- [x] Segredos Apple (Sign-In/APNS/Apple Pay) centralizados em AWS Secrets Manager.
+- [x] Envs Apple documentadas em `docs/envs_required.md`.
 
-## Privacy and compliance
-- [ ] Privacy policy URL set and reachable.
-- [ ] Data collection and tracking answers reviewed.
-- [ ] Sign-in with Apple requirements satisfied.
-- [ ] In-app purchase / payments disclosures updated.
+Evidências:
+- `reports/p_infra_2026-01-30.md`
+- `docs/envs_required.md`
 
-## Review information
-- [ ] Test account credentials provided (if required).
-- [ ] Review notes include any special flows.
-- [ ] Demo content available for reviewers.
+## Passos de submissão (executar em cada release mobile)
+Estes passos são operacionais por release e não representam backlog de infraestrutura.
 
-## QA and smoke
-- [ ] Login, onboarding, and logout tested.
-- [ ] Payments and checkout flow tested (sandbox).
-- [ ] Push notifications and deep links tested.
-- [ ] Crash-free run verified on latest iOS.
+1. Build e signing
+   - Confirmar `version` e `build number`.
+   - Confirmar bundle identifier de produção.
+   - Validar certificados/profiles de distribuição.
+2. Metadados App Store
+   - Atualizar descrição, screenshots e notas de versão.
+   - Confirmar ícones finais.
+3. Compliance e review
+   - Validar privacy answers e disclosures de pagamentos.
+   - Preparar notas para review e conta de teste (se necessário).
+4. QA final
+   - Smoke iOS: login, onboarding, checkout sandbox, push/deep links.
+5. Publicação
+   - Criar submissão no App Store Connect.
+   - Escolher release manual/automática.
+   - Confirmar rollback plan.
 
-## Release
-- [ ] App Store submission created.
-- [ ] Manual release vs automatic release chosen.
-- [ ] Rollback plan documented.
+## Resultado
+- Blueprint F1 permanece fechado.
+- Itens acima são checklist de execução contínua por release (D-day), não tarefas pendentes de implementação.

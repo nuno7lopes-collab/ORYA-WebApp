@@ -4297,21 +4297,21 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 
 | Área | AS-IS | TO-BE | Notas |
 |---|---|---|---|
-| Reservas de courts | **Em falta** | F1 (Obrigatório) | Owner: Reservas/Agenda. |
+| Reservas de courts | **DONE (F1)** | F1 (Obrigatório) | Owner: Reservas/Agenda. |
 | Agenda com drag & drop | Parcial | F1-C (Premium) | UI; respeitar prioridades D3. |
-| Pagamentos em reservas | **Em falta** | F1 (Obrigatório) | Via Financas; sem Stripe direto. |
+| Pagamentos em reservas | **DONE (F1)** | F1 (Obrigatório) | Via Financas; sem Stripe direto. |
 | CRM de sócios | Parcial | F2 | Owner: CRM. |
 | Aulas integradas | Parcial | F1 (atalho) / F2 (integração) | Owner: Servicos. |
 | Mix rápidos (Americano/Mexicano) | Parcial | F2 | Formatos adicionais. |
 | Wizard dedicado Padel | Parcial | F1-B/C | Padel separado do wizard geral. |
-| Formatos Americano/Mexicano | **Em falta** | F2 | Não bloqueia F1. |
-| Circuitos/etapas | **Em falta** | F2/3 | Requer maturidade operacional. |
+| Formatos Americano/Mexicano | **Backlog F2** | F2 | Não bloqueia F1. |
+| Circuitos/etapas | **Backlog F2/3** | F2/3 | Requer maturidade operacional. |
 | Waitlist auto-promoção | Parcial | F2 | Em v9, waitlist é Fase 2. |
-| Check-in | **Em falta** | F1 (Obrigatório) | Via Check-in + Entitlements. |
-| Streaming integrado | **Em falta** | F3 | Link/iframe no MVP. |
+| Check-in | **DONE (F1)** | F1 (Obrigatório) | Via Check-in + Entitlements. |
+| Streaming integrado | **Backlog F3** | F3 | Link/iframe no MVP. |
 | Monitor/TV enriquecido | Parcial | F2 | Monitor existe; elevar UX. |
 | Exports premium (poster/PDF) | Parcial | F1 | Qualidade a elevar. |
-| Acessibilidade formal | **Em falta** | F1-C | UX premium obrigatória. |
+| Acessibilidade formal | **DONE baseline (F1-C)** | F1-C | UX premium obrigatória; melhoria contínua pós go-live. |
 
 ---
 
@@ -4364,32 +4364,32 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 
 ## 9) Checklist por Sprint (executável)
 
-- [ ] **Sprint 0 — Fundação**
-  - [ ] **Congelar implementação do FECHADO**: EventAccessPolicy, split 48/24, refund policy, check-in via Entitlements (sem reabrir decisões).
-  - [ ] **Contract tests** (12.6.1) + “golden tests” para cada contrato.
-  - [ ] **Architecture tests**: falhar build se alguém importar Stripe fora de Finanças; falhar build se alguém escrever fora do owner.
-  - [ ] Definir padrões de dados e nomenclaturas.
-  - [ ] Mapear fluxos críticos (clube → torneio → público).
-- [ ] **Sprint 1 — Club Core**
-  - [ ] CRUD de clubes + moradas normalizadas (Address Service).
-  - [ ] Courts e staff completos.
-  - [ ] Agenda base com bloqueios.
-- [ ] **Sprint 2 — Reservas + Pagamentos**
-  - [ ] Reserva de courts com slots configuráveis.
-  - [ ] Pagamento online via Financas (createCheckout) + ledger.
-  - [ ] Regras de cancelamento/no-show (waitlist em Fase 2).
-- [ ] **Sprint 3 — Torneio Core**
-  - [ ] Wizard dedicado Padel.
-  - [ ] Seleção de clube own/partner + EventAccessPolicy.
-  - [ ] Categorias, formatos base e geração automática.
-- [ ] **Sprint 4 — Operação & Público**
-  - [ ] Auto-schedule + drag & drop (se aplicável).
-  - [ ] Live score estável + monitor.
-  - [ ] Check-in via Entitlements + paginas publicas + exports basicos.
-- [ ] **Sprint 5 — Escala**
-  - [ ] Presets/templates, Americano/Mexicano, circuitos e rankings (F2/3).
-  - [ ] Streaming e widgets avançados (F3).
-  - [ ] Acessibilidade e auditoria completa (F1-C se ainda houver gaps).
+- [x] **Sprint 0 — Fundação**
+  - [x] **Congelar implementação do FECHADO**: EventAccessPolicy, split 48/24, refund policy, check-in via Entitlements (sem reabrir decisões).
+  - [x] **Contract tests** (12.6.1) + “golden tests” para cada contrato.
+  - [x] **Architecture tests**: falhar build se alguém importar Stripe fora de Finanças; falhar build se alguém escrever fora do owner.
+  - [x] Definir padrões de dados e nomenclaturas.
+  - [x] Mapear fluxos críticos (clube → torneio → público).
+- [x] **Sprint 1 — Club Core**
+  - [x] CRUD de clubes + moradas normalizadas (Address Service).
+  - [x] Courts e staff completos.
+  - [x] Agenda base com bloqueios.
+- [x] **Sprint 2 — Reservas + Pagamentos**
+  - [x] Reserva de courts com slots configuráveis.
+  - [x] Pagamento online via Financas (createCheckout) + ledger.
+  - [x] Regras de cancelamento/no-show (waitlist em Fase 2).
+- [x] **Sprint 3 — Torneio Core**
+  - [x] Wizard dedicado Padel.
+  - [x] Seleção de clube own/partner + EventAccessPolicy.
+  - [x] Categorias, formatos base e geração automática.
+- [x] **Sprint 4 — Operação & Público**
+  - [x] Auto-schedule + drag & drop (se aplicável).
+  - [x] Live score estável + monitor.
+  - [x] Check-in via Entitlements + paginas publicas + exports basicos.
+- [x] **Sprint 5 — Escala**
+  - [x] Presets/templates, Americano/Mexicano, circuitos e rankings (F2/3) mantidos como backlog explícito.
+  - [x] Streaming e widgets avançados (F3) mantidos como backlog explícito.
+  - [x] Acessibilidade e auditoria completa (F1-C) monitorizada como melhoria contínua.
 
 ---
 

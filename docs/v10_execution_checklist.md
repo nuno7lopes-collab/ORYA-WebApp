@@ -1,6 +1,6 @@
 # v10 Execution Checklist (FINAL) — ORYA
 
-Atualizado: 2026-02-01
+Atualizado: 2026-02-02
 Fonte de verdade: `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md` + `docs/orya_blueprint_v9_final.md` + `docs/v9_ssot_registry.md` + `docs/v9_close_plan.md` + `docs/v9_close_checklist.md` + `docs/envs_required.md`
 Legenda estado: DONE | PARTIAL | TODO | N/A
 
@@ -537,6 +537,18 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: manter pipeline e repetir em cada release.
   - Risco/Impacto: baixo (envio externo bloqueado até SES Production; inbox Google Workspace OK via MX Google).
 
+- [x] Supabase (prod/test) e isolamento por ambiente
+  - Estado real: DONE — APP_ENV por host, dados de teste isolados (`env=test`) e provas SQL sem leak para produção.
+  - Evidência: `reports/test_env_isolation_2026-01-31.md`, `lib/prisma.ts`, `lib/appEnvShared.ts`, `prisma/migrations/20260131_env_isolation/migration.sql`.
+  - Ação exata: manter seeds `SEED_ENV=test` e validar isolamento após migrações.
+  - Risco/Impacto: baixo.
+
+- [x] Apple Developer readiness (Sign-In/APNS/Apple Pay domain)
+  - Estado real: DONE — chaves/variáveis e artefactos `.well-known` configurados e documentados; segredos Apple em AWS Secrets Manager.
+  - Evidência: `docs/envs_required.md` (Apple Sign-In/APNS/Maps), `reports/p_infra_2026-01-30.md` (grupo `orya/prod/apple`, URLs `.well-known`).
+  - Ação exata: manter rotação de chaves Apple e validação de domínio no ciclo de release.
+  - Risco/Impacto: baixo.
+
 - [x] Isolamento por env (prod/test) + host test.orya.pt
   - Estado real: DONE — APP_ENV por host, seed env=test aplicado e dados test isolados; prod sem leaks.
   - Evidência: `reports/test_env_isolation_2026-01-31.md` (SQL proofs + counts), `scripts/seed_create_test_profile.js`, `scripts/seed_events.js`, `lib/appEnvShared.ts`, `lib/prisma.ts`.
@@ -593,7 +605,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
   - Ação exata: executar no go-live e registar evidencias.
   - Risco/Impacto: medio se nao executado.
 
-- [ ] Padrões UX Avançados / Teste de Usabilidade
-  - Estado real: N/A — backlog pós go-live (melhoria incremental).
+- [x] Padrões UX Avançados / Teste de Usabilidade
+  - Estado real: N/A — backlog pós go-live (melhoria incremental; nao bloqueia F1).
   - Ação exata: reavaliar com feedback de uso.
   - Risco/Impacto: baixo (UX avançada adiada).

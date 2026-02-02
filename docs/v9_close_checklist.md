@@ -7,581 +7,585 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1: # V9 Close Plan (Blocos)
 - [N/A] L3: Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha tudo o que lhe pertence (código + UI + APIs + invariantes + fail-closed + ops). Sem passar ao bloco seguinte sem DONE.
 - [N/A] L5: ## Uso do plano
-- [TODO] L6: - Cada bloco é **deployavel** e tem Definition of Done objetiva.
-- [TODO] L7: - Todas as verificacoes sao auditaveis por paths/rg/tests.
-- [TODO] L8: - A normalizacao final e registada no `docs/v9_ssot_registry.md`.
+- [N/A] L6: - Cada bloco é **deployavel** e tem Definition of Done objetiva.
+- [N/A] L7: - Todas as verificacoes sao auditaveis por paths/rg/tests.
+- [N/A] L8: - A normalizacao final e registada no `docs/v9_ssot_registry.md`.
 - [N/A] L10: ## Status update (2026-02-02)
-- [TODO] L11: - Bloco 0: envelope C‑G5 + requestId/correlationId concluído.
-- [TODO] L12: - Bloco 2: claim winner‑only + recovery/runbook concluídos.
-- [TODO] L13: - Bloco 4: stats migradas para rollups/entitlements (sem legacy summaries).
-- [TODO] L14: - Bloco 5: gate de org context aplicado em CI + correções de rota crítica.
-- [TODO] L15: - Bloco 7: backfill de snapshots de reservas executado (sem pendências).
-- [TODO] L16: - Bloco 8: padel + torneios fechados (ruleset snapshot, lifecycle, matchmaking/cron, calendário SSOT).
-- [TODO] L17: - Bloco 9/10: entitlements (tickets/padel/booking/loja) e DSAR/retention concluídos.
-- [TODO] L18: - Bloco 11/12/13/14: search/cron/observabilidade/go-live fechados (a11y/perf/mobile report).
-- [TODO] L19: - F2/F3: backlog explícito (não bloqueia F1).
-- [N/A] L21: ---
-- [N/A] L23: ## Primeira Semana (Top-5 Drifts) — Plano de Execucao
-- [N/A] L25: ### Drift 1 (Bloco 1) — PaymentIntent fora do fluxo canonico
-- [N/A] L26: **Entrypoints que criam PaymentIntent (lista exata)**
-- [TODO] L27: - `app/api/payments/intent/route.ts` (canonico esperado)
-- [TODO] L28: - `app/api/store/checkout/route.ts`
-- [TODO] L29: - `app/api/servicos/[id]/checkout/route.ts`
-- [TODO] L30: - `app/api/servicos/[id]/creditos/checkout/route.ts`
-- [TODO] L31: - `app/api/organizacao/reservas/[id]/checkout/route.ts`
-- [TODO] L32: - `domain/padelSecondCharge.ts`
-- [TODO] L33: - `domain/finance/gateway/stripeGateway.ts` (gateway canonicamente permitido)
-- [N/A] L35: **Plano**
-- [TODO] L36: - Definir SSOT unico: `/api/payments/intent` + `domain/finance/checkout.ts`.
-- [TODO] L37: - Bloquear/elimitar criacao direta de PI fora do fluxo canonico (refactor entrypoints acima).
-- [TODO] L38: - Garantir idempotencia unificada: `purchaseId` + `idempotencyKey` canonica (checkoutKey).
-- [TODO] L39: - Validar que todos os fluxos retornam o mesmo envelope + requestId.
-- [N/A] L41: ### Drift 2 (Bloco 4) — Admin/Stats legacy 410
-- [N/A] L42: **Entrypoints afetados**
-- [TODO] L43: - `app/api/admin/organizacoes/list/route.ts` (410)
-- [TODO] L44: - `app/api/organizacao/estatisticas/overview/route.ts` (410)
-- [TODO] L45: - `app/api/organizacao/estatisticas/time-series/route.ts` (410)
-- [TODO] L46: - UI: `app/admin/organizacoes/page.tsx`, `app/organizacao/estatisticas/page.tsx`
-- [N/A] L48: **Plano**
-- [TODO] L49: - Substituir legacy stats por fontes atuais (EventLog/Ops Feed/Rollups v9).
-- [TODO] L50: - UI nao pode falhar se stats estiverem incompletas (fallback resiliente).
-- [TODO] L51: - Endpoints admin retornam dados minimos + envelope canonico.
-- [N/A] L53: ### Drift 3 (Bloco 2) — Outbox sem claim/lock explicito
-- [N/A] L54: **Entrypoints afetados**
-- [TODO] L55: - `domain/outbox/**`
-- [TODO] L56: - `app/api/internal/worker/operations/route.ts`
-- [TODO] L57: - `app/api/internal/outbox/replay/route.ts`
-- [TODO] L58: - `app/api/internal/outbox/dlq/route.ts`
-- [TODO] L59: - `app/api/internal/reprocess/**`
-- [TODO] L60: - `app/api/cron/operations/route.ts`
-- [N/A] L62: **Plano**
-- [TODO] L63: - Definir estrategia de claim: select + lock + winner-only (SKIP LOCKED ou equivalente).
-- [TODO] L64: - Definir regra de crash recovery (reconciliation guard).
-- [TODO] L65: - Garantir publishedAt apenas em sucesso, sem loop.
-- [TODO] L66: - Runbook DLQ/replay obrigatorio.
-- [N/A] L68: ### Drift 4 (Bloco 3) — Email oficial disperso
-- [N/A] L69: **Entrypoints afetados**
-- [TODO] L70: - `app/api/organizacao/organizations/settings/official-email/route.ts`
-- [TODO] L71: - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
-- [TODO] L72: - `app/api/admin/organizacoes/verify-platform-email/route.ts`
-- [TODO] L73: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`
-- [N/A] L75: **Plano**
-- [TODO] L76: - Regra unica de normalizacao: `lib/organizationOfficialEmail.ts` (NFKC + lowercase + trim).
-- [TODO] L77: - SSOT de verificado: `officialEmailVerifiedAt` nao null.
-- [TODO] L78: - Enforcement em todas as acoes criticas (servicos, payouts, exports).
-- [TODO] L79: - Banir fallbacks "fake verified" em UI/admin.
-- [N/A] L81: ### Drift 5 (Bloco 12) — Secrets internos divergentes
-- [N/A] L82: **Entrypoints afetados**
-- [TODO] L83: - Todas as rotas em `app/api/internal/**`
-- [TODO] L84: - Todas as rotas em `app/api/cron/**`
-- [N/A] L86: **Plano**
-- [TODO] L87: - Escolher um helper canonico (ex.: `lib/security/requireInternalSecret.ts`).
-- [TODO] L88: - Refactor de todas as rotas internas/cron para usar o mesmo helper.
-- [TODO] L89: - Garantir que UI nunca usa secret (usar server actions/proxy).
-- [N/A] L91: ---
-- [N/A] L93: ## Bloco 0 — Contratos de Erro + Envelope + Fail-Closed (Baseline)
-- [N/A] L95: ### Objetivo
-- [TODO] L96: - Unificar envelope de resposta/erro com requestId/correlationId.
-- [TODO] L97: - Garantir fail-closed em todos os endpoints criticos.
-- [TODO] L98: - Establish baseline de observabilidade.
-- [N/A] L100: ### Scope exato (paths + UI)
-- [TODO] L101: - `app/api/**`
-- [TODO] L102: - `middleware.ts`
-- [TODO] L103: - `lib/observability/**`, `lib/utils/**`, `lib/validation/**`
-- [TODO] L104: - UI: `app/components/checkout/**`, `app/organizacao/**`, `app/admin/**`
-- [N/A] L106: ### SSOT / Invariantes do blueprint
-- [TODO] L107: - I1 SSOT, I6 Idempotencia, I7 Async explicito, I9 Fail-closed
-- [TODO] L108: - C-G5 Error Envelope Standard, C-G7 Observability
-- [N/A] L110: ### Entrypoints end-to-end
-- [N/A] L111: **UI pages**
-- [TODO] L112: - `app/components/checkout/**`
-- [TODO] L113: - `app/organizacao/(dashboard)/**`
-- [TODO] L114: - `app/admin/**`
-- [N/A] L116: **API routes**
-- [TODO] L117: - Todas as rotas em `app/api/**` (com foco nos fluxos P0)
-- [N/A] L119: **P0 endpoints (Money & Infra) — inventario de auditoria (paths reais)**
-- [TODO] L120: - Payments/checkout: `app/api/payments/intent/route.ts`, `app/api/checkout/status/route.ts`, `app/api/store/checkout/route.ts`, `app/api/store/checkout/prefill/route.ts`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
-- [TODO] L121: - Refunds/disputes: `app/api/admin/payments/refund/route.ts`, `app/api/admin/payments/dispute/route.ts`, `app/api/admin/payments/reprocess/route.ts`, `app/api/admin/refunds/list/route.ts`, `app/api/admin/refunds/retry/route.ts`, `app/api/organizacao/refunds/list/route.ts`
-- [TODO] L122: - Payouts: `app/api/organizacao/payouts/status/route.ts`, `app/api/organizacao/payouts/list/route.ts`, `app/api/organizacao/payouts/summary/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/webhook/route.ts`, `app/api/admin/payouts/list/route.ts`, `app/api/admin/payouts/[id]/route.ts`, `app/api/admin/payouts/[id]/block/route.ts`, `app/api/admin/payouts/[id]/unblock/route.ts`, `app/api/admin/payouts/[id]/cancel/route.ts`, `app/api/admin/payouts/[id]/force-release/route.ts`
-- [TODO] L123: - Webhooks: `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`
-- [TODO] L124: - Internal ops/outbox: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/purchase/route.ts`, `app/api/internal/reprocess/payment-intent/route.ts`, `app/api/internal/reprocess/stripe-event/route.ts`, `app/api/internal/outbox/dlq/route.ts`, `app/api/internal/outbox/replay/route.ts`, `app/api/internal/worker/operations/route.ts`, `app/api/internal/checkout/timeline/route.ts`
-- [TODO] L125: - Internal allow/reason: `app/api/internal/checkin/consume/route.ts`
-- [TODO] L126: - Cron criticos: `app/api/cron/operations/route.ts`, `app/api/cron/payouts/release/route.ts`
-- [N/A] L128: **Jobs/cron/internal**
-- [TODO] L129: - `app/api/internal/**`
-- [TODO] L130: - `app/api/cron/**`
-- [N/A] L132: **Webhooks**
-- [TODO] L133: - `app/api/stripe/webhook/route.ts`
-- [N/A] L135: **Consumers/outbox processors**
-- [TODO] L136: - `domain/outbox/**`
-- [TODO] L137: - `domain/ops/**`
-- [TODO] L138: - `domain/eventLog/**`
-- [N/A] L140: ### Checklist de fecho
-- [TODO] L141: - [ ] **DECISAO**: envelope C-G5 + extensao `requestId` (contrato HTTP) confirmada.
-- [TODO] L142: - [ ] **EXISTE** envelope canonico: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data? }`.
-- [TODO] L143: - [ ] **REMOVER** respostas sem `errorCode`/`correlationId`/`requestId` em endpoints criticos.
-- [TODO] L144: - [ ] **WEBHOOKS**: erros de signature/secret invalid/missing retornam `text/plain` com headers `x-orya-request-id` e `x-orya-correlation-id`.
-- [TODO] L145: - [ ] **ALLOW/REASON**: endpoints com `allow/reasonCode` usam envelope + `data`.
-- [TODO] L146: - [ ] **FAIL-CLOSED**: auth/org context invalido retorna 401/403 com envelope canonico.
-- [TODO] L147: - [ ] **AJUSTAR** schema/Prisma se resposta exige campos novos.
-- [TODO] L148: - [ ] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
-- [TODO] L149: - [ ] **LOGS**: requestId/correlationId em logs de erro.
-- [N/A] L151: ### Criterios de DONE (producao)
-- [TODO] L152: - 100% das rotas criticas devolvem envelope canonico.
-- [TODO] L153: - Headers `x-orya-request-id` e `x-orya-correlation-id` presentes em todas as respostas HTTP.
-- [TODO] L154: - Runbook explica como localizar requestId e recuperar (replay/rollback).
-- [TODO] L155: - Em producao, falhas recuperaveis nao ficam sem nextAction.
-- [N/A] L157: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L158: - Drift entre rotas antigas/novas → aplicar helper canonico.
-- [TODO] L159: - Erros silenciosos sem requestId → padronizar middleware.
-- [N/A] L161: ### Guardrails (rg/tests/CI)
-- [TODO] L162: - `rg -n "NextResponse.json\(\{ ok: false" app/api -S` (verificar shape)
-- [TODO] L163: - `npx vitest run tests/access tests/ops`
-- [TODO] L164: - CI gate: falha se erro sem `code`/`requestId` em rotas P0.
-- [N/A] L166: ### Runbooks/Operabilidade
-- [TODO] L167: - Runbook: "Erro 4xx/5xx → encontrar requestId → logs → replay/rollback".
-- [N/A] L169: ---
-- [N/A] L171: ## Bloco 1 — Payments/Checkout/Ledger/Webhooks/Refunds/Reconciliation/Outbox
-- [N/A] L173: ### Objetivo
-- [TODO] L174: - Checkout idempotente e unico por SSOT financeiro.
-- [TODO] L175: - Ledger append-only e deterministico.
-- [TODO] L176: - Webhooks, refunds e reconciliation robustos.
-- [N/A] L178: ### Scope exato (paths + UI)
-- [TODO] L179: - API: `app/api/payments/intent/route.ts`, `app/api/stripe/webhook/route.ts`, `app/api/checkout/status/route.ts`
-- [TODO] L180: - API: `app/api/store/checkout/**`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
-- [TODO] L181: - Internal: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/**`
-- [TODO] L182: - Domain: `domain/finance/**`, `domain/outbox/**`, `domain/ops/**`
-- [TODO] L183: - UI: `app/components/checkout/**`, `app/eventos/[slug]/page.tsx`, `app/[username]/loja/**`, `app/resale/[id]/page.tsx`, `app/organizacao/(dashboard)/reservas/page.tsx`, `app/[username]/_components/ReservasBookingClient.tsx`
-- [N/A] L185: ### SSOT / Invariantes do blueprint
-- [TODO] L186: - I2 Ledger append-only, I3 Payments state machine, I6 Idempotencia
-- [TODO] L187: - Payment+Ledger SSOT; PaymentEvent/SaleSummary = read-model
-- [N/A] L189: ### Entrypoints end-to-end
-- [N/A] L190: **UI pages**
-- [TODO] L191: - `app/components/checkout/**` (Step2Pagamento/Step3Sucesso)
-- [TODO] L192: - `app/eventos/[slug]/page.tsx`
-- [TODO] L193: - `app/[username]/loja/page.tsx`, `app/[username]/loja/carrinho/page.tsx`, `app/[username]/loja/produto/[slug]/page.tsx`
-- [TODO] L194: - `app/resale/[id]/page.tsx`
-- [TODO] L195: - `app/organizacao/(dashboard)/reservas/page.tsx`
-- [N/A] L197: **API routes**
-- [TODO] L198: - `/api/payments/intent`
-- [TODO] L199: - `/api/stripe/webhook`
-- [TODO] L200: - `/api/checkout/status`
-- [TODO] L201: - `/api/store/checkout` + `/api/store/checkout/prefill`
-- [TODO] L202: - `/api/servicos/[id]/checkout`
-- [TODO] L203: - `/api/servicos/[id]/creditos/checkout`
-- [TODO] L204: - `/api/organizacao/reservas/[id]/checkout`
-- [TODO] L205: - `/api/padel/pairings/[id]/checkout`
-- [N/A] L207: **Jobs/cron/internal**
-- [TODO] L208: - `/api/internal/reconcile`
-- [TODO] L209: - `/api/internal/reprocess/purchase`
-- [TODO] L210: - `/api/internal/reprocess/payment-intent`
-- [TODO] L211: - `/api/internal/reprocess/stripe-event`
-- [N/A] L213: **Webhooks**
-- [TODO] L214: - `/api/stripe/webhook`
-- [N/A] L216: **Consumers/outbox processors**
-- [TODO] L217: - `domain/finance/outbox.ts`
-- [TODO] L218: - `domain/finance/readModelConsumer.ts`
-- [TODO] L219: - `domain/ops/*` (fulfillment/ledger upserts)
-- [N/A] L221: ### Checklist de fecho
-- [DONE] L222: - [x] **EXISTE** fluxo canonico de PI: `/api/payments/intent` + `domain/finance/checkout.ts`.
-- [DONE] L223: - [x] **REMOVER** criacao direta de PI nos endpoints paralelos (store/servicos/reservas).
-- [DONE] L224: - [x] **PR1** entrypoints P0 usam `ensurePaymentIntent` + `createCheckout` e `purchaseId` deterministico (sem `Date.now`).
-- [DONE] L225: - [x] **FAIL-CLOSED**: Stripe connect nao pronto → 4xx com code.
-- [DONE] L226: - [x] **AJUSTAR** schema/Prisma para alinhar PaymentEvent/Payment/SaleSummary.
-- [DONE] L227: - [x] **IDEMPOTENCIA**: dedupeKey baseada em `purchaseId` (checkoutKey).
-- [DONE] L228: - [x] **ERROS** com envelope canonico + requestId.
-- [DONE] L229: - [x] **LOGS**: correlacao `paymentIntentId` + `purchaseId`.
-- [N/A] L231: ### Criterios de DONE (producao)
-- [TODO] L232: - Todos os entrypoints criam PI via fluxo canonico.
-- [TODO] L233: - Se falhar em producao: runbook permite reprocess/replay sem duplos charges.
-- [TODO] L234: - Reconcile/rollback documentado com comandos internos.
-- [N/A] L236: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L237: - Drift de idempotencia entre fluxos → consolidar em helper unico.
-- [TODO] L238: - Read-models usados como SSOT → bloquear writes fora do consumer.
-- [N/A] L240: ### Guardrails (rg/tests/CI)
-- [TODO] L241: - `rg -n "stripe\.paymentIntents\.create" app lib domain -S -g '!domain/finance/gateway/**'`
-- [TODO] L242: - `rg -n "ledgerEntry\.(update|delete)" app lib domain -S`
-- [TODO] L243: - `rg -n "purchaseId\s*=.*Date\.now\(" app/api/servicos/[id]/checkout/route.ts app/api/servicos/[id]/creditos/checkout/route.ts app/api/organizacao/reservas/[id]/checkout/route.ts app/api/store/checkout/route.ts domain/padelSecondCharge.ts -S`
-- [TODO] L244: - `npx vitest run tests/finance tests/outbox tests/ops tests/entitlements`
-- [TODO] L245: - CI gate: falha se PI criado fora do gateway.
-- [N/A] L247: ### Runbooks/Operabilidade
-- [TODO] L248: - Runbook: "Checkout 409/500", "Reprocess PI", "Reconcile Stripe Event".
-- [N/A] L250: ---
-- [N/A] L252: ## Bloco 2 — Outbox/Workers/Operations
-- [N/A] L254: ### Objetivo
-- [TODO] L255: - Outbox winner-only, sem double-publish.
-- [TODO] L256: - Workers idempotentes, com replay seguro.
-- [TODO] L257: - Crash recovery fechado.
-- [N/A] L259: ### Scope exato (paths + UI)
-- [TODO] L260: - `domain/outbox/**`, `domain/ops/**`, `domain/eventLog/**`
-- [TODO] L261: - `app/api/internal/worker/operations/route.ts`
-- [TODO] L262: - `app/api/internal/outbox/replay/route.ts`, `app/api/internal/outbox/dlq/route.ts`
-- [TODO] L263: - `app/api/internal/reprocess/**`
-- [TODO] L264: - `app/api/cron/operations/route.ts`
-- [N/A] L266: ### SSOT / Invariantes do blueprint
-- [TODO] L267: - I7 Async explicito, I6 Idempotencia
-- [TODO] L268: - Outbox append-only; publishedAt apenas em sucesso
-- [N/A] L270: ### Entrypoints end-to-end
-- [N/A] L271: **UI pages**
-- [TODO] L272: - N/A (operacional)
-- [N/A] L274: **API routes**
-- [TODO] L275: - `/api/internal/worker/operations`
-- [TODO] L276: - `/api/internal/outbox/replay`
-- [TODO] L277: - `/api/internal/outbox/dlq`
-- [TODO] L278: - `/api/internal/reprocess/*`
-- [N/A] L280: **Jobs/cron/internal**
-- [TODO] L281: - `/api/cron/operations`
-- [N/A] L283: **Webhooks**
-- [TODO] L284: - N/A
-- [N/A] L286: **Consumers/outbox processors**
-- [TODO] L287: - `domain/outbox/producer.ts`
-- [TODO] L288: - `domain/outbox/publisher.ts`
-- [TODO] L289: - `domain/opsFeed/consumer.ts`
-- [N/A] L291: ### Checklist de fecho
-- [TODO] L292: - [ ] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
-- [TODO] L293: - [ ] **REMOVER** processamento concorrente sem dedupe.
-- [TODO] L294: - [ ] **FAIL-CLOSED**: worker sem secret nao executa.
-- [TODO] L295: - [ ] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
-- [TODO] L296: - [ ] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
-- [TODO] L297: - [ ] **ERROS** canonicos em replay/dlq.
-- [TODO] L298: - [ ] **LOGS** com correlationId.
-- [N/A] L300: ### Criterios de DONE (producao)
-- [TODO] L301: - Double-publish = 0 (provado por testes + logs).
-- [TODO] L302: - Runbook permite replay seguro apos crash.
-- [N/A] L304: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L305: - Concurrency sem lock → adotar SKIP LOCKED/claim seguro.
-- [N/A] L307: ### Guardrails (rg/tests/CI)
-- [TODO] L308: - `rg -n "outbox.*create" app/api -S -g '!domain/outbox/**'`
-- [TODO] L309: - `npx vitest run tests/outbox tests/ops`
-- [TODO] L310: - CI gate: falha se eventos forem processados fora do consumer.
-- [N/A] L312: ### Runbooks/Operabilidade
-- [TODO] L313: - Runbook: "DLQ triage", "Replay seguro", "Worker crash recovery".
-- [N/A] L315: ---
-- [N/A] L317: ## Bloco 3 — Email Oficial da Organizacao (Normalizacao + Verificacao + Enforcement)
-- [N/A] L319: ### Objetivo
-- [TODO] L320: - Email oficial unico, normalizado e verificado em toda a app.
-- [TODO] L321: - Enforcement consistente em acoes criticas.
-- [TODO] L322: - UX sem drift (refetch imediato).
-- [N/A] L324: ### Scope exato (paths + UI)
-- [TODO] L325: - DB: `prisma/schema.prisma` (Organization.official_email, Organization.official_email_verified_at, organization_official_email_requests)
-- [TODO] L326: - API: `app/api/organizacao/organizations/settings/official-email/route.ts`
-- [TODO] L327: - API: `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
-- [TODO] L328: - API: `app/api/admin/organizacoes/verify-platform-email/route.ts`
-- [TODO] L329: - API: `app/api/admin/config/platform-email/route.ts`
-- [TODO] L330: - API (enforcement): `app/api/organizacao/me/route.ts`, `app/api/organizacao/servicos/route.ts`, `app/api/organizacao/promo/route.ts`, `app/api/organizacao/loja/route.ts`, `app/api/organizacao/policies/route.ts`, `app/api/organizacao/checkin/route.ts`, `app/api/organizacao/finance/exports/fees/route.ts`, `app/api/organizacao/finance/exports/ledger/route.ts`, `app/api/organizacao/finance/exports/payouts/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/organizations/members/route.ts`, `app/api/organizacao/organizations/members/invites/route.ts`, `app/api/organizacao/events/update/route.ts`, `app/api/organizacao/events/[id]/invites/route.ts`, `app/api/organizacao/events/[id]/invite-token/route.ts`, `app/api/organizacao/tournaments/**`
-- [TODO] L331: - Libs: `lib/organizationOfficialEmail.ts`, `lib/organizationWriteAccess.ts`, `lib/organizationContext.ts`, `lib/organizationPayments.ts`, `lib/loja/access.ts`, `lib/reservas/access.ts`, `lib/crm/campaignSend.ts`, `lib/payments/releaseWorker.ts`, `lib/platformSettings.ts`, `lib/http/requestContext.ts`
-- [TODO] L332: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/(dashboard)/settings/verify/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`, `app/organizacao/OrganizationDashboardShell.tsx`, `app/organizacao/DashboardClient.tsx`, `app/organizacao/(dashboard)/eventos/novo/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`
-- [N/A] L334: ### SSOT / Invariantes do blueprint
-- [TODO] L335: - I1 SSOT, I9 Fail-closed
-- [TODO] L336: - `officialEmail` + `officialEmailVerifiedAt` canonicamente verificado
-- [N/A] L338: ### Entrypoints end-to-end
-- [N/A] L339: **UI pages**
-- [TODO] L340: - `app/organizacao/(dashboard)/settings/page.tsx`
-- [TODO] L341: - `app/organizacao/(dashboard)/settings/verify/page.tsx`
-- [TODO] L342: - `app/organizacao/OrganizationTopBar.tsx`
-- [TODO] L343: - `app/organizacao/OrganizationDashboardShell.tsx`
-- [TODO] L344: - `app/organizacao/DashboardClient.tsx`
-- [TODO] L345: - `app/organizacao/(dashboard)/eventos/novo/page.tsx`
-- [TODO] L346: - `app/admin/organizacoes/page.tsx`
-- [TODO] L347: - `app/[username]/page.tsx`
-- [N/A] L349: **API routes**
-- [TODO] L350: - `/api/organizacao/organizations/settings/official-email`
-- [TODO] L351: - `/api/organizacao/organizations/settings/official-email/confirm`
-- [TODO] L352: - `/api/admin/organizacoes/verify-platform-email`
-- [TODO] L353: - `/api/organizacao/me`
-- [TODO] L354: - `/api/organizacao/servicos`
-- [TODO] L355: - `/api/organizacao/promo`
-- [TODO] L356: - `/api/organizacao/loja`
-- [TODO] L357: - `/api/organizacao/policies`
-- [TODO] L358: - `/api/organizacao/checkin`
-- [TODO] L359: - `/api/organizacao/finance/exports/fees`
-- [TODO] L360: - `/api/organizacao/finance/exports/ledger`
-- [TODO] L361: - `/api/organizacao/finance/exports/payouts`
-- [TODO] L362: - `/api/organizacao/payouts/connect`
-- [TODO] L363: - `/api/organizacao/payouts/settings`
-- [TODO] L364: - `/api/organizacao/organizations/members`
-- [TODO] L365: - `/api/organizacao/organizations/members/invites`
-- [TODO] L366: - `/api/organizacao/events/update`
-- [TODO] L367: - `/api/organizacao/events/[id]/invites`
-- [TODO] L368: - `/api/organizacao/events/[id]/invite-token`
-- [TODO] L369: - `/api/organizacao/tournaments/*`
-- [N/A] L371: **Jobs/cron/internal**
-- [TODO] L372: - N/A
-- [N/A] L374: **Webhooks**
-- [TODO] L375: - N/A
-- [N/A] L377: **Consumers/outbox processors**
-- [TODO] L378: - N/A
-- [N/A] L380: ### Checklist de fecho
-- [DONE] L381: - [x] **NORMALIZACAO** unica (NFKC + lowercase + trim) via `lib/organizationOfficialEmail.ts`.
-- [DONE] L382: - [x] **REMOVER** fallbacks/hacks em UI/admin (ex: `app/organizacao/(dashboard)/settings/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`).
-- [DONE] L383: - [x] **FAIL-CLOSED**: acoes criticas bloqueadas sem `officialEmailVerifiedAt` (via `ensureOrganizationEmailVerified`/`requireOfficialEmailVerified`).
-- [DONE] L384: - [x] **ALLOWLIST** minima sem gate (org create/switch/become, webhooks, setup email oficial).
-- [DONE] L385: - [x] **PLATFORM EMAIL** SSOT em `platform_settings` + helper `getPlatformOfficialEmail()` + endpoints admin config.
-- [DONE] L386: - [x] **REQUEST/CONFIRM**: resposta 200 ok com `status:"VERIFIED"` quando já verificado; requestId/correlationId em payload+headers.
-- [DONE] L387: - [x] **LOGS** sem PII (usar `maskEmailForLog`).
-- [DONE] L388: - [x] **TESTES/GATES**: `npx vitest run tests/access tests/rbac tests/ops` + rg guardrails.
-- [N/A] L390: ### Criterios de DONE (producao)
-- [TODO] L391: - Nenhuma pagina mostra "nao verificado" quando esta verificado.
-- [TODO] L392: - Se falhar, runbook de reenvio/confirmacao recupera em minutos.
-- [N/A] L394: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L395: - Divergencia UI/API → alinhar org context e refetch.
-- [N/A] L397: ### Guardrails (rg/tests/CI)
-- [TODO] L398: - `rg -n "contactEmailFromAccount|new Date\\(\\)\\.toISOString\\(\\)" app -S`
-- [TODO] L399: - `rg -n "\\.toLowerCase\\(\\)|\\.trim\\(\\)" app lib domain -S` (apenas onde nao e email oficial)
-- [TODO] L400: - `rg -n "officialEmailVerifiedAt" app lib domain -S`
-- [TODO] L401: - `npx vitest run tests/access tests/rbac tests/ops`
-- [TODO] L402: - CI gate: falha se endpoint critico nao valida email verificado.
-- [N/A] L404: ### Runbooks/Operabilidade
-- [TODO] L405: - Runbook: "Enviar verificacao", "Confirmar/Revogar", "Revalidar".
-- [N/A] L407: ---
-- [N/A] L409: ## Bloco 4 — Admin Org Control Center + Ops Feed
-- [N/A] L411: ### Objetivo
-- [TODO] L412: - Admin console operavel sem legacy stats.
-- [TODO] L413: - Acoes admin auditaveis e resilientes.
-- [TODO] L414: - Ops Feed como fonte unica de operacoes.
-- [N/A] L416: ### Scope exato (paths + UI)
-- [TODO] L417: - UI: `app/admin/**`, `app/admin/organizacoes/page.tsx`
-- [TODO] L418: - API: `app/api/admin/**`
-- [TODO] L419: - API ops: `app/api/internal/ops/**`
-- [TODO] L420: - Domain: `domain/opsFeed/**`, `domain/eventLog/**`
-- [N/A] L422: ### SSOT / Invariantes do blueprint
-- [TODO] L423: - I1 SSOT, I7 Observability, I9 Fail-closed
-- [TODO] L424: - EventLog como fonte unica para Ops Feed
-- [N/A] L426: ### Entrypoints end-to-end
-- [N/A] L427: **UI pages**
-- [TODO] L428: - `app/admin/organizacoes/page.tsx`
-- [TODO] L429: - `app/admin/page.tsx`
-- [N/A] L431: **API routes**
-- [TODO] L432: - `/api/admin/organizacoes/list`
-- [TODO] L433: - `/api/admin/organizacoes/update-status`
-- [TODO] L434: - `/api/admin/organizacoes/update-payments-mode`
-- [TODO] L435: - `/api/admin/organizacoes/verify-platform-email`
-- [TODO] L436: - `/api/admin/payments/*`, `/api/admin/payouts/*`, `/api/admin/refunds/*`
-- [N/A] L438: **Jobs/cron/internal**
-- [TODO] L439: - `/api/internal/ops/*`
-- [N/A] L441: **Webhooks**
-- [TODO] L442: - N/A
-- [N/A] L444: **Consumers/outbox processors**
-- [TODO] L445: - `domain/opsFeed/consumer.ts`
-- [N/A] L447: ### Checklist de fecho
-- [TODO] L448: - [ ] **EXISTE** lista de orgs funcional (sem 410/LEGACY_STATS_DISABLED).
-- [TODO] L449: - [ ] **REMOVER** dependencia de legacy stats.
-- [TODO] L450: - [ ] **FAIL-CLOSED**: admin sem role retorna 403 com envelope canonico.
-- [TODO] L451: - [ ] **AJUSTAR** schema/queries para usar read-models v9.
-- [TODO] L452: - [ ] **IDEMPOTENCIA**: acoes admin com requestId/correlationId.
-- [TODO] L453: - [ ] **ERROS** canonicos + requestId no UI.
-- [TODO] L454: - [ ] **LOGS** sem payload sensivel.
-- [DONE] L455: - [x] **UI** admin para configurar platform email (consome `/api/admin/config/platform-email`).
-- [N/A] L457: ### Criterios de DONE (producao)
-- [TODO] L458: - Admin console operavel end-to-end.
-- [TODO] L459: - Se falhar em producao: runbook para regressar a dados minimos e recuperar.
-- [N/A] L461: ### Riscos/Drifts conhecidos + mitigacao
-- [TODO] L462: - UI depende de stats legacy → substituir por ops feed/rollups.
-- [N/A] L464: ### Guardrails (rg/tests/CI)
-- [TODO] L465: - `rg -n "LEGACY_STATS_DISABLED" app/api -S`
-- [TODO] L466: - `npx vitest run tests/ops tests/audit`
-- [TODO] L467: - CI gate: bloqueia se admin retorna 410.
-- [N/A] L469: ### Runbooks/Operabilidade
-- [TODO] L470: - Runbook: "Admin actions + rollback", "Ops Feed triage".
-- [N/A] L472: ---
-- [N/A] L474: ## Bloco 5 — RBAC / Org Context / Members / Owners
-- [N/A] L476: ### Objetivo
-- [TODO] L477: - Zero bypass de RBAC e org context.
-- [TODO] L478: - Helpers canonicos usados em todas as rotas sensiveis.
-- [N/A] L480: ### Scope exato (paths + UI)
-- [TODO] L481: - `lib/organizationRbac.ts`, `lib/organizationContext.ts`, `lib/organizationMemberAccess.ts`
-- [TODO] L482: - `app/api/organizacao/organizations/**`
-- [TODO] L483: - `app/api/organizacao/me/route.ts`
-- [TODO] L484: - UI: `app/organizacao/**`
-- [N/A] L486: ### SSOT / Invariantes do blueprint
-- [TODO] L487: - I5 Org Context explicito, I9 Fail-closed
-- [N/A] L489: ### Entrypoints end-to-end
-- [N/A] L490: **UI pages**
-- [TODO] L491: - `app/organizacao/(dashboard)/**`
-- [N/A] L493: **API routes**
-- [TODO] L494: - `/api/organizacao/organizations/members`
-- [TODO] L495: - `/api/organizacao/organizations/members/invites`
-- [TODO] L496: - `/api/organizacao/organizations/owner/*`
-- [TODO] L497: - `/api/organizacao/me`
-- [N/A] L499: **Jobs/cron/internal**
-- [TODO] L500: - N/A
-- [N/A] L502: **Webhooks**
-- [TODO] L503: - N/A
-- [N/A] L505: **Consumers/outbox processors**
-- [TODO] L506: - N/A
-- [N/A] L508: ### Checklist de fecho
-- [TODO] L509: - [ ] **EXISTE** helper unico para RBAC.
-- [TODO] L510: - [ ] **REMOVER** checks manuais (ownerId direto, findFirst ad-hoc).
-- [TODO] L511: - [ ] **FAIL-CLOSED**: org context invalido → 403.
-- [TODO] L512: - [ ] **IDEMPOTENCIA**: owner transfer sem duplicar estado.
-- [TODO] L513: - [ ] **ERROS** canonicos + requestId.
-- [N/A] L515: ### Criterios de DONE (producao)
-- [TODO] L516: - `rg` bypass = 0 e testes RBAC verdes.
-- [N/A] L518: ### Guardrails (rg/tests/CI)
-- [TODO] L519: - `rg -n "organizationMember\.findFirst|ownerId\s*=" app lib domain tests -S`
-- [TODO] L520: - `npx vitest run tests/rbac tests/access`
-- [N/A] L522: ### Runbooks/Operabilidade
-- [TODO] L523: - Runbook: "RBAC fail-closed + debug".
-- [N/A] L525: ---
-- [N/A] L527: ## Bloco 6 — Eventos (Create/Edit/Publish/Invites/Covers/Maps)
-- [N/A] L529: ### Objetivo
-- [TODO] L530: - Eventos completos, sem drift entre UI/API.
-- [TODO] L531: - Convites e acesso consistentes com policy v9.
-- [TODO] L532: - "Gratuito" derivado por pricingMode + ticket prices (Event.isFree = legacy read-model).
-- [N/A] L534: ### Scope exato (paths + UI)
-- [TODO] L535: - `app/api/organizacao/events/**`
-- [TODO] L536: - `app/eventos/**`
-- [TODO] L537: - `app/organizacao/(dashboard)/eventos/**`
-- [TODO] L538: - `app/descobrir/_lib/discoverData.ts`
-- [TODO] L539: - `domain/events/**`, `lib/events.ts`, `lib/eventCover.ts`, `lib/maps/**`
-- [TODO] L540: - `scripts/backfill_event_access_policy.ts`
-- [N/A] L542: ### Entrypoints end-to-end
-- [N/A] L543: **UI pages**
-- [TODO] L544: - `app/eventos/[slug]/page.tsx`
-- [TODO] L545: - `app/organizacao/(dashboard)/eventos/**`
-- [N/A] L547: **API routes**
-- [TODO] L548: - `/api/organizacao/events/create`
-- [TODO] L549: - `/api/organizacao/events/update`
-- [TODO] L550: - `/api/organizacao/events/list`
-- [TODO] L551: - `/api/organizacao/events/[id]/invites`
-- [TODO] L552: - `/api/organizacao/events/[id]/invite-token`
-- [TODO] L553: - `/api/organizacao/events/[id]/attendees`
-- [N/A] L555: **Consumers/outbox processors**
-- [TODO] L556: - `domain/events/**` consumers (quando existirem)
-- [N/A] L558: ### Checklist de fecho
-- [TODO] L559: - [ ] **EXISTE** EventAccessPolicy canonica (create/update) + policyVersionApplied estavel.
-- [TODO] L560: - [ ] **INVITES**: inviteToken resolve para eventInviteId (public endpoints) sem tocar payments core.
-- [TODO] L561: - [ ] **LEGACY**: flags de acesso legacy removidas de UI/API reads (RG guardrail).
-- [TODO] L562: - [ ] **GRATUITO**: deriveIsFreeEvent usado em discover/cards/search; Event.isFree = read-only.
-- [TODO] L563: - [ ] **FAIL-CLOSED**: mapas sem creds em PROD → erro explicito.
-- [N/A] L565: ### DONE criteria (Bloco 6)
-- [TODO] L566: - Create/Edit/Publish OK (UI + API).
-- [TODO] L567: - Invites (token/check) OK com accessGrant/eventInviteId.
-- [TODO] L568: - Discover listing OK com deriveIsFreeEvent.
-- [TODO] L569: - Check-in resolve policy por policyVersionApplied.
-- [TODO] L570: - Covers picker OK.
-- [TODO] L571: - Apple Maps token fail-closed OK.
-- [N/A] L573: ### Guardrails (rg/tests/CI)
-- [TODO] L574: - `npm run db:gates:offline`
-- [TODO] L575: - `npx vitest run tests/invites tests/access tests/checkin tests/search tests/ops`
-- [TODO] L576: - `rg -n "inviteOnly|publicAccessMode|participantAccessMode|publicTicketTypeIds|Event\\.isFree" app -S`
-- [TODO] L577: - `rg -n "\\.isFree\\b" app domain -S`
-- [TODO] L578: - (Se tocar em searchIndex) `npx vitest run tests/searchIndex`
-- [N/A] L580: ### Runbooks/Operabilidade
-- [TODO] L581: - Runbook: "Event publish/rollback".
-- [TODO] L582: - Backfill policy (obrigatorio antes de deploy):
-- [TODO] L583:   - Dry-run: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts --dry-run --limit=100`
-- [TODO] L584:   - Execucao: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts`
-- [TODO] L585:   - Esperado: output com contagem por mode/source + warnings de default/restricoes.
-- [N/A] L587: ---
-- [N/A] L589: ## Bloco 7 — Reservas / Agenda / Servicos / Softblocks
-- [N/A] L591: ### Objetivo
-- [TODO] L592: - Agenda deterministica com prioridades.
-- [TODO] L593: - Reservas e servicos consistentes.
-- [N/A] L595: ### Scope exato (paths + UI)
-- [TODO] L596: - `domain/agenda/**`, `domain/softBlocks/**`
-- [TODO] L597: - `app/api/organizacao/reservas/**`, `app/api/servicos/**`, `app/api/me/reservas/**`
-- [TODO] L598: - UI: `app/[username]/_components/ReservasBookingClient.tsx`
-- [N/A] L600: ### Entrypoints end-to-end
-- [N/A] L601: **API routes**
-- [TODO] L602: - `/api/organizacao/reservas/*`
-- [TODO] L603: - `/api/servicos/*`
-- [N/A] L605: **Consumers/outbox processors**
-- [TODO] L606: - `domain/agendaReadModel/**`
-- [N/A] L608: ### Guardrails (rg/tests/CI)
-- [TODO] L609: - `npx vitest run tests/agenda tests/outbox tests/ops`
-- [N/A] L611: ### PR1 — BookingConfirmationSnapshot v9 (DONE)
-- [TODO] L612: - Snapshot imutavel e versionado persistido no momento de confirmar.
-- [TODO] L613: - SSOT: `lib/reservas/confirmationSnapshot.ts`
-- [TODO] L614: - Pontos de confirmacao: `lib/reservas/confirmBooking.ts`, `lib/operations/fulfillServiceBooking.ts`
-- [N/A] L616: ### PR2 — Cancel/Refund/No-Show por snapshot + backfill (DONE)
-- [TODO] L617: - Cancelamento e no-show leem sempre `booking.confirmationSnapshot` (fail closed se faltar).
-- [TODO] L618: - Refund calcula por snapshot (policy + pricing), nunca por policy live.
-- [TODO] L619: - Entrypoints fechados:
-- [TODO] L620:   - `app/api/me/reservas/[id]/cancel/route.ts`
-- [TODO] L621:   - `app/api/organizacao/reservas/[id]/cancel/route.ts`
-- [TODO] L622:   - `app/api/organizacao/reservas/[id]/no-show/route.ts`
-- [TODO] L623: - Snapshot timezone exposto para representacao:
-- [TODO] L624:   - `app/api/me/reservas/route.ts`
-- [TODO] L625: - Backfill dedicado:
-- [TODO] L626:   - `scripts/backfill_booking_confirmation_snapshot.ts`
-- [TODO] L627:   - SSOT helper: `lib/reservas/backfillConfirmationSnapshot.ts`
-- [N/A] L629: ### Backfill obrigatorio antes de deploy (PR2)
-- [TODO] L630: - Dry-run (recomendado primeiro):
-- [TODO] L631:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --dry-run --limit=200`
-- [TODO] L632: - Execucao limitada (iterar por lotes):
-- [TODO] L633:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --limit=200`
-- [TODO] L634: - Esperado:
-- [TODO] L635:   - Contagens por status, `updated`, `skipped`, e warnings para snapshots nao resolvidos.
-- [N/A] L637: ---
-- [N/A] L639: ## Bloco 8 — Padel + Torneios
-- [N/A] L641: ### Scope exato (paths + UI)
-- [TODO] L642: - `app/api/padel/**`, `app/api/organizacao/tournaments/**`
-- [TODO] L643: - `domain/padel/**`, `domain/tournaments/**`
-- [N/A] L645: ### Guardrails (rg/tests/CI)
-- [TODO] L646: - `npx vitest run tests/padel tests/tournaments tests/outbox`
-- [N/A] L648: ---
-- [N/A] L650: ## Bloco 9 — Loja / Tickets / Check-in / Entitlements
-- [N/A] L652: ### Scope exato (paths + UI)
-- [TODO] L653: - `app/api/store/**`, `app/api/tickets/**`, `app/api/checkin/**`, `app/api/organizacao/checkin/**`
-- [TODO] L654: - `domain/entitlements/**`
-- [TODO] L655: - UI: `app/[username]/loja/**`, `app/me/loja/**`
-- [N/A] L657: ### Guardrails (rg/tests/CI)
-- [TODO] L658: - `npx vitest run tests/entitlements tests/checkin tests/finance`
-- [N/A] L660: ---
-- [N/A] L662: ## Bloco 10 — Users / Sessao / Perfil / Privacidade / Consentimentos / Notifs
-- [N/A] L664: ### Scope exato (paths + UI)
-- [TODO] L665: - `app/api/me/**`, `domain/location/**`, `domain/notifications/**`
-- [N/A] L667: ### Guardrails (rg/tests/CI)
-- [TODO] L668: - `npx vitest run tests/location tests/notifications tests/access`
-- [N/A] L670: ---
-- [N/A] L672: ## Bloco 11 — Search / Discover / SearchIndex / Analytics / CRM
-- [N/A] L674: ### Scope exato (paths + UI)
-- [TODO] L675: - `app/api/explorar/list/route.ts`
-- [TODO] L676: - `domain/search/**`, `domain/searchIndex/**`, `domain/analytics/**`
-- [TODO] L677: - `app/api/internal/analytics/rollup/route.ts`
-- [TODO] L678: - `app/api/internal/crm/**`, `app/api/cron/crm/**`
-- [N/A] L680: ### Guardrails (rg/tests/CI)
-- [TODO] L681: - `npx vitest run tests/search tests/searchIndex tests/analytics`
-- [N/A] L683: ---
-- [N/A] L685: ## Bloco 12 — Cron / Jobs / Internal Routes + Secrets
-- [N/A] L687: ### Scope exato (paths + UI)
-- [TODO] L688: - `app/api/cron/**`
-- [TODO] L689: - `app/api/internal/**`
-- [N/A] L691: ### Guardrails (rg/tests/CI)
-- [TODO] L692: - `rg -n "X-ORYA-CRON-SECRET" app/api/internal app/api/cron -S`
-- [TODO] L693: - `npx vitest run tests/ops`
-- [N/A] L695: ---
-- [N/A] L697: ## Bloco 13 — Observabilidade + Runbooks + DLQ/Replay + SLOs
-- [N/A] L699: ### Scope exato (paths + UI)
-- [TODO] L700: - `lib/observability/**`, `domain/opsFeed/**`
-- [TODO] L701: - `app/api/internal/ops/**`, `app/api/internal/outbox/*`
-- [TODO] L702: - `docs/runbooks/**`
-- [N/A] L704: ### Guardrails (rg/tests/CI)
-- [TODO] L705: - `npx vitest run tests/ops tests/audit`
-- [N/A] L707: ---
-- [N/A] L709: ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
-- [N/A] L711: ### Scope exato (paths + UI)
-- [TODO] L712: - `docs/v9_ssot_registry.md`, `docs/v10_execution_checklist.md`, `docs/orya_blueprint_v9_final.md`, `docs/runbooks/**`
-- [TODO] L713: - `lib/env.ts`, `next.config.ts`, `fly.worker.toml`, `Dockerfile.worker`
-- [N/A] L715: ### Guardrails (rg/tests/CI)
-- [TODO] L716: - `npx vitest run tests/apple tests/maps tests/push`
-- [N/A] L718: ---
-- [N/A] L720: ## Repo-wide audit checklist
-- [TODO] L721: - [ ] Checkout/Payments (entrypoints + webhooks + idempotencia)
-- [TODO] L722: - [ ] Org settings/email (normalizacao + verificado)
-- [TODO] L723: - [ ] Admin control center (sem legacy stats)
-- [TODO] L724: - [ ] Members/RBAC/Owners (rg bypass = 0)
-- [TODO] L725: - [ ] Outbox/Workers (winner-only + replay)
-- [TODO] L726: - [ ] Eventos (create/edit/publish/invites/covers/maps)
-- [TODO] L727: - [ ] Reservas/Agenda/Servicos/Softblocks
-- [TODO] L728: - [ ] Padel/Torneios
-- [TODO] L729: - [ ] Loja/Tickets/Check-in/Entitlements
-- [TODO] L730: - [ ] Users/Sessao/Privacidade/Consentimentos
-- [TODO] L731: - [ ] Search/Discover/Analytics/CRM
-- [TODO] L732: - [ ] Cron/Internal routes + secrets
-- [TODO] L733: - [ ] Observabilidade/Runbooks
-- [TODO] L734: - [ ] Go-live (env sanity + App Store)
+- [N/A] L11: - Bloco 0: envelope C‑G5 + requestId/correlationId concluído.
+- [N/A] L12: - Bloco 2: claim winner‑only + recovery/runbook concluídos.
+- [N/A] L13: - Bloco 4: stats migradas para rollups/entitlements (sem legacy summaries).
+- [N/A] L14: - Bloco 5: gate de org context aplicado em CI + correções de rota crítica.
+- [N/A] L15: - Bloco 7: backfill de snapshots de reservas executado (sem pendências).
+- [N/A] L16: - Bloco 8: padel + torneios fechados (ruleset snapshot, lifecycle, matchmaking/cron, calendário SSOT).
+- [N/A] L17: - Bloco 9/10: entitlements (tickets/padel/booking/loja) e DSAR/retention concluídos.
+- [N/A] L18: - Bloco 11/12/13/14: search/cron/observabilidade/go-live fechados (a11y/perf/mobile report).
+- [N/A] L19: - Infra já implementada e estável (sem mudanças de código nesta fase):
+- [N/A] L20:   - AWS: Route53 + ACM + ECS/ALB + ECR + CloudFront/.well-known + SES (ver `reports/p_infra_2026-01-30.md`, `reports/p_email_2026-01-31.md`).
+- [N/A] L21:   - Supabase: isolamento `prod`/`test`, RLS/env filtering e seed test (ver `reports/test_env_isolation_2026-01-31.md`).
+- [N/A] L22:   - Apple Developer readiness: Sign In with Apple, APNS, Apple Pay domain files e secrets em AWS (ver `docs/envs_required.md`, `reports/p_infra_2026-01-30.md`).
+- [N/A] L23: - F2/F3: backlog explícito (não bloqueia F1).
+- [N/A] L25: ---
+- [N/A] L27: ## Primeira Semana (Top-5 Drifts) — Plano de Execucao
+- [N/A] L29: ### Drift 1 (Bloco 1) — PaymentIntent fora do fluxo canonico
+- [N/A] L30: **Entrypoints que criam PaymentIntent (lista exata)**
+- [N/A] L31: - `app/api/payments/intent/route.ts` (canonico esperado)
+- [N/A] L32: - `app/api/store/checkout/route.ts`
+- [N/A] L33: - `app/api/servicos/[id]/checkout/route.ts`
+- [N/A] L34: - `app/api/servicos/[id]/creditos/checkout/route.ts`
+- [N/A] L35: - `app/api/organizacao/reservas/[id]/checkout/route.ts`
+- [N/A] L36: - `domain/padelSecondCharge.ts`
+- [N/A] L37: - `domain/finance/gateway/stripeGateway.ts` (gateway canonicamente permitido)
+- [N/A] L39: **Plano**
+- [N/A] L40: - Definir SSOT unico: `/api/payments/intent` + `domain/finance/checkout.ts`.
+- [N/A] L41: - Bloquear/elimitar criacao direta de PI fora do fluxo canonico (refactor entrypoints acima).
+- [N/A] L42: - Garantir idempotencia unificada: `purchaseId` + `idempotencyKey` canonica (checkoutKey).
+- [N/A] L43: - Validar que todos os fluxos retornam o mesmo envelope + requestId.
+- [N/A] L45: ### Drift 2 (Bloco 4) — Admin/Stats legacy 410
+- [N/A] L46: **Entrypoints afetados**
+- [N/A] L47: - `app/api/admin/organizacoes/list/route.ts` (410)
+- [N/A] L48: - `app/api/organizacao/estatisticas/overview/route.ts` (410)
+- [N/A] L49: - `app/api/organizacao/estatisticas/time-series/route.ts` (410)
+- [N/A] L50: - UI: `app/admin/organizacoes/page.tsx`, `app/organizacao/estatisticas/page.tsx`
+- [N/A] L52: **Plano**
+- [N/A] L53: - Substituir legacy stats por fontes atuais (EventLog/Ops Feed/Rollups v9).
+- [N/A] L54: - UI nao pode falhar se stats estiverem incompletas (fallback resiliente).
+- [N/A] L55: - Endpoints admin retornam dados minimos + envelope canonico.
+- [N/A] L57: ### Drift 3 (Bloco 2) — Outbox sem claim/lock explicito
+- [N/A] L58: **Entrypoints afetados**
+- [N/A] L59: - `domain/outbox/**`
+- [N/A] L60: - `app/api/internal/worker/operations/route.ts`
+- [N/A] L61: - `app/api/internal/outbox/replay/route.ts`
+- [N/A] L62: - `app/api/internal/outbox/dlq/route.ts`
+- [N/A] L63: - `app/api/internal/reprocess/**`
+- [N/A] L64: - `app/api/cron/operations/route.ts`
+- [N/A] L66: **Plano**
+- [N/A] L67: - Definir estrategia de claim: select + lock + winner-only (SKIP LOCKED ou equivalente).
+- [N/A] L68: - Definir regra de crash recovery (reconciliation guard).
+- [N/A] L69: - Garantir publishedAt apenas em sucesso, sem loop.
+- [N/A] L70: - Runbook DLQ/replay obrigatorio.
+- [N/A] L72: ### Drift 4 (Bloco 3) — Email oficial disperso
+- [N/A] L73: **Entrypoints afetados**
+- [N/A] L74: - `app/api/organizacao/organizations/settings/official-email/route.ts`
+- [N/A] L75: - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
+- [N/A] L76: - `app/api/admin/organizacoes/verify-platform-email/route.ts`
+- [N/A] L77: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`
+- [N/A] L79: **Plano**
+- [N/A] L80: - Regra unica de normalizacao: `lib/organizationOfficialEmail.ts` (NFKC + lowercase + trim).
+- [N/A] L81: - SSOT de verificado: `officialEmailVerifiedAt` nao null.
+- [N/A] L82: - Enforcement em todas as acoes criticas (servicos, payouts, exports).
+- [N/A] L83: - Banir fallbacks "fake verified" em UI/admin.
+- [N/A] L85: ### Drift 5 (Bloco 12) — Secrets internos divergentes
+- [N/A] L86: **Entrypoints afetados**
+- [N/A] L87: - Todas as rotas em `app/api/internal/**`
+- [N/A] L88: - Todas as rotas em `app/api/cron/**`
+- [N/A] L90: **Plano**
+- [N/A] L91: - Escolher um helper canonico (ex.: `lib/security/requireInternalSecret.ts`).
+- [N/A] L92: - Refactor de todas as rotas internas/cron para usar o mesmo helper.
+- [N/A] L93: - Garantir que UI nunca usa secret (usar server actions/proxy).
+- [N/A] L95: ---
+- [N/A] L97: ## Bloco 0 — Contratos de Erro + Envelope + Fail-Closed (Baseline)
+- [N/A] L99: ### Objetivo
+- [N/A] L100: - Unificar envelope de resposta/erro com requestId/correlationId.
+- [N/A] L101: - Garantir fail-closed em todos os endpoints criticos.
+- [N/A] L102: - Establish baseline de observabilidade.
+- [N/A] L104: ### Scope exato (paths + UI)
+- [N/A] L105: - `app/api/**`
+- [N/A] L106: - `middleware.ts`
+- [N/A] L107: - `lib/observability/**`, `lib/utils/**`, `lib/validation/**`
+- [N/A] L108: - UI: `app/components/checkout/**`, `app/organizacao/**`, `app/admin/**`
+- [N/A] L110: ### SSOT / Invariantes do blueprint
+- [N/A] L111: - I1 SSOT, I6 Idempotencia, I7 Async explicito, I9 Fail-closed
+- [N/A] L112: - C-G5 Error Envelope Standard, C-G7 Observability
+- [N/A] L114: ### Entrypoints end-to-end
+- [N/A] L115: **UI pages**
+- [N/A] L116: - `app/components/checkout/**`
+- [N/A] L117: - `app/organizacao/(dashboard)/**`
+- [N/A] L118: - `app/admin/**`
+- [N/A] L120: **API routes**
+- [N/A] L121: - Todas as rotas em `app/api/**` (com foco nos fluxos P0)
+- [N/A] L123: **P0 endpoints (Money & Infra) — inventario de auditoria (paths reais)**
+- [N/A] L124: - Payments/checkout: `app/api/payments/intent/route.ts`, `app/api/checkout/status/route.ts`, `app/api/store/checkout/route.ts`, `app/api/store/checkout/prefill/route.ts`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
+- [N/A] L125: - Refunds/disputes: `app/api/admin/payments/refund/route.ts`, `app/api/admin/payments/dispute/route.ts`, `app/api/admin/payments/reprocess/route.ts`, `app/api/admin/refunds/list/route.ts`, `app/api/admin/refunds/retry/route.ts`, `app/api/organizacao/refunds/list/route.ts`
+- [N/A] L126: - Payouts: `app/api/organizacao/payouts/status/route.ts`, `app/api/organizacao/payouts/list/route.ts`, `app/api/organizacao/payouts/summary/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/webhook/route.ts`, `app/api/admin/payouts/list/route.ts`, `app/api/admin/payouts/[id]/route.ts`, `app/api/admin/payouts/[id]/block/route.ts`, `app/api/admin/payouts/[id]/unblock/route.ts`, `app/api/admin/payouts/[id]/cancel/route.ts`, `app/api/admin/payouts/[id]/force-release/route.ts`
+- [N/A] L127: - Webhooks: `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`
+- [N/A] L128: - Internal ops/outbox: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/purchase/route.ts`, `app/api/internal/reprocess/payment-intent/route.ts`, `app/api/internal/reprocess/stripe-event/route.ts`, `app/api/internal/outbox/dlq/route.ts`, `app/api/internal/outbox/replay/route.ts`, `app/api/internal/worker/operations/route.ts`, `app/api/internal/checkout/timeline/route.ts`
+- [N/A] L129: - Internal allow/reason: `app/api/internal/checkin/consume/route.ts`
+- [N/A] L130: - Cron criticos: `app/api/cron/operations/route.ts`, `app/api/cron/payouts/release/route.ts`
+- [N/A] L132: **Jobs/cron/internal**
+- [N/A] L133: - `app/api/internal/**`
+- [N/A] L134: - `app/api/cron/**`
+- [N/A] L136: **Webhooks**
+- [N/A] L137: - `app/api/stripe/webhook/route.ts`
+- [N/A] L139: **Consumers/outbox processors**
+- [N/A] L140: - `domain/outbox/**`
+- [N/A] L141: - `domain/ops/**`
+- [N/A] L142: - `domain/eventLog/**`
+- [N/A] L144: ### Checklist de fecho
+- [DONE] L145: - [x] **DECISAO**: envelope C-G5 + extensao `requestId` (contrato HTTP) confirmada.
+- [DONE] L146: - [x] **EXISTE** envelope canonico: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data? }`.
+- [DONE] L147: - [x] **REMOVER** respostas sem `errorCode`/`correlationId`/`requestId` em endpoints criticos.
+- [DONE] L148: - [x] **WEBHOOKS**: erros de signature/secret invalid/missing retornam `text/plain` com headers `x-orya-request-id` e `x-orya-correlation-id`.
+- [DONE] L149: - [x] **ALLOW/REASON**: endpoints com `allow/reasonCode` usam envelope + `data`.
+- [DONE] L150: - [x] **FAIL-CLOSED**: auth/org context invalido retorna 401/403 com envelope canonico.
+- [DONE] L151: - [x] **AJUSTAR** schema/Prisma se resposta exige campos novos.
+- [DONE] L152: - [x] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
+- [DONE] L153: - [x] **LOGS**: requestId/correlationId em logs de erro.
+- [N/A] L155: ### Criterios de DONE (producao)
+- [N/A] L156: - 100% das rotas criticas devolvem envelope canonico.
+- [N/A] L157: - Headers `x-orya-request-id` e `x-orya-correlation-id` presentes em todas as respostas HTTP.
+- [N/A] L158: - Runbook explica como localizar requestId e recuperar (replay/rollback).
+- [N/A] L159: - Em producao, falhas recuperaveis nao ficam sem nextAction.
+- [N/A] L161: ### Riscos/Drifts conhecidos + mitigacao
+- [N/A] L162: - Drift entre rotas antigas/novas → aplicar helper canonico.
+- [N/A] L163: - Erros silenciosos sem requestId → padronizar middleware.
+- [N/A] L165: ### Guardrails (rg/tests/CI)
+- [N/A] L166: - `rg -n "NextResponse.json\(\{ ok: false" app/api -S` (verificar shape)
+- [N/A] L167: - `npx vitest run tests/access tests/ops`
+- [N/A] L168: - CI gate: falha se erro sem `code`/`requestId` em rotas P0.
+- [N/A] L170: ### Runbooks/Operabilidade
+- [N/A] L171: - Runbook: "Erro 4xx/5xx → encontrar requestId → logs → replay/rollback".
+- [N/A] L173: ---
+- [N/A] L175: ## Bloco 1 — Payments/Checkout/Ledger/Webhooks/Refunds/Reconciliation/Outbox
+- [N/A] L177: ### Objetivo
+- [N/A] L178: - Checkout idempotente e unico por SSOT financeiro.
+- [N/A] L179: - Ledger append-only e deterministico.
+- [N/A] L180: - Webhooks, refunds e reconciliation robustos.
+- [N/A] L182: ### Scope exato (paths + UI)
+- [N/A] L183: - API: `app/api/payments/intent/route.ts`, `app/api/stripe/webhook/route.ts`, `app/api/checkout/status/route.ts`
+- [N/A] L184: - API: `app/api/store/checkout/**`, `app/api/servicos/[id]/checkout/route.ts`, `app/api/servicos/[id]/creditos/checkout/route.ts`, `app/api/organizacao/reservas/[id]/checkout/route.ts`, `app/api/padel/pairings/[id]/checkout/route.ts`
+- [N/A] L185: - Internal: `app/api/internal/reconcile/route.ts`, `app/api/internal/reprocess/**`
+- [N/A] L186: - Domain: `domain/finance/**`, `domain/outbox/**`, `domain/ops/**`
+- [N/A] L187: - UI: `app/components/checkout/**`, `app/eventos/[slug]/page.tsx`, `app/[username]/loja/**`, `app/resale/[id]/page.tsx`, `app/organizacao/(dashboard)/reservas/page.tsx`, `app/[username]/_components/ReservasBookingClient.tsx`
+- [N/A] L189: ### SSOT / Invariantes do blueprint
+- [N/A] L190: - I2 Ledger append-only, I3 Payments state machine, I6 Idempotencia
+- [N/A] L191: - Payment+Ledger SSOT; PaymentEvent/SaleSummary = read-model
+- [N/A] L193: ### Entrypoints end-to-end
+- [N/A] L194: **UI pages**
+- [N/A] L195: - `app/components/checkout/**` (Step2Pagamento/Step3Sucesso)
+- [N/A] L196: - `app/eventos/[slug]/page.tsx`
+- [N/A] L197: - `app/[username]/loja/page.tsx`, `app/[username]/loja/carrinho/page.tsx`, `app/[username]/loja/produto/[slug]/page.tsx`
+- [N/A] L198: - `app/resale/[id]/page.tsx`
+- [N/A] L199: - `app/organizacao/(dashboard)/reservas/page.tsx`
+- [N/A] L201: **API routes**
+- [N/A] L202: - `/api/payments/intent`
+- [N/A] L203: - `/api/stripe/webhook`
+- [N/A] L204: - `/api/checkout/status`
+- [N/A] L205: - `/api/store/checkout` + `/api/store/checkout/prefill`
+- [N/A] L206: - `/api/servicos/[id]/checkout`
+- [N/A] L207: - `/api/servicos/[id]/creditos/checkout`
+- [N/A] L208: - `/api/organizacao/reservas/[id]/checkout`
+- [N/A] L209: - `/api/padel/pairings/[id]/checkout`
+- [N/A] L211: **Jobs/cron/internal**
+- [N/A] L212: - `/api/internal/reconcile`
+- [N/A] L213: - `/api/internal/reprocess/purchase`
+- [N/A] L214: - `/api/internal/reprocess/payment-intent`
+- [N/A] L215: - `/api/internal/reprocess/stripe-event`
+- [N/A] L217: **Webhooks**
+- [N/A] L218: - `/api/stripe/webhook`
+- [N/A] L220: **Consumers/outbox processors**
+- [N/A] L221: - `domain/finance/outbox.ts`
+- [N/A] L222: - `domain/finance/readModelConsumer.ts`
+- [N/A] L223: - `domain/ops/*` (fulfillment/ledger upserts)
+- [N/A] L225: ### Checklist de fecho
+- [DONE] L226: - [x] **EXISTE** fluxo canonico de PI: `/api/payments/intent` + `domain/finance/checkout.ts`.
+- [DONE] L227: - [x] **REMOVER** criacao direta de PI nos endpoints paralelos (store/servicos/reservas).
+- [DONE] L228: - [x] **PR1** entrypoints P0 usam `ensurePaymentIntent` + `createCheckout` e `purchaseId` deterministico (sem `Date.now`).
+- [DONE] L229: - [x] **FAIL-CLOSED**: Stripe connect nao pronto → 4xx com code.
+- [DONE] L230: - [x] **AJUSTAR** schema/Prisma para alinhar PaymentEvent/Payment/SaleSummary.
+- [DONE] L231: - [x] **IDEMPOTENCIA**: dedupeKey baseada em `purchaseId` (checkoutKey).
+- [DONE] L232: - [x] **ERROS** com envelope canonico + requestId.
+- [DONE] L233: - [x] **LOGS**: correlacao `paymentIntentId` + `purchaseId`.
+- [N/A] L235: ### Criterios de DONE (producao)
+- [N/A] L236: - Todos os entrypoints criam PI via fluxo canonico.
+- [N/A] L237: - Se falhar em producao: runbook permite reprocess/replay sem duplos charges.
+- [N/A] L238: - Reconcile/rollback documentado com comandos internos.
+- [N/A] L240: ### Riscos/Drifts conhecidos + mitigacao
+- [N/A] L241: - Drift de idempotencia entre fluxos → consolidar em helper unico.
+- [N/A] L242: - Read-models usados como SSOT → bloquear writes fora do consumer.
+- [N/A] L244: ### Guardrails (rg/tests/CI)
+- [N/A] L245: - `rg -n "stripe\.paymentIntents\.create" app lib domain -S -g '!domain/finance/gateway/**'`
+- [N/A] L246: - `rg -n "ledgerEntry\.(update|delete)" app lib domain -S`
+- [N/A] L247: - `rg -n "purchaseId\s*=.*Date\.now\(" app/api/servicos/[id]/checkout/route.ts app/api/servicos/[id]/creditos/checkout/route.ts app/api/organizacao/reservas/[id]/checkout/route.ts app/api/store/checkout/route.ts domain/padelSecondCharge.ts -S`
+- [N/A] L248: - `npx vitest run tests/finance tests/outbox tests/ops tests/entitlements`
+- [N/A] L249: - CI gate: falha se PI criado fora do gateway.
+- [N/A] L251: ### Runbooks/Operabilidade
+- [N/A] L252: - Runbook: "Checkout 409/500", "Reprocess PI", "Reconcile Stripe Event".
+- [N/A] L254: ---
+- [N/A] L256: ## Bloco 2 — Outbox/Workers/Operations
+- [N/A] L258: ### Objetivo
+- [N/A] L259: - Outbox winner-only, sem double-publish.
+- [N/A] L260: - Workers idempotentes, com replay seguro.
+- [N/A] L261: - Crash recovery fechado.
+- [N/A] L263: ### Scope exato (paths + UI)
+- [N/A] L264: - `domain/outbox/**`, `domain/ops/**`, `domain/eventLog/**`
+- [N/A] L265: - `app/api/internal/worker/operations/route.ts`
+- [N/A] L266: - `app/api/internal/outbox/replay/route.ts`, `app/api/internal/outbox/dlq/route.ts`
+- [N/A] L267: - `app/api/internal/reprocess/**`
+- [N/A] L268: - `app/api/cron/operations/route.ts`
+- [N/A] L270: ### SSOT / Invariantes do blueprint
+- [N/A] L271: - I7 Async explicito, I6 Idempotencia
+- [N/A] L272: - Outbox append-only; publishedAt apenas em sucesso
+- [N/A] L274: ### Entrypoints end-to-end
+- [N/A] L275: **UI pages**
+- [N/A] L276: - N/A (operacional)
+- [N/A] L278: **API routes**
+- [N/A] L279: - `/api/internal/worker/operations`
+- [N/A] L280: - `/api/internal/outbox/replay`
+- [N/A] L281: - `/api/internal/outbox/dlq`
+- [N/A] L282: - `/api/internal/reprocess/*`
+- [N/A] L284: **Jobs/cron/internal**
+- [N/A] L285: - `/api/cron/operations`
+- [N/A] L287: **Webhooks**
+- [N/A] L288: - N/A
+- [N/A] L290: **Consumers/outbox processors**
+- [N/A] L291: - `domain/outbox/producer.ts`
+- [N/A] L292: - `domain/outbox/publisher.ts`
+- [N/A] L293: - `domain/opsFeed/consumer.ts`
+- [N/A] L295: ### Checklist de fecho
+- [DONE] L296: - [x] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
+- [DONE] L297: - [x] **REMOVER** processamento concorrente sem dedupe.
+- [DONE] L298: - [x] **FAIL-CLOSED**: worker sem secret nao executa.
+- [DONE] L299: - [x] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
+- [DONE] L300: - [x] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
+- [DONE] L301: - [x] **ERROS** canonicos em replay/dlq.
+- [DONE] L302: - [x] **LOGS** com correlationId.
+- [N/A] L304: ### Criterios de DONE (producao)
+- [N/A] L305: - Double-publish = 0 (provado por testes + logs).
+- [N/A] L306: - Runbook permite replay seguro apos crash.
+- [N/A] L308: ### Riscos/Drifts conhecidos + mitigacao
+- [N/A] L309: - Concurrency sem lock → adotar SKIP LOCKED/claim seguro.
+- [N/A] L311: ### Guardrails (rg/tests/CI)
+- [N/A] L312: - `rg -n "outbox.*create" app/api -S -g '!domain/outbox/**'`
+- [N/A] L313: - `npx vitest run tests/outbox tests/ops`
+- [N/A] L314: - CI gate: falha se eventos forem processados fora do consumer.
+- [N/A] L316: ### Runbooks/Operabilidade
+- [N/A] L317: - Runbook: "DLQ triage", "Replay seguro", "Worker crash recovery".
+- [N/A] L319: ---
+- [N/A] L321: ## Bloco 3 — Email Oficial da Organizacao (Normalizacao + Verificacao + Enforcement)
+- [N/A] L323: ### Objetivo
+- [N/A] L324: - Email oficial unico, normalizado e verificado em toda a app.
+- [N/A] L325: - Enforcement consistente em acoes criticas.
+- [N/A] L326: - UX sem drift (refetch imediato).
+- [N/A] L328: ### Scope exato (paths + UI)
+- [N/A] L329: - DB: `prisma/schema.prisma` (Organization.official_email, Organization.official_email_verified_at, organization_official_email_requests)
+- [N/A] L330: - API: `app/api/organizacao/organizations/settings/official-email/route.ts`
+- [N/A] L331: - API: `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
+- [N/A] L332: - API: `app/api/admin/organizacoes/verify-platform-email/route.ts`
+- [N/A] L333: - API: `app/api/admin/config/platform-email/route.ts`
+- [N/A] L334: - API (enforcement): `app/api/organizacao/me/route.ts`, `app/api/organizacao/servicos/route.ts`, `app/api/organizacao/promo/route.ts`, `app/api/organizacao/loja/route.ts`, `app/api/organizacao/policies/route.ts`, `app/api/organizacao/checkin/route.ts`, `app/api/organizacao/finance/exports/fees/route.ts`, `app/api/organizacao/finance/exports/ledger/route.ts`, `app/api/organizacao/finance/exports/payouts/route.ts`, `app/api/organizacao/payouts/connect/route.ts`, `app/api/organizacao/payouts/settings/route.ts`, `app/api/organizacao/organizations/members/route.ts`, `app/api/organizacao/organizations/members/invites/route.ts`, `app/api/organizacao/events/update/route.ts`, `app/api/organizacao/events/[id]/invites/route.ts`, `app/api/organizacao/events/[id]/invite-token/route.ts`, `app/api/organizacao/tournaments/**`
+- [N/A] L335: - Libs: `lib/organizationOfficialEmail.ts`, `lib/organizationWriteAccess.ts`, `lib/organizationContext.ts`, `lib/organizationPayments.ts`, `lib/loja/access.ts`, `lib/reservas/access.ts`, `lib/crm/campaignSend.ts`, `lib/payments/releaseWorker.ts`, `lib/platformSettings.ts`, `lib/http/requestContext.ts`
+- [N/A] L336: - UI: `app/organizacao/(dashboard)/settings/page.tsx`, `app/organizacao/(dashboard)/settings/verify/page.tsx`, `app/organizacao/OrganizationTopBar.tsx`, `app/organizacao/OrganizationDashboardShell.tsx`, `app/organizacao/DashboardClient.tsx`, `app/organizacao/(dashboard)/eventos/novo/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`
+- [N/A] L338: ### SSOT / Invariantes do blueprint
+- [N/A] L339: - I1 SSOT, I9 Fail-closed
+- [N/A] L340: - `officialEmail` + `officialEmailVerifiedAt` canonicamente verificado
+- [N/A] L342: ### Entrypoints end-to-end
+- [N/A] L343: **UI pages**
+- [N/A] L344: - `app/organizacao/(dashboard)/settings/page.tsx`
+- [N/A] L345: - `app/organizacao/(dashboard)/settings/verify/page.tsx`
+- [N/A] L346: - `app/organizacao/OrganizationTopBar.tsx`
+- [N/A] L347: - `app/organizacao/OrganizationDashboardShell.tsx`
+- [N/A] L348: - `app/organizacao/DashboardClient.tsx`
+- [N/A] L349: - `app/organizacao/(dashboard)/eventos/novo/page.tsx`
+- [N/A] L350: - `app/admin/organizacoes/page.tsx`
+- [N/A] L351: - `app/[username]/page.tsx`
+- [N/A] L353: **API routes**
+- [N/A] L354: - `/api/organizacao/organizations/settings/official-email`
+- [N/A] L355: - `/api/organizacao/organizations/settings/official-email/confirm`
+- [N/A] L356: - `/api/admin/organizacoes/verify-platform-email`
+- [N/A] L357: - `/api/organizacao/me`
+- [N/A] L358: - `/api/organizacao/servicos`
+- [N/A] L359: - `/api/organizacao/promo`
+- [N/A] L360: - `/api/organizacao/loja`
+- [N/A] L361: - `/api/organizacao/policies`
+- [N/A] L362: - `/api/organizacao/checkin`
+- [N/A] L363: - `/api/organizacao/finance/exports/fees`
+- [N/A] L364: - `/api/organizacao/finance/exports/ledger`
+- [N/A] L365: - `/api/organizacao/finance/exports/payouts`
+- [N/A] L366: - `/api/organizacao/payouts/connect`
+- [N/A] L367: - `/api/organizacao/payouts/settings`
+- [N/A] L368: - `/api/organizacao/organizations/members`
+- [N/A] L369: - `/api/organizacao/organizations/members/invites`
+- [N/A] L370: - `/api/organizacao/events/update`
+- [N/A] L371: - `/api/organizacao/events/[id]/invites`
+- [N/A] L372: - `/api/organizacao/events/[id]/invite-token`
+- [N/A] L373: - `/api/organizacao/tournaments/*`
+- [N/A] L375: **Jobs/cron/internal**
+- [N/A] L376: - N/A
+- [N/A] L378: **Webhooks**
+- [N/A] L379: - N/A
+- [N/A] L381: **Consumers/outbox processors**
+- [N/A] L382: - N/A
+- [N/A] L384: ### Checklist de fecho
+- [DONE] L385: - [x] **NORMALIZACAO** unica (NFKC + lowercase + trim) via `lib/organizationOfficialEmail.ts`.
+- [DONE] L386: - [x] **REMOVER** fallbacks/hacks em UI/admin (ex: `app/organizacao/(dashboard)/settings/page.tsx`, `app/admin/organizacoes/page.tsx`, `app/[username]/page.tsx`).
+- [DONE] L387: - [x] **FAIL-CLOSED**: acoes criticas bloqueadas sem `officialEmailVerifiedAt` (via `ensureOrganizationEmailVerified`/`requireOfficialEmailVerified`).
+- [DONE] L388: - [x] **ALLOWLIST** minima sem gate (org create/switch/become, webhooks, setup email oficial).
+- [DONE] L389: - [x] **PLATFORM EMAIL** SSOT em `platform_settings` + helper `getPlatformOfficialEmail()` + endpoints admin config.
+- [DONE] L390: - [x] **REQUEST/CONFIRM**: resposta 200 ok com `status:"VERIFIED"` quando já verificado; requestId/correlationId em payload+headers.
+- [DONE] L391: - [x] **LOGS** sem PII (usar `maskEmailForLog`).
+- [DONE] L392: - [x] **TESTES/GATES**: `npx vitest run tests/access tests/rbac tests/ops` + rg guardrails.
+- [N/A] L394: ### Criterios de DONE (producao)
+- [N/A] L395: - Nenhuma pagina mostra "nao verificado" quando esta verificado.
+- [N/A] L396: - Se falhar, runbook de reenvio/confirmacao recupera em minutos.
+- [N/A] L398: ### Riscos/Drifts conhecidos + mitigacao
+- [N/A] L399: - Divergencia UI/API → alinhar org context e refetch.
+- [N/A] L401: ### Guardrails (rg/tests/CI)
+- [N/A] L402: - `rg -n "contactEmailFromAccount|new Date\\(\\)\\.toISOString\\(\\)" app -S`
+- [N/A] L403: - `rg -n "\\.toLowerCase\\(\\)|\\.trim\\(\\)" app lib domain -S` (apenas onde nao e email oficial)
+- [N/A] L404: - `rg -n "officialEmailVerifiedAt" app lib domain -S`
+- [N/A] L405: - `npx vitest run tests/access tests/rbac tests/ops`
+- [N/A] L406: - CI gate: falha se endpoint critico nao valida email verificado.
+- [N/A] L408: ### Runbooks/Operabilidade
+- [N/A] L409: - Runbook: "Enviar verificacao", "Confirmar/Revogar", "Revalidar".
+- [N/A] L411: ---
+- [N/A] L413: ## Bloco 4 — Admin Org Control Center + Ops Feed
+- [N/A] L415: ### Objetivo
+- [N/A] L416: - Admin console operavel sem legacy stats.
+- [N/A] L417: - Acoes admin auditaveis e resilientes.
+- [N/A] L418: - Ops Feed como fonte unica de operacoes.
+- [N/A] L420: ### Scope exato (paths + UI)
+- [N/A] L421: - UI: `app/admin/**`, `app/admin/organizacoes/page.tsx`
+- [N/A] L422: - API: `app/api/admin/**`
+- [N/A] L423: - API ops: `app/api/internal/ops/**`
+- [N/A] L424: - Domain: `domain/opsFeed/**`, `domain/eventLog/**`
+- [N/A] L426: ### SSOT / Invariantes do blueprint
+- [N/A] L427: - I1 SSOT, I7 Observability, I9 Fail-closed
+- [N/A] L428: - EventLog como fonte unica para Ops Feed
+- [N/A] L430: ### Entrypoints end-to-end
+- [N/A] L431: **UI pages**
+- [N/A] L432: - `app/admin/organizacoes/page.tsx`
+- [N/A] L433: - `app/admin/page.tsx`
+- [N/A] L435: **API routes**
+- [N/A] L436: - `/api/admin/organizacoes/list`
+- [N/A] L437: - `/api/admin/organizacoes/update-status`
+- [N/A] L438: - `/api/admin/organizacoes/update-payments-mode`
+- [N/A] L439: - `/api/admin/organizacoes/verify-platform-email`
+- [N/A] L440: - `/api/admin/payments/*`, `/api/admin/payouts/*`, `/api/admin/refunds/*`
+- [N/A] L442: **Jobs/cron/internal**
+- [N/A] L443: - `/api/internal/ops/*`
+- [N/A] L445: **Webhooks**
+- [N/A] L446: - N/A
+- [N/A] L448: **Consumers/outbox processors**
+- [N/A] L449: - `domain/opsFeed/consumer.ts`
+- [N/A] L451: ### Checklist de fecho
+- [DONE] L452: - [x] **EXISTE** lista de orgs funcional (sem 410/LEGACY_STATS_DISABLED).
+- [DONE] L453: - [x] **REMOVER** dependencia de legacy stats.
+- [DONE] L454: - [x] **FAIL-CLOSED**: admin sem role retorna 403 com envelope canonico.
+- [DONE] L455: - [x] **AJUSTAR** schema/queries para usar read-models v9.
+- [DONE] L456: - [x] **IDEMPOTENCIA**: acoes admin com requestId/correlationId.
+- [DONE] L457: - [x] **ERROS** canonicos + requestId no UI.
+- [DONE] L458: - [x] **LOGS** sem payload sensivel.
+- [DONE] L459: - [x] **UI** admin para configurar platform email (consome `/api/admin/config/platform-email`).
+- [N/A] L461: ### Criterios de DONE (producao)
+- [N/A] L462: - Admin console operavel end-to-end.
+- [N/A] L463: - Se falhar em producao: runbook para regressar a dados minimos e recuperar.
+- [N/A] L465: ### Riscos/Drifts conhecidos + mitigacao
+- [N/A] L466: - UI depende de stats legacy → substituir por ops feed/rollups.
+- [N/A] L468: ### Guardrails (rg/tests/CI)
+- [N/A] L469: - `rg -n "LEGACY_STATS_DISABLED" app/api -S`
+- [N/A] L470: - `npx vitest run tests/ops tests/audit`
+- [N/A] L471: - CI gate: bloqueia se admin retorna 410.
+- [N/A] L473: ### Runbooks/Operabilidade
+- [N/A] L474: - Runbook: "Admin actions + rollback", "Ops Feed triage".
+- [N/A] L476: ---
+- [N/A] L478: ## Bloco 5 — RBAC / Org Context / Members / Owners
+- [N/A] L480: ### Objetivo
+- [N/A] L481: - Zero bypass de RBAC e org context.
+- [N/A] L482: - Helpers canonicos usados em todas as rotas sensiveis.
+- [N/A] L484: ### Scope exato (paths + UI)
+- [N/A] L485: - `lib/organizationRbac.ts`, `lib/organizationContext.ts`, `lib/organizationMemberAccess.ts`
+- [N/A] L486: - `app/api/organizacao/organizations/**`
+- [N/A] L487: - `app/api/organizacao/me/route.ts`
+- [N/A] L488: - UI: `app/organizacao/**`
+- [N/A] L490: ### SSOT / Invariantes do blueprint
+- [N/A] L491: - I5 Org Context explicito, I9 Fail-closed
+- [N/A] L493: ### Entrypoints end-to-end
+- [N/A] L494: **UI pages**
+- [N/A] L495: - `app/organizacao/(dashboard)/**`
+- [N/A] L497: **API routes**
+- [N/A] L498: - `/api/organizacao/organizations/members`
+- [N/A] L499: - `/api/organizacao/organizations/members/invites`
+- [N/A] L500: - `/api/organizacao/organizations/owner/*`
+- [N/A] L501: - `/api/organizacao/me`
+- [N/A] L503: **Jobs/cron/internal**
+- [N/A] L504: - N/A
+- [N/A] L506: **Webhooks**
+- [N/A] L507: - N/A
+- [N/A] L509: **Consumers/outbox processors**
+- [N/A] L510: - N/A
+- [N/A] L512: ### Checklist de fecho
+- [DONE] L513: - [x] **EXISTE** helper unico para RBAC.
+- [DONE] L514: - [x] **REMOVER** checks manuais (ownerId direto, findFirst ad-hoc).
+- [DONE] L515: - [x] **FAIL-CLOSED**: org context invalido → 403.
+- [DONE] L516: - [x] **IDEMPOTENCIA**: owner transfer sem duplicar estado.
+- [DONE] L517: - [x] **ERROS** canonicos + requestId.
+- [N/A] L519: ### Criterios de DONE (producao)
+- [N/A] L520: - `rg` bypass = 0 e testes RBAC verdes.
+- [N/A] L522: ### Guardrails (rg/tests/CI)
+- [N/A] L523: - `rg -n "organizationMember\.findFirst|ownerId\s*=" app lib domain tests -S`
+- [N/A] L524: - `npx vitest run tests/rbac tests/access`
+- [N/A] L526: ### Runbooks/Operabilidade
+- [N/A] L527: - Runbook: "RBAC fail-closed + debug".
+- [N/A] L529: ---
+- [N/A] L531: ## Bloco 6 — Eventos (Create/Edit/Publish/Invites/Covers/Maps)
+- [N/A] L533: ### Objetivo
+- [N/A] L534: - Eventos completos, sem drift entre UI/API.
+- [N/A] L535: - Convites e acesso consistentes com policy v9.
+- [N/A] L536: - "Gratuito" derivado por pricingMode + ticket prices (Event.isFree = legacy read-model).
+- [N/A] L538: ### Scope exato (paths + UI)
+- [N/A] L539: - `app/api/organizacao/events/**`
+- [N/A] L540: - `app/eventos/**`
+- [N/A] L541: - `app/organizacao/(dashboard)/eventos/**`
+- [N/A] L542: - `app/descobrir/_lib/discoverData.ts`
+- [N/A] L543: - `domain/events/**`, `lib/events.ts`, `lib/eventCover.ts`, `lib/maps/**`
+- [N/A] L544: - `scripts/backfill_event_access_policy.ts`
+- [N/A] L546: ### Entrypoints end-to-end
+- [N/A] L547: **UI pages**
+- [N/A] L548: - `app/eventos/[slug]/page.tsx`
+- [N/A] L549: - `app/organizacao/(dashboard)/eventos/**`
+- [N/A] L551: **API routes**
+- [N/A] L552: - `/api/organizacao/events/create`
+- [N/A] L553: - `/api/organizacao/events/update`
+- [N/A] L554: - `/api/organizacao/events/list`
+- [N/A] L555: - `/api/organizacao/events/[id]/invites`
+- [N/A] L556: - `/api/organizacao/events/[id]/invite-token`
+- [N/A] L557: - `/api/organizacao/events/[id]/attendees`
+- [N/A] L559: **Consumers/outbox processors**
+- [N/A] L560: - `domain/events/**` consumers (quando existirem)
+- [N/A] L562: ### Checklist de fecho
+- [DONE] L563: - [x] **EXISTE** EventAccessPolicy canonica (create/update) + policyVersionApplied estavel.
+- [DONE] L564: - [x] **INVITES**: inviteToken resolve para eventInviteId (public endpoints) sem tocar payments core.
+- [DONE] L565: - [x] **LEGACY**: flags de acesso legacy removidas de UI/API reads (RG guardrail).
+- [DONE] L566: - [x] **GRATUITO**: deriveIsFreeEvent usado em discover/cards/search; Event.isFree = read-only.
+- [DONE] L567: - [x] **FAIL-CLOSED**: mapas sem creds em PROD → erro explicito.
+- [N/A] L569: ### DONE criteria (Bloco 6)
+- [N/A] L570: - Create/Edit/Publish OK (UI + API).
+- [N/A] L571: - Invites (token/check) OK com accessGrant/eventInviteId.
+- [N/A] L572: - Discover listing OK com deriveIsFreeEvent.
+- [N/A] L573: - Check-in resolve policy por policyVersionApplied.
+- [N/A] L574: - Covers picker OK.
+- [N/A] L575: - Apple Maps token fail-closed OK.
+- [N/A] L577: ### Guardrails (rg/tests/CI)
+- [N/A] L578: - `npm run db:gates:offline`
+- [N/A] L579: - `npx vitest run tests/invites tests/access tests/checkin tests/search tests/ops`
+- [N/A] L580: - `rg -n "inviteOnly|publicAccessMode|participantAccessMode|publicTicketTypeIds|Event\\.isFree" app -S`
+- [N/A] L581: - `rg -n "\\.isFree\\b" app domain -S`
+- [N/A] L582: - (Se tocar em searchIndex) `npx vitest run tests/searchIndex`
+- [N/A] L584: ### Runbooks/Operabilidade
+- [N/A] L585: - Runbook: "Event publish/rollback".
+- [N/A] L586: - Backfill policy (obrigatorio antes de deploy):
+- [N/A] L587:   - Dry-run: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts --dry-run --limit=100`
+- [N/A] L588:   - Execucao: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts`
+- [N/A] L589:   - Esperado: output com contagem por mode/source + warnings de default/restricoes.
+- [N/A] L591: ---
+- [N/A] L593: ## Bloco 7 — Reservas / Agenda / Servicos / Softblocks
+- [N/A] L595: ### Objetivo
+- [N/A] L596: - Agenda deterministica com prioridades.
+- [N/A] L597: - Reservas e servicos consistentes.
+- [N/A] L599: ### Scope exato (paths + UI)
+- [N/A] L600: - `domain/agenda/**`, `domain/softBlocks/**`
+- [N/A] L601: - `app/api/organizacao/reservas/**`, `app/api/servicos/**`, `app/api/me/reservas/**`
+- [N/A] L602: - UI: `app/[username]/_components/ReservasBookingClient.tsx`
+- [N/A] L604: ### Entrypoints end-to-end
+- [N/A] L605: **API routes**
+- [N/A] L606: - `/api/organizacao/reservas/*`
+- [N/A] L607: - `/api/servicos/*`
+- [N/A] L609: **Consumers/outbox processors**
+- [N/A] L610: - `domain/agendaReadModel/**`
+- [N/A] L612: ### Guardrails (rg/tests/CI)
+- [N/A] L613: - `npx vitest run tests/agenda tests/outbox tests/ops`
+- [N/A] L615: ### PR1 — BookingConfirmationSnapshot v9 (DONE)
+- [N/A] L616: - Snapshot imutavel e versionado persistido no momento de confirmar.
+- [N/A] L617: - SSOT: `lib/reservas/confirmationSnapshot.ts`
+- [N/A] L618: - Pontos de confirmacao: `lib/reservas/confirmBooking.ts`, `lib/operations/fulfillServiceBooking.ts`
+- [N/A] L620: ### PR2 — Cancel/Refund/No-Show por snapshot + backfill (DONE)
+- [N/A] L621: - Cancelamento e no-show leem sempre `booking.confirmationSnapshot` (fail closed se faltar).
+- [N/A] L622: - Refund calcula por snapshot (policy + pricing), nunca por policy live.
+- [N/A] L623: - Entrypoints fechados:
+- [N/A] L624:   - `app/api/me/reservas/[id]/cancel/route.ts`
+- [N/A] L625:   - `app/api/organizacao/reservas/[id]/cancel/route.ts`
+- [N/A] L626:   - `app/api/organizacao/reservas/[id]/no-show/route.ts`
+- [N/A] L627: - Snapshot timezone exposto para representacao:
+- [N/A] L628:   - `app/api/me/reservas/route.ts`
+- [N/A] L629: - Backfill dedicado:
+- [N/A] L630:   - `scripts/backfill_booking_confirmation_snapshot.ts`
+- [N/A] L631:   - SSOT helper: `lib/reservas/backfillConfirmationSnapshot.ts`
+- [N/A] L633: ### Backfill obrigatorio antes de deploy (PR2)
+- [N/A] L634: - Dry-run (recomendado primeiro):
+- [N/A] L635:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --dry-run --limit=200`
+- [N/A] L636: - Execucao limitada (iterar por lotes):
+- [N/A] L637:   - `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_booking_confirmation_snapshot.ts --limit=200`
+- [N/A] L638: - Esperado:
+- [N/A] L639:   - Contagens por status, `updated`, `skipped`, e warnings para snapshots nao resolvidos.
+- [N/A] L641: ---
+- [N/A] L643: ## Bloco 8 — Padel + Torneios
+- [N/A] L645: ### Scope exato (paths + UI)
+- [N/A] L646: - `app/api/padel/**`, `app/api/organizacao/tournaments/**`
+- [N/A] L647: - `domain/padel/**`, `domain/tournaments/**`
+- [N/A] L649: ### Guardrails (rg/tests/CI)
+- [N/A] L650: - `npx vitest run tests/padel tests/tournaments tests/outbox`
+- [N/A] L652: ---
+- [N/A] L654: ## Bloco 9 — Loja / Tickets / Check-in / Entitlements
+- [N/A] L656: ### Scope exato (paths + UI)
+- [N/A] L657: - `app/api/store/**`, `app/api/tickets/**`, `app/api/checkin/**`, `app/api/organizacao/checkin/**`
+- [N/A] L658: - `domain/entitlements/**`
+- [N/A] L659: - UI: `app/[username]/loja/**`, `app/me/loja/**`
+- [N/A] L661: ### Guardrails (rg/tests/CI)
+- [N/A] L662: - `npx vitest run tests/entitlements tests/checkin tests/finance`
+- [N/A] L664: ---
+- [N/A] L666: ## Bloco 10 — Users / Sessao / Perfil / Privacidade / Consentimentos / Notifs
+- [N/A] L668: ### Scope exato (paths + UI)
+- [N/A] L669: - `app/api/me/**`, `domain/location/**`, `domain/notifications/**`
+- [N/A] L671: ### Guardrails (rg/tests/CI)
+- [N/A] L672: - `npx vitest run tests/location tests/notifications tests/access`
+- [N/A] L674: ---
+- [N/A] L676: ## Bloco 11 — Search / Discover / SearchIndex / Analytics / CRM
+- [N/A] L678: ### Scope exato (paths + UI)
+- [N/A] L679: - `app/api/explorar/list/route.ts`
+- [N/A] L680: - `domain/search/**`, `domain/searchIndex/**`, `domain/analytics/**`
+- [N/A] L681: - `app/api/internal/analytics/rollup/route.ts`
+- [N/A] L682: - `app/api/internal/crm/**`, `app/api/cron/crm/**`
+- [N/A] L684: ### Guardrails (rg/tests/CI)
+- [N/A] L685: - `npx vitest run tests/search tests/searchIndex tests/analytics`
+- [N/A] L687: ---
+- [N/A] L689: ## Bloco 12 — Cron / Jobs / Internal Routes + Secrets
+- [N/A] L691: ### Scope exato (paths + UI)
+- [N/A] L692: - `app/api/cron/**`
+- [N/A] L693: - `app/api/internal/**`
+- [N/A] L695: ### Guardrails (rg/tests/CI)
+- [N/A] L696: - `rg -n "X-ORYA-CRON-SECRET" app/api/internal app/api/cron -S`
+- [N/A] L697: - `npx vitest run tests/ops`
+- [N/A] L699: ---
+- [N/A] L701: ## Bloco 13 — Observabilidade + Runbooks + DLQ/Replay + SLOs
+- [N/A] L703: ### Scope exato (paths + UI)
+- [N/A] L704: - `lib/observability/**`, `domain/opsFeed/**`
+- [N/A] L705: - `app/api/internal/ops/**`, `app/api/internal/outbox/*`
+- [N/A] L706: - `docs/runbooks/**`
+- [N/A] L708: ### Guardrails (rg/tests/CI)
+- [N/A] L709: - `npx vitest run tests/ops tests/audit`
+- [N/A] L711: ---
+- [N/A] L713: ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
+- [N/A] L715: ### Scope exato (paths + UI)
+- [N/A] L716: - `docs/v9_ssot_registry.md`, `docs/v10_execution_checklist.md`, `docs/orya_blueprint_v9_final.md`, `docs/runbooks/**`
+- [N/A] L717: - `lib/env.ts`, `next.config.ts`, `fly.worker.toml`, `Dockerfile.worker`
+- [N/A] L719: ### Guardrails (rg/tests/CI)
+- [N/A] L720: - `npx vitest run tests/apple tests/maps tests/push`
+- [N/A] L722: ---
+- [N/A] L724: ## Repo-wide audit checklist
+- [DONE] L725: - [x] Checkout/Payments (entrypoints + webhooks + idempotencia)
+- [DONE] L726: - [x] Org settings/email (normalizacao + verificado)
+- [DONE] L727: - [x] Admin control center (sem legacy stats)
+- [DONE] L728: - [x] Members/RBAC/Owners (rg bypass = 0)
+- [DONE] L729: - [x] Outbox/Workers (winner-only + replay)
+- [DONE] L730: - [x] Eventos (create/edit/publish/invites/covers/maps)
+- [DONE] L731: - [x] Reservas/Agenda/Servicos/Softblocks
+- [DONE] L732: - [x] Padel/Torneios
+- [DONE] L733: - [x] Loja/Tickets/Check-in/Entitlements
+- [DONE] L734: - [x] Users/Sessao/Privacidade/Consentimentos
+- [DONE] L735: - [x] Search/Discover/Analytics/CRM
+- [DONE] L736: - [x] Cron/Internal routes + secrets
+- [DONE] L737: - [x] Observabilidade/Runbooks
+- [DONE] L738: - [x] Go-live (env sanity + App Store)
 
 ## Source: docs/v9_ssot_registry.md
 - [N/A] L1: # V9 SSOT & Normalization Registry (Done Log)
@@ -589,251 +593,256 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L5: ---
 - [N/A] L7: ## Bloco 0 — Contratos de Erro + Envelope + Fail-Closed
 - [N/A] L8: **SSOTs canonicos**
-- [TODO] L9: - Envelope de erro/resposta global conforme C-G5 (errorCode/message/retryable/correlationId).
-- [TODO] L10: - Extensao HTTP obrigatoria: `requestId` + `correlationId` em todas as respostas (headers + body).
-- [TODO] L11: - Fail-closed para auth/org context em todas as rotas criticas.
+- [N/A] L9: - Envelope de erro/resposta global conforme C-G5 (errorCode/message/retryable/correlationId).
+- [N/A] L10: - Extensao HTTP obrigatoria: `requestId` + `correlationId` em todas as respostas (headers + body).
+- [N/A] L11: - Fail-closed para auth/org context em todas as rotas criticas.
 - [N/A] L13: **Contratos finais**
-- [TODO] L14: - Resposta canonica: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data?, details? }`.
-- [TODO] L15: - Erros com `errorCode` estavel e `requestId`/`correlationId` obrigatorios.
+- [N/A] L14: - Resposta canonica: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data?, details? }`.
+- [N/A] L15: - Erros com `errorCode` estavel e `requestId`/`correlationId` obrigatorios.
 - [N/A] L17: **Normalizacoes obrigatorias**
-- [TODO] L18: - `requestId` gerado por request HTTP (ou respeitar `x-request-id`).
-- [TODO] L19: - `correlationId` = header `x-correlation-id` quando fornecido; fallback = `requestId`.
-- [TODO] L20: - Headers sempre devolvidos: `x-orya-request-id`, `x-orya-correlation-id` (e espelho `x-request-id`, `x-correlation-id`).
-- [TODO] L21: - `correlationId` em operacoes async/outbox (C-G5/C-G7) e logado em erros; `requestId` sempre presente em logs.
+- [N/A] L18: - `requestId` gerado por request HTTP (ou respeitar `x-request-id`).
+- [N/A] L19: - `correlationId` = header `x-correlation-id` quando fornecido; fallback = `requestId`.
+- [N/A] L20: - Headers sempre devolvidos: `x-orya-request-id`, `x-orya-correlation-id` (e espelho `x-request-id`, `x-correlation-id`).
+- [N/A] L21: - `correlationId` em operacoes async/outbox (C-G5/C-G7) e logado em erros; `requestId` sempre presente em logs.
 - [N/A] L23: **Referencias de codigo**
-- [TODO] L24: - `middleware.ts` (geracao requestId)
-- [TODO] L25: - `lib/http/headers.ts`
-- [TODO] L26: - `lib/http/requestContext.ts`
-- [TODO] L27: - `lib/http/envelope.ts`
-- [TODO] L28: - `lib/observability/**`
-- [TODO] L29: - `app/api/**` (uso do envelope)
-- [TODO] L30: - `domain/outbox/**`, `domain/eventLog/**` (correlationId)
-- [TODO] L31: - `lib/security.ts` (auth fail-closed)
+- [N/A] L24: - `middleware.ts` (geracao requestId)
+- [N/A] L25: - `lib/http/headers.ts`
+- [N/A] L26: - `lib/http/requestContext.ts`
+- [N/A] L27: - `lib/http/envelope.ts`
+- [N/A] L28: - `lib/observability/**`
+- [N/A] L29: - `app/api/**` (uso do envelope)
+- [N/A] L30: - `domain/outbox/**`, `domain/eventLog/**` (correlationId)
+- [N/A] L31: - `lib/security.ts` (auth fail-closed)
 - [DONE] L33: **Status**: DONE
 - [N/A] L34: **DONE (data/commit/nota)**: 2026-01-31 — Middleware reintroduzido para requestId/correlationId em todas as respostas; `withApiEnvelope` normaliza códigos instáveis (canonical por status) e headers globais garantidos; gates mantêm shape C-G5.
 - [N/A] L36: ---
 - [N/A] L38: ## Bloco 1 — Payments/Checkout/Ledger/Webhooks/Refunds/Reconciliation/Outbox
 - [N/A] L39: **SSOTs canonicos**
-- [TODO] L40: - Payment + Ledger como SSOT financeiro.
-- [TODO] L41: - PaymentEvent/SaleSummary como read-models (nao fonte de verdade).
-- [TODO] L42: - Outbox/eventLog para side-effects e replay.
+- [N/A] L40: - Payment + Ledger como SSOT financeiro.
+- [N/A] L41: - PaymentEvent/SaleSummary como read-models (nao fonte de verdade).
+- [N/A] L42: - Outbox/eventLog para side-effects e replay.
 - [N/A] L44: **Contratos finais**
-- [TODO] L45: - `/api/payments/intent` input canonico: `items[]`, `paymentScenario`, `inviteToken?`, `idempotencyKey?`, `intentFingerprint?`, `guest?`.
-- [TODO] L46: - `/api/payments/intent` output canonico: `clientSecret`, `paymentIntentId`, `purchaseId`, `amount`, `currency`, `breakdown`, `requestId`.
-- [TODO] L47: - Error codes: `IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`, `PAYMENT_INTENT_TERMINAL`, `AUTH_REQUIRED`, `USERNAME_REQUIRED`, etc.
+- [N/A] L45: - `/api/payments/intent` input canonico: `items[]`, `paymentScenario`, `inviteToken?`, `idempotencyKey?`, `intentFingerprint?`, `guest?`.
+- [N/A] L46: - `/api/payments/intent` output canonico: `clientSecret`, `paymentIntentId`, `purchaseId`, `amount`, `currency`, `breakdown`, `requestId`.
+- [N/A] L47: - Error codes: `IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`, `PAYMENT_INTENT_TERMINAL`, `AUTH_REQUIRED`, `USERNAME_REQUIRED`, etc.
 - [N/A] L49: **Normalizacoes obrigatorias**
-- [TODO] L50: - `/api/payments/intent`: `purchaseId` no formato `pur_<hex32>` (via `lib/checkoutSchemas.ts`) quando o cliente nao envia.
-- [TODO] L51: - Entrypoints legados: `purchaseId` deterministico (sem `Date.now`) derivado do `sourceId` com sufixo versionado (`_vN`) ou chave canonica (ex.: `store_order_{id}`, `booking_{id}_vN`, `service_credit_{...}_vN`, `auto_charge:{pairingId}:{attempt}`).
-- [TODO] L52: - `currency` em uppercase.
-- [TODO] L53: - `idempotencyKey` baseada em `checkoutKey(purchaseId)`.
-- [TODO] L54: - `paymentId` = `purchaseId` (SSOT), com `PaymentEvent.purchaseId` alinhado.
-- [TODO] L55: - Refunds/Disputes atualizam `Payment.status` + emitem `FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED`.
+- [N/A] L50: - `/api/payments/intent`: `purchaseId` no formato `pur_<hex32>` (via `lib/checkoutSchemas.ts`) quando o cliente nao envia.
+- [N/A] L51: - Entrypoints legados: `purchaseId` deterministico (sem `Date.now`) derivado do `sourceId` com sufixo versionado (`_vN`) ou chave canonica (ex.: `store_order_{id}`, `booking_{id}_vN`, `service_credit_{...}_vN`, `auto_charge:{pairingId}:{attempt}`).
+- [N/A] L52: - `currency` em uppercase.
+- [N/A] L53: - `idempotencyKey` baseada em `checkoutKey(purchaseId)`.
+- [N/A] L54: - `paymentId` = `purchaseId` (SSOT), com `PaymentEvent.purchaseId` alinhado.
+- [N/A] L55: - Refunds/Disputes atualizam `Payment.status` + emitem `FINANCE_OUTBOX_EVENTS.PAYMENT_STATUS_CHANGED`.
 - [N/A] L57: **Referencias de codigo**
-- [TODO] L58: - `app/api/payments/intent/route.ts`
-- [TODO] L59: - `app/api/store/checkout/route.ts`
-- [TODO] L60: - `app/api/servicos/[id]/checkout/route.ts`
-- [TODO] L61: - `app/api/servicos/[id]/creditos/checkout/route.ts`
-- [TODO] L62: - `app/api/organizacao/reservas/[id]/checkout/route.ts`
-- [TODO] L63: - `domain/finance/paymentIntent.ts`
-- [TODO] L64: - `domain/finance/checkout.ts`
-- [TODO] L65: - `domain/finance/outbox.ts`
-- [TODO] L66: - `domain/padelSecondCharge.ts`
-- [TODO] L67: - `app/api/internal/worker/operations/route.ts`
-- [TODO] L68: - `app/api/stripe/webhook/route.ts`
-- [TODO] L69: - `lib/checkoutSchemas.ts`
-- [TODO] L70: - `lib/stripe/idempotency.ts`
+- [N/A] L58: - `app/api/payments/intent/route.ts`
+- [N/A] L59: - `app/api/store/checkout/route.ts`
+- [N/A] L60: - `app/api/servicos/[id]/checkout/route.ts`
+- [N/A] L61: - `app/api/servicos/[id]/creditos/checkout/route.ts`
+- [N/A] L62: - `app/api/organizacao/reservas/[id]/checkout/route.ts`
+- [N/A] L63: - `domain/finance/paymentIntent.ts`
+- [N/A] L64: - `domain/finance/checkout.ts`
+- [N/A] L65: - `domain/finance/outbox.ts`
+- [N/A] L66: - `domain/padelSecondCharge.ts`
+- [N/A] L67: - `app/api/internal/worker/operations/route.ts`
+- [N/A] L68: - `app/api/stripe/webhook/route.ts`
+- [N/A] L69: - `lib/checkoutSchemas.ts`
+- [N/A] L70: - `lib/stripe/idempotency.ts`
 - [DONE] L72: **Status**: DONE
 - [N/A] L73: **DONE (data/commit/nota)**: 2026-01-27 — Block 1: canonical PI + idempotency + refunds/disputes status sync + guardrails/tests.
 - [N/A] L74: **DONE (data/commit/nota)**: 2026-01-29 — Runbook de reconcile/rollback de pagamentos; legacy intent gate removido de `/api/payments/intent`.
 - [N/A] L76: ---
 - [N/A] L78: ## Bloco 2 — Outbox/Workers/Operations
 - [N/A] L79: **SSOTs canonicos**
-- [TODO] L80: - Outbox append-only com publishedAt apenas em sucesso.
-- [TODO] L81: - Worker idempotente e replay seguro.
+- [N/A] L80: - Outbox append-only com publishedAt apenas em sucesso.
+- [N/A] L81: - Worker idempotente e replay seguro.
 - [N/A] L83: **Contratos finais**
-- [TODO] L84: - Claim/winner rule: select + lock (SKIP LOCKED ou equivalente).
-- [TODO] L85: - DLQ payload minimo + motivo.
+- [N/A] L84: - Claim/winner rule: select + lock (SKIP LOCKED ou equivalente).
+- [N/A] L85: - DLQ payload minimo + motivo.
 - [N/A] L87: **Normalizacoes obrigatorias**
-- [TODO] L88: - `dedupeKey` obrigatoria em todos os eventos.
-- [TODO] L89: - `correlationId` propagado em ops/consumers.
+- [N/A] L88: - `dedupeKey` obrigatoria em todos os eventos.
+- [N/A] L89: - `correlationId` propagado em ops/consumers.
 - [N/A] L91: **Referencias de codigo**
-- [TODO] L92: - `domain/outbox/**`
-- [TODO] L93: - `app/api/internal/worker/operations/route.ts`
-- [TODO] L94: - `app/api/internal/outbox/replay/route.ts`
-- [TODO] L95: - `app/api/internal/outbox/dlq/route.ts`
+- [N/A] L92: - `domain/outbox/**`
+- [N/A] L93: - `app/api/internal/worker/operations/route.ts`
+- [N/A] L94: - `app/api/internal/outbox/replay/route.ts`
+- [N/A] L95: - `app/api/internal/outbox/dlq/route.ts`
 - [DONE] L97: **Status**: DONE
 - [N/A] L98: **DONE (data/commit/nota)**: 2026-01-31 — Claim winner-only com `FOR UPDATE SKIP LOCKED` + `locked_at` no worker; recovery via `/api/internal/reconcile`; runbook de operations publicado.
 - [N/A] L100: ---
 - [N/A] L102: ## Bloco 3 — Email Oficial da Organizacao
 - [N/A] L103: **SSOTs canonicos**
-- [TODO] L104: - `Organization.officialEmail` (`official_email`) + `Organization.officialEmailVerifiedAt` (`official_email_verified_at`) sao a verdade para verificacao.
-- [TODO] L105: - `OrganizationOfficialEmailRequest` (`organization_official_email_requests`) e a SSOT de pedidos/token/estado de verificacao.
-- [TODO] L106: - `PlatformSetting` key `platform.officialEmail` guarda o email oficial da plataforma (fallback env `PLATFORM_OFFICIAL_EMAIL`).
+- [N/A] L104: - `Organization.officialEmail` (`official_email`) + `Organization.officialEmailVerifiedAt` (`official_email_verified_at`) sao a verdade para verificacao.
+- [N/A] L105: - `OrganizationOfficialEmailRequest` (`organization_official_email_requests`) e a SSOT de pedidos/token/estado de verificacao.
+- [N/A] L106: - `PlatformSetting` key `platform.officialEmail` guarda o email oficial da plataforma (fallback env `PLATFORM_OFFICIAL_EMAIL`).
 - [N/A] L108: **Contratos finais**
-- [TODO] L109: - Verificado = `officialEmail` normalizado existe **e** `officialEmailVerifiedAt` != null.
-- [TODO] L110: - Alterar `officialEmail` limpa `officialEmailVerifiedAt`.
-- [TODO] L111: - Update/confirm retornam `status:"VERIFIED"` quando ja verificado (sem erro legacy).
-- [TODO] L112: - Erros canonicos de gate: `OFFICIAL_EMAIL_REQUIRED` | `OFFICIAL_EMAIL_NOT_VERIFIED` com `requestId`, `correlationId`, `verifyUrl`, `nextStepUrl`.
-- [TODO] L113: - `requestId`/`correlationId` sempre presentes em payload+headers nos endpoints de verificacao.
-- [TODO] L114: - Acoes criticas bloqueadas sem email verificado (fail-closed).
-- [TODO] L115: - Allowlist minima sem gate (SSOT de excecoes):
-- [TODO] L116:   - `app/api/organizacao/organizations/route.ts` — criacao de org (pre-email).
-- [TODO] L117:   - `app/api/organizacao/organizations/switch/route.ts` — troca de contexto (no-op de email).
-- [TODO] L118:   - `app/api/organizacao/become/route.ts` — onboarding (pre-email).
-- [TODO] L119:   - `app/api/organizacao/organizations/settings/official-email/route.ts` — setup do email oficial.
-- [TODO] L120:   - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts` — confirmacao do email oficial.
-- [TODO] L121:   - `app/api/organizacao/payouts/webhook/route.ts` — webhook com secret gate.
-- [TODO] L122:   - `app/api/organizacao/mensagens/broadcast/route.ts` — stub 501 (no-op).
+- [N/A] L109: - Verificado = `officialEmail` normalizado existe **e** `officialEmailVerifiedAt` != null.
+- [N/A] L110: - Alterar `officialEmail` limpa `officialEmailVerifiedAt`.
+- [N/A] L111: - Update/confirm retornam `status:"VERIFIED"` quando ja verificado (sem erro legacy).
+- [N/A] L112: - Erros canonicos de gate: `OFFICIAL_EMAIL_REQUIRED` | `OFFICIAL_EMAIL_NOT_VERIFIED` com `requestId`, `correlationId`, `verifyUrl`, `nextStepUrl`.
+- [N/A] L113: - `requestId`/`correlationId` sempre presentes em payload+headers nos endpoints de verificacao.
+- [N/A] L114: - Acoes criticas bloqueadas sem email verificado (fail-closed).
+- [N/A] L115: - Allowlist minima sem gate (SSOT de excecoes):
+- [N/A] L116:   - `app/api/organizacao/organizations/route.ts` — criacao de org (pre-email).
+- [N/A] L117:   - `app/api/organizacao/organizations/switch/route.ts` — troca de contexto (no-op de email).
+- [N/A] L118:   - `app/api/organizacao/become/route.ts` — onboarding (pre-email).
+- [N/A] L119:   - `app/api/organizacao/organizations/settings/official-email/route.ts` — setup do email oficial.
+- [N/A] L120:   - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts` — confirmacao do email oficial.
+- [N/A] L121:   - `app/api/organizacao/payouts/webhook/route.ts` — webhook com secret gate.
+- [N/A] L122:   - `app/api/organizacao/mensagens/broadcast/route.ts` — stub 501 (no-op).
 - [N/A] L124: **Normalizacoes obrigatorias**
-- [TODO] L125: - `normalizeOfficialEmail` = trim + NFKC + lowercase (ver `lib/organizationOfficialEmail.ts`).
-- [TODO] L126: - Guardar **sempre** normalizado (nao existe `officialEmailNormalized`).
-- [TODO] L127: - Email valido via regex basico (ver `isValidOfficialEmail`).
-- [TODO] L128: - Comparacoes de email oficial devem usar `normalizeOfficialEmail` (sem `toLowerCase`/`trim` ad-hoc).
-- [TODO] L129: - `getPlatformOfficialEmail()` le da DB, fallback env, fallback final `admin@orya.pt` (com warning).
+- [N/A] L125: - `normalizeOfficialEmail` = trim + NFKC + lowercase (ver `lib/organizationOfficialEmail.ts`).
+- [N/A] L126: - Guardar **sempre** normalizado (nao existe `officialEmailNormalized`).
+- [N/A] L127: - Email valido via regex basico (ver `isValidOfficialEmail`).
+- [N/A] L128: - Comparacoes de email oficial devem usar `normalizeOfficialEmail` (sem `toLowerCase`/`trim` ad-hoc).
+- [N/A] L129: - `getPlatformOfficialEmail()` le da DB, fallback env, fallback final `admin@orya.pt` (com warning).
 - [N/A] L131: **Referencias de codigo**
-- [TODO] L132: - `prisma/schema.prisma`
-- [TODO] L133: - `lib/organizationOfficialEmail.ts`
-- [TODO] L134: - `lib/organizationWriteAccess.ts`
-- [TODO] L135: - `lib/platformSettings.ts`
-- [TODO] L136: - `lib/http/requestContext.ts`
-- [TODO] L137: - `app/api/organizacao/organizations/settings/official-email/route.ts`
-- [TODO] L138: - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
-- [TODO] L139: - `app/api/admin/organizacoes/verify-platform-email/route.ts`
-- [TODO] L140: - `app/api/admin/config/platform-email/route.ts`
-- [TODO] L141: - `tests/access/officialEmailOrgWriteGuardrails.test.ts`
+- [N/A] L132: - `prisma/schema.prisma`
+- [N/A] L133: - `lib/organizationOfficialEmail.ts`
+- [N/A] L134: - `lib/organizationWriteAccess.ts`
+- [N/A] L135: - `lib/platformSettings.ts`
+- [N/A] L136: - `lib/http/requestContext.ts`
+- [N/A] L137: - `app/api/organizacao/organizations/settings/official-email/route.ts`
+- [N/A] L138: - `app/api/organizacao/organizations/settings/official-email/confirm/route.ts`
+- [N/A] L139: - `app/api/admin/organizacoes/verify-platform-email/route.ts`
+- [N/A] L140: - `app/api/admin/config/platform-email/route.ts`
+- [N/A] L141: - `tests/access/officialEmailOrgWriteGuardrails.test.ts`
 - [DONE] L143: **Status**: DONE
 - [N/A] L144: **DONE (data/commit/nota)**: 2026-01-27 — Bloco 3 (PR2/PR3)
 - [N/A] L146: ---
 - [N/A] L148: ## Bloco 4 — Admin Org Control Center + Ops Feed
 - [N/A] L149: **SSOTs canonicos**
-- [TODO] L150: - Ops Feed como fonte unica de operacoes (EventLog).
-- [TODO] L151: - Admin actions auditaveis com requestId.
-- [TODO] L152: - UI admin de platform email: `app/admin/config/platform-email/page.tsx` (consome `/api/admin/config/platform-email`).
+- [N/A] L150: - Ops Feed como fonte unica de operacoes (EventLog).
+- [N/A] L151: - Admin actions auditaveis com requestId.
+- [N/A] L152: - UI admin de platform email: `app/admin/config/platform-email/page.tsx` (consome `/api/admin/config/platform-email`).
 - [N/A] L154: **Endpoints admin (platform email)**
-- [TODO] L155: - `app/api/admin/config/platform-email/route.ts` (GET/POST).
+- [N/A] L155: - `app/api/admin/config/platform-email/route.ts` (GET/POST).
 - [N/A] L157: **Contratos finais**
-- [TODO] L158: - Respostas admin com envelope canonico.
-- [TODO] L159: - Remocao de legacy stats (sem 410 em producao).
+- [N/A] L158: - Respostas admin com envelope canonico.
+- [N/A] L159: - Remocao de legacy stats (sem 410 em producao).
 - [N/A] L161: **Normalizacoes obrigatorias**
-- [TODO] L162: - Logs sem payload sensivel.
-- [TODO] L163: - requestId/correlationId em acoes admin.
+- [N/A] L162: - Logs sem payload sensivel.
+- [N/A] L163: - requestId/correlationId em acoes admin.
 - [N/A] L165: **Referencias de codigo**
-- [TODO] L166: - `app/api/admin/**`
-- [TODO] L167: - `app/admin/**`
-- [TODO] L168: - `domain/opsFeed/**`
-- [TODO] L169: - `domain/eventLog/**`
+- [N/A] L166: - `app/api/admin/**`
+- [N/A] L167: - `app/admin/**`
+- [N/A] L168: - `domain/opsFeed/**`
+- [N/A] L169: - `domain/eventLog/**`
 - [DONE] L171: **Status**: DONE
 - [N/A] L172: **DONE (data/commit/nota)**: 2026-01-31 — Estatísticas migradas para rollups v9 (org overview + time-series); admin org list expõe contagens/revenue; UI resiliente sem legacy summaries.
 - [N/A] L174: ---
 - [N/A] L176: ## Bloco 5 — RBAC / Org Context / Members / Owners
 - [N/A] L177: **SSOTs canonicos**
-- [TODO] L178: - Org context explicito obrigatorio.
-- [TODO] L179: - Helpers canonicos de RBAC.
+- [N/A] L178: - Org context explicito obrigatorio.
+- [N/A] L179: - Helpers canonicos de RBAC.
 - [N/A] L181: **Contratos finais**
-- [TODO] L182: - rg bypass = 0.
+- [N/A] L182: - rg bypass = 0.
 - [N/A] L184: **Normalizacoes obrigatorias**
-- [TODO] L185: - orgId sempre propagado pelo contexto.
+- [N/A] L185: - orgId sempre propagado pelo contexto.
 - [N/A] L187: **Referencias de codigo**
-- [TODO] L188: - `lib/organizationRbac.ts`
-- [TODO] L189: - `lib/organizationContext.ts`
+- [N/A] L188: - `lib/organizationRbac.ts`
+- [N/A] L189: - `lib/organizationContext.ts`
 - [DONE] L191: **Status**: DONE
 - [N/A] L192: **DONE (data/commit/nota)**: 2026-01-31 — Gate `scripts/v9_org_context_gate.mjs` (bypass=0) + org context helpers auditados nas rotas.
 - [N/A] L194: ---
 - [N/A] L196: ## Bloco 6 — Eventos
 - [N/A] L197: **SSOTs canonicos**
-- [TODO] L198: - EventAccessPolicy (policy versionada) = SSOT de acesso.
-- [TODO] L199: - Entitlement = prova de acesso (check-in/entrada).
-- [TODO] L200: - deriveIsFreeEvent(pricingMode + ticket prices) = SSOT de "gratuito".
-- [TODO] L201: - Covers: resolver + library (lib/eventCover.ts + covers manifest).
+- [N/A] L198: - EventAccessPolicy (policy versionada) = SSOT de acesso.
+- [N/A] L199: - Entitlement = prova de acesso (check-in/entrada).
+- [N/A] L200: - deriveIsFreeEvent(pricingMode + ticket prices) = SSOT de "gratuito".
+- [N/A] L201: - Covers: resolver + library (lib/eventCover.ts + covers manifest).
 - [N/A] L203: **InviteToken resolution (SSOT)**
-- [TODO] L204: - Entrada: inviteToken (+ opcional email/ticketTypeId).
-- [TODO] L205: - Validacao: policy.inviteTokenAllowed + TTL; fail-closed.
-- [TODO] L206: - Saida: accessGrant canonico com eventInviteId (scope PUBLIC) + ticketTypeId (se token scoped).
-- [TODO] L207: - Endpoints: `app/api/eventos/[slug]/invite-token/route.ts`, `app/api/eventos/[slug]/invites/check/route.ts`.
+- [N/A] L204: - Entrada: inviteToken (+ opcional email/ticketTypeId).
+- [N/A] L205: - Validacao: policy.inviteTokenAllowed + TTL; fail-closed.
+- [N/A] L206: - Saida: accessGrant canonico com eventInviteId (scope PUBLIC) + ticketTypeId (se token scoped).
+- [N/A] L207: - Endpoints: `app/api/eventos/[slug]/invite-token/route.ts`, `app/api/eventos/[slug]/invites/check/route.ts`.
 - [N/A] L209: **Legacy -> Policy mapping (read-only)**
-- [TODO] L210: - inviteOnly/publicAccessMode/publicTicketTypeIds => EventAccessPolicy.mode:
-- [TODO] L211:   - inviteOnly=true OR publicAccessMode=INVITE OR tickets restritos => INVITE_ONLY.
-- [TODO] L212:   - publicAccessMode=OPEN/TICKET sem restricoes => PUBLIC.
-- [TODO] L213:   - default fail-closed => UNLISTED.
-- [TODO] L214: - Legacy fields sao **read-only**; UI/API nao decide acesso com legacy.
+- [N/A] L210: - inviteOnly/publicAccessMode/publicTicketTypeIds => EventAccessPolicy.mode:
+- [N/A] L211:   - inviteOnly=true OR publicAccessMode=INVITE OR tickets restritos => INVITE_ONLY.
+- [N/A] L212:   - publicAccessMode=OPEN/TICKET sem restricoes => PUBLIC.
+- [N/A] L213:   - default fail-closed => UNLISTED.
+- [N/A] L214: - Legacy fields sao **read-only**; UI/API nao decide acesso com legacy.
 - [N/A] L216: **Invariantes**
-- [TODO] L217: - Create cria sempre policy (event nunca sem EventAccessPolicy).
-- [TODO] L218: - policyVersionApplied estavel para check-in/tickets.
-- [TODO] L219: - Event.isFree nunca usado como fonte de decisao (apenas read-model legacy).
-- [TODO] L220: - InviteToken resolution cria/retorna eventInviteId antes de checkout.
+- [N/A] L217: - Create cria sempre policy (event nunca sem EventAccessPolicy).
+- [N/A] L218: - policyVersionApplied estavel para check-in/tickets.
+- [N/A] L219: - Event.isFree nunca usado como fonte de decisao (apenas read-model legacy).
+- [N/A] L220: - InviteToken resolution cria/retorna eventInviteId antes de checkout.
 - [N/A] L222: **Backfill (obrigatorio antes de deploy)**
-- [TODO] L223: - Script: `scripts/backfill_event_access_policy.ts`
-- [TODO] L224: - Dry-run: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts --dry-run --limit=100`
-- [TODO] L225: - Execucao: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts`
-- [TODO] L226: - Esperado: contagens por mode/source + warnings (default/restricoes).
+- [N/A] L223: - Script: `scripts/backfill_event_access_policy.ts`
+- [N/A] L224: - Dry-run: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts --dry-run --limit=100`
+- [N/A] L225: - Execucao: `node -r ./scripts/load-env.js -r ts-node/register scripts/backfill_event_access_policy.ts`
+- [N/A] L226: - Esperado: contagens por mode/source + warnings (default/restricoes).
 - [DONE] L228: **Status**: DONE
 - [N/A] L229: **DONE (data/commit/nota)**: 2026-01-29 — Deleted test events (slug test-*/qa-*, dry-run validated, backup at `backups/pre_delete_events_2026-01-29.dump`). Deleted IDs list at `reports/deleted_events_2026-01-29.json`.
 - [N/A] L231: ---
 - [N/A] L233: ## Bloco 7 — Reservas / Agenda / Servicos / Softblocks
 - [N/A] L234: **SSOTs canonicos**
-- [TODO] L235: - AgendaItem read-model unico.
-- [TODO] L236: - BookingConfirmationSnapshot imutavel como SSOT de policy+pricing no confirm:
-- [TODO] L237:   - Builder/parser/refund rules: `lib/reservas/confirmationSnapshot.ts`
-- [TODO] L238:   - Persistencia no confirm: `lib/reservas/confirmBooking.ts`, `lib/operations/fulfillServiceBooking.ts`
-- [TODO] L239: - Cancel/refund/no-show usam sempre snapshot (fail closed se faltar):
-- [TODO] L240:   - `app/api/me/reservas/[id]/cancel/route.ts`
-- [TODO] L241:   - `app/api/organizacao/reservas/[id]/cancel/route.ts`
-- [TODO] L242:   - `app/api/organizacao/reservas/[id]/no-show/route.ts`
-- [TODO] L243: - Backfill obrigatorio antes de deploy para bookings confirmados legacy:
-- [TODO] L244:   - Script: `scripts/backfill_booking_confirmation_snapshot.ts`
-- [TODO] L245:   - Helper idempotente: `lib/reservas/backfillConfirmationSnapshot.ts`
-- [TODO] L246: - Snapshot timezone preservado e exposto para representacao:
-- [TODO] L247:   - `app/api/me/reservas/route.ts`
+- [N/A] L235: - AgendaItem read-model unico.
+- [N/A] L236: - BookingConfirmationSnapshot imutavel como SSOT de policy+pricing no confirm:
+- [N/A] L237:   - Builder/parser/refund rules: `lib/reservas/confirmationSnapshot.ts`
+- [N/A] L238:   - Persistencia no confirm: `lib/reservas/confirmBooking.ts`, `lib/operations/fulfillServiceBooking.ts`
+- [N/A] L239: - Cancel/refund/no-show usam sempre snapshot (fail closed se faltar):
+- [N/A] L240:   - `app/api/me/reservas/[id]/cancel/route.ts`
+- [N/A] L241:   - `app/api/organizacao/reservas/[id]/cancel/route.ts`
+- [N/A] L242:   - `app/api/organizacao/reservas/[id]/no-show/route.ts`
+- [N/A] L243: - Backfill obrigatorio antes de deploy para bookings confirmados legacy:
+- [N/A] L244:   - Script: `scripts/backfill_booking_confirmation_snapshot.ts`
+- [N/A] L245:   - Helper idempotente: `lib/reservas/backfillConfirmationSnapshot.ts`
+- [N/A] L246: - Snapshot timezone preservado e exposto para representacao:
+- [N/A] L247:   - `app/api/me/reservas/route.ts`
 - [DONE] L249: **Status**: DONE
 - [N/A] L250: **DONE (data/commit/nota)**: 2026-02-01 — Backfill executado (dry-run + exec) sem pendências; logs em `reports/backfill_booking_confirmation_snapshot_2026-02-01.log` e `reports/backfill_booking_confirmation_snapshot_2026-02-01_exec.log`. Script atualizado para respeitar flags de SSL em conexões.
 - [N/A] L252: ---
 - [N/A] L254: ## Bloco 8 — Padel + Torneios
 - [N/A] L255: **SSOTs canonicos**
-- [TODO] L256: - Torneios com eventId obrigatorio.
-- [TODO] L257: - CalendarBlock/Availability + EventMatchSlot como agenda única de padel (sem calendário paralelo).
-- [TODO] L258: - RuleSetVersion (snapshot) por torneio para congelar regras.
-- [TODO] L259: - Address Service como SSOT de moradas para clubes (addressId).
-- [TODO] L260: - Lifecycle oficial (Draft/Published/Locked/Live/Completed) + transições auditadas.
-- [TODO] L261: - Roles por torneio (árbitro/diretor) e streaming/monitor rico.
-- [TODO] L262: - Páginas públicas por jogo + i18n/SEO por match.
+- [N/A] L256: - Torneios com eventId obrigatorio.
+- [N/A] L257: - CalendarBlock/Availability + EventMatchSlot como agenda única de padel (sem calendário paralelo).
+- [N/A] L258: - RuleSetVersion (snapshot) por torneio para congelar regras.
+- [N/A] L259: - Address Service como SSOT de moradas para clubes (addressId).
+- [N/A] L260: - Lifecycle oficial (Draft/Published/Locked/Live/Completed) + transições auditadas.
+- [N/A] L261: - Roles por torneio (árbitro/diretor) e streaming/monitor rico.
+- [N/A] L262: - Páginas públicas por jogo + i18n/SEO por match.
 - [DONE] L264: **Status**: DONE
 - [N/A] L265: **DONE (data/commit/nota)**: 2026-02-01 — Padel v2 completo: calendário SSOT (CalendarBlock/EventMatchSlot), matchmaking/cron T‑48/T‑24 + waitlist, ruleset versionado, lifecycle/roles, streaming/monitor e páginas públicas por match com i18n.
 - [N/A] L267: ---
 - [N/A] L269: ## Bloco 9 — Loja / Tickets / Check-in / Entitlements
 - [N/A] L270: **SSOTs canonicos**
-- [TODO] L271: - Entitlement como prova de acesso.
+- [N/A] L271: - Entitlement como prova de acesso.
 - [DONE] L273: **Status**: DONE
 - [N/A] L274: **DONE (data/commit/nota)**: 2026-01-31 — Entitlements emitidos para tickets/padel/booking + loja (STORE_ITEM); revenda rebinda owner/purchaseId; check-in mantém mapping por tipo.
 - [N/A] L276: ---
 - [N/A] L278: ## Bloco 10 — Users / Sessao / Perfil / Privacidade / Consentimentos / Notifs
 - [N/A] L279: **SSOTs canonicos**
-- [TODO] L280: - Consentimentos explicitos.
+- [N/A] L280: - Consentimentos explicitos.
 - [DONE] L282: **Status**: DONE
 - [N/A] L283: **DONE (data/commit/nota)**: 2026-01-31 — DSAR ativo (export + tracking + delete/purge), legal hold mínimo registado em purge e runbook com retenção/responsabilidades.
 - [N/A] L285: ---
 - [N/A] L287: ## Bloco 11 — Search / Discover / SearchIndex / Analytics / CRM
 - [N/A] L288: **SSOTs canonicos**
-- [TODO] L289: - Search/discover read-only.
+- [N/A] L289: - Search/discover read-only.
 - [DONE] L291: **Status**: DONE
 - [N/A] L292: **DONE (data/commit/nota)**: 2026-02-01 — SearchIndex + discover read-only com CRM/analytics integrados; UI de exploração + search API estável.
 - [N/A] L294: ---
 - [N/A] L296: ## Bloco 12 — Cron / Jobs / Internal Routes + Secrets
 - [N/A] L297: **SSOTs canonicos**
-- [TODO] L298: - Secret unico para rotas internas/cron.
+- [N/A] L298: - Secret unico para rotas internas/cron.
 - [DONE] L300: **Status**: DONE
 - [N/A] L301: **DONE (data/commit/nota)**: 2026-02-01 — `requireInternalSecret` aplicado em todas as rotas internal/cron; heartbeat e coverage de cron ativos com runbook.
 - [N/A] L303: ---
 - [N/A] L305: ## Bloco 13 — Observabilidade + Runbooks + DLQ/Replay + SLOs
 - [N/A] L306: **SSOTs canonicos**
-- [TODO] L307: - Runbooks minimos por dominio.
+- [N/A] L307: - Runbooks minimos por dominio.
 - [DONE] L309: **Status**: DONE
 - [N/A] L310: **DONE (data/commit/nota)**: 2026-02-01 — Runbooks + SLO/SLI publicados, DLQ/replay operacional e métricas/alertas documentados.
 - [N/A] L312: ---
 - [N/A] L314: ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
 - [N/A] L315: **SSOTs canonicos**
-- [TODO] L316: - Release checklist executavel.
-- [DONE] L318: **Status**: DONE
-- [N/A] L319: **DONE (data/commit/nota)**: 2026-02-01 — Checklist de release + env gates + infra AWS/SES concluídos; A11y/Performance/Mobile audits executados (reports/lighthouse + reports/axe).
+- [N/A] L316: - Release checklist executavel.
+- [N/A] L317: - Infra operacional já provisionada e documentada (AWS + Supabase + Apple Developer readiness).
+- [DONE] L319: **Status**: DONE
+- [N/A] L320: **DONE (data/commit/nota)**: 2026-02-01 — Checklist de release + env gates + infra AWS/SES concluídos; A11y/Performance/Mobile audits executados (reports/lighthouse + reports/axe).
+- [N/A] L321: **DONE (data/commit/nota)**: 2026-02-02 — Inventário infra consolidado sem alterações de código:
+- [N/A] L322: - AWS concluído: Route53/ACM, CloudFront `.well-known`, ECS/ALB, ECR e SES (`reports/p_infra_2026-01-30.md`, `reports/p_email_2026-01-31.md`).
+- [N/A] L323: - Supabase concluído: isolamento por ambiente (`prod`/`test`) com evidência de seed/query (`reports/test_env_isolation_2026-01-31.md`).
+- [N/A] L324: - Apple readiness concluído: variáveis Sign-In/APNS/Maps em `docs/envs_required.md` + assets/segredos Apple Pay no grupo `orya/prod/apple` (`reports/p_infra_2026-01-30.md`).
 
 ## Source: docs/orya_blueprint_v9_final.md
 - [N/A] L1: ORYA — Blueprint Final v9 (SSOT)
@@ -848,13 +857,13 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L13: Fechado = decisões finais; implementação ainda em curso — ver status.
 - [N/A] L15: Migrations: ver `docs/v9_ssot_registry.md` e `prisma/migrations/`.
 - [N/A] L17: ## Executive Summary (NÃO-NORMATIVO)
-- [TODO] L18: - A ORYA é uma plataforma integrada de descoberta + operações com módulos verticais (Eventos/Reservas/Padel/Loja/Serviços) sobre serviços horizontais canónicos.
-- [TODO] L19: - Invariantes: SSOT por domínio (Payment+Ledger, Entitlement, Identity), ledger append‑only, e idempotência obrigatória em operações com side‑effects.
-- [TODO] L20: - Multi‑tenancy explícita: todo o acesso/consulta é org‑scoped (fail‑closed).
-- [TODO] L21: - Contratos C1–C9 governam integrações internas; compatibilidade e observabilidade são mandatórias.
-- [TODO] L22: - Operação: Outbox + Jobs/Queue garantem execução assíncrona e replays seguros.
-- [TODO] L23: - Go‑live exige gates de SLO/SLI, retenção RGPD e auditoria (ver secções normativas).
-- [TODO] L24: - Não é motor de faturação do consumidor final v1; exports e ledger são obrigatórios.
+- [N/A] L18: - A ORYA é uma plataforma integrada de descoberta + operações com módulos verticais (Eventos/Reservas/Padel/Loja/Serviços) sobre serviços horizontais canónicos.
+- [N/A] L19: - Invariantes: SSOT por domínio (Payment+Ledger, Entitlement, Identity), ledger append‑only, e idempotência obrigatória em operações com side‑effects.
+- [N/A] L20: - Multi‑tenancy explícita: todo o acesso/consulta é org‑scoped (fail‑closed).
+- [N/A] L21: - Contratos C1–C9 governam integrações internas; compatibilidade e observabilidade são mandatórias.
+- [N/A] L22: - Operação: Outbox + Jobs/Queue garantem execução assíncrona e replays seguros.
+- [N/A] L23: - Go‑live exige gates de SLO/SLI, retenção RGPD e auditoria (ver secções normativas).
+- [N/A] L24: - Não é motor de faturação do consumidor final v1; exports e ledger são obrigatórios.
 - [N/A] L26: ```
 - [N/A] L27: Horizontais: Identity | Payments/Ledger | Entitlements | Notifications | Ops
 - [N/A] L28:       |             |                 |              |              |
@@ -874,24 +883,24 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L45: | Contracts (C1–C9) | Eng Lead | Product | Ops | Security |
 - [N/A] L46: | Ops/SLOs | Ops | Eng Lead | Product | Security |
 - [N/A] L48: ## CHANGELOG (v9.0) — correções finais anti-drift
-- [TODO] L49: - Check‑in: normalizado para `requiresEntitlementForEntry` (ticket = entitlement) e removida ambiguidade em torneios (QR_REGISTRATION).
-- [TODO] L50: - QR offline assinado: fechado como Fase 3 . PassKit na V1.5 mantém validação **online** (lookup por tokenHash).
-- [TODO] L51: - PricingSnapshot/fees: removidas “estimates”; `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
-- [TODO] L52: - Ledger append‑only: tipos explícitos `PROCESSOR_FEES_FINAL` e `PROCESSOR_FEES_ADJUSTMENT`; net final = soma de entries por payment.
-- [TODO] L53: - Entitlements: `policyVersionApplied` alinhado e obrigatório para entitlements ligados a eventos.
-- [TODO] L54: - Contratos: Finanças passa a usar `customerIdentityId` (Identity SSOT) e snapshot fields alinhados.
-- [TODO] L55: - Address: removido conflito D11 vs D17 (Apple-first com fallback OSM).
-- [TODO] L56: - Domínio: mapa declarado “não exaustivo” + entidades mínimas adicionadas (Promoções/Notificações/Perfil/Pesquisa).
-- [TODO] L57: - Revenda: removidas referências a estado `USED`; consumo é metadata (`consumedAt`).
-- [TODO] L58: - Ticket: adicionado estado `DISPUTED` ao enum mínimo para consistência com chargebacks.
-- [TODO] L59: - Editorial: numeração 15.1 corrigida + referência “blueprint” alinhada para v9.
-- [TODO] L60: - Production Readiness: gate de go‑live + compliance/ops/DSAR/retention/release gates (Secção 19).
-- [TODO] L61: - Stripe: Connect Standard + funds flow FECHADO + onboarding Standard (D4.0.1 / C2.x).
-- [TODO] L62: - Infra: backups Supabase→S3 + isolamento multi‑tenant (12.6.2 / 19.3.1).
-- [TODO] L63: - Check‑in: modo recinto (8.6) para fallback operacional sem offline QR.
-- [TODO] L64: - Policy Defaults v1 FECHADO (Apêndice A).
-- [TODO] L65: - Legal: sign‑off/versionamento FECHADO (19.1).
-- [TODO] L66: - Stripe Standard: mitigação operacional clarificada (sem controlo directo de payouts).
+- [N/A] L49: - Check‑in: normalizado para `requiresEntitlementForEntry` (ticket = entitlement) e removida ambiguidade em torneios (QR_REGISTRATION).
+- [N/A] L50: - QR offline assinado: fechado como Fase 3 . PassKit na V1.5 mantém validação **online** (lookup por tokenHash).
+- [N/A] L51: - PricingSnapshot/fees: removidas “estimates”; `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
+- [N/A] L52: - Ledger append‑only: tipos explícitos `PROCESSOR_FEES_FINAL` e `PROCESSOR_FEES_ADJUSTMENT`; net final = soma de entries por payment.
+- [N/A] L53: - Entitlements: `policyVersionApplied` alinhado e obrigatório para entitlements ligados a eventos.
+- [N/A] L54: - Contratos: Finanças passa a usar `customerIdentityId` (Identity SSOT) e snapshot fields alinhados.
+- [N/A] L55: - Address: removido conflito D11 vs D17 (Apple-first com fallback OSM).
+- [N/A] L56: - Domínio: mapa declarado “não exaustivo” + entidades mínimas adicionadas (Promoções/Notificações/Perfil/Pesquisa).
+- [N/A] L57: - Revenda: removidas referências a estado `USED`; consumo é metadata (`consumedAt`).
+- [N/A] L58: - Ticket: adicionado estado `DISPUTED` ao enum mínimo para consistência com chargebacks.
+- [N/A] L59: - Editorial: numeração 15.1 corrigida + referência “blueprint” alinhada para v9.
+- [N/A] L60: - Production Readiness: gate de go‑live + compliance/ops/DSAR/retention/release gates (Secção 19).
+- [N/A] L61: - Stripe: Connect Standard + funds flow FECHADO + onboarding Standard (D4.0.1 / C2.x).
+- [N/A] L62: - Infra: backups Supabase→S3 + isolamento multi‑tenant (12.6.2 / 19.3.1).
+- [N/A] L63: - Check‑in: modo recinto (8.6) para fallback operacional sem offline QR.
+- [N/A] L64: - Policy Defaults v1 FECHADO (Apêndice A).
+- [N/A] L65: - Legal: sign‑off/versionamento FECHADO (19.1).
+- [N/A] L66: - Stripe Standard: mitigação operacional clarificada (sem controlo directo de payouts).
 - [N/A] L69: > **Nota de execução (importante):** neste momento **não há dados sensíveis nem históricos que precisem de ser preservados**. Podemos **apagar os dados atuais** e **recriar tabelas/colunas** conforme o blueprint, sem plano de migração. (Isto simplifica muito as Fases 1–2: o foco é *higienizar* schema e código, não “migrar dados”.)
 - [N/A] L72: ---
 - [N/A] L74: ## System Invariants & Non-Negotiables (NORMATIVE)
@@ -900,19 +909,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L78: one or more invariants is considered incorrect, even if functional.
 - [N/A] L80: ### I1 — Single Source of Truth (SSOT)
 - [N/A] L81: Each domain has exactly one authoritative source of truth:
-- [TODO] L82: - Payments & money state → `Payment` + `LedgerEntry`
-- [TODO] L83: - Access rights → `Entitlement`
-- [TODO] L84: - Identity → `Identity` (USER or GUEST_EMAIL)
-- [TODO] L85: - Organization context → `Organization`
+- [N/A] L82: - Payments & money state → `Payment` + `LedgerEntry`
+- [N/A] L83: - Access rights → `Entitlement`
+- [N/A] L84: - Identity → `Identity` (USER or GUEST_EMAIL)
+- [N/A] L85: - Organization context → `Organization`
 - [N/A] L87: Derived data, caches, projections, and UI state MUST NOT be treated
 - [N/A] L88: as authoritative.
 - [N/A] L90: ---
 - [N/A] L92: ### I2 — Ledger Is Append-Only and Deterministic
 - [N/A] L93: `LedgerEntry` records are immutable and append-only.
 - [N/A] L94: They MUST:
-- [TODO] L95: - never be updated or deleted
-- [TODO] L96: - always reference a causative event
-- [TODO] L97: - be sufficient to fully recompute balances and net amounts
+- [N/A] L95: - never be updated or deleted
+- [N/A] L96: - always reference a causative event
+- [N/A] L97: - be sufficient to fully recompute balances and net amounts
 - [N/A] L99: Any correction is expressed via compensating entries, never mutation.
 - [N/A] L101: ---
 - [N/A] L103: ### I3 — Payments Are State Machines, Not Balances
@@ -929,40 +938,40 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L119: ---
 - [N/A] L121: ### I5 — Explicit Organization Context (Multi-Tenancy)
 - [N/A] L122: All domain data MUST be scoped to an explicit `orgId`, either:
-- [TODO] L123: - directly (row-level), or
-- [TODO] L124: - indirectly via an owning entity
+- [N/A] L123: - directly (row-level), or
+- [N/A] L124: - indirectly via an owning entity
 - [N/A] L126: No query, job, webhook, or background task may operate without an
 - [N/A] L127: explicit organization context.
 - [N/A] L129: ---
 - [N/A] L131: ### I6 — Idempotency Is Mandatory for Side-Effectful Operations
 - [N/A] L132: Any operation that:
-- [TODO] L133: - creates money movement
-- [TODO] L134: - issues entitlements
-- [TODO] L135: - sends emails or webhooks
-- [TODO] L136: - mutates irreversible state
+- [N/A] L133: - creates money movement
+- [N/A] L134: - issues entitlements
+- [N/A] L135: - sends emails or webhooks
+- [N/A] L136: - mutates irreversible state
 - [N/A] L138: MUST be idempotent and safe to retry.
 - [N/A] L140: ---
 - [N/A] L142: ### I7 — Async Is Explicit and Observable
 - [N/A] L143: All asynchronous work MUST be:
-- [TODO] L144: - triggered via an outbox or durable queue
-- [TODO] L145: - observable via metrics and logs
-- [TODO] L146: - retryable without side effects
+- [N/A] L144: - triggered via an outbox or durable queue
+- [N/A] L145: - observable via metrics and logs
+- [N/A] L146: - retryable without side effects
 - [N/A] L148: Fire-and-forget execution is forbidden.
 - [N/A] L150: ---
 - [N/A] L152: ### I8 — External Systems Are Not Trusted
 - [N/A] L153: External systems (payment processors, email providers, scanners,
 - [N/A] L154: integrations) are treated as:
-- [TODO] L155: - unreliable
-- [TODO] L156: - duplicative
-- [TODO] L157: - out-of-order
+- [N/A] L155: - unreliable
+- [N/A] L156: - duplicative
+- [N/A] L157: - out-of-order
 - [N/A] L159: All inbound signals MUST be validated, deduplicated, and reconciled
 - [N/A] L160: against internal truth.
 - [N/A] L162: ---
 - [N/A] L164: ### I9 — Fail Closed on Authorization and Access
 - [N/A] L165: In case of uncertainty, missing data, or reconciliation lag:
-- [TODO] L166: - access is denied
-- [TODO] L167: - payouts are delayed
-- [TODO] L168: - irreversible actions are blocked
+- [N/A] L166: - access is denied
+- [N/A] L167: - payouts are delayed
+- [N/A] L168: - irreversible actions are blocked
 - [N/A] L170: The system always fails closed, never open.
 - [N/A] L172: ---
 - [N/A] L174: ### I10 — FECHADO Decisions Are Binding
@@ -971,7 +980,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L178: Deviation requires an explicit blueprint revision.
 - [N/A] L180: ---
 - [N/A] L182: ⸻
-- [TODO] L184: 0) Objetivo e Visão
+- [N/A] L184: 0) Objetivo e Visão
 - [N/A] L186: 0.1 Objetivo
 - [N/A] L188: Transformar a ORYA num ecossistema integrado ao nível das melhores plataformas globais de:
 - [N/A] L189: 	•	Discovery + Social + Compra + Histórico para utilizadores
@@ -987,23 +996,23 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L201: 	•	Uma verdade única para moradas/localização (Address Service)
 - [N/A] L202: 	•	Métricas macro e micro (Analytics derivado do Ledger + EventLog)
 - [N/A] L204: ⸻
-- [TODO] L206: 1) Princípios (TO-BE)
-- [TODO] L207: 	1.	Simplicidade e automação
+- [N/A] L206: 1) Princípios (TO-BE)
+- [N/A] L207: 	1.	Simplicidade e automação
 - [N/A] L208: Defaults fortes, menos passos, menos fricção. “O sistema sugere; o humano confirma.”
-- [TODO] L209: 	2.	Operacional e robusto
+- [N/A] L209: 	2.	Operacional e robusto
 - [N/A] L210: Tempo real onde importa, fallback operacional, auditoria em tudo crítico.
-- [TODO] L211: 	3.	Experiência premium
+- [N/A] L211: 	3.	Experiência premium
 - [N/A] L212: UI consistente e previsível, rápida, acessível, com estados claros e feedback imediato.
-- [TODO] L213: 	4.	Integração sem monólito confuso
+- [N/A] L213: 	4.	Integração sem monólito confuso
 - [N/A] L214: Fronteiras claras; integração via contratos; zero duplicação de lógica entre owners.
-- [TODO] L215: 	5.	Determinismo financeiro
+- [N/A] L215: 	5.	Determinismo financeiro
 - [N/A] L216: Ledger único, reconciliável; idempotência obrigatória; relatórios derivados (não inventados).
-- [TODO] L217: 	6.	RGPD by design
+- [N/A] L217: 	6.	RGPD by design
 - [N/A] L218: Minimização de PII em logs; consentimentos; retenção; portabilidade.
-- [TODO] L219: 	7.	Escala sem rebentar orçamento
+- [N/A] L219: 	7.	Escala sem rebentar orçamento
 - [N/A] L220: Auto-scale e pay-as-you-go. Infra preparada para crescer, mas activada por necessidade.
 - [N/A] L222: ⸻
-- [TODO] L224: 2) Modelo de Plataforma (User + Social + Organizações)
+- [N/A] L224: 2) Modelo de Plataforma (User + Social + Organizações)
 - [N/A] L226: 2.1 Utilizador (app)
 - [N/A] L228: O utilizador é “rede social + discovery + compra + histórico”.
 - [N/A] L230: Superfícies separadas (sem feed único):
@@ -1023,14 +1032,14 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L246: 	•	mostrar/ocultar: stats padel, jogos recentes, eventos futuros, histórico (por secções)
 - [N/A] L247: 	•	ainda com 2 níveis base (público/privado), mas com toggles por secção
 - [N/A] L249: 2.2 Social (seguidores)
-- [TODO] L251: - Um utilizador pode **seguir** e **deixar de seguir** Utilizadores e Organizações.
-- [TODO] L252: - Uma Organização pode ter **seguidores**, mas **nunca segue ninguém** (não existe “A seguir” no perfil público de uma Organização).
-- [TODO] L253: - No UI, isto significa:
-- [TODO] L254:   - **Perfil de Utilizador**: mostra “Seguidores” e “A seguir”.
-- [TODO] L255:   - **Perfil de Organização**: mostra apenas “Seguidores” + crachá “Organização” (já previsto).
-- [TODO] L256: - No backend, isto significa:
-- [TODO] L257:   - A tabela/serviço de follow é única, mas com uma regra: `subjectType=ORG` não pode ser `actorType=ORG` em nenhum caso.
-- [TODO] L258:   - Ao pedir o perfil público de uma Organização, a API **não devolve** listas/contagens de “a seguir”, mesmo que existam (porque não podem existir).
+- [N/A] L251: - Um utilizador pode **seguir** e **deixar de seguir** Utilizadores e Organizações.
+- [N/A] L252: - Uma Organização pode ter **seguidores**, mas **nunca segue ninguém** (não existe “A seguir” no perfil público de uma Organização).
+- [N/A] L253: - No UI, isto significa:
+- [N/A] L254:   - **Perfil de Utilizador**: mostra “Seguidores” e “A seguir”.
+- [N/A] L255:   - **Perfil de Organização**: mostra apenas “Seguidores” + crachá “Organização” (já previsto).
+- [N/A] L256: - No backend, isto significa:
+- [N/A] L257:   - A tabela/serviço de follow é única, mas com uma regra: `subjectType=ORG` não pode ser `actorType=ORG` em nenhum caso.
+- [N/A] L258:   - Ao pedir o perfil público de uma Organização, a API **não devolve** listas/contagens de “a seguir”, mesmo que existam (porque não podem existir).
 - [N/A] L261: 2.3 Organizações
 - [N/A] L263: Uma Organization é entidade pública com branding e montra:
 - [N/A] L264: 	•	serviços, eventos, torneios, loja, links, reviews (futuro), staff
@@ -1057,11 +1066,11 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L290: 	•	Tracking
 - [N/A] L291: 		–	Logar eventos separados: VIEW_PUBLIC_PROFILE vs VIEW_ORG_DASHBOARD.
 - [N/A] L293: **Regra de routing (estilo Instagram):** páginas públicas de **Utilizador** e **Organização** vivem no mesmo namespace: `/:username`.
-- [TODO] L294: - O `UsernameRegistry` resolve de forma determinística se aquele `username` pertence a USER ou ORG e faz o render do perfil público correto.
-- [TODO] L295: - O `username` é **globalmente único** (uma organização e um utilizador **não** podem partilhar o mesmo).
-- [TODO] L296: - Existe lista de **reserved paths** (ex.: `app`, `org`, `organizacao`, `api`, `admin`, `support`, `login`, `signup`, `events`, `checkout`, `pricing`, `assets`, `static`, `robots.txt`, `sitemap.xml`, etc.) para evitar colisões.
-- [TODO] L297: - Em caso de `username` inexistente: 404.
-- [TODO] L298: - Em caso de `username` “released” em cooldown: continua reservado até expirar.
+- [N/A] L294: - O `UsernameRegistry` resolve de forma determinística se aquele `username` pertence a USER ou ORG e faz o render do perfil público correto.
+- [N/A] L295: - O `username` é **globalmente único** (uma organização e um utilizador **não** podem partilhar o mesmo).
+- [N/A] L296: - Existe lista de **reserved paths** (ex.: `app`, `org`, `organizacao`, `api`, `admin`, `support`, `login`, `signup`, `events`, `checkout`, `pricing`, `assets`, `static`, `robots.txt`, `sitemap.xml`, etc.) para evitar colisões.
+- [N/A] L297: - Em caso de `username` inexistente: 404.
+- [N/A] L298: - Em caso de `username` “released” em cooldown: continua reservado até expirar.
 - [N/A] L301: 2.3.2 Perfil Público “componível” (page builder baseado em módulos)
 - [N/A] L303: Objetivo
 - [N/A] L304: 	•	O Perfil Público da org adapta-se automaticamente ao que a org usa: Eventos / Loja / Formulários / Serviços.
@@ -1094,7 +1103,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L336: 	•	Qualquer escrita em profiles.username ou organization.username passa pelo registry.
 - [N/A] L337: 	•	Architecture test falha se alguém escrever username directo sem passar pelo serviço.
 - [N/A] L338: ⸻
-- [TODO] L340: 3) Arquitectura de Ferramentas (horizontais vs verticais)
+- [N/A] L340: 3) Arquitectura de Ferramentas (horizontais vs verticais)
 - [N/A] L342: 3.1 Ferramentas horizontais (Core)
 - [N/A] L343: 	•	Reservas — agenda engine, bookings, disponibilidade, recursos, profissionais, políticas, no-show
 - [N/A] L344: 	•	Presença/Conclusão — **por tipo**: em *Eventos/Tickets* usa QR/check‑in; em *Reservas de serviços* (ex.: cabeleireiro) no v1 basta **marcar como “Concluída/No‑show”** pelo prestador (QR fica opcional/fase 2 se fizer sentido).
@@ -1119,7 +1128,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L364: 	•	Digital Goods (fase 2/3) — venda de produtos digitais/cursos via Loja + Entitlements
 - [N/A] L366: Nota de produto: Padel é um vertical inicial forte, mas o blueprint v9 garante que Eventos/Serviços/Digital são igualmente first-class.
 - [N/A] L368: ⸻
-- [TODO] L371: 4) Decisions Locked v9 (não avançar sem isto)
+- [N/A] L371: 4) Decisions Locked v9 (não avançar sem isto)
 - [N/A] L373: D0) Fora de scope (v1–v3): API pública
 - [N/A] L374: 	•	Não vamos expor API pública/SDK/webhooks para terceiros nesta fase.
 - [N/A] L375: 	•	Apenas contratos internos versionados (Secção 6) e exports/configurações por organização.
@@ -1150,160 +1159,160 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L411: > **FECHADO (SSOT):** SSOT financeiro = `Payment` (state machine) + `LedgerEntry` (linhas imutáveis).
 - [N/A] L412: > Tudo o resto (SaleSummary, dashboards, exports) é **derivado**.
 - [N/A] L414: Princípios
-- [TODO] L415: - Stripe Connect obrigatório já (v1.x): cada Organization tem `stripeAccountId`.
-- [TODO] L416: - **Finanças é o único gateway**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
-- [TODO] L417: - Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
-- [TODO] L418: - “Pago” só existe quando `Payment.status == SUCCEEDED`.
+- [N/A] L415: - Stripe Connect obrigatório já (v1.x): cada Organization tem `stripeAccountId`.
+- [N/A] L416: - **Finanças é o único gateway**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
+- [N/A] L417: - Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
+- [N/A] L418: - “Pago” só existe quando `Payment.status == SUCCEEDED`.
 - [N/A] L420: D4.0) Stripe Connect — Account Type (FECHADO)
-- [TODO] L421: - ORYA usa **Stripe Connect Standard** como tipo de conta por defeito para Organizações.
-- [TODO] L422: - A conta Stripe é do organizador (autonomia e responsabilidade fiscal/operacional).
-- [TODO] L423: - A ORYA não cria nem gere contas Custom nesta fase.
-- [TODO] L424: - Qualquer excepção (Express/Custom) só por decisão de produto + contrato (fora v1.x).
+- [N/A] L421: - ORYA usa **Stripe Connect Standard** como tipo de conta por defeito para Organizações.
+- [N/A] L422: - A conta Stripe é do organizador (autonomia e responsabilidade fiscal/operacional).
+- [N/A] L423: - A ORYA não cria nem gere contas Custom nesta fase.
+- [N/A] L424: - Qualquer excepção (Express/Custom) só por decisão de produto + contrato (fora v1.x).
 - [N/A] L426: D4.0.1) Stripe Funds Flow (FECHADO)
 - [N/A] L427: Objetivo: definir de forma única como o dinheiro flui e onde a ORYA consegue (ou não) aplicar “risk holds”.
 - [N/A] L429: Decisão (v1.x):
-- [TODO] L430: - Modelo: **Destination Charges + Application Fee** (Stripe Connect Standard).
-- [TODO] L431: - A cobrança ao cliente é criada pela ORYA (Finanças) para o evento/serviço (`sourceType/sourceId`), com:
-- [TODO] L432:   - `application_fee_amount` = fee ORYA (conforme FeePolicyVersion)
-- [TODO] L433:   - `transfer_data.destination` = `Organization.stripeAccountId`
+- [N/A] L430: - Modelo: **Destination Charges + Application Fee** (Stripe Connect Standard).
+- [N/A] L431: - A cobrança ao cliente é criada pela ORYA (Finanças) para o evento/serviço (`sourceType/sourceId`), com:
+- [N/A] L432:   - `application_fee_amount` = fee ORYA (conforme FeePolicyVersion)
+- [N/A] L433:   - `transfer_data.destination` = `Organization.stripeAccountId`
 - [N/A] L435: Implicações (normativas):
-- [TODO] L436: - Refunds são iniciados pela ORYA (Finanças) e são idempotentes.
-- [TODO] L437: - Disputes/chargebacks afectam `Payment/Entitlements` conforme D4.9 e Secções 7/8.
-- [TODO] L438: - “Risk hold” em v1.x é **operacional** (step‑up, limits, bloqueio temporário de criação de eventos/checkout); não assume controlo directo de payouts.
-- [TODO] L439: - Se for necessário controlo fino de payouts/transferências (hold real de fundos), isso é **fora v1.x** e requer revisão do flow (ou mudança de account type/contrato).
+- [N/A] L436: - Refunds são iniciados pela ORYA (Finanças) e são idempotentes.
+- [N/A] L437: - Disputes/chargebacks afectam `Payment/Entitlements` conforme D4.9 e Secções 7/8.
+- [N/A] L438: - “Risk hold” em v1.x é **operacional** (step‑up, limits, bloqueio temporário de criação de eventos/checkout); não assume controlo directo de payouts.
+- [N/A] L439: - Se for necessário controlo fino de payouts/transferências (hold real de fundos), isso é **fora v1.x** e requer revisão do flow (ou mudança de account type/contrato).
 - [N/A] L441: Regra: nenhum módulo assume “payout control” fora do que este flow permite.
 - [N/A] L443: D4.1 Política de Fee (Admin) (FECHADO)
-- [TODO] L444: - Config por organização (default) + overrides por `sourceType` (e opcionalmente por `sourceId`).
-- [TODO] L445: - Limites opcionais: min/max, arredondamentos, feeMode (INCLUDED/ADDED/ABSORBED — se aplicável).
-- [TODO] L446: - Qualquer alteração gera nova versão (`feePolicyVersion`), nunca edita retroativamente.
+- [N/A] L444: - Config por organização (default) + overrides por `sourceType` (e opcionalmente por `sourceId`).
+- [N/A] L445: - Limites opcionais: min/max, arredondamentos, feeMode (INCLUDED/ADDED/ABSORBED — se aplicável).
+- [N/A] L446: - Qualquer alteração gera nova versão (`feePolicyVersion`), nunca edita retroativamente.
 - [N/A] L448: D4.2 PricingSnapshot (obrigatório) (FECHADO)
-- [TODO] L449: - `pricingSnapshot` é gravado no momento do checkout e nunca muda.
-- [TODO] L450: - Deve incluir, no mínimo:
-- [TODO] L451:   - currency, gross, discounts, taxes (se existirem), platformFee, netToOrgPending (calculado **sem** fees reais do processador)
-- [TODO] L452:   - `processorFeesStatus: PENDING | FINAL`
-- [TODO] L453:   - `processorFeesActual` (nullable até reconciliação Stripe; quando FINAL, é obrigatório)
-- [TODO] L454:   - feeMode resolvido (como a fee é aplicada)
-- [TODO] L455:   - referências: `feePolicyVersion`, `promoPolicyVersion` (se houver), `sourceType/sourceId`
-- [TODO] L456:   - lineItems com preços unitários e quantidades (para auditoria)
-- [TODO] L457: - Regra: **qualquer cálculo futuro** usa o snapshot + o Ledger (SSOT), nunca re‑calcula com regras novas.
-- [TODO] L458: - `netToOrgFinal` **não** vive no snapshot inicial; é sempre derivado de `SUM(entries.amountSigned)` quando `processorFeesStatus=FINAL`.
+- [N/A] L449: - `pricingSnapshot` é gravado no momento do checkout e nunca muda.
+- [N/A] L450: - Deve incluir, no mínimo:
+- [N/A] L451:   - currency, gross, discounts, taxes (se existirem), platformFee, netToOrgPending (calculado **sem** fees reais do processador)
+- [N/A] L452:   - `processorFeesStatus: PENDING | FINAL`
+- [N/A] L453:   - `processorFeesActual` (nullable até reconciliação Stripe; quando FINAL, é obrigatório)
+- [N/A] L454:   - feeMode resolvido (como a fee é aplicada)
+- [N/A] L455:   - referências: `feePolicyVersion`, `promoPolicyVersion` (se houver), `sourceType/sourceId`
+- [N/A] L456:   - lineItems com preços unitários e quantidades (para auditoria)
+- [N/A] L457: - Regra: **qualquer cálculo futuro** usa o snapshot + o Ledger (SSOT), nunca re‑calcula com regras novas.
+- [N/A] L458: - `netToOrgFinal` **não** vive no snapshot inicial; é sempre derivado de `SUM(entries.amountSigned)` quando `processorFeesStatus=FINAL`.
 - [N/A] L460: D4.3 Fee determinística + versionamento (obrigatório) (FECHADO)
-- [TODO] L461: - Fee calculada em Finanças durante `createCheckout` e congelada no `Payment`.
-- [TODO] L462: - `Payment.feePolicyVersion` obrigatório (incremental ou hash do snapshot).
-- [TODO] L463: - LedgerEntryType (MVP v1.x) — FECHADO
-- [TODO] L464:   - `GROSS`
-- [TODO] L465:   - `PLATFORM_FEE`
-- [TODO] L466:   - `PROCESSOR_FEES_FINAL`
-- [TODO] L467:   - `PROCESSOR_FEES_ADJUSTMENT`
-- [TODO] L468:   - `DISPUTE_FEE`
-- [TODO] L469:   - `DISPUTE_FEE_REVERSAL`
-- [TODO] L470:   - `REFUND_GROSS`
-- [TODO] L471:   - `REFUND_PLATFORM_FEE_REVERSAL`
-- [TODO] L472:   - `REFUND_PROCESSOR_FEES_REVERSAL`
-- [TODO] L473:   - `CHARGEBACK_GROSS`
-- [TODO] L474:   - `CHARGEBACK_PLATFORM_FEE_REVERSAL`
-- [TODO] L475: - Norma de sinais (obrigatória)
-- [TODO] L476:   - `GROSS` é positivo (+)
-- [TODO] L477:   - `PLATFORM_FEE` é negativo (-)
-- [TODO] L478:   - `PROCESSOR_FEES_FINAL` é negativo (-)
-- [TODO] L479:   - `PROCESSOR_FEES_ADJUSTMENT` pode ser + ou - (depende do delta)
-- [TODO] L480:   - `DISPUTE_FEE` é negativo (-)
-- [TODO] L481:   - `DISPUTE_FEE_REVERSAL` é positivo (+)
-- [TODO] L482:   - `REFUND_GROSS` é negativo (-)
-- [TODO] L483:   - `REFUND_PLATFORM_FEE_REVERSAL` é positivo (+)
-- [TODO] L484:   - `REFUND_PROCESSOR_FEES_REVERSAL` é positivo (+)
-- [TODO] L485:   - `CHARGEBACK_GROSS` é negativo (-)
-- [TODO] L486:   - `CHARGEBACK_PLATFORM_FEE_REVERSAL` é positivo (+)
-- [TODO] L487: - Regra FECHADA
-- [TODO] L488:   - `netToOrgFinal = SUM(entries.amountSigned)` por `paymentId` quando `processorFeesStatus=FINAL`.
-- [TODO] L489:   - `netToOrgPending = gross - platformFee` (informativo; não é canónico; sem fees reais do processador).
-- [TODO] L490:   - Refund/chargeback geram entries adicionais no mesmo `paymentId` (append-only); o `netToOrgFinal = SUM(entries.amountSigned)` continua verdadeiro após refund/chargeback.
-- [TODO] L491: - Alterações no Admin não afectam pagamentos antigos.
+- [N/A] L461: - Fee calculada em Finanças durante `createCheckout` e congelada no `Payment`.
+- [N/A] L462: - `Payment.feePolicyVersion` obrigatório (incremental ou hash do snapshot).
+- [N/A] L463: - LedgerEntryType (MVP v1.x) — FECHADO
+- [N/A] L464:   - `GROSS`
+- [N/A] L465:   - `PLATFORM_FEE`
+- [N/A] L466:   - `PROCESSOR_FEES_FINAL`
+- [N/A] L467:   - `PROCESSOR_FEES_ADJUSTMENT`
+- [N/A] L468:   - `DISPUTE_FEE`
+- [N/A] L469:   - `DISPUTE_FEE_REVERSAL`
+- [N/A] L470:   - `REFUND_GROSS`
+- [N/A] L471:   - `REFUND_PLATFORM_FEE_REVERSAL`
+- [N/A] L472:   - `REFUND_PROCESSOR_FEES_REVERSAL`
+- [N/A] L473:   - `CHARGEBACK_GROSS`
+- [N/A] L474:   - `CHARGEBACK_PLATFORM_FEE_REVERSAL`
+- [N/A] L475: - Norma de sinais (obrigatória)
+- [N/A] L476:   - `GROSS` é positivo (+)
+- [N/A] L477:   - `PLATFORM_FEE` é negativo (-)
+- [N/A] L478:   - `PROCESSOR_FEES_FINAL` é negativo (-)
+- [N/A] L479:   - `PROCESSOR_FEES_ADJUSTMENT` pode ser + ou - (depende do delta)
+- [N/A] L480:   - `DISPUTE_FEE` é negativo (-)
+- [N/A] L481:   - `DISPUTE_FEE_REVERSAL` é positivo (+)
+- [N/A] L482:   - `REFUND_GROSS` é negativo (-)
+- [N/A] L483:   - `REFUND_PLATFORM_FEE_REVERSAL` é positivo (+)
+- [N/A] L484:   - `REFUND_PROCESSOR_FEES_REVERSAL` é positivo (+)
+- [N/A] L485:   - `CHARGEBACK_GROSS` é negativo (-)
+- [N/A] L486:   - `CHARGEBACK_PLATFORM_FEE_REVERSAL` é positivo (+)
+- [N/A] L487: - Regra FECHADA
+- [N/A] L488:   - `netToOrgFinal = SUM(entries.amountSigned)` por `paymentId` quando `processorFeesStatus=FINAL`.
+- [N/A] L489:   - `netToOrgPending = gross - platformFee` (informativo; não é canónico; sem fees reais do processador).
+- [N/A] L490:   - Refund/chargeback geram entries adicionais no mesmo `paymentId` (append-only); o `netToOrgFinal = SUM(entries.amountSigned)` continua verdadeiro após refund/chargeback.
+- [N/A] L491: - Alterações no Admin não afectam pagamentos antigos.
 - [N/A] L493: D4.4 Ledger SSOT (imutável) + reconciliação (FECHADO)
-- [TODO] L494: - `LedgerEntry` é append‑only (sem update/delete).
-- [TODO] L495: - Cada entrada tem: `entryType`, `amount`, `currency`, `paymentId`, `sourceType/sourceId`, `createdAt`, `causationId`, `correlationId`.
-- [TODO] L496: - Regras:
-- [TODO] L497:   - entradas são geradas apenas por Finanças (write‑owner)
-- [TODO] L498:   - replays são idempotentes (mesma causationId não duplica)
-- [TODO] L499: - Reconciliação (FECHADO):
-- [TODO] L500:   - Fonte única do fee real: `stripe.balance_transaction.fee` (ou equivalente do processor).
-- [TODO] L501:   - Transição:
-- [TODO] L502:     - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
-- [TODO] L503:     - `processorFeesStatus=FINAL` quando existir
-- [TODO] L504:   - Entries:
-- [TODO] L505:     - criar `PROCESSOR_FEES_FINAL` quando chega o `balance_transaction`
-- [TODO] L506:     - criar `PROCESSOR_FEES_ADJUSTMENT` se, em reconciliações futuras, o fee real mudar (delta)
-- [TODO] L507:   - Append-only sempre: nunca editar entries antigas.
-- [TODO] L508:   - divergências geram `LedgerReconciliationIssue` (ver 12.4.x)
+- [N/A] L494: - `LedgerEntry` é append‑only (sem update/delete).
+- [N/A] L495: - Cada entrada tem: `entryType`, `amount`, `currency`, `paymentId`, `sourceType/sourceId`, `createdAt`, `causationId`, `correlationId`.
+- [N/A] L496: - Regras:
+- [N/A] L497:   - entradas são geradas apenas por Finanças (write‑owner)
+- [N/A] L498:   - replays são idempotentes (mesma causationId não duplica)
+- [N/A] L499: - Reconciliação (FECHADO):
+- [N/A] L500:   - Fonte única do fee real: `stripe.balance_transaction.fee` (ou equivalente do processor).
+- [N/A] L501:   - Transição:
+- [N/A] L502:     - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
+- [N/A] L503:     - `processorFeesStatus=FINAL` quando existir
+- [N/A] L504:   - Entries:
+- [N/A] L505:     - criar `PROCESSOR_FEES_FINAL` quando chega o `balance_transaction`
+- [N/A] L506:     - criar `PROCESSOR_FEES_ADJUSTMENT` se, em reconciliações futuras, o fee real mudar (delta)
+- [N/A] L507:   - Append-only sempre: nunca editar entries antigas.
+- [N/A] L508:   - divergências geram `LedgerReconciliationIssue` (ver 12.4.x)
 - [N/A] L510: D4.5 SaleSummary (se existir) — read model derivado
-- [TODO] L511: - Pode existir para performance/UX, mas:
-- [TODO] L512:   - nunca decide estados (pago/reembolsado)
-- [TODO] L513:   - é re‑gerável a partir de Ledger + Payment
-- [TODO] L514:   - falhas são reparáveis por replay (EventLog/Jobs)
-- [TODO] L515: - Definição (read‑model):
-- [TODO] L516:   - `SaleSummary`: resumo por compra (`purchaseId`/`paymentIntentId`), totais/fees (`subtotal/discount/platformFee/cardFee/stripeFee/total/net`), `status`, owner (`ownerUserId`/`ownerIdentityId`), modo/teste (`mode`/`isTest`) e snapshots de promo (`promoCodeSnapshot/label/type/value`).
-- [TODO] L517:   - `SaleLine`: linhas por ticketType (`ticketTypeId`), `quantity`, `unitPrice`, `gross/net/platformFee` + snapshots de promo.
-- [TODO] L518: - Owner: apenas o consumer de finanças (domain/finance read‑model consumer) escreve; resto é read‑only.
+- [N/A] L511: - Pode existir para performance/UX, mas:
+- [N/A] L512:   - nunca decide estados (pago/reembolsado)
+- [N/A] L513:   - é re‑gerável a partir de Ledger + Payment
+- [N/A] L514:   - falhas são reparáveis por replay (EventLog/Jobs)
+- [N/A] L515: - Definição (read‑model):
+- [N/A] L516:   - `SaleSummary`: resumo por compra (`purchaseId`/`paymentIntentId`), totais/fees (`subtotal/discount/platformFee/cardFee/stripeFee/total/net`), `status`, owner (`ownerUserId`/`ownerIdentityId`), modo/teste (`mode`/`isTest`) e snapshots de promo (`promoCodeSnapshot/label/type/value`).
+- [N/A] L517:   - `SaleLine`: linhas por ticketType (`ticketTypeId`), `quantity`, `unitPrice`, `gross/net/platformFee` + snapshots de promo.
+- [N/A] L518: - Owner: apenas o consumer de finanças (domain/finance read‑model consumer) escreve; resto é read‑only.
 - [N/A] L520: D4.6 FeeMode e pricing têm um resolvedor único (FECHADO)
-- [TODO] L521: - `computePricing()` (Finanças) decide de forma determinística e versionada:
-- [TODO] L522:   - platform default
-- [TODO] L523:   - org default
-- [TODO] L524:   - override por `sourceType`
-- [TODO] L525:   - override por `sourceId` (opcional)
-- [TODO] L526: - Regra: nenhum módulo força feeMode “por fora”. Se Eventos quiserem “INCLUDED sempre”, isso é configurado como override por `sourceType=TICKET_ORDER` e fica escrito em policy versionada.
+- [N/A] L521: - `computePricing()` (Finanças) decide de forma determinística e versionada:
+- [N/A] L522:   - platform default
+- [N/A] L523:   - org default
+- [N/A] L524:   - override por `sourceType`
+- [N/A] L525:   - override por `sourceId` (opcional)
+- [N/A] L526: - Regra: nenhum módulo força feeMode “por fora”. Se Eventos quiserem “INCLUDED sempre”, isso é configurado como override por `sourceType=TICKET_ORDER` e fica escrito em policy versionada.
 - [N/A] L528: D4.7 Regras de FREE_CHECKOUT (FECHADO)
-- [TODO] L529: - Um checkout é “free” se:
-- [TODO] L530:   - `totalAmount == 0` (após promos/fees) **ou**
-- [TODO] L531:   - `scenario == FREE_CHECKOUT` (explicitamente resolvido por Finanças)
-- [TODO] L532: - Limites e anti‑abuso aplicam-se ao free checkout independentemente de qualquer flag no evento.
-- [TODO] L533: - Bilhetes 0€ só existem por decisão explícita:
-- [TODO] L534:   - `Event.allowZeroPriceTickets` (default false) **ou** policy por TicketType (recomendado).
+- [N/A] L529: - Um checkout é “free” se:
+- [N/A] L530:   - `totalAmount == 0` (após promos/fees) **ou**
+- [N/A] L531:   - `scenario == FREE_CHECKOUT` (explicitamente resolvido por Finanças)
+- [N/A] L532: - Limites e anti‑abuso aplicam-se ao free checkout independentemente de qualquer flag no evento.
+- [N/A] L533: - Bilhetes 0€ só existem por decisão explícita:
+- [N/A] L534:   - `Event.allowZeroPriceTickets` (default false) **ou** policy por TicketType (recomendado).
 - [N/A] L537: D4.7.1 Guardrails de FREE_CHECKOUT (FECHADO)
-- [TODO] L538: - Anti‑abuso é **normativo** e vive em Finanças (não em Eventos):
-- [TODO] L539:   - Limite por `Identity` e por `eventId+ticketTypeId`: default `max=1` (configurável por policy, com guardrails globais).
-- [TODO] L540:   - Rate limit por IP/device + janela (ex.: 10 tentativas/5 min) + cooldown progressivo em falhas.
-- [TODO] L541:   - Step‑up em casos suspeitos: captcha/turnstile, obrigar login, ou bloquear por 15–60 min (policy).
-- [TODO] L542:   - Dedupe por idempotencyKey e por `Identity+sourceId` (não existe “free checkout repetido”).
-- [TODO] L543:   - Audit + EventLog obrigatórios: `free_checkout.denied` com reasonCode (sem PII).
-- [TODO] L544: - Regra: o mesmo conjunto de guardrails aplica-se a `totalAmount==0` e a `scenario==FREE_CHECKOUT`.
+- [N/A] L538: - Anti‑abuso é **normativo** e vive em Finanças (não em Eventos):
+- [N/A] L539:   - Limite por `Identity` e por `eventId+ticketTypeId`: default `max=1` (configurável por policy, com guardrails globais).
+- [N/A] L540:   - Rate limit por IP/device + janela (ex.: 10 tentativas/5 min) + cooldown progressivo em falhas.
+- [N/A] L541:   - Step‑up em casos suspeitos: captcha/turnstile, obrigar login, ou bloquear por 15–60 min (policy).
+- [N/A] L542:   - Dedupe por idempotencyKey e por `Identity+sourceId` (não existe “free checkout repetido”).
+- [N/A] L543:   - Audit + EventLog obrigatórios: `free_checkout.denied` com reasonCode (sem PII).
+- [N/A] L544: - Regra: o mesmo conjunto de guardrails aplica-se a `totalAmount==0` e a `scenario==FREE_CHECKOUT`.
 - [N/A] L546: D4.8 Deprecação de `Event.isFree` (anti‑desync) (FECHADO)
 - [N/A] L547: Regra:
-- [TODO] L548: - `Event.isFree` deixa de existir como “fonte de decisão”.
-- [TODO] L549: - A única regra de “free” é a de D4.7.
-- [TODO] L550: - Para UI (“evento grátis”) é sempre derivado:
-- [TODO] L551:   - `derivedIsFree = (min(TicketType.price) == 0 AND não existe TicketType.price > 0)` **ou**
-- [TODO] L552:   - `Event.pricingMode = FREE_ONLY` (flag explícita, se precisares)
-- [TODO] L553: - Qualquer gating (checkout/login/anti‑abuso) **nunca** usa `Event.isFree`.
+- [N/A] L548: - `Event.isFree` deixa de existir como “fonte de decisão”.
+- [N/A] L549: - A única regra de “free” é a de D4.7.
+- [N/A] L550: - Para UI (“evento grátis”) é sempre derivado:
+- [N/A] L551:   - `derivedIsFree = (min(TicketType.price) == 0 AND não existe TicketType.price > 0)` **ou**
+- [N/A] L552:   - `Event.pricingMode = FREE_ONLY` (flag explícita, se precisares)
+- [N/A] L553: - Qualquer gating (checkout/login/anti‑abuso) **nunca** usa `Event.isFree`.
 - [N/A] L555: Implementação:
-- [TODO] L556: - Remover leituras do flag em UI/checkout.
-- [TODO] L557: - Se o campo ainda existir por compatibilidade, marcá-lo como deprecated e preenchê-lo apenas como read model.
-- [TODO] L558: - Assert em Finanças: se `totalAmount > 0` então `scenario != FREE_CHECKOUT`.
+- [N/A] L556: - Remover leituras do flag em UI/checkout.
+- [N/A] L557: - Se o campo ainda existir por compatibilidade, marcá-lo como deprecated e preenchê-lo apenas como read model.
+- [N/A] L558: - Assert em Finanças: se `totalAmount > 0` então `scenario != FREE_CHECKOUT`.
 - [N/A] L560: D4.9 Refunds, cancelamentos e chargebacks (FECHADO)
 - [N/A] L561: Cancelamento de evento:
-- [TODO] L562: - Ao cancelar um evento: **refund automático** para todas as compras elegíveis.
-- [TODO] L563: - Stripe Connect Standard:
-- [TODO] L564:   - o organizador paga os processing fees (quando Stripe não os devolve)
-- [TODO] L565:   - a ORYA devolve a sua `platformFee` (através de entrada de ledger de reversão)
-- [TODO] L566: - O refund é idempotente e auditável (`RefundPolicyVersion` se houver regras variáveis).
+- [N/A] L562: - Ao cancelar um evento: **refund automático** para todas as compras elegíveis.
+- [N/A] L563: - Stripe Connect Standard:
+- [N/A] L564:   - o organizador paga os processing fees (quando Stripe não os devolve)
+- [N/A] L565:   - a ORYA devolve a sua `platformFee` (através de entrada de ledger de reversão)
+- [N/A] L566: - O refund é idempotente e auditável (`RefundPolicyVersion` se houver regras variáveis).
 - [N/A] L568: Refund manual (suporte):
-- [TODO] L569: - Só por casos definidos (evento cancelado, falha grave, denúncias, problema técnico confirmado).
-- [TODO] L570: - Não existe “refund porque faltaste”.
+- [N/A] L569: - Só por casos definidos (evento cancelado, falha grave, denúncias, problema técnico confirmado).
+- [N/A] L570: - Não existe “refund porque faltaste”.
 - [N/A] L572: Refund parcial (FECHADO):
-- [TODO] L573: - `Payment=PARTIAL_REFUND` quando apenas alguns lineItems são reembolsados.
-- [TODO] L574: - Ledger adiciona `REFUND_GROSS` + reversões aplicáveis **por item** (append-only; pode haver múltiplos parciais).
-- [TODO] L575: - Em `sourceType=TICKET_ORDER`, revoga apenas os entitlements dos itens refundados (resto mantém ACTIVE).
+- [N/A] L573: - `Payment=PARTIAL_REFUND` quando apenas alguns lineItems são reembolsados.
+- [N/A] L574: - Ledger adiciona `REFUND_GROSS` + reversões aplicáveis **por item** (append-only; pode haver múltiplos parciais).
+- [N/A] L575: - Em `sourceType=TICKET_ORDER`, revoga apenas os entitlements dos itens refundados (resto mantém ACTIVE).
 - [N/A] L577: Chargeback / dispute:
-- [TODO] L578: - Evento Stripe `dispute.created` → `Payment` entra em estado de disputa e:
-- [TODO] L579:   - Entitlements associados → `SUSPENDED` (bloqueia entrada) até resolução
-- [TODO] L580: - Resolução:
-- [TODO] L581:   - `dispute.won` → `Payment=CHARGEBACK_WON` + reactivar entitlements (se ainda fizer sentido temporalmente)
-- [TODO] L582:   - `dispute.lost` → `Payment=CHARGEBACK_LOST` + `Entitlement=REVOKED` + ledger com `CHARGEBACK_*` (e `DISPUTE_FEE` se aplicável)
-- [TODO] L583: - Fee de disputa (FECHADO):
-- [TODO] L584:   - `DISPUTE_FEE` é debitado à organização por defeito.
-- [TODO] L585:   - Se o processor reembolsar a fee num `CHARGEBACK_WON`, criar `DISPUTE_FEE_REVERSAL` (positivo).
-- [TODO] L586: - `Ticket.status=DISPUTED` entra em `dispute.created` (ou `charge.dispute.created`) e bloqueia entrada.
-- [TODO] L587: - `dispute.won` → volta a `ACTIVE` (se não houver refund/chargeback aplicado).
-- [TODO] L588: - `dispute.lost` → `CHARGEBACK_LOST` (estado final canónico).
+- [N/A] L578: - Evento Stripe `dispute.created` → `Payment` entra em estado de disputa e:
+- [N/A] L579:   - Entitlements associados → `SUSPENDED` (bloqueia entrada) até resolução
+- [N/A] L580: - Resolução:
+- [N/A] L581:   - `dispute.won` → `Payment=CHARGEBACK_WON` + reactivar entitlements (se ainda fizer sentido temporalmente)
+- [N/A] L582:   - `dispute.lost` → `Payment=CHARGEBACK_LOST` + `Entitlement=REVOKED` + ledger com `CHARGEBACK_*` (e `DISPUTE_FEE` se aplicável)
+- [N/A] L583: - Fee de disputa (FECHADO):
+- [N/A] L584:   - `DISPUTE_FEE` é debitado à organização por defeito.
+- [N/A] L585:   - Se o processor reembolsar a fee num `CHARGEBACK_WON`, criar `DISPUTE_FEE_REVERSAL` (positivo).
+- [N/A] L586: - `Ticket.status=DISPUTED` entra em `dispute.created` (ou `charge.dispute.created`) e bloqueia entrada.
+- [N/A] L587: - `dispute.won` → volta a `ACTIVE` (se não houver refund/chargeback aplicado).
+- [N/A] L588: - `dispute.lost` → `CHARGEBACK_LOST` (estado final canónico).
 - [N/A] L590: ⸻
 - [N/A] L594: D5) RBAC mínimo viável + Role Packs
 - [N/A] L596: Introduzir já: CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE
@@ -1322,54 +1331,54 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L617: > **FECHADO (SSOT):** `EventAccessPolicy` é a única fonte de verdade para:
 - [N/A] L618: > 1) modo de acesso (public/invite/unlisted), 2) checkout como convidado, 3) convites por token, 4) compatibilidade de identidade, e 5) check‑in (ver Secção 8).
 - [N/A] L620: D8.1) EventAccessPolicy é a única verdade de acesso (FECHADO)
-- [TODO] L621: - Substitui qualquer combo de flags legacy (`public_access_mode`, `invite_only`, etc.).
-- [TODO] L622: - Modelo canónico (mínimo):
-- [TODO] L623:   - `mode: PUBLIC | INVITE_ONLY | UNLISTED`
-- [TODO] L624:   - `guestCheckoutAllowed: boolean`
-- [TODO] L625:   - `inviteTokenAllowed: boolean`
-- [TODO] L626:   - `inviteIdentityMatch: EMAIL | USERNAME | BOTH`
-- [TODO] L627:   - `inviteTokenTTL: duration` (obrigatório se `inviteTokenAllowed=true`)
-- [TODO] L628:   - `checkin: { requiresEntitlementForEntry, methods[...] }` (ver Secção 8)
-- [TODO] L629: - **Sem fallback** entre campos. Migração/backfill obrigatório no write‑path (não na leitura).
+- [N/A] L621: - Substitui qualquer combo de flags legacy (`public_access_mode`, `invite_only`, etc.).
+- [N/A] L622: - Modelo canónico (mínimo):
+- [N/A] L623:   - `mode: PUBLIC | INVITE_ONLY | UNLISTED`
+- [N/A] L624:   - `guestCheckoutAllowed: boolean`
+- [N/A] L625:   - `inviteTokenAllowed: boolean`
+- [N/A] L626:   - `inviteIdentityMatch: EMAIL | USERNAME | BOTH`
+- [N/A] L627:   - `inviteTokenTTL: duration` (obrigatório se `inviteTokenAllowed=true`)
+- [N/A] L628:   - `checkin: { requiresEntitlementForEntry, methods[...] }` (ver Secção 8)
+- [N/A] L629: - **Sem fallback** entre campos. Migração/backfill obrigatório no write‑path (não na leitura).
 - [N/A] L631: D8.2) Convites por token (guest checkout) — versão final (FECHADO)
 - [N/A] L633: Convites permitem checkout como convidado via token. Login não é obrigatório, mas é incentivado.
 - [N/A] L635: Regras fechadas
-- [TODO] L636: 1) InviteToken one‑time + expira
-- [TODO] L637: - guardar `tokenHash` (nunca token em claro)
-- [TODO] L638: - `expiresAt` (ex.: 7 dias; ou conforme `inviteTokenTTL`)
-- [TODO] L639: - `usedAt` + `usedByIdentityId`
-- [TODO] L641: 2) Match obrigatório de identidade
-- [TODO] L642: - o token fica associado a `emailNormalizado` (e opcionalmente username, se usares BOTH)
-- [TODO] L643: - no checkout guest, o email tem de bater certo (case‑insensitive, normalizado)
-- [TODO] L645: 3) Scope do token
-- [TODO] L646: - token é válido só para 1 evento e (opcional) 1 `ticketTypeId` (controlo fino)
-- [TODO] L648: 4) Rate limit + anti‑enumeração
-- [TODO] L649: - limitar tentativas por IP/device
-- [TODO] L650: - respostas indistinguíveis (“token inválido” sem detalhes)
-- [TODO] L652: 5) Entitlement final (SSOT) + claim posterior (FECHADO)
-- [TODO] L653: - compra gera `Entitlement` com `ownerIdentityId = Identity(GUEST_EMAIL)`
-- [TODO] L654: - quando o user criar conta e verificar o mesmo email → claim automático (Secção 7.7)
-- [TODO] L655: - **Propriedade do acesso nunca é OR entre campos.** Resolver sempre via `Entitlement.ownerIdentityId`.
-- [TODO] L657: 6) Eventos VIP (login obrigatório)
-- [TODO] L658: - Para eventos que exijam login: `guestCheckoutAllowed=false` e `mode=INVITE_ONLY` (sem exceções).
+- [N/A] L636: 1) InviteToken one‑time + expira
+- [N/A] L637: - guardar `tokenHash` (nunca token em claro)
+- [N/A] L638: - `expiresAt` (ex.: 7 dias; ou conforme `inviteTokenTTL`)
+- [N/A] L639: - `usedAt` + `usedByIdentityId`
+- [N/A] L641: 2) Match obrigatório de identidade
+- [N/A] L642: - o token fica associado a `emailNormalizado` (e opcionalmente username, se usares BOTH)
+- [N/A] L643: - no checkout guest, o email tem de bater certo (case‑insensitive, normalizado)
+- [N/A] L645: 3) Scope do token
+- [N/A] L646: - token é válido só para 1 evento e (opcional) 1 `ticketTypeId` (controlo fino)
+- [N/A] L648: 4) Rate limit + anti‑enumeração
+- [N/A] L649: - limitar tentativas por IP/device
+- [N/A] L650: - respostas indistinguíveis (“token inválido” sem detalhes)
+- [N/A] L652: 5) Entitlement final (SSOT) + claim posterior (FECHADO)
+- [N/A] L653: - compra gera `Entitlement` com `ownerIdentityId = Identity(GUEST_EMAIL)`
+- [N/A] L654: - quando o user criar conta e verificar o mesmo email → claim automático (Secção 7.7)
+- [N/A] L655: - **Propriedade do acesso nunca é OR entre campos.** Resolver sempre via `Entitlement.ownerIdentityId`.
+- [N/A] L657: 6) Eventos VIP (login obrigatório)
+- [N/A] L658: - Para eventos que exijam login: `guestCheckoutAllowed=false` e `mode=INVITE_ONLY` (sem exceções).
 - [N/A] L660: UX recomendada
-- [TODO] L661: - Página de convite: “Aceitar convite” → pede nome + email (pré‑preenchido se possível)
-- [TODO] L662: - Pós‑compra: “Criar conta para guardar bilhetes e entrar mais rápido” (1 clique)
+- [N/A] L661: - Página de convite: “Aceitar convite” → pede nome + email (pré‑preenchido se possível)
+- [N/A] L662: - Pós‑compra: “Criar conta para guardar bilhetes e entrar mais rápido” (1 clique)
 - [N/A] L664: ⸻
 - [N/A] L666: D8.3 Imutabilidade temporal (depois de haver vendas) (FECHADO)
-- [TODO] L667: - `EventAccessPolicy` é versionada (`policyVersion`) e cada alteração cria **nova versão** (append‑only; sem editar retroativamente).
-- [TODO] L668: - **Lock após a primeira venda/entitlement**: quando existir qualquer `Payment.status=SUCCEEDED` ou qualquer `Entitlement` emitido para o evento:
-- [TODO] L669:   - Campos **bloqueados** (não podem tornar-se mais restritivos nem mudar de semântica): `mode`, `guestCheckoutAllowed`, `inviteTokenAllowed`, `inviteIdentityMatch`, `requiresEntitlementForEntry`.
-- [TODO] L670:   - Permitido apenas:
-- [TODO] L671:     - **Relaxar** regras (ex.: INVITE_ONLY → UNLISTED/PUBLIC) se não quebrar direitos já emitidos.
-- [TODO] L672:     - Ajustar `inviteTokenTTL` apenas para **novos** convites (tokens já emitidos mantêm o seu `expiresAt`).
-- [TODO] L673:     - **Adicionar** métodos de check‑in (nunca remover) para compatibilidade operacional.
-- [TODO] L674:     - Reentrada/undo só podem **relaxar**:
+- [N/A] L667: - `EventAccessPolicy` é versionada (`policyVersion`) e cada alteração cria **nova versão** (append‑only; sem editar retroativamente).
+- [N/A] L668: - **Lock após a primeira venda/entitlement**: quando existir qualquer `Payment.status=SUCCEEDED` ou qualquer `Entitlement` emitido para o evento:
+- [N/A] L669:   - Campos **bloqueados** (não podem tornar-se mais restritivos nem mudar de semântica): `mode`, `guestCheckoutAllowed`, `inviteTokenAllowed`, `inviteIdentityMatch`, `requiresEntitlementForEntry`.
+- [N/A] L670:   - Permitido apenas:
+- [N/A] L671:     - **Relaxar** regras (ex.: INVITE_ONLY → UNLISTED/PUBLIC) se não quebrar direitos já emitidos.
+- [N/A] L672:     - Ajustar `inviteTokenTTL` apenas para **novos** convites (tokens já emitidos mantêm o seu `expiresAt`).
+- [N/A] L673:     - **Adicionar** métodos de check‑in (nunca remover) para compatibilidade operacional.
+- [N/A] L674:     - Reentrada/undo só podem **relaxar**:
 - [N/A] L675:       – `checkin.allowReentry`: apenas `false → true`
 - [N/A] L676:       – `maxEntries`, `reentryWindowMinutes`, `undoWindowMinutes`: apenas aumentar
-- [TODO] L677: - Snapshot aplicado:
-- [TODO] L678:   - `Entitlement.policyVersionApplied` passa a **obrigatório** para `sourceType=TICKET_ORDER|PADEL_REGISTRATION|BOOKING` quando associado a um evento.
-- [TODO] L679:   - Check-in valida por defeito contra `policyVersionApplied` armazenado no Entitlement. A policy corrente só pode relaxar regras ou adicionar métodos; nunca pode apertar constraints após emissão.
+- [N/A] L677: - Snapshot aplicado:
+- [N/A] L678:   - `Entitlement.policyVersionApplied` passa a **obrigatório** para `sourceType=TICKET_ORDER|PADEL_REGISTRATION|BOOKING` quando associado a um evento.
+- [N/A] L679:   - Check-in valida por defeito contra `policyVersionApplied` armazenado no Entitlement. A policy corrente só pode relaxar regras ou adicionar métodos; nunca pode apertar constraints após emissão.
 - [N/A] L684: D9) Merchant of Record + fiscalidade (decisão “top”)
 - [N/A] L685: 	•	MoR por defeito é a Organização (Connected Account)
 - [N/A] L686: 	•	Organização é responsável por IVA / fatura ao consumidor final
@@ -1402,8 +1411,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L721: 	•	Campos legacy (ex.: inviteOnly / publicAccessMode / publicTicketTypeIds) ficam READ-ONLY (deprecated) e deixam de ser lidos por UI/API.
 - [N/A] L722: 	•	Se existir payload antigo, converte-se para EventAccessPolicy na escrita (write-path), nunca na leitura (read-path).
 - [N/A] L724: Migração:
-- [TODO] L725: 	1) Backfill único: para cada Event, gerar EventAccessPolicy canónica.
-- [TODO] L726: 	2) Toggle de rollout:
+- [N/A] L725: 	1) Backfill único: para cada Event, gerar EventAccessPolicy canónica.
+- [N/A] L726: 	2) Toggle de rollout:
 - [N/A] L727: 		•	Fase A: ler ambos, mas COMPARAR e alertar se divergirem (sem mudar UX).
 - [N/A] L728: 		•	Fase B: UI/API lê apenas policy canónica; legacy só para export/debug.
 - [N/A] L729: 		•	Fase C: remover fallback e remover campos legacy do schema.
@@ -1446,75 +1455,75 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L776: > **FECHADO:** Tudo o que é assíncrono, re‑tentável, ou depende de webhooks externos passa por Jobs/Queues.
 - [N/A] L777: > A entrega de eventos internos é garantida por Outbox + idempotência (evita “eventos perdidos”).
 - [N/A] L779: D10.1 Jobs/Queues (obrigatório)
-- [TODO] L780: - Sistema de jobs com:
-- [TODO] L781:   - queue, retries, backoff, e DLQ
-- [TODO] L782:   - prioridades (ex.: pagamentos/entitlements > notificações)
-- [TODO] L783:   - dedupe por `idempotencyKey`
-- [TODO] L784: - Tudo assíncrono passa por jobs:
-- [TODO] L785:   - notificações, exports, ingest CRM, sync Stripe, indexação/search
-- [TODO] L786:   - replays do EventLog, reminders (ex.: split payment T‑48/36/24), reconciliations
-- [TODO] L787: - Estado efémero com TTL (holds, locks, rate‑limits) vive em Redis; DB guarda apenas estado final/auditável.
+- [N/A] L780: - Sistema de jobs com:
+- [N/A] L781:   - queue, retries, backoff, e DLQ
+- [N/A] L782:   - prioridades (ex.: pagamentos/entitlements > notificações)
+- [N/A] L783:   - dedupe por `idempotencyKey`
+- [N/A] L784: - Tudo assíncrono passa por jobs:
+- [N/A] L785:   - notificações, exports, ingest CRM, sync Stripe, indexação/search
+- [N/A] L786:   - replays do EventLog, reminders (ex.: split payment T‑48/36/24), reconciliations
+- [N/A] L787: - Estado efémero com TTL (holds, locks, rate‑limits) vive em Redis; DB guarda apenas estado final/auditável.
 - [N/A] L789: D10.2 Outbox (obrigatório)
-- [TODO] L790: - Padrão:
-- [TODO] L791:   - Dentro da mesma transação DB que altera estado, escrever `OutboxEvent` (append‑only).
-- [TODO] L792:   - Worker lê Outbox e publica para:
-- [TODO] L793:     - Job queue (SQS) / consumidores internos
-- [TODO] L794:     - EventBus (quando existir)
-- [TODO] L795: - Campos mínimos:
-- [TODO] L796:   - `eventId` (UUID), `eventType`, `payload`, `createdAt`, `publishedAt`, `attempts`, `nextAttemptAt`
-- [TODO] L797:   - `causationId` / `correlationId`
-- [TODO] L798: - Garantias:
-- [TODO] L799:   - pelo menos uma vez (at‑least‑once) + consumidores idempotentes
-- [TODO] L800:   - sem “eventos perdidos” mesmo com crash entre write e publish
+- [N/A] L790: - Padrão:
+- [N/A] L791:   - Dentro da mesma transação DB que altera estado, escrever `OutboxEvent` (append‑only).
+- [N/A] L792:   - Worker lê Outbox e publica para:
+- [N/A] L793:     - Job queue (SQS) / consumidores internos
+- [N/A] L794:     - EventBus (quando existir)
+- [N/A] L795: - Campos mínimos:
+- [N/A] L796:   - `eventId` (UUID), `eventType`, `payload`, `createdAt`, `publishedAt`, `attempts`, `nextAttemptAt`
+- [N/A] L797:   - `causationId` / `correlationId`
+- [N/A] L798: - Garantias:
+- [N/A] L799:   - pelo menos uma vez (at‑least‑once) + consumidores idempotentes
+- [N/A] L800:   - sem “eventos perdidos” mesmo com crash entre write e publish
 - [N/A] L802: D10.3 EventBus na AWS — introdução faseada (sem overkill)
 - [N/A] L803: Fase 1:
-- [TODO] L804: - EventLog + Outbox + consumers no worker + SQS para jobs críticos
-- [TODO] L805: - simplicidade e custo baixo
-- [TODO] L806: - **Higienização:** remover legacy (tabelas/colunas/flags antigas), sem fallback; só fica o modelo final do blueprint.
+- [N/A] L804: - EventLog + Outbox + consumers no worker + SQS para jobs críticos
+- [N/A] L805: - simplicidade e custo baixo
+- [N/A] L806: - **Higienização:** remover legacy (tabelas/colunas/flags antigas), sem fallback; só fica o modelo final do blueprint.
 - [N/A] L808: Fase 2/3 (fan‑out real / múltiplos serviços):
-- [TODO] L809: - Introduzir EventBridge para routing serverless
-- [TODO] L810: - Regras/targets por tipo de evento
-- [TODO] L811: - Mantém EventLog como trilho e base de auditoria
+- [N/A] L809: - Introduzir EventBridge para routing serverless
+- [N/A] L810: - Regras/targets por tipo de evento
+- [N/A] L811: - Mantém EventLog como trilho e base de auditoria
 - [N/A] L813: ⸻
 - [N/A] L816: D11) Moradas — Address Service (SSOT) + provider Apple-first com fallback
 - [N/A] L818: > **FECHADO (SSOT):** Todos os módulos consomem e escrevem moradas **apenas** via Address Service. Nunca há “moradas por módulo”.
 - [N/A] L820: Regra
-- [TODO] L821: - Todos os módulos (Eventos / Reservas / Loja / Serviços / Padel) consomem e escrevem moradas APENAS via Address Service (SSOT).
-- [TODO] L822: - O SSOT guarda SEMPRE:
-- [TODO] L823:   - `addressId`
-- [TODO] L824:   - `formattedAddress` (para UI)
-- [TODO] L825:   - `canonical` (estruturado: `countryCode` ISO‑3166‑1, region, locality, postalCode, street, number, etc.)
-- [TODO] L826:   - `geo` (lat, lng)
-- [TODO] L827:   - `sourceProvider` (ex.: `APPLE_MAPS` / `OSM_PHOTON` / `OSM_NOMINATIM`)
-- [TODO] L828:   - `sourceProviderPlaceId` (quando existir)
-- [TODO] L829:   - `confidenceScore` + `validationStatus` (`RAW | NORMALIZED | VERIFIED`)
-- [TODO] L830: - Nunca há “moradas locais” por módulo. Só referências a `addressId`.
+- [N/A] L821: - Todos os módulos (Eventos / Reservas / Loja / Serviços / Padel) consomem e escrevem moradas APENAS via Address Service (SSOT).
+- [N/A] L822: - O SSOT guarda SEMPRE:
+- [N/A] L823:   - `addressId`
+- [N/A] L824:   - `formattedAddress` (para UI)
+- [N/A] L825:   - `canonical` (estruturado: `countryCode` ISO‑3166‑1, region, locality, postalCode, street, number, etc.)
+- [N/A] L826:   - `geo` (lat, lng)
+- [N/A] L827:   - `sourceProvider` (ex.: `APPLE_MAPS` / `OSM_PHOTON` / `OSM_NOMINATIM`)
+- [N/A] L828:   - `sourceProviderPlaceId` (quando existir)
+- [N/A] L829:   - `confidenceScore` + `validationStatus` (`RAW | NORMALIZED | VERIFIED`)
+- [N/A] L830: - Nunca há “moradas locais” por módulo. Só referências a `addressId`.
 - [N/A] L832: Provider (decisão v9)
-- [TODO] L833: - **Primário (qualidade):** Apple Maps (autocomplete + geocode) via server token.
-- [TODO] L834: - **Fallback (custo zero):** Photon (autocomplete) + Nominatim (geocode/reverse), com cache agressivo.
-- [TODO] L835: - Regra: o client **nunca** chama providers diretamente; tudo passa por Address Service (protege keys, rate limits e consistência).
+- [N/A] L833: - **Primário (qualidade):** Apple Maps (autocomplete + geocode) via server token.
+- [N/A] L834: - **Fallback (custo zero):** Photon (autocomplete) + Nominatim (geocode/reverse), com cache agressivo.
+- [N/A] L835: - Regra: o client **nunca** chama providers diretamente; tudo passa por Address Service (protege keys, rate limits e consistência).
 - [N/A] L837: Proteções (obrigatório)
-- [TODO] L838: - Rate limiting por IP/user/org + quotas por módulo (para não estourar limites Apple).
-- [TODO] L839: - Cache em 2 níveis:
-- [TODO] L840:   - Redis (TTL curto) por query (autocomplete) e por placeId/geo (geocode)
-- [TODO] L841:   - cache persistente por `addressId` (TTL longo) e dedupe por canonical+geo
-- [TODO] L842: - Circuit breaker por provider:
-- [TODO] L843:   - se Apple falhar acima de `errorRateThreshold` (ex.: 20% em 2 min) → **fallback automático** para OSM por `cooldownMinutes` (ex.: 10)
-- [TODO] L844:   - durante cooldown, re-test Apple em background (probe) e só volta quando estabilizar
-- [TODO] L845: - Quotas “hard” por organização e por módulo:
-- [TODO] L846:   - ao exceder quota → degrade gracioso (só `resolvePlace` por placeId já em cache; sem autocomplete novo)
-- [TODO] L847:   - emitir `ops.alert` com orgId + módulo + métrica de consumo
+- [N/A] L838: - Rate limiting por IP/user/org + quotas por módulo (para não estourar limites Apple).
+- [N/A] L839: - Cache em 2 níveis:
+- [N/A] L840:   - Redis (TTL curto) por query (autocomplete) e por placeId/geo (geocode)
+- [N/A] L841:   - cache persistente por `addressId` (TTL longo) e dedupe por canonical+geo
+- [N/A] L842: - Circuit breaker por provider:
+- [N/A] L843:   - se Apple falhar acima de `errorRateThreshold` (ex.: 20% em 2 min) → **fallback automático** para OSM por `cooldownMinutes` (ex.: 10)
+- [N/A] L844:   - durante cooldown, re-test Apple em background (probe) e só volta quando estabilizar
+- [N/A] L845: - Quotas “hard” por organização e por módulo:
+- [N/A] L846:   - ao exceder quota → degrade gracioso (só `resolvePlace` por placeId já em cache; sem autocomplete novo)
+- [N/A] L847:   - emitir `ops.alert` com orgId + módulo + métrica de consumo
 - [N/A] L849: Implementação (o que fazer)
-- [TODO] L850: 1) AddressNormalizeJob
-- [TODO] L851: - Quando Address Service recebe input manual/autocomplete:
-- [TODO] L852:   - parse + normaliza (libpostal + regras internas)
-- [TODO] L853:   - geocode (Apple ou fallback)
-- [TODO] L854:   - grava `canonical+geo+confidence`
-- [TODO] L856: 2) Deduplication
-- [TODO] L857: - Se canonical+geo (arredondado) coincidir, reusa `addressId` existente (evita duplicados).
-- [TODO] L859: 3) UI (front)
-- [TODO] L860: - Autocomplete sempre passa por Address Service.
-- [TODO] L861: - Front recebe sugestões normalizadas + “confidence”.
+- [N/A] L850: 1) AddressNormalizeJob
+- [N/A] L851: - Quando Address Service recebe input manual/autocomplete:
+- [N/A] L852:   - parse + normaliza (libpostal + regras internas)
+- [N/A] L853:   - geocode (Apple ou fallback)
+- [N/A] L854:   - grava `canonical+geo+confidence`
+- [N/A] L856: 2) Deduplication
+- [N/A] L857: - Se canonical+geo (arredondado) coincidir, reusa `addressId` existente (evita duplicados).
+- [N/A] L859: 3) UI (front)
+- [N/A] L860: - Autocomplete sempre passa por Address Service.
+- [N/A] L861: - Front recebe sugestões normalizadas + “confidence”.
 - [N/A] L863: ⸻
 - [N/A] L867: D12) Split Payment Padel — regra default (48/24) + resolução determinística
 - [N/A] L869: Objetivo: proteger a organização de buracos operacionais e dar saídas dignas ao utilizador.
@@ -1531,16 +1540,16 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L882: 	•	CANCELLED (ação explícita do utilizador/admin)
 - [N/A] L883: 	•	REFUNDED (quando aplicável, com policy versionada)
 - [N/A] L885: Ações permitidas por janela temporal (contrato + UX):
-- [TODO] L886: 	1)	Antes de T-48h:
+- [N/A] L886: 	1)	Antes de T-48h:
 - [N/A] L887: 		•	convidar, trocar parceiro
 - [N/A] L888: 		•	pagar ambos (captain pays / pay both)
 - [N/A] L889: 		•	entrar em matchmaking (opcional)
-- [TODO] L890: 	2)	T-48h → T-24h:
+- [N/A] L890: 	2)	T-48h → T-24h:
 - [N/A] L891: 		•	matchmaking ON
 - [N/A] L892: 		•	troca de parceiro ON (com regras)
 - [N/A] L893: 		•	pagar ambos ON
 - [N/A] L894: 		•	sair do matchmaking ON
-- [TODO] L895: 	3)	Depois de T-24h:
+- [N/A] L895: 	3)	Depois de T-24h:
 - [N/A] L896: 		•	ou CONFIRMED ou EXPIRED (determinístico)
 - [N/A] L898: Parceiro sem conta:
 - [N/A] L899: 	•	parceiro pode ser só por email
@@ -1613,7 +1622,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L983: Key management
 - [N/A] L984: 	•	Certificados/keys Apple (APNs, Pass Type ID) vivem em AWS Secrets Manager + rotação.
 - [N/A] L985: 	•	Build e signing automatizado em CI com permissões mínimas.
-- [TODO] L988: 5) Mapa de Domínio (owners + integrações)
+- [N/A] L988: 5) Mapa de Domínio (owners + integrações)
 - [N/A] L990: > Nota: este mapa lista as entidades **mínimas e normativas** para execução; não é exaustivo. Entidades adicionais podem existir, desde que respeitem os owners e contratos.
 - [N/A] L992: Entidades core (owner):
 - [N/A] L994: Reservas
@@ -1663,7 +1672,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1053: 	•	AnalyticsMaterializedView (opcional, derivado)
 - [N/A] L1054: 	•	“fact tables” geradas por job (opcional; não owner)
 - [N/A] L1056: ⸻
-- [TODO] L1058: 6) Contratos de Integração v3.0 (mínimos obrigatórios)
+- [N/A] L1058: 6) Contratos de Integração v3.0 (mínimos obrigatórios)
 - [N/A] L1060: Regra: módulos verticais consomem horizontais via contratos. Contratos são tratados como APIs internas versionadas.
 - [N/A] L1062: ---
 - [N/A] L1064: ## Contract Execution Rules (GLOBAL, NORMATIVE)
@@ -1673,67 +1682,67 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1071: ---
 - [N/A] L1073: ### C-G1 — Explicit Contract Ownership
 - [N/A] L1074: Every contract MUST define:
-- [TODO] L1075: - a single owning team or domain
-- [TODO] L1076: - one or more known consumers
+- [N/A] L1075: - a single owning team or domain
+- [N/A] L1076: - one or more known consumers
 - [N/A] L1078: The owner is responsible for compatibility, versioning, and lifecycle.
 - [N/A] L1080: ---
 - [N/A] L1082: ### C-G2 — Contract Versioning
 - [N/A] L1083: Contracts use semantic versioning:
-- [TODO] L1085: - MAJOR: breaking change
-- [TODO] L1086: - MINOR: backward-compatible additive change
-- [TODO] L1087: - PATCH: non-behavioral clarification or bug fix
+- [N/A] L1085: - MAJOR: breaking change
+- [N/A] L1086: - MINOR: backward-compatible additive change
+- [N/A] L1087: - PATCH: non-behavioral clarification or bug fix
 - [N/A] L1089: Version is explicit and never inferred.
 - [N/A] L1091: ---
 - [N/A] L1093: ### C-G3 — Backward Compatibility Is Mandatory
 - [N/A] L1094: Consumers MUST:
-- [TODO] L1095: - tolerate unknown fields
-- [TODO] L1096: - not rely on field ordering
-- [TODO] L1097: - not assume default values unless explicitly documented
+- [N/A] L1095: - tolerate unknown fields
+- [N/A] L1096: - not rely on field ordering
+- [N/A] L1097: - not assume default values unless explicitly documented
 - [N/A] L1099: Producers MUST NOT:
-- [TODO] L1100: - remove fields in minor versions
-- [TODO] L1101: - change field meaning without a major version
+- [N/A] L1100: - remove fields in minor versions
+- [N/A] L1101: - change field meaning without a major version
 - [N/A] L1103: ---
 - [N/A] L1105: ### C-G4 — Idempotency Semantics
 - [N/A] L1106: If a contract triggers side effects, it MUST define:
-- [TODO] L1107: - the idempotency key
-- [TODO] L1108: - retry behavior
-- [TODO] L1109: - duplicate handling guarantees
+- [N/A] L1107: - the idempotency key
+- [N/A] L1108: - retry behavior
+- [N/A] L1109: - duplicate handling guarantees
 - [N/A] L1111: Idempotency applies across retries, crashes, and network failures.
 - [N/A] L1113: ---
 - [N/A] L1115: ### C-G5 — Error Envelope Standard
 - [N/A] L1116: All contracts MUST use a consistent error structure containing:
-- [TODO] L1117: - errorCode (stable, machine-readable)
-- [TODO] L1118: - message (human-readable)
-- [TODO] L1119: - retryable (boolean)
-- [TODO] L1120: - correlationId
+- [N/A] L1117: - errorCode (stable, machine-readable)
+- [N/A] L1118: - message (human-readable)
+- [N/A] L1119: - retryable (boolean)
+- [N/A] L1120: - correlationId
 - [N/A] L1122: Errors without classification are forbidden.
 - [N/A] L1124: ---
 - [N/A] L1126: ### C-G6 — Time and Ordering Assumptions
 - [N/A] L1127: Contracts MUST NOT assume:
-- [TODO] L1128: - in-order delivery
-- [TODO] L1129: - single delivery
-- [TODO] L1130: - synchronized clocks
+- [N/A] L1128: - in-order delivery
+- [N/A] L1129: - single delivery
+- [N/A] L1130: - synchronized clocks
 - [N/A] L1132: If ordering matters, the contract MUST explicitly define ordering keys
 - [N/A] L1133: or reconciliation logic.
 - [N/A] L1135: ---
 - [N/A] L1137: ### C-G7 — Observability Obligations
 - [N/A] L1138: Each contract MUST emit:
-- [TODO] L1139: - success/failure metrics
-- [TODO] L1140: - latency metrics (p50, p95)
-- [TODO] L1141: - structured logs with correlationId
+- [N/A] L1139: - success/failure metrics
+- [N/A] L1140: - latency metrics (p50, p95)
+- [N/A] L1141: - structured logs with correlationId
 - [N/A] L1143: Silent failure is forbidden.
 - [N/A] L1145: ---
 - [N/A] L1147: ### C-G8 — Compatibility Testing
 - [N/A] L1148: Any contract change MUST include:
-- [TODO] L1149: - backward compatibility tests
-- [TODO] L1150: - replay of at least one historical payload
-- [TODO] L1151: - explicit validation of idempotency behavior
+- [N/A] L1149: - backward compatibility tests
+- [N/A] L1150: - replay of at least one historical payload
+- [N/A] L1151: - explicit validation of idempotency behavior
 - [N/A] L1153: ---
 - [N/A] L1155: ### C-G9 — Documentation Is Executable
 - [N/A] L1156: Each contract MUST include:
-- [TODO] L1157: - example payloads
-- [TODO] L1158: - example error cases
-- [TODO] L1159: - explicit state transitions (if applicable)
+- [N/A] L1157: - example payloads
+- [N/A] L1158: - example error cases
+- [N/A] L1159: - explicit state transitions (if applicable)
 - [N/A] L1161: Ambiguous contracts are considered incomplete.
 - [N/A] L1163: ---
 - [N/A] L1166: C1) Reservas ↔ Padel (agenda e slots)
@@ -1757,9 +1766,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1193: Define a interface canónica para criação/atualização de slots/bloqueios na agenda a partir do domínio Padel, com deteção de conflitos.
 - [N/A] L1195: ---
 - [N/A] L1197: #### Idempotency
-- [TODO] L1198: - **Idempotency Key:** idempotencyKey
-- [TODO] L1199: - **Scope:** per orgId + sourceType/sourceId
-- [TODO] L1200: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L1198: - **Idempotency Key:** idempotencyKey
+- [N/A] L1199: - **Scope:** per orgId + sourceType/sourceId
+- [N/A] L1200: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L1201:   duplicate side effects.
 - [N/A] L1203: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L1205: ---
@@ -1798,8 +1807,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1242: ---
 - [N/A] L1244: #### Ordering & Duplication
 - [N/A] L1245: This contract MUST tolerate:
-- [TODO] L1246: - duplicate delivery
-- [TODO] L1247: - out-of-order delivery
+- [N/A] L1246: - duplicate delivery
+- [N/A] L1247: - out-of-order delivery
 - [N/A] L1249: If ordering is required, the following key is authoritative:
 - [N/A] L1250: startAt
 - [N/A] L1252: ---
@@ -1813,19 +1822,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1263: ---
 - [N/A] L1265: #### Observability
 - [N/A] L1266: This contract MUST emit:
-- [TODO] L1267: - success/failure counters
-- [TODO] L1268: - latency metrics (p50, p95)
-- [TODO] L1269: - structured logs with correlationId and orgId
+- [N/A] L1267: - success/failure counters
+- [N/A] L1268: - latency metrics (p50, p95)
+- [N/A] L1269: - structured logs with correlationId and orgId
 - [N/A] L1271: ---
 - [N/A] L1273: #### Compatibility Rules
-- [TODO] L1274: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L1275: - Fields may only be removed or redefined in major versions.
-- [TODO] L1276: - Consumers MUST tolerate unknown fields.
+- [N/A] L1274: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L1275: - Fields may only be removed or redefined in major versions.
+- [N/A] L1276: - Consumers MUST tolerate unknown fields.
 - [N/A] L1278: ---
 - [N/A] L1280: #### Failure Mode
 - [N/A] L1281: On uncertainty or partial failure:
-- [TODO] L1282: - the contract MUST fail closed
-- [TODO] L1283: - no irreversible side effects may be committed
+- [N/A] L1282: - the contract MUST fail closed
+- [N/A] L1283: - no irreversible side effects may be committed
 - [N/A] L1285: ---
 - [N/A] L1287: #### Notes
 - [N/A] L1288: N/A
@@ -1861,9 +1870,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1330: Define o gateway único para criar checkouts e refunds, garantindo Payment state machine e ledger determinístico.
 - [N/A] L1332: ---
 - [N/A] L1334: #### Idempotency
-- [TODO] L1335: - **Idempotency Key:** idempotencyKey
-- [TODO] L1336: - **Scope:** per orgId + sourceType + sourceId
-- [TODO] L1337: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L1335: - **Idempotency Key:** idempotencyKey
+- [N/A] L1336: - **Scope:** per orgId + sourceType + sourceId
+- [N/A] L1337: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L1338:   duplicate side effects.
 - [N/A] L1340: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L1342: ---
@@ -1902,8 +1911,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1379: ---
 - [N/A] L1381: #### Ordering & Duplication
 - [N/A] L1382: This contract MUST tolerate:
-- [TODO] L1383: - duplicate delivery
-- [TODO] L1384: - out-of-order delivery
+- [N/A] L1383: - duplicate delivery
+- [N/A] L1384: - out-of-order delivery
 - [N/A] L1386: If ordering is required, the following key is authoritative:
 - [N/A] L1387: NONE
 - [N/A] L1389: ---
@@ -1917,19 +1926,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1400: ---
 - [N/A] L1402: #### Observability
 - [N/A] L1403: This contract MUST emit:
-- [TODO] L1404: - success/failure counters
-- [TODO] L1405: - latency metrics (p50, p95)
-- [TODO] L1406: - structured logs with correlationId and orgId
+- [N/A] L1404: - success/failure counters
+- [N/A] L1405: - latency metrics (p50, p95)
+- [N/A] L1406: - structured logs with correlationId and orgId
 - [N/A] L1408: ---
 - [N/A] L1410: #### Compatibility Rules
-- [TODO] L1411: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L1412: - Fields may only be removed or redefined in major versions.
-- [TODO] L1413: - Consumers MUST tolerate unknown fields.
+- [N/A] L1411: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L1412: - Fields may only be removed or redefined in major versions.
+- [N/A] L1413: - Consumers MUST tolerate unknown fields.
 - [N/A] L1415: ---
 - [N/A] L1417: #### Failure Mode
 - [N/A] L1418: On uncertainty or partial failure:
-- [TODO] L1419: - the contract MUST fail closed
-- [TODO] L1420: - no irreversible side effects may be committed
+- [N/A] L1419: - the contract MUST fail closed
+- [N/A] L1420: - no irreversible side effects may be committed
 - [N/A] L1422: ---
 - [N/A] L1424: #### Notes
 - [N/A] L1425: Entitlements são emitidos apenas após Payment SUCCEEDED e reconciliação do ledger.
@@ -1950,9 +1959,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1448: Define a validação de acesso via Entitlement e o registo de consumo (check-in).
 - [N/A] L1450: ---
 - [N/A] L1452: #### Idempotency
-- [TODO] L1453: - **Idempotency Key:** entitlementId + scannerId + timeWindow
-- [TODO] L1454: - **Scope:** per entitlement + scanner
-- [TODO] L1455: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L1453: - **Idempotency Key:** entitlementId + scannerId + timeWindow
+- [N/A] L1454: - **Scope:** per entitlement + scanner
+- [N/A] L1455: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L1456:   duplicate side effects.
 - [N/A] L1458: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L1460: ---
@@ -1989,8 +1998,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1495: ---
 - [N/A] L1497: #### Ordering & Duplication
 - [N/A] L1498: This contract MUST tolerate:
-- [TODO] L1499: - duplicate delivery
-- [TODO] L1500: - out-of-order delivery
+- [N/A] L1499: - duplicate delivery
+- [N/A] L1500: - out-of-order delivery
 - [N/A] L1502: If ordering is required, the following key is authoritative:
 - [N/A] L1503: NONE
 - [N/A] L1505: ---
@@ -2004,19 +2013,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1516: ---
 - [N/A] L1518: #### Observability
 - [N/A] L1519: This contract MUST emit:
-- [TODO] L1520: - success/failure counters
-- [TODO] L1521: - latency metrics (p50, p95)
-- [TODO] L1522: - structured logs with correlationId and orgId
+- [N/A] L1520: - success/failure counters
+- [N/A] L1521: - latency metrics (p50, p95)
+- [N/A] L1522: - structured logs with correlationId and orgId
 - [N/A] L1524: ---
 - [N/A] L1526: #### Compatibility Rules
-- [TODO] L1527: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L1528: - Fields may only be removed or redefined in major versions.
-- [TODO] L1529: - Consumers MUST tolerate unknown fields.
+- [N/A] L1527: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L1528: - Fields may only be removed or redefined in major versions.
+- [N/A] L1529: - Consumers MUST tolerate unknown fields.
 - [N/A] L1531: ---
 - [N/A] L1533: #### Failure Mode
 - [N/A] L1534: On uncertainty or partial failure:
-- [TODO] L1535: - the contract MUST fail closed
-- [TODO] L1536: - no irreversible side effects may be committed
+- [N/A] L1535: - the contract MUST fail closed
+- [N/A] L1536: - no irreversible side effects may be committed
 - [N/A] L1538: ---
 - [N/A] L1540: #### Notes
 - [N/A] L1541: Consumo é metadata (consumedAt), nunca estado.
@@ -2034,9 +2043,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1560: Define a ingestão de eventos para timeline e segmentação CRM.
 - [N/A] L1562: ---
 - [N/A] L1564: #### Idempotency
-- [TODO] L1565: - **Idempotency Key:** eventId
-- [TODO] L1566: - **Scope:** global
-- [TODO] L1567: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L1565: - **Idempotency Key:** eventId
+- [N/A] L1566: - **Scope:** global
+- [N/A] L1567: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L1568:   duplicate side effects.
 - [N/A] L1570: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L1572: ---
@@ -2071,8 +2080,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1605: ---
 - [N/A] L1607: #### Ordering & Duplication
 - [N/A] L1608: This contract MUST tolerate:
-- [TODO] L1609: - duplicate delivery
-- [TODO] L1610: - out-of-order delivery
+- [N/A] L1609: - duplicate delivery
+- [N/A] L1610: - out-of-order delivery
 - [N/A] L1612: If ordering is required, the following key is authoritative:
 - [N/A] L1613: NONE
 - [N/A] L1615: ---
@@ -2086,19 +2095,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1626: ---
 - [N/A] L1628: #### Observability
 - [N/A] L1629: This contract MUST emit:
-- [TODO] L1630: - success/failure counters
-- [TODO] L1631: - latency metrics (p50, p95)
-- [TODO] L1632: - structured logs with correlationId and orgId
+- [N/A] L1630: - success/failure counters
+- [N/A] L1631: - latency metrics (p50, p95)
+- [N/A] L1632: - structured logs with correlationId and orgId
 - [N/A] L1634: ---
 - [N/A] L1636: #### Compatibility Rules
-- [TODO] L1637: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L1638: - Fields may only be removed or redefined in major versions.
-- [TODO] L1639: - Consumers MUST tolerate unknown fields.
+- [N/A] L1637: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L1638: - Fields may only be removed or redefined in major versions.
+- [N/A] L1639: - Consumers MUST tolerate unknown fields.
 - [N/A] L1641: ---
 - [N/A] L1643: #### Failure Mode
 - [N/A] L1644: On uncertainty or partial failure:
-- [TODO] L1645: - the contract MUST fail closed
-- [TODO] L1646: - no irreversible side effects may be committed
+- [N/A] L1645: - the contract MUST fail closed
+- [N/A] L1646: - no irreversible side effects may be committed
 - [N/A] L1648: ---
 - [N/A] L1650: #### Notes
 - [N/A] L1651: Ingestão é idempotente e tolera replays.
@@ -2116,9 +2125,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1670: Define o disparo e entrega de notificações (in-app/push) a partir de eventos do sistema.
 - [N/A] L1672: ---
 - [N/A] L1674: #### Idempotency
-- [TODO] L1675: - **Idempotency Key:** sourceEventId
-- [TODO] L1676: - **Scope:** per identity + eventId
-- [TODO] L1677: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L1675: - **Idempotency Key:** sourceEventId
+- [N/A] L1676: - **Scope:** per identity + eventId
+- [N/A] L1677: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L1678:   duplicate side effects.
 - [N/A] L1680: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L1682: ---
@@ -2156,8 +2165,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1718: ---
 - [N/A] L1720: #### Ordering & Duplication
 - [N/A] L1721: This contract MUST tolerate:
-- [TODO] L1722: - duplicate delivery
-- [TODO] L1723: - out-of-order delivery
+- [N/A] L1722: - duplicate delivery
+- [N/A] L1723: - out-of-order delivery
 - [N/A] L1725: If ordering is required, the following key is authoritative:
 - [N/A] L1726: NONE
 - [N/A] L1728: ---
@@ -2171,19 +2180,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1739: ---
 - [N/A] L1741: #### Observability
 - [N/A] L1742: This contract MUST emit:
-- [TODO] L1743: - success/failure counters
-- [TODO] L1744: - latency metrics (p50, p95)
-- [TODO] L1745: - structured logs with correlationId and orgId
+- [N/A] L1743: - success/failure counters
+- [N/A] L1744: - latency metrics (p50, p95)
+- [N/A] L1745: - structured logs with correlationId and orgId
 - [N/A] L1747: ---
 - [N/A] L1749: #### Compatibility Rules
-- [TODO] L1750: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L1751: - Fields may only be removed or redefined in major versions.
-- [TODO] L1752: - Consumers MUST tolerate unknown fields.
+- [N/A] L1750: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L1751: - Fields may only be removed or redefined in major versions.
+- [N/A] L1752: - Consumers MUST tolerate unknown fields.
 - [N/A] L1754: ---
 - [N/A] L1756: #### Failure Mode
 - [N/A] L1757: On uncertainty or partial failure:
-- [TODO] L1758: - the contract MUST fail closed
-- [TODO] L1759: - no irreversible side effects may be committed
+- [N/A] L1758: - the contract MUST fail closed
+- [N/A] L1759: - no irreversible side effects may be committed
 - [N/A] L1761: ---
 - [N/A] L1763: #### Notes
 - [N/A] L1764: Envio real ocorre apenas via consumer idempotente.
@@ -2192,10 +2201,10 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1767: 	•	bilhete é acesso/presença (Eventos)
 - [N/A] L1768: 	•	pagamentos sempre via Finanças
 - [N/A] L1770: Regras:
-- [TODO] L1771: 	1.	Padel nunca cria bilhetes; Eventos nunca cria inscrições
-- [TODO] L1772: 	2.	inscrição Padel referencia eventId
-- [TODO] L1773: 	3.	pago vem de Finanças
-- [TODO] L1774: 	4.	check-in aceita ticket/booking/inscrição conforme policy do evento
+- [N/A] L1771: 	1.	Padel nunca cria bilhetes; Eventos nunca cria inscrições
+- [N/A] L1772: 	2.	inscrição Padel referencia eventId
+- [N/A] L1773: 	3.	pago vem de Finanças
+- [N/A] L1774: 	4.	check-in aceita ticket/booking/inscrição conforme policy do evento
 - [N/A] L1777: ---
 - [N/A] L1779: ### Contract Execution Addendum (NORMATIVE)
 - [N/A] L1781: **Contract ID:** C6
@@ -2208,9 +2217,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1790: Define a coexistência entre inscrições Padel e bilhetes, mantendo pagamentos e check-in canónicos.
 - [N/A] L1792: ---
 - [N/A] L1794: #### Idempotency
-- [TODO] L1795: - **Idempotency Key:** idempotencyKey
-- [TODO] L1796: - **Scope:** per padelRegistrationId
-- [TODO] L1797: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L1795: - **Idempotency Key:** idempotencyKey
+- [N/A] L1796: - **Scope:** per padelRegistrationId
+- [N/A] L1797: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L1798:   duplicate side effects.
 - [N/A] L1800: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L1802: ---
@@ -2245,8 +2254,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1835: ---
 - [N/A] L1837: #### Ordering & Duplication
 - [N/A] L1838: This contract MUST tolerate:
-- [TODO] L1839: - duplicate delivery
-- [TODO] L1840: - out-of-order delivery
+- [N/A] L1839: - duplicate delivery
+- [N/A] L1840: - out-of-order delivery
 - [N/A] L1842: If ordering is required, the following key is authoritative:
 - [N/A] L1843: NONE
 - [N/A] L1845: ---
@@ -2260,19 +2269,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1856: ---
 - [N/A] L1858: #### Observability
 - [N/A] L1859: This contract MUST emit:
-- [TODO] L1860: - success/failure counters
-- [TODO] L1861: - latency metrics (p50, p95)
-- [TODO] L1862: - structured logs with correlationId and orgId
+- [N/A] L1860: - success/failure counters
+- [N/A] L1861: - latency metrics (p50, p95)
+- [N/A] L1862: - structured logs with correlationId and orgId
 - [N/A] L1864: ---
 - [N/A] L1866: #### Compatibility Rules
-- [TODO] L1867: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L1868: - Fields may only be removed or redefined in major versions.
-- [TODO] L1869: - Consumers MUST tolerate unknown fields.
+- [N/A] L1867: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L1868: - Fields may only be removed or redefined in major versions.
+- [N/A] L1869: - Consumers MUST tolerate unknown fields.
 - [N/A] L1871: ---
 - [N/A] L1873: #### Failure Mode
 - [N/A] L1874: On uncertainty or partial failure:
-- [TODO] L1875: - the contract MUST fail closed
-- [TODO] L1876: - no irreversible side effects may be committed
+- [N/A] L1875: - the contract MUST fail closed
+- [N/A] L1876: - no irreversible side effects may be committed
 - [N/A] L1878: ---
 - [N/A] L1880: #### Notes
 - [N/A] L1881: Inscrição e bilhete permanecem entidades distintas; Entitlement é o acesso.
@@ -2292,9 +2301,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1901: Define a normalização e resolução de moradas via Address Service (SSOT).
 - [N/A] L1903: ---
 - [N/A] L1905: #### Idempotency
-- [TODO] L1906: - **Idempotency Key:** placeId
-- [TODO] L1907: - **Scope:** per placeId
-- [TODO] L1908: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L1906: - **Idempotency Key:** placeId
+- [N/A] L1907: - **Scope:** per placeId
+- [N/A] L1908: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L1909:   duplicate side effects.
 - [N/A] L1911: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L1913: ---
@@ -2329,8 +2338,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1946: ---
 - [N/A] L1948: #### Ordering & Duplication
 - [N/A] L1949: This contract MUST tolerate:
-- [TODO] L1950: - duplicate delivery
-- [TODO] L1951: - out-of-order delivery
+- [N/A] L1950: - duplicate delivery
+- [N/A] L1951: - out-of-order delivery
 - [N/A] L1953: If ordering is required, the following key is authoritative:
 - [N/A] L1954: NONE
 - [N/A] L1956: ---
@@ -2344,19 +2353,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L1967: ---
 - [N/A] L1969: #### Observability
 - [N/A] L1970: This contract MUST emit:
-- [TODO] L1971: - success/failure counters
-- [TODO] L1972: - latency metrics (p50, p95)
-- [TODO] L1973: - structured logs with correlationId and orgId
+- [N/A] L1971: - success/failure counters
+- [N/A] L1972: - latency metrics (p50, p95)
+- [N/A] L1973: - structured logs with correlationId and orgId
 - [N/A] L1975: ---
 - [N/A] L1977: #### Compatibility Rules
-- [TODO] L1978: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L1979: - Fields may only be removed or redefined in major versions.
-- [TODO] L1980: - Consumers MUST tolerate unknown fields.
+- [N/A] L1978: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L1979: - Fields may only be removed or redefined in major versions.
+- [N/A] L1980: - Consumers MUST tolerate unknown fields.
 - [N/A] L1982: ---
 - [N/A] L1984: #### Failure Mode
 - [N/A] L1985: On uncertainty or partial failure:
-- [TODO] L1986: - the contract MUST fail closed
-- [TODO] L1987: - no irreversible side effects may be committed
+- [N/A] L1986: - the contract MUST fail closed
+- [N/A] L1987: - no irreversible side effects may be committed
 - [N/A] L1989: ---
 - [N/A] L1991: #### Notes
 - [N/A] L1992: Deduplicação por canonical+geo evita duplicados.
@@ -2376,9 +2385,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2012: Define emissão e resgate de pontos de fidelização a partir de eventos canónicos.
 - [N/A] L2014: ---
 - [N/A] L2016: #### Idempotency
-- [TODO] L2017: - **Idempotency Key:** eventId
-- [TODO] L2018: - **Scope:** per identity + eventId
-- [TODO] L2019: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L2017: - **Idempotency Key:** eventId
+- [N/A] L2018: - **Scope:** per identity + eventId
+- [N/A] L2019: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L2020:   duplicate side effects.
 - [N/A] L2022: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L2024: ---
@@ -2416,8 +2425,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2060: ---
 - [N/A] L2062: #### Ordering & Duplication
 - [N/A] L2063: This contract MUST tolerate:
-- [TODO] L2064: - duplicate delivery
-- [TODO] L2065: - out-of-order delivery
+- [N/A] L2064: - duplicate delivery
+- [N/A] L2065: - out-of-order delivery
 - [N/A] L2067: If ordering is required, the following key is authoritative:
 - [N/A] L2068: NONE
 - [N/A] L2070: ---
@@ -2431,19 +2440,19 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2081: ---
 - [N/A] L2083: #### Observability
 - [N/A] L2084: This contract MUST emit:
-- [TODO] L2085: - success/failure counters
-- [TODO] L2086: - latency metrics (p50, p95)
-- [TODO] L2087: - structured logs with correlationId and orgId
+- [N/A] L2085: - success/failure counters
+- [N/A] L2086: - latency metrics (p50, p95)
+- [N/A] L2087: - structured logs with correlationId and orgId
 - [N/A] L2089: ---
 - [N/A] L2091: #### Compatibility Rules
-- [TODO] L2092: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L2093: - Fields may only be removed or redefined in major versions.
-- [TODO] L2094: - Consumers MUST tolerate unknown fields.
+- [N/A] L2092: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L2093: - Fields may only be removed or redefined in major versions.
+- [N/A] L2094: - Consumers MUST tolerate unknown fields.
 - [N/A] L2096: ---
 - [N/A] L2098: #### Failure Mode
 - [N/A] L2099: On uncertainty or partial failure:
-- [TODO] L2100: - the contract MUST fail closed
-- [TODO] L2101: - no irreversible side effects may be committed
+- [N/A] L2100: - the contract MUST fail closed
+- [N/A] L2101: - no irreversible side effects may be committed
 - [N/A] L2103: ---
 - [N/A] L2105: #### Notes
 - [N/A] L2106: Pontos não alteram ledger financeiro.
@@ -2464,9 +2473,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2128: Define a materialização do Activity Feed a partir do EventLog e a publicação no canal Ops.
 - [N/A] L2130: ---
 - [N/A] L2132: #### Idempotency
-- [TODO] L2133: - **Idempotency Key:** eventId
-- [TODO] L2134: - **Scope:** global
-- [TODO] L2135: - **Guarantee:** repeated requests with the same key MUST NOT produce
+- [N/A] L2133: - **Idempotency Key:** eventId
+- [N/A] L2134: - **Scope:** global
+- [N/A] L2135: - **Guarantee:** repeated requests with the same key MUST NOT produce
 - [N/A] L2136:   duplicate side effects.
 - [N/A] L2138: If idempotency cannot be guaranteed, the contract is considered invalid.
 - [N/A] L2140: ---
@@ -2501,8 +2510,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2173: ---
 - [N/A] L2175: #### Ordering & Duplication
 - [N/A] L2176: This contract MUST tolerate:
-- [TODO] L2177: - duplicate delivery
-- [TODO] L2178: - out-of-order delivery
+- [N/A] L2177: - duplicate delivery
+- [N/A] L2178: - out-of-order delivery
 - [N/A] L2180: If ordering is required, the following key is authoritative:
 - [N/A] L2181: createdAt
 - [N/A] L2183: ---
@@ -2516,89 +2525,89 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2194: ---
 - [N/A] L2196: #### Observability
 - [N/A] L2197: This contract MUST emit:
-- [TODO] L2198: - success/failure counters
-- [TODO] L2199: - latency metrics (p50, p95)
-- [TODO] L2200: - structured logs with correlationId and orgId
+- [N/A] L2198: - success/failure counters
+- [N/A] L2199: - latency metrics (p50, p95)
+- [N/A] L2200: - structured logs with correlationId and orgId
 - [N/A] L2202: ---
 - [N/A] L2204: #### Compatibility Rules
-- [TODO] L2205: - Fields may only be added as OPTIONAL in minor versions.
-- [TODO] L2206: - Fields may only be removed or redefined in major versions.
-- [TODO] L2207: - Consumers MUST tolerate unknown fields.
+- [N/A] L2205: - Fields may only be added as OPTIONAL in minor versions.
+- [N/A] L2206: - Fields may only be removed or redefined in major versions.
+- [N/A] L2207: - Consumers MUST tolerate unknown fields.
 - [N/A] L2209: ---
 - [N/A] L2211: #### Failure Mode
 - [N/A] L2212: On uncertainty or partial failure:
-- [TODO] L2213: - the contract MUST fail closed
-- [TODO] L2214: - no irreversible side effects may be committed
+- [N/A] L2213: - the contract MUST fail closed
+- [N/A] L2214: - no irreversible side effects may be committed
 - [N/A] L2216: ---
 - [N/A] L2218: #### Notes
 - [N/A] L2219: Consumer dedupe por eventId; replays não duplicam items.
-- [TODO] L2221: 7) Entitlements e sourceType (canónico e unificado)
+- [N/A] L2221: 7) Entitlements e sourceType (canónico e unificado)
 - [N/A] L2223: > **FECHADO (SSOT):** Entitlement + Identity são a única fonte de verdade de “quem tem direito a quê”. Tickets/Bookings/Registos são *origens* (source), não “provas” de acesso.
 - [N/A] L2225: 7.1 Modelo de Identidade (FECHADO)
-- [TODO] L2226: - `Identity` é o “dono” canónico de coisas (tickets, bookings, etc.).
-- [TODO] L2227: - Tipos:
-- [TODO] L2228:   - `USER` (userId)
-- [TODO] L2229:   - `GUEST_EMAIL` (emailNormalizado + emailHash)
-- [TODO] L2230: - Permite:
-- [TODO] L2231:   - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy`
-- [TODO] L2232:   - claim/merge posterior para user (quando o email for verificado)
-- [TODO] L2233:   - RGPD delete/anonymize sem destruir ledger (ledger mantém apenas IDs/pseudónimos)
+- [N/A] L2226: - `Identity` é o “dono” canónico de coisas (tickets, bookings, etc.).
+- [N/A] L2227: - Tipos:
+- [N/A] L2228:   - `USER` (userId)
+- [N/A] L2229:   - `GUEST_EMAIL` (emailNormalizado + emailHash)
+- [N/A] L2230: - Permite:
+- [N/A] L2231:   - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy`
+- [N/A] L2232:   - claim/merge posterior para user (quando o email for verificado)
+- [N/A] L2233:   - RGPD delete/anonymize sem destruir ledger (ledger mantém apenas IDs/pseudónimos)
 - [N/A] L2235: 7.2 Entitlement states (FECHADO)
 - [N/A] L2236: `PENDING | ACTIVE | REVOKED | EXPIRED | SUSPENDED`
-- [TODO] L2237: - `PENDING`: criado mas ainda não “válido” (ex.: pagamento em processamento, hold de reserva).
-- [TODO] L2238: - `ACTIVE`: válido para uso (entrada/consumo).
-- [TODO] L2239: - `REVOKED`: invalidado por política (refund concluído, cancelamento, ação admin, violação).
-- [TODO] L2240: - `EXPIRED`: passou a janela temporal (evento já ocorreu / reserva já passou / TTL).
-- [TODO] L2241: - `SUSPENDED`: bloqueado temporariamente (chargeback, fraude, investigação, disputa).
+- [N/A] L2237: - `PENDING`: criado mas ainda não “válido” (ex.: pagamento em processamento, hold de reserva).
+- [N/A] L2238: - `ACTIVE`: válido para uso (entrada/consumo).
+- [N/A] L2239: - `REVOKED`: invalidado por política (refund concluído, cancelamento, ação admin, violação).
+- [N/A] L2240: - `EXPIRED`: passou a janela temporal (evento já ocorreu / reserva já passou / TTL).
+- [N/A] L2241: - `SUSPENDED`: bloqueado temporariamente (chargeback, fraude, investigação, disputa).
 - [N/A] L2243: > **Regra:** “USADO/CONSUMIDO” não é um estado. Consumo é metadata (ver 7.3) para evitar drift e conflitos.
 - [N/A] L2245: 7.3 Consumo (check‑in / presença) como metadata (FECHADO)
-- [TODO] L2246: - Campos recomendados no Entitlement (ou em `EntitlementConsumption`):
-- [TODO] L2247:   - `consumedAt` (nullable)
-- [TODO] L2248:   - `consumedByIdentityId` (quem consumiu; tipicamente igual ao owner, mas pode existir “transfer/scan”)
-- [TODO] L2249:   - `consumedByDeviceId` / `scannerId` (auditoria)
-- [TODO] L2250:   - `consumedLocation` (opcional)
-- [TODO] L2251:   - `consumedMethod` (`QR`, `MANUAL`, `NFC` futuro)
-- [TODO] L2252: - Idempotência: consumo idempotente por `(entitlementId, scannerId, timeWindow)`.
+- [N/A] L2246: - Campos recomendados no Entitlement (ou em `EntitlementConsumption`):
+- [N/A] L2247:   - `consumedAt` (nullable)
+- [N/A] L2248:   - `consumedByIdentityId` (quem consumiu; tipicamente igual ao owner, mas pode existir “transfer/scan”)
+- [N/A] L2249:   - `consumedByDeviceId` / `scannerId` (auditoria)
+- [N/A] L2250:   - `consumedLocation` (opcional)
+- [N/A] L2251:   - `consumedMethod` (`QR`, `MANUAL`, `NFC` futuro)
+- [N/A] L2252: - Idempotência: consumo idempotente por `(entitlementId, scannerId, timeWindow)`.
 - [N/A] L2254: 7.4 Entitlement unificado (escopo)
 - [N/A] L2255: Cobre:
-- [TODO] L2256: - Ticket (Eventos)
-- [TODO] L2257: - Booking (Reservas)
-- [TODO] L2258: - Padel registration (Padel)
-- [TODO] L2259: - Loja (fase 2: pickup/fulfillment + digital goods)
+- [N/A] L2256: - Ticket (Eventos)
+- [N/A] L2257: - Booking (Reservas)
+- [N/A] L2258: - Padel registration (Padel)
+- [N/A] L2259: - Loja (fase 2: pickup/fulfillment + digital goods)
 - [N/A] L2261: Campos mínimos (write model):
-- [TODO] L2262: - `sourceType`, `sourceId`
-- [TODO] L2263: - `ownerIdentityId` (**SSOT**)
-- [TODO] L2264: - `status` (enum FECHADO)
-- [TODO] L2265: - `validFrom`, `validUntil` (ou derivado do evento/reserva)
-- [TODO] L2266: - `createdAt`, `updatedAt`
-- [TODO] L2267: - `policyVersionApplied` (**obrigatório** quando `entitlement.eventId != null` e existe `EventAccessPolicy` para esse `eventId`; opcional apenas quando não há policy aplicável)
+- [N/A] L2262: - `sourceType`, `sourceId`
+- [N/A] L2263: - `ownerIdentityId` (**SSOT**)
+- [N/A] L2264: - `status` (enum FECHADO)
+- [N/A] L2265: - `validFrom`, `validUntil` (ou derivado do evento/reserva)
+- [N/A] L2266: - `createdAt`, `updatedAt`
+- [N/A] L2267: - `policyVersionApplied` (**obrigatório** quando `entitlement.eventId != null` e existe `EventAccessPolicy` para esse `eventId`; opcional apenas quando não há policy aplicável)
 - [N/A] L2269: 7.5 sourceType canónico (FECHADO)
 - [N/A] L2270: Lista oficial:
-- [TODO] L2271: - `TICKET_ORDER`
-- [TODO] L2272: - `BOOKING`
-- [TODO] L2273: - `PADEL_REGISTRATION`
-- [TODO] L2274: - `STORE_ORDER`
-- [TODO] L2275: - (fase 2) `SUBSCRIPTION`, `MEMBERSHIP`
+- [N/A] L2271: - `TICKET_ORDER`
+- [N/A] L2272: - `BOOKING`
+- [N/A] L2273: - `PADEL_REGISTRATION`
+- [N/A] L2274: - `STORE_ORDER`
+- [N/A] L2275: - (fase 2) `SUBSCRIPTION`, `MEMBERSHIP`
 - [N/A] L2277: Regra:
-- [TODO] L2278: - Ledger e check‑in guardam apenas `sourceType` canónico.
-- [TODO] L2279: - Não criar “sourceType por módulo” fora desta lista; se precisares, adiciona aqui com versionamento.
+- [N/A] L2278: - Ledger e check‑in guardam apenas `sourceType` canónico.
+- [N/A] L2279: - Não criar “sourceType por módulo” fora desta lista; se precisares, adiciona aqui com versionamento.
 - [N/A] L2281: Separação de enums (SSOT D7):
-- [TODO] L2282: - `FinanceSourceType` = lista acima (SSOT para Finanças/ledger/check‑in).
-- [TODO] L2283: - `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `SOFT_BLOCK`, `HARD_BLOCK` (apenas agenda/check‑in).
-- [TODO] L2284: - Normalização deve escolher o enum certo por domínio (finance vs agenda).
+- [N/A] L2282: - `FinanceSourceType` = lista acima (SSOT para Finanças/ledger/check‑in).
+- [N/A] L2283: - `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `SOFT_BLOCK`, `HARD_BLOCK` (apenas agenda/check‑in).
+- [N/A] L2284: - Normalização deve escolher o enum certo por domínio (finance vs agenda).
 - [N/A] L2286: 7.6 Segurança de Entitlements (mínimo v1–v2)
-- [TODO] L2287: - QR tokens nunca reversíveis (guardar **hash**, nunca token em claro) + expiração.
-- [TODO] L2288: - `EntitlementQrToken` separado (rota de rotação/revogação).
-- [TODO] L2289: - Endpoints de scanner com rate limit + detecção de abuso.
-- [TODO] L2290: - Refund/chargeback/cancelamento → evento interno que move Entitlement para `REVOKED` ou `SUSPENDED` (job idempotente).
-- [TODO] L2291: - Logs mínimos (sem PII) + auditoria forte para ações admin/scanner.
+- [N/A] L2287: - QR tokens nunca reversíveis (guardar **hash**, nunca token em claro) + expiração.
+- [N/A] L2288: - `EntitlementQrToken` separado (rota de rotação/revogação).
+- [N/A] L2289: - Endpoints de scanner com rate limit + detecção de abuso.
+- [N/A] L2290: - Refund/chargeback/cancelamento → evento interno que move Entitlement para `REVOKED` ou `SUSPENDED` (job idempotente).
+- [N/A] L2291: - Logs mínimos (sem PII) + auditoria forte para ações admin/scanner.
 - [N/A] L2293: 7.7 Claim automático (guest → user) (FECHADO)
 - [N/A] L2294: Quando um utilizador cria conta e **verifica o email**:
-- [TODO] L2295: - Job/flow idempotente:
-- [TODO] L2296:   - encontra `Identity(GUEST_EMAIL)` daquele email
-- [TODO] L2297:   - move (claim) todos os entitlements elegíveis para `Identity(USER)`
-- [TODO] L2298:   - escreve `AuditLog` + `EventLog` (idempotencyKey = `emailHash+userId+batchVersion`)
-- [TODO] L2299: - Regra: o claim nunca altera o ledger; apenas ownership lógico de acesso.
+- [N/A] L2295: - Job/flow idempotente:
+- [N/A] L2296:   - encontra `Identity(GUEST_EMAIL)` daquele email
+- [N/A] L2297:   - move (claim) todos os entitlements elegíveis para `Identity(USER)`
+- [N/A] L2298:   - escreve `AuditLog` + `EventLog` (idempotencyKey = `emailHash+userId+batchVersion`)
+- [N/A] L2299: - Regra: o claim nunca altera o ledger; apenas ownership lógico de acesso.
 - [N/A] L2301: 7.8 Matriz de verdade (Payment × Ticket × Entitlement) — **FECHADO**
 - [N/A] L2302: Nota (escopo):
 - [N/A] L2303: 	•	Aplica-se a `sourceType=TICKET_ORDER` (Ticket). Para `BOOKING` e `PADEL_REGISTRATION`, substituir “Ticket” pelo registo de origem equivalente (Booking/PadelRegistration) com estados canónicos correspondentes.
@@ -2611,74 +2620,74 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2310: 	•	Payment=CHARGEBACK_WON ⇒ Ticket=ACTIVE ⇒ Entitlement=ACTIVE (se ainda fizer sentido temporalmente)
 - [N/A] L2311: 	•	Payment=FAILED/CANCELLED ⇒ Ticket não emitido (ou CANCELLED) ⇒ Entitlement não emitido
 - [N/A] L2313: ⸻
-- [TODO] L2316: 8) Check‑in (QR) — SSOT e quando NÃO usar (definição final)
+- [N/A] L2316: 8) Check‑in (QR) — SSOT e quando NÃO usar (definição final)
 - [N/A] L2318: > **FECHADO (SSOT):** `EventAccessPolicy` é a única fonte de verdade da política de acesso **e** de check‑in.
 - [N/A] L2319: > Campos legacy `Event.checkinPolicy` e `EventSessionAccessPolicyOverride (tabela futura; não é campo legado)` são **removidos** do write‑path e não podem ser usados como norma.
 - [N/A] L2321: 8.1 Onde vive (write model)
-- [TODO] L2322: - `EventAccessPolicy` contém um bloco `checkin` (ou tabela normalizada equivalente):
-- [TODO] L2323:   - `requiresEntitlementForEntry: boolean`
+- [N/A] L2322: - `EventAccessPolicy` contém um bloco `checkin` (ou tabela normalizada equivalente):
+- [N/A] L2323:   - `requiresEntitlementForEntry: boolean`
 - [N/A] L2325: > Compatibilidade: quaisquer campos legacy/clients que ainda usem `requiresTicketForEntry` devem mapear 1:1 para `requiresEntitlementForEntry` (ticket = entitlement), até serem removidos.
-- [TODO] L2326:   - `methods: QR_TICKET | QR_REGISTRATION | QR_BOOKING | MANUAL` (array/enum)
-- [TODO] L2327:   - `scannerRequired: boolean` (se precisares de obrigar device)
-- [TODO] L2328:   - `allowReentry: boolean`
-- [TODO] L2329:   - `reentryWindowMinutes: number`
-- [TODO] L2330:   - `maxEntries: number`
-- [TODO] L2331:   - `undoWindowMinutes: number`
-- [TODO] L2332:   - `policyVersion` (versão da policy)
-- [TODO] L2333: - Se no futuro for necessário override por sessão:
-- [TODO] L2334:   - criar `EventSessionAccessPolicyOverride` (tabela explícita)
-- [TODO] L2335:   - **nunca** reintroduzir `EventSessionAccessPolicyOverride (tabela futura; não é campo legado)` como campo solto.
+- [N/A] L2326:   - `methods: QR_TICKET | QR_REGISTRATION | QR_BOOKING | MANUAL` (array/enum)
+- [N/A] L2327:   - `scannerRequired: boolean` (se precisares de obrigar device)
+- [N/A] L2328:   - `allowReentry: boolean`
+- [N/A] L2329:   - `reentryWindowMinutes: number`
+- [N/A] L2330:   - `maxEntries: number`
+- [N/A] L2331:   - `undoWindowMinutes: number`
+- [N/A] L2332:   - `policyVersion` (versão da policy)
+- [N/A] L2333: - Se no futuro for necessário override por sessão:
+- [N/A] L2334:   - criar `EventSessionAccessPolicyOverride` (tabela explícita)
+- [N/A] L2335:   - **nunca** reintroduzir `EventSessionAccessPolicyOverride (tabela futura; não é campo legado)` como campo solto.
 - [N/A] L2337: 8.2 Onde é obrigatório (v9)
-- [TODO] L2338: - Bilhetes de eventos (entrada)
-- [TODO] L2339: - Torneios Padel (validação de inscrição / entrada, conforme regra do torneio)
+- [N/A] L2338: - Bilhetes de eventos (entrada)
+- [N/A] L2339: - Torneios Padel (validação de inscrição / entrada, conforme regra do torneio)
 - [N/A] L2341: 8.3 Onde pode ser opcional (v9)
-- [TODO] L2342: - Reservas de serviços (ex.: cabeleireiro) **não precisam** de QR/check‑in.
-- [TODO] L2343: - Alternativas “simples”:
-- [TODO] L2344:   - “Marcar como concluída” (organização)
-- [TODO] L2345:   - “Confirmar presença” (utilizador)
-- [TODO] L2346: - QR opcional pode existir como camada extra (fase 2), mas não é requisito do core.
+- [N/A] L2342: - Reservas de serviços (ex.: cabeleireiro) **não precisam** de QR/check‑in.
+- [N/A] L2343: - Alternativas “simples”:
+- [N/A] L2344:   - “Marcar como concluída” (organização)
+- [N/A] L2345:   - “Confirmar presença” (utilizador)
+- [N/A] L2346: - QR opcional pode existir como camada extra (fase 2), mas não é requisito do core.
 - [N/A] L2348: 8.4 Defaults recomendados (norma)
-- [TODO] L2349: - Eventos com bilhete: `requiresEntitlementForEntry=true`, `methods=[QR_TICKET]`
-- [TODO] L2350: - Torneios Padel:
-- [TODO] L2351:   - se tiverem “entrada controlada”: `requiresEntitlementForEntry=true`, `methods=[QR_REGISTRATION]`
-- [TODO] L2352:   - se não tiverem controlo de entrada: `requiresEntitlementForEntry=false` (mas mantém entitlement para histórico)
-- [TODO] L2353: - Reservas:
-- [TODO] L2354:   - default: `methods=[MANUAL]`
-- [TODO] L2355:   - opcional: `methods=[QR_BOOKING]` apenas para organizações que activem “check‑in em serviços”
+- [N/A] L2349: - Eventos com bilhete: `requiresEntitlementForEntry=true`, `methods=[QR_TICKET]`
+- [N/A] L2350: - Torneios Padel:
+- [N/A] L2351:   - se tiverem “entrada controlada”: `requiresEntitlementForEntry=true`, `methods=[QR_REGISTRATION]`
+- [N/A] L2352:   - se não tiverem controlo de entrada: `requiresEntitlementForEntry=false` (mas mantém entitlement para histórico)
+- [N/A] L2353: - Reservas:
+- [N/A] L2354:   - default: `methods=[MANUAL]`
+- [N/A] L2355:   - opcional: `methods=[QR_BOOKING]` apenas para organizações que activem “check‑in em serviços”
 - [N/A] L2357: 8.5 Regra principal (idempotência e SSOT)
-- [TODO] L2358: - Check‑in nunca decide “tem direito” por campos do Ticket/Booking.
-- [TODO] L2359: - Check‑in resolve sempre:
-- [TODO] L2360:   1) `Entitlement` por QR token
-- [TODO] L2361:  2) valida `status==ACTIVE` e janela temporal
-- [TODO] L2362:  3) valida compatibilidade com `EventAccessPolicy.checkin` (método permitido)
-- [TODO] L2363:  4) grava consumo (metadata) + `EventLog` + `AuditLog` (quando aplicável)
+- [N/A] L2358: - Check‑in nunca decide “tem direito” por campos do Ticket/Booking.
+- [N/A] L2359: - Check‑in resolve sempre:
+- [N/A] L2360:   1) `Entitlement` por QR token
+- [N/A] L2361:  2) valida `status==ACTIVE` e janela temporal
+- [N/A] L2362:  3) valida compatibilidade com `EventAccessPolicy.checkin` (método permitido)
+- [N/A] L2363:  4) grava consumo (metadata) + `EventLog` + `AuditLog` (quando aplicável)
 - [N/A] L2365: 8.5.1 Contrato de consumo (mundo real) — **FECHADO v1**
-- [TODO] L2366: - Default v1: **1 check-in por Entitlement** (consumo único).
-- [TODO] L2367: - Um segundo scan (mesmo QR) resulta em:
-- [TODO] L2368:   - `allow=false`
-- [TODO] L2369:   - `reasonCode=ALREADY_CONSUMED`
-- [TODO] L2370:   - emitir `checkin.duplicate` no Ops Feed
-- [TODO] L2371: - **Reentrada (excepção por policy):**
-- [TODO] L2372:   - `EventAccessPolicy.checkin.allowReentry=true`
-- [TODO] L2373:   - `reentryWindowMinutes` (default: 15)
-- [TODO] L2374:   - `maxEntries` (default: 1; se >1, incrementa contador e audita sempre)
-- [TODO] L2375: - **Undo (erro humano):**
-- [TODO] L2376:   - permitido **apenas** para roles `CHECKIN_RW` (ou superior) + motivo obrigatório
-- [TODO] L2377:   - janela curta `undoWindowMinutes` (default: 10)
-- [TODO] L2378:   - escreve `AuditLog` + `EventLog` (`checkin.undo`) + mantém histórico (append-only)
-- [TODO] L2379: - A “verdade” do acesso continua a ser `Entitlement.status` + metadata (`consumedAt`, `consumedByDeviceId`, contadores).
+- [N/A] L2366: - Default v1: **1 check-in por Entitlement** (consumo único).
+- [N/A] L2367: - Um segundo scan (mesmo QR) resulta em:
+- [N/A] L2368:   - `allow=false`
+- [N/A] L2369:   - `reasonCode=ALREADY_CONSUMED`
+- [N/A] L2370:   - emitir `checkin.duplicate` no Ops Feed
+- [N/A] L2371: - **Reentrada (excepção por policy):**
+- [N/A] L2372:   - `EventAccessPolicy.checkin.allowReentry=true`
+- [N/A] L2373:   - `reentryWindowMinutes` (default: 15)
+- [N/A] L2374:   - `maxEntries` (default: 1; se >1, incrementa contador e audita sempre)
+- [N/A] L2375: - **Undo (erro humano):**
+- [N/A] L2376:   - permitido **apenas** para roles `CHECKIN_RW` (ou superior) + motivo obrigatório
+- [N/A] L2377:   - janela curta `undoWindowMinutes` (default: 10)
+- [N/A] L2378:   - escreve `AuditLog` + `EventLog` (`checkin.undo`) + mantém histórico (append-only)
+- [N/A] L2379: - A “verdade” do acesso continua a ser `Entitlement.status` + metadata (`consumedAt`, `consumedByDeviceId`, contadores).
 - [N/A] L2381: 8.5.2 Multi‑sessão / multi‑day (FECHADO v1)
-- [TODO] L2382: - Em eventos com sessões, a regra v1 é **1 Entitlement por sessão**.
-- [TODO] L2383: - O check‑in valida sempre contra a sessão (sessionId) ou janela temporal da sessão.
-- [TODO] L2384: - `allowReentry/maxEntries` **não** dão acesso a sessões futuras; só controlam reentrada dentro da **mesma sessão**.
+- [N/A] L2382: - Em eventos com sessões, a regra v1 é **1 Entitlement por sessão**.
+- [N/A] L2383: - O check‑in valida sempre contra a sessão (sessionId) ou janela temporal da sessão.
+- [N/A] L2384: - `allowReentry/maxEntries` **não** dão acesso a sessões futuras; só controlam reentrada dentro da **mesma sessão**.
 - [N/A] L2386: 8.6 Modo “Recinto” (rede fraca) — **FECHADO**
-- [TODO] L2387: - Scanner pode fazer prefetch de uma allow‑list (hashes) por evento/sessão com TTL curto.
-- [TODO] L2388: - Se não houver rede:
-- [TODO] L2389:   - valida contra allow‑list (TTL) + regista como `offline_pending_sync`
-- [TODO] L2390:   - sincroniza assim que voltar rede e gera EventLog normalizado
-- [TODO] L2391: - Não substitui “offline signed QR” (Fase 3). É apenas fallback operacional.
+- [N/A] L2387: - Scanner pode fazer prefetch de uma allow‑list (hashes) por evento/sessão com TTL curto.
+- [N/A] L2388: - Se não houver rede:
+- [N/A] L2389:   - valida contra allow‑list (TTL) + regista como `offline_pending_sync`
+- [N/A] L2390:   - sincroniza assim que voltar rede e gera EventLog normalizado
+- [N/A] L2391: - Não substitui “offline signed QR” (Fase 3). É apenas fallback operacional.
 - [N/A] L2393: ⸻
-- [TODO] L2396: 9) PRDs por Ferramenta (produto + técnico, com limites)
+- [N/A] L2396: 9) PRDs por Ferramenta (produto + técnico, com limites)
 - [N/A] L2398: 9.1 Eventos
 - [N/A] L2400: Faz
 - [N/A] L2401: 	•	criar eventos, sessões, tickets/lotes, página pública base (SEO)
@@ -2705,10 +2714,10 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2428: Regras:
 - [N/A] L2429: 	•	Listar revenda: Ticket.status → LISTED_FOR_RESALE + cria ResaleListing (activo)
 - [N/A] L2430: 	•	Comprar revenda (transação única):
-- [TODO] L2431: 		1)	Payment SUCCEEDED (Finanças)
-- [TODO] L2432: 		2)	Ticket.currentOwnerIdentityId actualizado (owner canónico)
-- [TODO] L2433: 		3)	Entitlements revogados do owner antigo e emitidos para o novo owner
-- [TODO] L2434: 		4)	ResaleListing fechado
+- [N/A] L2431: 		1)	Payment SUCCEEDED (Finanças)
+- [N/A] L2432: 		2)	Ticket.currentOwnerIdentityId actualizado (owner canónico)
+- [N/A] L2433: 		3)	Entitlements revogados do owner antigo e emitidos para o novo owner
+- [N/A] L2434: 		4)	ResaleListing fechado
 - [N/A] L2435: 	•	Se falhar em qualquer passo: rollback + estado consistente
 - [N/A] L2437: Guardrails:
 - [N/A] L2438: 	•	Não pode haver listing activo com Ticket.status != LISTED_FOR_RESALE.
@@ -2731,9 +2740,9 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2459: 		•	Ticket.status → **DISPUTED** (imediato via job) e **entrada bloqueada** enquanto DISPUTED.
 - [N/A] L2460: 		•	**Regra v1:** **não existe reversão automática de owner** (evita “tribunal automático” e bugs operacionais).
 - [N/A] L2461: 		•	Resolução (v1):
-- [TODO] L2462: 			1) dispute ganha pelo comprador → reactivar entitlement (ACTIVE) + Ticket volta a ACTIVE
-- [TODO] L2463: 			2) dispute perdido → Ticket CHARGEBACK_LOST + Entitlement REVOKED
-- [TODO] L2464: 			3) refund confirmado (sem disputa) → Ticket REFUNDED + Entitlement REVOKED
+- [N/A] L2462: 			1) dispute ganha pelo comprador → reactivar entitlement (ACTIVE) + Ticket volta a ACTIVE
+- [N/A] L2463: 			2) dispute perdido → Ticket CHARGEBACK_LOST + Entitlement REVOKED
+- [N/A] L2464: 			3) refund confirmado (sem disputa) → Ticket REFUNDED + Entitlement REVOKED
 - [N/A] L2465: 		•	**Qualquer reversão de owner é apenas manual/admin** (Admin tooling + AuditLog), e só entra como “policy v2”.
 - [N/A] L2466: 		•	Integra com jobs existentes: `entitlements.suspend_on_dispute_opened` + `ticket.mark_disputed`.
 - [N/A] L2468: 	F) Cancelamento do evento
@@ -2808,14 +2817,14 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2560: 	•	matchmaking opera apenas em T-48h → T-24h
 - [N/A] L2561: 	•	sem buracos para a organização: sempre há resolução determinística aos T-24h
 - [N/A] L2563: Fluxo (UX):
-- [TODO] L2564: 	1)	Jogador A cria inscrição e escolhe:
+- [N/A] L2564: 	1)	Jogador A cria inscrição e escolhe:
 - [N/A] L2565: 		•	Convidar parceiro (email / conta)
 - [N/A] L2566: 		•	Entrar em matchmaking (apenas recomendado a partir de T-48h)
-- [TODO] L2567: 	2)	Se parceiro for por email:
+- [N/A] L2567: 	2)	Se parceiro for por email:
 - [N/A] L2568: 		•	email com link + CTA claro
 - [N/A] L2569: 		•	pagamento fica “pendente” associado ao email
 - [N/A] L2570: 		•	ao criar conta com esse email, a cobrança aparece automaticamente
-- [TODO] L2571: 	3)	Até T-24h, A tem sempre 3 saídas:
+- [N/A] L2571: 	3)	Até T-24h, A tem sempre 3 saídas:
 - [N/A] L2572: 		•	Trocar parceiro
 - [N/A] L2573: 		•	Pagar também pelo parceiro (confirmar já)
 - [N/A] L2574: 		•	Entrar/sair do matchmaking (se estiver em janela)
@@ -2869,7 +2878,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2636: 	•	ledger com dimensões para macro/micro analytics
 - [N/A] L2637: 	•	exports contabilísticos (CSV/PDF) (Fase 1/2)
 - [N/A] L2639: 	Hardening obrigatório (v3) — Finanças “Stripe-level”
-- [TODO] L2641: 1) Payment State Machine (explícita)
+- [N/A] L2641: 1) Payment State Machine (explícita)
 - [N/A] L2642: Estados canónicos do Payment:
 - [N/A] L2643: 	•	CREATED
 - [N/A] L2644: 	•	REQUIRES_ACTION (3DS / confirmação / autenticação)
@@ -2882,13 +2891,13 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2651: 	•	DISPUTED
 - [N/A] L2652: 	•	CHARGEBACK_WON / CHARGEBACK_LOST
 - [N/A] L2654: Regra: UI e API nunca assumem “pago” sem SUCCEEDED.
-- [TODO] L2656: 2) Idempotência end-to-end (não só createCheckout)
+- [N/A] L2656: 2) Idempotência end-to-end (não só createCheckout)
 - [N/A] L2657: Para cada Payment:
 - [N/A] L2658: 	•	criar entitlement
 - [N/A] L2659: 	•	escrever ledger entries (GROSS/PLATFORM_FEE/PROCESSOR_FEES_FINAL)
 - [N/A] L2660: 	•	disparar notificações
 - [N/A] L2661: …tudo com idempotencyKey e “fulfillment lock” para impedir duplicação em retries/webhooks.
-- [TODO] L2663: 3) Finance Failover UX (premium)
+- [N/A] L2663: 3) Finance Failover UX (premium)
 - [N/A] L2664: Estados e mensagens claras quando:
 - [N/A] L2665: 	•	o user fecha o checkout
 - [N/A] L2666: 	•	o método fica pendente (PROCESSING)
@@ -2898,7 +2907,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2670: 	•	“Estamos a confirmar o teu pagamento” (PROCESSING) + polling/backoff controlado
 - [N/A] L2671: 	•	CTA “Voltar ao pagamento” se REQUIRES_ACTION
 - [N/A] L2672: 	•	“Não confirmámos ainda — não te preocupes” + notificação quando fechar
-- [TODO] L2674: 4) Disputes/Chargebacks como produto (B2B)
+- [N/A] L2674: 4) Disputes/Chargebacks como produto (B2B)
 - [N/A] L2675: 	•	visão central de disputas por organização (status, prazo, evidências)
 - [N/A] L2676: 	•	eventos no Ops Feed + alertas para FINANCE roles
 - [N/A] L2677: 	•	revogação/suspensão de entitlements por job quando dispute abre (policy)
@@ -3076,7 +3085,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2914: 	•	histórico + pesquisa obrigatórios
 - [N/A] L2915: 	•	push/mobile para alertas críticos (via Notificações)
 - [N/A] L2917: ⸻
-- [TODO] L2919: 10) Sub-navegação TO-BE (rotas canónicas)
+- [N/A] L2919: 10) Sub-navegação TO-BE (rotas canónicas)
 - [N/A] L2921: Regra: todas as rotas B2B são **/org/:orgId/*** (orgId explícito).
 - [N/A] L2922: Alias PT (legado/UX): /organizacao/:orgId/* faz redirect 301 para /org/:orgId/*.
 - [N/A] L2924: 10.1 Serviços
@@ -3125,7 +3134,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L2981: Alias:
 - [N/A] L2982: /organizacao/:orgId/analytics → /org/:orgId/analytics
 - [N/A] L2984: ⸻
-- [TODO] L2986: 11) RBAC v2 — packs, roles e scopes
+- [N/A] L2986: 11) RBAC v2 — packs, roles e scopes
 - [N/A] L2988: 11.1 Roles “reais”
 - [N/A] L2990: OWNER, CO_OWNER, ADMIN, STAFF, TRAINER, PROMOTER, VIEWER
 - [N/A] L2992: 11.2 Scopes (mapeados ao repo)
@@ -3154,7 +3163,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3018: 	•	v1.x/v2: CHECKIN_* mapeado a módulos existentes
 - [N/A] L3019: 	•	v3: CHECKIN torna-se módulo próprio
 - [N/A] L3021: ⸻
-- [TODO] L3023: 12) Infra do Produto (EventBus, EventLog, Idempotência, Auditoria, Jobs)
+- [N/A] L3023: 12) Infra do Produto (EventBus, EventLog, Idempotência, Auditoria, Jobs)
 - [N/A] L3025: 12.1 EventBus (pub/sub)
 - [N/A] L3026: 	•	publish/subscribe interno
 - [N/A] L3027: 	•	idempotência por evento
@@ -3190,45 +3199,45 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3068: ---
 - [N/A] L3070: ### T1 — Explicit Organization Scoping (MANDATORY)
 - [N/A] L3071: All domain entities MUST be scoped to an organization via:
-- [TODO] L3072: - a direct `orgId` field, or
-- [TODO] L3073: - an immutable reference to an entity that contains `orgId`
+- [N/A] L3072: - a direct `orgId` field, or
+- [N/A] L3073: - an immutable reference to an entity that contains `orgId`
 - [N/A] L3075: No entity that represents customer, operational, or financial data may
 - [N/A] L3076: exist without an organization context.
 - [N/A] L3078: ---
 - [N/A] L3080: ### T2 — Query Enforcement
 - [N/A] L3081: All read and write queries MUST:
-- [TODO] L3082: - include `orgId` as a mandatory filter, OR
-- [TODO] L3083: - derive `orgId` from a parent entity already scoped
+- [N/A] L3082: - include `orgId` as a mandatory filter, OR
+- [N/A] L3083: - derive `orgId` from a parent entity already scoped
 - [N/A] L3085: Queries without explicit organization scoping are forbidden.
 - [N/A] L3087: ---
 - [N/A] L3089: ### T3 — Global Tables (Explicit Exceptions)
 - [N/A] L3090: Only the following categories MAY exist without `orgId`:
-- [TODO] L3091: - identity registries (e.g., username, email uniqueness)
-- [TODO] L3092: - configuration metadata explicitly marked as GLOBAL
+- [N/A] L3091: - identity registries (e.g., username, email uniqueness)
+- [N/A] L3092: - configuration metadata explicitly marked as GLOBAL
 - [N/A] L3094: Global tables MUST:
-- [TODO] L3095: - never contain customer-sensitive data
-- [TODO] L3096: - be read-only in customer flows
-- [TODO] L3097: - be explicitly documented as GLOBAL
+- [N/A] L3095: - never contain customer-sensitive data
+- [N/A] L3096: - be read-only in customer flows
+- [N/A] L3097: - be explicitly documented as GLOBAL
 - [N/A] L3099: ---
 - [N/A] L3101: ### T4 — Background Jobs & Async Processing
 - [N/A] L3102: All background jobs, workers, and outbox processors MUST:
-- [TODO] L3103: - execute within a resolved `orgId` context
-- [TODO] L3104: - include `orgId` in logs, metrics, and traces
+- [N/A] L3103: - execute within a resolved `orgId` context
+- [N/A] L3104: - include `orgId` in logs, metrics, and traces
 - [N/A] L3106: Jobs operating across multiple organizations MUST process one
 - [N/A] L3107: organization at a time.
 - [N/A] L3109: ---
 - [N/A] L3111: ### T5 — Webhooks & External Callbacks
 - [N/A] L3112: Inbound webhooks MUST:
-- [TODO] L3113: - be resolved to an internal entity
-- [TODO] L3114: - derive the owning `orgId`
-- [TODO] L3115: - fail if organization context cannot be resolved
+- [N/A] L3113: - be resolved to an internal entity
+- [N/A] L3114: - derive the owning `orgId`
+- [N/A] L3115: - fail if organization context cannot be resolved
 - [N/A] L3117: Webhook handling without organization resolution is forbidden.
 - [N/A] L3119: ---
 - [N/A] L3121: ### T6 — Authorization Is Org-Bound
 - [N/A] L3122: Authorization checks MUST always evaluate:
-- [TODO] L3123: - actor identity
-- [TODO] L3124: - organization membership
-- [TODO] L3125: - role / permission within that organization
+- [N/A] L3123: - actor identity
+- [N/A] L3124: - organization membership
+- [N/A] L3125: - role / permission within that organization
 - [N/A] L3127: Cross-organization access is forbidden unless explicitly designed
 - [N/A] L3128: and documented as such.
 - [N/A] L3130: ---
@@ -3236,42 +3245,42 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3133: Service roles MAY bypass user-level RBAC but MUST NOT bypass
 - [N/A] L3134: organization isolation.
 - [N/A] L3136: All service-role access MUST:
-- [TODO] L3137: - be auditable
-- [TODO] L3138: - be logged with `orgId`
-- [TODO] L3139: - have a documented justification
+- [N/A] L3137: - be auditable
+- [N/A] L3138: - be logged with `orgId`
+- [N/A] L3139: - have a documented justification
 - [N/A] L3141: ---
 - [N/A] L3143: ### T8 — Testing & Verification
 - [N/A] L3144: The platform MUST include automated tests that:
-- [TODO] L3145: - attempt cross-org access
-- [TODO] L3146: - verify hard failure on isolation violations
-- [TODO] L3147: - cover API, jobs, and webhook paths
+- [N/A] L3145: - attempt cross-org access
+- [N/A] L3146: - verify hard failure on isolation violations
+- [N/A] L3147: - cover API, jobs, and webhook paths
 - [N/A] L3149: Tenancy enforcement MUST be continuously tested.
 - [N/A] L3151: ---
 - [N/A] L3153: ### T9 — Failure Mode
 - [N/A] L3154: On any ambiguity or missing organization context:
-- [TODO] L3155: - the operation MUST fail
-- [TODO] L3156: - no partial data may be returned
-- [TODO] L3157: - no side effects may be executed
+- [N/A] L3155: - the operation MUST fail
+- [N/A] L3156: - no partial data may be returned
+- [N/A] L3157: - no side effects may be executed
 - [N/A] L3159: The system always fails closed.
 - [N/A] L3161: ---
 - [N/A] L3163: ## Threat Model & Data Classification (NÃO-NORMATIVO)
 - [N/A] L3165: ### Data Classes
-- [TODO] L3166: - **Public**: conteúdo público, páginas, metadados de eventos.
-- [TODO] L3167: - **PII**: email, nome, identificadores de utilizador.
-- [TODO] L3168: - **Finance/Audit**: ledger, payments, refunds, payouts, invoices.
-- [TODO] L3169: - **Security-sensitive**: tokens, secrets, audit logs, access policies.
+- [N/A] L3166: - **Public**: conteúdo público, páginas, metadados de eventos.
+- [N/A] L3167: - **PII**: email, nome, identificadores de utilizador.
+- [N/A] L3168: - **Finance/Audit**: ledger, payments, refunds, payouts, invoices.
+- [N/A] L3169: - **Security-sensitive**: tokens, secrets, audit logs, access policies.
 - [N/A] L3171: ### Top Threats (V1)
-- [TODO] L3172: - ATO / credential stuffing
-- [TODO] L3173: - Webhook spoofing, replay e out‑of‑order
-- [TODO] L3174: - Privilege escalation em RBAC
-- [TODO] L3175: - Leakage via logs/analytics
-- [TODO] L3176: - Cross‑org data access
+- [N/A] L3172: - ATO / credential stuffing
+- [N/A] L3173: - Webhook spoofing, replay e out‑of‑order
+- [N/A] L3174: - Privilege escalation em RBAC
+- [N/A] L3175: - Leakage via logs/analytics
+- [N/A] L3176: - Cross‑org data access
 - [N/A] L3178: ### Mitigações Mapeadas
-- [TODO] L3179: - **I1/I2/I3/I6**: SSOT + ledger append‑only + idempotência → evita duplicações e inconsistências.
-- [TODO] L3180: - **I5/T1–T9**: isolamento por orgId + fail‑closed → bloqueia cross‑org.
-- [TODO] L3181: - **I7/I8**: outbox + reconciliação → tolera duplicados/out‑of‑order.
-- [TODO] L3182: - **O3**: logs com correlationId/orgId → auditoria/trace.
-- [TODO] L3183: - **RGPD**: retenções e minimização → reduz risco de leakage.
+- [N/A] L3179: - **I1/I2/I3/I6**: SSOT + ledger append‑only + idempotência → evita duplicações e inconsistências.
+- [N/A] L3180: - **I5/T1–T9**: isolamento por orgId + fail‑closed → bloqueia cross‑org.
+- [N/A] L3181: - **I7/I8**: outbox + reconciliação → tolera duplicados/out‑of‑order.
+- [N/A] L3182: - **O3**: logs com correlationId/orgId → auditoria/trace.
+- [N/A] L3183: - **RGPD**: retenções e minimização → reduz risco de leakage.
 - [N/A] L3185: 12.4 Jobs & Queues (obrigatório)
 - [N/A] L3186: 	•	queue (AWS SQS recomendado) + retries + backoff + DLQ
 - [N/A] L3187: 	•	observabilidade por job (status, tentativas, payload mínimo)
@@ -3288,13 +3297,13 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3200: 	•	Contadores incrementais (soldQuantity, métricas CRM, materializações/aggregates) são READ MODELS.
 - [N/A] L3201: 	•	A “verdade” está nos registos base (Tickets/Orders/Ledger/Interactions).
 - [N/A] L3203: Jobs mínimos:
-- [TODO] L3204: 	1) ticketing.reconcile_sold_quantities (hourly/daily)
+- [N/A] L3204: 	1) ticketing.reconcile_sold_quantities (hourly/daily)
 - [N/A] L3205: 		•	recalcula vendidos por TicketType a partir de ordens pagas e entitlements válidos:
 - [N/A] L3206: 			–	base: Payments SUCCEEDED por sourceType=TICKET_ORDER (Finanças SSOT)
 - [N/A] L3207: 			–	excluir: entitlements REVOKED/REFUNDED/SUSPENDED quando aplicável (policy)
 - [N/A] L3208: 			–	sem depender de “estados inventados” no Ticket
 - [N/A] L3209: 		•	se drift > threshold → corrigir + emitir evento ops.alert + log de auditoria
-- [TODO] L3210: 	2) crm.rebuild_customer_counters (daily)
+- [N/A] L3210: 	2) crm.rebuild_customer_counters (daily)
 - [N/A] L3211: 		•	rebuild determinístico a partir de CrmInteraction
 - [N/A] L3214: Outputs:
 - [N/A] L3215: 	•	tabela de “drifts” + dashboard no Admin (14.1) com alerts e links.
@@ -3319,45 +3328,45 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3237: 	•	pipeline que falha se schema Prisma divergir do DB (staging)
 - [N/A] L3239: 12.6.2 Isolamento multi-tenant (DB) — **FECHADO**
 - [N/A] L3240: Objetivo: garantir que falhas na camada API não criam fuga de dados entre organizações.
-- [TODO] L3241: - Todas as tabelas B2B têm `organizationId` obrigatório.
-- [TODO] L3242: - Queries na API são sempre filtradas por `organizationId` (orgContext + RBAC).
-- [TODO] L3243: - Base de segurança (quando aplicável):
-- [TODO] L3244:   - RLS no Supabase para tabelas críticas multi‑tenant (Finanças, Reservas, RBAC, CRM, Check‑in),
-- [TODO] L3245:   - policies mínimas: “só lê/escreve se organizationId ∈ memberships do user”.
-- [TODO] L3246: - Logs e exports respeitam minimização de PII (12.2/19.4).
+- [N/A] L3241: - Todas as tabelas B2B têm `organizationId` obrigatório.
+- [N/A] L3242: - Queries na API são sempre filtradas por `organizationId` (orgContext + RBAC).
+- [N/A] L3243: - Base de segurança (quando aplicável):
+- [N/A] L3244:   - RLS no Supabase para tabelas críticas multi‑tenant (Finanças, Reservas, RBAC, CRM, Check‑in),
+- [N/A] L3245:   - policies mínimas: “só lê/escreve se organizationId ∈ memberships do user”.
+- [N/A] L3246: - Logs e exports respeitam minimização de PII (12.2/19.4).
 - [N/A] L3248: 12.6.1 Contract Signatures (MVP) (FECHADO)
 - [N/A] L3249: Objetivo: reduzir drift FE/BE e entre módulos. Assinaturas mínimas (shape), sem impor transporte (REST/GRPC).
-- [TODO] L3251: - Finanças.createCheckout(input)
-- [TODO] L3252:   - input: {sourceType, sourceId, buyerIdentityRef?, pricingSnapshotHash?, idempotencyKey}
-- [TODO] L3253:   - output: {paymentId, status, clientSecret?, pricingSnapshotHash}
-- [TODO] L3255: - Finanças.getPayment(paymentId)
-- [TODO] L3256:   - output: {paymentId, status, amounts, currency, pricingSnapshotHash, processorFeesStatus, processorFeesActual?}
-- [TODO] L3258: - Eventos.validateInviteToken(input)
-- [TODO] L3259:   - input: {eventId, inviteToken, identityRef?}
-- [TODO] L3260:   - output: {allow, reasonCode?, constraints:{expiresAt, requiresIdentityMatch}}
-- [TODO] L3262: - UsernameRegistry.resolveUsername(username)
-- [TODO] L3263:   - output: {ownerType, ownerId, canonicalUsername}
-- [TODO] L3265: - Checkin.consume(input)
-- [TODO] L3266:   - input: {qrPayload, scannerIdentityRef, eventId, deviceId?}
-- [TODO] L3267:   - output: {allow, reasonCode?, entitlementId?, consumedAt?, policyVersionApplied, duplicate?:{duplicateOfConsumedAt, duplicateCount?}}
-- [TODO] L3269: - Address.searchAutocomplete(query, context?)
-- [TODO] L3270:   - output: {items:[{placeId, label, lat?, lng?}]}
-- [TODO] L3272: - Address.resolvePlace(placeId)
-- [TODO] L3273:   - output: {placeId, label, lat, lng, components?}
+- [N/A] L3251: - Finanças.createCheckout(input)
+- [N/A] L3252:   - input: {sourceType, sourceId, buyerIdentityRef?, pricingSnapshotHash?, idempotencyKey}
+- [N/A] L3253:   - output: {paymentId, status, clientSecret?, pricingSnapshotHash}
+- [N/A] L3255: - Finanças.getPayment(paymentId)
+- [N/A] L3256:   - output: {paymentId, status, amounts, currency, pricingSnapshotHash, processorFeesStatus, processorFeesActual?}
+- [N/A] L3258: - Eventos.validateInviteToken(input)
+- [N/A] L3259:   - input: {eventId, inviteToken, identityRef?}
+- [N/A] L3260:   - output: {allow, reasonCode?, constraints:{expiresAt, requiresIdentityMatch}}
+- [N/A] L3262: - UsernameRegistry.resolveUsername(username)
+- [N/A] L3263:   - output: {ownerType, ownerId, canonicalUsername}
+- [N/A] L3265: - Checkin.consume(input)
+- [N/A] L3266:   - input: {qrPayload, scannerIdentityRef, eventId, deviceId?}
+- [N/A] L3267:   - output: {allow, reasonCode?, entitlementId?, consumedAt?, policyVersionApplied, duplicate?:{duplicateOfConsumedAt, duplicateCount?}}
+- [N/A] L3269: - Address.searchAutocomplete(query, context?)
+- [N/A] L3270:   - output: {items:[{placeId, label, lat?, lng?}]}
+- [N/A] L3272: - Address.resolvePlace(placeId)
+- [N/A] L3273:   - output: {placeId, label, lat, lng, components?}
 - [N/A] L3275: ⸻
 - [N/A] L3277: C2.x) Stripe Onboarding (Standard) — **FECHADO**
-- [TODO] L3278: - Activação de vendas/payouts exige Organization completar onboarding KYC no Stripe.
-- [TODO] L3279: - Implementação: Finanças gera `account_link` (Stripe-hosted) e guarda estado:
-- [TODO] L3280:   - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
-- [TODO] L3281: - Guardrail:
-- [TODO] L3282:   - se status != COMPLETE → bloquear criação de checkouts pagos (permitir apenas rascunhos/testes).
+- [N/A] L3278: - Activação de vendas/payouts exige Organization completar onboarding KYC no Stripe.
+- [N/A] L3279: - Implementação: Finanças gera `account_link` (Stripe-hosted) e guarda estado:
+- [N/A] L3280:   - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
+- [N/A] L3281: - Guardrail:
+- [N/A] L3282:   - se status != COMPLETE → bloquear criação de checkouts pagos (permitir apenas rascunhos/testes).
 - [N/A] L3284: ⸻
 - [N/A] L3286: 12.7 Timezone canónica (FECHADO)
-- [TODO] L3287: - Todas as janelas temporais e jobs com T‑X (reminders, locks, expirations) são calculadas na **timezone do evento** (IANA, ex.: `Europe/Lisbon`).
-- [TODO] L3288: - Em Reservas (sem evento), usa‑se a timezone da **organização/recurso** (também IANA).
-- [TODO] L3289: - Regra: guardar timestamps canónicos em UTC + timezone original; UI apenas converte para visualização.
+- [N/A] L3287: - Todas as janelas temporais e jobs com T‑X (reminders, locks, expirations) são calculadas na **timezone do evento** (IANA, ex.: `Europe/Lisbon`).
+- [N/A] L3288: - Em Reservas (sem evento), usa‑se a timezone da **organização/recurso** (também IANA).
+- [N/A] L3289: - Regra: guardar timestamps canónicos em UTC + timezone original; UI apenas converte para visualização.
 - [N/A] L3291: ⸻
-- [TODO] L3293: 13) Pesquisa & Discovery (infra sem overkill) — **FECHADO**
+- [N/A] L3293: 13) Pesquisa & Discovery (infra sem overkill) — **FECHADO**
 - [N/A] L3295: v1 (Fase 1)
 - [N/A] L3296: 	•	Postgres full-text + trigram + filtros por tipo
 - [N/A] L3297: 	•	index unificado derivado (owners continuam Eventos/Padel/Reservas/Serviços)
@@ -3366,22 +3375,22 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3301: 	•	Typesense/Meilisearch alimentado por jobs a partir de EventLog
 - [N/A] L3303: 13.1 Ranking (v1) — **FECHADO**
 - [N/A] L3304: ADITAMENTO FECHADO: ranking mínimo e observabilidade para produção v1.
-- [TODO] L3305: - Sinais mínimos (ordenados por impacto):
-- [TODO] L3306:   - relevância textual (match exato + trigram)
-- [TODO] L3307:   - proximidade (geo) quando aplicável
-- [TODO] L3308:   - janela temporal (a acontecer / hoje / esta semana)
-- [TODO] L3309:   - popularidade (views, likes, going)
-- [TODO] L3310:   - qualidade (org score + `risk.flagged`)
-- [TODO] L3311:   - penalizações por spam de keywords
-- [TODO] L3312: - Observabilidade mínima:
-- [TODO] L3313:   - CTR por posição
-- [TODO] L3314:   - zero‑result rate
-- [TODO] L3315:   - top queries (sem PII)
-- [TODO] L3316: - Anti‑abuso:
-- [TODO] L3317:   - keyword stuffing → downrank com `reasonCode=RANKING_SPAM_KEYWORDS`
-- [TODO] L3318:   - org com `risk.flagged` → downrank com `reasonCode=RANKING_RISK_FLAGGED`
+- [N/A] L3305: - Sinais mínimos (ordenados por impacto):
+- [N/A] L3306:   - relevância textual (match exato + trigram)
+- [N/A] L3307:   - proximidade (geo) quando aplicável
+- [N/A] L3308:   - janela temporal (a acontecer / hoje / esta semana)
+- [N/A] L3309:   - popularidade (views, likes, going)
+- [N/A] L3310:   - qualidade (org score + `risk.flagged`)
+- [N/A] L3311:   - penalizações por spam de keywords
+- [N/A] L3312: - Observabilidade mínima:
+- [N/A] L3313:   - CTR por posição
+- [N/A] L3314:   - zero‑result rate
+- [N/A] L3315:   - top queries (sem PII)
+- [N/A] L3316: - Anti‑abuso:
+- [N/A] L3317:   - keyword stuffing → downrank com `reasonCode=RANKING_SPAM_KEYWORDS`
+- [N/A] L3318:   - org com `risk.flagged` → downrank com `reasonCode=RANKING_RISK_FLAGGED`
 - [N/A] L3320: ⸻
-- [TODO] L3322: 14) Governança & Ferramentas Internas (Admin, Billing, Support, Analytics)
+- [N/A] L3322: 14) Governança & Ferramentas Internas (Admin, Billing, Support, Analytics)
 - [N/A] L3324: 14.1 Admin global (admin.orya.pt)
 - [N/A] L3325: 	•	gestão de organizações (KYC leve, settings globais)
 - [N/A] L3326: 	•	fee policies globais + overrides
@@ -3411,8 +3420,8 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3356: ---
 - [N/A] L3358: ### O1 — Alert Classification
 - [N/A] L3359: Alerts are classified as:
-- [TODO] L3360: - **PAGER:** requires immediate human intervention
-- [TODO] L3361: - **TICKET:** requires investigation but not immediate action
+- [N/A] L3360: - **PAGER:** requires immediate human intervention
+- [N/A] L3361: - **TICKET:** requires investigation but not immediate action
 - [N/A] L3363: ---
 - [N/A] L3365: ### O2 — Core Domain SLIs & Thresholds
 - [N/A] L3367: #### Payments & Ledger
@@ -3439,16 +3448,16 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3393: ---
 - [N/A] L3395: ### O3 — Logging & Correlation
 - [N/A] L3396: All logs MUST include:
-- [TODO] L3397: - `correlationId`
-- [TODO] L3398: - `orgId`
-- [TODO] L3399: - domain entity identifiers
+- [N/A] L3397: - `correlationId`
+- [N/A] L3398: - `orgId`
+- [N/A] L3399: - domain entity identifiers
 - [N/A] L3401: Logs without correlation context are non-compliant.
 - [N/A] L3403: ---
 - [N/A] L3405: ### O4 — Incident Readiness
 - [N/A] L3406: For each PAGER alert, the following MUST exist:
-- [TODO] L3407: - documented runbook
-- [TODO] L3408: - clear ownership
-- [TODO] L3409: - rollback or mitigation steps
+- [N/A] L3407: - documented runbook
+- [N/A] L3408: - clear ownership
+- [N/A] L3409: - rollback or mitigation steps
 - [N/A] L3411: Production without runbooks is forbidden.
 - [N/A] L3413: ---
 - [N/A] L3415: 14.2 Billing & planos ORYA (SaaS)
@@ -3478,7 +3487,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3444: 	•	tudo deriva do ledger + referências (sourceType/sourceId)
 - [N/A] L3445: 	•	qualquer “agregação” tem auditoria de como foi calculada (reprodutível)
 - [N/A] L3447: ⸻
-- [TODO] L3449: 16) Plano Executável — 3 Fases (cada fase: A / B / C, por módulos, só avança quando perfeito)
+- [N/A] L3449: 16) Plano Executável — 3 Fases (cada fase: A / B / C, por módulos, só avança quando perfeito)
 - [N/A] L3451: Regra de passagem: não se avança para o módulo seguinte se o anterior não estiver “perfeito” segundo DoD e testes E2E.
 - [N/A] L3453: ⸻
 - [N/A] L3455: FASE 1 — MVP “Robusto” (higienização + base certa + operação premium essencial)
@@ -3489,14 +3498,14 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [DONE] L3462: - [x] Outbox/Workers winner-only com SKIP LOCKED + replay seguro.
 - [DONE] L3463: - [x] Padel F1 fechado: wizard dedicado, ruleset versionado, split 48/24, matchmaking, calendario SSOT, interclubes, comunidade.
 - [DONE] L3464: - [x] C6: Padel nao cria bilhetes; pagamentos via Financas.
-- [TODO] L3465: - F2/F3 permanecem backlog (nao bloqueiam F1).
+- [N/A] L3465: - F2/F3 permanecem backlog (nao bloqueiam F1).
 - [N/A] L3467: F1-A) Base técnica e contratos (ordem por módulos)
-- [TODO] L3468: 	1.	EventBus + EventLog + Idempotência
+- [N/A] L3468: 	1.	EventBus + EventLog + Idempotência
 - [N/A] L3469: 	•	implementar pub/sub interno + idempotência por evento
 - [N/A] L3470: 	•	EventLog com constraints
 - [N/A] L3471: 	•	guidelines de PII + retenção
 - [N/A] L3472: 	•	consumers tolerantes a replay
-- [TODO] L3473: 	2.	Jobs/Queue + DLQ (AWS-first já na Fase 1)
+- [N/A] L3473: 	2.	Jobs/Queue + DLQ (AWS-first já na Fase 1)
 - [N/A] L3474: 	•	SQS + DLQ (obrigatório) + retries/backoff + observabilidade mínima
 - [N/A] L3475: 	•	Worker(s) na AWS para jobs e consumers (processamento assíncrono + EventLog consumers)
 - [N/A] L3476: 	•	Arquitetura “AWS-first” já na Fase 1:
@@ -3509,7 +3518,7 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3483: 			•	Secrets (SSM Parameter Store ou Secrets Manager) para chaves e webhooks
 - [N/A] L3484: 			•	S3 para uploads e artefactos (exports PDF/CSV, imagens, anexos)
 - [N/A] L3485: 	•	Objetivo: preparar migração total para AWS sem re-arquitetar depois
-- [TODO] L3487: 	3.	Contratos versionados
+- [N/A] L3487: 	3.	Contratos versionados
 - [N/A] L3488: 	•	domain/contracts/reservas.ts
 - [N/A] L3489: 	•	domain/contracts/financas.ts
 - [N/A] L3490: 	•	domain/contracts/checkin.ts
@@ -3517,21 +3526,21 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3492: 	•	domain/contracts/notifications.ts
 - [N/A] L3493: 	•	domain/contracts/address.ts
 - [N/A] L3494: 	•	testes de contrato (unit + integração)
-- [TODO] L3495: 	4.	Refactors estruturais (higiene)
+- [N/A] L3495: 	4.	Refactors estruturais (higiene)
 - [N/A] L3496: 	•	Agenda: deprecar PadelCourtBlock/PadelAvailability → centralizar em Reservas
 - [N/A] L3497: 	•	Pagamentos: remover checkout Stripe directo fora de Finanças
 - [N/A] L3498: 	•	CRM: ingest via EventLog, não ponto-a-ponto
 - [N/A] L3499: 	•	Check-in: suportar bookings + inscrições via entitlement unificado
 - [N/A] L3500: 	•	Moradas: migrar para Address Service (uma verdade)
-- [TODO] L3501: 	5.	Finanças determinística
+- [N/A] L3501: 	5.	Finanças determinística
 - [N/A] L3502: 	•	feePolicyVersion + ledger entries explícitas
 - [N/A] L3503: 	•	idempotencyKey obrigatório em checkout/refund
 - [N/A] L3504: 	•	exports mínimos
-- [TODO] L3505: 	6.	RBAC + auditoria
+- [N/A] L3505: 	6.	RBAC + auditoria
 - [N/A] L3506: 	•	middleware orgRbacGuard
 - [N/A] L3507: 	•	packs v2 activos
 - [N/A] L3508: 	•	audit log em operações críticas
-- [TODO] L3509: 	7. Guardrails: architecture tests + anti-drift + contract tests
+- [N/A] L3509: 	7. Guardrails: architecture tests + anti-drift + contract tests
 - [N/A] L3511: Exit Criteria F1-A
 - [N/A] L3512: 	•	nenhum checkout fora de Finanças
 - [N/A] L3513: 	•	owners respeitados (D2)
@@ -3540,12 +3549,12 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3516: 	•	E2E tests básicos a passar (booking → payment → entitlement → check-in)
 - [N/A] L3518: ⸻
 - [N/A] L3520: F1-B) Produto + governança (ordem por módulos)
-- [TODO] L3521: 	1.	Padel Torneios — core + formatos base
+- [N/A] L3521: 	1.	Padel Torneios — core + formatos base
 - [N/A] L3522: 	•	templates de formato (eliminação simples, grupos+eliminação, round-robin)
 - [N/A] L3523: 	•	ruleset versionado
 - [N/A] L3524: 	•	matchSlots via Reservas
 - [N/A] L3525: 	•	live ops estável
-- [TODO] L3526: 	2.	Split payment Padel (definitivo) — regra 48/24 + matchmaking + resolução determinística
+- [N/A] L3526: 	2.	Split payment Padel (definitivo) — regra 48/24 + matchmaking + resolução determinística
 - [N/A] L3527: 	•	convite por email (parceiro pode não ter conta)
 - [N/A] L3528: 	•	pagamento pendente associado ao email (aparece ao criar conta com o mesmo email)
 - [N/A] L3529: 	•	inscrição em dupla só CONFIRMA quando ambos pagam
@@ -3567,17 +3576,17 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3550: 	•	reminders automáticos:
 - [N/A] L3551: 	•	T-72h (se aplicável), T-48h (abrir matchmaking), T-36h, T-24h (último aviso + lock)
 - [N/A] L3552: 	•	auditoria completa (quem convidou, quem trocou, quem pagou pelo parceiro, decisões do matchmaking, lock final)
-- [TODO] L3553: 	3.	Reservas — políticas + segmentos
+- [N/A] L3553: 	3.	Reservas — políticas + segmentos
 - [N/A] L3554: 	•	regras para membros vs não-membros (via CRM segmentos + políticas)
 - [N/A] L3555: 	•	no-show + penalizações configuráveis
-- [TODO] L3556: 	4.	Check-in completo
+- [N/A] L3556: 	4.	Check-in completo
 - [N/A] L3557: 	•	QR ticket + QR inscrição + QR booking
 - [N/A] L3558: 	•	logs + presença/no-show
 - [N/A] L3559: 	•	rate limit + idempotência
-- [TODO] L3560: 	5.	Ops Feed (Activity Feed)
+- [N/A] L3560: 	5.	Ops Feed (Activity Feed)
 - [N/A] L3561: 	•	consumer EventLog → feed UI + canal “Ops”
 - [N/A] L3562: 	•	lista base de alertas (Secção 12.5)
-- [TODO] L3563: 	6.	Admin mínimo
+- [N/A] L3563: 	6.	Admin mínimo
 - [N/A] L3564: 	•	fee policies
 - [N/A] L3565: 	•	feature flags
 - [N/A] L3566: 	•	health de jobs/DLQ
@@ -3592,24 +3601,24 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3578: F1-C) UX/UI/Design + operação (ordem por módulos)
 - [N/A] L3579: •	Padrões UX Globais (B2B): Unified Search + Context Drawer + Command Palette + Ops mode
 - [N/A] L3580: •	Objetivo: reduzir cliques e tempo de resolução operacional (nível Linear/Stripe)
-- [TODO] L3582: 	1.	Design System / Componentização
+- [N/A] L3582: 	1.	Design System / Componentização
 - [N/A] L3583: 	•	componentes consistentes
 - [N/A] L3584: 	•	estados (loading/empty/error/success)
 - [N/A] L3585: 	•	acessibilidade (WCAG base)
-- [TODO] L3586: 	2.	Agenda premium
+- [N/A] L3586: 	2.	Agenda premium
 - [N/A] L3587: 	•	dia/semana
 - [N/A] L3588: 	•	drag & drop com validação de conflitos
 - [N/A] L3589: 	•	camadas (reservas/matchslots/aulas/bloqueios)
 - [N/A] L3590: 	•	auditoria visível (quem alterou)
-- [TODO] L3591: 	3.	Padel Wizard premium
+- [N/A] L3591: 	3.	Padel Wizard premium
 - [N/A] L3592: 	•	templates rápidos
 - [N/A] L3593: 	•	validações claras
 - [N/A] L3594: 	•	import CSV básico (se necessário)
-- [TODO] L3595: 	4.	Performance percebida
+- [N/A] L3595: 	4.	Performance percebida
 - [N/A] L3596: 	•	paginação
 - [N/A] L3597: 	•	cache de configs
 - [N/A] L3598: 	•	placeholders skeleton
-- [TODO] L3599: 	5.	“Adicionar ao calendário” (ICS)
+- [N/A] L3599: 	5.	“Adicionar ao calendário” (ICS)
 - [N/A] L3600: 	•	para reservas/eventos no utilizador
 - [N/A] L3602: Exit Criteria F1-C
 - [N/A] L3603: 	•	UX da agenda e do wizard “nível grande”
@@ -3623,37 +3632,37 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3614: FASE 2 — Expansão (monetização avançada, memberships, campanhas, marketplace)
 - [N/A] L3616: Objetivo: elevar a ORYA de “muito boa” para “dominante” em retenção, monetização e escalabilidade funcional.
 - [N/A] L3618: F2-A) Base técnica
-- [TODO] L3619: 	1.	Search Index Service (se necessário)
-- [TODO] L3620: 	2.	Materializações de Analytics por job
-- [TODO] L3621: 	3.	Observabilidade (logs/metrics/tracing)
-- [TODO] L3622: 	4.	F2-A.x) Roadmap Infra (Supabase → AWS) — FECHADO
+- [N/A] L3619: 	1.	Search Index Service (se necessário)
+- [N/A] L3620: 	2.	Materializações de Analytics por job
+- [N/A] L3621: 	3.	Observabilidade (logs/metrics/tracing)
+- [N/A] L3622: 	4.	F2-A.x) Roadmap Infra (Supabase → AWS) — FECHADO
 - [N/A] L3623: 	•	Fase 1: Supabase (Postgres/Auth) + compute/queues/storage/observabilidade em AWS (AWS-first).
 - [N/A] L3624: 	•	Fase 2: migrar Postgres para AWS (RDS/Aurora) com cutover planeado.
 - [N/A] L3625: 	•	Fase 2/3: migrar Auth para AWS (Cognito ou serviço próprio), mantendo `Identity` como SSOT estável.
 - [N/A] L3626: 	•	Objetivo final: 100% AWS (DB/Auth/Workers/Storage/Observabilidade), Supabase descontinuado.
-- [TODO] L3627: 	5.	2FA obrigatório para admins/financeiro
-- [TODO] L3628: 	6.	Backups e exports avançados
+- [N/A] L3627: 	5.	2FA obrigatório para admins/financeiro
+- [N/A] L3628: 	6.	Backups e exports avançados
 - [N/A] L3630: F2-B) Produto + governança
-- [TODO] L3631: 	1.	Stripe Billing (subscrições/memberships)
+- [N/A] L3631: 	1.	Stripe Billing (subscrições/memberships)
 - [N/A] L3632: 	•	planos de sócio
 - [N/A] L3633: 	•	autopay + falhas + retries
 - [N/A] L3634: 	•	janelas de reserva antecipada para membros
-- [TODO] L3635: 	2.	Multi-moeda + métodos locais
-- [TODO] L3636: 	3.	Gift cards
-- [TODO] L3637: 	4.	CRM: leads + campanhas
+- [N/A] L3635: 	2.	Multi-moeda + métodos locais
+- [N/A] L3636: 	3.	Gift cards
+- [N/A] L3637: 	4.	CRM: leads + campanhas
 - [N/A] L3638: 	•	email/push segmentado
 - [N/A] L3639: 	•	tracking de campanha/ROI
-- [TODO] L3640: 	5.	Promoções avançadas
-- [TODO] L3641: 	6.	Loja: inventário centralizado + KPIs
-- [TODO] L3642: 	7.	Eventos: recorrência, séries, waitlist, pre/post comms
-- [TODO] L3643: 	8.	Marketplace básico
+- [N/A] L3640: 	5.	Promoções avançadas
+- [N/A] L3641: 	6.	Loja: inventário centralizado + KPIs
+- [N/A] L3642: 	7.	Eventos: recorrência, séries, waitlist, pre/post comms
+- [N/A] L3643: 	8.	Marketplace básico
 - [N/A] L3644: 	•	procurar clubes/serviços/eventos por localização
 - [N/A] L3646: F2-C) UX/UI/Design
-- [TODO] L3647: 	1.	Dashboard personalizável (widgets)
-- [TODO] L3648: 	2.	UI de permissões (granular)
-- [TODO] L3649: 	3.	App/PWA staff (opcional)
+- [N/A] L3647: 	1.	Dashboard personalizável (widgets)
+- [N/A] L3648: 	2.	UI de permissões (granular)
+- [N/A] L3649: 	3.	App/PWA staff (opcional)
 - [N/A] L3650: 	•	scanner + operação rápida
-- [TODO] L3651: 	4.	Localização/i18n (pt/en/es)
+- [N/A] L3651: 	4.	Localização/i18n (pt/en/es)
 - [N/A] L3653: Custo alvo Fase 2
 - [N/A] L3654: 	•	subir gradual conforme uso: ~200–400€/mês quando já houver tração real
 - [N/A] L3655: 	•	activar apenas serviços necessários (sem “plataforma enterprise vazia”)
@@ -3661,27 +3670,27 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3659: FASE 3 — Completar (globalização, optimização inteligente, integrações enterprise)
 - [N/A] L3661: Objetivo: tornar a ORYA referência “best-in-class” internacional.
 - [N/A] L3663: F3-A) Base técnica
-- [TODO] L3664: 	1.	Optimização/yield + recomendações
-- [TODO] L3665: 	2.	Escala horizontal por módulos (se necessário)
-- [TODO] L3666: 	3.	Integrações IoT/portas/gates
-- [TODO] L3667: 	4.	Data warehouse (se fizer sentido)
+- [N/A] L3664: 	1.	Optimização/yield + recomendações
+- [N/A] L3665: 	2.	Escala horizontal por módulos (se necessário)
+- [N/A] L3666: 	3.	Integrações IoT/portas/gates
+- [N/A] L3667: 	4.	Data warehouse (se fizer sentido)
 - [N/A] L3669: F3-B) Produto
-- [TODO] L3670: 	1.	Padel interclubes/equipas
-- [TODO] L3671: 	2.	ELO/Glicko
-- [TODO] L3672: 	3.	Streaming + widgets avançados
-- [TODO] L3673: 	4.	Eventos com chat do evento + moderação
-- [TODO] L3674: 	5.	Digital goods completo
-- [TODO] L3675: 	6.	White-label avançado
-- [TODO] L3676: 	7.	Integrações federações/partners
+- [N/A] L3670: 	1.	Padel interclubes/equipas
+- [N/A] L3671: 	2.	ELO/Glicko
+- [N/A] L3672: 	3.	Streaming + widgets avançados
+- [N/A] L3673: 	4.	Eventos com chat do evento + moderação
+- [N/A] L3674: 	5.	Digital goods completo
+- [N/A] L3675: 	6.	White-label avançado
+- [N/A] L3676: 	7.	Integrações federações/partners
 - [N/A] L3678: F3-C) UX/UI/Design
-- [TODO] L3679: 	1.	Experiências “live” topo
+- [N/A] L3679: 	1.	Experiências “live” topo
 - [N/A] L3680: 	•	brackets ao vivo
 - [N/A] L3681: 	•	live stream embed
 - [N/A] L3682: 	•	notificações por momento do evento
-- [TODO] L3683: 	2.	Comunidade ORYA
-- [TODO] L3684: 	3.	Analytics preditivo
+- [N/A] L3683: 	2.	Comunidade ORYA
+- [N/A] L3684: 	3.	Analytics preditivo
 - [N/A] L3686: ⸻
-- [TODO] L3688: 17) Métricas e Definition of Done (DoD)
+- [N/A] L3688: 17) Métricas e Definition of Done (DoD)
 - [N/A] L3690: KPIs prioritários
 - [N/A] L3691: 	•	tempo para criar torneio completo (end-to-end)
 - [N/A] L3692: 	•	% auto-schedule sem conflitos hard
@@ -3724,208 +3733,208 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3735: 	•	Todos os itens IN operacionais **e** 19.0 Go‑Live Gate cumprido.
 - [N/A] L3736: 	•	Cut‑line aplicado e verificado por testes (19.6).
 - [N/A] L3738: ⸻
-- [TODO] L3740: 18) Nota final (regra de ouro)
+- [N/A] L3740: 18) Nota final (regra de ouro)
 - [N/A] L3742: Se uma decisão não estiver aqui, não está decidida.
 - [N/A] L3743: Se uma implementação contradizer D2/D4/D3, é bug de arquitectura, não é “trade-off”.
 - [N/A] L3745: ⸻
-- [TODO] L3747: 19) Production Readiness — **FECHADO**
+- [N/A] L3747: 19) Production Readiness — **FECHADO**
 - [N/A] L3749: Objetivo: tornar a ORYA “produção real” (Portugal, Web + iOS + Android) — resiliente, auditável, compatível (RGPD + lojas), e operável em dias de pico (pagamentos, check‑in, revenda).
 - [N/A] L3751: 19.0 Go‑Live Gate (Fase 1) — **FECHADO**
 - [N/A] L3752: Pré‑requisitos mínimos antes de abrir produção real:
-- [TODO] L3753: - Documentos legais publicados e linkados (19.1).
-- [TODO] L3754: - Onboarding B2B para payouts completo (KYC + aceites).
-- [TODO] L3755: - DSAR básico ativo (19.4).
-- [TODO] L3756: - Trust & Safety mínimo (19.2).
-- [TODO] L3757: - Runbooks de suporte + escalação definidos (19.3).
-- [TODO] L3758: - Alertas críticos ativos (SLIs 14.1.1) + dashboards básicos.
-- [TODO] L3759: - Backups configurados + **1º teste de restore** executado (19.3).
-- [TODO] L3760: - Release gates ativos (19.6) + guardrails 12.6.
+- [N/A] L3753: - Documentos legais publicados e linkados (19.1).
+- [N/A] L3754: - Onboarding B2B para payouts completo (KYC + aceites).
+- [N/A] L3755: - DSAR básico ativo (19.4).
+- [N/A] L3756: - Trust & Safety mínimo (19.2).
+- [N/A] L3757: - Runbooks de suporte + escalação definidos (19.3).
+- [N/A] L3758: - Alertas críticos ativos (SLIs 14.1.1) + dashboards básicos.
+- [N/A] L3759: - Backups configurados + **1º teste de restore** executado (19.3).
+- [N/A] L3760: - Release gates ativos (19.6) + guardrails 12.6.
 - [N/A] L3762: 19.1 Legal & Compliance (Portugal + App Stores) — **FECHADO**
-- [TODO] L3763: - Documentos obrigatórios (publicados e versionados):
-- [TODO] L3764:   - Termos de Utilização (Utilizadores)
-- [TODO] L3765:   - Termos para Organizações (B2B)
-- [TODO] L3766:   - Política de Privacidade (RGPD)
-- [TODO] L3767:   - Política de Cookies / Tracking (web)
-- [TODO] L3768:   - Política de Conteúdo/Conduta + Política de Denúncias (Trust & Safety)
-- [TODO] L3769: - Links obrigatórios na app e website:
-- [TODO] L3770:   - Privacy Policy + Terms **sempre acessíveis sem login** (iOS/Android/Web).
-- [TODO] L3771: - Organizações com vendas/payouts (pré‑requisito para activar pagamentos):
-- [TODO] L3772:   - Identificação legal e fiscal (NIF, representante, morada, dados da empresa).
-- [TODO] L3773:   - Aceitação explícita:
-- [TODO] L3774:     - Organização é responsável pelo evento/serviço (conteúdo, segurança, cumprimento legal, IVA/faturação).
-- [TODO] L3775:     - ORYA é plataforma (fee) e pode suspender funcionalidades e vendas (bloquear checkouts) por risco/abuso.
-- [TODO] L3776:   - Disputes/chargebacks:
-- [TODO] L3777:     - Processo formalizado de evidência e resposta (SLA interno) + auditoria.
-- [TODO] L3778: - Cookies (web):
-- [TODO] L3779:   - Consentimento por categoria (essenciais / analytics / marketing) + gestão de preferências.
-- [TODO] L3780:   - Tracking de marketing **apenas com opt‑in** (salvo base legal documentada).
+- [N/A] L3763: - Documentos obrigatórios (publicados e versionados):
+- [N/A] L3764:   - Termos de Utilização (Utilizadores)
+- [N/A] L3765:   - Termos para Organizações (B2B)
+- [N/A] L3766:   - Política de Privacidade (RGPD)
+- [N/A] L3767:   - Política de Cookies / Tracking (web)
+- [N/A] L3768:   - Política de Conteúdo/Conduta + Política de Denúncias (Trust & Safety)
+- [N/A] L3769: - Links obrigatórios na app e website:
+- [N/A] L3770:   - Privacy Policy + Terms **sempre acessíveis sem login** (iOS/Android/Web).
+- [N/A] L3771: - Organizações com vendas/payouts (pré‑requisito para activar pagamentos):
+- [N/A] L3772:   - Identificação legal e fiscal (NIF, representante, morada, dados da empresa).
+- [N/A] L3773:   - Aceitação explícita:
+- [N/A] L3774:     - Organização é responsável pelo evento/serviço (conteúdo, segurança, cumprimento legal, IVA/faturação).
+- [N/A] L3775:     - ORYA é plataforma (fee) e pode suspender funcionalidades e vendas (bloquear checkouts) por risco/abuso.
+- [N/A] L3776:   - Disputes/chargebacks:
+- [N/A] L3777:     - Processo formalizado de evidência e resposta (SLA interno) + auditoria.
+- [N/A] L3778: - Cookies (web):
+- [N/A] L3779:   - Consentimento por categoria (essenciais / analytics / marketing) + gestão de preferências.
+- [N/A] L3780:   - Tracking de marketing **apenas com opt‑in** (salvo base legal documentada).
 - [N/A] L3782: Legal Sign-off e Versionamento (FECHADO)
-- [TODO] L3783: - Todos os documentos legais (Termos, Privacidade, Cookies) são versionados:
-- [TODO] L3784:   - `legalDocsVersion` (ex.: 1.0.0) + `effectiveAt`
-- [TODO] L3785: - Go‑Live Gate:
-- [TODO] L3786:   - não se lança produção sem `legalDocsVersion` aprovado/revisto e links publicados no produto (web/app).
-- [TODO] L3787: - Alterações legais:
-- [TODO] L3788:   - criam nova versão + changelog + data de entrada em vigor
-- [TODO] L3789:   - utilizadores são notificados quando aplicável (Notificações + registo de aceitação)
-- [TODO] L3790: - Ownership:
-- [TODO] L3791:   - responsável interno: Owner/Legal (nome/role no repositório de decisão) + registo de aprovação.
+- [N/A] L3783: - Todos os documentos legais (Termos, Privacidade, Cookies) são versionados:
+- [N/A] L3784:   - `legalDocsVersion` (ex.: 1.0.0) + `effectiveAt`
+- [N/A] L3785: - Go‑Live Gate:
+- [N/A] L3786:   - não se lança produção sem `legalDocsVersion` aprovado/revisto e links publicados no produto (web/app).
+- [N/A] L3787: - Alterações legais:
+- [N/A] L3788:   - criam nova versão + changelog + data de entrada em vigor
+- [N/A] L3789:   - utilizadores são notificados quando aplicável (Notificações + registo de aceitação)
+- [N/A] L3790: - Ownership:
+- [N/A] L3791:   - responsável interno: Owner/Legal (nome/role no repositório de decisão) + registo de aprovação.
 - [N/A] L3793: 19.2 Trust & Safety (abuso inevitável) — **FECHADO**
-- [TODO] L3794: - Sistema de denúncias (in‑app + web):
-- [TODO] L3795:   - Categorias normativas: fraude/pagamentos, evento falso, spam, assédio, conteúdo ilegal, risco físico, menores, violação de direitos, revenda abusiva.
-- [TODO] L3796:   - SLA normativo:
-- [TODO] L3797:     - triagem ≤ 24h
-- [TODO] L3798:     - decisão inicial ≤ 72h (ou “investigação” com estado + motivo)
-- [TODO] L3799:   - Registo obrigatório: `SafetyCase` (caseId, entidade alvo, motivo, evidência, decisão, auditoria).
+- [N/A] L3794: - Sistema de denúncias (in‑app + web):
+- [N/A] L3795:   - Categorias normativas: fraude/pagamentos, evento falso, spam, assédio, conteúdo ilegal, risco físico, menores, violação de direitos, revenda abusiva.
+- [N/A] L3796:   - SLA normativo:
+- [N/A] L3797:     - triagem ≤ 24h
+- [N/A] L3798:     - decisão inicial ≤ 72h (ou “investigação” com estado + motivo)
+- [N/A] L3799:   - Registo obrigatório: `SafetyCase` (caseId, entidade alvo, motivo, evidência, decisão, auditoria).
 - [N/A] L3801: 19.2.1 Políticas de Conteúdo & Idade — **FECHADO**
-- [TODO] L3802: - Proibido:
-- [TODO] L3803:   - fraude, eventos falsos, venda de bens/serviços ilegais, doxxing, assédio grave, incitação ao ódio/violência.
-- [TODO] L3804: - Eventos sensíveis (ex.: álcool/noite):
-- [TODO] L3805:   - exigem sinalização e age-gate quando aplicável.
-- [TODO] L3806: - Responsabilidade:
-- [TODO] L3807:   - a Organização é responsável por licenças/segurança/conduta no local.
-- [TODO] L3808:   - ORYA pode suspender o evento e bloquear novas vendas/checkouts por risco/abuso (com `SafetyCase`).
-- [TODO] L3809: - Medidas (escalonadas e auditáveis):
-- [TODO] L3810:   - Aviso → Limitação (shadow‑limit) → Suspensão temporária → Ban
-- [TODO] L3811:   - Cancelamento de evento (soft‑cancel) + refunds idempotentes quando aplicável
+- [N/A] L3802: - Proibido:
+- [N/A] L3803:   - fraude, eventos falsos, venda de bens/serviços ilegais, doxxing, assédio grave, incitação ao ódio/violência.
+- [N/A] L3804: - Eventos sensíveis (ex.: álcool/noite):
+- [N/A] L3805:   - exigem sinalização e age-gate quando aplicável.
+- [N/A] L3806: - Responsabilidade:
+- [N/A] L3807:   - a Organização é responsável por licenças/segurança/conduta no local.
+- [N/A] L3808:   - ORYA pode suspender o evento e bloquear novas vendas/checkouts por risco/abuso (com `SafetyCase`).
+- [N/A] L3809: - Medidas (escalonadas e auditáveis):
+- [N/A] L3810:   - Aviso → Limitação (shadow‑limit) → Suspensão temporária → Ban
+- [N/A] L3811:   - Cancelamento de evento (soft‑cancel) + refunds idempotentes quando aplicável
 - [N/A] L3813: 19.2.2 Thresholds & Ações Automáticas — **FECHADO**
 - [N/A] L3814: ADITAMENTO FECHADO: thresholds mínimos (valores default; ajustáveis por política).
-- [TODO] L3815: - Chargeback rate por Organização (janela móvel 30d, mínimo 100 pagamentos):
-- [TODO] L3816:   - **Sinaliza** > 0.8% → `SafetyCase` + `reasonCode=RISK_CHARGEBACK_RATE_ORG_HIGH`
-- [TODO] L3817:   - **Bloqueia** > 1.5% → bloquear novos checkouts da org até revisão + `reasonCode=RISK_CHARGEBACK_RATE_ORG_BLOCK`
-- [TODO] L3818: - Chargeback rate por Evento (janela móvel 30d desde 1ª venda até 30d pós‑evento, mínimo 30 pagamentos):
-- [TODO] L3819:   - **Sinaliza** > 1.0% **e** ≥ 2 disputes → `reasonCode=RISK_CHARGEBACK_RATE_EVENT_HIGH`
-- [TODO] L3820:   - **Bloqueia** > 2.0% **e** ≥ 3 disputes → bloquear novos checkouts do evento + `reasonCode=RISK_CHARGEBACK_RATE_EVENT_BLOCK`
-- [TODO] L3821: - Picos anómalos de vendas (org/event, baseline 7d):
-- [TODO] L3822:   - **Sinaliza** ≥ 3× baseline **e** ≥ 20 compras/min por ≥ 3 min → step‑up/captcha + rate‑limit + `reasonCode=RISK_SALES_SPIKE`
-- [TODO] L3823:   - **Bloqueia** ≥ 6× baseline **e** ≥ 50 compras/min por ≥ 3 min → bloquear novos checkouts + `reasonCode=RISK_SALES_SPIKE_BLOCK`
-- [TODO] L3824: - Revenda suspeita (por identidade):
-- [TODO] L3825:   - **Sinaliza** ≥ 5 falhas de transfer/claim por 1h **ou** ≥ 8 transferências/24h → step‑up + rate‑limit + `reasonCode=RISK_RESALE_SUSPECTED`
-- [TODO] L3826:   - **Bloqueia** ≥ 10 falhas/1h **ou** ≥ 12 transferências/24h → bloquear transferências/claims + `reasonCode=RISK_RESALE_BLOCK`
-- [TODO] L3827: - Check‑in anómalo (por evento/scanner):
-- [TODO] L3828:   - **Sinaliza** (`checkin.denied` + `checkin.duplicate`) ≥ 10% em 10 min com ≥ 30 scans → aviso + modo recinto + `reasonCode=RISK_CHECKIN_ANOMALY`
-- [TODO] L3829:   - **Bloqueia** ≥ 20% em 10 min com ≥ 30 scans → bloquear novos scans desse scanner + fallback + `reasonCode=RISK_CHECKIN_ANOMALY_BLOCK`
+- [N/A] L3815: - Chargeback rate por Organização (janela móvel 30d, mínimo 100 pagamentos):
+- [N/A] L3816:   - **Sinaliza** > 0.8% → `SafetyCase` + `reasonCode=RISK_CHARGEBACK_RATE_ORG_HIGH`
+- [N/A] L3817:   - **Bloqueia** > 1.5% → bloquear novos checkouts da org até revisão + `reasonCode=RISK_CHARGEBACK_RATE_ORG_BLOCK`
+- [N/A] L3818: - Chargeback rate por Evento (janela móvel 30d desde 1ª venda até 30d pós‑evento, mínimo 30 pagamentos):
+- [N/A] L3819:   - **Sinaliza** > 1.0% **e** ≥ 2 disputes → `reasonCode=RISK_CHARGEBACK_RATE_EVENT_HIGH`
+- [N/A] L3820:   - **Bloqueia** > 2.0% **e** ≥ 3 disputes → bloquear novos checkouts do evento + `reasonCode=RISK_CHARGEBACK_RATE_EVENT_BLOCK`
+- [N/A] L3821: - Picos anómalos de vendas (org/event, baseline 7d):
+- [N/A] L3822:   - **Sinaliza** ≥ 3× baseline **e** ≥ 20 compras/min por ≥ 3 min → step‑up/captcha + rate‑limit + `reasonCode=RISK_SALES_SPIKE`
+- [N/A] L3823:   - **Bloqueia** ≥ 6× baseline **e** ≥ 50 compras/min por ≥ 3 min → bloquear novos checkouts + `reasonCode=RISK_SALES_SPIKE_BLOCK`
+- [N/A] L3824: - Revenda suspeita (por identidade):
+- [N/A] L3825:   - **Sinaliza** ≥ 5 falhas de transfer/claim por 1h **ou** ≥ 8 transferências/24h → step‑up + rate‑limit + `reasonCode=RISK_RESALE_SUSPECTED`
+- [N/A] L3826:   - **Bloqueia** ≥ 10 falhas/1h **ou** ≥ 12 transferências/24h → bloquear transferências/claims + `reasonCode=RISK_RESALE_BLOCK`
+- [N/A] L3827: - Check‑in anómalo (por evento/scanner):
+- [N/A] L3828:   - **Sinaliza** (`checkin.denied` + `checkin.duplicate`) ≥ 10% em 10 min com ≥ 30 scans → aviso + modo recinto + `reasonCode=RISK_CHECKIN_ANOMALY`
+- [N/A] L3829:   - **Bloqueia** ≥ 20% em 10 min com ≥ 30 scans → bloquear novos scans desse scanner + fallback + `reasonCode=RISK_CHECKIN_ANOMALY_BLOCK`
 - [N/A] L3831: 19.2.3 Tooling mínimo de moderação — **FECHADO**
 - [N/A] L3832: ADITAMENTO FECHADO: estado e campos mínimos do `SafetyCase`.
-- [TODO] L3833: - Queue / estados: `NEW → TRIAGED → INVESTIGATING → DECIDED → (APPEALED) → CLOSED`
-- [TODO] L3834: - Campos mínimos:
-- [TODO] L3835:   - `decision = ALLOW | LIMIT | SUSPEND | BAN | SOFT_CANCEL_EVENT`
-- [TODO] L3836:   - `scope = USER | ORG | EVENT`
-- [TODO] L3837:   - `duration`/`expiresAt` (quando aplicável)
-- [TODO] L3838:   - `decidedBy` (userId/role)
-- [TODO] L3839:   - `evidenceLinks[]`
-- [TODO] L3840:   - timestamps: `createdAt`, `triagedAt`, `decidedAt`, `closedAt`
-- [TODO] L3841: - Safety Inbox (Backoffice):
-- [TODO] L3842:   - lista + pesquisa + filtros por severidade/estado/entidade
-- [TODO] L3843:   - SLA timers (triagem/decisão)
-- [TODO] L3844:   - templates de decisão (com reasonCode)
-- [TODO] L3845:   - audit log completo por caso
+- [N/A] L3833: - Queue / estados: `NEW → TRIAGED → INVESTIGATING → DECIDED → (APPEALED) → CLOSED`
+- [N/A] L3834: - Campos mínimos:
+- [N/A] L3835:   - `decision = ALLOW | LIMIT | SUSPEND | BAN | SOFT_CANCEL_EVENT`
+- [N/A] L3836:   - `scope = USER | ORG | EVENT`
+- [N/A] L3837:   - `duration`/`expiresAt` (quando aplicável)
+- [N/A] L3838:   - `decidedBy` (userId/role)
+- [N/A] L3839:   - `evidenceLinks[]`
+- [N/A] L3840:   - timestamps: `createdAt`, `triagedAt`, `decidedAt`, `closedAt`
+- [N/A] L3841: - Safety Inbox (Backoffice):
+- [N/A] L3842:   - lista + pesquisa + filtros por severidade/estado/entidade
+- [N/A] L3843:   - SLA timers (triagem/decisão)
+- [N/A] L3844:   - templates de decisão (com reasonCode)
+- [N/A] L3845:   - audit log completo por caso
 - [N/A] L3847: 19.2.4 Kill Switches — **FECHADO**
 - [N/A] L3848: ADITAMENTO FECHADO: switches operacionais compatíveis com Stripe Connect Standard.
-- [TODO] L3849: - A) Kill switch por **EVENTO**
-- [TODO] L3850:   - aplica: bloquear novos checkouts + ocultar da descoberta
-- [TODO] L3851:   - mantém: suporte + gestão de refunds
-- [TODO] L3852:   - guardrail: API `createCheckout` + discovery gated
-- [TODO] L3853:   - reversão: decisão em `SafetyCase` + expiração definida
-- [TODO] L3854:   - audit: EventLog `safety.kill_switch.event` + `reasonCode=KILL_SWITCH_EVENT`
-- [TODO] L3855: - B) Kill switch por **ORG**
-- [TODO] L3856:   - aplica: bloquear criação/publicação + bloquear checkouts + travar revenda
-- [TODO] L3857:   - guardrail: API org/event + checkout + transfer
-- [TODO] L3858:   - reversão: decisão em `SafetyCase` + expiração definida
-- [TODO] L3859:   - audit: EventLog `safety.kill_switch.org` + `reasonCode=KILL_SWITCH_ORG`
-- [TODO] L3860: - C) Kill switch por **IDENTITY**
-- [TODO] L3861:   - aplica: bloquear compras/transferências, exigir step‑up, suspender sessão
-- [TODO] L3862:   - guardrail: auth + createCheckout + transfer
-- [TODO] L3863:   - reversão: decisão em `SafetyCase` + expiração definida
-- [TODO] L3864:   - audit: EventLog `safety.kill_switch.identity` + `reasonCode=KILL_SWITCH_IDENTITY`
+- [N/A] L3849: - A) Kill switch por **EVENTO**
+- [N/A] L3850:   - aplica: bloquear novos checkouts + ocultar da descoberta
+- [N/A] L3851:   - mantém: suporte + gestão de refunds
+- [N/A] L3852:   - guardrail: API `createCheckout` + discovery gated
+- [N/A] L3853:   - reversão: decisão em `SafetyCase` + expiração definida
+- [N/A] L3854:   - audit: EventLog `safety.kill_switch.event` + `reasonCode=KILL_SWITCH_EVENT`
+- [N/A] L3855: - B) Kill switch por **ORG**
+- [N/A] L3856:   - aplica: bloquear criação/publicação + bloquear checkouts + travar revenda
+- [N/A] L3857:   - guardrail: API org/event + checkout + transfer
+- [N/A] L3858:   - reversão: decisão em `SafetyCase` + expiração definida
+- [N/A] L3859:   - audit: EventLog `safety.kill_switch.org` + `reasonCode=KILL_SWITCH_ORG`
+- [N/A] L3860: - C) Kill switch por **IDENTITY**
+- [N/A] L3861:   - aplica: bloquear compras/transferências, exigir step‑up, suspender sessão
+- [N/A] L3862:   - guardrail: auth + createCheckout + transfer
+- [N/A] L3863:   - reversão: decisão em `SafetyCase` + expiração definida
+- [N/A] L3864:   - audit: EventLog `safety.kill_switch.identity` + `reasonCode=KILL_SWITCH_IDENTITY`
 - [N/A] L3866: Nota (FECHADO): em Stripe Connect Standard, a ORYA não controla directamente payouts do Connected Account.
 - [N/A] L3867: As medidas de mitigação são operacionais: bloquear novas vendas/checkouts, desactivar eventos, aplicar step‑up,
 - [N/A] L3868: limitar acções de risco e, quando aplicável, iniciar refunds/chargeback workflows.
 - [N/A] L3869: Qualquer controlo fino de transferências/payout holds é fora do v1.x e requer revisão do funds flow/account type.
-- [TODO] L3871: - Risk flags automáticos (motor mínimo v1):
-- [TODO] L3872:   - Chargeback rate acima de threshold (por organização e por evento)
-- [TODO] L3873:   - Padrões anómalos de venda (picos, múltiplas compras por identidades correlacionadas, repetição de IP/device)
-- [TODO] L3874:   - Revenda suspeita (tentativas repetidas, padrões de scalping, abuso de 0€)
-- [TODO] L3875:   - Check‑in anómalo (múltiplos denies/duplicates por scanner/evento)
-- [TODO] L3876: - Integração com Finanças:
-- [TODO] L3877:   - `risk.flagged` pode activar: step‑up, limits, bloqueio temporário de criação de eventos/checkouts e revisão manual (D4/D9).
+- [N/A] L3871: - Risk flags automáticos (motor mínimo v1):
+- [N/A] L3872:   - Chargeback rate acima de threshold (por organização e por evento)
+- [N/A] L3873:   - Padrões anómalos de venda (picos, múltiplas compras por identidades correlacionadas, repetição de IP/device)
+- [N/A] L3874:   - Revenda suspeita (tentativas repetidas, padrões de scalping, abuso de 0€)
+- [N/A] L3875:   - Check‑in anómalo (múltiplos denies/duplicates por scanner/evento)
+- [N/A] L3876: - Integração com Finanças:
+- [N/A] L3877:   - `risk.flagged` pode activar: step‑up, limits, bloqueio temporário de criação de eventos/checkouts e revisão manual (D4/D9).
 - [N/A] L3879: 19.3 Suporte & Operação (quando falha às 02:00) — **FECHADO**
 - [N/A] L3880: 19.3.0 Kill Switches & Degraded Modes (NORMATIVE)
 - [N/A] L3881: The platform MUST support operational kill switches to limit blast radius.
 - [N/A] L3883: Examples include:
-- [TODO] L3884: - disabling new checkouts while allowing check-in
-- [TODO] L3885: - pausing payouts while preserving ledger integrity
-- [TODO] L3886: - freezing promotions or codes during abuse spikes
+- [N/A] L3884: - disabling new checkouts while allowing check-in
+- [N/A] L3885: - pausing payouts while preserving ledger integrity
+- [N/A] L3886: - freezing promotions or codes during abuse spikes
 - [N/A] L3888: Kill switches MUST:
-- [TODO] L3889: - be reversible
-- [TODO] L3890: - be auditable
-- [TODO] L3891: - not violate SSOT or ledger invariants
+- [N/A] L3889: - be reversible
+- [N/A] L3890: - be auditable
+- [N/A] L3891: - not violate SSOT or ledger invariants
 - [N/A] L3893: Degraded operation is preferred over full outage.
-- [TODO] L3895: - Support Playbook (runbooks) obrigatório:
-- [TODO] L3896:   - Pagamento preso (PROCESSING / REQUIRES_ACTION)
-- [TODO] L3897:   - Webhook falhou / DLQ a crescer
-- [TODO] L3898:   - Check‑in lento / rede instável no recinto
-- [TODO] L3899:   - Erro em refunds/chargebacks
-- [TODO] L3900:   - Incidente de segurança (conta comprometida / fraude)
-- [TODO] L3901: - Modos operacionais:
-- [TODO] L3902:   - “Recinto” (check‑in): prioridade operacional, UX de fallback e mensagens claras.
-- [TODO] L3903:   - “Finance ops”: triagem de disputes/refunds com logs e trilho de auditoria.
-- [TODO] L3904: - Escalação (SLA interno):
-- [TODO] L3905:   - L1 suporte → L2 operações → engenharia on‑call → decisão (admin).
-- [TODO] L3906: - Observabilidade mínima (sempre ligada):
-- [TODO] L3907:   - Logs, métricas, tracing onde possível; dashboards por domínio (Finanças, Jobs, Check‑in, Address).
-- [TODO] L3908:   - Alertas críticos (pagers) quando:
-- [TODO] L3909:     - DLQ > 0 por mais de X min
-- [TODO] L3910:     - webhook failure rate acima de threshold
-- [TODO] L3911:     - taxa de `payment.processing` > threshold
-- [TODO] L3912:     - `processorFeesStatus` não fecha dentro de janela (p95)
-- [TODO] L3913:     - drift jobs acusam inconsistências acima de threshold
-- [TODO] L3914: - Backups & Restore (targets internos):
-- [TODO] L3915:   - RPO/RTO normativos (targets operacionais):
-- [TODO] L3916:     - DB transaccional: RPO ≤ 1h, RTO ≤ 4h
-- [TODO] L3917:     - Config/policies (fee policies, access policies): RPO ≤ 15m, RTO ≤ 2h
-- [TODO] L3918:     - Logs/EventLog (auditoria): RPO ≤ 24h, RTO ≤ 12h
-- [TODO] L3919:   - Backups automáticos + retenção por política.
-- [TODO] L3920:   - **Teste de restore inicial** obrigatório no Go‑Live.
+- [N/A] L3895: - Support Playbook (runbooks) obrigatório:
+- [N/A] L3896:   - Pagamento preso (PROCESSING / REQUIRES_ACTION)
+- [N/A] L3897:   - Webhook falhou / DLQ a crescer
+- [N/A] L3898:   - Check‑in lento / rede instável no recinto
+- [N/A] L3899:   - Erro em refunds/chargebacks
+- [N/A] L3900:   - Incidente de segurança (conta comprometida / fraude)
+- [N/A] L3901: - Modos operacionais:
+- [N/A] L3902:   - “Recinto” (check‑in): prioridade operacional, UX de fallback e mensagens claras.
+- [N/A] L3903:   - “Finance ops”: triagem de disputes/refunds com logs e trilho de auditoria.
+- [N/A] L3904: - Escalação (SLA interno):
+- [N/A] L3905:   - L1 suporte → L2 operações → engenharia on‑call → decisão (admin).
+- [N/A] L3906: - Observabilidade mínima (sempre ligada):
+- [N/A] L3907:   - Logs, métricas, tracing onde possível; dashboards por domínio (Finanças, Jobs, Check‑in, Address).
+- [N/A] L3908:   - Alertas críticos (pagers) quando:
+- [N/A] L3909:     - DLQ > 0 por mais de X min
+- [N/A] L3910:     - webhook failure rate acima de threshold
+- [N/A] L3911:     - taxa de `payment.processing` > threshold
+- [N/A] L3912:     - `processorFeesStatus` não fecha dentro de janela (p95)
+- [N/A] L3913:     - drift jobs acusam inconsistências acima de threshold
+- [N/A] L3914: - Backups & Restore (targets internos):
+- [N/A] L3915:   - RPO/RTO normativos (targets operacionais):
+- [N/A] L3916:     - DB transaccional: RPO ≤ 1h, RTO ≤ 4h
+- [N/A] L3917:     - Config/policies (fee policies, access policies): RPO ≤ 15m, RTO ≤ 2h
+- [N/A] L3918:     - Logs/EventLog (auditoria): RPO ≤ 24h, RTO ≤ 12h
+- [N/A] L3919:   - Backups automáticos + retenção por política.
+- [N/A] L3920:   - **Teste de restore inicial** obrigatório no Go‑Live.
 - [N/A] L3922: 19.3.1 Backups reais (Supabase → AWS) — **FECHADO**
 - [N/A] L3923: Como o DB está em Supabase na Fase 1, a estratégia de backup é:
-- [TODO] L3924: - Primário: PITR/Backups geridos pelo Supabase (conforme plano).
-- [TODO] L3925: - Secundário (AWS): export automatizado para S3 (diário) + retenção por policy:
-- [TODO] L3926:   - dumps encriptados (KMS) + versioning + lifecycle (ex.: 30/90/365 dias conforme classe).
-- [TODO] L3927: - Restore:
-- [TODO] L3928:   - runbook para restore via Supabase + validação pós‑restore (smoke tests).
-- [TODO] L3929:   - 1º restore test obrigatório antes do Go‑Live (19.0).
+- [N/A] L3924: - Primário: PITR/Backups geridos pelo Supabase (conforme plano).
+- [N/A] L3925: - Secundário (AWS): export automatizado para S3 (diário) + retenção por policy:
+- [N/A] L3926:   - dumps encriptados (KMS) + versioning + lifecycle (ex.: 30/90/365 dias conforme classe).
+- [N/A] L3927: - Restore:
+- [N/A] L3928:   - runbook para restore via Supabase + validação pós‑restore (smoke tests).
+- [N/A] L3929:   - 1º restore test obrigatório antes do Go‑Live (19.0).
 - [N/A] L3931: 19.4 Governança de Dados (RGPD / DSAR) — **FECHADO**
 - [N/A] L3932: 19.4.0 Data Classification & Purpose Binding (NORMATIVE)
 - [N/A] L3933: All data within the ORYA platform is classified and handled according to its sensitivity and purpose.
 - [N/A] L3935: ### Data Classes
-- [TODO] L3936: - **PII:** personal identifiers (email, name, phone)
-- [TODO] L3937: - **FINANCIAL:** ledger entries, payouts, fees, invoices
-- [TODO] L3938: - **AUDIT:** immutable logs, access trails, reconciliation records
-- [TODO] L3939: - **OPERATIONAL:** configs, schedules, availability
-- [TODO] L3940: - **PUBLIC:** content explicitly marked as public
+- [N/A] L3936: - **PII:** personal identifiers (email, name, phone)
+- [N/A] L3937: - **FINANCIAL:** ledger entries, payouts, fees, invoices
+- [N/A] L3938: - **AUDIT:** immutable logs, access trails, reconciliation records
+- [N/A] L3939: - **OPERATIONAL:** configs, schedules, availability
+- [N/A] L3940: - **PUBLIC:** content explicitly marked as public
 - [N/A] L3942: ### Purpose Binding
 - [N/A] L3943: Each data class MUST:
-- [TODO] L3944: - be collected for an explicit purpose
-- [TODO] L3945: - not be reused for unrelated purposes
-- [TODO] L3946: - respect least-retention necessary for that purpose
+- [N/A] L3944: - be collected for an explicit purpose
+- [N/A] L3945: - not be reused for unrelated purposes
+- [N/A] L3946: - respect least-retention necessary for that purpose
 - [N/A] L3948: Access outside declared purpose is forbidden.
-- [TODO] L3950: - Direitos do titular (DSAR) — fluxos obrigatórios:
-- [TODO] L3951:   - Exportar dados (“download my data”) em formato portátil.
-- [TODO] L3952:   - Eliminar conta (“delete account”) com:
-- [TODO] L3953:     - apagamento/anonymize de PII onde permitido
-- [TODO] L3954:     - preservação legal do que for obrigatório (ex.: registos contabilísticos/financeiros)
-- [TODO] L3955:   - Prazos e tracking:
-- [TODO] L3956:     - pedidos registados com `dsarCaseId`, status, datas, evidência de cumprimento.
-- [TODO] L3957: - Retenção por categoria:
-- [TODO] L3958:   - Ledger/finanças/auditoria: retenção legal (Portugal) + minimização de PII.
-- [TODO] L3959:   - EventLog técnico e logs: conforme 12.2.1 (sem PII directa).
-- [TODO] L3960:   - PII: apenas enquanto necessário para prestação do serviço + base legal documentada.
-- [TODO] L3961: - Minimização / pseudonimização:
-- [TODO] L3962:   - IDs/pseudónimos em logs; emails/telefones apenas em sistemas próprios e protegidos.
-- [TODO] L3963:   - Hashes para dedupe e anti‑abuso (sem reidentificação indevida).
-- [TODO] L3964: - Segurança:
-- [TODO] L3965:   - Encryption at rest e in transit.
-- [TODO] L3966:   - Segredos em Secrets Manager/SSM; rotação; acesso mínimo.
+- [N/A] L3950: - Direitos do titular (DSAR) — fluxos obrigatórios:
+- [N/A] L3951:   - Exportar dados (“download my data”) em formato portátil.
+- [N/A] L3952:   - Eliminar conta (“delete account”) com:
+- [N/A] L3953:     - apagamento/anonymize de PII onde permitido
+- [N/A] L3954:     - preservação legal do que for obrigatório (ex.: registos contabilísticos/financeiros)
+- [N/A] L3955:   - Prazos e tracking:
+- [N/A] L3956:     - pedidos registados com `dsarCaseId`, status, datas, evidência de cumprimento.
+- [N/A] L3957: - Retenção por categoria:
+- [N/A] L3958:   - Ledger/finanças/auditoria: retenção legal (Portugal) + minimização de PII.
+- [N/A] L3959:   - EventLog técnico e logs: conforme 12.2.1 (sem PII directa).
+- [N/A] L3960:   - PII: apenas enquanto necessário para prestação do serviço + base legal documentada.
+- [N/A] L3961: - Minimização / pseudonimização:
+- [N/A] L3962:   - IDs/pseudónimos em logs; emails/telefones apenas em sistemas próprios e protegidos.
+- [N/A] L3963:   - Hashes para dedupe e anti‑abuso (sem reidentificação indevida).
+- [N/A] L3964: - Segurança:
+- [N/A] L3965:   - Encryption at rest e in transit.
+- [N/A] L3966:   - Segredos em Secrets Manager/SSM; rotação; acesso mínimo.
 - [N/A] L3968: 19.4.1 Tabela de Retenção (normativa) — **FECHADO**
 - [N/A] L3969: ADITAMENTO FECHADO: valores default e tratamento no delete account.
 - [N/A] L3971: | Categoria de dados | Exemplos (entidades/tabelas) | Retenção | Base legal | Tratamento no delete account |
@@ -3942,73 +3951,73 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L3983: Regra: se existir **legal hold** (dispute/obrigação legal), o delete account **não** remove dados bloqueados; apenas minimiza PII e regista motivo no `dsarCaseId`.
 - [N/A] L3985: 19.4.2 Regras de Anonymize / Detach — **FECHADO**
 - [N/A] L3986: ADITAMENTO FECHADO: procedimento técnico mínimo.
-- [TODO] L3987: - Remover/limpar PII directa: `email`, `phone`, `fullName`, `address`, `dob`, `documentId`, `avatarUrl`.
-- [TODO] L3988: - Detach de referências externas: remover `stripeCustomerId` quando permitido; manter apenas referências financeiras legalmente obrigatórias.
-- [TODO] L3989: - Pseudónimos e hashes:
-- [TODO] L3990:   - `emailHash`/`phoneHash` via HMAC com segredo rotativo; uso exclusivo para dedupe/anti‑abuso.
-- [TODO] L3991:   - hashes **não** são reidentificáveis sem segredo; acesso restrito.
-- [TODO] L3992: - Integridade referencial:
-- [TODO] L3993:   - substituir `identityRef` por `anonymizedIdentityRef` em `LedgerEntry`, `Ticket`, `Entitlement`, `CheckinLog`, `EventLog`.
-- [TODO] L3994:   - manter `subjectType`/`subjectId` para auditoria sem PII.
-- [TODO] L3995: - DSAR export (“download my data”) **inclui**:
-- [TODO] L3996:   - perfil/conta, memberships, compras, tickets/entitlements, refunds, histórico de check‑in, consentimentos, notificações enviadas, pedidos de suporte.
-- [TODO] L3997: - DSAR export **exclui**:
-- [TODO] L3998:   - segredos, chaves, regras internas de risco, notas internas de moderação, evidência sensível de terceiros.
+- [N/A] L3987: - Remover/limpar PII directa: `email`, `phone`, `fullName`, `address`, `dob`, `documentId`, `avatarUrl`.
+- [N/A] L3988: - Detach de referências externas: remover `stripeCustomerId` quando permitido; manter apenas referências financeiras legalmente obrigatórias.
+- [N/A] L3989: - Pseudónimos e hashes:
+- [N/A] L3990:   - `emailHash`/`phoneHash` via HMAC com segredo rotativo; uso exclusivo para dedupe/anti‑abuso.
+- [N/A] L3991:   - hashes **não** são reidentificáveis sem segredo; acesso restrito.
+- [N/A] L3992: - Integridade referencial:
+- [N/A] L3993:   - substituir `identityRef` por `anonymizedIdentityRef` em `LedgerEntry`, `Ticket`, `Entitlement`, `CheckinLog`, `EventLog`.
+- [N/A] L3994:   - manter `subjectType`/`subjectId` para auditoria sem PII.
+- [N/A] L3995: - DSAR export (“download my data”) **inclui**:
+- [N/A] L3996:   - perfil/conta, memberships, compras, tickets/entitlements, refunds, histórico de check‑in, consentimentos, notificações enviadas, pedidos de suporte.
+- [N/A] L3997: - DSAR export **exclui**:
+- [N/A] L3998:   - segredos, chaves, regras internas de risco, notas internas de moderação, evidência sensível de terceiros.
 - [N/A] L4000: 19.5 Account Security (ATO / Account Takeover) — **FECHADO**
 - [N/A] L4001: 19.5.0 Threat Model (NORMATIVE)
 - [N/A] L4002: The platform explicitly defends against the following primary threats:
-- [TODO] L4003: - Account Takeover (ATO)
-- [TODO] L4004: - Cross-organization data leakage
-- [TODO] L4005: - Replay and duplicate execution
-- [TODO] L4006: - Webhook spoofing
-- [TODO] L4007: - Privilege escalation via RBAC
-- [TODO] L4008: - Financial double-spend or reconciliation drift
+- [N/A] L4003: - Account Takeover (ATO)
+- [N/A] L4004: - Cross-organization data leakage
+- [N/A] L4005: - Replay and duplicate execution
+- [N/A] L4006: - Webhook spoofing
+- [N/A] L4007: - Privilege escalation via RBAC
+- [N/A] L4008: - Financial double-spend or reconciliation drift
 - [N/A] L4010: Mitigations include:
-- [TODO] L4011: - strict org isolation
-- [TODO] L4012: - idempotency at all side-effect boundaries
-- [TODO] L4013: - append-only ledger
-- [TODO] L4014: - fail-closed authorization
-- [TODO] L4015: - audit trails for all sensitive actions
+- [N/A] L4011: - strict org isolation
+- [N/A] L4012: - idempotency at all side-effect boundaries
+- [N/A] L4013: - append-only ledger
+- [N/A] L4014: - fail-closed authorization
+- [N/A] L4015: - audit trails for all sensitive actions
 - [N/A] L4017: Any new feature MUST be evaluated against this threat model.
-- [TODO] L4019: - Email verificado obrigatório para acções de risco:
-- [TODO] L4020:   - comprar, revender/transferir, alterar email, alterar payout settings (org), aceder a Finanças (org).
-- [TODO] L4021: - Rate limit global por IP/device/identity em:
-- [TODO] L4022:   - login, reset password, magic links, invite token, QR token, createCheckout.
-- [TODO] L4023: - Sessões:
-- [TODO] L4024:   - refresh tokens rotativos + revogação em logout e mudança de password.
-- [TODO] L4025: - Step‑up de segurança:
-- [TODO] L4026:   - comportamento suspeito → captcha/turnstile + re‑auth obrigatório.
-- [TODO] L4027: - Auditoria:
-- [TODO] L4028:   - `security.alert` (EventLog) para logins suspeitos e acções de risco.
+- [N/A] L4019: - Email verificado obrigatório para acções de risco:
+- [N/A] L4020:   - comprar, revender/transferir, alterar email, alterar payout settings (org), aceder a Finanças (org).
+- [N/A] L4021: - Rate limit global por IP/device/identity em:
+- [N/A] L4022:   - login, reset password, magic links, invite token, QR token, createCheckout.
+- [N/A] L4023: - Sessões:
+- [N/A] L4024:   - refresh tokens rotativos + revogação em logout e mudança de password.
+- [N/A] L4025: - Step‑up de segurança:
+- [N/A] L4026:   - comportamento suspeito → captcha/turnstile + re‑auth obrigatório.
+- [N/A] L4027: - Auditoria:
+- [N/A] L4028:   - `security.alert` (EventLog) para logins suspeitos e acções de risco.
 - [N/A] L4030: 19.6 Qualidade & Release Gates (DoD “produção”) — **FECHADO**
-- [TODO] L4031: - Nenhum release sem:
-- [TODO] L4032:   - Contract tests a passar (golden tests) — ver 12.6
-- [TODO] L4033:   - Architecture tests a passar (owners, Stripe só em Finanças, etc.) — ver 12.6
-- [TODO] L4034:   - Idempotência verificada nos fluxos críticos (checkout/refund/fulfillment/check‑in)
-- [TODO] L4035:   - SLIs/alertas actualizados e dashboards válidos (14.1.1)
-- [TODO] L4036:   - Runbooks actualizados para mudanças de comportamento
-- [TODO] L4037: - Golden Set (obrigatório) — **FECHADO** (ADITAMENTO)
-- [TODO] L4038:   - `createCheckout` idempotente: replay com o mesmo `idempotencyKey` **não** duplica `Payment`/`LedgerEntry`
-- [TODO] L4039:   - Webhooks fora de ordem não corrompem estados (`Payment`/`Refund`/`Dispute`)
-- [TODO] L4040:   - Refund parcial revoga **apenas** os entitlements correctos
-- [TODO] L4041:   - `dispute.created` suspende entitlement + bloqueia entrada (se aplicável) + cria `SafetyCase` com `reasonCode=RISK_DISPUTE_CREATED`
-- [TODO] L4042:   - Claim guest → user não duplica ownership nem tickets
-- [TODO] L4043:   - Check‑in duplicate gera `reasonCode=CHECKIN_DUPLICATE` + audit em `EventLog`
-- [TODO] L4044:   - Reconciliação ledger vs processor detecta divergência e gera alerta crítico
-- [TODO] L4045: - Regressões automáticas (alertas):
-- [TODO] L4046:   - divergência ledger vs processor (reconciliação)
-- [TODO] L4047:   - pagamentos presos acima do normal
-- [TODO] L4048:   - falhas em jobs críticos / DLQ
-- [TODO] L4049:   - spikes de `checkin.denied`/`duplicate`
-- [TODO] L4050:   - spikes de `free_checkout.denied` (anti‑abuso)
+- [N/A] L4031: - Nenhum release sem:
+- [N/A] L4032:   - Contract tests a passar (golden tests) — ver 12.6
+- [N/A] L4033:   - Architecture tests a passar (owners, Stripe só em Finanças, etc.) — ver 12.6
+- [N/A] L4034:   - Idempotência verificada nos fluxos críticos (checkout/refund/fulfillment/check‑in)
+- [N/A] L4035:   - SLIs/alertas actualizados e dashboards válidos (14.1.1)
+- [N/A] L4036:   - Runbooks actualizados para mudanças de comportamento
+- [N/A] L4037: - Golden Set (obrigatório) — **FECHADO** (ADITAMENTO)
+- [N/A] L4038:   - `createCheckout` idempotente: replay com o mesmo `idempotencyKey` **não** duplica `Payment`/`LedgerEntry`
+- [N/A] L4039:   - Webhooks fora de ordem não corrompem estados (`Payment`/`Refund`/`Dispute`)
+- [N/A] L4040:   - Refund parcial revoga **apenas** os entitlements correctos
+- [N/A] L4041:   - `dispute.created` suspende entitlement + bloqueia entrada (se aplicável) + cria `SafetyCase` com `reasonCode=RISK_DISPUTE_CREATED`
+- [N/A] L4042:   - Claim guest → user não duplica ownership nem tickets
+- [N/A] L4043:   - Check‑in duplicate gera `reasonCode=CHECKIN_DUPLICATE` + audit em `EventLog`
+- [N/A] L4044:   - Reconciliação ledger vs processor detecta divergência e gera alerta crítico
+- [N/A] L4045: - Regressões automáticas (alertas):
+- [N/A] L4046:   - divergência ledger vs processor (reconciliação)
+- [N/A] L4047:   - pagamentos presos acima do normal
+- [N/A] L4048:   - falhas em jobs críticos / DLQ
+- [N/A] L4049:   - spikes de `checkin.denied`/`duplicate`
+- [N/A] L4050:   - spikes de `free_checkout.denied` (anti‑abuso)
 - [N/A] L4052: 19.7 Hardening (Fase 2/3) — **FECHADO**
-- [TODO] L4053: - DR “game days” (semestral):
-- [TODO] L4054:   - simular indisponibilidade de componentes críticos (fila/jobs, storage, compute)
-- [TODO] L4055:   - validar recuperação e impacto em RPO/RTO
-- [TODO] L4056: - Restore tests recorrentes + relatórios assinados.
-- [TODO] L4057: - Observabilidade avançada (tracing end‑to‑end, SLOs por domínio).
-- [TODO] L4058: - Risk engine mais sofisticado (modelos e regras dinâmicas).
-- [TODO] L4059: - Automação de DSAR e auditorias internas periódicas.
+- [N/A] L4053: - DR “game days” (semestral):
+- [N/A] L4054:   - simular indisponibilidade de componentes críticos (fila/jobs, storage, compute)
+- [N/A] L4055:   - validar recuperação e impacto em RPO/RTO
+- [N/A] L4056: - Restore tests recorrentes + relatórios assinados.
+- [N/A] L4057: - Observabilidade avançada (tracing end‑to‑end, SLOs por domínio).
+- [N/A] L4058: - Risk engine mais sofisticado (modelos e regras dinâmicas).
+- [N/A] L4059: - Automação de DSAR e auditorias internas periódicas.
 - [N/A] L4062: ANEXO A — Padel (Plano de Excelência)
 - [DONE] L4063: Status Padel (2026-02-02): DONE (F1). F2/F3 mantidos como backlog explicito.
 - [N/A] L4065: **Nota de integração:** este anexo detalha o vertical Padel. Tudo o que for pagamento, identidade, entitlements, refunds, RBAC, endereços e notificações **obedece** às decisões e SSOTs do blueprint principal (v9). Se houver conflito, vence o blueprint.
@@ -4021,489 +4030,489 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L4077: ---
 - [N/A] L4079: ## 0) Objetivo e Princípios
 - [N/A] L4081: **Objetivo:** elevar o ecossistema ORYA de Padel ao nível das melhores plataformas globais (Padel Manager, Playtomic Manager, Tournament Software, PadelTeams), criando **duas ferramentas distintas e integradas**:
-- [TODO] L4082: 1. **Gestão de Clube de Padel**
-- [TODO] L4083: 2. **Gestão de Torneios de Padel**
+- [N/A] L4082: 1. **Gestão de Clube de Padel**
+- [N/A] L4083: 2. **Gestão de Torneios de Padel**
 - [N/A] L4085: **Princípios (TO-BE):**
-- [TODO] L4086: - **Simples e automático:** defaults fortes, pouco atrito.
-- [TODO] L4087: - **Operacional e robusto:** tudo funciona em tempo real, com logs e controlo.
-- [TODO] L4088: - **Experiência premium:** organizadores e jogadores com UX limpa e previsível.
-- [TODO] L4089: - **Integração total:** clube, torneio, CRM, perfis e estatísticas em sintonia.
-- [TODO] L4090: - **SSOT v9:** Financas/Reservas/Check-in/CRM/RBAC/Address seguem o v9; Padel nunca duplica logica.
+- [N/A] L4086: - **Simples e automático:** defaults fortes, pouco atrito.
+- [N/A] L4087: - **Operacional e robusto:** tudo funciona em tempo real, com logs e controlo.
+- [N/A] L4088: - **Experiência premium:** organizadores e jogadores com UX limpa e previsível.
+- [N/A] L4089: - **Integração total:** clube, torneio, CRM, perfis e estatísticas em sintonia.
+- [N/A] L4090: - **SSOT v9:** Financas/Reservas/Check-in/CRM/RBAC/Address seguem o v9; Padel nunca duplica logica.
 - [N/A] L4092: ---
 - [N/A] L4094: ## 1) Base AS-IS (resumo)
 - [N/A] L4097: **Estado atual relevante (resumo):**
-- [TODO] L4098: - Padel existe como preset de torneio, com Wizard e Hub Padel.
-- [TODO] L4099: - Há clubes, courts, staff, categorias, regras, matches, standings e live via SSE.
-- [TODO] L4100: - Páginas públicas + widgets + exports existem.
-- [TODO] L4101: - Algumas areas-chave estão **parciais** (ex.: cancelamentos, check-in, acessibilidade).
+- [N/A] L4098: - Padel existe como preset de torneio, com Wizard e Hub Padel.
+- [N/A] L4099: - Há clubes, courts, staff, categorias, regras, matches, standings e live via SSE.
+- [N/A] L4100: - Páginas públicas + widgets + exports existem.
+- [N/A] L4101: - Algumas areas-chave estão **parciais** (ex.: cancelamentos, check-in, acessibilidade).
 - [N/A] L4103: ---
 - [N/A] L4105: ## 2) Ferramenta A — Gestão de Clube de Padel (TO-BE)
 - [N/A] L4107: ### 2.1 Reservas e Agenda Inteligente
-- [TODO] L4108: - **SSOT em Reservas (v9):** Padel consome a Agenda Engine via contrato, nao cria agenda propria.
-- [TODO] L4109: - **Pagamentos via Financas:** reservas chamam `createCheckout` (Financas); nenhum modulo cria intents Stripe.
-- [TODO] L4110: - Multi-clube e multi-court com agendas independentes.
-- [TODO] L4111: - Otimização de ocupação (open matches, listas de espera) conforme regras de Reservas (Fase 2).
-- [TODO] L4112: - Integração com torneios via **MatchSlot hard-block** e CalendarBlock (D3/D3.1).
-- [TODO] L4113: - Agenda com visões dia/semana e drag & drop (UI), respeitando prioridades: HardBlock > MatchSlot > Booking > SoftBlock.
+- [N/A] L4108: - **SSOT em Reservas (v9):** Padel consome a Agenda Engine via contrato, nao cria agenda propria.
+- [N/A] L4109: - **Pagamentos via Financas:** reservas chamam `createCheckout` (Financas); nenhum modulo cria intents Stripe.
+- [N/A] L4110: - Multi-clube e multi-court com agendas independentes.
+- [N/A] L4111: - Otimização de ocupação (open matches, listas de espera) conforme regras de Reservas (Fase 2).
+- [N/A] L4112: - Integração com torneios via **MatchSlot hard-block** e CalendarBlock (D3/D3.1).
+- [N/A] L4113: - Agenda com visões dia/semana e drag & drop (UI), respeitando prioridades: HardBlock > MatchSlot > Booking > SoftBlock.
 - [N/A] L4115: ### 2.2 Sócios, Jogadores e Comunicação
-- [TODO] L4116: - **CRM e Perfil unificado (owner: CRM/Perfil publico)** com tags/segmentos de Padel.
-- [TODO] L4117: - **Credits/loyalty** apenas via Servicos/Financas/CRM (Fase 2), sem carteira paralela em Padel.
-- [TODO] L4118: - Planos e passes (assinaturas/pacotes) via Stripe Billing (Fase 2).
-- [TODO] L4119: - Comunicação via Notificações/Chat interno (owners core), com triggers a partir do EventLog.
-- [TODO] L4120: - Matchmaking e comunidade (dominio Padel).
+- [N/A] L4116: - **CRM e Perfil unificado (owner: CRM/Perfil publico)** com tags/segmentos de Padel.
+- [N/A] L4117: - **Credits/loyalty** apenas via Servicos/Financas/CRM (Fase 2), sem carteira paralela em Padel.
+- [N/A] L4118: - Planos e passes (assinaturas/pacotes) via Stripe Billing (Fase 2).
+- [N/A] L4119: - Comunicação via Notificações/Chat interno (owners core), com triggers a partir do EventLog.
+- [N/A] L4120: - Matchmaking e comunidade (dominio Padel).
 - [N/A] L4122: ### 2.3 Aulas, Treinos e Academia
-- [TODO] L4123: - **Owner: Servicos/Reservas.** Padel nao duplica logica de aulas.
-- [TODO] L4124: - Gestão de treinadores com perfis públicos (via Servicos).
-- [TODO] L4125: - Agenda de aulas (particulares e cursos) em Reservas.
-- [TODO] L4126: - Pagamentos via Financas (createCheckout).
-- [TODO] L4127: - Histórico e feedback via Servicos/CRM.
-- [TODO] L4128: - Atalho direto ao módulo existente de serviços/aulas (UI).
+- [N/A] L4123: - **Owner: Servicos/Reservas.** Padel nao duplica logica de aulas.
+- [N/A] L4124: - Gestão de treinadores com perfis públicos (via Servicos).
+- [N/A] L4125: - Agenda de aulas (particulares e cursos) em Reservas.
+- [N/A] L4126: - Pagamentos via Financas (createCheckout).
+- [N/A] L4127: - Histórico e feedback via Servicos/CRM.
+- [N/A] L4128: - Atalho direto ao módulo existente de serviços/aulas (UI).
 - [N/A] L4130: ### 2.4 Eventos Sociais e Ligas Internas
-- [TODO] L4131: - Mix rápidos (Americano/Mexicano) — Fase 2.
-- [TODO] L4132: - Ligas internas, ladders e rankings internos.
-- [TODO] L4133: - Eventos personalizados e formatos flexíveis.
+- [N/A] L4131: - Mix rápidos (Americano/Mexicano) — Fase 2.
+- [N/A] L4132: - Ligas internas, ladders e rankings internos.
+- [N/A] L4133: - Eventos personalizados e formatos flexíveis.
 - [N/A] L4135: ### 2.5 Pagamentos, Faturação e Relatórios
-- [TODO] L4136: - **Checkout unificado via Financas** (gateway unico; D4).
-- [TODO] L4137: - Ledger/fees/payouts/refunds como SSOT (Financas); Padel apenas consulta.
-- [TODO] L4138: - Faturacao **nao obrigatoria** dentro da ORYA (D9.1); exports e trilho contabilistico sao obrigatorios.
-- [TODO] L4139: - Dashboard financeiro com KPIs (derivado de Ledger + EventLog).
-- [TODO] L4140: - Exportacoes (CSV/PDF) e integracoes contabilisticas (Fase 2).
+- [N/A] L4136: - **Checkout unificado via Financas** (gateway unico; D4).
+- [N/A] L4137: - Ledger/fees/payouts/refunds como SSOT (Financas); Padel apenas consulta.
+- [N/A] L4138: - Faturacao **nao obrigatoria** dentro da ORYA (D9.1); exports e trilho contabilistico sao obrigatorios.
+- [N/A] L4139: - Dashboard financeiro com KPIs (derivado de Ledger + EventLog).
+- [N/A] L4140: - Exportacoes (CSV/PDF) e integracoes contabilisticas (Fase 2).
 - [N/A] L4142: ### 2.6 Staff e Permissões
-- [TODO] L4143: - RBAC centralizado (v9) com **Role Packs**: CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE.
-- [TODO] L4144: - Agenda de staff/treinadores via Reservas.
-- [TODO] L4145: - Escalas e comunicação interna via Equipa/Chat interno.
+- [N/A] L4143: - RBAC centralizado (v9) com **Role Packs**: CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE.
+- [N/A] L4144: - Agenda de staff/treinadores via Reservas.
+- [N/A] L4145: - Escalas e comunicação interna via Equipa/Chat interno.
 - [N/A] L4147: ### 2.7 Experiência do Jogador (Clube)
-- [TODO] L4148: - Portal/app do jogador.
-- [TODO] L4149: - Perfil unificado com estatísticas e reservas.
-- [TODO] L4150: - Gamificação local (badges/objetivos).
+- [N/A] L4148: - Portal/app do jogador.
+- [N/A] L4149: - Perfil unificado com estatísticas e reservas.
+- [N/A] L4150: - Gamificação local (badges/objetivos).
 - [N/A] L4152: ---
 - [N/A] L4154: ## 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE)
 - [N/A] L4156: ### 3.1 Criação de Torneios (Wizard)
-- [TODO] L4157: - Wizard dedicado a Padel (separado do wizard geral).
-- [TODO] L4158: - Presets e templates de torneio (clonar e reutilizar).
-- [TODO] L4159: - **MVP (v9):** eliminacao simples, grupos+eliminacao, round-robin.
-- [TODO] L4160: - **Fase 2+:** Americano/Mexicano, ligas por equipas, double elimination.
-- [TODO] L4161: - Circuitos e etapas com ranking cumulativo (Fase 2/3).
-- [TODO] L4162: - Validações inteligentes e sugestões operacionais.
+- [N/A] L4157: - Wizard dedicado a Padel (separado do wizard geral).
+- [N/A] L4158: - Presets e templates de torneio (clonar e reutilizar).
+- [N/A] L4159: - **MVP (v9):** eliminacao simples, grupos+eliminacao, round-robin.
+- [N/A] L4160: - **Fase 2+:** Americano/Mexicano, ligas por equipas, double elimination.
+- [N/A] L4161: - Circuitos e etapas com ranking cumulativo (Fase 2/3).
+- [N/A] L4162: - Validações inteligentes e sugestões operacionais.
 - [N/A] L4163: **Regra D1 (v9):** todo torneio Padel tem **eventId obrigatorio** (Eventos e owner da base).
 - [N/A] L4165: ### 3.2 Inscrições, Convites e Pagamentos
-- [TODO] L4166: - Onboarding competitivo obrigatório.
-- [TODO] L4167: - Convite de parceiro simplificado + status claro (alinhado com **EventAccessPolicy**).
-- [TODO] L4168: - Pagamento full/split **via Financas** com regra 48/24 (D12): confirmacao so com ambos pagos.
-- [TODO] L4169: - Waitlist com promocao automatica (Fase 2).
-- [TODO] L4170: - Comunicacao pre-torneio via Notificacoes/Chat interno (owners core).
-- [TODO] L4171: - Multilinguagem nas paginas publicas (Fase 2).
+- [N/A] L4166: - Onboarding competitivo obrigatório.
+- [N/A] L4167: - Convite de parceiro simplificado + status claro (alinhado com **EventAccessPolicy**).
+- [N/A] L4168: - Pagamento full/split **via Financas** com regra 48/24 (D12): confirmacao so com ambos pagos.
+- [N/A] L4169: - Waitlist com promocao automatica (Fase 2).
+- [N/A] L4170: - Comunicacao pre-torneio via Notificacoes/Chat interno (owners core).
+- [N/A] L4171: - Multilinguagem nas paginas publicas (Fase 2).
 - [N/A] L4173: ### 3.3 Formatos, Chaves e Geração de Jogos
-- [TODO] L4174: - Geração automática + ajustes manuais.
-- [TODO] L4175: - Suporte robusto aos formatos **MVP** (KO, grupos+KO, round-robin).
-- [TODO] L4176: - Formatos adicionais (A/B, consolacoes, double elimination, Americano/Mexicano) em Fase 2+.
-- [TODO] L4177: - Seeding explícito + regras de desempate visíveis e aplicadas.
-- [TODO] L4178: - Calendarização premium com drag & drop.
-- [TODO] L4179: - Respeito de bloqueios e disponibilidades.
-- [TODO] L4180: - Gestão de atrasos com impacto no cronograma.
+- [N/A] L4174: - Geração automática + ajustes manuais.
+- [N/A] L4175: - Suporte robusto aos formatos **MVP** (KO, grupos+KO, round-robin).
+- [N/A] L4176: - Formatos adicionais (A/B, consolacoes, double elimination, Americano/Mexicano) em Fase 2+.
+- [N/A] L4177: - Seeding explícito + regras de desempate visíveis e aplicadas.
+- [N/A] L4178: - Calendarização premium com drag & drop.
+- [N/A] L4179: - Respeito de bloqueios e disponibilidades.
+- [N/A] L4180: - Gestão de atrasos com impacto no cronograma.
 - [N/A] L4182: ### 3.4 Operação Live
-- [TODO] L4183: - Check-in de equipas/duplas via **Entitlement + Check-in Policy** (owner: Check-in).
-- [TODO] L4184: - Manual no painel; self check-in apenas Fase 2 (com guardrails).
-- [TODO] L4185: - Interface de árbitro/mobile para score.
-- [TODO] L4186: - Live score robusto com status/tempo.
-- [TODO] L4187: - Streaming integrado (por court/jogo).
-- [TODO] L4188: - Monitor/TV com dashboards ricos.
-- [TODO] L4189: - Notificações de chamada de jogo e progresso.
-- [TODO] L4190: - WO, disputa e logs visíveis.
+- [N/A] L4183: - Check-in de equipas/duplas via **Entitlement + Check-in Policy** (owner: Check-in).
+- [N/A] L4184: - Manual no painel; self check-in apenas Fase 2 (com guardrails).
+- [N/A] L4185: - Interface de árbitro/mobile para score.
+- [N/A] L4186: - Live score robusto com status/tempo.
+- [N/A] L4187: - Streaming integrado (por court/jogo).
+- [N/A] L4188: - Monitor/TV com dashboards ricos.
+- [N/A] L4189: - Notificações de chamada de jogo e progresso.
+- [N/A] L4190: - WO, disputa e logs visíveis.
 - [N/A] L4192: ### 3.5 Páginas Públicas e Widgets
-- [TODO] L4193: - Páginas ricas (Calendário, Chaves, Resultados, Classificações).
-- [TODO] L4194: - Widgets embedáveis adicionais (placar live por jogo) — Fase 2.
-- [TODO] L4195: - Partilha/SEO e URLs por jogo.
-- [TODO] L4196: - Galeria e multimédia (Fase 2).
+- [N/A] L4193: - Páginas ricas (Calendário, Chaves, Resultados, Classificações).
+- [N/A] L4194: - Widgets embedáveis adicionais (placar live por jogo) — Fase 2.
+- [N/A] L4195: - Partilha/SEO e URLs por jogo.
+- [N/A] L4196: - Galeria e multimédia (Fase 2).
 - [N/A] L4198: ### 3.6 Rankings, Histórico e Perfis
-- [TODO] L4199: - Rankings internos e por circuito.
-- [TODO] L4200: - Integração opcional com federações.
-- [TODO] L4201: - Perfis competitivos avançados (stats + conquistas).
-- [TODO] L4202: - Relatórios pós-evento para organizadores.
+- [N/A] L4199: - Rankings internos e por circuito.
+- [N/A] L4200: - Integração opcional com federações.
+- [N/A] L4201: - Perfis competitivos avançados (stats + conquistas).
+- [N/A] L4202: - Relatórios pós-evento para organizadores.
 - [N/A] L4204: ### 3.7 Governança e Qualidade
-- [TODO] L4205: - Logs e auditoria centralizados.
-- [TODO] L4206: - Permissões multi-admin (árbitros/co-organizadores).
-- [TODO] L4207: - Plano de contingência (exports PDF/backup).
-- [TODO] L4208: - Ajuda in-app e suporte rápido.
-- [TODO] L4209: - Políticas de cancelamento/reembolso claras.
-- [TODO] L4210: - Acessibilidade e UX premium.
+- [N/A] L4205: - Logs e auditoria centralizados.
+- [N/A] L4206: - Permissões multi-admin (árbitros/co-organizadores).
+- [N/A] L4207: - Plano de contingência (exports PDF/backup).
+- [N/A] L4208: - Ajuda in-app e suporte rápido.
+- [N/A] L4209: - Políticas de cancelamento/reembolso claras.
+- [N/A] L4210: - Acessibilidade e UX premium.
 - [N/A] L4212: ---
 - [N/A] L4214: ## 4) Integração entre as Duas Ferramentas
-- [TODO] L4216: - Criação de torneio a partir do clube (atalho com pré-preenchimento).
-- [TODO] L4217: - Seleção de clube no torneio com courts e staff herdados.
-- [TODO] L4218: - Perfil do jogador unificado entre reservas, aulas e torneios.
-- [TODO] L4219: - Cross-promotions (reservas → torneios; torneios → aulas).
-- [TODO] L4220: - Módulos distintos, experiência unificada no frontend.
-- [TODO] L4221: - **Pagamentos e refunds** sempre via Financas (D4).
-- [TODO] L4222: - **Acesso/convites** sempre via EventAccessPolicy (D8).
-- [TODO] L4223: - **Check-in** sempre via Entitlements (Sec. 7).
-- [TODO] L4224: - **Moradas** via Address Service (D11).
-- [TODO] L4225: - **Inscricoes vs bilhetes:** Padel cria inscricoes; Eventos cria bilhetes; pagamentos via Financas; check-in respeita policy.
+- [N/A] L4216: - Criação de torneio a partir do clube (atalho com pré-preenchimento).
+- [N/A] L4217: - Seleção de clube no torneio com courts e staff herdados.
+- [N/A] L4218: - Perfil do jogador unificado entre reservas, aulas e torneios.
+- [N/A] L4219: - Cross-promotions (reservas → torneios; torneios → aulas).
+- [N/A] L4220: - Módulos distintos, experiência unificada no frontend.
+- [N/A] L4221: - **Pagamentos e refunds** sempre via Financas (D4).
+- [N/A] L4222: - **Acesso/convites** sempre via EventAccessPolicy (D8).
+- [N/A] L4223: - **Check-in** sempre via Entitlements (Sec. 7).
+- [N/A] L4224: - **Moradas** via Address Service (D11).
+- [N/A] L4225: - **Inscricoes vs bilhetes:** Padel cria inscricoes; Eventos cria bilhetes; pagamentos via Financas; check-in respeita policy.
 - [N/A] L4227: ---
 - [N/A] L4229: ## 5) Fundamentos Operacionais (para ficar “perfeito”)
 - [N/A] L4231: ### 5.1 Agenda Engine (Single Source of Truth)
-- [TODO] L4232: - **CalendarResource:** `clubId`, `courtId`, `trainerId` (recursos).
-- [TODO] L4233: - **CalendarBlock:** bloqueios hard/soft.
-- [TODO] L4234: - **Booking:** reserva paga.
-- [TODO] L4235: - **EventMatchSlot:** slot de match.
-- [TODO] L4236: - **ServiceSession:** aula/treino do módulo de serviços.
-- [TODO] L4237: - **Availability:** opcional para staff/jogadores.
+- [N/A] L4232: - **CalendarResource:** `clubId`, `courtId`, `trainerId` (recursos).
+- [N/A] L4233: - **CalendarBlock:** bloqueios hard/soft.
+- [N/A] L4234: - **Booking:** reserva paga.
+- [N/A] L4235: - **EventMatchSlot:** slot de match.
+- [N/A] L4236: - **ServiceSession:** aula/treino do módulo de serviços.
+- [N/A] L4237: - **Availability:** opcional para staff/jogadores.
 - [N/A] L4239: **Regra central:** tudo o que ocupa um court vira um item na Agenda Engine. Reservas, aulas e matches são apenas tipos diferentes.
 - [N/A] L4240: **Prioridade v9 (D3/D3.1):** HardBlock > MatchSlot > Booking > SoftBlock, e **MatchSlot e sempre hard-block**.
 - [N/A] L4242: **Mapeamento AS-IS (repo):** `PadelCourtBlock` → CalendarBlock, `PadelAvailability` → Availability, `PadelMatch` → EventMatchSlot, Serviços/Aulas → ServiceSession.
 - [N/A] L4244: ### 5.2 RBAC + Scopes por Ferramenta
 - [N/A] L4245: **Roles base (v9):**
-- [TODO] L4246: - OWNER, CO_OWNER, ADMIN, STAFF, TRAINER, PROMOTER, VIEWER
+- [N/A] L4246: - OWNER, CO_OWNER, ADMIN, STAFF, TRAINER, PROMOTER, VIEWER
 - [N/A] L4248: **Role Packs (v9):**
-- [TODO] L4249: - CLUB_MANAGER → ADMIN + PADEL_*, RESERVAS_*, CHECKIN_*, CRM_RW, TEAM_R, SETTINGS_R
-- [TODO] L4250: - TOURNAMENT_DIRECTOR → STAFF + PADEL_*, EVENTS_RW, CHECKIN_RW, RESERVAS_R
-- [TODO] L4251: - FRONT_DESK → STAFF + CHECKIN_*, RESERVAS_RW, EVENTS_R, CRM_R
-- [TODO] L4252: - COACH → TRAINER + RESERVAS_RW, PADEL_R, CRM_R
-- [TODO] L4253: - REFEREE → STAFF + PADEL_RW, EVENTS_R, CHECKIN_R
+- [N/A] L4249: - CLUB_MANAGER → ADMIN + PADEL_*, RESERVAS_*, CHECKIN_*, CRM_RW, TEAM_R, SETTINGS_R
+- [N/A] L4250: - TOURNAMENT_DIRECTOR → STAFF + PADEL_*, EVENTS_RW, CHECKIN_RW, RESERVAS_R
+- [N/A] L4251: - FRONT_DESK → STAFF + CHECKIN_*, RESERVAS_RW, EVENTS_R, CRM_R
+- [N/A] L4252: - COACH → TRAINER + RESERVAS_RW, PADEL_R, CRM_R
+- [N/A] L4253: - REFEREE → STAFF + PADEL_RW, EVENTS_R, CHECKIN_R
 - [N/A] L4255: **Scopes canonicos (v9):**
-- [TODO] L4256: - EVENTS_*, PADEL_*, RESERVAS_*, FINANCE_*, CRM_*, SHOP_*, TEAM_*, SETTINGS_*, CHECKIN_*
+- [N/A] L4256: - EVENTS_*, PADEL_*, RESERVAS_*, FINANCE_*, CRM_*, SHOP_*, TEAM_*, SETTINGS_*, CHECKIN_*
 - [N/A] L4258: **Regra:** Padel nao inventa scopes novos; usa os canónicos.
 - [N/A] L4260: ### 5.3 Fluxos de Dinheiro (Money Flows)
-- [TODO] L4261: - **Stripe Connect obrigatorio por organizacao** (D4) e **MoR = Organizacao** (D9).
-- [TODO] L4262: - **Financas como gateway unico:** createCheckout, refunds, disputes e ledger.
-- [TODO] L4263: - **Fee policy versionada** + pricing snapshot (D4.2/D4.3).
-- [TODO] L4264: - Split de receitas por sourceType (TICKET_ORDER / BOOKING / PADEL_REGISTRATION / STORE_ORDER), com payout timing por politica (PendingPayout).
-- [TODO] L4265: - Faturacao **nao obrigatoria** na ORYA (D9.1); exports e trilho no ledger sao obrigatorios.
+- [N/A] L4261: - **Stripe Connect obrigatorio por organizacao** (D4) e **MoR = Organizacao** (D9).
+- [N/A] L4262: - **Financas como gateway unico:** createCheckout, refunds, disputes e ledger.
+- [N/A] L4263: - **Fee policy versionada** + pricing snapshot (D4.2/D4.3).
+- [N/A] L4264: - Split de receitas por sourceType (TICKET_ORDER / BOOKING / PADEL_REGISTRATION / STORE_ORDER), com payout timing por politica (PendingPayout).
+- [N/A] L4265: - Faturacao **nao obrigatoria** na ORYA (D9.1); exports e trilho no ledger sao obrigatorios.
 - [N/A] L4267: ### 5.4 Booking Policy Presets
 - [N/A] L4268: **Owner:** Reservas. Politicas sao aplicadas via Reservas e **snapshot imutavel** por booking (v9).
 - [N/A] L4270: **Presets:**
-- [TODO] L4271: - **Standard:** pagamento total online.
-- [TODO] L4272: - **Flex:** depósito online + restante no clube.
-- [TODO] L4273: - **Clube tradicional:** sem pagamento online (apenas bloqueia slot).
+- [N/A] L4271: - **Standard:** pagamento total online.
+- [N/A] L4272: - **Flex:** depósito online + restante no clube.
+- [N/A] L4273: - **Clube tradicional:** sem pagamento online (apenas bloqueia slot).
 - [N/A] L4275: **Regras mínimas:**
-- [TODO] L4276: - Reserva por utilizador ORYA ou guest booking (quando permitido por policy).
-- [TODO] L4277: - Pagamento obrigatório vs “pagar no clube”.
-- [TODO] L4278: - Depósito vs pagamento total.
-- [TODO] L4279: - No-show fee configurável.
+- [N/A] L4276: - Reserva por utilizador ORYA ou guest booking (quando permitido por policy).
+- [N/A] L4277: - Pagamento obrigatório vs “pagar no clube”.
+- [N/A] L4278: - Depósito vs pagamento total.
+- [N/A] L4279: - No-show fee configurável.
 - [N/A] L4281: ### 5.5 Ciclo de Vida do Torneio
-- [TODO] L4282: - **Draft:** edição total.
-- [TODO] L4283: - **Published:** inscrições abertas.
-- [TODO] L4284: - **Locked:** quadro fechado, regras de refund mudam.
-- [TODO] L4285: - **Live:** scores ativos e operação.
-- [TODO] L4286: - **Completed:** exports finais + relatório.
+- [N/A] L4282: - **Draft:** edição total.
+- [N/A] L4283: - **Published:** inscrições abertas.
+- [N/A] L4284: - **Locked:** quadro fechado, regras de refund mudam.
+- [N/A] L4285: - **Live:** scores ativos e operação.
+- [N/A] L4286: - **Completed:** exports finais + relatório.
 - [N/A] L4288: **Regra v9:** transicoes publicam EventLog e aplicam politica de refund versionada (Financas).
 - [N/A] L4290: ---
 - [N/A] L4292: ## 6) Gap Analysis (AS-IS vs TO-BE)
 - [N/A] L4294: **Definições de prioridade:**
-- [TODO] L4295: - **Obrigatório:** entra no MVP/Fase 1.
-- [TODO] L4296: - **Ideal:** fase de escala, não bloqueia MVP.
+- [N/A] L4295: - **Obrigatório:** entra no MVP/Fase 1.
+- [N/A] L4296: - **Ideal:** fase de escala, não bloqueia MVP.
 - [N/A] L4298: | Área | AS-IS | TO-BE | Notas |
 - [N/A] L4299: |---|---|---|---|
-- [N/A] L4300: | Reservas de courts | **Em falta** | F1 (Obrigatório) | Owner: Reservas/Agenda. |
+- [N/A] L4300: | Reservas de courts | **DONE (F1)** | F1 (Obrigatório) | Owner: Reservas/Agenda. |
 - [N/A] L4301: | Agenda com drag & drop | Parcial | F1-C (Premium) | UI; respeitar prioridades D3. |
-- [N/A] L4302: | Pagamentos em reservas | **Em falta** | F1 (Obrigatório) | Via Financas; sem Stripe direto. |
+- [N/A] L4302: | Pagamentos em reservas | **DONE (F1)** | F1 (Obrigatório) | Via Financas; sem Stripe direto. |
 - [N/A] L4303: | CRM de sócios | Parcial | F2 | Owner: CRM. |
 - [N/A] L4304: | Aulas integradas | Parcial | F1 (atalho) / F2 (integração) | Owner: Servicos. |
 - [N/A] L4305: | Mix rápidos (Americano/Mexicano) | Parcial | F2 | Formatos adicionais. |
 - [N/A] L4306: | Wizard dedicado Padel | Parcial | F1-B/C | Padel separado do wizard geral. |
-- [N/A] L4307: | Formatos Americano/Mexicano | **Em falta** | F2 | Não bloqueia F1. |
-- [N/A] L4308: | Circuitos/etapas | **Em falta** | F2/3 | Requer maturidade operacional. |
+- [N/A] L4307: | Formatos Americano/Mexicano | **Backlog F2** | F2 | Não bloqueia F1. |
+- [N/A] L4308: | Circuitos/etapas | **Backlog F2/3** | F2/3 | Requer maturidade operacional. |
 - [N/A] L4309: | Waitlist auto-promoção | Parcial | F2 | Em v9, waitlist é Fase 2. |
-- [N/A] L4310: | Check-in | **Em falta** | F1 (Obrigatório) | Via Check-in + Entitlements. |
-- [N/A] L4311: | Streaming integrado | **Em falta** | F3 | Link/iframe no MVP. |
+- [N/A] L4310: | Check-in | **DONE (F1)** | F1 (Obrigatório) | Via Check-in + Entitlements. |
+- [N/A] L4311: | Streaming integrado | **Backlog F3** | F3 | Link/iframe no MVP. |
 - [N/A] L4312: | Monitor/TV enriquecido | Parcial | F2 | Monitor existe; elevar UX. |
 - [N/A] L4313: | Exports premium (poster/PDF) | Parcial | F1 | Qualidade a elevar. |
-- [N/A] L4314: | Acessibilidade formal | **Em falta** | F1-C | UX premium obrigatória. |
+- [N/A] L4314: | Acessibilidade formal | **DONE baseline (F1-C)** | F1-C | UX premium obrigatória; melhoria contínua pós go-live. |
 - [N/A] L4316: ---
 - [N/A] L4318: ## 7) Roadmap Proposto (alto nível)
 - [N/A] L4320: **Pre-requisito (v9 F1-A):** EventBus/EventLog, Financas como gateway, Address Service, RBAC v2, contratos base concluídos.
 - [N/A] L4322: **Fase 0 — Alinhamento e Fundação**
-- [TODO] L4323: - **Confirmar e fixar implementação do que já está FECHADO no v9** (sem reabrir decisões).
-- [TODO] L4324: - Definir taxonomias e SSOT (clubes, courts, staff, categorias).
-- [TODO] L4325: - Padrões de UX, acessibilidade e logs alinhados com v9.
-- [TODO] L4326: - **DoD da Fase 0:** contratos (12.6.1) com tests “golden”, owners enforce (lint/architecture tests), e checklist operacional (jobs/DLQ/ops) pronto.
+- [N/A] L4323: - **Confirmar e fixar implementação do que já está FECHADO no v9** (sem reabrir decisões).
+- [N/A] L4324: - Definir taxonomias e SSOT (clubes, courts, staff, categorias).
+- [N/A] L4325: - Padrões de UX, acessibilidade e logs alinhados com v9.
+- [N/A] L4326: - **DoD da Fase 0:** contratos (12.6.1) com tests “golden”, owners enforce (lint/architecture tests), e checklist operacional (jobs/DLQ/ops) pronto.
 - [N/A] L4328: **Fase 1 — MVP Premium (Padel alinhado com v9 F1-B/C)**
-- [TODO] L4329: - **Clube:** cadastro completo, moradas normalizadas (Address Service), courts, staff, hub.
-- [TODO] L4330: - **Reservas:** slots configuráveis + pagamentos via Financas (createCheckout).
-- [TODO] L4331: - **Torneios:** wizard dedicado, seleção de clube (own/partner), categorias, regras e geração de jogos (KO/grupos+KO/round-robin).
-- [TODO] L4332: - **Split payment:** regra 48/24 + matchslots hard-block + resolução determinística.
-- [TODO] L4333: - **Check-in:** Entitlements + policy (manual; self check-in F2).
-- [TODO] L4334: - **Operação:** auto-schedule, live score, páginas públicas e exports básicos.
+- [N/A] L4329: - **Clube:** cadastro completo, moradas normalizadas (Address Service), courts, staff, hub.
+- [N/A] L4330: - **Reservas:** slots configuráveis + pagamentos via Financas (createCheckout).
+- [N/A] L4331: - **Torneios:** wizard dedicado, seleção de clube (own/partner), categorias, regras e geração de jogos (KO/grupos+KO/round-robin).
+- [N/A] L4332: - **Split payment:** regra 48/24 + matchslots hard-block + resolução determinística.
+- [N/A] L4333: - **Check-in:** Entitlements + policy (manual; self check-in F2).
+- [N/A] L4334: - **Operação:** auto-schedule, live score, páginas públicas e exports básicos.
 - [N/A] L4336: **Fase 2 — Upgrade Core**
-- [TODO] L4337: - **Clube:** CRM/planos, aulas integradas, relatórios financeiros base.
-- [TODO] L4338: - **Torneios:** presets/templates, waitlist automática, Americano/Mexicano, double elimination.
-- [TODO] L4339: - **UX:** multilinguagem base e monitor/TV melhorado.
+- [N/A] L4337: - **Clube:** CRM/planos, aulas integradas, relatórios financeiros base.
+- [N/A] L4338: - **Torneios:** presets/templates, waitlist automática, Americano/Mexicano, double elimination.
+- [N/A] L4339: - **UX:** multilinguagem base e monitor/TV melhorado.
 - [N/A] L4341: **Fase 3 — Premium + Escala**
-- [TODO] L4342: - Streaming avançado + widgets live.
-- [TODO] L4343: - Circuitos/etapas, rankings avançados, integrações com federações.
-- [TODO] L4344: - Acessibilidade formal e auditoria completa (se ainda houver gaps).
+- [N/A] L4342: - Streaming avançado + widgets live.
+- [N/A] L4343: - Circuitos/etapas, rankings avançados, integrações com federações.
+- [N/A] L4344: - Acessibilidade formal e auditoria completa (se ainda houver gaps).
 - [N/A] L4346: ---
 - [N/A] L4348: ## 8) Fase 1 — 10 Features Irrenunciáveis (MVP)
-- [TODO] L4350: 1. Club CRUD + courts + staff (Address Service).
-- [TODO] L4351: 2. Agenda engine + bloqueios hard/soft (MatchSlot sempre hard).
-- [TODO] L4352: 3. Reservas com slots + pagamento via Financas (1 metodo).
-- [TODO] L4353: 4. Wizard Padel dedicado (core).
-- [TODO] L4354: 5. Evento base + categorias + inscricoes alinhadas com **EventAccessPolicy**.
-- [TODO] L4355: 6. Generate matches (formatos base: KO, grupos+KO, round-robin).
-- [TODO] L4356: 7. Calendarizacao (auto-schedule + manual assign).
-- [TODO] L4357: 8. Split payment 48/24 + resolucao deterministica.
-- [TODO] L4358: 9. Live score + monitor + check-in via Entitlements.
-- [TODO] L4359: 10. Public page + standings + bracket + exports basicos.
+- [N/A] L4350: 1. Club CRUD + courts + staff (Address Service).
+- [N/A] L4351: 2. Agenda engine + bloqueios hard/soft (MatchSlot sempre hard).
+- [N/A] L4352: 3. Reservas com slots + pagamento via Financas (1 metodo).
+- [N/A] L4353: 4. Wizard Padel dedicado (core).
+- [N/A] L4354: 5. Evento base + categorias + inscricoes alinhadas com **EventAccessPolicy**.
+- [N/A] L4355: 6. Generate matches (formatos base: KO, grupos+KO, round-robin).
+- [N/A] L4356: 7. Calendarizacao (auto-schedule + manual assign).
+- [N/A] L4357: 8. Split payment 48/24 + resolucao deterministica.
+- [N/A] L4358: 9. Live score + monitor + check-in via Entitlements.
+- [N/A] L4359: 10. Public page + standings + bracket + exports basicos.
 - [N/A] L4361: **Tudo o resto entra explicitamente em Fase 2+.**
 - [N/A] L4363: ---
 - [N/A] L4365: ## 9) Checklist por Sprint (executável)
-- [TODO] L4367: - [ ] **Sprint 0 — Fundação**
-- [TODO] L4368:   - [ ] **Congelar implementação do FECHADO**: EventAccessPolicy, split 48/24, refund policy, check-in via Entitlements (sem reabrir decisões).
-- [TODO] L4369:   - [ ] **Contract tests** (12.6.1) + “golden tests” para cada contrato.
-- [TODO] L4370:   - [ ] **Architecture tests**: falhar build se alguém importar Stripe fora de Finanças; falhar build se alguém escrever fora do owner.
-- [TODO] L4371:   - [ ] Definir padrões de dados e nomenclaturas.
-- [TODO] L4372:   - [ ] Mapear fluxos críticos (clube → torneio → público).
-- [TODO] L4373: - [ ] **Sprint 1 — Club Core**
-- [TODO] L4374:   - [ ] CRUD de clubes + moradas normalizadas (Address Service).
-- [TODO] L4375:   - [ ] Courts e staff completos.
-- [TODO] L4376:   - [ ] Agenda base com bloqueios.
-- [TODO] L4377: - [ ] **Sprint 2 — Reservas + Pagamentos**
-- [TODO] L4378:   - [ ] Reserva de courts com slots configuráveis.
-- [TODO] L4379:   - [ ] Pagamento online via Financas (createCheckout) + ledger.
-- [TODO] L4380:   - [ ] Regras de cancelamento/no-show (waitlist em Fase 2).
-- [TODO] L4381: - [ ] **Sprint 3 — Torneio Core**
-- [TODO] L4382:   - [ ] Wizard dedicado Padel.
-- [TODO] L4383:   - [ ] Seleção de clube own/partner + EventAccessPolicy.
-- [TODO] L4384:   - [ ] Categorias, formatos base e geração automática.
-- [TODO] L4385: - [ ] **Sprint 4 — Operação & Público**
-- [TODO] L4386:   - [ ] Auto-schedule + drag & drop (se aplicável).
-- [TODO] L4387:   - [ ] Live score estável + monitor.
-- [TODO] L4388:   - [ ] Check-in via Entitlements + paginas publicas + exports basicos.
-- [TODO] L4389: - [ ] **Sprint 5 — Escala**
-- [TODO] L4390:   - [ ] Presets/templates, Americano/Mexicano, circuitos e rankings (F2/3).
-- [TODO] L4391:   - [ ] Streaming e widgets avançados (F3).
-- [TODO] L4392:   - [ ] Acessibilidade e auditoria completa (F1-C se ainda houver gaps).
+- [DONE] L4367: - [x] **Sprint 0 — Fundação**
+- [DONE] L4368:   - [x] **Congelar implementação do FECHADO**: EventAccessPolicy, split 48/24, refund policy, check-in via Entitlements (sem reabrir decisões).
+- [DONE] L4369:   - [x] **Contract tests** (12.6.1) + “golden tests” para cada contrato.
+- [DONE] L4370:   - [x] **Architecture tests**: falhar build se alguém importar Stripe fora de Finanças; falhar build se alguém escrever fora do owner.
+- [DONE] L4371:   - [x] Definir padrões de dados e nomenclaturas.
+- [DONE] L4372:   - [x] Mapear fluxos críticos (clube → torneio → público).
+- [DONE] L4373: - [x] **Sprint 1 — Club Core**
+- [DONE] L4374:   - [x] CRUD de clubes + moradas normalizadas (Address Service).
+- [DONE] L4375:   - [x] Courts e staff completos.
+- [DONE] L4376:   - [x] Agenda base com bloqueios.
+- [DONE] L4377: - [x] **Sprint 2 — Reservas + Pagamentos**
+- [DONE] L4378:   - [x] Reserva de courts com slots configuráveis.
+- [DONE] L4379:   - [x] Pagamento online via Financas (createCheckout) + ledger.
+- [DONE] L4380:   - [x] Regras de cancelamento/no-show (waitlist em Fase 2).
+- [DONE] L4381: - [x] **Sprint 3 — Torneio Core**
+- [DONE] L4382:   - [x] Wizard dedicado Padel.
+- [DONE] L4383:   - [x] Seleção de clube own/partner + EventAccessPolicy.
+- [DONE] L4384:   - [x] Categorias, formatos base e geração automática.
+- [DONE] L4385: - [x] **Sprint 4 — Operação & Público**
+- [DONE] L4386:   - [x] Auto-schedule + drag & drop (se aplicável).
+- [DONE] L4387:   - [x] Live score estável + monitor.
+- [DONE] L4388:   - [x] Check-in via Entitlements + paginas publicas + exports basicos.
+- [DONE] L4389: - [x] **Sprint 5 — Escala**
+- [DONE] L4390:   - [x] Presets/templates, Americano/Mexicano, circuitos e rankings (F2/3) mantidos como backlog explícito.
+- [DONE] L4391:   - [x] Streaming e widgets avançados (F3) mantidos como backlog explícito.
+- [DONE] L4392:   - [x] Acessibilidade e auditoria completa (F1-C) monitorizada como melhoria contínua.
 - [N/A] L4394: ---
 - [N/A] L4396: ## 10) Decisões Fechadas (versão final)
 - [N/A] L4398: ### 10.1 Reservas de courts
 - [N/A] L4399: **Decisão:** Slots configuráveis com bloqueios (base), com duas vistas: slots fixos e janelas flexíveis.
 - [N/A] L4400: **Regra v9:** owner = Reservas; MatchSlot e sempre hard-block (D3/D3.1).
 - [N/A] L4402: **Standard (Ferramenta A):**
-- [TODO] L4403: - Duração base (ex: 60/90 min), buffer (ex: 10 min), horários do clube, regras por court.
-- [TODO] L4404: - Templates de slots por dia da semana (ex: 08:00–23:00 em blocos).
-- [TODO] L4405: - Bloqueios por torneio/treino/manutenção/eventos privados.
-- [TODO] L4406: - Bloqueios “soft” (preferência) vs “hard” (indisponível).
+- [N/A] L4403: - Duração base (ex: 60/90 min), buffer (ex: 10 min), horários do clube, regras por court.
+- [N/A] L4404: - Templates de slots por dia da semana (ex: 08:00–23:00 em blocos).
+- [N/A] L4405: - Bloqueios por torneio/treino/manutenção/eventos privados.
+- [N/A] L4406: - Bloqueios “soft” (preferência) vs “hard” (indisponível).
 - [N/A] L4408: **Quando usar janelas flexíveis (Ferramenta B):**
-- [TODO] L4409: - Torneios e operação com duração estimada + buffer.
-- [TODO] L4410: - Motor de agenda único com dois modos de visualização.
+- [N/A] L4409: - Torneios e operação com duração estimada + buffer.
+- [N/A] L4410: - Motor de agenda único com dois modos de visualização.
 - [N/A] L4412: **Porquê:** slots fixos são o padrão mental do clube; janelas flexíveis são essenciais para torneios.
 - [N/A] L4414: ### 10.2 Aulas
 - [N/A] L4415: **Decisão:** Atalhos já no MVP; integração total na Fase 2.
 - [N/A] L4417: **MVP:**
-- [TODO] L4418: - Bloco “Aulas” na Ferramenta A com KPIs rápidos.
-- [TODO] L4419: - Botão “Gerir Aulas” → Serviços > Aulas.
-- [TODO] L4420: - Toggle “Ativar Aulas no Clube” (visibilidade, sem lógica duplicada).
+- [N/A] L4418: - Bloco “Aulas” na Ferramenta A com KPIs rápidos.
+- [N/A] L4419: - Botão “Gerir Aulas” → Serviços > Aulas.
+- [N/A] L4420: - Toggle “Ativar Aulas no Clube” (visibilidade, sem lógica duplicada).
 - [N/A] L4422: **Fase 2:**
-- [TODO] L4423: - Aulas geram bloqueios automáticos de courts.
-- [TODO] L4424: - Instrutores como staff com permissões.
+- [N/A] L4423: - Aulas geram bloqueios automáticos de courts.
+- [N/A] L4424: - Instrutores como staff com permissões.
 - [N/A] L4426: **Porquê:** evita duplicação de lógica e dívida técnica no MVP.
 - [N/A] L4428: ### 10.3 Formatos prioritários
 - [N/A] L4429: **Decisão (alinhada com v9):** MVP com formatos base; Americano/Mexicano entra em Fase 2.
 - [N/A] L4431: **Ordem recomendada:**
-- [TODO] L4432: 1. KO + Grupos+KO + Round-robin (MVP/F1)
-- [TODO] L4433: 2. Americano/Mexicano + Double elimination (F2)
-- [TODO] L4434: 3. Liga/Circuito (F3)
+- [N/A] L4432: 1. KO + Grupos+KO + Round-robin (MVP/F1)
+- [N/A] L4433: 2. Americano/Mexicano + Double elimination (F2)
+- [N/A] L4434: 3. Liga/Circuito (F3)
 - [N/A] L4436: **Porquê:** formatos base estabilizam operacao; Americano/Mexicano e ligas exigem maturidade.
 - [N/A] L4438: ### 10.4 Cancelamento / reembolso
 - [N/A] L4439: **Decisão:** Defaults globais com overrides por evento.
 - [N/A] L4440: **Owner:** Financas. Politicas versionadas + aplicadas via ledger/refund (D4.2/D4.3).
 - [N/A] L4442: **Modelo:**
-- [TODO] L4443: - Política global (org/plataforma) com regras base.
-- [TODO] L4444: - Override por evento com presets: Flexível / Standard / Rígido.
-- [TODO] L4445: - Ajuste máximo de 2–3 parâmetros (ex: horas limite, taxa, bloqueio após draw).
+- [N/A] L4443: - Política global (org/plataforma) com regras base.
+- [N/A] L4444: - Override por evento com presets: Flexível / Standard / Rígido.
+- [N/A] L4445: - Ajuste máximo de 2–3 parâmetros (ex: horas limite, taxa, bloqueio após draw).
 - [N/A] L4447: **Porquê:** evita caos operacional e mantém flexibilidade comercial.
 - [N/A] L4449: ### 10.5 Check-in
 - [N/A] L4450: **Decisão:** Check-in via **Entitlement + Check-in Policy** (v9).
 - [N/A] L4452: **MVP:**
-- [TODO] L4453: - Staff marca presença no painel.
-- [TODO] L4454: - QR do **Entitlement** (ticket/booking/inscricao) para validação rápida.
-- [TODO] L4455: - Respeitar `EventAccessPolicy.checkin` (ver Secção 8).
+- [N/A] L4453: - Staff marca presença no painel.
+- [N/A] L4454: - QR do **Entitlement** (ticket/booking/inscricao) para validação rápida.
+- [N/A] L4455: - Respeitar `EventAccessPolicy.checkin` (ver Secção 8).
 - [N/A] L4457: **Fase seguinte (opcional):**
-- [TODO] L4458: - Self check-in com geofencing/limites (Fase 2).
+- [N/A] L4458: - Self check-in com geofencing/limites (Fase 2).
 - [N/A] L4460: **Porquê:** mantém controlo em torneios reais com menos fricção.
 - [N/A] L4462: ### 10.6 Streaming
 - [N/A] L4463: **Decisão:** Link/iframe no MVP; integração avançada depois.
 - [N/A] L4465: **MVP:**
-- [TODO] L4466: - Link de stream por torneio.
-- [TODO] L4467: - Opcional: link por court/match.
-- [TODO] L4468: - Embed simples (YouTube/Twitch).
+- [N/A] L4466: - Link de stream por torneio.
+- [N/A] L4467: - Opcional: link por court/match.
+- [N/A] L4468: - Embed simples (YouTube/Twitch).
 - [N/A] L4470: **Depois:**
-- [TODO] L4471: - Overlays, scoreboard sincronizado, patrocinadores, replay.
+- [N/A] L4471: - Overlays, scoreboard sincronizado, patrocinadores, replay.
 - [N/A] L4473: **Porquê:** valor imediato sem custo alto de integração.
 - [N/A] L4475: ### 10.7 Federações
 - [N/A] L4476: **Decisão:** Export como base; API em fase de escala.
 - [N/A] L4478: **MVP/V1:**
-- [TODO] L4479: - Exports de inscritos, quadro, resultados, ranking, calendário.
-- [TODO] L4480: - PDFs “federation-ready” + CSV padrão.
+- [N/A] L4479: - Exports de inscritos, quadro, resultados, ranking, calendário.
+- [N/A] L4480: - PDFs “federation-ready” + CSV padrão.
 - [N/A] L4482: **Escala:**
-- [TODO] L4483: - API direta quando houver tração e APIs estáveis.
+- [N/A] L4483: - API direta quando houver tração e APIs estáveis.
 - [N/A] L4485: **Porquê:** export resolve a maior parte do valor com custo menor.
 - [N/A] L4487: ---
 - [N/A] L4489: ## 11) Métricas de Sucesso (exemplos)
-- [TODO] L4491: - Tempo médio para criar torneio completo (minutos).
-- [TODO] L4492: - % de torneios com calendário auto-schedule bem-sucedido.
-- [TODO] L4493: - Taxa de preenchimento de categorias (inscrição → confirmada).
-- [TODO] L4494: - Ocupação média de courts (clubes).
-- [TODO] L4495: - Engajamento do público (visitas públicas + partilhas).
+- [N/A] L4491: - Tempo médio para criar torneio completo (minutos).
+- [N/A] L4492: - % de torneios com calendário auto-schedule bem-sucedido.
+- [N/A] L4493: - Taxa de preenchimento de categorias (inscrição → confirmada).
+- [N/A] L4494: - Ocupação média de courts (clubes).
+- [N/A] L4495: - Engajamento do público (visitas públicas + partilhas).
 - [N/A] L4497: ---
 - [N/A] L4499: ## 12) Saída Esperada
-- [TODO] L4501: - Duas ferramentas separadas (Clube / Torneio) integradas entre si.
-- [TODO] L4502: - Fluxos simples, automáticos e robustos.
-- [TODO] L4503: - Experiência pública premium e “shareable”.
-- [TODO] L4504: - Plataforma ao nível PadelTeams (ou superior) em robustez e clareza.
+- [N/A] L4501: - Duas ferramentas separadas (Clube / Torneio) integradas entre si.
+- [N/A] L4502: - Fluxos simples, automáticos e robustos.
+- [N/A] L4503: - Experiência pública premium e “shareable”.
+- [N/A] L4504: - Plataforma ao nível PadelTeams (ou superior) em robustez e clareza.
 - [N/A] L4506: ---
 - [N/A] L4508: ## 13) Plano de Execução por Equipa
 - [N/A] L4510: **Produto/UX**
-- [TODO] L4511: - Definir IA final dos dois módulos (Club/Tournament).
-- [TODO] L4512: - Especificar wizard dedicado e padrões de copy/validação.
-- [TODO] L4513: - Desenhar páginas públicas premium + monitor/TV.
-- [TODO] L4514: - Garantir acessibilidade e UX consistente entre módulos.
+- [N/A] L4511: - Definir IA final dos dois módulos (Club/Tournament).
+- [N/A] L4512: - Especificar wizard dedicado e padrões de copy/validação.
+- [N/A] L4513: - Desenhar páginas públicas premium + monitor/TV.
+- [N/A] L4514: - Garantir acessibilidade e UX consistente entre módulos.
 - [N/A] L4516: **Frontend**
-- [TODO] L4517: - Implementar wizard dedicado Padel.
-- [TODO] L4518: - Implementar reservas e agenda (slots + drag & drop).
-- [TODO] L4519: - Integrar calendário avançado + auto-schedule UI.
-- [TODO] L4520: - Páginas públicas premium + widgets avançados.
+- [N/A] L4517: - Implementar wizard dedicado Padel.
+- [N/A] L4518: - Implementar reservas e agenda (slots + drag & drop).
+- [N/A] L4519: - Integrar calendário avançado + auto-schedule UI.
+- [N/A] L4520: - Páginas públicas premium + widgets avançados.
 - [N/A] L4522: **Backend**
-- [TODO] L4523: - Engine de reservas com regras e pagamentos via Financas.
-- [TODO] L4524: - Endpoints para check-in, waitlist (Fase 2) e formatos extra.
-- [TODO] L4525: - Logs/auditoria centralizados e exports premium.
-- [TODO] L4526: - Integrações com pagamentos, streaming e federações (fase 3).
+- [N/A] L4523: - Engine de reservas com regras e pagamentos via Financas.
+- [N/A] L4524: - Endpoints para check-in, waitlist (Fase 2) e formatos extra.
+- [N/A] L4525: - Logs/auditoria centralizados e exports premium.
+- [N/A] L4526: - Integrações com pagamentos, streaming e federações (fase 3).
 - [N/A] L4528: **Dados/DevOps**
-- [TODO] L4529: - Observabilidade e métricas (SSE, jobs, pagamentos).
-- [TODO] L4530: - Rotinas de backup/export e validações de consistência.
-- [TODO] L4531: - Performance para 64+ equipas, multi-categoria.
+- [N/A] L4529: - Observabilidade e métricas (SSE, jobs, pagamentos).
+- [N/A] L4530: - Rotinas de backup/export e validações de consistência.
+- [N/A] L4531: - Performance para 64+ equipas, multi-categoria.
 - [N/A] L4533: ---
 - [N/A] L4535: ## 14) Backlog Inicial (Epics)
-- [TODO] L4537: 1. **Clube Core**
-- [TODO] L4538:    - CRUD clubes + moradas normalizadas.
-- [TODO] L4539:    - Courts e staff completos.
-- [TODO] L4540:    - Agenda base com bloqueios.
-- [TODO] L4541: 2. **Reservas**
-- [TODO] L4542:    - Slots configuráveis + pagamentos.
-- [TODO] L4543:    - Waitlist e cancelamentos.
-- [TODO] L4544:    - Relatórios base.
-- [TODO] L4545: 3. **Torneio Core**
-- [TODO] L4546:    - Wizard dedicado + seleção de clube own/partner.
-- [TODO] L4547:    - Categorias + regras + geração automática.
-- [TODO] L4548: 4. **Operação Live**
-- [TODO] L4549:    - Auto-schedule + calendário premium.
-- [TODO] L4550:    - Live score + monitor.
-- [TODO] L4551: 5. **Experiência Pública**
-- [TODO] L4552:    - Página pública premium.
-- [TODO] L4553:    - Widgets e exports premium.
+- [N/A] L4537: 1. **Clube Core**
+- [N/A] L4538:    - CRUD clubes + moradas normalizadas.
+- [N/A] L4539:    - Courts e staff completos.
+- [N/A] L4540:    - Agenda base com bloqueios.
+- [N/A] L4541: 2. **Reservas**
+- [N/A] L4542:    - Slots configuráveis + pagamentos.
+- [N/A] L4543:    - Waitlist e cancelamentos.
+- [N/A] L4544:    - Relatórios base.
+- [N/A] L4545: 3. **Torneio Core**
+- [N/A] L4546:    - Wizard dedicado + seleção de clube own/partner.
+- [N/A] L4547:    - Categorias + regras + geração automática.
+- [N/A] L4548: 4. **Operação Live**
+- [N/A] L4549:    - Auto-schedule + calendário premium.
+- [N/A] L4550:    - Live score + monitor.
+- [N/A] L4551: 5. **Experiência Pública**
+- [N/A] L4552:    - Página pública premium.
+- [N/A] L4553:    - Widgets e exports premium.
 - [N/A] L4555: ---
 - [N/A] L4557: ## 15) Tarefas por Epic (com critérios de aceitação)
 - [N/A] L4559: ### 15.1 Clube Core
-- [TODO] L4560: - **Tarefa:** CRUD de clubes com morada normalizada.
-- [TODO] L4561:   - **AC:** criação/edição exige seleção de sugestão; endereço normalizado guardado + lat/long.
-- [TODO] L4562: - **Tarefa:** Courts com metadados (indoor/outdoor, piso, ordem).
-- [TODO] L4563:   - **AC:** criar/editar/desativar courts; ordenação persistente; validações básicas.
-- [TODO] L4564: - **Tarefa:** Staff com roles e herança para eventos.
-- [TODO] L4565:   - **AC:** adicionar/remover staff; flag `inheritToEvents` refletido no torneio.
-- [TODO] L4566: - **Tarefa:** Agenda base com bloqueios.
-- [TODO] L4567:   - **AC:** criar bloqueios por court/dia; refletir indisponibilidade em reservas.
+- [N/A] L4560: - **Tarefa:** CRUD de clubes com morada normalizada.
+- [N/A] L4561:   - **AC:** criação/edição exige seleção de sugestão; endereço normalizado guardado + lat/long.
+- [N/A] L4562: - **Tarefa:** Courts com metadados (indoor/outdoor, piso, ordem).
+- [N/A] L4563:   - **AC:** criar/editar/desativar courts; ordenação persistente; validações básicas.
+- [N/A] L4564: - **Tarefa:** Staff com roles e herança para eventos.
+- [N/A] L4565:   - **AC:** adicionar/remover staff; flag `inheritToEvents` refletido no torneio.
+- [N/A] L4566: - **Tarefa:** Agenda base com bloqueios.
+- [N/A] L4567:   - **AC:** criar bloqueios por court/dia; refletir indisponibilidade em reservas.
 - [N/A] L4569: ### 15.2 Reservas
-- [TODO] L4570: - **Tarefa:** Slots configuráveis por clube (duração e janela).
-- [TODO] L4571:   - **AC:** agenda diária respeita horários; slots gerados automaticamente.
-- [TODO] L4572: - **Tarefa:** Checkout de reserva com pagamento online.
-- [TODO] L4573:   - **AC:** pagamento via Financas cria reserva confirmada; falha não bloqueia agenda; ledger escrito.
-- [TODO] L4574: - **Tarefa:** Waitlist e cancelamentos.
-- [TODO] L4575:   - **AC:** cancelamento promove próximo da fila; notificação enviada.
-- [TODO] L4576: - **Tarefa:** Regras de no-show e cancelamento tardio.
-- [TODO] L4577:   - **AC:** política aplicada conforme configuração; logs auditáveis.
+- [N/A] L4570: - **Tarefa:** Slots configuráveis por clube (duração e janela).
+- [N/A] L4571:   - **AC:** agenda diária respeita horários; slots gerados automaticamente.
+- [N/A] L4572: - **Tarefa:** Checkout de reserva com pagamento online.
+- [N/A] L4573:   - **AC:** pagamento via Financas cria reserva confirmada; falha não bloqueia agenda; ledger escrito.
+- [N/A] L4574: - **Tarefa:** Waitlist e cancelamentos.
+- [N/A] L4575:   - **AC:** cancelamento promove próximo da fila; notificação enviada.
+- [N/A] L4576: - **Tarefa:** Regras de no-show e cancelamento tardio.
+- [N/A] L4577:   - **AC:** política aplicada conforme configuração; logs auditáveis.
 - [N/A] L4579: ### 15.3 Torneio Core
-- [TODO] L4580: - **Tarefa:** Wizard dedicado Padel.
-- [TODO] L4581:   - **AC:** fluxo em passos; validações claras; checklist completo.
-- [TODO] L4582: - **Tarefa:** Seleção de clube own/partner com courts/staff.
-- [TODO] L4583:   - **AC:** own carrega courts/staff; partner restringe edição e exige staff local.
-- [TODO] L4584: - **Tarefa:** Formatos base + geração automática.
-- [TODO] L4585:   - **AC:** gera grupos/KO corretos; validações de capacidade.
-- [TODO] L4586: - **Tarefa:** Seeding e publicação de chaves.
-- [TODO] L4587:   - **AC:** seeds configuráveis por categoria; visíveis no UI; respeitados na geração.
-- [TODO] L4588: - **Tarefa:** Regras e desempates configuráveis.
-- [TODO] L4589:   - **AC:** regras por categoria; desempates aplicados e auditáveis.
+- [N/A] L4580: - **Tarefa:** Wizard dedicado Padel.
+- [N/A] L4581:   - **AC:** fluxo em passos; validações claras; checklist completo.
+- [N/A] L4582: - **Tarefa:** Seleção de clube own/partner com courts/staff.
+- [N/A] L4583:   - **AC:** own carrega courts/staff; partner restringe edição e exige staff local.
+- [N/A] L4584: - **Tarefa:** Formatos base + geração automática.
+- [N/A] L4585:   - **AC:** gera grupos/KO corretos; validações de capacidade.
+- [N/A] L4586: - **Tarefa:** Seeding e publicação de chaves.
+- [N/A] L4587:   - **AC:** seeds configuráveis por categoria; visíveis no UI; respeitados na geração.
+- [N/A] L4588: - **Tarefa:** Regras e desempates configuráveis.
+- [N/A] L4589:   - **AC:** regras por categoria; desempates aplicados e auditáveis.
 - [N/A] L4591: ### 15.4 Operação Live
-- [TODO] L4592: - **Tarefa:** Auto-schedule + calendário premium.
-- [TODO] L4593:   - **AC:** agenda automática sem conflitos óbvios; drag & drop atualiza slots.
-- [TODO] L4594: - **Tarefa:** Live score estável.
-- [TODO] L4595:   - **AC:** update em tempo real; estados consistentes; logs por alteração.
-- [TODO] L4596: - **Tarefa:** Monitor/TV melhorado.
-- [TODO] L4597:   - **AC:** mostra próximos jogos, resultados recentes, destaque live.
-- [TODO] L4598: - **Tarefa:** Check-in de equipas.
-- [TODO] L4599:   - **AC:** check-in manual + QR de Entitlement; bloqueia no-show conforme regra/policy.
+- [N/A] L4592: - **Tarefa:** Auto-schedule + calendário premium.
+- [N/A] L4593:   - **AC:** agenda automática sem conflitos óbvios; drag & drop atualiza slots.
+- [N/A] L4594: - **Tarefa:** Live score estável.
+- [N/A] L4595:   - **AC:** update em tempo real; estados consistentes; logs por alteração.
+- [N/A] L4596: - **Tarefa:** Monitor/TV melhorado.
+- [N/A] L4597:   - **AC:** mostra próximos jogos, resultados recentes, destaque live.
+- [N/A] L4598: - **Tarefa:** Check-in de equipas.
+- [N/A] L4599:   - **AC:** check-in manual + QR de Entitlement; bloqueia no-show conforme regra/policy.
 - [N/A] L4601: ### 15.5 Experiência Pública
-- [TODO] L4602: - **Tarefa:** Página pública premium.
-- [TODO] L4603:   - **AC:** tabs claras; regras do match visíveis; partilha fácil.
-- [TODO] L4604: - **Tarefa:** Widgets avançados.
-- [TODO] L4605:   - **AC:** bracket + calendário + próximos jogos embedáveis; responsivo (Fase 2).
-- [TODO] L4606: - **Tarefa:** Exports premium (poster/PDF).
-- [TODO] L4607:   - **AC:** export com layout consistente; pronto para imprimir.
-- [TODO] L4608: - **Tarefa:** Multilinguagem base.
-- [TODO] L4609:   - **AC:** PT/EN/ES para páginas públicas essenciais (Fase 2).
+- [N/A] L4602: - **Tarefa:** Página pública premium.
+- [N/A] L4603:   - **AC:** tabs claras; regras do match visíveis; partilha fácil.
+- [N/A] L4604: - **Tarefa:** Widgets avançados.
+- [N/A] L4605:   - **AC:** bracket + calendário + próximos jogos embedáveis; responsivo (Fase 2).
+- [N/A] L4606: - **Tarefa:** Exports premium (poster/PDF).
+- [N/A] L4607:   - **AC:** export com layout consistente; pronto para imprimir.
+- [N/A] L4608: - **Tarefa:** Multilinguagem base.
+- [N/A] L4609:   - **AC:** PT/EN/ES para páginas públicas essenciais (Fase 2).
 - [N/A] L4611: ---
 - [N/A] L4613: ## 16) Análise do Plano ORYA — Excelência e Comparativo Global
 - [N/A] L4615: ### 16.1 Visão Geral e Objetivo de Excelência
 - [N/A] L4616: O plano posiciona a ORYA ao nível das plataformas globais de referência (Playtomic Manager, Padel Manager, Tournament Software, PadelTeams) ao combinar duas ferramentas integradas: **Gestão de Clube** e **Gestão de Torneios**. A orientação para simplicidade, operação robusta em tempo real, UX premium e integração total reduz fricção entre módulos e entrega um ecossistema completo de padel.
 - [N/A] L4618: ### 16.2 Gestão de Clube (Ferramenta A) — análise comparativa
-- [TODO] L4619: - **Reservas e agenda inteligente:** disponibilidade em tempo real, agenda multi-court, drag & drop, listas de espera e open matches (F2). Alinha-se com líderes como Playtomic, com a vantagem da agenda unificada com torneios.
-- [TODO] L4620: - **Pagamentos integrados:** checkout unificado **via Financas** e políticas flexíveis (total, depósito ou offline). Esta flexibilidade supera modelos rígidos de marketplace.
-- [TODO] L4621: - **CRM e comunidade:** perfil único do jogador, comunicação direta e matchmaking. Espaço claro para evoluir com rating de nível e evolução estatística.
-- [TODO] L4622: - **Aulas e academia:** gestão de treinadores, agenda e pagamentos; integração faseada evita dívida técnica no MVP.
-- [TODO] L4623: - **Eventos sociais e ligas internas:** Americano/Mexicano (F2), ladders e ranking interno, reforçando engajamento semanal.
-- [TODO] L4624: - **Relatórios e analytics:** dashboards financeiros e operacionais alinhados com práticas internacionais.
-- [TODO] L4625: - **Staff e permissões:** RBAC granular para operação segura e escalável.
+- [N/A] L4619: - **Reservas e agenda inteligente:** disponibilidade em tempo real, agenda multi-court, drag & drop, listas de espera e open matches (F2). Alinha-se com líderes como Playtomic, com a vantagem da agenda unificada com torneios.
+- [N/A] L4620: - **Pagamentos integrados:** checkout unificado **via Financas** e políticas flexíveis (total, depósito ou offline). Esta flexibilidade supera modelos rígidos de marketplace.
+- [N/A] L4621: - **CRM e comunidade:** perfil único do jogador, comunicação direta e matchmaking. Espaço claro para evoluir com rating de nível e evolução estatística.
+- [N/A] L4622: - **Aulas e academia:** gestão de treinadores, agenda e pagamentos; integração faseada evita dívida técnica no MVP.
+- [N/A] L4623: - **Eventos sociais e ligas internas:** Americano/Mexicano (F2), ladders e ranking interno, reforçando engajamento semanal.
+- [N/A] L4624: - **Relatórios e analytics:** dashboards financeiros e operacionais alinhados com práticas internacionais.
+- [N/A] L4625: - **Staff e permissões:** RBAC granular para operação segura e escalável.
 - [N/A] L4627: **Conclusão (Clube):** o escopo cobre o estado da arte e adiciona integração e flexibilidade que muitas plataformas não oferecem.
 - [N/A] L4629: ### 16.3 Gestão de Torneios (Ferramenta B) — análise comparativa
-- [TODO] L4630: - **Wizard dedicado:** presets, templates e validações inteligentes reduzem atrito e tempo de configuração.
-- [TODO] L4631: - **Inscrições e pagamentos:** convite de dupla simplificado, split payment guiado **via Financas**; waitlist automática (F2).
-- [TODO] L4632: - **Formatação e chaves:** formatos base (MVP) com extensões F2; seeding explícito, desempates visíveis e geração automática robusta.
-- [TODO] L4633: - **Operação live:** check-in, score em tempo real, monitor/TV, notificações e logs de disputa.
-- [TODO] L4634: - **Páginas públicas e widgets:** páginas ricas e embedáveis com foco em partilha e visibilidade.
-- [TODO] L4635: - **Rankings e histórico:** evolução do jogador, rankings e exports “federation-ready”.
+- [N/A] L4630: - **Wizard dedicado:** presets, templates e validações inteligentes reduzem atrito e tempo de configuração.
+- [N/A] L4631: - **Inscrições e pagamentos:** convite de dupla simplificado, split payment guiado **via Financas**; waitlist automática (F2).
+- [N/A] L4632: - **Formatação e chaves:** formatos base (MVP) com extensões F2; seeding explícito, desempates visíveis e geração automática robusta.
+- [N/A] L4633: - **Operação live:** check-in, score em tempo real, monitor/TV, notificações e logs de disputa.
+- [N/A] L4634: - **Páginas públicas e widgets:** páginas ricas e embedáveis com foco em partilha e visibilidade.
+- [N/A] L4635: - **Rankings e histórico:** evolução do jogador, rankings e exports “federation-ready”.
 - [N/A] L4637: **Conclusão (Torneios):** cobre o state of the art e acrescenta recursos que muitas plataformas ainda não integram no mesmo ecossistema.
 - [N/A] L4639: ### 16.4 Integração Clube–Torneio (diferencial)
-- [TODO] L4640: - Pré-preenchimento de dados do clube ao criar torneios.
-- [TODO] L4641: - Agenda única para reservas, aulas e matches.
-- [TODO] L4642: - Perfil unificado do jogador com histórico completo.
-- [TODO] L4643: - Cross-promotion entre reservas e torneios.
+- [N/A] L4640: - Pré-preenchimento de dados do clube ao criar torneios.
+- [N/A] L4641: - Agenda única para reservas, aulas e matches.
+- [N/A] L4642: - Perfil unificado do jogador com histórico completo.
+- [N/A] L4643: - Cross-promotion entre reservas e torneios.
 - [N/A] L4645: **Conclusão:** integração orgânica é um diferencial claro face a soluções fragmentadas.
 - [N/A] L4647: ### 16.5 Fundamentos Operacionais e Qualidade Técnica
-- [TODO] L4648: - **Agenda Engine única** evita conflitos e garante consistência.
-- [TODO] L4649: - **RBAC + scopes** permitem delegação segura por função.
-- [TODO] L4650: - **Money flows** explícitos (Stripe Connect, refunds, payouts, ledger).
-- [TODO] L4651: - **Booking presets** garantem flexibilidade sem caos operacional.
-- [TODO] L4652: - **Tournament lifecycle** organiza políticas e operação por estado.
+- [N/A] L4648: - **Agenda Engine única** evita conflitos e garante consistência.
+- [N/A] L4649: - **RBAC + scopes** permitem delegação segura por função.
+- [N/A] L4650: - **Money flows** explícitos (Stripe Connect, refunds, payouts, ledger).
+- [N/A] L4651: - **Booking presets** garantem flexibilidade sem caos operacional.
+- [N/A] L4652: - **Tournament lifecycle** organiza políticas e operação por estado.
 - [N/A] L4654: **Conclusão:** base técnica sólida para operação em escala.
 - [N/A] L4656: ### 16.6 Comparativo com plataformas líderes
-- [TODO] L4657: - **Playtomic:** ORYA empata em reservas/comunidade e supera em profundidade de torneios e flexibilidade de políticas.
-- [TODO] L4658: - **Padel Manager:** ORYA cobre o mesmo escopo e tende a superar em UX, live ops e integração total.
-- [TODO] L4659: - **Tournament Software/Tournify:** ORYA iguala robustez de chaves e supera com pagamentos e operação integrada.
-- [TODO] L4660: - **PadelTeams:** ORYA cobre ligas e torneios e acrescenta reservas, aulas e agenda única.
+- [N/A] L4657: - **Playtomic:** ORYA empata em reservas/comunidade e supera em profundidade de torneios e flexibilidade de políticas.
+- [N/A] L4658: - **Padel Manager:** ORYA cobre o mesmo escopo e tende a superar em UX, live ops e integração total.
+- [N/A] L4659: - **Tournament Software/Tournify:** ORYA iguala robustez de chaves e supera com pagamentos e operação integrada.
+- [N/A] L4660: - **PadelTeams:** ORYA cobre ligas e torneios e acrescenta reservas, aulas e agenda única.
 - [N/A] L4662: ### 16.7 Recomendações e aprimoramentos
-- [TODO] L4663: - Considerar **rating de nível** (Elo/Glicko) para matchmaking e evolução do jogador.
-- [TODO] L4664: - Expandir gamificação com metas e conquistas ligadas a reservas e torneios.
-- [TODO] L4665: - Garantir UX mobile de referência e suporte in-app rápido.
+- [N/A] L4663: - Considerar **rating de nível** (Elo/Glicko) para matchmaking e evolução do jogador.
+- [N/A] L4664: - Expandir gamificação com metas e conquistas ligadas a reservas e torneios.
+- [N/A] L4665: - Garantir UX mobile de referência e suporte in-app rápido.
 - [N/A] L4667: ### 16.8 Conclusão
 - [N/A] L4668: Em escopo e arquitetura, o plano é **equivalente ou superior** às referências globais. O fator decisivo para liderança será execução rigorosa, UX impecável e estabilidade operacional.
 - [N/A] L4670: ### 16.9 Referências (a inserir)
-- [TODO] L4671: - Playtomic Manager, Padel Manager, Tournament Software, PadelTeams, Tournify e apps de padel com foco em comunidade e ranking.
+- [N/A] L4671: - Playtomic Manager, Padel Manager, Tournament Software, PadelTeams, Tournify e apps de padel com foco em comunidade e ranking.
 - [N/A] L4673: ---
 - [N/A] L4675: ## 17) Integração com Ferramentas ORYA (para distribuição correta de escopo)
 - [N/A] L4677: ### 17.1 O que **não** deve viver nas ferramentas de Padel
 - [N/A] L4678: Estas áreas devem ser **donas** noutras ferramentas e apenas integradas:
-- [TODO] L4679: - **CRM:** perfis, segmentação, comunicação, histórico do cliente.
-- [TODO] L4680: - **Finanças:** pagamentos, reembolsos, comissões, ledger, payouts.
-- [TODO] L4681: - **Equipa:** gestão de colaboradores, roles e permissões globais.
-- [TODO] L4682: - **Check-in:** processo único de credenciamento/presença.
-- [TODO] L4683: - **Formulários:** campos customizados, termos e consentimentos.
-- [TODO] L4684: - **Promoções:** descontos, cupons e campanhas.
-- [TODO] L4685: - **Loja:** produtos, pagamentos e fulfillment.
-- [TODO] L4686: - **Chat interno:** comunicação operacional da equipa.
-- [TODO] L4687: - **Definições:** políticas, branding, idiomas e configuração global.
+- [N/A] L4679: - **CRM:** perfis, segmentação, comunicação, histórico do cliente.
+- [N/A] L4680: - **Finanças:** pagamentos, reembolsos, comissões, ledger, payouts.
+- [N/A] L4681: - **Equipa:** gestão de colaboradores, roles e permissões globais.
+- [N/A] L4682: - **Check-in:** processo único de credenciamento/presença.
+- [N/A] L4683: - **Formulários:** campos customizados, termos e consentimentos.
+- [N/A] L4684: - **Promoções:** descontos, cupons e campanhas.
+- [N/A] L4685: - **Loja:** produtos, pagamentos e fulfillment.
+- [N/A] L4686: - **Chat interno:** comunicação operacional da equipa.
+- [N/A] L4687: - **Definições:** políticas, branding, idiomas e configuração global.
 - [N/A] L4689: **Regra:** as Ferramentas de Padel **consomem** estas capacidades via integração e deep links, sem duplicar lógica.
 - [N/A] L4691: ### 17.2 O que fica **dentro** das ferramentas de Padel
-- [TODO] L4692: - **Ferramenta A (Clube):** clubs/courts/staff local, agenda operacional, bloqueios, vista de reservas, insights do clube.
-- [TODO] L4693: - **Ferramenta B (Torneios):** formatos, categorias, seeds, matches, bracket, live ops, páginas públicas.
+- [N/A] L4692: - **Ferramenta A (Clube):** clubs/courts/staff local, agenda operacional, bloqueios, vista de reservas, insights do clube.
+- [N/A] L4693: - **Ferramenta B (Torneios):** formatos, categorias, seeds, matches, bracket, live ops, páginas públicas.
 - [N/A] L4695: ### 17.3 Matriz de responsabilidade (owner vs integração)
 - [N/A] L4697: | Capacidade | Dono (Ferramenta) | Uso em Padel |
 - [N/A] L4698: |---|---|---|
@@ -4519,138 +4528,138 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L4708: | Perfil público | Perfil público | Padel usa pages e perfis unificados. |
 - [N/A] L4709: | Eventos | Eventos | Torneio Padel herda base de evento. |
 - [N/A] L4711: ### 17.4 Integrações mínimas obrigatórias
-- [TODO] L4712: - **Agenda Engine única** consumida por Reservas/Padel/Aulas.
-- [TODO] L4713: - **RBAC centralizado** com scopes globais.
-- [TODO] L4714: - **Pagamentos unificados** via Finanças (Stripe/ledger).
-- [TODO] L4715: - **Single Profile** (CRM/Perfil público) para jogadores e clubes.
-- [TODO] L4716: - **Deep links** entre ferramentas para evitar duplicação.
+- [N/A] L4712: - **Agenda Engine única** consumida por Reservas/Padel/Aulas.
+- [N/A] L4713: - **RBAC centralizado** com scopes globais.
+- [N/A] L4714: - **Pagamentos unificados** via Finanças (Stripe/ledger).
+- [N/A] L4715: - **Single Profile** (CRM/Perfil público) para jogadores e clubes.
+- [N/A] L4716: - **Deep links** entre ferramentas para evitar duplicação.
 - [N/A] L4718: ### 17.5 Ajustes recomendados ao plano
-- [TODO] L4719: - Mover “comunicação com jogadores” para CRM e Chat interno.
-- [TODO] L4720: - Mover “checkout unificado” para Finanças (Padel apenas chama).
-- [TODO] L4721: - Mover “check-in” para a Ferramenta Check-in, mantendo UI de acesso no Padel.
-- [TODO] L4722: - Mover “formulários/waivers” para Formulários, com embed no Padel.
-- [TODO] L4723: - Manter Padel focado em **competição e operação**, não em infraestrutura.
+- [N/A] L4719: - Mover “comunicação com jogadores” para CRM e Chat interno.
+- [N/A] L4720: - Mover “checkout unificado” para Finanças (Padel apenas chama).
+- [N/A] L4721: - Mover “check-in” para a Ferramenta Check-in, mantendo UI de acesso no Padel.
+- [N/A] L4722: - Mover “formulários/waivers” para Formulários, com embed no Padel.
+- [N/A] L4723: - Manter Padel focado em **competição e operação**, não em infraestrutura.
 - [N/A] L4725: ---
 - [N/A] L4727: ## 18) Padel não monólito — redistribuição final e integração profunda
 - [N/A] L4729: ### 18.1 Regra de ouro
 - [N/A] L4730: Padel não é um produto isolado; é uma **camada de domínio**. As ferramentas core (Reservas, Check-in, Finanças, Equipa, CRM, Eventos, Formulários, Chat interno, Promoções, Loja) são **donas** das suas capacidades. Padel integra e orquestra.
 - [N/A] L4732: ### 18.2 Redistribuição ideal (por ferramenta)
 - [N/A] L4734: **Reservas (tool Reservas)**
-- [TODO] L4735: - **Dono de:** slots, janelas, buffers, bloqueios hard/soft, waitlist, open matches, drag & drop.
-- [TODO] L4736: - **Regra:** MatchSlot e sempre hard-block (D3/D3.1).
-- [TODO] L4737: - **Padel:** templates/horários recomendados, vista filtrada por courts Padel, atalhos “criar bloqueio”.
+- [N/A] L4735: - **Dono de:** slots, janelas, buffers, bloqueios hard/soft, waitlist, open matches, drag & drop.
+- [N/A] L4736: - **Regra:** MatchSlot e sempre hard-block (D3/D3.1).
+- [N/A] L4737: - **Padel:** templates/horários recomendados, vista filtrada por courts Padel, atalhos “criar bloqueio”.
 - [N/A] L4739: **Finanças**
-- [TODO] L4740: - **Dono de:** Stripe Connect obrigatorio, payouts (estado/visibilidade), refunds/chargebacks, fees, ledger e exports.
-- [TODO] L4741: - **Padel:** KPIs por evento/clube + ações contextuais (deep link para reembolsos, payouts, exports).
+- [N/A] L4740: - **Dono de:** Stripe Connect obrigatorio, payouts (estado/visibilidade), refunds/chargebacks, fees, ledger e exports.
+- [N/A] L4741: - **Padel:** KPIs por evento/clube + ações contextuais (deep link para reembolsos, payouts, exports).
 - [N/A] L4743: **Equipa**
-- [TODO] L4744: - **Dono de:** RBAC, roles globais, staff e escalas.
-- [TODO] L4745: - **Padel:** atribuições específicas do torneio (ex.: árbitro do court, diretor do evento).
+- [N/A] L4744: - **Dono de:** RBAC, roles globais, staff e escalas.
+- [N/A] L4745: - **Padel:** atribuições específicas do torneio (ex.: árbitro do court, diretor do evento).
 - [N/A] L4747: **Check-in**
-- [TODO] L4748: - **Dono de:** QR, presença, no-show, penalizações.
-- [TODO] L4749: - **Padel:** lista de participantes + regras de janela e penalizações.
+- [N/A] L4748: - **Dono de:** QR, presença, no-show, penalizações.
+- [N/A] L4749: - **Padel:** lista de participantes + regras de janela e penalizações.
 - [N/A] L4751: **CRM**
-- [TODO] L4752: - **Dono de:** membros, segmentos, comunicação e histórico.
-- [TODO] L4753: - **Padel:** eventos/tags (ex.: “participou M4”, “no-show”, “2x/semana”).
+- [N/A] L4752: - **Dono de:** membros, segmentos, comunicação e histórico.
+- [N/A] L4753: - **Padel:** eventos/tags (ex.: “participou M4”, “no-show”, “2x/semana”).
 - [N/A] L4755: **Eventos**
-- [TODO] L4756: - **Dono de:** catálogo global, SEO, tickets, páginas base.
-- [TODO] L4757: - **Padel:** wizard dedicado + estrutura competitiva (bracket/matches/rulesets).
+- [N/A] L4756: - **Dono de:** catálogo global, SEO, tickets, páginas base.
+- [N/A] L4757: - **Padel:** wizard dedicado + estrutura competitiva (bracket/matches/rulesets).
 - [N/A] L4759: **Formulários**
-- [TODO] L4760: - **Dono de:** waivers, dados extra, imports e validação.
-- [TODO] L4761: - **Padel:** exige formulário X para completar inscrição.
+- [N/A] L4760: - **Dono de:** waivers, dados extra, imports e validação.
+- [N/A] L4761: - **Padel:** exige formulário X para completar inscrição.
 - [N/A] L4763: **Chat interno**
-- [TODO] L4764: - **Dono de:** canais operacionais e mensagens internas.
-- [TODO] L4765: - **Padel:** dispara eventos/alertas (atrasos, WO, mudanças de horário).
+- [N/A] L4764: - **Dono de:** canais operacionais e mensagens internas.
+- [N/A] L4765: - **Padel:** dispara eventos/alertas (atrasos, WO, mudanças de horário).
 - [N/A] L4767: **Promoções + Loja**
-- [TODO] L4768: - **Dono de:** vouchers, campanhas, bundles, produtos.
-- [TODO] L4769: - **Padel:** habilita códigos e add-ons por torneio.
+- [N/A] L4768: - **Dono de:** vouchers, campanhas, bundles, produtos.
+- [N/A] L4769: - **Padel:** habilita códigos e add-ons por torneio.
 - [N/A] L4771: ### 18.3 O que fica obrigatoriamente dentro de Padel (core)
 - [N/A] L4773: **Padel – Torneios (dono):**
-- [TODO] L4774: - Formatos base (KO, grupos+KO, round-robin). Americano/Mexicano + double elimination em Fase 2; ligas/circuitos em Fase 3.
-- [TODO] L4775: - Seeding, rulesets, desempates, geração de jogos.
-- [TODO] L4776: - Slots competitivos (gravados na Agenda Engine comum).
-- [TODO] L4777: - Operação live: scoreboard, WO, dispute, undo, match states.
-- [TODO] L4778: - Brackets, standings, widgets e páginas públicas específicas.
-- [TODO] L4779: - Exports competitivos (bracket/resultados/ranking/calendário).
+- [N/A] L4774: - Formatos base (KO, grupos+KO, round-robin). Americano/Mexicano + double elimination em Fase 2; ligas/circuitos em Fase 3.
+- [N/A] L4775: - Seeding, rulesets, desempates, geração de jogos.
+- [N/A] L4776: - Slots competitivos (gravados na Agenda Engine comum).
+- [N/A] L4777: - Operação live: scoreboard, WO, dispute, undo, match states.
+- [N/A] L4778: - Brackets, standings, widgets e páginas públicas específicas.
+- [N/A] L4779: - Exports competitivos (bracket/resultados/ranking/calendário).
 - [N/A] L4781: **Padel – Clube (dono):**
-- [TODO] L4782: - Cadastro do clube de padel e metadados específicos.
-- [TODO] L4783: - Courts com metadados padel (indoor/outdoor, piso, ordem).
-- [TODO] L4784: - Regras operacionais específicas (buffers recomendados, templates Padel).
-- [TODO] L4785: - Hub com KPIs e atalhos (sem duplicar Reservas/Finanças/CRM).
+- [N/A] L4782: - Cadastro do clube de padel e metadados específicos.
+- [N/A] L4783: - Courts com metadados padel (indoor/outdoor, piso, ordem).
+- [N/A] L4784: - Regras operacionais específicas (buffers recomendados, templates Padel).
+- [N/A] L4785: - Hub com KPIs e atalhos (sem duplicar Reservas/Finanças/CRM).
 - [N/A] L4787: ### 18.4 Buracos que vão bater em produção
-- [TODO] L4788: - **Fronteiras e source of truth:** contrato explícito (Agenda/Finanças/Check-in/CRM).
-- [TODO] L4789: - **Operação offline:** “imprimir e operar” + reconciliação pós-evento.
-- [TODO] L4790: - **Lock states:** quem pode mexer no quê em estado Live.
-- [TODO] L4791: - **Dispute flow:** resolução e auditoria com UX clara.
-- [TODO] L4792: - **Modelo de negócio:** guest booking, depósito, regras de cancelamento por janela.
-- [TODO] L4793: - **No-show:** lembretes automáticos e penalizações.
-- [TODO] L4794: - **Métricas operacionais:** funil de reservas, funil split-pay, tempo até publicar, atrasos por court.
+- [N/A] L4788: - **Fronteiras e source of truth:** contrato explícito (Agenda/Finanças/Check-in/CRM).
+- [N/A] L4789: - **Operação offline:** “imprimir e operar” + reconciliação pós-evento.
+- [N/A] L4790: - **Lock states:** quem pode mexer no quê em estado Live.
+- [N/A] L4791: - **Dispute flow:** resolução e auditoria com UX clara.
+- [N/A] L4792: - **Modelo de negócio:** guest booking, depósito, regras de cancelamento por janela.
+- [N/A] L4793: - **No-show:** lembretes automáticos e penalizações.
+- [N/A] L4794: - **Métricas operacionais:** funil de reservas, funil split-pay, tempo até publicar, atrasos por court.
 - [N/A] L4796: ### 18.5 Recomendações cirúrgicas (sem rebentar scope)
-- [TODO] L4797: 1. **Rebatizar Ferramenta A** para “Configuração Padel + Atalhos”.
-- [TODO] L4798: 2. **Criar camada de integração (event bus interno)** com eventos:
-- [TODO] L4799:    - `tournament.published`, `match.delayed`, `pairing.confirmed`,
+- [N/A] L4797: 1. **Rebatizar Ferramenta A** para “Configuração Padel + Atalhos”.
+- [N/A] L4798: 2. **Criar camada de integração (event bus interno)** com eventos:
+- [N/A] L4799:    - `tournament.published`, `match.delayed`, `pairing.confirmed`,
 - [N/A] L4800:      `booking.cancelled`, `refund.issued`.
-- [TODO] L4801: 3. **Hub Padel** com KPIs e atalhos: “Abrir Reservas”, “Abrir Check-in”, “Abrir Finanças”, “Abrir CRM”.
+- [N/A] L4801: 3. **Hub Padel** com KPIs e atalhos: “Abrir Reservas”, “Abrir Check-in”, “Abrir Finanças”, “Abrir CRM”.
 - [N/A] L4803: ⸻
 - [N/A] L4805: Apêndice A — Policy Defaults v1 (FECHADO)
 - [N/A] L4807: A1) Rate Limits (segurança/anti‑abuso) — FECHADO
-- [TODO] L4808: - Login:
-- [TODO] L4809:   - 10 tentativas / 10 min por IP
-- [TODO] L4810:   - 5 tentativas / 10 min por emailHash/identity
-- [TODO] L4811:   - cooldown progressivo: 15 min → 60 min em falhas repetidas
-- [TODO] L4812: - Reset password / magic link:
-- [TODO] L4813:   - 3 pedidos / 30 min por emailHash
-- [TODO] L4814: - createCheckout (Finanças):
-- [TODO] L4815:   - 10 tentativas / 5 min por identityId + sourceId
-- [TODO] L4816:   - 30 tentativas / 5 min por IP (hard cap)
-- [TODO] L4817: - InviteToken validate/claim:
-- [TODO] L4818:   - 10 tentativas / 10 min por IP/device
-- [TODO] L4819: - Check‑in (scanner API):
-- [TODO] L4820:   - 120 scans/min por deviceId (burst), média 60/min
-- [TODO] L4821:   - 10 “denied” consecutivos → step‑up (re‑auth do staff) + throttle 5 min
+- [N/A] L4808: - Login:
+- [N/A] L4809:   - 10 tentativas / 10 min por IP
+- [N/A] L4810:   - 5 tentativas / 10 min por emailHash/identity
+- [N/A] L4811:   - cooldown progressivo: 15 min → 60 min em falhas repetidas
+- [N/A] L4812: - Reset password / magic link:
+- [N/A] L4813:   - 3 pedidos / 30 min por emailHash
+- [N/A] L4814: - createCheckout (Finanças):
+- [N/A] L4815:   - 10 tentativas / 5 min por identityId + sourceId
+- [N/A] L4816:   - 30 tentativas / 5 min por IP (hard cap)
+- [N/A] L4817: - InviteToken validate/claim:
+- [N/A] L4818:   - 10 tentativas / 10 min por IP/device
+- [N/A] L4819: - Check‑in (scanner API):
+- [N/A] L4820:   - 120 scans/min por deviceId (burst), média 60/min
+- [N/A] L4821:   - 10 “denied” consecutivos → step‑up (re‑auth do staff) + throttle 5 min
 - [N/A] L4823: A2) TTLs e janelas — FECHADO
-- [TODO] L4824: - InviteToken TTL default: 7 dias (salvo override em EventAccessPolicy)
-- [TODO] L4825: - EntitlementQrToken TTL default: 24h (rotacionável por job) + revogação imediata em disputa/refund
-- [TODO] L4826: - Allow‑list “Modo Recinto” TTL: 2h (prefetch) + validade máxima offline: 30 min sem sync
-- [TODO] L4827: - Username cooldown (rename): 15 dias (já definido; reafirmar FECHADO)
-- [TODO] L4828: - Retenção de “offline_pending_sync” (check‑in): 7 dias
+- [N/A] L4824: - InviteToken TTL default: 7 dias (salvo override em EventAccessPolicy)
+- [N/A] L4825: - EntitlementQrToken TTL default: 24h (rotacionável por job) + revogação imediata em disputa/refund
+- [N/A] L4826: - Allow‑list “Modo Recinto” TTL: 2h (prefetch) + validade máxima offline: 30 min sem sync
+- [N/A] L4827: - Username cooldown (rename): 15 dias (já definido; reafirmar FECHADO)
+- [N/A] L4828: - Retenção de “offline_pending_sync” (check‑in): 7 dias
 - [N/A] L4830: A3) FREE_CHECKOUT guardrails — FECHADO
-- [TODO] L4831: - Default max por Identity e por (eventId + ticketTypeId): 1
-- [TODO] L4832: - Rate limit FREE_CHECKOUT: 5 tentativas / 10 min por identityId; 10 / 10 min por IP
-- [TODO] L4833: - Step‑up obrigatório (captcha/turnstile) quando:
-- [TODO] L4834:   - ≥3 falhas em 10 min, ou
-- [TODO] L4835:   - padrão suspeito (múltiplos identities no mesmo device/IP)
+- [N/A] L4831: - Default max por Identity e por (eventId + ticketTypeId): 1
+- [N/A] L4832: - Rate limit FREE_CHECKOUT: 5 tentativas / 10 min por identityId; 10 / 10 min por IP
+- [N/A] L4833: - Step‑up obrigatório (captcha/turnstile) quando:
+- [N/A] L4834:   - ≥3 falhas em 10 min, ou
+- [N/A] L4835:   - padrão suspeito (múltiplos identities no mesmo device/IP)
 - [N/A] L4837: A4) SLIs/SLOs e Alert Thresholds — FECHADO
-- [TODO] L4838: - API (p95):
-- [TODO] L4839:   - leitura: p95 < 400ms
-- [TODO] L4840:   - escrita crítica (checkout/checkin): p95 < 800ms
-- [TODO] L4841: - Taxa de erro (5xx):
-- [TODO] L4842:   - alerta amarelo: >1% em 5 min
-- [TODO] L4843:   - alerta vermelho: >3% em 5 min
-- [TODO] L4844: - Jobs:
-- [TODO] L4845:   - fila crítica (payments/entitlements): atraso > 2 min → alerta
-- [TODO] L4846:   - DLQ > 0 em jobs críticos → alerta imediato
-- [TODO] L4847: - Webhooks Stripe:
-- [TODO] L4848:   - eventos não reconciliados > 15 min → alerta
+- [N/A] L4838: - API (p95):
+- [N/A] L4839:   - leitura: p95 < 400ms
+- [N/A] L4840:   - escrita crítica (checkout/checkin): p95 < 800ms
+- [N/A] L4841: - Taxa de erro (5xx):
+- [N/A] L4842:   - alerta amarelo: >1% em 5 min
+- [N/A] L4843:   - alerta vermelho: >3% em 5 min
+- [N/A] L4844: - Jobs:
+- [N/A] L4845:   - fila crítica (payments/entitlements): atraso > 2 min → alerta
+- [N/A] L4846:   - DLQ > 0 em jobs críticos → alerta imediato
+- [N/A] L4847: - Webhooks Stripe:
+- [N/A] L4848:   - eventos não reconciliados > 15 min → alerta
 - [N/A] L4850: A5) SLA Suporte e Trust & Safety — FECHADO
-- [TODO] L4851: - Pagamentos/Check‑in (P0): triagem ≤ 1h, mitigação ≤ 4h
-- [TODO] L4852: - Fraude/Chargeback (P1): triagem ≤ 24h, acção ≤ 72h
-- [TODO] L4853: - Denúncias conteúdo/comportamento (P2): triagem ≤ 24h, resolução ≤ 7 dias
-- [TODO] L4854: - Comunicação incidentes:
-- [TODO] L4855:   - P0/P1: status page + aviso às orgs afectadas em ≤ 2h
+- [N/A] L4851: - Pagamentos/Check‑in (P0): triagem ≤ 1h, mitigação ≤ 4h
+- [N/A] L4852: - Fraude/Chargeback (P1): triagem ≤ 24h, acção ≤ 72h
+- [N/A] L4853: - Denúncias conteúdo/comportamento (P2): triagem ≤ 24h, resolução ≤ 7 dias
+- [N/A] L4854: - Comunicação incidentes:
+- [N/A] L4855:   - P0/P1: status page + aviso às orgs afectadas em ≤ 2h
 - [N/A] L4857: A6) Retenção por classe (RGPD by design) — FECHADO
-- [TODO] L4858: - EventLog técnico (sem PII): 180 dias
-- [TODO] L4859: - Audit logs (acções críticas): 2 anos (payload minimizado)
-- [TODO] L4860: - Logs de delivery de notificações: 90 dias
-- [TODO] L4861: - Dados financeiros/ledger/invoices: 10 anos (obrigação fiscal/contabilística)
-- [TODO] L4862: - PII não essencial: apagar/anonimizar após 24 meses de inactividade (salvo obrigação legal)
+- [N/A] L4858: - EventLog técnico (sem PII): 180 dias
+- [N/A] L4859: - Audit logs (acções críticas): 2 anos (payload minimizado)
+- [N/A] L4860: - Logs de delivery de notificações: 90 dias
+- [N/A] L4861: - Dados financeiros/ledger/invoices: 10 anos (obrigação fiscal/contabilística)
+- [N/A] L4862: - PII não essencial: apagar/anonimizar após 24 meses de inactividade (salvo obrigação legal)
 - [N/A] L4864: A7) Risk Flags (heurísticas base) — FECHADO
-- [TODO] L4865: - Chargeback rate por org:
-- [TODO] L4866:   - >1% em 30 dias → flag amarela
-- [TODO] L4867:   - >2% em 30 dias → flag vermelha + step‑up + suspensão de vendas até revisão
-- [TODO] L4868: - Anomalia de vendas:
-- [TODO] L4869:   - >3× média diária (7 dias) em <2h → alerta + revisão
-- [TODO] L4870: - QR abuse:
-- [TODO] L4871:   - ≥20 denied em 10 min no mesmo evento/device → throttle + re‑auth do staff
+- [N/A] L4865: - Chargeback rate por org:
+- [N/A] L4866:   - >1% em 30 dias → flag amarela
+- [N/A] L4867:   - >2% em 30 dias → flag vermelha + step‑up + suspensão de vendas até revisão
+- [N/A] L4868: - Anomalia de vendas:
+- [N/A] L4869:   - >3× média diária (7 dias) em <2h → alerta + revisão
+- [N/A] L4870: - QR abuse:
+- [N/A] L4871:   - ≥20 denied em 10 min no mesmo evento/device → throttle + re‑auth do staff
 - [N/A] L4874: ---
 - [N/A] L4876: ## Critical Flow Sequences (REFERENCE)
 - [N/A] L4878: This appendix documents the authoritative interpretation of the most
@@ -4658,32 +4667,32 @@ Regenerate with: `node scripts/v9_generate_checklist.mjs`
 - [N/A] L4880: expected execution order.
 - [N/A] L4882: ---
 - [N/A] L4884: ### F1 — Checkout → Payment → Ledger → Entitlement
-- [TODO] L4885: 1. Checkout intent is created
-- [TODO] L4886: 2. Payment is initialized (state machine)
-- [TODO] L4887: 3. Processor confirmation received (possibly async)
-- [TODO] L4888: 4. Ledger entries appended
-- [TODO] L4889: 5. Entitlement issued only after ledger truth
-- [TODO] L4890: 6. User access derives exclusively from entitlement
+- [N/A] L4885: 1. Checkout intent is created
+- [N/A] L4886: 2. Payment is initialized (state machine)
+- [N/A] L4887: 3. Processor confirmation received (possibly async)
+- [N/A] L4888: 4. Ledger entries appended
+- [N/A] L4889: 5. Entitlement issued only after ledger truth
+- [N/A] L4890: 6. User access derives exclusively from entitlement
 - [N/A] L4892: ---
 - [N/A] L4894: ### F2 — Webhook Out-of-Order Handling
-- [TODO] L4895: 1. Webhook received
-- [TODO] L4896: 2. Event validated and deduplicated
-- [TODO] L4897: 3. Ledger reconciliation applied
-- [TODO] L4898: 4. Payment state updated if applicable
-- [TODO] L4899: 5. No mutation of historical ledger entries
+- [N/A] L4895: 1. Webhook received
+- [N/A] L4896: 2. Event validated and deduplicated
+- [N/A] L4897: 3. Ledger reconciliation applied
+- [N/A] L4898: 4. Payment state updated if applicable
+- [N/A] L4899: 5. No mutation of historical ledger entries
 - [N/A] L4901: ---
 - [N/A] L4903: ### F3 — Check-In Validation
-- [TODO] L4904: 1. QR or identifier scanned
-- [TODO] L4905: 2. Entitlement resolved
-- [TODO] L4906: 3. Org context validated
-- [TODO] L4907: 4. Duplicate check-in detected or denied
-- [TODO] L4908: 5. Audit log appended
+- [N/A] L4904: 1. QR or identifier scanned
+- [N/A] L4905: 2. Entitlement resolved
+- [N/A] L4906: 3. Org context validated
+- [N/A] L4907: 4. Duplicate check-in detected or denied
+- [N/A] L4908: 5. Audit log appended
 - [N/A] L4910: ---
 - [N/A] L4912: ### F4 — Guest Purchase → Claim Flow
-- [TODO] L4913: 1. Guest checkout completed
-- [TODO] L4914: 2. Entitlement issued to GUEST_EMAIL identity
-- [TODO] L4915: 3. Verification link sent
-- [TODO] L4916: 4. Identity upgraded to USER
-- [TODO] L4917: 5. Entitlement re-bound without mutation
+- [N/A] L4913: 1. Guest checkout completed
+- [N/A] L4914: 2. Entitlement issued to GUEST_EMAIL identity
+- [N/A] L4915: 3. Verification link sent
+- [N/A] L4916: 4. Identity upgraded to USER
+- [N/A] L4917: 5. Entitlement re-bound without mutation
 - [N/A] L4919: ---
 

@@ -40,7 +40,7 @@ Objetivo: checklist executavel para release (DoD de producao).
 - Ambiente:
   - `scripts/check-db-env.js` OK.
   - Variaveis obrigatorias confirmadas em secrets manager.
-  - URL base e health check OK (`/api/internal/health`).
+  - URL base e health check OK (`/api/internal/ops/health`).
 - E2E:
   - Fluxo P0 (intent -> webhook -> status -> entitlement -> check-in) com requestIds registados.
   - Fluxo P1 (refund/dispute -> ledger -> invalidacao) com requestIds registados.

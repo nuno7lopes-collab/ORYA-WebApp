@@ -7,6 +7,14 @@ ACCOUNT_ID=${AWS_ACCOUNT_ID:-""}
 WEB_REPO=${WEB_REPO:-orya-web}
 WORKER_REPO=${WORKER_REPO:-orya-worker}
 SHA=${GIT_SHA:-$(git rev-parse --short=12 HEAD)}
+if [[ -z "${DOCKER_PLATFORM:-}" ]]; then
+  ARCH=$(uname -m)
+  if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
+    DOCKER_PLATFORM="linux/arm64"
+  else
+    DOCKER_PLATFORM="linux/amd64"
+  fi
+fi
 TARGET=all
 
 while [[ $# -gt 0 ]]; do
@@ -66,26 +74,28 @@ WORKER_IMAGE_SHA="$REGISTRY/$WORKER_REPO:$SHA"
 WORKER_IMAGE_LATEST="$REGISTRY/$WORKER_REPO:latest"
 WEB_BUILD_ARGS=()
 
-if [[ -n "${NEXT_PUBLIC_SUPABASE_URL:-}" ]]; then
-  WEB_BUILD_ARGS+=(--build-arg NEXT_PUBLIC_SUPABASE_URL)
-fi
-if [[ -n "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ]]; then
-  WEB_BUILD_ARGS+=(--build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY)
-fi
-
 if [[ "$TARGET" == "all" || "$TARGET" == "web" ]]; then
+  if [[ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" || -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ]]; then
+    echo "Missing NEXT_PUBLIC_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_ANON_KEY for web build." >&2
+    echo "Export them before running this script or use --target worker." >&2
+    exit 1
+  fi
+  WEB_BUILD_ARGS+=(
+    --build-arg "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}"
+    --build-arg "NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}"
+  )
   if [[ ! -f Dockerfile.web ]]; then
     echo "Missing Dockerfile.web" >&2
     exit 1
   fi
-  docker build -f Dockerfile.web -t "$WEB_IMAGE_SHA" -t "$WEB_IMAGE_LATEST" "${WEB_BUILD_ARGS[@]}" .
+  docker build --platform "$DOCKER_PLATFORM" -f Dockerfile.web -t "$WEB_IMAGE_SHA" -t "$WEB_IMAGE_LATEST" "${WEB_BUILD_ARGS[@]}" .
   docker push "$WEB_IMAGE_SHA"
   docker push "$WEB_IMAGE_LATEST"
   echo "WEB_IMAGE_SHA=$WEB_IMAGE_SHA"
 fi
 
 if [[ "$TARGET" == "all" || "$TARGET" == "worker" ]]; then
-  docker build -f Dockerfile.worker -t "$WORKER_IMAGE_SHA" -t "$WORKER_IMAGE_LATEST" .
+  docker build --platform "$DOCKER_PLATFORM" -f Dockerfile.worker -t "$WORKER_IMAGE_SHA" -t "$WORKER_IMAGE_LATEST" .
   docker push "$WORKER_IMAGE_SHA"
   docker push "$WORKER_IMAGE_LATEST"
   echo "WORKER_IMAGE_SHA=$WORKER_IMAGE_SHA"

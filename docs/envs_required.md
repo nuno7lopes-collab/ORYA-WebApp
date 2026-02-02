@@ -86,6 +86,15 @@ Optional:
 - Wire secrets into the service/task env.
 - Separate prod/staging secrets and rotate on schedule.
 
+Current groups (documented as configured in PROD/DEV):
+- `orya/prod/app`, `orya/prod/supabase`, `orya/prod/payments`, `orya/prod/apple`, `orya/prod/email`, `orya/prod/admin`
+- `orya/dev/app`, `orya/dev/supabase`, `orya/dev/payments`, `orya/dev/apple`, `orya/dev/email`, `orya/dev/admin`
+
+Infra evidence:
+- `reports/p_infra_2026-01-30.md`
+- `reports/p_email_2026-01-31.md`
+- `reports/test_env_isolation_2026-01-31.md`
+
 ## Vercel
 - Project Settings -> Environment Variables.
 - Add for Production / Preview / Development as needed.

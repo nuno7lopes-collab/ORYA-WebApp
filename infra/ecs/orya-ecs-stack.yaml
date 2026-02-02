@@ -396,6 +396,7 @@ Resources:
                   - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple*"
                   - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email*"
                   - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/*"
 
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -429,6 +430,7 @@ Resources:
                   - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple*"
                   - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email*"
                   - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/admin*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/*"
               - Effect: Allow
                 Action:
                   - logs:CreateLogStream
@@ -578,7 +580,7 @@ Resources:
           HealthCheck:
             Command:
               - CMD-SHELL
-              - "curl -sf -H 'x-orya-cron-secret: ${ORYA_CRON_SECRET}' http://localhost:3000${HealthCheckPath} || exit 1"
+              - "curl -sf -H \"x-orya-cron-secret: ${ORYA_CRON_SECRET}\" http://localhost:3000${HealthCheckPath} || exit 1"
             Interval: 30
             Timeout: 5
             Retries: 3

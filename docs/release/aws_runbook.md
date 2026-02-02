@@ -3,6 +3,7 @@
 ## Scope
 - Production release for ORYA-WebApp (AWS).
 - Source branch: main (from developer).
+- Infra status snapshot (2026-02-02): AWS + Supabase isolation + Apple readiness já concluídos; este runbook não implica alterações de infraestrutura.
 
 ## Preconditions
 - Secrets configured in AWS Secrets Manager / environment.

@@ -16,6 +16,10 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - Bloco 8: padel + torneios fechados (ruleset snapshot, lifecycle, matchmaking/cron, calendário SSOT).
 - Bloco 9/10: entitlements (tickets/padel/booking/loja) e DSAR/retention concluídos.
 - Bloco 11/12/13/14: search/cron/observabilidade/go-live fechados (a11y/perf/mobile report).
+- Infra já implementada e estável (sem mudanças de código nesta fase):
+  - AWS: Route53 + ACM + ECS/ALB + ECR + CloudFront/.well-known + SES (ver `reports/p_infra_2026-01-30.md`, `reports/p_email_2026-01-31.md`).
+  - Supabase: isolamento `prod`/`test`, RLS/env filtering e seed test (ver `reports/test_env_isolation_2026-01-31.md`).
+  - Apple Developer readiness: Sign In with Apple, APNS, Apple Pay domain files e secrets em AWS (ver `docs/envs_required.md`, `reports/p_infra_2026-01-30.md`).
 - F2/F3: backlog explícito (não bloqueia F1).
 
 ---
@@ -138,15 +142,15 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - `domain/eventLog/**`
 
 ### Checklist de fecho
-- [ ] **DECISAO**: envelope C-G5 + extensao `requestId` (contrato HTTP) confirmada.
-- [ ] **EXISTE** envelope canonico: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data? }`.
-- [ ] **REMOVER** respostas sem `errorCode`/`correlationId`/`requestId` em endpoints criticos.
-- [ ] **WEBHOOKS**: erros de signature/secret invalid/missing retornam `text/plain` com headers `x-orya-request-id` e `x-orya-correlation-id`.
-- [ ] **ALLOW/REASON**: endpoints com `allow/reasonCode` usam envelope + `data`.
-- [ ] **FAIL-CLOSED**: auth/org context invalido retorna 401/403 com envelope canonico.
-- [ ] **AJUSTAR** schema/Prisma se resposta exige campos novos.
-- [ ] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
-- [ ] **LOGS**: requestId/correlationId em logs de erro.
+- [x] **DECISAO**: envelope C-G5 + extensao `requestId` (contrato HTTP) confirmada.
+- [x] **EXISTE** envelope canonico: `{ ok, requestId, correlationId, errorCode, message, retryable, nextAction?, data? }`.
+- [x] **REMOVER** respostas sem `errorCode`/`correlationId`/`requestId` em endpoints criticos.
+- [x] **WEBHOOKS**: erros de signature/secret invalid/missing retornam `text/plain` com headers `x-orya-request-id` e `x-orya-correlation-id`.
+- [x] **ALLOW/REASON**: endpoints com `allow/reasonCode` usam envelope + `data`.
+- [x] **FAIL-CLOSED**: auth/org context invalido retorna 401/403 com envelope canonico.
+- [x] **AJUSTAR** schema/Prisma se resposta exige campos novos.
+- [x] **IDEMPOTENCIA**: respostas de erro incluem `retryable` e `nextAction`.
+- [x] **LOGS**: requestId/correlationId em logs de erro.
 
 ### Criterios de DONE (producao)
 - 100% das rotas criticas devolvem envelope canonico.
@@ -289,13 +293,13 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - `domain/opsFeed/consumer.ts`
 
 ### Checklist de fecho
-- [ ] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
-- [ ] **REMOVER** processamento concorrente sem dedupe.
-- [ ] **FAIL-CLOSED**: worker sem secret nao executa.
-- [ ] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
-- [ ] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
-- [ ] **ERROS** canonicos em replay/dlq.
-- [ ] **LOGS** com correlationId.
+- [x] **EXISTE** claim/lock explicito (winner-only) com reconciliacao.
+- [x] **REMOVER** processamento concorrente sem dedupe.
+- [x] **FAIL-CLOSED**: worker sem secret nao executa.
+- [x] **AJUSTAR** schema se precisar de deadLetteredAt/backoff.
+- [x] **IDEMPOTENCIA**: dedupeKey obrigatoria em todos os eventos.
+- [x] **ERROS** canonicos em replay/dlq.
+- [x] **LOGS** com correlationId.
 
 ### Criterios de DONE (producao)
 - Double-publish = 0 (provado por testes + logs).
@@ -445,13 +449,13 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - `domain/opsFeed/consumer.ts`
 
 ### Checklist de fecho
-- [ ] **EXISTE** lista de orgs funcional (sem 410/LEGACY_STATS_DISABLED).
-- [ ] **REMOVER** dependencia de legacy stats.
-- [ ] **FAIL-CLOSED**: admin sem role retorna 403 com envelope canonico.
-- [ ] **AJUSTAR** schema/queries para usar read-models v9.
-- [ ] **IDEMPOTENCIA**: acoes admin com requestId/correlationId.
-- [ ] **ERROS** canonicos + requestId no UI.
-- [ ] **LOGS** sem payload sensivel.
+- [x] **EXISTE** lista de orgs funcional (sem 410/LEGACY_STATS_DISABLED).
+- [x] **REMOVER** dependencia de legacy stats.
+- [x] **FAIL-CLOSED**: admin sem role retorna 403 com envelope canonico.
+- [x] **AJUSTAR** schema/queries para usar read-models v9.
+- [x] **IDEMPOTENCIA**: acoes admin com requestId/correlationId.
+- [x] **ERROS** canonicos + requestId no UI.
+- [x] **LOGS** sem payload sensivel.
 - [x] **UI** admin para configurar platform email (consome `/api/admin/config/platform-email`).
 
 ### Criterios de DONE (producao)
@@ -506,11 +510,11 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - N/A
 
 ### Checklist de fecho
-- [ ] **EXISTE** helper unico para RBAC.
-- [ ] **REMOVER** checks manuais (ownerId direto, findFirst ad-hoc).
-- [ ] **FAIL-CLOSED**: org context invalido → 403.
-- [ ] **IDEMPOTENCIA**: owner transfer sem duplicar estado.
-- [ ] **ERROS** canonicos + requestId.
+- [x] **EXISTE** helper unico para RBAC.
+- [x] **REMOVER** checks manuais (ownerId direto, findFirst ad-hoc).
+- [x] **FAIL-CLOSED**: org context invalido → 403.
+- [x] **IDEMPOTENCIA**: owner transfer sem duplicar estado.
+- [x] **ERROS** canonicos + requestId.
 
 ### Criterios de DONE (producao)
 - `rg` bypass = 0 e testes RBAC verdes.
@@ -556,11 +560,11 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 - `domain/events/**` consumers (quando existirem)
 
 ### Checklist de fecho
-- [ ] **EXISTE** EventAccessPolicy canonica (create/update) + policyVersionApplied estavel.
-- [ ] **INVITES**: inviteToken resolve para eventInviteId (public endpoints) sem tocar payments core.
-- [ ] **LEGACY**: flags de acesso legacy removidas de UI/API reads (RG guardrail).
-- [ ] **GRATUITO**: deriveIsFreeEvent usado em discover/cards/search; Event.isFree = read-only.
-- [ ] **FAIL-CLOSED**: mapas sem creds em PROD → erro explicito.
+- [x] **EXISTE** EventAccessPolicy canonica (create/update) + policyVersionApplied estavel.
+- [x] **INVITES**: inviteToken resolve para eventInviteId (public endpoints) sem tocar payments core.
+- [x] **LEGACY**: flags de acesso legacy removidas de UI/API reads (RG guardrail).
+- [x] **GRATUITO**: deriveIsFreeEvent usado em discover/cards/search; Event.isFree = read-only.
+- [x] **FAIL-CLOSED**: mapas sem creds em PROD → erro explicito.
 
 ### DONE criteria (Bloco 6)
 - Create/Edit/Publish OK (UI + API).
@@ -718,17 +722,17 @@ Plano SSOT para fechar o Blueprint v9 e alinhar a repo inteira. Cada bloco fecha
 ---
 
 ## Repo-wide audit checklist
-- [ ] Checkout/Payments (entrypoints + webhooks + idempotencia)
-- [ ] Org settings/email (normalizacao + verificado)
-- [ ] Admin control center (sem legacy stats)
-- [ ] Members/RBAC/Owners (rg bypass = 0)
-- [ ] Outbox/Workers (winner-only + replay)
-- [ ] Eventos (create/edit/publish/invites/covers/maps)
-- [ ] Reservas/Agenda/Servicos/Softblocks
-- [ ] Padel/Torneios
-- [ ] Loja/Tickets/Check-in/Entitlements
-- [ ] Users/Sessao/Privacidade/Consentimentos
-- [ ] Search/Discover/Analytics/CRM
-- [ ] Cron/Internal routes + secrets
-- [ ] Observabilidade/Runbooks
-- [ ] Go-live (env sanity + App Store)
+- [x] Checkout/Payments (entrypoints + webhooks + idempotencia)
+- [x] Org settings/email (normalizacao + verificado)
+- [x] Admin control center (sem legacy stats)
+- [x] Members/RBAC/Owners (rg bypass = 0)
+- [x] Outbox/Workers (winner-only + replay)
+- [x] Eventos (create/edit/publish/invites/covers/maps)
+- [x] Reservas/Agenda/Servicos/Softblocks
+- [x] Padel/Torneios
+- [x] Loja/Tickets/Check-in/Entitlements
+- [x] Users/Sessao/Privacidade/Consentimentos
+- [x] Search/Discover/Analytics/CRM
+- [x] Cron/Internal routes + secrets
+- [x] Observabilidade/Runbooks
+- [x] Go-live (env sanity + App Store)

@@ -1,0 +1,36 @@
+import { z } from "zod";
+
+export const PublicEventLocationSchema = z.object({
+  name: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  formattedAddress: z.string().nullable().optional(),
+});
+
+export const PublicEventCardSchema = z.object({
+  id: z.number(),
+  type: z.literal("EVENT"),
+  slug: z.string(),
+  title: z.string(),
+  shortDescription: z.string().nullable().optional(),
+  startsAt: z.string().optional(),
+  coverImageUrl: z.string().nullable().optional(),
+  isGratis: z.boolean().optional(),
+  priceFrom: z.number().nullable().optional(),
+  hostName: z.string().nullable().optional(),
+  location: PublicEventLocationSchema.optional(),
+});
+
+export type PublicEventCard = z.infer<typeof PublicEventCardSchema>;
+
+export const DiscoverPaginationSchema = z.object({
+  nextCursor: z.string().nullable().optional(),
+  hasMore: z.boolean().optional(),
+});
+
+export const DiscoverResponseSchema = z.object({
+  items: z.array(PublicEventCardSchema).default([]),
+  pagination: DiscoverPaginationSchema.optional(),
+});
+
+export type DiscoverResponse = z.infer<typeof DiscoverResponseSchema>;

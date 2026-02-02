@@ -314,6 +314,11 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 ## Bloco 14 — Go-Live (CI Gates + Env + AWS/Supabase + App Store)
 **SSOTs canonicos**
 - Release checklist executavel.
+- Infra operacional já provisionada e documentada (AWS + Supabase + Apple Developer readiness).
 
 **Status**: DONE
 **DONE (data/commit/nota)**: 2026-02-01 — Checklist de release + env gates + infra AWS/SES concluídos; A11y/Performance/Mobile audits executados (reports/lighthouse + reports/axe).
+**DONE (data/commit/nota)**: 2026-02-02 — Inventário infra consolidado sem alterações de código:
+- AWS concluído: Route53/ACM, CloudFront `.well-known`, ECS/ALB, ECR e SES (`reports/p_infra_2026-01-30.md`, `reports/p_email_2026-01-31.md`).
+- Supabase concluído: isolamento por ambiente (`prod`/`test`) com evidência de seed/query (`reports/test_env_isolation_2026-01-31.md`).
+- Apple readiness concluído: variáveis Sign-In/APNS/Maps em `docs/envs_required.md` + assets/segredos Apple Pay no grupo `orya/prod/apple` (`reports/p_infra_2026-01-30.md`).

@@ -15,7 +15,7 @@ Secrets are grouped into JSON secrets (`orya/prod/app`, `orya/prod/supabase`, `o
 1) Create/ensure ACM cert for the domain and validate in Route53.
 2) Deploy `orya-ecs-stack.yaml` with your VPC/Subnet IDs and images (ALB optional).
 3) Register task definitions (or use the CFN task resources) and update ECS services.
-4) Ensure ALB health check points to `/api/internal/health`.
+4) Ensure ALB health check points to `/api/internal/ops/health`.
 
 ## Minimal parameters
 - `VpcId`, `PublicSubnets`, `ServiceSubnets`, `AssignPublicIp`
