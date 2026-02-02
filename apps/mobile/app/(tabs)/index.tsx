@@ -9,6 +9,7 @@ import {
   LayoutAnimation,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { i18n, tokens } from "@orya/shared";
 import { useDebouncedValue, useDiscoverFeed } from "../../features/discover/hooks";
 import { useDiscoverStore } from "../../features/discover/store";
@@ -26,6 +27,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 
 export default function DiscoverScreen() {
   const t = i18n.pt.discover;
+  const router = useRouter();
   const query = useDiscoverStore((state) => state.query);
   const priceFilter = useDiscoverStore((state) => state.priceFilter);
   const setQuery = useDiscoverStore((state) => state.setQuery);
@@ -77,7 +79,12 @@ export default function DiscoverScreen() {
             <View className="px-5 pb-3">
               <GlassSurface intensity={65} padding={12}>
                 <View className="flex-row items-center gap-3">
-                  <Ionicons name="search" size={18} color={tokens.colors.textMuted} />
+                  <Pressable
+                    onPress={() => router.push({ pathname: "/search", params: { q: query } })}
+                    style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
+                  >
+                    <Ionicons name="search" size={18} color={tokens.colors.textMuted} />
+                  </Pressable>
                   <TextInput
                     value={query}
                     onChangeText={setQuery}
@@ -85,6 +92,8 @@ export default function DiscoverScreen() {
                     placeholderTextColor={tokens.colors.textMuted}
                     className="text-white text-base flex-1"
                     style={{ minHeight: tokens.layout.touchTarget - 12 }}
+                    returnKeyType="search"
+                    onSubmitEditing={() => router.push({ pathname: "/search", params: { q: query } })}
                   />
                 </View>
               </GlassSurface>

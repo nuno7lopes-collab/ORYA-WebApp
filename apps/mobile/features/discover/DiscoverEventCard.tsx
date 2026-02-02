@@ -112,7 +112,7 @@ export function DiscoverEventCard({ item, variant = "feed" }: Props) {
                       colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.65)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 0, y: 1 }}
-                      style={{ ...StyleSheet.absoluteFillObject }}
+                      style={styles.coverGradient}
                     />
                     <View className="flex-row items-center justify-between px-3 pt-3">
                       <View className="flex-row items-center gap-2">
@@ -179,3 +179,13 @@ export function DiscoverEventCard({ item, variant = "feed" }: Props) {
     </Link>
   );
 }
+
+const styles = StyleSheet.create({
+  coverGradient: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+});
