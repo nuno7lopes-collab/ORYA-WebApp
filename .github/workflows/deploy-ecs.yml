@@ -45,12 +45,37 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Load public env for web build
+        run: |
+          set -euo pipefail
+          SECRET_ID="orya/prod/supabase"
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text)
+          NEXT_PUBLIC_SUPABASE_URL=$(echo "$SECRET_JSON" | jq -r '.NEXT_PUBLIC_SUPABASE_URL')
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=$(echo "$SECRET_JSON" | jq -r '.NEXT_PUBLIC_SUPABASE_ANON_KEY')
+          if [[ -z "$NEXT_PUBLIC_SUPABASE_URL" || "$NEXT_PUBLIC_SUPABASE_URL" == "null" ]]; then
+            echo "Missing NEXT_PUBLIC_SUPABASE_URL in $SECRET_ID" >&2
+            exit 1
+          fi
+          if [[ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" || "$NEXT_PUBLIC_SUPABASE_ANON_KEY" == "null" ]]; then
+            echo "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY in $SECRET_ID" >&2
+            exit 1
+          fi
+          echo "::add-mask::$NEXT_PUBLIC_SUPABASE_URL"
+          echo "::add-mask::$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          } >> "$GITHUB_ENV"
+
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build & push web image
         run: |
-          docker build -t ${ECR_REPOSITORY_WEB}:latest -f Dockerfile.web .
+          docker build -t ${ECR_REPOSITORY_WEB}:latest -f Dockerfile.web \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            .
           docker tag ${ECR_REPOSITORY_WEB}:latest ${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}:latest
           docker push ${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}:latest
 
