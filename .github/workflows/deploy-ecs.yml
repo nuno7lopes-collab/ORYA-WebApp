@@ -7,14 +7,14 @@ on:
       - developer
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-  ECR_REPOSITORY_WEB: ${{ secrets.ECR_REPOSITORY_WEB }}
-  ECR_REPOSITORY_WORKER: ${{ secrets.ECR_REPOSITORY_WORKER }}
-  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
-  ECS_SERVICE_WEB: ${{ secrets.ECS_SERVICE_WEB }}
-  ECS_SERVICE_WORKER: ${{ secrets.ECS_SERVICE_WORKER }}
+  AWS_REGION: eu-west-1
+  AWS_ACCOUNT_ID: "495219734037"
+  ECR_REGISTRY: 495219734037.dkr.ecr.eu-west-1.amazonaws.com
+  ECR_REPOSITORY_WEB: orya-web
+  ECR_REPOSITORY_WORKER: orya-worker
+  ECS_CLUSTER: orya-prod
+  ECS_SERVICE_WEB: orya-prod-web
+  ECS_SERVICE_WORKER: orya-prod-worker
   DIRECT_URL: postgresql://user:pass@localhost:5432/postgres
   DATABASE_URL: postgresql://user:pass@localhost:5432/postgres
 
