@@ -14,7 +14,15 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <StatusBar style="light" />
-            <Stack screenOptions={{ headerShown: false }} />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen
+                name="event/[slug]"
+                options={{
+                  animation: "slide_from_right",
+                  gestureEnabled: true,
+                }}
+              />
+            </Stack>
           </AuthProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

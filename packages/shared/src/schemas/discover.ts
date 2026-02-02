@@ -4,7 +4,12 @@ export const PublicEventLocationSchema = z.object({
   name: z.string().nullable().optional(),
   city: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
   formattedAddress: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  components: z.record(z.string(), z.unknown()).nullable().optional(),
+  overrides: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const PublicEventCardSchema = z.object({
@@ -14,10 +19,15 @@ export const PublicEventCardSchema = z.object({
   title: z.string(),
   shortDescription: z.string().nullable().optional(),
   startsAt: z.string().optional(),
+  endsAt: z.string().optional(),
   coverImageUrl: z.string().nullable().optional(),
   isGratis: z.boolean().optional(),
   priceFrom: z.number().nullable().optional(),
+  categories: z.array(z.string()).optional(),
   hostName: z.string().nullable().optional(),
+  hostUsername: z.string().nullable().optional(),
+  status: z.enum(["ACTIVE", "CANCELLED", "PAST", "DRAFT"]).optional(),
+  isHighlighted: z.boolean().optional(),
   location: PublicEventLocationSchema.optional(),
 });
 
@@ -34,3 +44,9 @@ export const DiscoverResponseSchema = z.object({
 });
 
 export type DiscoverResponse = z.infer<typeof DiscoverResponseSchema>;
+
+export const DiscoverDetailResponseSchema = z.object({
+  item: PublicEventCardSchema,
+});
+
+export type DiscoverDetailResponse = z.infer<typeof DiscoverDetailResponseSchema>;

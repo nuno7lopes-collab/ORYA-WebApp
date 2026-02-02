@@ -1,4 +1,4 @@
-import { api, ApiError } from "../../lib/api";
+import { api, ApiError, unwrapApiResponse } from "../../lib/api";
 import { DiscoverResponseSchema, PublicEventCard } from "@orya/shared";
 
 type DiscoverParams = {
@@ -26,7 +26,8 @@ const toQueryString = (params: DiscoverParams): string => {
 export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<DiscoverPage> => {
   const qs = toQueryString(params);
   const response = await api.request<unknown>(`/api/explorar/list?${qs}`);
-  const parsed = DiscoverResponseSchema.safeParse(response);
+  const unwrapped = unwrapApiResponse<unknown>(response);
+  const parsed = DiscoverResponseSchema.safeParse(unwrapped);
 
   if (!parsed.success) {
     throw new ApiError(500, "Formato inválido na resposta de descobrir.");
