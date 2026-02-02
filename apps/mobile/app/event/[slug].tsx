@@ -1,10 +1,12 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   Animated,
   ImageBackground,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -14,6 +16,9 @@ import { useEventDetail } from "../../features/events/hooks";
 import { tokens } from "@orya/shared";
 import { Ionicons } from "@expo/vector-icons";
 import { ApiError } from "../../lib/api";
+import { LiquidBackground } from "../../components/liquid/LiquidBackground";
+import { GlassCard } from "../../components/liquid/GlassCard";
+import { GlassPill } from "../../components/liquid/GlassPill";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt) return "Data por anunciar";
@@ -93,7 +98,7 @@ export default function EventDetail() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
-      <View className="flex-1 bg-[#0b101a]">
+      <LiquidBackground variant="deep">
         <ScrollView contentContainerStyle={{ paddingBottom: 36 }}>
           <View className="px-5 pt-12 pb-4">
             <Pressable
@@ -137,31 +142,41 @@ export default function EventDetail() {
                     <ImageBackground
                       source={{ uri: cover }}
                       resizeMode="cover"
-                      style={{ height: 240, justifyContent: "space-between" }}
+                      style={{ height: 260, justifyContent: "space-between" }}
                     >
+                      <LinearGradient
+                        colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.7)"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
                       <View className="flex-row items-center justify-between px-4 pt-4">
-                        <View className="rounded-full border border-white/30 bg-black/35 px-2 py-1">
-                          <Text className="text-[10px] font-semibold tracking-[0.08em] text-white">{category}</Text>
+                        <View className="flex-row items-center gap-2">
+                          <GlassPill label={category} />
+                          {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
                         </View>
-                        <View className="rounded-full border border-white/30 bg-black/35 px-2 py-1">
-                          <Text className="text-[10px] font-semibold text-white">
-                            {resolveStatusLabel(data.status)}
-                          </Text>
-                        </View>
+                        <GlassPill label={resolveStatusLabel(data.status)} variant="muted" />
+                      </View>
+                      <View className="px-4 pb-4 gap-2">
+                        <Text className="text-white text-2xl font-semibold">{data.title}</Text>
+                        {data.shortDescription ? (
+                          <Text className="text-white/75 text-sm">{data.shortDescription}</Text>
+                        ) : null}
                       </View>
                     </ImageBackground>
                   ) : (
                     <View
                       style={{
-                        height: 240,
+                        height: 260,
                         backgroundColor: "rgba(255,255,255,0.08)",
                         justifyContent: "space-between",
                         paddingHorizontal: tokens.spacing.lg,
                         paddingVertical: tokens.spacing.lg,
                       }}
                     >
-                      <View className="rounded-full border border-white/30 bg-black/35 px-2 py-1 self-start">
-                        <Text className="text-[10px] font-semibold tracking-[0.08em] text-white">{category}</Text>
+                      <View className="flex-row items-center gap-2 self-start">
+                        <GlassPill label={category} />
+                        {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
                       </View>
                       <Text className="text-white/60 text-xs">Imagem do evento em breve</Text>
                     </View>
@@ -169,37 +184,44 @@ export default function EventDetail() {
                 </View>
               </View>
 
-              <View className="px-5 pt-6 gap-3">
-                <Text className="text-white text-2xl font-semibold">{data.title}</Text>
-                {data.shortDescription ? (
-                  <Text className="text-white/70 text-sm">{data.shortDescription}</Text>
-                ) : null}
-
-                <GlassSurface intensity={55}>
-                  <View className="gap-2">
-                    <Text className="text-white text-sm font-semibold">Informações</Text>
-                    <Text className="text-white/65 text-sm">{date}</Text>
-                    <Text className="text-white/55 text-sm">{location}</Text>
-                    <Text className="text-white/70 text-sm">Organizador: {data.hostName ?? "ORYA"}</Text>
-                    <Text className="text-white text-sm font-semibold">{price}</Text>
+              <View className="px-5 pt-6 gap-4">
+                <GlassCard intensity={60}>
+                  <View className="gap-3">
+                    <Text className="text-white text-sm font-semibold">Informações principais</Text>
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="calendar-outline" size={16} color="rgba(255,255,255,0.7)" />
+                      <Text className="text-white/70 text-sm">{date}</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.6)" />
+                      <Text className="text-white/65 text-sm">{location}</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.6)" />
+                      <Text className="text-white/70 text-sm">Organizador: {data.hostName ?? "ORYA"}</Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="pricetag-outline" size={16} color="rgba(255,255,255,0.7)" />
+                      <Text className="text-white text-sm font-semibold">{price}</Text>
+                    </View>
                   </View>
-                </GlassSurface>
+                </GlassCard>
 
                 {description ? (
-                  <GlassSurface intensity={48}>
+                  <GlassCard intensity={54}>
                     <View className="gap-2">
                       <Text className="text-white text-sm font-semibold">Sobre o evento</Text>
-                      <Text className="text-white/70 text-sm">{description}</Text>
+                      <Text className="text-white/75 text-sm">{description}</Text>
                     </View>
-                  </GlassSurface>
+                  </GlassCard>
                 ) : null}
 
-                <GlassSurface intensity={48}>
+                <GlassCard intensity={50}>
                   <Text className="text-white/70 text-sm">
                     Checkout e inscrição entram na próxima fase. Já estamos a preparar a experiência
                     completa de compra e carteira.
                   </Text>
-                </GlassSurface>
+                </GlassCard>
 
                 <Pressable
                   disabled
@@ -212,7 +234,7 @@ export default function EventDetail() {
             </Animated.View>
           )}
         </ScrollView>
-      </View>
+      </LiquidBackground>
     </>
   );
 }

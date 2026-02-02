@@ -15,10 +15,11 @@ export default function RootLayout() {
           <AuthProvider>
             <StatusBar style="light" />
             <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen
+            <Stack.Screen
                 name="event/[slug]"
                 options={{
-                  animation: "slide_from_right",
+                  animation: "fade_from_bottom",
+                  animationDuration: 420,
                   gestureEnabled: true,
                 }}
               />

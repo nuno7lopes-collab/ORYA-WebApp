@@ -4,51 +4,44 @@ import { PropsWithChildren } from "react";
 import { StyleSheet, View, ViewStyle } from "react-native";
 import { tokens } from "@orya/shared";
 
-type GlassSurfaceProps = PropsWithChildren<{
+type GlassCardProps = PropsWithChildren<{
   className?: string;
   intensity?: number;
   padding?: number;
-  tint?: "dark" | "light";
+  highlight?: boolean;
   style?: ViewStyle;
   contentStyle?: ViewStyle;
-  withGradient?: boolean;
 }>;
 
-export function GlassSurface({
+export function GlassCard({
   children,
   className,
-  intensity = 52,
+  intensity = 60,
   padding = tokens.spacing.lg,
-  tint = "dark",
+  highlight = false,
   style,
   contentStyle,
-  withGradient = true,
-}: GlassSurfaceProps) {
+}: GlassCardProps) {
   return (
     <View
       className={className}
       style={[
         styles.shell,
+        highlight ? styles.highlight : null,
         style,
       ]}
     >
-      {withGradient ? (
-        <LinearGradient
-          colors={["rgba(255,255,255,0.14)", "rgba(255,255,255,0.04)", "rgba(0,0,0,0.2)"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-      ) : null}
+      <LinearGradient
+        colors={["rgba(255,255,255,0.18)", "rgba(255,255,255,0.02)", "rgba(0,0,0,0.18)"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
       <BlurView
         intensity={intensity}
-        tint={tint}
-        style={[
-          styles.blur,
-          { padding },
-          contentStyle,
-        ]}
+        tint="dark"
+        style={[styles.blur, { padding }, contentStyle]}
       >
         {children}
       </BlurView>
@@ -62,9 +55,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: tokens.colors.border,
     overflow: "hidden",
-    backgroundColor: tokens.colors.glass,
+    backgroundColor: tokens.colors.surface,
   },
   blur: {
     borderRadius: tokens.radius.xl,
+  },
+  highlight: {
+    borderColor: "rgba(148, 214, 255, 0.45)",
+    shadowColor: "rgba(148, 214, 255, 0.6)",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
   },
 });
