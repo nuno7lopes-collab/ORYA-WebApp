@@ -120,6 +120,10 @@ describe("padel registration outbox consumer", () => {
   });
 
   it("expira e cancela pairing/holds", async () => {
+    prismaMock.payment.findMany.mockResolvedValueOnce([{ id: "pur_1" }] as any);
+    prismaMock.paymentEvent.findMany.mockResolvedValueOnce([
+      { purchaseId: "pur_1", stripePaymentIntentId: "pi_1" },
+    ] as any);
     await handlePadelRegistrationOutboxEvent({
       eventType: "PADREG_EXPIRED",
       payload: { registrationId: "reg_1", reason: "GRACE_EXPIRED" },
