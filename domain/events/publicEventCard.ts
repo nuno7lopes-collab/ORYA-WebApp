@@ -6,6 +6,7 @@ export type PublicEventCard = {
   type: "EVENT";
   slug: string;
   title: string;
+  description: string | null;
   shortDescription: string | null;
   startsAt: string;
   endsAt: string;
@@ -128,12 +129,19 @@ export function toPublicEventCardWithPrice(params: {
   const hostUsername = ownerProfile?.username ?? null;
 
   const categories = resolveEventCategories(event.templateType);
+  const isHighlighted = resolveIsHighlighted({
+    status: event.status,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    coverImageUrl: event.coverImageUrl,
+  });
 
   return {
     id: event.id,
     type: "EVENT",
     slug: event.slug,
     title: event.title,
+    description: event.description ?? null,
     shortDescription: event.description?.slice(0, 200) ?? null,
     startsAt: event.startsAt ? new Date(event.startsAt).toISOString() : "",
     endsAt: event.endsAt ? new Date(event.endsAt).toISOString() : "",
@@ -161,7 +169,7 @@ export function toPublicEventCardWithPrice(params: {
     hostName,
     hostUsername,
     status: resolvePublicEventStatus({ status: event.status, endsAt: event.endsAt }),
-    isHighlighted: false,
+    isHighlighted,
     _priceFromCents: priceFromCents,
   };
 }
@@ -181,11 +189,19 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
       ? input.priceFromCents / 100
       : null;
 
+  const isHighlighted = resolveIsHighlighted({
+    status: input.status,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    coverImageUrl: input.coverImageUrl,
+  });
+
   return {
     id: Number.isFinite(id) ? id : 0,
     type: "EVENT",
     slug: input.slug,
     title: input.title,
+    description: input.description ?? null,
     shortDescription: input.description?.slice(0, 200) ?? null,
     startsAt: input.startsAt ? new Date(input.startsAt).toISOString() : "",
     endsAt: input.endsAt ? new Date(input.endsAt).toISOString() : "",
@@ -207,7 +223,7 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     hostName: input.hostName ?? null,
     hostUsername: input.hostUsername ?? null,
     status: resolvePublicEventStatus({ status: input.status, endsAt: input.endsAt }),
-    isHighlighted: false,
+    isHighlighted,
   };
 }
 
@@ -232,4 +248,30 @@ function resolveEventCategories(templateType: string | null): string[] {
   return templateType != null
     ? [templateToCategory[String(templateType)] ?? "GERAL"]
     : ["GERAL"];
+}
+
+function resolveIsHighlighted(params: {
+  status: string;
+  startsAt: Date | string | null;
+  endsAt: Date | string | null;
+  coverImageUrl?: string | null;
+}): boolean {
+  const status = resolvePublicEventStatus({ status: params.status, endsAt: params.endsAt });
+  if (status !== "ACTIVE") return false;
+
+  const start =
+    params.startsAt instanceof Date
+      ? params.startsAt.getTime()
+      : params.startsAt
+        ? new Date(params.startsAt).getTime()
+        : null;
+  if (!start || Number.isNaN(start)) return false;
+
+  const now = Date.now();
+  const upcomingWindowMs = 10 * 24 * 60 * 60 * 1000;
+  const graceMs = 24 * 60 * 60 * 1000;
+  const withinWindow = start >= now - graceMs && start <= now + upcomingWindowMs;
+
+  if (!withinWindow) return false;
+  return Boolean(params.coverImageUrl);
 }

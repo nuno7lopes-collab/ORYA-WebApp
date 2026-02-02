@@ -13,6 +13,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useEventDetail } from "../../features/events/hooks";
 import { tokens } from "@orya/shared";
 import { Ionicons } from "@expo/vector-icons";
+import { ApiError } from "../../lib/api";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt) return "Data por anunciar";
@@ -61,7 +62,7 @@ export default function EventDetail() {
   const { slug } = useLocalSearchParams();
   const router = useRouter();
   const slugValue = useMemo(() => (Array.isArray(slug) ? slug[0] : slug) ?? null, [slug]);
-  const { data, isLoading, isError, refetch } = useEventDetail(slugValue ?? "");
+  const { data, isLoading, isError, error, refetch } = useEventDetail(slugValue ?? "");
 
   const fade = useRef(new Animated.Value(0)).current;
   const translate = useRef(new Animated.Value(12)).current;
@@ -87,6 +88,7 @@ export default function EventDetail() {
   const location = data?.location?.formattedAddress || data?.location?.city || "Local a anunciar";
   const price =
     data?.isGratis ? "Grátis" : typeof data?.priceFrom === "number" ? `Desde ${data.priceFrom.toFixed(0)}€` : "Preço em breve";
+  const description = data?.description ?? data?.shortDescription ?? null;
 
   return (
     <>
@@ -113,7 +115,11 @@ export default function EventDetail() {
           ) : isError || !data ? (
             <View className="px-5">
               <GlassSurface intensity={50}>
-                <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o evento.</Text>
+                <Text className="text-red-300 text-sm mb-3">
+                  {error instanceof ApiError && error.status === 404
+                    ? "Evento não encontrado."
+                    : "Não foi possível carregar o evento."}
+                </Text>
                 <Pressable
                   onPress={() => refetch()}
                   className="rounded-xl bg-white/10 px-4 py-3"
@@ -178,6 +184,15 @@ export default function EventDetail() {
                     <Text className="text-white text-sm font-semibold">{price}</Text>
                   </View>
                 </GlassSurface>
+
+                {description ? (
+                  <GlassSurface intensity={48}>
+                    <View className="gap-2">
+                      <Text className="text-white text-sm font-semibold">Sobre o evento</Text>
+                      <Text className="text-white/70 text-sm">{description}</Text>
+                    </View>
+                  </GlassSurface>
+                ) : null}
 
                 <GlassSurface intensity={48}>
                   <Text className="text-white/70 text-sm">

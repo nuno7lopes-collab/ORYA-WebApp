@@ -1,25 +1,35 @@
 import { useState } from "react";
 import { Alert, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useRouter } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { i18n, tokens } from "@orya/shared";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 
 export default function SignInScreen() {
   const t = i18n.pt.auth;
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSignIn = async () => {
     try {
+      setErrorMessage(null);
       setLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       if (error) throw error;
+      if (!data?.session) {
+        throw new Error("Sessão não criada. Verifica o email e a password.");
+      }
+      router.replace("/(tabs)");
     } catch (err: any) {
-      Alert.alert("Erro", err?.message ?? t.errorGeneric);
+      const message = err?.message ?? t.errorGeneric;
+      setErrorMessage(message);
+      Alert.alert("Erro", message);
     } finally {
       setLoading(false);
     }
@@ -59,6 +69,9 @@ export default function SignInScreen() {
         >
           <Text className="text-black font-semibold">{loading ? "A entrar..." : t.signIn}</Text>
         </TouchableOpacity>
+        {errorMessage ? (
+          <Text className="mt-4 text-xs text-rose-200">{errorMessage}</Text>
+        ) : null}
       </GlassSurface>
     </View>
   );

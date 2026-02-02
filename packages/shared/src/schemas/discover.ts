@@ -17,6 +17,7 @@ export const PublicEventCardSchema = z.object({
   type: z.literal("EVENT"),
   slug: z.string(),
   title: z.string(),
+  description: z.string().nullable().optional(),
   shortDescription: z.string().nullable().optional(),
   startsAt: z.string().optional(),
   endsAt: z.string().optional(),
