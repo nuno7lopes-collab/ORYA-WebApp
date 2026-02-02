@@ -64,13 +64,21 @@ WEB_IMAGE_SHA="$REGISTRY/$WEB_REPO:$SHA"
 WEB_IMAGE_LATEST="$REGISTRY/$WEB_REPO:latest"
 WORKER_IMAGE_SHA="$REGISTRY/$WORKER_REPO:$SHA"
 WORKER_IMAGE_LATEST="$REGISTRY/$WORKER_REPO:latest"
+WEB_BUILD_ARGS=()
+
+if [[ -n "${NEXT_PUBLIC_SUPABASE_URL:-}" ]]; then
+  WEB_BUILD_ARGS+=(--build-arg NEXT_PUBLIC_SUPABASE_URL)
+fi
+if [[ -n "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ]]; then
+  WEB_BUILD_ARGS+=(--build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY)
+fi
 
 if [[ "$TARGET" == "all" || "$TARGET" == "web" ]]; then
   if [[ ! -f Dockerfile.web ]]; then
     echo "Missing Dockerfile.web" >&2
     exit 1
   fi
-  docker build -f Dockerfile.web -t "$WEB_IMAGE_SHA" -t "$WEB_IMAGE_LATEST" .
+  docker build -f Dockerfile.web -t "$WEB_IMAGE_SHA" -t "$WEB_IMAGE_LATEST" "${WEB_BUILD_ARGS[@]}" .
   docker push "$WEB_IMAGE_SHA"
   docker push "$WEB_IMAGE_LATEST"
   echo "WEB_IMAGE_SHA=$WEB_IMAGE_SHA"
