@@ -40,7 +40,8 @@
     "covers:thumbs": "node -r ts-node/register scripts/covers/generate-thumbs.ts",
     "covers:manifest": "node -r ts-node/register scripts/covers/sync-manifest.ts",
     "covers:validate": "node -r ts-node/register scripts/covers/validate-manifest.ts",
-    "covers:all": "npm run covers:thumbs && npm run covers:manifest && npm run covers:validate"
+    "covers:all": "npm run covers:thumbs && npm run covers:manifest && npm run covers:validate",
+    "logo:build": "node scripts/regenerate-logo-assets.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-budgets": "^3.980.0",
