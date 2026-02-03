@@ -122,4 +122,12 @@ export const env = {
   storageSignedUrls: parseBoolean(process.env.SUPABASE_STORAGE_SIGNED_URLS, false),
   storageSignedTtlSeconds: parseNumber(process.env.SUPABASE_STORAGE_SIGNED_TTL_SECONDS, 60 * 60 * 24 * 30), // 30 dias
   storeEnabled: parseBoolean(process.env.STORE_ENABLED, false),
+  appleWalletPassEnabled: parseBoolean(process.env.APPLE_WALLET_PASS_ENABLED, false),
+  appleWalletPassTypeId: process.env.APPLE_WALLET_PASS_TYPE_ID ?? "",
+  appleWalletTeamId: process.env.APPLE_WALLET_TEAM_ID ?? "",
+  appleWalletOrgName: process.env.APPLE_WALLET_ORG_NAME ?? "ORYA",
+  appleWalletCertPemBase64: process.env.APPLE_WALLET_CERT_PEM_BASE64 ?? "",
+  appleWalletKeyPemBase64: process.env.APPLE_WALLET_KEY_PEM_BASE64 ?? "",
+  appleWalletKeyPassword: process.env.APPLE_WALLET_KEY_PASSWORD ?? "",
+  appleWalletWwdrPemBase64: process.env.APPLE_WALLET_WWDR_PEM_BASE64 ?? "",
 };

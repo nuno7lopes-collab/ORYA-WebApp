@@ -48,6 +48,7 @@ export function WalletEntitlementCard({ item }: Props) {
   const venue = item.snapshot.venueName ?? "Local a anunciar";
   const dateLabel = formatDate(item.snapshot.startAt);
   const canShowQr = Boolean(item.actions?.canShowQr && item.qrToken);
+  const passAvailable = Boolean(item.passAvailable);
 
   return (
     <Link href={{ pathname: "/wallet/[entitlementId]", params: { entitlementId: item.entitlementId } }} asChild push>
@@ -103,7 +104,10 @@ export function WalletEntitlementCard({ item }: Props) {
               </View>
               <View className="flex-row items-center justify-between pt-1">
                 {canShowQr ? (
-                  <GlassPill label="QR pronto" variant="accent" />
+                  <View className="flex-row items-center gap-2">
+                    <GlassPill label="QR pronto" variant="accent" />
+                    {passAvailable ? <GlassPill label="Wallet" variant="muted" /> : null}
+                  </View>
                 ) : (
                   <Text className="text-[11px] uppercase tracking-[0.14em] text-white/45">
                     Sem QR
@@ -128,4 +132,3 @@ const styles = StyleSheet.create({
     left: 0,
   },
 });
-

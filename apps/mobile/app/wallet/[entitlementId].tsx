@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef } from "react";
-import { Animated, Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Animated, Image, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { getSharedEnv, tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -71,6 +71,7 @@ export default function WalletDetailScreen() {
 
   const baseUrl = getSharedEnv().apiBaseUrl.replace(/\/$/, "");
   const qrUrl = data?.qrToken ? `${baseUrl}/api/qr/${encodeURIComponent(data.qrToken)}?theme=dark` : null;
+  const passUrl = data?.passUrl ?? null;
 
   return (
     <>
@@ -172,9 +173,24 @@ export default function WalletDetailScreen() {
 
               <GlassCard intensity={46}>
                 <Text className="text-white/70 text-sm mb-2">Apple Wallet Pass</Text>
-                <Text className="text-white/55 text-xs">
-                  Integração em curso no mobile. O bilhete já está válido via QR.
-                </Text>
+                {passUrl ? (
+                  <>
+                    <Text className="text-white/55 text-xs mb-3">
+                      Guarda o bilhete na Apple Wallet e apresenta no check-in.
+                    </Text>
+                    <Pressable
+                      onPress={() => Linking.openURL(passUrl)}
+                      className="rounded-xl bg-white/10 px-4 py-3"
+                      style={{ minHeight: tokens.layout.touchTarget }}
+                    >
+                      <Text className="text-white text-sm font-semibold text-center">Adicionar à Wallet</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <Text className="text-white/55 text-xs">
+                    Disponível quando a Wallet estiver ativa para este bilhete.
+                  </Text>
+                )}
               </GlassCard>
             </Animated.View>
           )}

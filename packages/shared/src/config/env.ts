@@ -3,6 +3,8 @@ export type SharedEnv = {
   apiBaseUrl: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  stripePublishableKey?: string;
+  appleMerchantId?: string;
 };
 
 const readEnv = (key: string) =>
@@ -19,7 +21,7 @@ export const getSharedEnv = (): SharedEnv => {
     readEnv("EXPO_PUBLIC_API_BASE_URL") ??
     readEnv("NEXT_PUBLIC_API_BASE_URL") ??
     readEnv("NEXT_PUBLIC_BASE_URL") ??
-    "https://app.orya.pt";
+    "https://www.orya.pt";
 
   const supabaseUrl =
     readEnv("EXPO_PUBLIC_SUPABASE_URL") ?? readEnv("NEXT_PUBLIC_SUPABASE_URL");
@@ -29,10 +31,20 @@ export const getSharedEnv = (): SharedEnv => {
     readEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY") ??
     readEnv("SUPABASE_ANON_KEY");
 
+  const stripePublishableKey =
+    readEnv("EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY") ??
+    readEnv("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
+
+  const appleMerchantId =
+    readEnv("EXPO_PUBLIC_APPLE_MERCHANT_ID") ??
+    readEnv("NEXT_PUBLIC_APPLE_MERCHANT_ID");
+
   return {
     appEnv,
     apiBaseUrl,
     supabaseUrl,
     supabaseAnonKey,
+    stripePublishableKey,
+    appleMerchantId,
   };
 };

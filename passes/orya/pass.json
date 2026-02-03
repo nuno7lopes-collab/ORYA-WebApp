@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "passTypeIdentifier": "pass.com.orya.ticket",
+  "teamIdentifier": "TEAMID",
+  "organizationName": "ORYA",
+  "description": "Bilhete ORYA",
+  "serialNumber": "SERIAL",
+  "logoText": "ORYA"
+}

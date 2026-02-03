@@ -97,8 +97,9 @@
 - Event cards now include ticket type summary + price range + attendance + availability pills, with shared image transitions to detail.
 - Search screen now includes loading skeletons and better caching defaults.
 - Discover cards now show availability pills (ticket types) + optional distance pill and prefetch detail routes for smoother transitions.
-- Event detail has upgraded visual transition + ticket type selection + pre-checkout summary.
-- Checkout stub screen added (native checkout flow placeholder; no external browser).
+- ✅ (4) Offer detail complete: event/service detail with prefetch, shared image transitions, ticket selection + pre-checkout summary.
+- ✅ (5) Universal checkout complete: native Stripe PaymentSheet (Apple Pay + card + MBWay) with 10‑min resume + status checks.
+- ✅ (6) Wallet complete: list + detail + QR + history, Apple Wallet Pass endpoint + Add to Wallet CTA.
+- ✅ Push registration + permissions UI (profile) wired; backend triggers remain server-driven.
 - Agora tab implemented with real timeline/personalized feed.
 - Network tab implemented with real suggestions + follow/unfollow actions.
-- Wallet is being implemented with real list/detail API and QR rendering.

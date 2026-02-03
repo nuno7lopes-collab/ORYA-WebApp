@@ -9,6 +9,8 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { isWalletPassEnabled } from "@/lib/wallet/pass";
 
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -94,6 +96,14 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     emailVerified: Boolean(data.user.email_confirmed_at),
     isGuestOwner: false,
   });
+  const passAvailable =
+    isWalletPassEnabled() &&
+    actions.canShowQr &&
+    ent.type === "TICKET" &&
+    ["ACTIVE", "USED"].includes(ent.status.toUpperCase());
+  const passUrl = passAvailable
+    ? `${getAppBaseUrl()}/api/me/wallet/${encodeURIComponent(ent.id)}/pass`
+    : null;
 
   let qrToken: string | null = null;
   if (actions.canShowQr) {
@@ -235,6 +245,8 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
       timezone: ent.snapshotTimezone,
     },
     actions,
+    passAvailable,
+    passUrl,
     qrToken,
     pairing: pairingSummary,
     pairingActions,

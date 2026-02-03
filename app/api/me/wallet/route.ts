@@ -9,6 +9,7 @@ import crypto from "crypto";
 import { normalizeEmail } from "@/lib/utils/email";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
+import { isWalletPassEnabled } from "@/lib/wallet/pass";
 
 const MAX_PAGE = 50;
 
@@ -175,6 +176,11 @@ async function _GET(req: NextRequest) {
           emailVerified: Boolean(data.user.email_confirmed_at),
           isGuestOwner: false,
         });
+        const passAvailable =
+          isWalletPassEnabled() &&
+          actions.canShowQr &&
+          e.type === "TICKET" &&
+          ["ACTIVE", "USED"].includes(e.status.toUpperCase());
 
         let qrToken: string | null = null;
         if (actions.canShowQr) {
@@ -207,6 +213,7 @@ async function _GET(req: NextRequest) {
             timezone: e.snapshotTimezone,
           },
           actions,
+          passAvailable,
           qrToken,
           updatedAt: e.updatedAt,
         };

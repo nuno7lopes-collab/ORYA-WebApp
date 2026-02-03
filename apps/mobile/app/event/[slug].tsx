@@ -19,6 +19,7 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { useAuth } from "../../lib/auth";
+import { useCheckoutStore } from "../../features/checkout/store";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt) return "Data por anunciar";
@@ -137,6 +138,7 @@ export default function EventDetail() {
   }, [imageTag]);
   const { data, isLoading, isError, error, refetch } = useEventDetail(slugValue ?? "");
   const { session } = useAuth();
+  const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const transitionSource = source === "discover" ? "discover" : "direct";
 
   const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
@@ -593,18 +595,19 @@ export default function EventDetail() {
                   disabled={!canCheckout}
                   onPress={() => {
                     if (!selectedTicket) return;
-                    router.push({
-                      pathname: "/checkout",
-                      params: {
-                        eventSlug: data.slug,
-                        eventTitle: data.title,
-                        ticketTypeId: String(selectedTicket.id),
-                        ticketName: selectedTicket.name,
-                        quantity: String(ticketQuantity),
-                        totalCents: String(totalCents),
-                        currency: selectedTicket.currency ?? "EUR",
-                      },
+                    setCheckoutDraft({
+                      slug: data.slug,
+                      eventId: data.id,
+                      eventTitle: data.title,
+                      ticketTypeId: selectedTicket.id,
+                      ticketName: selectedTicket.name,
+                      quantity: ticketQuantity,
+                      unitPriceCents: selectedTicket.price,
+                      totalCents,
+                      currency: selectedTicket.currency ?? "EUR",
+                      paymentMethod: "card",
                     });
+                    router.push("/checkout");
                   }}
                   className={canCheckout ? "rounded-2xl bg-white/15 px-4 py-4" : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"}
                   style={{ minHeight: tokens.layout.touchTarget }}

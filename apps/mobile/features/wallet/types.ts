@@ -12,6 +12,7 @@ export type WalletEntitlement = {
   actions?: {
     canShowQr?: boolean;
   };
+  passAvailable?: boolean;
   qrToken?: string | null;
   updatedAt?: string;
 };
@@ -26,6 +27,8 @@ export type WalletDetail = {
   type: string;
   status: string;
   snapshot: WalletEntitlement["snapshot"];
+  passAvailable?: boolean;
+  passUrl?: string | null;
   qrToken?: string | null;
   event?: {
     id: number;

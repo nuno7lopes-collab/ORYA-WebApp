@@ -1,4 +1,5 @@
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import * as Notifications from "expo-notifications";
 import { supabase } from "../../lib/supabase";
 import { i18n, tokens } from "@orya/shared";
 import { GlassSurface } from "../../components/glass/GlassSurface";
@@ -6,6 +7,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { useProfileAgenda, useProfileSummary } from "../../features/profile/hooks";
+import { useEffect, useState } from "react";
 
 const formatAgendaDate = (value: string): string => {
   const parsed = new Date(value);
@@ -28,6 +30,7 @@ export default function ProfileScreen() {
   const t = i18n.pt.profile;
   const summary = useProfileSummary();
   const agenda = useProfileAgenda();
+  const [pushStatus, setPushStatus] = useState<"loading" | "granted" | "denied" | "undetermined">("loading");
   const profile = summary.data;
   const agendaData = agenda.data?.items ?? [];
   const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
@@ -39,6 +42,23 @@ export default function ProfileScreen() {
   const signOut = async () => {
     await supabase.auth.signOut();
   };
+
+  useEffect(() => {
+    let mounted = true;
+    Notifications.getPermissionsAsync()
+      .then((status) => {
+        if (!mounted) return;
+        if (status.granted) setPushStatus("granted");
+        else if (status.status === "denied") setPushStatus("denied");
+        else setPushStatus("undetermined");
+      })
+      .catch(() => {
+        if (mounted) setPushStatus("undetermined");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <LiquidBackground>
@@ -149,6 +169,48 @@ export default function ProfileScreen() {
           <Text className="text-white/75 text-sm">Email</Text>
           <Text className="text-white text-base font-semibold mt-1">{profile?.email ?? "-"}</Text>
         </GlassSurface>
+
+        <View className="mt-6">
+          <SectionHeader title="Notificações" subtitle="Lembra-te de ativares para não perderes eventos." />
+          <GlassSurface intensity={52} padding={16}>
+            <View className="flex-row items-center justify-between">
+              <View>
+                <Text className="text-white/70 text-sm">Estado</Text>
+                <Text className="text-white text-base font-semibold mt-1">
+                  {pushStatus === "loading"
+                    ? "A verificar…"
+                    : pushStatus === "granted"
+                      ? "Ativas"
+                      : pushStatus === "denied"
+                        ? "Bloqueadas"
+                        : "Por ativar"}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  if (pushStatus === "granted") {
+                    Linking.openSettings();
+                    return;
+                  }
+                  Notifications.requestPermissionsAsync().then((status) => {
+                    if (status.granted) setPushStatus("granted");
+                    else if (status.status === "denied") setPushStatus("denied");
+                    else setPushStatus("undetermined");
+                  });
+                }}
+                className="rounded-full border border-white/10 bg-white/10 px-4 py-2"
+                style={{ minHeight: tokens.layout.touchTarget }}
+              >
+                <Text className="text-white text-sm font-semibold">
+                  {pushStatus === "granted" ? "Abrir definições" : "Ativar"}
+                </Text>
+              </Pressable>
+            </View>
+            <Text className="text-white/55 text-xs mt-3">
+              Enviamos lembretes de eventos, cancelamentos e updates importantes (incl. padel T-48/T-24).
+            </Text>
+          </GlassSurface>
+        </View>
 
         <View className="mt-6">
           <SectionHeader title="Segurança" />
