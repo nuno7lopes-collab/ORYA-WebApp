@@ -7,15 +7,28 @@ export async function fetchGeoAutocomplete(query: string, opts?: { lat?: number;
     params.set("lng", String(opts?.lng));
   }
   const res = await fetch(`/api/address/autocomplete?${params.toString()}`);
-  const data = (await res.json()) as { ok: boolean; items?: GeoAutocompleteItem[]; error?: string };
+  const data = (await res.json()) as {
+    ok: boolean;
+    items?: GeoAutocompleteItem[];
+    error?: string;
+    sourceProvider?: string | null;
+  };
   if (!res.ok || !data.ok) {
     throw new Error(data.error || "Falha ao obter sugestões.");
   }
   return data.items ?? [];
 }
 
-export async function fetchGeoDetails(providerId: string) {
+export async function fetchGeoDetails(
+  providerId: string,
+  opts?: { sourceProvider?: string | null; lat?: number | null; lng?: number | null }
+) {
   const params = new URLSearchParams({ providerId });
+  if (opts?.sourceProvider) params.set("sourceProvider", opts.sourceProvider);
+  if (Number.isFinite(opts?.lat ?? NaN) && Number.isFinite(opts?.lng ?? NaN)) {
+    params.set("lat", String(opts?.lat));
+    params.set("lng", String(opts?.lng));
+  }
   const res = await fetch(`/api/address/details?${params.toString()}`);
   const data = (await res.json()) as { ok: boolean; item?: GeoDetailsItem; error?: string };
   if (!res.ok || !data.ok) {

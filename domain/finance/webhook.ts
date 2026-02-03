@@ -47,7 +47,10 @@ export async function handleStripeWebhook(event: StripeDisputeEvent): Promise<{
     return { handled: false, reason: "PAYMENT_ID_MISSING" };
   }
 
-  const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    select: { id: true, status: true, organizationId: true, sourceType: true, sourceId: true },
+  });
   if (!payment) {
     return { handled: false, reason: "PAYMENT_NOT_FOUND", paymentId };
   }

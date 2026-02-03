@@ -16,9 +16,17 @@ async function _POST(_req: NextRequest, context: { params: { rewardId: string } 
     const rewardId = context.params.rewardId;
     const reward = await prisma.loyaltyReward.findUnique({
       where: { id: rewardId },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        stock: true,
+        pointsCost: true,
+        programId: true,
         program: {
-          include: {
+          select: {
+            organizationId: true,
+            status: true,
             organization: {
               select: { id: true, publicName: true, businessName: true, primaryModule: true },
             },

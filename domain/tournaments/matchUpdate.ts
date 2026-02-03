@@ -29,7 +29,17 @@ export async function updateMatchResult({
   return prisma.$transaction(async (tx) => {
     const current = await tx.tournamentMatch.findUnique({
       where: { id: matchId },
-      include: { stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } } },
+      select: {
+        id: true,
+        status: true,
+        updatedAt: true,
+        score: true,
+        pairing1Id: true,
+        pairing2Id: true,
+        nextMatchId: true,
+        nextSlot: true,
+        stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
+      },
     });
     if (!current) throw new Error("MATCH_NOT_FOUND");
 

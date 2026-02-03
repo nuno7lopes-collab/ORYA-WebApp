@@ -34,6 +34,15 @@ function resolveCookieDomainFromHost(rawHost?: string | null) {
   return "";
 }
 
+function extractBearerToken(authorizationHeader?: string | null) {
+  if (!authorizationHeader) return null;
+  const [scheme, token] = authorizationHeader.split(" ");
+  if (!scheme || !token) return null;
+  if (scheme.toLowerCase() !== "bearer") return null;
+  const trimmed = token.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * Server-side Supabase client (SSR + Route Handlers)
  * - Safe cookie reading
@@ -43,19 +52,30 @@ function resolveCookieDomainFromHost(rawHost?: string | null) {
  */
 export async function createSupabaseServer() {
   const cookieStore = (await cookies());
-  const hostHeader = (await headers()).get("host");
+  const headersStore = await headers();
+  const hostHeader = headersStore.get("host");
+  const bearerToken = extractBearerToken(headersStore.get("authorization"));
   const cookieDomain =
     env.supabaseCookieDomain || resolveCookieDomainFromHost(hostHeader);
   const isLocalhostDomain =
     cookieDomain === "localhost" || cookieDomain.endsWith(".localhost");
   const isSecure =
     !isLocalhostDomain &&
-    (process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production");
+    process.env.NODE_ENV === "production";
 
   const supabase = createServerClient(
     env.supabaseUrl,
     env.supabaseAnonKey,
     {
+      ...(bearerToken
+        ? {
+            global: {
+              headers: {
+                Authorization: `Bearer ${bearerToken}`,
+              },
+            },
+          }
+        : {}),
       cookieOptions: cookieDomain
         ? {
             domain: cookieDomain,

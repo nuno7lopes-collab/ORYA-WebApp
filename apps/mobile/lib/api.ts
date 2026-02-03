@@ -1,6 +1,16 @@
 import { createApiClient } from "@orya/shared";
+import { supabase } from "./supabase";
 
-export const api = createApiClient();
+export const api = createApiClient({
+  getAccessToken: async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    } catch {
+      return null;
+    }
+  },
+});
 
 export class ApiError extends Error {
   status: number;

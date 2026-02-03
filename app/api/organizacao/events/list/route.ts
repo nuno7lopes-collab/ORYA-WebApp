@@ -109,9 +109,21 @@ async function _GET(req: NextRequest) {
     const eventQuery = {
       where,
       orderBy: { startsAt: "asc" },
-      include: {
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        description: true,
+        startsAt: true,
+        endsAt: true,
+        locationName: true,
+        locationCity: true,
+        status: true,
+        templateType: true,
+        isFree: true,
+        coverImageUrl: true,
         padelTournamentConfig: {
-          select: { padelClubId: true, partnerClubIds: true, advancedSettings: true, isInterclub: true, teamSize: true },
+          select: { padelClubId: true, partnerClubIds: true, advancedSettings: true },
         },
         tournament: {
           select: { id: true },
@@ -250,10 +262,7 @@ async function _GET(req: NextRequest) {
 
     const items = events.map((event) => {
       const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
-      const isGratis = deriveIsFreeEvent({
-        pricingMode: event.pricingMode ?? undefined,
-        ticketPrices,
-      });
+      const isGratis = event.isFree || deriveIsFreeEvent({ ticketPrices });
       const partnerClubIds = (event.padelTournamentConfig?.partnerClubIds ?? []) as number[];
 
       return {
@@ -287,8 +296,8 @@ async function _GET(req: NextRequest) {
           ? padelClubMap.get(event.padelTournamentConfig.padelClubId) ?? null
           : null,
         padelPartnerClubNames: partnerClubIds.map((id) => padelClubMap.get(id) ?? null),
-        isInterclub: event.padelTournamentConfig?.isInterclub ?? false,
-        teamSize: event.padelTournamentConfig?.teamSize ?? null,
+        isInterclub: (event.padelTournamentConfig as { isInterclub?: boolean } | null)?.isInterclub ?? false,
+        teamSize: (event.padelTournamentConfig as { teamSize?: number | null } | null)?.teamSize ?? null,
       };
     });
 

@@ -49,7 +49,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
-    include: {
+    select: {
+      id: true,
+      status: true,
+      score: true,
       event: { select: { id: true, organizationId: true } },
       pairingA: { select: { slots: { select: { profileId: true } } } },
       pairingB: { select: { slots: { select: { profileId: true } } } },
@@ -128,7 +131,12 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
 
   const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
-    include: { event: { select: { id: true, organizationId: true } } },
+    select: {
+      id: true,
+      status: true,
+      score: true,
+      event: { select: { id: true, organizationId: true } },
+    },
   });
   if (!match || !match.event?.organizationId) {
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });

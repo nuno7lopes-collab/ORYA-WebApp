@@ -1,9 +1,10 @@
-import { DiscoverResponseSchema, PublicEventCard } from "@orya/shared";
-import { api, ApiError, unwrapApiResponse } from "../../lib/api";
+import { api, unwrapApiResponse } from "../../lib/api";
+import { fetchDiscoverPage } from "../discover/api";
+import { DiscoverOfferCard } from "../discover/types";
 import { SearchOrganization, SearchUser } from "./types";
 
 type OfferSearchResult = {
-  items: PublicEventCard[];
+  items: DiscoverOfferCard[];
 };
 
 const parseResults = <T>(payload: unknown): T[] => {
@@ -18,16 +19,15 @@ export const searchOffers = async (query: string): Promise<OfferSearchResult> =>
   const q = query.trim();
   if (!q) return { items: [] };
 
-  const response = await api.request<unknown>(
-    `/api/explorar/list?q=${encodeURIComponent(q)}&limit=8`,
-  );
-  const unwrapped = unwrapApiResponse<unknown>(response);
-  const parsed = DiscoverResponseSchema.safeParse(unwrapped);
-  if (!parsed.success) {
-    throw new ApiError(500, "Formato inválido no search de ofertas.");
-  }
+  const page = await fetchDiscoverPage({
+    q,
+    kind: "all",
+    type: "all",
+    limit: 8,
+    cursor: null,
+  });
 
-  return { items: parsed.data.items };
+  return { items: page.items };
 };
 
 export const searchUsers = async (query: string): Promise<SearchUser[]> => {

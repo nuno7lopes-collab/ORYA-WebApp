@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 
-const IS_PROD = process.env.VERCEL_ENV
-  ? process.env.VERCEL_ENV === "production"
-  : process.env.NODE_ENV === "production";
+const IS_PROD = process.env.NODE_ENV === "production";
 const ENABLE_CSP_REPORT_ONLY = IS_PROD || process.env.CSP_REPORT_ONLY === "1";
 const CSP_REPORT_ONLY = [
   "default-src 'self'",

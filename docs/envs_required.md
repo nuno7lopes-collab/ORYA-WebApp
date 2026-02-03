@@ -95,11 +95,11 @@ Infra evidence:
 - `reports/p_email_2026-01-31.md`
 - `reports/test_env_isolation_2026-01-31.md`
 
-## Vercel
-- Project Settings -> Environment Variables.
-- Add for Production / Preview / Development as needed.
+## AWS deploy
+- Store env vars in AWS Secrets Manager/SSM.
+- Attach them to App Runner/ECS task definitions by environment.
 - Base64 values must be single line (no quotes, no line breaks).
-- Redeploy after changes.
+- Redeploy services after changes.
 
 ## Local dev / CI
 - Use `.env` or `.env.local` locally.

@@ -103,7 +103,21 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
   if (!payload?.matchId) return { ok: false, code: "MATCH_ID_REQUIRED" } as const;
   const match = await prisma.eventMatchSlot.findUnique({
     where: { id: payload.matchId },
-    include: { event: { select: { id: true, organizationId: true, startsAt: true, endsAt: true, padelTournamentConfig: { select: { padelClubId: true, partnerClubIds: true, advancedSettings: true } } } } },
+    select: {
+      id: true,
+      score: true,
+      event: {
+        select: {
+          id: true,
+          organizationId: true,
+          startsAt: true,
+          endsAt: true,
+          padelTournamentConfig: {
+            select: { padelClubId: true, partnerClubIds: true, advancedSettings: true },
+          },
+        },
+      },
+    },
   });
   if (!match || !match.event?.organizationId) return { ok: false, code: "MATCH_NOT_FOUND" } as const;
 
@@ -293,12 +307,53 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
   if (!payload?.matchId) return { ok: false, code: "MATCH_ID_REQUIRED" } as const;
   const updated = await prisma.eventMatchSlot.findUnique({
     where: { id: payload.matchId },
-    include: {
+    select: {
+      id: true,
+      eventId: true,
+      status: true,
+      roundType: true,
+      roundLabel: true,
+      groupLabel: true,
+      categoryId: true,
+      pairingAId: true,
+      pairingBId: true,
+      winnerPairingId: true,
+      courtId: true,
+      courtNumber: true,
+      startTime: true,
+      plannedStartAt: true,
       event: {
-        select: { id: true, slug: true, title: true, organizationId: true, timezone: true, padelTournamentConfig: { select: { advancedSettings: true, format: true, ruleSetId: true } } },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          organizationId: true,
+          timezone: true,
+          padelTournamentConfig: { select: { advancedSettings: true, format: true, ruleSetId: true } },
+        },
       },
-      pairingA: { include: { slots: { include: { playerProfile: true } } } },
-      pairingB: { include: { slots: { include: { playerProfile: true } } } },
+      pairingA: {
+        select: {
+          id: true,
+          slots: {
+            select: {
+              profileId: true,
+              playerProfile: { select: { displayName: true, fullName: true } },
+            },
+          },
+        },
+      },
+      pairingB: {
+        select: {
+          id: true,
+          slots: {
+            select: {
+              profileId: true,
+              playerProfile: { select: { displayName: true, fullName: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (!updated || !updated.event?.organizationId) return { ok: false, code: "MATCH_NOT_FOUND" } as const;

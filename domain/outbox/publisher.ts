@@ -100,25 +100,60 @@ async function processClaimedOutboxEvent(params: {
   const { event, processingToken, now } = params;
   const operationKey = `outbox:${event.eventId}`;
 
-  return prisma.$transaction(async (tx) => {
-    const current = await tx.outboxEvent.findUnique({
-      where: { eventId: event.eventId },
-      select: { processingToken: true, attempts: true },
-    });
-    if (!current || current.processingToken !== processingToken) {
-      return { eventId: event.eventId, status: "SKIPPED" as const };
+  const current = await prisma.outboxEvent.findUnique({
+    where: { eventId: event.eventId },
+    select: { processingToken: true, attempts: true },
+  });
+  if (!current || current.processingToken !== processingToken) {
+    return { eventId: event.eventId, status: "SKIPPED" as const };
+  }
+
+  const attempts =
+    typeof current.attempts === "number"
+      ? current.attempts
+      : typeof event.attempts === "number"
+        ? event.attempts
+        : 0;
+
+  const handleExistingOperation = async (existingOp: { status: string; updatedAt: Date | null }) => {
+    if (existingOp.status === "SUCCEEDED") {
+      const update = await prisma.outboxEvent.updateMany({
+        where: { eventId: event.eventId, processingToken },
+        data: {
+          publishedAt: existingOp.updatedAt ?? now,
+          nextAttemptAt: null,
+          reasonCode: null,
+          errorClass: null,
+          errorStack: null,
+          firstSeenAt: null,
+          lastSeenAt: null,
+        },
+      });
+      if (update.count === 0) {
+        return { eventId: event.eventId, status: "SKIPPED" as const };
+      }
+      logInfo(
+        "outbox.already-succeeded",
+        {
+          eventId: event.eventId,
+          eventType: event.eventType,
+          attempts,
+          correlationId: event.correlationId ?? null,
+        },
+        { fallbackToRequestContext: false },
+      );
+      return { eventId: event.eventId, status: "PUBLISHED" as const };
     }
 
-    const attempts = current.attempts ?? event.attempts;
-    if (attempts >= OUTBOX_MAX_ATTEMPTS) {
+    if (existingOp.status === "DEAD_LETTER") {
       const firstSeenAt = event.firstSeenAt ?? now;
-      const update = await tx.outboxEvent.updateMany({
+      const update = await prisma.outboxEvent.updateMany({
         where: { eventId: event.eventId, processingToken },
         data: {
           deadLetteredAt: now,
           nextAttemptAt: null,
-          reasonCode: event.reasonCode ?? "MAX_ATTEMPTS",
-          errorClass: event.errorClass ?? "OutboxMaxAttempts",
+          reasonCode: event.reasonCode ?? "OPERATION_DEAD_LETTER",
+          errorClass: event.errorClass ?? "OutboxOperationDeadLetter",
           errorStack: event.errorStack ?? null,
           firstSeenAt,
           lastSeenAt: now,
@@ -134,96 +169,71 @@ async function processClaimedOutboxEvent(params: {
           eventType: event.eventType,
           attempts,
           correlationId: event.correlationId ?? null,
-          registrationId:
-            event.payload && typeof event.payload === "object"
-              ? (event.payload as Record<string, unknown>).registrationId ?? null
-              : null,
         },
         { fallbackToRequestContext: false },
       );
       return { eventId: event.eventId, status: "DEAD_LETTER" as const };
     }
 
+    await prisma.outboxEvent.updateMany({
+      where: { eventId: event.eventId, processingToken },
+      data: {
+        nextAttemptAt: new Date(now.getTime() + computeBackoffMs(Math.max(1, attempts))),
+        reasonCode: event.reasonCode ?? null,
+        errorClass: event.errorClass ?? null,
+        errorStack: event.errorStack ?? null,
+        firstSeenAt: event.firstSeenAt ?? now,
+        lastSeenAt: now,
+      },
+    });
+    return { eventId: event.eventId, status: "RETRY" as const };
+  };
+
+  if (attempts >= OUTBOX_MAX_ATTEMPTS) {
+    const firstSeenAt = event.firstSeenAt ?? now;
+    const update = await prisma.outboxEvent.updateMany({
+      where: { eventId: event.eventId, processingToken },
+      data: {
+        deadLetteredAt: now,
+        nextAttemptAt: null,
+        reasonCode: event.reasonCode ?? "MAX_ATTEMPTS",
+        errorClass: event.errorClass ?? "OutboxMaxAttempts",
+        errorStack: event.errorStack ?? null,
+        firstSeenAt,
+        lastSeenAt: now,
+      },
+    });
+    if (update.count === 0) {
+      return { eventId: event.eventId, status: "SKIPPED" as const };
+    }
+    logWarn(
+      "outbox.dead-letter",
+      {
+        eventId: event.eventId,
+        eventType: event.eventType,
+        attempts,
+        correlationId: event.correlationId ?? null,
+        registrationId:
+          event.payload && typeof event.payload === "object"
+            ? (event.payload as Record<string, unknown>).registrationId ?? null
+            : null,
+      },
+      { fallbackToRequestContext: false },
+    );
+    return { eventId: event.eventId, status: "DEAD_LETTER" as const };
+  }
+
+  try {
+    const existingOp = await prisma.operation.findUnique({
+      where: { dedupeKey: operationKey },
+      select: { status: true, updatedAt: true },
+    });
+    if (existingOp) {
+      return await handleExistingOperation(existingOp);
+    }
+
     try {
-      const existingOp = await tx.operation.findUnique({
-        where: { dedupeKey: operationKey },
-        select: { status: true, updatedAt: true },
-      });
-
-      if (existingOp) {
-        if (existingOp.status === "SUCCEEDED") {
-          const update = await tx.outboxEvent.updateMany({
-            where: { eventId: event.eventId, processingToken },
-            data: {
-              publishedAt: existingOp.updatedAt ?? now,
-              nextAttemptAt: null,
-              reasonCode: null,
-              errorClass: null,
-              errorStack: null,
-              firstSeenAt: null,
-              lastSeenAt: null,
-            },
-          });
-          if (update.count === 0) {
-            return { eventId: event.eventId, status: "SKIPPED" as const };
-          }
-          logInfo(
-            "outbox.already-succeeded",
-            {
-              eventId: event.eventId,
-              eventType: event.eventType,
-              attempts,
-              correlationId: event.correlationId ?? null,
-            },
-            { fallbackToRequestContext: false },
-          );
-          return { eventId: event.eventId, status: "PUBLISHED" as const };
-        }
-        if (existingOp.status === "DEAD_LETTER") {
-          const firstSeenAt = event.firstSeenAt ?? now;
-          const update = await tx.outboxEvent.updateMany({
-            where: { eventId: event.eventId, processingToken },
-            data: {
-              deadLetteredAt: now,
-              nextAttemptAt: null,
-              reasonCode: event.reasonCode ?? "OPERATION_DEAD_LETTER",
-              errorClass: event.errorClass ?? "OutboxOperationDeadLetter",
-              errorStack: event.errorStack ?? null,
-              firstSeenAt,
-              lastSeenAt: now,
-            },
-          });
-          if (update.count === 0) {
-            return { eventId: event.eventId, status: "SKIPPED" as const };
-          }
-          logWarn(
-            "outbox.dead-letter",
-            {
-              eventId: event.eventId,
-              eventType: event.eventType,
-              attempts,
-              correlationId: event.correlationId ?? null,
-            },
-            { fallbackToRequestContext: false },
-          );
-          return { eventId: event.eventId, status: "DEAD_LETTER" as const };
-        }
-
-        await tx.outboxEvent.updateMany({
-          where: { eventId: event.eventId, processingToken },
-          data: {
-            nextAttemptAt: new Date(now.getTime() + computeBackoffMs(Math.max(1, attempts))),
-            reasonCode: event.reasonCode ?? null,
-            errorClass: event.errorClass ?? null,
-            errorStack: event.errorStack ?? null,
-            firstSeenAt: event.firstSeenAt ?? now,
-            lastSeenAt: now,
-          },
-        });
-        return { eventId: event.eventId, status: "RETRY" as const };
-      }
-
-      await tx.operation.create({
+      await prisma.operation.create({
         data: {
           operationType: "OUTBOX_EVENT",
           dedupeKey: operationKey,
@@ -237,69 +247,83 @@ async function processClaimedOutboxEvent(params: {
           },
         },
       });
-
-      await tx.outboxEvent.updateMany({
-        where: { eventId: event.eventId, processingToken },
-        data: {
-          nextAttemptAt: new Date(now.getTime() + computeBackoffMs(Math.max(1, attempts))),
-        },
-      });
-
-      logInfo(
-        "outbox.enqueued",
-        {
-          eventId: event.eventId,
-          eventType: event.eventType,
-          attempts,
-          correlationId: event.correlationId ?? null,
-          registrationId:
-            event.payload && typeof event.payload === "object"
-              ? (event.payload as Record<string, unknown>).registrationId ?? null
-              : null,
-        },
-        { fallbackToRequestContext: false },
-      );
-      return { eventId: event.eventId, status: "RETRY" as const };
     } catch (err) {
-      const { message, errorClass, reasonCode, stackSummary } = summarizeError(err);
-      const nextAttempts = attempts + 1;
-      const isDead = nextAttempts >= OUTBOX_MAX_ATTEMPTS;
-      const firstSeenAt = event.firstSeenAt ?? now;
-      await tx.outboxEvent.updateMany({
-        where: { eventId: event.eventId, processingToken },
-        data: {
-          attempts: nextAttempts,
-          nextAttemptAt: isDead ? null : new Date(now.getTime() + computeBackoffMs(nextAttempts)),
-          deadLetteredAt: isDead ? now : null,
-          reasonCode,
-          errorClass,
-          errorStack: stackSummary,
-          firstSeenAt,
-          lastSeenAt: now,
-        },
-      });
-      logWarn(
-        "outbox.publish-failed",
-        {
-          eventId: event.eventId,
-          eventType: event.eventType,
-          attempts: nextAttempts,
-          correlationId: event.correlationId ?? null,
-          errorClass,
-          reasonCode,
-          error: message,
-          registrationId:
-            event.payload && typeof event.payload === "object"
-              ? (event.payload as Record<string, unknown>).registrationId ?? null
-              : null,
-          deadLettered: isDead,
-        },
-        { fallbackToRequestContext: false },
-      );
-      const status: "DEAD_LETTER" | "RETRY" = isDead ? "DEAD_LETTER" : "RETRY";
-      return { eventId: event.eventId, status };
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const op = await prisma.operation.findUnique({
+          where: { dedupeKey: operationKey },
+          select: { status: true, updatedAt: true },
+        });
+        if (op) {
+          return await handleExistingOperation(op);
+        }
+      }
+      throw err;
     }
-  });
+
+    const update = await prisma.outboxEvent.updateMany({
+      where: { eventId: event.eventId, processingToken },
+      data: {
+        nextAttemptAt: new Date(now.getTime() + computeBackoffMs(Math.max(1, attempts))),
+      },
+    });
+    if (update.count === 0) {
+      return { eventId: event.eventId, status: "SKIPPED" as const };
+    }
+
+    logInfo(
+      "outbox.enqueued",
+      {
+        eventId: event.eventId,
+        eventType: event.eventType,
+        attempts,
+        correlationId: event.correlationId ?? null,
+        registrationId:
+          event.payload && typeof event.payload === "object"
+            ? (event.payload as Record<string, unknown>).registrationId ?? null
+            : null,
+      },
+      { fallbackToRequestContext: false },
+    );
+    return { eventId: event.eventId, status: "RETRY" as const };
+  } catch (err) {
+    const { message, errorClass, reasonCode, stackSummary } = summarizeError(err);
+    const nextAttempts = attempts + 1;
+    const isDead = nextAttempts >= OUTBOX_MAX_ATTEMPTS;
+    const firstSeenAt = event.firstSeenAt ?? now;
+    await prisma.outboxEvent.updateMany({
+      where: { eventId: event.eventId, processingToken },
+      data: {
+        attempts: nextAttempts,
+        nextAttemptAt: isDead ? null : new Date(now.getTime() + computeBackoffMs(nextAttempts)),
+        deadLetteredAt: isDead ? now : null,
+        reasonCode,
+        errorClass,
+        errorStack: stackSummary,
+        firstSeenAt,
+        lastSeenAt: now,
+      },
+    });
+    logWarn(
+      "outbox.publish-failed",
+      {
+        eventId: event.eventId,
+        eventType: event.eventType,
+        attempts: nextAttempts,
+        correlationId: event.correlationId ?? null,
+        errorClass,
+        reasonCode,
+        error: message,
+        registrationId:
+          event.payload && typeof event.payload === "object"
+            ? (event.payload as Record<string, unknown>).registrationId ?? null
+            : null,
+        deadLettered: isDead,
+      },
+      { fallbackToRequestContext: false },
+    );
+    const status: "DEAD_LETTER" | "RETRY" = isDead ? "DEAD_LETTER" : "RETRY";
+    return { eventId: event.eventId, status };
+  }
 }
 
 export async function publishOutboxBatch(params?: { now?: Date; batchSize?: number }) {
@@ -349,7 +373,7 @@ export async function publishOutboxBatch(params?: { now?: Date; batchSize?: numb
       data: { processingToken, claimedAt: now },
     });
     return { processingToken, events };
-  });
+  }, { timeout: 20000, maxWait: 5000 });
 
   if (!claimed.processingToken || claimed.events.length === 0) {
     logInfo("outbox.batch.empty", { batchSize }, { fallbackToRequestContext: false });

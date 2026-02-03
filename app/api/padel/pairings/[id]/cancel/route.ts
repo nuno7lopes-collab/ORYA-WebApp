@@ -8,6 +8,7 @@ import {
   PadelPairingStatus,
   PadelPairingSlotStatus,
   PadelRegistrationStatus,
+  Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -17,6 +18,25 @@ import { checkPadelRegistrationWindow, upsertPadelRegistrationForPairing } from 
 import { readNumericParam } from "@/lib/routeParams";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+
+const pairingSelect = {
+  id: true,
+  organizationId: true,
+  eventId: true,
+  categoryId: true,
+  createdByUserId: true,
+  pairingStatus: true,
+  payment_mode: true,
+  event: { select: { organizationId: true } },
+  slots: {
+    select: {
+      id: true,
+      slot_role: true,
+      slotStatus: true,
+      paymentStatus: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 // Cancela pairing Padel v2 (MVP: estados DB; refund efetivo fica para o checkout/refund handler).
 // Regras: capitão (created_by_user_id) ou staff OWNER/ADMIN do organization.
@@ -33,10 +53,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: {
-      event: { select: { organizationId: true } },
-      slots: true,
-    },
+    select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
@@ -87,7 +104,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           partnerLinkExpiresAt: null,
           lockedUntil: null,
         },
-        include: { slots: true },
+        select: pairingSelect,
       });
 
       await cancelActiveHold(tx, pairingId);

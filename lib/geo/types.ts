@@ -6,6 +6,7 @@ export type GeoAutocompleteItem = {
   address: string | null;
   lat: number;
   lng: number;
+  sourceProvider?: string | null;
 };
 
 export type GeoDetailsItem = {
@@ -17,6 +18,7 @@ export type GeoDetailsItem = {
   name: string | null;
   city: string | null;
   address: string | null;
+  sourceProvider?: string | null;
   addressId?: string | null;
   canonical?: Record<string, unknown> | null;
   confidenceScore?: number | null;

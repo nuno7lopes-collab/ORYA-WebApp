@@ -241,6 +241,31 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                 ctaLabel="Convidar pessoas"
               />
             </section>
+
+            {isTournaments && (
+              <section className="space-y-3">
+                <div className="space-y-1">
+                  <p className="text-[16px] font-semibold text-white">Padel agora</p>
+                  <p className="text-[11px] text-white/60">Liga-te às duplas abertas e ranking.</p>
+                </div>
+                <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-2 text-[12px] text-white/70">
+                  <Link
+                    href="/padel/duplas"
+                    className="flex items-center justify-between rounded-xl border border-white/15 bg-black/40 px-3 py-2 hover:bg-white/5"
+                  >
+                    <span>Duplas abertas</span>
+                    <span className="text-white/40">→</span>
+                  </Link>
+                  <Link
+                    href="/padel/rankings"
+                    className="flex items-center justify-between rounded-xl border border-white/15 bg-black/40 px-3 py-2 hover:bg-white/5"
+                  >
+                    <span>Ranking global</span>
+                    <span className="text-white/40">→</span>
+                  </Link>
+                </div>
+              </section>
+            )}
           </aside>
         </div>
       </section>

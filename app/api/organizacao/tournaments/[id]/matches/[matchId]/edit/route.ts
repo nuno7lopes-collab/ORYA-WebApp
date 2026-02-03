@@ -64,8 +64,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const match = await prisma.tournamentMatch.findUnique({
     where: { id: matchId },
-    include: {
-      stage: { select: { tournamentId: true, tournament: { select: { eventId: true, generationSeed: true } } } },
+    select: {
+      id: true,
+      startAt: true,
+      courtId: true,
+      status: true,
+      score: true,
+      roundLabel: true,
+      stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
     },
   });
   if (!match || match.stage.tournamentId !== tournamentId) {

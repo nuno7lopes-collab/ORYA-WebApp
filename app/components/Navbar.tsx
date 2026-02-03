@@ -131,13 +131,13 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
       aria-label="Voltar à homepage ORYA"
     >
       <Image
-        src="/brand/orya-logo-112.png"
+        src="/brand/orya-logo-flat.png"
         alt="Logo ORYA"
-        width={56}
-        height={56}
+        width={112}
+        height={62}
         priority
-        sizes="56px"
-        className="h-14 w-14 shrink-0 rounded-full object-cover"
+        sizes="112px"
+        className="h-9 w-auto shrink-0 object-contain"
       />
       <span className="text-base font-semibold leading-none tracking-[0.18em] text-white sm:text-lg sm:tracking-[0.24em]">
         ORYA
@@ -1272,13 +1272,19 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
 
 export function Navbar({ adminHostHint = false }: { adminHostHint?: boolean }) {
   const rawPathname = usePathname();
+  const [mounted, setMounted] = useState(false);
   const [isAdminHost, setIsAdminHost] = useState(Boolean(adminHostHint));
 
   useEffect(() => {
+    setMounted(true);
     if (typeof window === "undefined") return;
     const host = window.location.host.toLowerCase();
     setIsAdminHost(host.startsWith("admin."));
   }, []);
+
+  if (!mounted) {
+    return null;
+  }
 
   if (isAdminHost || rawPathname?.startsWith("/admin")) {
     return null;

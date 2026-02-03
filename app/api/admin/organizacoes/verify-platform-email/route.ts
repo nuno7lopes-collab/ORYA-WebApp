@@ -64,6 +64,9 @@ export async function POST(req: NextRequest) {
     }
 
     const platformEmail = await getPlatformOfficialEmail();
+    if (!platformEmail) {
+      return fail(ctx, 400, "PLATFORM_EMAIL_NOT_SET", "Email oficial da plataforma não configurado.");
+    }
     const alreadyVerified =
       organization.orgType === OrgType.PLATFORM &&
       normalizeOfficialEmail(organization.officialEmail ?? null) === platformEmail &&
@@ -89,6 +92,9 @@ export async function POST(req: NextRequest) {
         orgType: OrgType.PLATFORM,
         officialEmail: platformEmail,
         officialEmailVerifiedAt: new Date(),
+        stripeAccountId: null,
+        stripeChargesEnabled: false,
+        stripePayoutsEnabled: false,
       },
       select: { id: true, orgType: true, officialEmail: true, officialEmailVerifiedAt: true },
     });

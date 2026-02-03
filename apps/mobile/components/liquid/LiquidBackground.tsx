@@ -7,7 +7,9 @@ type LiquidBackgroundProps = PropsWithChildren<{
   variant?: "default" | "deep";
 }>;
 
-const gradientVariants: Record<NonNullable<LiquidBackgroundProps["variant"]>, string[]> = {
+type GradientTuple = readonly [string, string, ...string[]];
+
+const gradientVariants: Record<NonNullable<LiquidBackgroundProps["variant"]>, GradientTuple> = {
   default: ["#0b101a", "#0f1626", "#0b101a"],
   deep: ["#070b12", "#0b1220", "#111b2f"],
 };

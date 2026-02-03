@@ -81,7 +81,7 @@ type OrganizationMeResponse = {
 const OPERATION_LABELS: Record<OperationModule, string> = {
   EVENTOS: "Eventos",
   RESERVAS: "Reservas",
-  TORNEIOS: "Padel e torneios",
+  TORNEIOS: "Padel",
 };
 
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
@@ -149,7 +149,9 @@ export default function OrganizationTopBar({
       if (tabParam === "manage") {
         if (sectionParam === "inscricoes") return setApp("Formulários", "INSCRICOES");
         if (sectionParam === "reservas") return setApp("Reservas", "RESERVAS");
-        if (sectionParam === "padel-hub") return setApp("Padel e torneios", "TORNEIOS");
+        if (sectionParam === "padel-club") return setApp("Padel Clube", "TORNEIOS");
+        if (sectionParam === "padel-tournaments") return setApp("Padel Torneios", "TORNEIOS");
+        if (sectionParam === "padel-hub") return setApp("Padel Clube", "TORNEIOS");
         return setApp(OPERATION_LABELS[moduleState.primary], moduleState.primary);
       }
       if (tabParam === "promote") return setApp("Promoções", "MARKETING");
@@ -163,7 +165,7 @@ export default function OrganizationTopBar({
       pathname?.startsWith("/organizacao/padel") ||
       pathname?.startsWith("/organizacao/tournaments")
     ) {
-      return setApp("Padel e torneios", "TORNEIOS");
+      return setApp("Padel", "TORNEIOS");
     }
     if (pathname?.startsWith("/organizacao/reservas")) return setApp("Reservas", "RESERVAS");
     if (pathname?.startsWith("/organizacao/inscricoes")) return setApp("Formulários", "INSCRICOES");
@@ -226,17 +228,20 @@ export default function OrganizationTopBar({
     const padelParam = searchParams?.get("padel");
     const eventIdParam = searchParams?.get("eventId");
     const hasEventId = eventIdParam ? Number.isFinite(Number(eventIdParam)) : false;
-    const padelFallback = hasEventId ? "calendar" : "clubs";
+    const isPadelClubSection = sectionParam === "padel-club" || sectionParam === "padel-hub";
+    const isPadelTournamentsSection = sectionParam === "padel-tournaments";
+    const padelFallback = isPadelTournamentsSection || hasEventId ? "calendar" : "clubs";
+    const isPadelSection = isPadelClubSection || isPadelTournamentsSection;
     if (pathname?.startsWith("/organizacao/crm")) {
       if (pathname?.startsWith("/organizacao/crm/segmentos")) return "crm-segmentos";
       if (pathname?.startsWith("/organizacao/crm/campanhas")) return "crm-campanhas";
       if (pathname?.startsWith("/organizacao/crm/loyalty")) return "crm-loyalty";
       return "crm-clientes";
     }
-    if (sectionParam && sectionParam !== "padel-hub") return sectionParam;
+    if (sectionParam && !isPadelSection) return sectionParam;
     if (!activeObjective) return null;
     if (activeObjective === "manage") {
-      if (sectionParam === "padel-hub") return padelParam ?? padelFallback;
+      if (isPadelSection) return padelParam ?? padelFallback;
       if (pathname?.startsWith("/organizacao/reservas")) {
         if (pathname?.startsWith("/organizacao/reservas/novo")) return "servicos";
         if (pathname?.startsWith("/organizacao/reservas/servicos")) return "servicos";

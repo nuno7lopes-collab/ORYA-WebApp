@@ -22,32 +22,61 @@ function normalizeLabel(name: string | null, address: string | null) {
   return name || address || "";
 }
 
+const resolveAddressLabel = (item: any) =>
+  item.formattedAddress ||
+  item.displayAddress ||
+  (Array.isArray(item.displayLines) ? item.displayLines.filter(Boolean).join(", ") : null) ||
+  item.address?.formattedAddress ||
+  item.address?.fullAddress ||
+  item.address ||
+  null;
+
 function mapResultToAutocomplete(item: any): GeoAutocompleteItem {
-  const id = String(item.id || item.placeId || item.identifier || `${item.name || "place"}-${item.coordinate?.latitude}-${item.coordinate?.longitude}`);
-  const address = item.formattedAddress || item.displayAddress || item.address || null;
-  const name = item.name || null;
-  const city = item.address?.locality || item.locality || null;
+  const id = String(
+    item.id ||
+      item.placeId ||
+      item.identifier ||
+      item.place?.id ||
+      `${item.name || "place"}-${item.coordinate?.latitude}-${item.coordinate?.longitude}`
+  );
+  const address = resolveAddressLabel(item);
+  const name = item.name || item.place?.name || null;
+  const city =
+    item.address?.locality ||
+    item.address?.city ||
+    item.locality ||
+    item.address?.subLocality ||
+    null;
   return {
     providerId: id,
     label: normalizeLabel(name, address),
     name,
     city,
     address,
-    lat: Number(item.coordinate?.latitude ?? item.location?.latitude ?? item.latitude ?? 0),
-    lng: Number(item.coordinate?.longitude ?? item.location?.longitude ?? item.longitude ?? 0),
+    lat: Number(item.coordinate?.latitude ?? item.location?.latitude ?? item.center?.latitude ?? item.latitude ?? 0),
+    lng: Number(item.coordinate?.longitude ?? item.location?.longitude ?? item.center?.longitude ?? item.longitude ?? 0),
   };
 }
 
 function mapResultToDetails(item: any): GeoDetailsItem {
-  const address = item.formattedAddress || item.displayAddress || item.address || null;
-  const name = item.name || null;
-  const city = item.address?.locality || item.locality || null;
+  const address = resolveAddressLabel(item);
+  const name = item.name || item.place?.name || null;
+  const city =
+    item.address?.locality ||
+    item.address?.city ||
+    item.locality ||
+    item.address?.subLocality ||
+    null;
   return {
-    providerId: item.id ? String(item.id) : null,
+    providerId: item.id ? String(item.id) : item.placeId ? String(item.placeId) : null,
     formattedAddress: address,
-    components: item.address ? (item.address as Record<string, unknown>) : null,
-    lat: Number(item.coordinate?.latitude ?? item.location?.latitude ?? item.latitude ?? null),
-    lng: Number(item.coordinate?.longitude ?? item.location?.longitude ?? item.longitude ?? null),
+    components: item.address
+      ? (item.address as Record<string, unknown>)
+      : item.structuredAddress
+        ? (item.structuredAddress as Record<string, unknown>)
+        : null,
+    lat: Number(item.coordinate?.latitude ?? item.location?.latitude ?? item.center?.latitude ?? item.latitude ?? null),
+    lng: Number(item.coordinate?.longitude ?? item.location?.longitude ?? item.center?.longitude ?? item.longitude ?? null),
     name,
     city,
     address,

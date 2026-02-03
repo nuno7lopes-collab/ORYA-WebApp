@@ -38,5 +38,5 @@ export default async function OrganizationTorneiosPage() {
     redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id));
   }
 
-  return <DashboardClient hasOrganization defaultObjective="manage" defaultSection="eventos" />;
+  return <DashboardClient hasOrganization defaultObjective="manage" defaultSection="padel-tournaments" />;
 }

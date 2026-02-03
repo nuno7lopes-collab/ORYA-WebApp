@@ -16,7 +16,7 @@ Resolver os findings do Pentester e estabelecer um baseline de segurança consis
 - security.txt: exposto em `/.well-known/security.txt` e duplicado em `/security.txt`.
 - Headers de fingerprinting:
   - `X-Powered-By` desativado via Next.
-  - `Server` deve ser removido/mascarado na borda (Cloudflare/Nginx/Vercel), pois a app não garante remoção total.
+  - `Server` deve ser removido/mascarado na borda (Cloudflare/Nginx/ALB), pois a app não garante remoção total.
 
 ## Implementações no repo
 - Headers base alinhados com OWASP/MDN (HSTS, CSP Report-Only, Referrer-Policy, etc.).
@@ -24,13 +24,12 @@ Resolver os findings do Pentester e estabelecer um baseline de segurança consis
 - `Cache-Control: no-store` em rotas sensíveis.
 - `security.txt` em `.well-known` e na raiz.
 
-## Configuração Vercel (manual)
-- Definir `orya.pt` como domínio primário e garantir redirect de `www` para o root (há regra em `vercel.json`).
-- Confirmar certificados geridos pela Vercel e auto-renovação ativa.
-- Ativar Firewall/WAF no projeto (se o plano permitir) com regras para `/admin`, `/login` e `/api`.
+## Configuração AWS/edge (manual)
+- Definir `orya.pt` como domínio primário e garantir redirect de `www` para o root no CloudFront/ALB.
+- Confirmar certificados geridos no ACM e auto-renovação ativa.
+- Ativar WAF com regras para `/admin`, `/login` e `/api`.
 - Criar allowlist temporária para os IPs do Pentester com expiração.
-- Se for necessário remover `Server`, usar proxy à frente (ex.: Cloudflare Transform Rules) porque a Vercel pode injetar este header.
-  - No plano Hobby, o WAF não está disponível; considerar upgrade ou Cloudflare.
+- Se for necessário remover `Server`, aplicar regra na borda (Cloudflare/ALB/CloudFront).
 
 ## Variáveis de ambiente relevantes
 - `CANONICAL_HOST` (ex.: `orya.pt`)

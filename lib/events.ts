@@ -109,10 +109,12 @@ export function mapEventToCardDTO(
     priceFrom = Math.min(...ticketPrices);
   }
 
-  const isGratis = deriveIsFreeEvent({
-    pricingMode: event.pricingMode ?? undefined,
-    ticketPrices,
-  });
+  const isGratis =
+    Boolean(event.isFree) ||
+    deriveIsFreeEvent({
+      pricingMode: event.pricingMode ?? undefined,
+      ticketPrices,
+    });
 
   return {
     id: event.id,

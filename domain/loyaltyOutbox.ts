@@ -60,10 +60,25 @@ export async function handleLoyaltyOutboxEvent(params: {
 
   const ledger = await prisma.loyaltyLedger.findUnique({
     where: { id: params.payload.ledgerId },
-    include: {
-      program: { include: { organization: true } },
-      rule: true,
-      reward: true,
+    select: {
+      id: true,
+      entryType: true,
+      points: true,
+      programId: true,
+      organizationId: true,
+      userId: true,
+      program: {
+        select: {
+          id: true,
+          name: true,
+          pointsName: true,
+          organization: {
+            select: { publicName: true, businessName: true },
+          },
+        },
+      },
+      rule: { select: { name: true } },
+      reward: { select: { name: true } },
     },
   });
   if (!ledger) return { ok: false, code: "LEDGER_NOT_FOUND" } as const;

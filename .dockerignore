@@ -1,7 +1,11 @@
 node_modules
+**/node_modules
 .git
 .next
 out
 dist
 .turbo
 *.log
+coverage
+reports
+backups

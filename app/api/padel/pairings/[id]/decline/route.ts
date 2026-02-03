@@ -2,11 +2,28 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { PadelPairingPaymentStatus, PadelPairingSlotStatus } from "@prisma/client";
+import { PadelPairingPaymentStatus, PadelPairingSlotStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const pairingSlotSelect = {
+  id: true,
+  slot_role: true,
+  slotStatus: true,
+  paymentStatus: true,
+  invitedUserId: true,
+  invitedContact: true,
+} satisfies Prisma.PadelPairingSlotSelect;
+
+const pairingSelect = {
+  id: true,
+  pairingStatus: true,
+  slots: {
+    select: pairingSlotSelect,
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -21,7 +38,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true },
+    select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.pairingStatus === "CANCELLED") {
@@ -82,7 +99,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         partnerPaidAt: null,
         player2UserId: null,
       },
-      include: { slots: true },
+      select: pairingSelect,
     });
   });
 

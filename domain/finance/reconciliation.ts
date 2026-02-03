@@ -48,12 +48,23 @@ export async function reconcilePaymentFees(
   return prisma.$transaction(async (tx) => {
     const existing = await tx.ledgerEntry.findFirst({
       where: { paymentId: input.paymentId, causationId: input.causationId },
+      select: { id: true },
     });
     if (existing) {
       return { status: "NOOP", paymentId: input.paymentId };
     }
 
-    const payment = await tx.payment.findUnique({ where: { id: input.paymentId } });
+    const payment = await tx.payment.findUnique({
+      where: { id: input.paymentId },
+      select: {
+        id: true,
+        organizationId: true,
+        sourceType: true,
+        sourceId: true,
+        pricingSnapshotJson: true,
+        processorFeesStatus: true,
+      },
+    });
     if (!payment) {
       throw new Error("PAYMENT_NOT_FOUND");
     }

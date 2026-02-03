@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev",
     "dev:all": "node scripts/dev-all.js",
+    "mobile:dev": "npm --prefix apps/mobile run start -- -c --go",
+    "mobile:dev:tunnel": "npm --prefix apps/mobile run start -- -c --tunnel",
+    "e2e:address:checklist": "node scripts/e2e/address_event_checklist.mjs",
     "reset": "scripts/reset-dev-servers.sh",
     "reset:hard": "scripts/reset-dev-servers.sh --aggressive --full --no-exclude",
     "delete": "prisma db execute --file scripts/db/cleanup-app_v3.sql",
@@ -24,6 +27,7 @@
     "db:status": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js migrate status --schema=prisma/schema.prisma",
     "db:deploy": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js migrate deploy --schema=prisma/schema.prisma",
     "db:generate": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js generate --schema=prisma/schema.prisma",
+    "db:address:renormalize": "npm run db:env && npm run db:preflight && prisma db execute --file scripts/db/address_renormalize.sql",
     "db:gates": "node ./scripts/db/gates.js",
     "db:gates:offline": "DB_GATES_MODE=offline npm run db:gates",
     "gate:api-contract": "node scripts/v9_api_contract_gate.mjs",
@@ -66,7 +70,6 @@
     "@types/pdfkit": "^0.17.4",
     "@types/seedrandom": "^3.0.8",
     "@upstash/redis": "^1.34.4",
-    "@vercel/analytics": "^1.6.1",
     "exceljs": "^4.4.0",
     "framer-motion": "^12.23.24",
     "jose": "^5.9.3",
@@ -108,7 +111,6 @@
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "typescript": "^5",
-    "vercel": "^50.9.6",
     "vitest": "^4.0.18"
   },
   "overrides": {

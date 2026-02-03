@@ -15,7 +15,7 @@ type OwnerTransferOutboxPayload = {
 const buildDedupeKey = (transferId: string, eventType: string) => `${transferId}:${eventType}`;
 
 async function ensureEmailDedupe(dedupeKey: string, recipient: string) {
-  const existing = await prisma.emailOutbox.findUnique({ where: { dedupeKey } });
+  const existing = await prisma.emailOutbox.findUnique({ where: { dedupeKey }, select: { id: true } });
   if (existing) return false;
   await prisma.emailOutbox.create({
     data: {
@@ -40,7 +40,11 @@ export async function handleOwnerTransferOutboxEvent(params: {
   if (eventType === "organization.owner_transfer.requested") {
     const transfer = await prisma.organizationOwnerTransfer.findUnique({
       where: { id: payload.transferId },
-      include: { organization: { select: { publicName: true, username: true } } },
+      select: {
+        token: true,
+        expiresAt: true,
+        organization: { select: { publicName: true, username: true } },
+      },
     });
     if (!transfer) return { ok: false, code: "TRANSFER_NOT_FOUND" } as const;
 
@@ -73,7 +77,9 @@ export async function handleOwnerTransferOutboxEvent(params: {
   if (eventType === "organization.owner_transfer.confirmed") {
     const transfer = await prisma.organizationOwnerTransfer.findUnique({
       where: { id: payload.transferId },
-      include: { organization: { select: { publicName: true, username: true } } },
+      select: {
+        organization: { select: { publicName: true, username: true } },
+      },
     });
     if (!transfer) return { ok: false, code: "TRANSFER_NOT_FOUND" } as const;
 

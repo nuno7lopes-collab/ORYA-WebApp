@@ -145,11 +145,21 @@ async function _GET(req: NextRequest) {
       where,
       orderBy: [{ startsAt: "asc" }, { id: "asc" }],
       take: limit,
-      include: {
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+        coverImageUrl: true,
+        locationName: true,
+        locationCity: true,
+        status: true,
+        isFree: true,
         ticketTypes: { select: { price: true, status: true } },
         organization: { select: { publicName: true, username: true } },
         padelTournamentConfig: {
-          select: { format: true, eligibilityType: true, padelClubId: true, advancedSettings: true, lifecycleStatus: true },
+          select: { format: true, eligibilityType: true, padelClubId: true, advancedSettings: true },
         },
         padelCategoryLinks: {
           where: { isEnabled: true },
@@ -163,7 +173,7 @@ async function _GET(req: NextRequest) {
       const competitionState = resolvePadelCompetitionState({
         eventStatus: event.status,
         competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
-        lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
+        lifecycleStatus: null,
       });
       return competitionState === "DEVELOPMENT" || competitionState === "PUBLIC";
     });
@@ -172,10 +182,7 @@ async function _GET(req: NextRequest) {
         .map((t) => (typeof t.price === "number" ? t.price : null))
         .filter((p): p is number => p !== null);
 
-      const isGratis = deriveIsFreeEvent({
-        pricingMode: event.pricingMode ?? undefined,
-        ticketPrices,
-      });
+      const isGratis = event.isFree || deriveIsFreeEvent({ ticketPrices });
       const priceFromCents =
         isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
       const priceFrom = priceFromCents !== null ? priceFromCents / 100 : null;

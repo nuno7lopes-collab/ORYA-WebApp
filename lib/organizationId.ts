@@ -81,7 +81,7 @@ function resolveRequestId(req: NextRequest): string | null {
   return (
     req.headers.get("x-request-id") ||
     req.headers.get("x-correlation-id") ||
-    req.headers.get("x-vercel-id") ||
+    req.headers.get("x-amzn-trace-id") ||
     null
   );
 }

@@ -77,10 +77,33 @@ async function _GET(
 
     const promo = await prisma.promoCode.findUnique({
       where: { id: promoId },
-      include: {
+      select: {
+        id: true,
+        code: true,
+        type: true,
+        value: true,
+        active: true,
+        autoApply: true,
+        validFrom: true,
+        validUntil: true,
+        minQuantity: true,
+        minTotalCents: true,
+        maxUses: true,
+        perUserLimit: true,
+        createdAt: true,
+        updatedAt: true,
+        organizationId: true,
+        eventId: true,
         redemptions: {
           orderBy: { usedAt: "desc" },
           take: 25,
+          select: {
+            id: true,
+            purchaseId: true,
+            usedAt: true,
+            userId: true,
+            guestEmail: true,
+          },
         },
       },
     });

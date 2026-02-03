@@ -50,18 +50,26 @@ type FieldKey =
   | "tickets"
   | "padel";
 
-type LocationMode = "OSM" | "MANUAL";
-type LocationSource = "OSM" | "MANUAL";
+type LocationMode = "APPLE_MAPS" | "MANUAL";
+type LocationSource = "APPLE_MAPS" | "MANUAL";
 
 type PadelClubSummary = {
   id: number;
   name: string;
   city?: string | null;
   address?: string | null;
+  addressId?: string | null;
+  locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
   addressRef?: {
     formattedAddress?: string | null;
     canonical?: Record<string, unknown> | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    sourceProvider?: string | null;
+    sourceProviderPlaceId?: string | null;
+    confidenceScore?: number | null;
+    validationStatus?: string | null;
   } | null;
   kind?: "OWN" | "PARTNER" | null;
   sourceClubId?: number | null;
@@ -297,7 +305,7 @@ export function NewOrganizationEventPage({
   const [locationCity, setLocationCity] = useState<string>(PT_CITIES[0]);
   const [address, setAddress] = useState("");
   const [locationManuallySet, setLocationManuallySet] = useState(false);
-  const [locationMode, setLocationMode] = useState<LocationMode>("OSM");
+  const [locationMode, setLocationMode] = useState<LocationMode>("APPLE_MAPS");
   const [locationQuery, setLocationQuery] = useState("");
   const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
   const [locationSearchLoading, setLocationSearchLoading] = useState(false);
@@ -305,8 +313,12 @@ export function NewOrganizationEventPage({
   const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
   const [locationConfirmed, setLocationConfirmed] = useState(false);
   const [locationProviderId, setLocationProviderId] = useState<string | null>(null);
+  const [locationAddressId, setLocationAddressId] = useState<string | null>(null);
   const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(null);
   const [locationComponents, setLocationComponents] = useState<Record<string, unknown> | null>(null);
+  const [locationSourceProvider, setLocationSourceProvider] = useState<string | null>(null);
+  const [locationConfidenceScore, setLocationConfidenceScore] = useState<number | null>(null);
+  const [locationValidationStatus, setLocationValidationStatus] = useState<string | null>(null);
   const [locationHouseNumber, setLocationHouseNumber] = useState("");
   const [locationPostalCode, setLocationPostalCode] = useState("");
   const [locationLat, setLocationLat] = useState<number | null>(null);
@@ -1060,18 +1072,40 @@ export function NewOrganizationEventPage({
       }
     }
     if (!locationManuallySet) {
-      setLocationMode("MANUAL");
-      setLocationProviderId(null);
-      setLocationFormattedAddress(null);
-      setLocationComponents(null);
-      setLocationLat(null);
-      setLocationLng(null);
-      setLocationQuery(composed || club.name || "");
+      if (club.addressId || club.addressRef?.formattedAddress) {
+        setLocationMode("APPLE_MAPS");
+        setLocationProviderId(club.addressRef?.sourceProviderPlaceId || club.locationProviderId || null);
+        setLocationAddressId(club.addressId || null);
+        setLocationFormattedAddress(resolved.formatted || null);
+        setLocationComponents(club.addressRef?.canonical ?? null);
+        setLocationLat(
+          typeof club.addressRef?.latitude === "number" ? club.addressRef?.latitude ?? null : null,
+        );
+        setLocationLng(
+          typeof club.addressRef?.longitude === "number" ? club.addressRef?.longitude ?? null : null,
+        );
+        setLocationSourceProvider(club.addressRef?.sourceProvider ?? null);
+        setLocationConfidenceScore(
+          typeof club.addressRef?.confidenceScore === "number" ? club.addressRef?.confidenceScore ?? null : null,
+        );
+        setLocationValidationStatus(club.addressRef?.validationStatus ?? null);
+        setLocationQuery(composed || club.name || "");
+        setLocationConfirmed(Boolean(club.addressId));
+      } else {
+        setLocationMode("MANUAL");
+        setLocationProviderId(null);
+        setLocationAddressId(null);
+        setLocationFormattedAddress(null);
+        setLocationComponents(null);
+        setLocationLat(null);
+        setLocationLng(null);
+        setLocationQuery(composed || club.name || "");
+      }
     }
   }, [selectedPreset, selectedPadelClubId, padelClubs?.items, locationManuallySet, locationName]);
 
   useEffect(() => {
-    if (locationMode !== "OSM") {
+    if (locationMode !== "APPLE_MAPS") {
       setLocationSuggestions([]);
       setLocationSearchLoading(false);
       setLocationSearchError(null);
@@ -1120,16 +1154,29 @@ export function NewOrganizationEventPage({
     const nextName = details.name || fallbackName || locationName;
     const nextCity = details.city || locationCity;
     const nextAddress = details.address || address;
+    const canonical = (details.canonical as Record<string, unknown> | null) ?? null;
+    const mergedComponents = canonical ?? details.components ?? null;
     setLocationFormattedAddress(details.formattedAddress || locationFormattedAddress);
-    setLocationComponents(details.components ?? null);
+    setLocationComponents(mergedComponents);
+    setLocationAddressId(details.addressId ?? null);
+    setLocationSourceProvider(details.sourceProvider ?? null);
+    setLocationConfidenceScore(
+      typeof details.confidenceScore === "number" ? details.confidenceScore : null,
+    );
+    setLocationValidationStatus(details.validationStatus ?? null);
+    if (details.providerId) {
+      setLocationProviderId(details.providerId);
+    }
     const detailsHouse =
-      details.components && typeof (details.components as { houseNumber?: unknown }).houseNumber === "string"
+      (canonical && typeof canonical.houseNumber === "string" ? canonical.houseNumber : "") ||
+      (details.components && typeof (details.components as { houseNumber?: unknown }).houseNumber === "string"
         ? ((details.components as { houseNumber?: string }).houseNumber ?? "")
-        : "";
+        : "");
     const detailsPostal =
-      details.components && typeof (details.components as { postalCode?: unknown }).postalCode === "string"
+      (canonical && typeof canonical.postalCode === "string" ? canonical.postalCode : "") ||
+      (details.components && typeof (details.components as { postalCode?: unknown }).postalCode === "string"
         ? ((details.components as { postalCode?: string }).postalCode ?? "")
-        : "";
+        : "");
     setLocationHouseNumber(detailsHouse);
     setLocationPostalCode(detailsPostal);
     if (Number.isFinite(details.lat ?? NaN) && Number.isFinite(details.lng ?? NaN)) {
@@ -1142,10 +1189,14 @@ export function NewOrganizationEventPage({
   };
 
   const handleSelectGeoSuggestion = async (item: GeoAutocompleteItem) => {
-    setLocationMode("OSM");
+    setLocationMode("APPLE_MAPS");
     setLocationManuallySet(true);
     setLocationTbd(false);
     setLocationProviderId(item.providerId);
+    setLocationAddressId(null);
+    setLocationSourceProvider(item.sourceProvider ?? null);
+    setLocationConfidenceScore(null);
+    setLocationValidationStatus(null);
     activeProviderRef.current = item.providerId;
     setLocationLat(item.lat);
     setLocationLng(item.lng);
@@ -1164,7 +1215,11 @@ export function NewOrganizationEventPage({
     const seq = ++locationDetailsSeq.current;
     setLocationDetailsLoading(true);
     try {
-      const details = await fetchGeoDetails(item.providerId);
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
       if (locationDetailsSeq.current !== seq) return;
       if (activeProviderRef.current !== item.providerId) return;
       applyGeoDetails(details, item.name || item.label);
@@ -1184,6 +1239,10 @@ export function NewOrganizationEventPage({
     setLocationMode("MANUAL");
     setLocationManuallySet(true);
     setLocationProviderId(null);
+    setLocationAddressId(null);
+    setLocationSourceProvider(null);
+    setLocationConfidenceScore(null);
+    setLocationValidationStatus(null);
     activeProviderRef.current = null;
     setLocationFormattedAddress(null);
     setLocationComponents(null);
@@ -1197,10 +1256,14 @@ export function NewOrganizationEventPage({
     setLocationConfirmed(true);
   };
 
-  const enableOsmLocation = () => {
-    setLocationMode("OSM");
+  const enableAppleLocation = () => {
+    setLocationMode("APPLE_MAPS");
     setLocationTbd(false);
     setLocationProviderId(null);
+    setLocationAddressId(null);
+    setLocationSourceProvider(null);
+    setLocationConfidenceScore(null);
+    setLocationValidationStatus(null);
     activeProviderRef.current = null;
     setLocationFormattedAddress(null);
     setLocationComponents(null);
@@ -1444,7 +1507,7 @@ export function NewOrganizationEventPage({
                         Procurar no diretorio
                       </button>
                       <Link
-                        href="/organizacao/torneios?section=padel-hub&padel=clubs"
+                        href="/organizacao/torneios?section=padel-club&padel=clubs"
                         className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                       >
                         Criar clube rapido
@@ -1916,6 +1979,20 @@ export function NewOrganizationEventPage({
     if (parts.length === 0) return "Localização";
     return parts.join(" · ");
   }, [locationFormattedAddress, locationName, locationCity, address]);
+  const locationProviderLabel = useMemo(() => {
+    if (!locationSourceProvider) return null;
+    if (locationSourceProvider === "APPLE_MAPS") return "Apple Maps";
+    if (locationSourceProvider.startsWith("OSM")) return "OpenStreetMap (legado)";
+    if (locationSourceProvider === "MANUAL") return "Manual";
+    return locationSourceProvider;
+  }, [locationSourceProvider]);
+  const locationValidationLabel = useMemo(() => {
+    if (!locationValidationStatus) return null;
+    if (locationValidationStatus === "VERIFIED") return "Verificada";
+    if (locationValidationStatus === "NORMALIZED") return "Normalizada";
+    if (locationValidationStatus === "RAW") return "Bruta";
+    return locationValidationStatus;
+  }, [locationValidationStatus]);
 
   const buildLocationFormattedAddress = () => {
     const components = locationComponents as
@@ -1924,18 +2001,37 @@ export function NewOrganizationEventPage({
           houseNumber?: string | null;
           postalCode?: string | null;
           address?: Record<string, unknown>;
+          canonical?: Record<string, unknown>;
         }
       | null;
+    const canonical =
+      (components && typeof components.canonical === "object" ? (components.canonical as Record<string, unknown>) : null) ||
+      (components && typeof components === "object" && !Array.isArray(components) && ("addressLine1" in components || "houseNumber" in components)
+        ? (components as Record<string, unknown>)
+        : null);
     const road =
       (typeof components?.road === "string" && components.road.trim()) ||
       (typeof components?.address?.road === "string" && components.address.road.trim()) ||
+      (canonical && typeof canonical.street === "string" ? canonical.street.trim() : null) ||
       null;
-    const houseNumber = locationHouseNumber.trim() || (components?.houseNumber ?? "");
-    const postalCode = locationPostalCode.trim() || (components?.postalCode ?? "");
+    const houseNumber =
+      locationHouseNumber.trim() ||
+      (components?.houseNumber ?? "") ||
+      (canonical && typeof canonical.houseNumber === "string" ? canonical.houseNumber : "");
+    const postalCode =
+      locationPostalCode.trim() ||
+      (components?.postalCode ?? "") ||
+      (canonical && typeof canonical.postalCode === "string" ? canonical.postalCode : "");
     const country =
-      (typeof components?.address?.country === "string" && components.address.country.trim()) || "";
-    const line1 = [road, houseNumber].filter(Boolean).join(" ").trim();
-    const line2 = [postalCode.trim(), locationCity.trim()].filter(Boolean).join(" ").trim();
+      (canonical && typeof canonical.country === "string" ? canonical.country.trim() : null) ||
+      (typeof components?.address?.country === "string" && components.address.country.trim()) ||
+      "";
+    const line1 =
+      (canonical && typeof canonical.addressLine1 === "string" ? canonical.addressLine1.trim() : "") ||
+      [road, houseNumber].filter(Boolean).join(" ").trim();
+    const line2 =
+      (canonical && typeof canonical.addressLine2 === "string" ? canonical.addressLine2.trim() : "") ||
+      [postalCode.trim(), locationCity.trim()].filter(Boolean).join(" ").trim();
     const parts = [line1, line2, country].filter(Boolean);
     if (parts.length > 0) return parts.join(", ");
     if (locationFormattedAddress) return locationFormattedAddress;
@@ -2042,10 +2138,10 @@ export function NewOrganizationEventPage({
     if (locationMode === "MANUAL" && !locationTbd && !locationName.trim()) {
       issues.push({ field: "locationName", message: "Local obrigatório." });
     }
-    if (locationMode === "OSM" && !locationProviderId) {
+    if (locationMode === "APPLE_MAPS" && !locationProviderId) {
       issues.push({ field: "locationName", message: "Seleciona uma sugestão de localização." });
     }
-    if (locationMode === "OSM" && locationProviderId && !locationConfirmed) {
+    if (locationMode === "APPLE_MAPS" && locationProviderId && !locationConfirmed) {
       issues.push({ field: "locationName", message: "Confirma a localização antes de guardar." });
     }
     if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
@@ -2328,7 +2424,7 @@ export function NewOrganizationEventPage({
   }, [startsAt]);
 
   useEffect(() => {
-    if (locationMode === "OSM") {
+    if (locationMode === "APPLE_MAPS") {
       if (locationProviderId && locationConfirmed) {
         clearErrorsForFields(["locationName"]);
       }
@@ -2506,16 +2602,21 @@ export function NewOrganizationEventPage({
         checkinMethods: selectedPreset === "padel" ? ["QR_REGISTRATION"] : ["QR_TICKET"],
       };
       const resolvedLocationSource: LocationSource =
-        locationMode === "OSM" && locationProviderId ? "OSM" : "MANUAL";
+        locationMode === "APPLE_MAPS" && locationProviderId ? "APPLE_MAPS" : "MANUAL";
+      const resolvedAddressId = resolvedLocationSource === "APPLE_MAPS" ? locationAddressId : null;
       const resolvedLocationOverrides =
-        resolvedLocationSource === "OSM"
+        resolvedLocationSource === "APPLE_MAPS"
           ? {
               houseNumber: locationHouseNumber.trim() || null,
               postalCode: locationPostalCode.trim() || null,
             }
           : null;
       const resolvedFormattedAddress =
-        resolvedLocationSource === "OSM" ? buildLocationFormattedAddress() : null;
+        resolvedLocationSource === "APPLE_MAPS" ? buildLocationFormattedAddress() : null;
+      if (resolvedLocationSource === "APPLE_MAPS" && !resolvedAddressId) {
+        setErrorMessage("Seleciona uma morada normalizada antes de criar o evento.");
+        return;
+      }
       const selectedCourtsPayload =
         selectedPadelClubId && padelCourts?.items
           ? padelCourts.items.filter((court) => selectedPadelCourtIds.includes(court.id))
@@ -2549,13 +2650,14 @@ export function NewOrganizationEventPage({
         templateType: templateToSend,
         address: address.trim() || null,
         locationSource: resolvedLocationSource,
-        locationProviderId: resolvedLocationSource === "OSM" ? locationProviderId : null,
+        locationProviderId: resolvedLocationSource === "APPLE_MAPS" ? locationProviderId : null,
         locationFormattedAddress:
-          resolvedLocationSource === "OSM" ? resolvedFormattedAddress : null,
-        locationComponents: resolvedLocationSource === "OSM" ? locationComponents : null,
+          resolvedLocationSource === "APPLE_MAPS" ? resolvedFormattedAddress : null,
+        locationComponents: resolvedLocationSource === "APPLE_MAPS" ? locationComponents : null,
         locationOverrides: resolvedLocationOverrides,
-        latitude: resolvedLocationSource === "OSM" ? locationLat : null,
-        longitude: resolvedLocationSource === "OSM" ? locationLng : null,
+        addressId: resolvedAddressId,
+        latitude: resolvedLocationSource === "APPLE_MAPS" ? locationLat : null,
+        longitude: resolvedLocationSource === "APPLE_MAPS" ? locationLng : null,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
         accessPolicy,
@@ -2649,7 +2751,7 @@ export function NewOrganizationEventPage({
     setLocationName("");
     setLocationCity(PT_CITIES[0]);
     setAddress("");
-    setLocationMode("OSM");
+    setLocationMode("APPLE_MAPS");
     setLocationQuery("");
     setLocationSuggestions([]);
     setLocationSearchLoading(false);
@@ -3196,7 +3298,7 @@ export function NewOrganizationEventPage({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className={labelClass}>Local / Morada</label>
           <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-            {locationMode === "OSM" ? (
+            {locationMode === "APPLE_MAPS" ? (
               <button
                 type="button"
                 onClick={enableManualLocation}
@@ -3207,10 +3309,10 @@ export function NewOrganizationEventPage({
             ) : (
               <button
                 type="button"
-                onClick={enableOsmLocation}
+                onClick={enableAppleLocation}
                 className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
               >
-                Pesquisar local
+                Pesquisar no Apple Maps
               </button>
             )}
             <button
@@ -3223,7 +3325,7 @@ export function NewOrganizationEventPage({
           </div>
         </div>
 
-        {locationMode === "OSM" ? (
+        {locationMode === "APPLE_MAPS" ? (
           <div className="space-y-3">
             <div className="relative overflow-visible">
                 <input
@@ -3236,6 +3338,10 @@ export function NewOrganizationEventPage({
                     setLocationSearchError(null);
                     if (locationProviderId) {
                       setLocationProviderId(null);
+                      setLocationAddressId(null);
+                      setLocationSourceProvider(null);
+                      setLocationConfidenceScore(null);
+                      setLocationValidationStatus(null);
                       activeProviderRef.current = null;
                       setLocationFormattedAddress(null);
                       setLocationComponents(null);
@@ -3273,7 +3379,18 @@ export function NewOrganizationEventPage({
                       >
                         <div className="flex w-full items-center justify-between gap-3">
                           <span className="font-semibold text-white">{suggestion.label}</span>
-                          <span className="text-[12px] text-white/65">{suggestion.city || "—"}</span>
+                          <div className="flex items-center gap-2 text-[12px] text-white/65">
+                            <span>{suggestion.city || "—"}</span>
+                            {suggestion.sourceProvider && (
+                              <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
+                                {suggestion.sourceProvider === "APPLE_MAPS"
+                                  ? "Apple"
+                                  : suggestion.sourceProvider.startsWith("OSM")
+                                    ? "OSM legado"
+                                    : "GPS"}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                     ))
@@ -3291,6 +3408,25 @@ export function NewOrganizationEventPage({
                   <p className="mt-1 text-[11px] text-white/55">
                     {locationLat.toFixed(5)}, {locationLng.toFixed(5)}
                   </p>
+                )}
+                {(locationProviderLabel || locationConfidenceScore !== null || locationValidationLabel) && (
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                    {locationProviderLabel && (
+                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                        {locationProviderLabel}
+                      </span>
+                    )}
+                    {locationConfidenceScore !== null && (
+                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                        Confiança {Math.round(locationConfidenceScore)}%
+                      </span>
+                    )}
+                    {locationValidationLabel && (
+                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                        {locationValidationLabel}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -4646,7 +4782,7 @@ export function NewOrganizationEventPage({
                       <p className="text-[12px] text-white/70">Configuração</p>
                     </div>
                     <Link
-                      href="/organizacao/torneios?section=padel-hub"
+                      href="/organizacao/torneios?section=padel-club"
                       className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15"
                     >
                       Hub
@@ -4713,7 +4849,7 @@ export function NewOrganizationEventPage({
                             Abrir diretorio
                           </button>
                           <Link
-                            href="/organizacao/torneios?section=padel-hub&padel=clubs"
+                            href="/organizacao/torneios?section=padel-club&padel=clubs"
                             className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                           >
                             Criar clube rapido

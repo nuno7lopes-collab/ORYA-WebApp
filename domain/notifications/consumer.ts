@@ -423,11 +423,26 @@ export async function deliverNotificationOutboxItem(item: {
     if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
     const match = await prisma.eventMatchSlot.findUnique({
       where: { id: matchId },
-      include: {
+      select: {
+        id: true,
+        eventId: true,
+        startTime: true,
+        plannedStartAt: true,
+        courtId: true,
+        courtNumber: true,
+        courtName: true,
         event: { select: { id: true, title: true, slug: true, organizationId: true, timezone: true } },
         court: { select: { name: true } },
-        pairingA: { include: { slots: { include: { playerProfile: true } } } },
-        pairingB: { include: { slots: { include: { playerProfile: true } } } },
+        pairingA: {
+          select: {
+            slots: { select: { profileId: true, playerProfile: { select: { displayName: true, fullName: true } } } },
+          },
+        },
+        pairingB: {
+          select: {
+            slots: { select: { profileId: true, playerProfile: { select: { displayName: true, fullName: true } } } },
+          },
+        },
       },
     });
     if (!match?.event) throw new Error("MATCH_NOT_FOUND");
@@ -467,10 +482,20 @@ export async function deliverNotificationOutboxItem(item: {
     if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
     const match = await prisma.eventMatchSlot.findUnique({
       where: { id: matchId },
-      include: {
+      select: {
+        score: true,
+        scoreSets: true,
         event: { select: { id: true, title: true, slug: true, organizationId: true } },
-        pairingA: { include: { slots: { include: { playerProfile: true } } } },
-        pairingB: { include: { slots: { include: { playerProfile: true } } } },
+        pairingA: {
+          select: {
+            slots: { select: { playerProfile: { select: { displayName: true, fullName: true } } } },
+          },
+        },
+        pairingB: {
+          select: {
+            slots: { select: { playerProfile: { select: { displayName: true, fullName: true } } } },
+          },
+        },
       },
     });
     if (!match?.event) throw new Error("MATCH_NOT_FOUND");
@@ -502,7 +527,7 @@ export async function deliverNotificationOutboxItem(item: {
     if (!Number.isFinite(matchId)) throw new Error("MATCH_NOT_FOUND");
     const match = await prisma.eventMatchSlot.findUnique({
       where: { id: matchId },
-      include: { event: { select: { id: true, title: true, slug: true, organizationId: true } } },
+      select: { event: { select: { id: true, title: true, slug: true, organizationId: true } } },
     });
     if (!match?.event) throw new Error("MATCH_NOT_FOUND");
     const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";

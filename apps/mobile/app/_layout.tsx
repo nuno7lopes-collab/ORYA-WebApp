@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider } from "../lib/auth";
 import { queryClient } from "../lib/queryClient";
 import { StatusBar } from "expo-status-bar";
+import { PushGate } from "../components/notifications/PushGate";
 
 export default function RootLayout() {
   return (
@@ -14,8 +15,9 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <StatusBar style="light" />
+            <PushGate />
             <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen
+              <Stack.Screen
                 name="event/[slug]"
                 options={{
                   animation: "fade_from_bottom",
@@ -23,7 +25,23 @@ export default function RootLayout() {
                   gestureEnabled: true,
                 }}
               />
-            </Stack>
+            <Stack.Screen
+              name="service/[id]"
+              options={{
+                animation: "fade_from_bottom",
+                animationDuration: 420,
+                gestureEnabled: true,
+              }}
+            />
+            <Stack.Screen
+              name="checkout/index"
+              options={{
+                animation: "slide_from_right",
+                animationDuration: 380,
+                gestureEnabled: true,
+              }}
+            />
+          </Stack>
           </AuthProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

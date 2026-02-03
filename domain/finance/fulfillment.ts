@@ -79,7 +79,19 @@ async function issueTicketOrderEntitlements(
 ) {
   const order = await tx.ticketOrder.findUnique({
     where: { id: payment.sourceId },
-    include: { lines: true },
+    select: {
+      id: true,
+      buyerIdentityId: true,
+      currency: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          totalAmount: true,
+          ticketTypeId: true,
+        },
+      },
+    },
   });
   if (!order) throw new Error("TICKET_ORDER_NOT_FOUND");
   if (!order.lines.length) throw new Error("TICKET_ORDER_LINES_EMPTY");
@@ -191,7 +203,19 @@ async function issuePadelRegistrationEntitlements(
 ) {
   const registration = await tx.padelRegistration.findUnique({
     where: { id: payment.sourceId },
-    include: { lines: true },
+    select: {
+      id: true,
+      eventId: true,
+      pairingId: true,
+      buyerIdentityId: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          pairingSlotId: true,
+        },
+      },
+    },
   });
   if (!registration) throw new Error("PADEL_REGISTRATION_NOT_FOUND");
 
@@ -210,14 +234,36 @@ async function issuePadelRegistrationEntitlements(
 
   const saleLines = await tx.saleLine.findMany({
     where: { saleSummaryId: saleSummary.id, padelRegistrationLineId: { not: null } },
-    include: { padelRegistrationLine: true },
+    select: {
+      id: true,
+      padelRegistrationLine: {
+        select: {
+          id: true,
+          qty: true,
+          pairingSlotId: true,
+        },
+      },
+    },
   });
   if (!saleLines.length) {
     throw new Error("PADEL_REGISTRATION_LINES_EMPTY");
   }
 
   const pairing = registration.pairingId
-    ? await tx.padelPairing.findUnique({ where: { id: registration.pairingId }, include: { slots: true } })
+    ? await tx.padelPairing.findUnique({
+        where: { id: registration.pairingId },
+        select: {
+          id: true,
+          slots: {
+            select: {
+              id: true,
+              profileId: true,
+              invitedUserId: true,
+              invitedContact: true,
+            },
+          },
+        },
+      })
     : null;
   const slotMap = new Map((pairing?.slots ?? []).map((slot) => [slot.id, slot]));
 
@@ -299,7 +345,10 @@ async function issuePadelRegistrationEntitlements(
 export async function fulfillPaymentIfSucceeded(
   input: FulfillPaymentInput,
 ): Promise<FulfillPaymentResult> {
-  const payment = await prisma.payment.findUnique({ where: { id: input.paymentId } });
+  const payment = await prisma.payment.findUnique({
+    where: { id: input.paymentId },
+    select: { id: true, status: true, sourceType: true },
+  });
   if (!payment) throw new Error("PAYMENT_NOT_FOUND");
   if (payment.status !== PaymentStatus.SUCCEEDED) {
     return { status: "SKIPPED", paymentId: payment.id };

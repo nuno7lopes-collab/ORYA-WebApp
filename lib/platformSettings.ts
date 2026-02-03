@@ -20,8 +20,6 @@ const envPlatformFeeFixedCents =
   process.env.PLATFORM_FEE_FIXED_CENTS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_CENTS;
 const envPlatformFeeFixedEur =
   process.env.PLATFORM_FEE_FIXED_EUR ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_EUR;
-const envPlatformOfficialEmail =
-  process.env.PLATFORM_OFFICIAL_EMAIL ?? process.env.NEXT_PUBLIC_PLATFORM_OFFICIAL_EMAIL;
 
 const DEFAULT_PLATFORM_FEE_BPS = Number.isFinite(Number(envPlatformFeeBps))
   ? Number(envPlatformFeeBps)
@@ -38,7 +36,6 @@ const DEFAULT_STRIPE_FEE_FIXED_CENTS_EU = Number.isFinite(Number(process.env.STR
   : Math.round(Number(process.env.STRIPE_FEE_FIXED_EUR_EU ?? 0.25) * 100) || 25; // €0.25
 
 const PLATFORM_OFFICIAL_EMAIL_KEY: PlatformSettingKey = "platform.officialEmail";
-const DEFAULT_PLATFORM_OFFICIAL_EMAIL = "admin@orya.pt";
 
 function parseNumber(raw: unknown, fallback: number) {
   const n = Number(raw);
@@ -153,14 +150,10 @@ export async function getOrgTransferEnabled(): Promise<boolean> {
   return parseBoolean(map["org_transfer_enabled"], false);
 }
 
-export async function getPlatformOfficialEmail(): Promise<string> {
+export async function getPlatformOfficialEmail(): Promise<string | null> {
   const map = await getSettingsMap([PLATFORM_OFFICIAL_EMAIL_KEY]);
   const stored = normalizeOfficialEmail(map[PLATFORM_OFFICIAL_EMAIL_KEY] ?? null);
-  if (stored) return stored;
-  const envEmail = normalizeOfficialEmail(envPlatformOfficialEmail ?? null);
-  if (envEmail) return envEmail;
-  console.warn("[platformSettings] PLATFORM_OFFICIAL_EMAIL not set; using default admin@orya.pt");
-  return DEFAULT_PLATFORM_OFFICIAL_EMAIL;
+  return stored || null;
 }
 
 export async function setPlatformOfficialEmail(email: string): Promise<string> {

@@ -12,7 +12,7 @@ type PadelClub = {
   id: number;
   name: string;
   isActive: boolean;
-  locationSource?: "OSM" | "MANUAL" | null;
+  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
   latitude?: number | null;
@@ -98,7 +98,7 @@ function resolveClubLocation(club: PadelClub | null) {
       components: null,
       latitude: null,
       longitude: null,
-      source: "OSM",
+      source: "APPLE_MAPS",
     };
   }
   const canonical = club.addressRef?.canonical ?? null;
@@ -118,7 +118,7 @@ function resolveClubLocation(club: PadelClub | null) {
     components: canonical,
     latitude: club.addressRef?.latitude ?? club.latitude ?? null,
     longitude: club.addressRef?.longitude ?? club.longitude ?? null,
-    source: club.locationSource || "OSM",
+    source: club.locationSource === "OSM" ? "APPLE_MAPS" : club.locationSource || "APPLE_MAPS",
   };
 }
 
@@ -301,7 +301,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       locationName: selectedClub?.name ?? null,
       locationCity: location.city || null,
       address: location.formatted || null,
-      locationSource: location.source || "OSM",
+      locationSource: location.source || "APPLE_MAPS",
       locationProviderId: location.providerId,
       locationFormattedAddress: location.formatted || null,
       locationComponents: location.components || null,
@@ -435,7 +435,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               <p className="text-sm text-white/70">Configura níveis e preços por categoria.</p>
             </div>
             <Link
-              href={appendOrganizationIdToHref("/organizacao/torneios?section=padel-hub&padel=categories", organizationId)}
+              href={appendOrganizationIdToHref("/organizacao/torneios?section=padel-tournaments&padel=categories", organizationId)}
               className="text-[12px] text-white/70 underline"
             >
               Gerir categorias

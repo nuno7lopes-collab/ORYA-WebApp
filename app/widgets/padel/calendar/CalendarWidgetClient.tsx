@@ -53,6 +53,8 @@ type CalendarWidgetClientProps = {
   timezone: string;
   locale?: string;
   initialDays: CalendarDay[];
+  containerClassName?: string;
+  showHeader?: boolean;
 };
 
 const formatDayKey = (date: Date, timezone: string) =>
@@ -147,6 +149,8 @@ export default function CalendarWidgetClient({
   timezone,
   locale,
   initialDays,
+  containerClassName,
+  showHeader = true,
 }: CalendarWidgetClientProps) {
   const resolvedLocale = resolveLocale(locale);
   const [days, setDays] = useState<CalendarDay[]>(initialDays);
@@ -209,15 +213,19 @@ export default function CalendarWidgetClient({
 
   const hasDays = useMemo(() => days.length > 0, [days]);
 
+  const rootClass = containerClassName ?? "min-h-screen bg-[#0b0f1d] px-4 py-4 text-white";
+
   return (
-    <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
+    <div className={rootClass}>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{t("calendarTitle", resolvedLocale)}</p>
-          <span className="text-[10px] uppercase tracking-[0.2em] text-white/40">
-            {realtimeActive ? "Live" : "Sync"}
-          </span>
-        </div>
+        {showHeader && (
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{t("calendarTitle", resolvedLocale)}</p>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-white/40">
+              {realtimeActive ? "Live" : "Sync"}
+            </span>
+          </div>
+        )}
         {!hasDays && <p className="text-[12px] text-white/70">{t("noMatches", resolvedLocale)}</p>}
         {days.map((day) => (
           <section key={day.date} className="space-y-3">

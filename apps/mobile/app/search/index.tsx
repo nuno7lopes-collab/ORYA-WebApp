@@ -6,6 +6,7 @@ import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { GlassSurface } from "../../components/glass/GlassSurface";
+import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { DiscoverEventCard } from "../../features/discover/DiscoverEventCard";
 import { useDebouncedValue } from "../../features/discover/hooks";
 import { useGlobalSearch } from "../../features/search/hooks";
@@ -24,6 +25,7 @@ export default function SearchScreen() {
   const debounced = useDebouncedValue(query, 280);
 
   const { offers, users, organizations, hasResults, isLoading, isError } = useGlobalSearch(debounced);
+  const showSkeleton = isLoading && debounced.trim().length > 0;
 
   useEffect(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -56,7 +58,7 @@ export default function SearchScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Eventos, clubes, amigos…"
+              placeholder="Eventos, clubes, amigos..."
               placeholderTextColor={tokens.colors.textMuted}
               className="text-white text-base flex-1"
               returnKeyType="search"
@@ -75,18 +77,45 @@ export default function SearchScreen() {
           </GlassSurface>
         ) : null}
 
-        {offers.length > 0 ? (
+        {showSkeleton ? (
           <View className="pt-6">
-            <SectionHeader title="Ofertas" subtitle="Eventos, experiências e atividades" />
+            <SectionHeader title="Ofertas" subtitle="A carregar resultados" />
             <View className="mt-3">
-              {offers.map((item) => (
-                <DiscoverEventCard key={`offer-${item.id}-${item.slug}`} item={item} />
+              {Array.from({ length: 2 }).map((_, index) => (
+                <GlassSkeleton key={`search-offer-${index}`} className="mb-4" height={150} />
+              ))}
+            </View>
+            <SectionHeader title="Pessoas" subtitle="A carregar utilizadores" />
+            <View className="mt-3">
+              {Array.from({ length: 2 }).map((_, index) => (
+                <GlassSkeleton key={`search-user-${index}`} className="mb-3" height={72} />
+              ))}
+            </View>
+            <SectionHeader title="Organizações" subtitle="A carregar clubes" />
+            <View className="mt-3">
+              {Array.from({ length: 2 }).map((_, index) => (
+                <GlassSkeleton key={`search-org-${index}`} className="mb-3" height={72} />
               ))}
             </View>
           </View>
         ) : null}
 
-        {users.length > 0 ? (
+        {!showSkeleton && offers.length > 0 ? (
+          <View className="pt-6">
+            <SectionHeader title="Ofertas" subtitle="Eventos, servicos e experiencias" />
+            <View className="mt-3">
+              {offers.map((item, index) =>
+                item.type === "event" ? (
+                  <DiscoverEventCard key={item.key} item={item.event} itemType="event" index={index} />
+                ) : (
+                  <DiscoverEventCard key={item.key} item={item.service} itemType="service" index={index} />
+                ),
+              )}
+            </View>
+          </View>
+        ) : null}
+
+        {!showSkeleton && users.length > 0 ? (
           <View className="pt-6">
             <SectionHeader title="Pessoas" subtitle="Utilizadores e perfis" />
             <View className="mt-3">
@@ -97,9 +126,9 @@ export default function SearchScreen() {
           </View>
         ) : null}
 
-        {organizations.length > 0 ? (
+        {!showSkeleton && organizations.length > 0 ? (
           <View className="pt-6">
-            <SectionHeader title="Organizações" subtitle="Clubes e marcas" />
+            <SectionHeader title="Organizacoes" subtitle="Clubes e marcas" />
             <View className="mt-3">
               {organizations.map((item) => (
                 <SearchOrganizationRow key={`org-${item.id}`} item={item} />
@@ -111,7 +140,7 @@ export default function SearchScreen() {
         {isError ? (
           <View className="pt-6">
             <GlassSurface intensity={45}>
-              <Text className="text-red-300 text-sm">Não foi possível carregar os resultados.</Text>
+              <Text className="text-red-300 text-sm">Nao foi possivel carregar os resultados.</Text>
             </GlassSurface>
           </View>
         ) : null}

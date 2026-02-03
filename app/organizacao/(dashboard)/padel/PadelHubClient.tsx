@@ -25,7 +25,7 @@ type PadelClub = {
   addressId?: string | null;
   kind?: "OWN" | "PARTNER" | null;
   sourceClubId?: number | null;
-  locationSource?: "OSM" | "MANUAL" | null;
+  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
   locationComponents?: Record<string, unknown> | null;
@@ -39,6 +39,8 @@ type PadelClub = {
     longitude?: number | null;
     sourceProvider?: string | null;
     sourceProviderPlaceId?: string | null;
+    confidenceScore?: number | null;
+    validationStatus?: string | null;
   } | null;
   courtsCount: number;
   slug?: string | null;
@@ -309,6 +311,7 @@ type CalendarResponse = {
 };
 
 const PADEL_TABS = [
+  "tournaments",
   "calendar",
   "clubs",
   "courts",
@@ -319,6 +322,40 @@ const PADEL_TABS = [
   "trainers",
   "lessons",
 ] as const;
+type PadelTab = (typeof PADEL_TABS)[number];
+type PadelToolMode = "CLUB" | "TOURNAMENTS";
+
+const CLUB_TOOL_TABS: ReadonlyArray<PadelTab> = [
+  "clubs",
+  "courts",
+  "players",
+  "community",
+  "trainers",
+  "lessons",
+];
+const TOURNAMENTS_TOOL_TABS: ReadonlyArray<PadelTab> = [
+  "tournaments",
+  "calendar",
+  "categories",
+  "teams",
+  "players",
+];
+const TAB_LABELS: Record<PadelTab, string> = {
+  tournaments: "Torneios",
+  calendar: "Calendário",
+  clubs: "Clubes",
+  courts: "Courts",
+  categories: "Categorias",
+  players: "Jogadores",
+  teams: "Equipas",
+  community: "Comunidade",
+  trainers: "Treinadores",
+  lessons: "Aulas",
+};
+const TOOL_SECTION_BY_MODE: Record<PadelToolMode, "padel-club" | "padel-tournaments"> = {
+  CLUB: "padel-club",
+  TOURNAMENTS: "padel-tournaments",
+};
 const CTA_PAD_PRIMARY = `${CTA_PRIMARY} px-4 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed`;
 const CTA_PAD_PRIMARY_SM = `${CTA_PRIMARY} px-3 py-1.5 text-[12px] disabled:opacity-60 disabled:cursor-not-allowed`;
 const CTA_PAD_SECONDARY_SM = `${CTA_SECONDARY} px-3 py-2 text-[12px]`;
@@ -328,6 +365,7 @@ const OPERATION_MODE_STORAGE_KEY = "orya_padel_operation_mode";
 type Props = {
   organizationId: number;
   organizationKind: string | null;
+  toolMode: PadelToolMode;
   initialClubs: PadelClub[];
   initialPlayers: Player[];
 };
@@ -338,10 +376,13 @@ const DEFAULT_FORM = {
   city: "",
   address: "",
   addressId: "" as string | "",
-  locationSource: "OSM" as "OSM" | "MANUAL",
+  locationSource: "APPLE_MAPS" as "APPLE_MAPS" | "MANUAL",
   locationProviderId: "",
   locationFormattedAddress: "",
   locationComponents: null as Record<string, unknown> | null,
+  locationSourceProvider: null as string | null,
+  locationConfidenceScore: null as number | null,
+  locationValidationStatus: null as string | null,
   latitude: null as number | null,
   longitude: null as number | null,
   courtsCount: "1",
@@ -390,6 +431,13 @@ const TRAINER_STATUS_TONE: Record<TrainerItem["reviewStatus"], string> = {
 };
 const LESSON_DURATION_OPTIONS = [30, 60, 90, 120];
 const LESSON_TAG = "AULAS";
+const TOURNAMENT_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Rascunho",
+  PUBLISHED: "Publicado",
+  LIVE: "Live",
+  COMPLETED: "Concluído",
+  ARCHIVED: "Arquivado",
+};
 
 const badge = (tone: "green" | "amber" | "slate" = "slate") =>
   `rounded-full border px-2 py-[4px] text-[11px] ${
@@ -916,19 +964,28 @@ const fetchCourtsForClub = async (clubId: number): Promise<PadelClubCourt[]> => 
   return [];
 };
 
-export default function PadelHubClient({ organizationId, organizationKind, initialClubs, initialPlayers }: Props) {
+export default function PadelHubClient({
+  organizationId,
+  organizationKind,
+  toolMode,
+  initialClubs,
+  initialPlayers,
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const padelSectionParam = searchParams?.get("padel") || null;
   const eventIdParam = searchParams?.get("eventId") || null;
   const eventId = eventIdParam && Number.isFinite(Number(eventIdParam)) ? Number(eventIdParam) : null;
-  const defaultTab = eventId ? "calendar" : "clubs";
-  const initialTab = PADEL_TABS.includes(padelSectionParam as any)
-    ? (padelSectionParam as (typeof PADEL_TABS)[number])
-    : defaultTab;
+  const allowedTabs = toolMode === "CLUB" ? CLUB_TOOL_TABS : TOURNAMENTS_TOOL_TABS;
+  const defaultTab = toolMode === "TOURNAMENTS" ? (eventId ? "calendar" : "tournaments") : "clubs";
+  const fallbackTab = (allowedTabs.includes(defaultTab as PadelTab) ? defaultTab : allowedTabs[0]) as PadelTab;
+  const initialTab = allowedTabs.includes(padelSectionParam as PadelTab)
+    ? (padelSectionParam as PadelTab)
+    : fallbackTab;
+  const activeSection = TOOL_SECTION_BY_MODE[toolMode];
 
-  const [activeTab, setActiveTab] = useState<(typeof PADEL_TABS)[number]>(initialTab);
+  const [activeTab, setActiveTab] = useState<PadelTab>(initialTab);
   const [switchingTab, setSwitchingTab] = useState(false);
   const [clubs, setClubs] = useState<PadelClub[]>(initialClubs);
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
@@ -1059,7 +1116,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   const [savingClub, setSavingClub] = useState(false);
   const [clubError, setClubError] = useState<string | null>(null);
   const [clubMessage, setClubMessage] = useState<string | null>(null);
-  const [clubLocationMode, setClubLocationMode] = useState<"OSM" | "MANUAL">("OSM");
+  const [clubLocationMode, setClubLocationMode] = useState<"APPLE_MAPS" | "MANUAL">("APPLE_MAPS");
   const [clubLocationQuery, setClubLocationQuery] = useState("");
   const [clubLocationSuggestions, setClubLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
   const [clubLocationSearchLoading, setClubLocationSearchLoading] = useState(false);
@@ -1181,11 +1238,16 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   };
 
   useEffect(() => {
-    if (padelSectionParam && PADEL_TABS.includes(padelSectionParam as any) && padelSectionParam !== activeTab) {
-      setActiveTab(padelSectionParam as (typeof PADEL_TABS)[number]);
+    if (padelSectionParam && allowedTabs.includes(padelSectionParam as PadelTab) && padelSectionParam !== activeTab) {
+      setActiveTab(padelSectionParam as PadelTab);
+      setSwitchingTab(false);
+      return;
+    }
+    if (!allowedTabs.includes(activeTab)) {
+      setActiveTab(fallbackTab);
       setSwitchingTab(false);
     }
-  }, [padelSectionParam, activeTab]);
+  }, [activeTab, allowedTabs, fallbackTab, padelSectionParam]);
 
   useEffect(() => {
     const timer = switchingTab ? setTimeout(() => setSwitchingTab(false), 280) : null;
@@ -1269,11 +1331,11 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     slotMinutes,
   ]);
 
-  const setPadelSection = (section: (typeof PADEL_TABS)[number]) => {
+  const setPadelSection = (section: PadelTab) => {
     setSwitchingTab(true);
     setActiveTab(section);
     const params = new URLSearchParams(searchParams?.toString() || "");
-    params.set("section", "padel-hub");
+    params.set("section", activeSection);
     params.set("padel", section);
     const isModuleRoute = pathname?.startsWith("/organizacao/torneios");
     if (isModuleRoute) {
@@ -1293,7 +1355,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     } else {
       params.delete("eventId");
     }
-    params.set("section", "padel-hub");
+    params.set("section", activeSection);
     params.set("padel", "calendar");
     const isModuleRoute = pathname?.startsWith("/organizacao/torneios");
     if (isModuleRoute) {
@@ -1320,8 +1382,23 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     if (!padelEventsRes?.ok || !Array.isArray(padelEventsRes.items)) return [];
     return padelEventsRes.items;
   }, [padelEventsRes]);
+  const sortedPadelEvents = useMemo(() => {
+    return [...padelEvents].sort((a, b) => {
+      const aStart = a.startsAt ? new Date(a.startsAt).getTime() : 0;
+      const bStart = b.startsAt ? new Date(b.startsAt).getTime() : 0;
+      return bStart - aStart;
+    });
+  }, [padelEvents]);
   const interclubEvents = useMemo(
     () => padelEvents.filter((event) => event.isInterclub),
+    [padelEvents],
+  );
+  const liveEventsCount = useMemo(
+    () => padelEvents.filter((event) => (event.status || "").toUpperCase() === "LIVE").length,
+    [padelEvents],
+  );
+  const publishedEventsCount = useMemo(
+    () => padelEvents.filter((event) => (event.status || "").toUpperCase() === "PUBLISHED").length,
     [padelEvents],
   );
   const padelEventsError = padelEventsRes?.ok === false ? padelEventsRes.error || "Erro ao carregar torneios." : null;
@@ -1368,17 +1445,22 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     });
   }, [players, search]);
 
-  const quickLinks = useMemo(
-    () => [
+  const quickLinks = useMemo(() => {
+    if (toolMode === "TOURNAMENTS") {
+      return [
+        { label: "Torneios", href: "/organizacao/torneios", desc: "Lista, estados e operação live." },
+        { label: "Check-in", href: "/organizacao/scan", desc: "Entradas e QR em tempo real." },
+        { label: "Inscrições", href: "/organizacao/inscricoes", desc: "Duplas, pagamentos e status." },
+        { label: "Finanças", href: "/organizacao/clube/caixa", desc: "Receitas e reconciliação." },
+      ];
+    }
+    return [
       { label: "Reservas", href: "/organizacao/reservas", desc: "Agenda, aulas e bookings." },
-      { label: "Check-in", href: "/organizacao/scan", desc: "Entradas e QR em tempo real." },
-      { label: "Finanças", href: "/organizacao/clube/caixa", desc: "Receitas e reconciliação." },
       { label: "CRM", href: "/organizacao/crm/clientes", desc: "Clientes, tags e segmentos." },
-      { label: "Inscrições", href: "/organizacao/inscricoes", desc: "Duplas, pagamentos e status." },
+      { label: "Treinadores", href: "/organizacao/treinadores", desc: "Perfis públicos e gestão." },
       { label: "Loja", href: "/organizacao/loja", desc: "Produtos e stock." },
-    ],
-    [],
-  );
+    ];
+  }, [toolMode]);
 
   const trainers = trainersRes?.items ?? [];
   const trainersError = trainersRes?.ok === false ? trainersRes.error || "Erro ao carregar treinadores." : null;
@@ -2052,7 +2134,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
 
   const openNewClubModal = () => {
     const nextKind: ClubKind = operationMode === "CLUB_OWNER" ? "OWN" : "PARTNER";
-    const nextLocationMode = "OSM";
+    const nextLocationMode = "APPLE_MAPS";
     setClubForm({
       ...DEFAULT_FORM,
       kind: nextKind,
@@ -2084,9 +2166,9 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
           ? "OWN"
           : "PARTNER";
     const resolvedLocationSource =
-      club.locationSource === "OSM" || club.locationSource === "MANUAL" ? club.locationSource : "MANUAL";
+      club.locationSource === "APPLE_MAPS" || club.locationSource === "OSM" || club.locationSource === "MANUAL" ? club.locationSource : "MANUAL";
     const isOwnClub = inferredKind === "OWN";
-    const normalizedSource = isOwnClub ? "OSM" : resolvedLocationSource;
+    const normalizedSource = isOwnClub ? "APPLE_MAPS" : (resolvedLocationSource === "OSM" ? "APPLE_MAPS" : resolvedLocationSource);
     const resolvedLocation = resolveClubLocation(club);
     setClubForm({
       id: club.id,
@@ -2098,6 +2180,9 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       locationProviderId: club.locationProviderId || "",
       locationFormattedAddress: resolvedLocation.formatted,
       locationComponents: club.locationComponents ?? null,
+      locationSourceProvider: club.addressRef?.sourceProvider ?? null,
+      locationConfidenceScore: club.addressRef?.confidenceScore ?? null,
+      locationValidationStatus: club.addressRef?.validationStatus ?? null,
       latitude: typeof club.latitude === "number" ? club.latitude : null,
       longitude: typeof club.longitude === "number" ? club.longitude : null,
       courtsCount: club.courtsCount ? String(club.courtsCount) : "1",
@@ -2158,22 +2243,28 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     if (!details) return;
     const nextAddress = details.address || clubForm.address;
     const nextCity = details.city || clubForm.city;
+    const canonical = (details.canonical as Record<string, unknown> | null) ?? null;
+    const mergedComponents = canonical ?? details.components ?? null;
     setClubForm((prev) => ({
       ...prev,
       address: nextAddress || prev.address,
       city: nextCity || prev.city,
       addressId: details.addressId || prev.addressId,
-      locationSource: "OSM",
+      locationSource: "APPLE_MAPS",
       locationProviderId: details.providerId || prev.locationProviderId,
       locationFormattedAddress: details.formattedAddress || fallbackLabel || prev.locationFormattedAddress,
-      locationComponents: details.components ?? prev.locationComponents,
+      locationComponents: mergedComponents ?? prev.locationComponents,
+      locationSourceProvider: details.sourceProvider ?? prev.locationSourceProvider,
+      locationConfidenceScore:
+        typeof details.confidenceScore === "number" ? details.confidenceScore : prev.locationConfidenceScore,
+      locationValidationStatus: details.validationStatus ?? prev.locationValidationStatus,
       latitude: Number.isFinite(details.lat ?? NaN) ? details.lat ?? prev.latitude : prev.latitude,
       longitude: Number.isFinite(details.lng ?? NaN) ? details.lng ?? prev.longitude : prev.longitude,
     }));
   };
 
   useEffect(() => {
-    if (clubLocationMode !== "OSM") {
+    if (clubLocationMode !== "APPLE_MAPS") {
       setClubLocationSuggestions([]);
       setClubLocationSearchLoading(false);
       setClubLocationSearchError(null);
@@ -2211,14 +2302,17 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   }, [clubLocationMode, clubLocationQuery]);
 
   const handleSelectClubLocationSuggestion = async (item: GeoAutocompleteItem) => {
-    setClubLocationMode("OSM");
+    setClubLocationMode("APPLE_MAPS");
     setClubForm((prev) => ({
       ...prev,
-      locationSource: "OSM",
+      locationSource: "APPLE_MAPS",
       addressId: "",
       locationProviderId: item.providerId,
       locationFormattedAddress: item.label,
       locationComponents: null,
+      locationSourceProvider: item.sourceProvider ?? null,
+      locationConfidenceScore: null,
+      locationValidationStatus: null,
       latitude: Number.isFinite(item.lat ?? NaN) ? item.lat ?? null : null,
       longitude: Number.isFinite(item.lng ?? NaN) ? item.lng ?? null : null,
       address: item.address || prev.address,
@@ -2230,7 +2324,11 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     const seq = ++clubLocationDetailsSeq.current;
     setClubLocationDetailsLoading(true);
     try {
-      const details = await fetchGeoDetails(item.providerId);
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
       if (clubLocationDetailsSeq.current !== seq) return;
       applyClubGeoDetails(details, item.label);
     } catch (err) {
@@ -2243,7 +2341,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
   };
 
   const enableClubOsmLocation = () => {
-    setClubLocationMode("OSM");
+    setClubLocationMode("APPLE_MAPS");
     setClubLocationSearchError(null);
     if (!clubLocationQuery) {
       const fallback = buildClubFormattedAddress() || clubForm.name.trim();
@@ -2251,7 +2349,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     }
     setClubForm((prev) => ({
       ...prev,
-      locationSource: "OSM",
+      locationSource: "APPLE_MAPS",
       addressId: prev.addressId || "",
       locationProviderId: prev.locationProviderId || "",
     }));
@@ -2331,7 +2429,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       setClubMessage(clubForm.id ? "Clube atualizado." : "Clube criado.");
       setClubModalOpen(false);
       setClubForm({ ...DEFAULT_FORM, courtsCount: String(courtsCount) });
-      setClubLocationMode("OSM");
+      setClubLocationMode("APPLE_MAPS");
       setClubLocationQuery("");
       setClubLocationSuggestions([]);
       setClubLocationSearchError(null);
@@ -3309,65 +3407,105 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
     }
   };
 
+  const isClubTool = toolMode === "CLUB";
+  const toolBadge = isClubTool ? "Ferramenta A · Clube" : "Ferramenta B · Torneios";
+  const toolTitle = isClubTool ? "Configuração Padel + Atalhos" : "Gestão de Torneios Padel";
+  const toolSubtitle = isClubTool
+    ? "Clubes, courts, equipa local, comunidade e atalhos cross-module."
+    : "Formatos, categorias, equipas, calendário e operação competitiva.";
+  const toolSwitchHref = isClubTool ? "/organizacao/padel/torneios" : "/organizacao/padel/clube";
+  const toolSwitchLabel = isClubTool ? "Abrir Ferramenta B" : "Abrir Ferramenta A";
+
   return (
     <div className="space-y-5 rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#101b39]/70 to-[#050810]/90 px-4 py-6 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl md:px-6">
       <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-            Padel Hub
+            {toolBadge}
           </div>
-          <h1 className="text-3xl font-semibold text-white drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">Operação de Padel</h1>
-          <p className="text-sm text-white/70">Calendário, clubes, campos e jogadores num só hub.</p>
+          <h1 className="text-3xl font-semibold text-white drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">{toolTitle}</h1>
+          <p className="text-sm text-white/70">{toolSubtitle}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/organizacao/padel/mix/novo"
+            href={toolSwitchHref}
             className={CTA_PAD_SECONDARY_SM}
           >
-            Criar Mix rápido
+            {toolSwitchLabel}
           </Link>
+          {isClubTool ? (
+            <Link
+              href="/organizacao/padel/mix/novo"
+              className={CTA_PAD_SECONDARY_SM}
+            >
+              Criar Mix rápido
+            </Link>
+          ) : (
+            <Link
+              href="/organizacao/torneios/novo"
+              className={CTA_PAD_SECONDARY_SM}
+            >
+              Criar torneio
+            </Link>
+          )}
         </div>
       </header>
 
-      <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Modo de operação</p>
-            <p className="text-sm text-white/70">
-              Ajusta o fluxo de clubes conforme tens clube próprio ou organizas em clubes parceiros.
-            </p>
+      {isClubTool ? (
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Modo de operação</p>
+              <p className="text-sm text-white/70">
+                Ajusta o fluxo de clubes conforme tens clube próprio ou organizas em clubes parceiros.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+              {isClubOwnerMode ? "Clube próprio" : "Organizador"}
+            </span>
           </div>
-          <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-            {isClubOwnerMode ? "Clube próprio" : "Organizador"}
-          </span>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setOperationMode("CLUB_OWNER")}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${
+                isClubOwnerMode
+                  ? "border-cyan-300/60 bg-cyan-400/10 text-white shadow-[0_0_0_1px_rgba(107,255,255,0.35)]"
+                  : "border-white/12 bg-white/5 text-white/70 hover:border-white/25"
+              }`}
+            >
+              <p className="text-sm font-semibold">Tenho clube</p>
+              <p className="text-[12px] text-white/60">Cria clube principal, campos e equipa local.</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setOperationMode("ORGANIZER")}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${
+                !isClubOwnerMode
+                  ? "border-amber-300/60 bg-amber-400/10 text-white shadow-[0_0_0_1px_rgba(251,191,36,0.35)]"
+                  : "border-white/12 bg-white/5 text-white/70 hover:border-white/25"
+              }`}
+            >
+              <p className="text-sm font-semibold">Organizo em clubes parceiros</p>
+              <p className="text-[12px] text-white/60">Gere clubes parceiros e usa-os em torneios.</p>
+            </button>
+          </div>
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setOperationMode("CLUB_OWNER")}
-            className={`rounded-2xl border px-4 py-3 text-left transition ${
-              isClubOwnerMode
-                ? "border-cyan-300/60 bg-cyan-400/10 text-white shadow-[0_0_0_1px_rgba(107,255,255,0.35)]"
-                : "border-white/12 bg-white/5 text-white/70 hover:border-white/25"
-            }`}
-          >
-            <p className="text-sm font-semibold">Tenho clube</p>
-            <p className="text-[12px] text-white/60">Cria clube principal, campos e equipa local.</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setOperationMode("ORGANIZER")}
-            className={`rounded-2xl border px-4 py-3 text-left transition ${
-              !isClubOwnerMode
-                ? "border-amber-300/60 bg-amber-400/10 text-white shadow-[0_0_0_1px_rgba(251,191,36,0.35)]"
-                : "border-white/12 bg-white/5 text-white/70 hover:border-white/25"
-            }`}
-          >
-            <p className="text-sm font-semibold">Organizo em clubes parceiros</p>
-            <p className="text-[12px] text-white/60">Gere clubes parceiros e usa-os em torneios.</p>
-          </button>
+      ) : (
+        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Dependências da Ferramenta A</p>
+              <p className="text-sm text-white/70">
+                Clubes, courts e staff são geridos na Ferramenta A e consumidos aqui.
+              </p>
+            </div>
+            <Link href="/organizacao/padel/clube" className={CTA_PAD_SECONDARY_SM}>
+              Abrir Ferramenta A
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-[2fr_3fr]">
         <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
@@ -3435,6 +3573,41 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
         </div>
       </div>
 
+      <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Áreas da ferramenta</p>
+            <p className="text-sm text-white/70">
+              {isClubTool
+                ? "Operação de clube e comunidade, sem duplicar módulos core."
+                : "Operação competitiva e calendário de torneios."}
+            </p>
+          </div>
+          <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+            {allowedTabs.length} áreas
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {allowedTabs.map((tab) => {
+            const active = activeTab === tab;
+            return (
+              <button
+                key={`padel-tab-${tab}`}
+                type="button"
+                onClick={() => setPadelSection(tab)}
+                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  active
+                    ? "border-cyan-300/70 bg-cyan-400/15 text-white shadow-[0_0_0_1px_rgba(107,255,255,0.35)]"
+                    : "border-white/20 bg-white/5 text-white/75 hover:border-white/35"
+                }`}
+              >
+                {TAB_LABELS[tab]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-3 rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/70 to-[#050912]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)] sm:grid-cols-5">
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Calendário</p>
@@ -3472,6 +3645,91 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
       </div>
 
       {switchingTab && <PadelTabSkeleton />}
+
+      {!switchingTab && activeTab === "tournaments" && (
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Operação de torneios</p>
+              <p className="text-sm text-white/70">Lista rápida, estado e atalhos para live/configuração.</p>
+            </div>
+            <Link href="/organizacao/torneios/novo" className={CTA_PAD_PRIMARY_SM}>
+              Novo torneio
+            </Link>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-white/12 bg-black/35 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Total</p>
+              <p className="mt-1 text-xl font-semibold text-white">{padelEvents.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/12 bg-black/35 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Publicados</p>
+              <p className="mt-1 text-xl font-semibold text-white">{publishedEventsCount}</p>
+            </div>
+            <div className="rounded-xl border border-white/12 bg-black/35 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Live</p>
+              <p className="mt-1 text-xl font-semibold text-white">{liveEventsCount}</p>
+            </div>
+            <div className="rounded-xl border border-white/12 bg-black/35 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Interclubes</p>
+              <p className="mt-1 text-xl font-semibold text-white">{interclubEvents.length}</p>
+            </div>
+          </div>
+
+          {padelEventsError && <p className="text-[12px] text-amber-200">{padelEventsError}</p>}
+
+          {sortedPadelEvents.length === 0 ? (
+            <div className="rounded-xl border border-white/12 bg-black/25 px-4 py-6 text-sm text-white/70">
+              Ainda não existem torneios de padel para esta organização.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sortedPadelEvents.slice(0, 12).map((event) => {
+                const statusKey = (event.status || "").toUpperCase();
+                const statusLabel = TOURNAMENT_STATUS_LABELS[statusKey] || statusKey || "—";
+                const liveTone =
+                  statusKey === "LIVE"
+                    ? "border-emerald-300/60 bg-emerald-400/10 text-emerald-100"
+                    : "border-white/20 bg-white/5 text-white/70";
+                return (
+                  <article
+                    key={`tournament-row-${event.id}`}
+                    className="rounded-xl border border-white/12 bg-black/25 px-3 py-3 text-sm text-white/80"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-white">{event.title || `Torneio ${event.id}`}</p>
+                        <p className="text-[12px] text-white/60">
+                          {event.startsAt ? formatShortDate(event.startsAt) : "Data por definir"}
+                          {event.padelClubName ? ` · ${event.padelClubName}` : ""}
+                          {event.isInterclub ? " · Interclubes" : ""}
+                        </p>
+                      </div>
+                      <span className={`rounded-full border px-2 py-1 text-[11px] ${liveTone}`}>{statusLabel}</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href={`/organizacao/torneios/${event.id}`} className={CTA_PAD_SECONDARY_SM}>
+                        Abrir
+                      </Link>
+                      <Link href={`/organizacao/torneios/${event.id}/live`} className={CTA_PAD_SECONDARY_SM}>
+                        Live
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setPadelEventId(event.id)}
+                        className="rounded-full border border-white/25 px-3 py-2 text-[12px] font-semibold text-white/85 hover:border-white/45"
+                      >
+                        Calendário
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {!switchingTab && activeTab === "calendar" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
@@ -6120,7 +6378,7 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                         key={opt.key}
                         type="button"
                         onClick={() => {
-                          const nextMode = "OSM";
+                          const nextMode = "APPLE_MAPS";
                           setClubForm((prev) => ({
                             ...prev,
                             kind: opt.key,
@@ -6162,16 +6420,16 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                         type="button"
                         onClick={enableClubOsmLocation}
                         className={`rounded-full px-3 py-1 transition ${
-                          clubLocationMode === "OSM"
+                          clubLocationMode === "APPLE_MAPS"
                             ? "bg-white text-black font-semibold shadow"
                             : "text-white/70 hover:bg-white/10"
                         }`}
                       >
-                        Auto (OSM)
+                        Auto (Apple Maps)
                       </button>
                     </div>
                   </div>
-                  {clubLocationMode === "OSM" && (
+                  {clubLocationMode === "APPLE_MAPS" && (
                     <div className="space-y-2">
                       <input
                         value={clubLocationQuery}
@@ -6183,6 +6441,9 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                             locationProviderId: "",
                             locationFormattedAddress: "",
                             locationComponents: null,
+                            locationSourceProvider: null,
+                            locationConfidenceScore: null,
+                            locationValidationStatus: null,
                           }));
                         }}
                         placeholder="Pesquisar morada"
@@ -6204,7 +6465,21 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                               onClick={() => handleSelectClubLocationSuggestion(item)}
                               className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-left text-[12px] text-white/80 hover:border-cyan-300/50"
                             >
-                              {item.label}
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-semibold text-white">{item.label}</span>
+                                <div className="flex items-center gap-2 text-[10px] text-white/60">
+                                  <span>{item.city || "—"}</span>
+                                  {item.sourceProvider && (
+                                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em]">
+                                      {item.sourceProvider === "APPLE_MAPS"
+                                        ? "Apple"
+                                        : item.sourceProvider.startsWith("OSM")
+                                          ? "OSM legado"
+                                          : "GPS"}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </button>
                           ))}
                         </div>
@@ -6213,9 +6488,40 @@ export default function PadelHubClient({ organizationId, organizationKind, initi
                         <p className="text-[11px] text-white/50">A validar morada...</p>
                       )}
                       {Boolean(clubForm.addressId) && clubForm.locationFormattedAddress && (
-                        <p className="text-[11px] text-emerald-200">
-                          Morada confirmada: {clubForm.locationFormattedAddress}
-                        </p>
+                        <div className="space-y-1 text-[11px] text-emerald-200">
+                          <p>Morada confirmada: {clubForm.locationFormattedAddress}</p>
+                          {(clubForm.locationSourceProvider ||
+                            clubForm.locationConfidenceScore !== null ||
+                            clubForm.locationValidationStatus) && (
+                            <div className="flex flex-wrap gap-2 text-[10px] text-white/70">
+                              {clubForm.locationSourceProvider && (
+                                <span className="rounded-full border border-white/15 px-2 py-0.5">
+                                  {clubForm.locationSourceProvider === "APPLE_MAPS"
+                                    ? "Apple Maps"
+                                    : clubForm.locationSourceProvider.startsWith("OSM")
+                                      ? "OpenStreetMap (legado)"
+                                      : clubForm.locationSourceProvider}
+                                </span>
+                              )}
+                              {clubForm.locationConfidenceScore !== null && (
+                                <span className="rounded-full border border-white/15 px-2 py-0.5">
+                                  Confiança {Math.round(clubForm.locationConfidenceScore)}%
+                                </span>
+                              )}
+                              {clubForm.locationValidationStatus && (
+                                <span className="rounded-full border border-white/15 px-2 py-0.5">
+                                  {clubForm.locationValidationStatus === "VERIFIED"
+                                    ? "Verificada"
+                                    : clubForm.locationValidationStatus === "NORMALIZED"
+                                      ? "Normalizada"
+                                      : clubForm.locationValidationStatus === "RAW"
+                                        ? "Bruta"
+                                        : clubForm.locationValidationStatus}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}

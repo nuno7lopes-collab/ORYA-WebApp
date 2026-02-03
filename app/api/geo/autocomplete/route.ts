@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
-import { getGeoProvider } from "@/lib/geo/provider";
+import { mapGeoError } from "@/lib/geo/errors";
+import { getGeoResolver } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -49,24 +50,32 @@ async function _GET(req: NextRequest) {
   const lang = resolveLang(req);
 
   const cacheKey = buildCacheKey(["geo-autocomplete", query.toLowerCase(), lat, lng, lang]);
-  const cached = getCache(cacheKey);
+  const cached = getCache<{ items: unknown; sourceProvider?: string }>(cacheKey);
   if (cached) {
-    return jsonWrap({ ok: true, items: cached }, { headers: { "Cache-Control": "public, max-age=300" } });
+    return jsonWrap(
+      { ok: true, items: cached.items, sourceProvider: cached.sourceProvider ?? null },
+      { headers: { "Cache-Control": "public, max-age=300" } },
+    );
   }
 
-  const provider = getGeoProvider();
+  const resolver = getGeoResolver();
   try {
-    const items = await provider.autocomplete({
+    const resolved = await resolver.autocomplete({
       query,
       lat: Number.isFinite(lat ?? NaN) ? lat : undefined,
       lng: Number.isFinite(lng ?? NaN) ? lng : undefined,
       lang,
     });
-    setCache(cacheKey, items, CACHE_TTL_MS);
-    return jsonWrap({ ok: true, items }, { headers: { "Cache-Control": "public, max-age=300" } });
+    const items = resolved.data.map((item) => ({ ...item, sourceProvider: resolved.sourceProvider }));
+    setCache(cacheKey, { items, sourceProvider: resolved.sourceProvider }, CACHE_TTL_MS);
+    return jsonWrap(
+      { ok: true, items, sourceProvider: resolved.sourceProvider },
+      { headers: { "Cache-Control": "public, max-age=300" } },
+    );
   } catch (err) {
     console.error("[geo/autocomplete] erro", err);
-    return jsonWrap({ ok: false, error: "Falha ao obter sugestões." }, { status: 502 });
+    const { status, message } = mapGeoError(err, "Falha ao obter sugestões.");
+    return jsonWrap({ ok: false, error: message }, { status });
   }
 }
 export const GET = withApiEnvelope(_GET);

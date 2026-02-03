@@ -12,6 +12,20 @@ export const PublicEventLocationSchema = z.object({
   overrides: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
+export const PublicEventTicketTypeSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  price: z.number(),
+  currency: z.string().nullable().optional(),
+  status: z.enum(["ON_SALE", "UPCOMING", "CLOSED", "SOLD_OUT"]).optional(),
+  startsAt: z.string().nullable().optional(),
+  endsAt: z.string().nullable().optional(),
+  totalQuantity: z.number().nullable().optional(),
+  soldQuantity: z.number().nullable().optional(),
+  sortOrder: z.number().nullable().optional(),
+});
+
 export const PublicEventCardSchema = z.object({
   id: z.number(),
   type: z.literal("EVENT"),
@@ -30,6 +44,7 @@ export const PublicEventCardSchema = z.object({
   status: z.enum(["ACTIVE", "CANCELLED", "PAST", "DRAFT"]).optional(),
   isHighlighted: z.boolean().optional(),
   location: PublicEventLocationSchema.optional(),
+  ticketTypes: z.array(PublicEventTicketTypeSchema).optional(),
 });
 
 export type PublicEventCard = z.infer<typeof PublicEventCardSchema>;

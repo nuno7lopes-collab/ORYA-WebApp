@@ -11,11 +11,11 @@ import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
 /**
  * ⚠️ IMPORTANT
- * This route is designed to be triggered by Vercel Cron.
+ * This route is designed to be triggered by an external scheduler (AWS EventBridge/Cron).
  * It must NOT be callable by the public internet.
  * We enforce a secret token header to protect it.
  *
- * Add this header in Vercel Cron:
+ * Add this header in the scheduler request:
  *   X-ORYA-CRON-SECRET: <your-secret>
  *
  * And set the env var:

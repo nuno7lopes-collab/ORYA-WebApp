@@ -38,6 +38,8 @@ const PRIMARY_META: Record<
     createHref: "/organizacao/reservas?create=service",
   },
 };
+const PADEL_CLUB_SECTION = "padel-club";
+const PADEL_TOURNAMENTS_SECTION = "padel-tournaments";
 
 function hasModule(modules: string[], key: string) {
   return Array.isArray(modules) && modules.includes(key);
@@ -169,61 +171,44 @@ export function getObjectiveSections(
       return sections;
     }
     if (operationOverride === "TORNEIOS") {
-      const padelBase = manageHref("padel-hub");
-      const padelHref = (tab: string) => `${padelBase}${padelBase.includes("?") ? "&" : "?"}padel=${tab}`;
+      const padelClubBase = manageHref(PADEL_CLUB_SECTION);
+      const padelTournamentsBase = manageHref(PADEL_TOURNAMENTS_SECTION);
+      const withPadelTab = (baseHref: string, tab: string) =>
+        `${baseHref}${baseHref.includes("?") ? "&" : "?"}padel=${tab}`;
+      const padelClubHref = (tab: string) => withPadelTab(padelClubBase, tab);
+      const padelTournamentsHref = (tab: string) => withPadelTab(padelTournamentsBase, tab);
       const torneiosHref = manageHref("eventos");
       sections.push(
         {
-          id: "torneios",
-          label: "Torneios",
-          href: torneiosHref,
+          id: "padel-tool-b",
+          label: "Ferramenta B",
+          href: padelTournamentsHref("calendar"),
           items: [
             { id: "torneios", label: "Torneios", href: torneiosHref },
             { id: "torneios-criar", label: "Criar torneio", href: categoryMeta.createHref },
-            { id: "categories", label: "Categorias", href: padelHref("categories") },
+            { id: "calendar", label: "Calendário", href: padelTournamentsHref("calendar") },
+            { id: "categories", label: "Categorias", href: padelTournamentsHref("categories") },
+            { id: "teams", label: "Equipas", href: padelTournamentsHref("teams") },
           ],
         },
         {
-          id: "clube",
-          label: "Clube",
-          href: padelHref("clubs"),
+          id: "padel-tool-a",
+          label: "Ferramenta A",
+          href: padelClubHref("clubs"),
           items: [
-            { id: "clubs", label: "Clubes", href: padelHref("clubs") },
-            { id: "courts", label: "Campos", href: padelHref("courts") },
+            { id: "clubs", label: "Clubes", href: padelClubHref("clubs") },
+            { id: "courts", label: "Campos", href: padelClubHref("courts") },
+            { id: "players", label: "Jogadores", href: padelClubHref("players") },
+            { id: "community", label: "Comunidade", href: padelClubHref("community") },
+            { id: "trainers", label: "Treinadores", href: padelClubHref("trainers") },
+            { id: "lessons", label: "Aulas", href: padelClubHref("lessons") },
           ],
         },
         {
-          id: "calendar",
-          label: "Calendário",
-          href: padelHref("calendar"),
-          items: [{ id: "calendar", label: "Jogos", href: padelHref("calendar") }],
-        },
-        {
-          id: "pessoas",
-          label: "Pessoas",
-          href: padelHref("players"),
-          items: [
-            { id: "players", label: "Jogadores", href: padelHref("players") },
-            { id: "trainers", label: "Treinadores", href: padelHref("trainers") },
-          ],
-        },
-        {
-          id: "equipas",
-          label: "Equipas",
-          href: padelHref("teams"),
-          items: [{ id: "teams", label: "Equipas", href: padelHref("teams") }],
-        },
-        {
-          id: "comunidade",
-          label: "Comunidade",
-          href: padelHref("community"),
-          items: [{ id: "community", label: "Comunidade", href: padelHref("community") }],
-        },
-        {
-          id: "aulas",
-          label: "Aulas",
-          href: padelHref("lessons"),
-          items: [{ id: "lessons", label: "Aulas", href: padelHref("lessons") }],
+          id: "padel-jogadores",
+          label: "Jogadores",
+          href: padelTournamentsHref("players"),
+          items: [{ id: "players", label: "Jogadores", href: padelTournamentsHref("players") }],
         },
       );
       if (!isDashboard) {
@@ -275,9 +260,14 @@ export function getObjectiveSections(
         href: manageHref("reservas"),
       },
       {
-        id: "padel-hub",
-        label: "Padel",
-        href: manageHref("padel-hub"),
+        id: "padel-tool-a",
+        label: "Padel Clube",
+        href: manageHref(PADEL_CLUB_SECTION),
+      },
+      {
+        id: "padel-tool-b",
+        label: "Padel Torneios",
+        href: manageHref(PADEL_TOURNAMENTS_SECTION),
       },
     );
     if (hasModule(context.modules, "EVENTOS") || hasModule(context.modules, "TORNEIOS")) {

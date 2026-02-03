@@ -42,7 +42,7 @@ type ExploreItem = {
     lat: number | null;
     lng: number | null;
     formattedAddress: string | null;
-    source: "OSM" | "MANUAL" | null;
+    source: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
     components: Record<string, unknown> | null;
     overrides: Record<string, unknown> | null;
   };

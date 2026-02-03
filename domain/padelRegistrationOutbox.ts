@@ -55,11 +55,12 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
   if (!payload.registrationId) throw new Error("PADREG_OUTBOX_MISSING_REGISTRATION");
   const registration = await prisma.padelRegistration.findUnique({
     where: { id: payload.registrationId },
-    include: {
+    select: {
+      id: true,
+      eventId: true,
+      organizationId: true,
       pairing: {
-        include: {
-          slots: true,
-        },
+        select: { id: true },
       },
     },
   });

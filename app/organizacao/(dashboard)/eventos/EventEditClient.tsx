@@ -22,8 +22,8 @@ const TicketTypeStatus = {
 type TicketTypeStatus = (typeof TicketTypeStatus)[keyof typeof TicketTypeStatus];
 
 type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
-type LocationMode = "OSM" | "MANUAL";
-type LocationSource = "OSM" | "MANUAL";
+type LocationMode = "APPLE_MAPS" | "MANUAL";
+type LocationSource = "APPLE_MAPS" | "OSM" | "MANUAL";
 
 type ToastTone = "success" | "error";
 type Toast = { id: number; message: string; tone: ToastTone };
@@ -105,6 +105,7 @@ type EventEditClientProps = {
     locationName: string | null;
     locationCity: string | null;
     address: string | null;
+    addressId?: string | null;
     locationSource?: LocationSource | null;
     locationProviderId?: string | null;
     locationFormattedAddress?: string | null;
@@ -112,6 +113,16 @@ type EventEditClientProps = {
     locationOverrides?: Record<string, unknown> | null;
     latitude?: number | null;
     longitude?: number | null;
+    addressRef?: {
+      formattedAddress: string;
+      canonical: Record<string, unknown> | null;
+      latitude: number;
+      longitude: number;
+      sourceProvider: string | null;
+      sourceProviderPlaceId: string | null;
+      confidenceScore: number | null;
+      validationStatus: string | null;
+    } | null;
     templateType: string | null;
     isGratis: boolean;
     coverImageUrl: string | null;
@@ -169,8 +180,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [locationName, setLocationName] = useState(event.locationName ?? "");
   const [locationCity, setLocationCity] = useState(event.locationCity ?? "");
   const [address, setAddress] = useState(event.address ?? "");
+  const [locationAddressId, setLocationAddressId] = useState<string | null>(event.addressId ?? null);
   const [locationMode, setLocationMode] = useState<LocationMode>(
-    event.locationSource === "OSM" || event.locationProviderId ? "OSM" : "MANUAL",
+    event.locationSource === "APPLE_MAPS" || event.locationSource === "OSM" || event.locationProviderId
+      ? "APPLE_MAPS"
+      : "MANUAL",
   );
   const [locationQuery, setLocationQuery] = useState(
     event.locationFormattedAddress ||
@@ -182,7 +196,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
   const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
   const [locationConfirmed, setLocationConfirmed] = useState(
-    Boolean(event.locationProviderId || event.locationSource === "OSM"),
+    Boolean(event.locationProviderId || event.locationSource === "APPLE_MAPS" || event.locationSource === "OSM"),
   );
   const [locationProviderId, setLocationProviderId] = useState<string | null>(
     event.locationProviderId ?? null,
@@ -191,22 +205,37 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     event.locationFormattedAddress ?? null,
   );
   const [locationComponents, setLocationComponents] = useState<Record<string, unknown> | null>(
-    event.locationComponents ?? null,
+    event.locationComponents ?? event.addressRef?.canonical ?? null,
   );
   const [locationHouseNumber, setLocationHouseNumber] = useState(
     (event.locationOverrides?.houseNumber as string | undefined) ||
       (event.locationComponents as { houseNumber?: string } | null)?.houseNumber ||
+      (event.addressRef?.canonical as { houseNumber?: string } | null)?.houseNumber ||
       "",
   );
   const [locationPostalCode, setLocationPostalCode] = useState(
     (event.locationOverrides?.postalCode as string | undefined) ||
       (event.locationComponents as { postalCode?: string } | null)?.postalCode ||
+      (event.addressRef?.canonical as { postalCode?: string } | null)?.postalCode ||
       "",
   );
-  const [locationLat, setLocationLat] = useState<number | null>(event.latitude ?? null);
-  const [locationLng, setLocationLng] = useState<number | null>(event.longitude ?? null);
+  const [locationLat, setLocationLat] = useState<number | null>(
+    event.latitude ?? event.addressRef?.latitude ?? null,
+  );
+  const [locationLng, setLocationLng] = useState<number | null>(
+    event.longitude ?? event.addressRef?.longitude ?? null,
+  );
+  const [locationSourceProvider, setLocationSourceProvider] = useState<string | null>(
+    event.addressRef?.sourceProvider ?? null,
+  );
+  const [locationConfidenceScore, setLocationConfidenceScore] = useState<number | null>(
+    event.addressRef?.confidenceScore ?? null,
+  );
+  const [locationValidationStatus, setLocationValidationStatus] = useState<string | null>(
+    event.addressRef?.validationStatus ?? null,
+  );
   const [locationTbd, setLocationTbd] = useState(() => {
-    if (event.locationSource === "OSM" || event.locationProviderId) return false;
+    if (event.locationSource === "APPLE_MAPS" || event.locationSource === "OSM" || event.locationProviderId) return false;
     return !event.locationName && !event.locationCity && !event.address && !event.locationFormattedAddress;
   });
   const [templateType] = useState(event.templateType ?? "OTHER");
@@ -370,6 +399,20 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     const parts = [locationName.trim(), locationCity.trim(), address.trim()].filter(Boolean);
     return parts.length ? parts.join(" · ") : "Local a definir";
   }, [locationFormattedAddress, locationName, locationCity, address]);
+  const locationProviderLabel = useMemo(() => {
+    if (!locationSourceProvider) return null;
+    if (locationSourceProvider === "APPLE_MAPS") return "Apple Maps";
+    if (locationSourceProvider.startsWith("OSM")) return "OpenStreetMap (legado)";
+    if (locationSourceProvider === "MANUAL") return "Manual";
+    return locationSourceProvider;
+  }, [locationSourceProvider]);
+  const locationValidationLabel = useMemo(() => {
+    if (!locationValidationStatus) return null;
+    if (locationValidationStatus === "VERIFIED") return "Verificada";
+    if (locationValidationStatus === "NORMALIZED") return "Normalizada";
+    if (locationValidationStatus === "RAW") return "Bruta";
+    return locationValidationStatus;
+  }, [locationValidationStatus]);
 
   const buildLocationFormattedAddress = () => {
     const components = locationComponents as
@@ -378,18 +421,37 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           houseNumber?: string | null;
           postalCode?: string | null;
           address?: Record<string, unknown>;
+          canonical?: Record<string, unknown>;
         }
       | null;
+    const canonical =
+      (components && typeof components.canonical === "object" ? (components.canonical as Record<string, unknown>) : null) ||
+      (components && typeof components === "object" && !Array.isArray(components) && ("addressLine1" in components || "houseNumber" in components)
+        ? (components as Record<string, unknown>)
+        : null);
     const road =
       (typeof components?.road === "string" && components.road.trim()) ||
       (typeof components?.address?.road === "string" && components.address.road.trim()) ||
+      (canonical && typeof canonical.street === "string" ? canonical.street.trim() : null) ||
       null;
-    const houseNumber = locationHouseNumber.trim() || (components?.houseNumber ?? "");
-    const postalCode = locationPostalCode.trim() || (components?.postalCode ?? "");
+    const houseNumber =
+      locationHouseNumber.trim() ||
+      (components?.houseNumber ?? "") ||
+      (canonical && typeof canonical.houseNumber === "string" ? canonical.houseNumber : "");
+    const postalCode =
+      locationPostalCode.trim() ||
+      (components?.postalCode ?? "") ||
+      (canonical && typeof canonical.postalCode === "string" ? canonical.postalCode : "");
     const country =
-      (typeof components?.address?.country === "string" && components.address.country.trim()) || "";
-    const line1 = [road, houseNumber].filter(Boolean).join(" ").trim();
-    const line2 = [postalCode.trim(), locationCity.trim()].filter(Boolean).join(" ").trim();
+      (canonical && typeof canonical.country === "string" ? canonical.country.trim() : null) ||
+      (typeof components?.address?.country === "string" && components.address.country.trim()) ||
+      "";
+    const line1 =
+      (canonical && typeof canonical.addressLine1 === "string" ? canonical.addressLine1.trim() : "") ||
+      [road, houseNumber].filter(Boolean).join(" ").trim();
+    const line2 =
+      (canonical && typeof canonical.addressLine2 === "string" ? canonical.addressLine2.trim() : "") ||
+      [postalCode.trim(), locationCity.trim()].filter(Boolean).join(" ").trim();
     const parts = [line1, line2, country].filter(Boolean);
     if (parts.length > 0) return parts.join(", ");
     if (locationFormattedAddress) return locationFormattedAddress;
@@ -415,7 +477,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   }, [padelCategories, padelCategoryLinks]);
 
   useEffect(() => {
-    if (locationMode !== "OSM") {
+    if (locationMode !== "APPLE_MAPS") {
       setLocationSuggestions([]);
       setLocationSearchLoading(false);
       setShowLocationSuggestions(false);
@@ -465,16 +527,29 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     const nextName = details.name || fallbackName || locationName;
     const nextCity = details.city || locationCity;
     const nextAddress = details.address || address;
+    const canonical = (details.canonical as Record<string, unknown> | null) ?? null;
+    const mergedComponents = canonical ?? details.components ?? null;
     setLocationFormattedAddress(details.formattedAddress || locationFormattedAddress);
-    setLocationComponents(details.components ?? null);
+    setLocationComponents(mergedComponents);
+    setLocationAddressId(details.addressId ?? null);
+    setLocationSourceProvider(details.sourceProvider ?? null);
+    setLocationConfidenceScore(
+      typeof details.confidenceScore === "number" ? details.confidenceScore : null,
+    );
+    setLocationValidationStatus(details.validationStatus ?? null);
+    if (details.providerId) {
+      setLocationProviderId(details.providerId);
+    }
     const detailsHouse =
-      details.components && typeof (details.components as { houseNumber?: unknown }).houseNumber === "string"
+      (canonical && typeof canonical.houseNumber === "string" ? canonical.houseNumber : "") ||
+      (details.components && typeof (details.components as { houseNumber?: unknown }).houseNumber === "string"
         ? ((details.components as { houseNumber?: string }).houseNumber ?? "")
-        : "";
+        : "");
     const detailsPostal =
-      details.components && typeof (details.components as { postalCode?: unknown }).postalCode === "string"
+      (canonical && typeof canonical.postalCode === "string" ? canonical.postalCode : "") ||
+      (details.components && typeof (details.components as { postalCode?: unknown }).postalCode === "string"
         ? ((details.components as { postalCode?: string }).postalCode ?? "")
-        : "";
+        : "");
     setLocationHouseNumber(detailsHouse);
     setLocationPostalCode(detailsPostal);
     if (Number.isFinite(details.lat ?? NaN) && Number.isFinite(details.lng ?? NaN)) {
@@ -487,9 +562,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   };
 
   const handleSelectGeoSuggestion = async (item: GeoAutocompleteItem) => {
-    setLocationMode("OSM");
+    setLocationMode("APPLE_MAPS");
     setLocationTbd(false);
     setLocationProviderId(item.providerId);
+    setLocationAddressId(null);
+    setLocationSourceProvider(item.sourceProvider ?? null);
     activeProviderRef.current = item.providerId;
     setLocationLat(item.lat);
     setLocationLng(item.lng);
@@ -507,7 +584,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     const seq = ++locationDetailsSeq.current;
     setLocationDetailsLoading(true);
     try {
-      const details = await fetchGeoDetails(item.providerId);
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
       if (locationDetailsSeq.current !== seq) return;
       if (activeProviderRef.current !== item.providerId) return;
       applyGeoDetails(details, item.name || item.label);
@@ -526,6 +607,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const enableManualLocation = () => {
     setLocationMode("MANUAL");
     setLocationProviderId(null);
+    setLocationAddressId(null);
+    setLocationSourceProvider(null);
+    setLocationConfidenceScore(null);
+    setLocationValidationStatus(null);
     activeProviderRef.current = null;
     setLocationFormattedAddress(null);
     setLocationComponents(null);
@@ -543,10 +628,14 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     }
   };
 
-  const enableOsmLocation = () => {
-    setLocationMode("OSM");
+  const enableAppleLocation = () => {
+    setLocationMode("APPLE_MAPS");
     setLocationTbd(false);
     setLocationProviderId(null);
+    setLocationAddressId(null);
+    setLocationSourceProvider(null);
+    setLocationConfidenceScore(null);
+    setLocationValidationStatus(null);
     activeProviderRef.current = null;
     setLocationFormattedAddress(null);
     setLocationComponents(null);
@@ -719,11 +808,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         : field === "endsAt"
             ? (endsRef.current?.querySelector("button") as HTMLElement | null)
             : field === "locationCity"
-              ? locationMode === "OSM"
+              ? locationMode === "APPLE_MAPS"
                 ? locationSearchRef.current
                 : cityRef.current
               : field === "locationName"
-                ? locationMode === "OSM"
+                ? locationMode === "APPLE_MAPS"
                   ? locationSearchRef.current
               : locationNameRef.current
             : null;
@@ -768,10 +857,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         if (locationMode === "MANUAL" && !locationTbd && !locationName.trim()) {
           issues.push({ field: "locationName", message: "Local obrigatório." });
         }
-        if (locationMode === "OSM" && !locationProviderId) {
+        if (locationMode === "APPLE_MAPS" && !locationProviderId) {
           issues.push({ field: "locationName", message: "Seleciona uma sugestão de localização." });
         }
-        if (locationMode === "OSM" && locationProviderId && !locationConfirmed) {
+        if (locationMode === "APPLE_MAPS" && locationProviderId && !locationConfirmed) {
           issues.push({ field: "locationName", message: "Confirma a localização antes de guardar." });
         }
       }
@@ -805,7 +894,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   }, [title]);
 
   useEffect(() => {
-    if (locationMode === "OSM") {
+    if (locationMode === "APPLE_MAPS") {
       if (locationProviderId && locationConfirmed) {
         clearErrorsForFields(["locationName"]);
       }
@@ -972,16 +1061,22 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     }
 
     const resolvedLocationSource: LocationSource =
-      locationMode === "OSM" && locationProviderId ? "OSM" : "MANUAL";
+      locationMode === "APPLE_MAPS" && locationProviderId ? "APPLE_MAPS" : "MANUAL";
+    const resolvedAddressId = resolvedLocationSource === "APPLE_MAPS" ? locationAddressId : null;
     const resolvedLocationOverrides =
-      resolvedLocationSource === "OSM"
+      resolvedLocationSource === "APPLE_MAPS"
         ? {
             houseNumber: locationHouseNumber.trim() || null,
             postalCode: locationPostalCode.trim() || null,
           }
         : null;
     const resolvedFormattedAddress =
-      resolvedLocationSource === "OSM" ? buildLocationFormattedAddress() : null;
+      resolvedLocationSource === "APPLE_MAPS" ? buildLocationFormattedAddress() : null;
+    if (resolvedLocationSource === "APPLE_MAPS" && !resolvedAddressId) {
+      setValidationAlert("Seleciona uma morada normalizada antes de guardar.");
+      pushToast("Seleciona uma morada normalizada.");
+      return;
+    }
     if (
       isPadel &&
       newTicket.name.trim() &&
@@ -1036,12 +1131,13 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           locationCity,
           address,
           locationSource: resolvedLocationSource,
-          locationProviderId: resolvedLocationSource === "OSM" ? locationProviderId : null,
-          locationFormattedAddress: resolvedLocationSource === "OSM" ? resolvedFormattedAddress : null,
-          locationComponents: resolvedLocationSource === "OSM" ? locationComponents : null,
+          locationProviderId: resolvedLocationSource === "APPLE_MAPS" ? locationProviderId : null,
+          locationFormattedAddress: resolvedLocationSource === "APPLE_MAPS" ? resolvedFormattedAddress : null,
+          locationComponents: resolvedLocationSource === "APPLE_MAPS" ? locationComponents : null,
           locationOverrides: resolvedLocationOverrides,
-          latitude: resolvedLocationSource === "OSM" ? locationLat : null,
-          longitude: resolvedLocationSource === "OSM" ? locationLng : null,
+          addressId: resolvedAddressId,
+          latitude: resolvedLocationSource === "APPLE_MAPS" ? locationLat : null,
+          longitude: resolvedLocationSource === "APPLE_MAPS" ? locationLng : null,
           templateType,
           isGratis,
           coverImageUrl: coverUrl,
@@ -1270,7 +1366,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-sm font-medium">Local / Morada</label>
             <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-              {locationMode === "OSM" ? (
+              {locationMode === "APPLE_MAPS" ? (
                 <button
                   type="button"
                   onClick={enableManualLocation}
@@ -1279,13 +1375,13 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                   Modo manual
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={enableOsmLocation}
-                  className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
-                >
-                  Pesquisar local
-                </button>
+              <button
+                type="button"
+                onClick={enableAppleLocation}
+                className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
+              >
+                Pesquisar no Apple Maps
+              </button>
               )}
               <button
                 type="button"
@@ -1297,7 +1393,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             </div>
           </div>
 
-          {locationMode === "OSM" ? (
+          {locationMode === "APPLE_MAPS" ? (
             <div className="space-y-3">
               <div className="relative overflow-visible">
                 <input
@@ -1310,6 +1406,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                     setLocationSearchError(null);
                     if (locationProviderId) {
                       setLocationProviderId(null);
+                      setLocationAddressId(null);
+                      setLocationSourceProvider(null);
+                      setLocationConfidenceScore(null);
+                      setLocationValidationStatus(null);
                       activeProviderRef.current = null;
                       setLocationFormattedAddress(null);
                       setLocationComponents(null);
@@ -1347,7 +1447,18 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                         >
                           <div className="flex w-full items-center justify-between gap-3">
                             <span className="font-semibold text-white">{suggestion.label}</span>
-                            <span className="text-[12px] text-white/65">{suggestion.city || "—"}</span>
+                            <div className="flex items-center gap-2 text-[12px] text-white/65">
+                              <span>{suggestion.city || "—"}</span>
+                              {suggestion.sourceProvider && (
+                                <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
+                                  {suggestion.sourceProvider === "APPLE_MAPS"
+                                    ? "Apple"
+                                    : suggestion.sourceProvider.startsWith("OSM")
+                                      ? "OSM legado"
+                                      : "GPS"}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </button>
                       ))
@@ -1365,6 +1476,25 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                   <p className="mt-1 text-[11px] text-white/55">
                     {locationLat.toFixed(5)}, {locationLng.toFixed(5)}
                   </p>
+                )}
+                {(locationProviderLabel || locationConfidenceScore !== null || locationValidationLabel) && (
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                    {locationProviderLabel && (
+                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                        {locationProviderLabel}
+                      </span>
+                    )}
+                    {locationConfidenceScore !== null && (
+                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                        Confiança {Math.round(locationConfidenceScore)}%
+                      </span>
+                    )}
+                    {locationValidationLabel && (
+                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                        {locationValidationLabel}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             )}

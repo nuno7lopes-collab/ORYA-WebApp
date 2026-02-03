@@ -38,7 +38,7 @@ type EventPayload = {
   locationName: string;
   locationCity: string | null;
   address: string | null;
-  locationSource: "OSM" | "MANUAL" | null;
+  locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress: string | null;
   locationComponents: Record<string, unknown> | null;
   locationOverrides: Record<string, unknown> | null;

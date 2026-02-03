@@ -68,7 +68,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const tournament = await prisma.tournament.findUnique({
     where: { id },
-    include: { event: { select: { organizationId: true } } },
+    select: {
+      id: true,
+      eventId: true,
+      format: true,
+      config: true,
+      inscriptionDeadlineAt: true,
+      event: { select: { organizationId: true } },
+    },
   });
   if (!tournament) return fail(404, "NOT_FOUND");
 

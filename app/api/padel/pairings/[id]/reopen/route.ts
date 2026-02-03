@@ -8,6 +8,7 @@ import {
   PadelPairingSlotStatus,
   PadelPaymentMode,
   PadelRegistrationStatus,
+  Prisma,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
@@ -25,6 +26,39 @@ import {
 } from "@/domain/padelRegistration";
 
 type ReopenMode = "INVITE_PARTNER" | "LOOKING_FOR_PARTNER";
+
+const pairingSlotSelect = {
+  id: true,
+  slot_role: true,
+  slotStatus: true,
+  paymentStatus: true,
+  profileId: true,
+  invitedUserId: true,
+  invitedContact: true,
+} satisfies Prisma.PadelPairingSlotSelect;
+
+const pairingSelect = {
+  id: true,
+  organizationId: true,
+  eventId: true,
+  createdByUserId: true,
+  pairingStatus: true,
+  pairingJoinMode: true,
+  isPublicOpen: true,
+  payment_mode: true,
+  deadlineAt: true,
+  graceUntilAt: true,
+  guaranteeStatus: true,
+  event: {
+    select: {
+      organizationId: true,
+      startsAt: true,
+      padelTournamentConfig: { select: { splitDeadlineHours: true } },
+    },
+  },
+  slots: { select: pairingSlotSelect },
+  registration: { select: { status: true } },
+} satisfies Prisma.PadelPairingSelect;
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -50,17 +84,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: {
-      event: {
-        select: {
-          organizationId: true,
-          startsAt: true,
-          padelTournamentConfig: { select: { splitDeadlineHours: true } },
-        },
-      },
-      slots: true,
-      registration: { select: { status: true } },
-    },
+    select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
@@ -165,7 +189,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           ],
         },
       },
-      include: { slots: true },
+      select: pairingSelect,
     });
 
     await upsertPadelRegistrationForPairing(tx, {

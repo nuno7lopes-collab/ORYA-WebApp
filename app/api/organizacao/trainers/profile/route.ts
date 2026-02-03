@@ -83,7 +83,18 @@ export async function GET(req: NextRequest) {
 
     const profile = await prisma.trainerProfile.findUnique({
       where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        bio: true,
+        specialties: true,
+        certifications: true,
+        experienceYears: true,
+        coverImageUrl: true,
+        isPublished: true,
+        reviewStatus: true,
+        reviewNote: true,
+        reviewRequestedAt: true,
         user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
         organization: { select: { id: true, username: true, publicName: true } },
       },

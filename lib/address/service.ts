@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import type { GeoDetailsItem } from "@/lib/geo/types";
-import { AddressSourceProvider, AddressValidationStatus, type Prisma } from "@prisma/client";
+import { AddressSourceProvider, AddressValidationStatus, Prisma } from "@prisma/client";
 import { normalizeAddressFromDetails } from "@/lib/address/normalize";
 
 const canonicalize = (value: unknown): unknown => {
@@ -23,13 +23,30 @@ const roundCoord = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
 const hashAddress = (payload: Record<string, unknown>) =>
   crypto.createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
 
+const isAddressLookupTableMissingError = (err: unknown) =>
+  err instanceof Prisma.PrismaClientKnownRequestError &&
+  err.code === "P2021" &&
+  String((err.meta as Record<string, unknown> | undefined)?.table ?? "").includes("address_lookups");
+
+const ADDRESS_SELECT = {
+  id: true,
+  formattedAddress: true,
+  canonical: true,
+  latitude: true,
+  longitude: true,
+  sourceProvider: true,
+  sourceProviderPlaceId: true,
+  validationStatus: true,
+  confidenceScore: true,
+} satisfies Prisma.AddressSelect;
+
 export type AddressResolveResult =
   | { ok: true; address: { id: string; formattedAddress: string; canonical: Prisma.JsonValue; latitude: number; longitude: number; sourceProvider: AddressSourceProvider; sourceProviderPlaceId: string | null; validationStatus: AddressValidationStatus; confidenceScore: number } }
   | { ok: false; error: string };
 
 export async function getAddressById(addressId: string, tx: Prisma.TransactionClient | typeof prisma = prisma) {
   if (!addressId) return null;
-  return tx.address.findUnique({ where: { id: addressId } });
+  return tx.address.findUnique({ where: { id: addressId }, select: ADDRESS_SELECT });
 }
 
 export async function upsertAddressFromGeoDetails(params: {
@@ -48,17 +65,25 @@ export async function upsertAddressFromGeoDetails(params: {
     : null;
 
   if (providerId) {
-    const lookup = await tx.addressLookup.findUnique({
-      where: {
-        sourceProvider_sourceProviderPlaceId: {
-          sourceProvider: provider,
-          sourceProviderPlaceId: providerId,
+    try {
+      const lookup = await tx.addressLookup.findUnique({
+        where: {
+          sourceProvider_sourceProviderPlaceId: {
+            sourceProvider: provider,
+            sourceProviderPlaceId: providerId,
+          },
         },
-      },
-      include: { address: true },
-    });
-    if (lookup?.address) {
-      return { ok: true, address: lookup.address };
+        select: {
+          address: {
+            select: ADDRESS_SELECT,
+          },
+        },
+      });
+      if (lookup?.address) {
+        return { ok: true, address: lookup.address };
+      }
+    } catch (err) {
+      if (!isAddressLookupTableMissingError(err)) throw err;
     }
   }
 
@@ -66,23 +91,27 @@ export async function upsertAddressFromGeoDetails(params: {
   const lng = roundCoord(normalized.lng);
   const addressHash = hashAddress({ canonical: normalized.canonical, lat, lng });
 
-  const existing = await tx.address.findUnique({ where: { addressHash } });
+  const existing = await tx.address.findUnique({ where: { addressHash }, select: ADDRESS_SELECT });
   if (existing) {
     if (providerId) {
-      await tx.addressLookup.upsert({
-        where: {
-          sourceProvider_sourceProviderPlaceId: {
+      try {
+        await tx.addressLookup.upsert({
+          where: {
+            sourceProvider_sourceProviderPlaceId: {
+              sourceProvider: provider,
+              sourceProviderPlaceId: providerId,
+            },
+          },
+          create: {
+            addressId: existing.id,
             sourceProvider: provider,
             sourceProviderPlaceId: providerId,
           },
-        },
-        create: {
-          addressId: existing.id,
-          sourceProvider: provider,
-          sourceProviderPlaceId: providerId,
-        },
-        update: { addressId: existing.id },
-      });
+          update: { addressId: existing.id },
+        });
+      } catch (err) {
+        if (!isAddressLookupTableMissingError(err)) throw err;
+      }
     }
     return { ok: true, address: existing };
   }
@@ -102,16 +131,21 @@ export async function upsertAddressFromGeoDetails(params: {
   });
 
   if (providerId) {
-    await tx.addressLookup.create({
-      data: {
-        addressId: created.id,
-        sourceProvider: provider,
-        sourceProviderPlaceId: providerId,
-      },
-    });
+    try {
+      await tx.addressLookup.create({
+        data: {
+          addressId: created.id,
+          sourceProvider: provider,
+          sourceProviderPlaceId: providerId,
+        },
+      });
+    } catch (err) {
+      if (!isAddressLookupTableMissingError(err)) throw err;
+    }
   }
 
-  return { ok: true, address: created };
+  const resolved = await tx.address.findUnique({ where: { id: created.id }, select: ADDRESS_SELECT });
+  return { ok: true, address: resolved ?? created };
 }
 
 export async function createManualAddress(params: {
@@ -133,7 +167,7 @@ export async function createManualAddress(params: {
   const canonical = (params.canonical && typeof params.canonical === "object" ? params.canonical : { label: formatted }) as Prisma.JsonObject;
   const addressHash = hashAddress({ canonical, lat, lng });
 
-  const existing = await tx.address.findUnique({ where: { addressHash } });
+  const existing = await tx.address.findUnique({ where: { addressHash }, select: ADDRESS_SELECT });
   if (existing) return { ok: true, address: existing } as const;
 
   const created = await tx.address.create({
@@ -150,5 +184,6 @@ export async function createManualAddress(params: {
     },
   });
 
-  return { ok: true, address: created } as const;
+  const resolved = await tx.address.findUnique({ where: { id: created.id }, select: ADDRESS_SELECT });
+  return { ok: true, address: resolved ?? created } as const;
 }

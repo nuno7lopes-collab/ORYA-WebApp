@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { randomUUID } from "crypto";
@@ -10,6 +11,28 @@ import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const pairingSelect = {
+  id: true,
+  organizationId: true,
+  createdByUserId: true,
+  player2UserId: true,
+  partnerInviteToken: true,
+  payment_mode: true,
+  event: {
+    select: {
+      organizationId: true,
+      startsAt: true,
+      padelTournamentConfig: { select: { splitDeadlineHours: true } },
+    },
+  },
+  slots: {
+    select: {
+      id: true,
+      slot_role: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 // Regenera token de convite para um pairing (v2). Apenas capitão ou staff OWNER/ADMIN.
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,16 +52,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: {
-      event: {
-        select: {
-          organizationId: true,
-          startsAt: true,
-          padelTournamentConfig: { select: { splitDeadlineHours: true } },
-        },
-      },
-      slots: true,
-    },
+    select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.player2UserId) {

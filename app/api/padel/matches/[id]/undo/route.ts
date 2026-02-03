@@ -44,7 +44,18 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
-    include: { event: { select: { id: true, organizationId: true } } },
+    select: {
+      id: true,
+      eventId: true,
+      status: true,
+      roundType: true,
+      categoryId: true,
+      roundLabel: true,
+      pairingAId: true,
+      pairingBId: true,
+      winnerPairingId: true,
+      event: { select: { id: true, organizationId: true } },
+    },
   });
   if (!match || !match.event?.organizationId) {
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });

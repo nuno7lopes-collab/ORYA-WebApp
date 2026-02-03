@@ -11,7 +11,7 @@ type PadelClub = {
   address: string | null;
   kind?: "OWN" | "PARTNER";
   sourceClubId?: number | null;
-  locationSource?: "OSM" | "MANUAL" | null;
+  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
   locationComponents?: Record<string, unknown> | null;
@@ -59,11 +59,12 @@ type PadelHubResponse<T> = {
 type Props = {
   organizationId: number;
   organizationKind: string | null;
+  toolMode: "CLUB" | "TOURNAMENTS";
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export default function PadelHubSection({ organizationId, organizationKind }: Props) {
+export default function PadelHubSection({ organizationId, organizationKind, toolMode }: Props) {
   const clubsUrl = organizationId ? `/api/padel/clubs?includeInactive=1&organizationId=${organizationId}` : null;
   const playersUrl = organizationId ? `/api/padel/players?organizationId=${organizationId}` : null;
 
@@ -121,6 +122,7 @@ export default function PadelHubSection({ organizationId, organizationKind }: Pr
     <PadelHubClient
       organizationId={organizationId}
       organizationKind={organizationKind}
+      toolMode={toolMode}
       initialClubs={clubs}
       initialPlayers={players}
     />

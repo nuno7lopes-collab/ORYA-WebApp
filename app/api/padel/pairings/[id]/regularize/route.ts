@@ -8,6 +8,7 @@ import {
   PadelPairingSlotStatus,
   PadelPaymentMode,
   PadelRegistrationStatus,
+  Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -15,6 +16,32 @@ import { clampDeadlineHours, computeSplitDeadlineAt } from "@/domain/padelDeadli
 import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+
+const pairingSelect = {
+  id: true,
+  organizationId: true,
+  eventId: true,
+  createdByUserId: true,
+  payment_mode: true,
+  pairingStatus: true,
+  guaranteeStatus: true,
+  event: {
+    select: {
+      organizationId: true,
+      startsAt: true,
+      padelTournamentConfig: { select: { splitDeadlineHours: true } },
+    },
+  },
+  registration: { select: { status: true } },
+  slots: {
+    select: {
+      id: true,
+      slot_role: true,
+      slotStatus: true,
+      paymentStatus: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 // Regulariza uma dupla cancelada por falha de pagamento (SPLIT).
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -32,17 +59,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: {
-      slots: true,
-      registration: { select: { status: true } },
-      event: {
-        select: {
-          organizationId: true,
-          startsAt: true,
-          padelTournamentConfig: { select: { splitDeadlineHours: true } },
-        },
-      },
-    },
+    select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.payment_mode !== PadelPaymentMode.SPLIT) {
@@ -107,7 +124,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         graceUntilAt: null,
         captainSecondChargedAt: null,
       },
-      include: { slots: true },
+      select: pairingSelect,
     });
     await upsertPadelRegistrationForPairing(tx, {
       pairingId: updatedPairing.id,

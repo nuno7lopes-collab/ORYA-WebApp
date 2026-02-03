@@ -39,8 +39,21 @@ const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[
   return null;
 };
 
+const ADDRESS_SELECT = {
+  id: true,
+  formattedAddress: true,
+  canonical: true,
+  latitude: true,
+  longitude: true,
+  sourceProvider: true,
+  sourceProviderPlaceId: true,
+  confidenceScore: true,
+  validationStatus: true,
+} satisfies Prisma.AddressSelect;
+
 const mapAddressProviderToLocationSource = (provider?: AddressSourceProvider | null) => {
   if (!provider || provider === AddressSourceProvider.MANUAL) return LocationSource.MANUAL;
+  if (provider === AddressSourceProvider.APPLE_MAPS) return LocationSource.APPLE_MAPS;
   return LocationSource.OSM;
 };
 
@@ -222,7 +235,10 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "Seleciona uma morada normalizada antes de guardar." }, { status: 400 });
   }
 
-  const resolvedAddressRecord = await prisma.address.findUnique({ where: { id: resolvedAddressId } });
+  const resolvedAddressRecord = await prisma.address.findUnique({
+    where: { id: resolvedAddressId },
+    select: ADDRESS_SELECT,
+  });
   if (!resolvedAddressRecord) {
     return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
   }

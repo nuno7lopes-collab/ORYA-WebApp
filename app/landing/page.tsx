@@ -10,13 +10,13 @@ export default function LandingPage() {
       <div className="landing-hero">
         <div className="landing-logo-wrap">
           <Image
-            src="/brand/orya-logo.png"
+            src="/brand/orya-logo-flat.png"
             alt="Logo ORYA"
-            width={360}
-            height={360}
+            width={720}
+            height={401}
             priority
             fetchPriority="high"
-            sizes="(max-width: 768px) 60vw, 360px"
+            sizes="(max-width: 768px) 72vw, 720px"
             className="landing-logo"
           />
         </div>

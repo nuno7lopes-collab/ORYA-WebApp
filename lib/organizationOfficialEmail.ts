@@ -3,8 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 
 const PLATFORM_EMAIL_KEY = "platform.officialEmail";
-const FALLBACK_PLATFORM_EMAIL = "admin@orya.pt";
-export async function getPlatformOfficialEmail(): Promise<{ email: string; source: "db" | "env" | "fallback" }> {
+export async function getPlatformOfficialEmail(): Promise<{ email: string | null; source: "db" | "missing" }> {
   const row = await prisma.platformSetting.findUnique({
     where: { key: PLATFORM_EMAIL_KEY },
     select: { value: true },
@@ -14,14 +13,7 @@ export async function getPlatformOfficialEmail(): Promise<{ email: string; sourc
   if (dbEmail) {
     return { email: dbEmail, source: "db" };
   }
-
-  const envEmail = normalizeOfficialEmail(process.env.PLATFORM_OFFICIAL_EMAIL ?? null);
-  if (envEmail) {
-    return { email: envEmail, source: "env" };
-  }
-
-  console.warn("[platform-email] fallback email in use", { key: PLATFORM_EMAIL_KEY });
-  return { email: FALLBACK_PLATFORM_EMAIL, source: "fallback" };
+  return { email: null, source: "missing" };
 }
 
 export async function setPlatformOfficialEmail(rawEmail: string) {

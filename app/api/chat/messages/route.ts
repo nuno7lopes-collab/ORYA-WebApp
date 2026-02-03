@@ -23,7 +23,19 @@ const PREVIEW_MAX = 180;
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
 
 type MessageWithRelations = Prisma.ChatConversationMessageGetPayload<{
-  include: {
+  select: {
+    id: true;
+    conversationId: true;
+    organizationId: true;
+    senderId: true;
+    body: true;
+    clientMessageId: true;
+    kind: true;
+    metadata: true;
+    createdAt: true;
+    editedAt: true;
+    deletedAt: true;
+    replyToId: true;
     sender: { select: { id: true; fullName: true; username: true; avatarUrl: true } };
     attachments: true;
     reactions: { include: { user: { select: { id: true; fullName: true; username: true; avatarUrl: true } } } };
@@ -216,7 +228,19 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const messageInclude = {
+    const messageSelect = {
+      id: true,
+      conversationId: true,
+      organizationId: true,
+      senderId: true,
+      body: true,
+      clientMessageId: true,
+      kind: true,
+      metadata: true,
+      createdAt: true,
+      editedAt: true,
+      deletedAt: true,
+      replyToId: true,
       sender: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
       attachments: true,
       reactions: {
@@ -243,7 +267,7 @@ async function _POST(req: NextRequest) {
 
     let message: MessageWithRelations | null = await prisma.chatConversationMessage.findUnique({
       where: uniqueWhere,
-      include: messageInclude,
+      select: messageSelect,
     });
 
     if (!message) {
@@ -273,7 +297,7 @@ async function _POST(req: NextRequest) {
                   }
                 : undefined,
             },
-            include: messageInclude,
+            select: messageSelect,
           })) as MessageWithRelations;
 
           await tx.chatConversation.update({
@@ -292,7 +316,7 @@ async function _POST(req: NextRequest) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
           message = await prisma.chatConversationMessage.findUnique({
             where: uniqueWhere,
-            include: messageInclude,
+            select: messageSelect,
           });
           if (!message) {
             return jsonWrap({ ok: false, error: "DUPLICATE_MESSAGE" }, { status: 409 });

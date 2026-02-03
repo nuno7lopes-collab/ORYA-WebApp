@@ -2,9 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { TicketStatus, ResaleStatus } from "@prisma/client";
+import { TicketStatus, ResaleStatus, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
+
+const resaleSelect = {
+  id: true,
+  sellerUserId: true,
+  status: true,
+  ticketId: true,
+  ticket: {
+    select: {
+      id: true,
+    },
+  },
+} satisfies Prisma.TicketResaleSelect;
 
 /**
  * F5-8 – Cancelar revenda
@@ -59,9 +71,7 @@ async function _POST(req: NextRequest) {
     // 2. Buscar revenda e garantir que pertence ao utilizador e está LISTED
     const resale = await prisma.ticketResale.findUnique({
       where: { id: resaleId },
-      include: {
-        ticket: true,
-      },
+      select: resaleSelect,
     });
 
     if (!resale) {

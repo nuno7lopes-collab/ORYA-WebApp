@@ -181,7 +181,10 @@ async function publishPaymentStatusChanged(params: {
   const paymentId = params.paymentId;
   if (!paymentId) return;
   await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({ where: { id: paymentId } });
+    const payment = await tx.payment.findUnique({
+      where: { id: paymentId },
+      select: { status: true, organizationId: true, sourceType: true, sourceId: true },
+    });
     if (!payment) return;
     if (payment.status === params.status) return;
     await tx.payment.update({
@@ -480,7 +483,7 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
     });
 
     return candidates;
-  });
+  }, { timeout: 20000, maxWait: 5000 });
 }
 
 export async function runOperationsBatch() {
@@ -1014,7 +1017,18 @@ async function processUpsertLedger(op: OperationRecord) {
   const platformFeeCents = Number(payload.platformFeeCents ?? 0);
   const feeMode = typeof payload.feeMode === "string" ? (payload.feeMode as string) : null;
 
-  const event = await prisma.event.findUnique({ where: { id: eventId }, include: { ticketTypes: true } });
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      title: true,
+      coverImageUrl: true,
+      locationName: true,
+      startsAt: true,
+      timezone: true,
+      ticketTypes: { select: { id: true, currency: true } },
+    },
+  });
   if (!event) throw new Error("Event not found");
 
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));

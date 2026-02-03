@@ -10,18 +10,30 @@ export const useGlobalSearch = (query: string) => {
     queryKey: ["search", "offers", normalized],
     queryFn: () => searchOffers(normalized),
     enabled,
+    staleTime: 45_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 
   const usersQuery = useQuery({
     queryKey: ["search", "users", normalized],
     queryFn: () => searchUsers(normalized),
     enabled,
+    staleTime: 45_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 
   const orgsQuery = useQuery({
     queryKey: ["search", "orgs", normalized],
     queryFn: () => searchOrganizations(normalized),
     enabled,
+    staleTime: 45_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 
   const isLoading = offersQuery.isLoading || usersQuery.isLoading || orgsQuery.isLoading;

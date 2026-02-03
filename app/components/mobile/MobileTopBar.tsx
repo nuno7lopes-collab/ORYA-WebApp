@@ -38,12 +38,12 @@ export default function MobileTopBar({
         <div className="flex items-center justify-between">
           <Link href={logoHref} className="flex items-center gap-2" aria-label="Ir para Início">
             <Image
-              src="/brand/orya-logo-112.png"
+              src="/brand/orya-logo-flat.png"
               alt="ORYA"
-              width={28}
-              height={28}
+              width={74}
+              height={41}
               priority
-              className="h-7 w-7 rounded-full object-cover shadow-[0_0_16px_rgba(107,255,255,0.25)]"
+              className="h-6 w-auto object-contain drop-shadow-[0_0_10px_rgba(107,255,255,0.2)]"
             />
             <span className="text-[12px] font-semibold tracking-[0.32em] text-white/85">ORYA</span>
           </Link>

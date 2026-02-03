@@ -2,11 +2,29 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { PadelPaymentMode } from "@prisma/client";
+import { PadelPaymentMode, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const pairingSelect = {
+  id: true,
+  payment_mode: true,
+  pairingStatus: true,
+  createdByUserId: true,
+  event: {
+    select: {
+      organizationId: true,
+    },
+  },
+  slots: {
+    select: {
+      id: true,
+      slotStatus: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 // Capitão assume o resto (SPLIT): apenas validação; checkout deve ser iniciado no cliente.
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +40,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, event: { select: { organizationId: true } } },
+    select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.payment_mode !== PadelPaymentMode.SPLIT) {

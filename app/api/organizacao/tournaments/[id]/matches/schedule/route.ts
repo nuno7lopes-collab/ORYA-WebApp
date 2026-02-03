@@ -70,7 +70,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   // Confirm organization access using first match -> stage -> tournament -> event
   const firstMatch = await prisma.tournamentMatch.findUnique({
     where: { id: items[0]?.matchId ?? -1 },
-    include: { stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } } },
+    select: {
+      id: true,
+      stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
+    },
   });
   if (!firstMatch || firstMatch.stage.tournamentId !== tournamentId) {
     return fail(404, "NOT_FOUND");
@@ -102,7 +105,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       for (const entry of items) {
         const m = await tx.tournamentMatch.findUnique({
           where: { id: entry.matchId },
-          include: { stage: { select: { tournamentId: true } } },
+          select: {
+            id: true,
+            status: true,
+            startAt: true,
+            courtId: true,
+            stage: { select: { tournamentId: true } },
+          },
         });
         if (!m || m.stage.tournamentId !== tournamentId) continue;
 

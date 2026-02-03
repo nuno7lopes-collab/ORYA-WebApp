@@ -11,7 +11,15 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
 
   const form = await prisma.organizationForm.findUnique({
     where: { id: formId },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      status: true,
+      capacity: true,
+      waitlistEnabled: true,
+      startAt: true,
+      endAt: true,
       organization: {
         select: {
           id: true,
@@ -21,7 +29,18 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
           username: true,
         },
       },
-      fields: { orderBy: { order: "asc" } },
+      fields: {
+        orderBy: { order: "asc" },
+        select: {
+          id: true,
+          label: true,
+          fieldType: true,
+          required: true,
+          helpText: true,
+          placeholder: true,
+          options: true,
+        },
+      },
     },
   });
 

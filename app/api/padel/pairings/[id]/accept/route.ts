@@ -9,6 +9,7 @@ import {
   PadelPairingPaymentStatus,
   PadelPairingSlotStatus,
   PadelPaymentMode,
+  Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -31,6 +32,39 @@ import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 const ensurePlayerProfile = (params: { organizationId: number; userId: string }) =>
   ensurePadelPlayerProfileId(prisma, params);
 
+const pairingSlotSelect = {
+  id: true,
+  slot_role: true,
+  slotStatus: true,
+  paymentStatus: true,
+  ticketId: true,
+  profileId: true,
+  invitedUserId: true,
+  invitedContact: true,
+} satisfies Prisma.PadelPairingSlotSelect;
+
+const pairingSelect = {
+  id: true,
+  organizationId: true,
+  eventId: true,
+  categoryId: true,
+  player1UserId: true,
+  player2UserId: true,
+  pairingStatus: true,
+  payment_mode: true,
+  deadlineAt: true,
+  guaranteeStatus: true,
+  graceUntilAt: true,
+  registration: {
+    select: {
+      status: true,
+    },
+  },
+  slots: {
+    select: pairingSlotSelect,
+  },
+} satisfies Prisma.PadelPairingSelect;
+
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const pairingId = readNumericParam(resolved?.id, req, "pairings");
@@ -45,7 +79,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, registration: { select: { status: true } } },
+    select: pairingSelect,
   });
 
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
@@ -294,7 +328,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
       const updatedPairing = await tx.padelPairing.findUnique({
         where: { id: pairing.id },
-        include: { slots: true },
+        select: pairingSelect,
       });
       if (!updatedPairing) throw new Error("PAIRING_NOT_FOUND");
 
@@ -304,7 +338,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         const completed = await tx.padelPairing.update({
           where: { id: pairing.id },
           data: { pairingStatus: "COMPLETE" },
-          include: { slots: true },
+          select: pairingSelect,
         });
         return { pairing: completed, shouldEnsureEntries: true, nextRegistrationStatus };
       }

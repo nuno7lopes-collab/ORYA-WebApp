@@ -5,6 +5,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { OrgType, PendingPayoutStatus } from "@prisma/client";
+import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 
@@ -61,6 +62,13 @@ async function _POST(req: NextRequest) {
     }
 
     let cancelledPayouts = 0;
+    let platformEmail: string | null = null;
+    if (orgType === OrgType.PLATFORM) {
+      platformEmail = await getPlatformOfficialEmail();
+      if (!platformEmail) {
+        return jsonWrap({ ok: false, error: "PLATFORM_EMAIL_NOT_SET" }, { status: 400 });
+      }
+    }
     if (orgType === OrgType.PLATFORM && organization.stripeAccountId) {
       const cancelled = await prisma.pendingPayout.updateMany({
         where: {
@@ -76,7 +84,24 @@ async function _POST(req: NextRequest) {
 
     const updated = await prisma.organization.update({
       where: { id: organization.id },
-      data: { orgType },
+      data:
+        orgType === OrgType.PLATFORM
+          ? {
+              orgType,
+              officialEmail: platformEmail,
+              officialEmailVerifiedAt: new Date(),
+              stripeAccountId: null,
+              stripeChargesEnabled: false,
+              stripePayoutsEnabled: false,
+            }
+          : {
+              orgType,
+              officialEmail: null,
+              officialEmailVerifiedAt: null,
+              stripeAccountId: null,
+              stripeChargesEnabled: false,
+              stripePayoutsEnabled: false,
+            },
       select: { id: true, orgType: true },
     });
 

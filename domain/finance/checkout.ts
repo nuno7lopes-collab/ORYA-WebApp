@@ -133,7 +133,21 @@ async function resolveBookingSnapshot(sourceId: string): Promise<ResolvedSnapsho
 
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
-    include: { organization: true },
+    select: {
+      id: true,
+      price: true,
+      currency: true,
+      organizationId: true,
+      userId: true,
+      organization: {
+        select: {
+          feeMode: true,
+          platformFeeBps: true,
+          platformFeeFixedCents: true,
+          orgType: true,
+        },
+      },
+    },
   });
   if (!booking) {
     throw new Error("SOURCE_NOT_FOUND");
@@ -203,9 +217,33 @@ async function resolveStoreOrderSnapshot(sourceId: string): Promise<ResolvedSnap
 
   const order = await prisma.storeOrder.findUnique({
     where: { id: orderId },
-    include: {
-      store: { include: { organization: true } },
-      lines: true,
+    select: {
+      id: true,
+      subtotalCents: true,
+      shippingCents: true,
+      discountCents: true,
+      currency: true,
+      userId: true,
+      store: {
+        select: {
+          ownerOrganizationId: true,
+          organization: {
+            select: {
+              feeMode: true,
+              platformFeeBps: true,
+              platformFeeFixedCents: true,
+              orgType: true,
+            },
+          },
+        },
+      },
+      lines: {
+        select: {
+          id: true,
+          quantity: true,
+          unitPriceCents: true,
+        },
+      },
     },
   });
   if (!order) {
@@ -273,7 +311,22 @@ async function resolveStoreOrderSnapshot(sourceId: string): Promise<ResolvedSnap
 async function resolveTicketOrderSnapshot(sourceId: string): Promise<ResolvedSnapshot> {
   const order = await prisma.ticketOrder.findUnique({
     where: { id: sourceId },
-    include: { lines: true },
+    select: {
+      id: true,
+      currency: true,
+      buyerIdentityId: true,
+      organizationId: true,
+      eventId: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          unitAmount: true,
+          totalAmount: true,
+          ticketTypeId: true,
+        },
+      },
+    },
   });
   if (!order) {
     throw new Error("SOURCE_NOT_FOUND");
@@ -355,7 +408,22 @@ async function resolveTicketOrderSnapshot(sourceId: string): Promise<ResolvedSna
 async function resolvePadelRegistrationSnapshot(sourceId: string): Promise<ResolvedSnapshot> {
   const registration = await prisma.padelRegistration.findUnique({
     where: { id: sourceId },
-    include: { lines: true },
+    select: {
+      id: true,
+      currency: true,
+      buyerIdentityId: true,
+      organizationId: true,
+      eventId: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          unitAmount: true,
+          totalAmount: true,
+          label: true,
+        },
+      },
+    },
   });
   if (!registration) {
     throw new Error("SOURCE_NOT_FOUND");

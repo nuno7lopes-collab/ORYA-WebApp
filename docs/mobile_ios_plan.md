@@ -1,68 +1,104 @@
 # ORYA iOS Plan (B2C-only)
 
-## Scope (confirmed)
-- Mobile = ONLY USER (B2C).
-- Web-only: org/admin/staff/check-in/finance/backoffice.
+## 1) Product scope (locked)
+- Mobile is **ONLY USER (B2C)**.
+- All B2B/backoffice/admin/staff/check-in/finance/CRM operations remain web-only.
+- Admin remains web-only with strong auth + 2FA.
 
-## MVP Modules (ordered)
-1) Auth + onboarding (Apple, Google, email/pass, OTP, magic link)
-2) Agora (personalized feed + live hubs)
-3) Discover (Padel/Eventos/Serviços) + global search
-4) Offer detail (evento/torneio/serviço)
-5) Universal checkout (native, resume 10 min)
-6) Wallet (bilhetes/inscrições/reservas) + QR + Apple Wallet Pass
-7) Social (follow people/orgs + activity feed)
-8) Event chat (participants w/ entitlement)
-9) Profile + settings (language, notifications, privacy)
+## 2) Mandatory iOS MVP (execution order)
+1. Auth + onboarding:
+   - Apple, Google, email/password, OTP, magic link.
+   - Onboarding with skips for non-critical inputs.
+   - Preferências/interesses no onboarding; localização e nível padel pedidos no fim como permissões opcionais.
+2. Discover + Agora:
+   - Discover split by Padel / Eventos / Serviços.
+   - Agora with live hubs + personalized feed.
+   - Discover filtros: cidade/localização, data, preço, categoria/tipo.
+3. Global search:
+   - Offers + users + organizations (search global).
+4. Offer detail:
+   - Event/tournament/service detail with high-quality motion and prefetch.
+5. Universal checkout:
+   - Native-first flow, resume supported (10 min).
+6. Wallet:
+   - Bilhetes + inscrições + reservas, QR and history.
+   - Apple Wallet Pass (bilhetes no MVP; extensível).
+7. Social:
+   - Follow users/orgs + activity feed.
+8. Event chat:
+   - Participants-only (entitlement-gated).
+9. Profile/settings:
+   - Basic profile + language + notifications + privacy.
 
-## UX / Design
-- "Liquid Glass" on key surfaces (cards, headers, hero) only.
-- Light + dark themes.
-- 44px tap targets, soft motion, clean typography.
+## 2.1) MVP explicit scope (B2C-only)
+- Feed personalizado + live hubs (Agora).
+- Discover (Padel/Eventos/Serviços) + search global (ofertas + utilizadores + organizações).
+- Detalhe de oferta (evento/torneio/serviço) com pré-checkout/resumo.
+- Checkout nativo com Apple Pay + cartão + MBWay (redirects apenas in-app quando inevitável).
+- Carteira (bilhetes/inscrições/reservas) + QR + histórico + Apple Wallet Pass.
+- Rede: seguir pessoas/clubes + feed de atividade.
+- Chat do evento apenas para participantes (entitlements).
+- Perfil + definições básicas.
+- Push notifications (compras, cancelamentos, live/start, updates, padel reminders).
 
-## Payments & Checkout
-- Native checkout only (Apple Pay + card + MBWay).
-- Redirects allowed only inside app webview when unavoidable.
-- Resume/abandon tracking and recovery.
+## 3) UX direction (Liquid Glass)
+- Premium Apple-like look:
+  - Translucent/blurred surfaces on key zones (headers/cards/hero), not everywhere.
+  - Depth via subtle highlights, soft shadows, low-noise gradients.
+  - 44px minimum touch targets and smooth motion.
+- Avoid generic Material patterns.
+- Light + dark themes required.
 
-## Notifications
-- Push: purchase, cancellations, live/start, event updates.
-- Padel reminders: T-48, T-36, T-24, T-23 + status changes.
-- Email only for critical/security flows.
+## 4) Payments and checkout constraints
+- Native checkout is the default.
+- Allowed methods: Apple Pay, card, MBWay.
+- Redirect flows are only acceptable inside app context when unavoidable.
+- Track purchase funnel + resume/abandon.
 
-## Wallet
-- Apple Wallet Pass in MVP (tickets first, extensible to others).
-- History: upcoming + basic historical list.
+## 5) Wallet constraints
+- Wallet includes active + history tabs.
+- QR must be available when entitlement allows.
+- Apple Wallet Pass is MVP target (tickets first, extend later).
 
-## Search
-- Global: offers + users + orgs.
-- Filters: city/geo, date, price, category/type.
-- Sorting: relevance + distance (optional permission).
+## 6) Notifications
+- Push triggers (MVP): purchase confirmation, cancellations, event start/live updates.
+- Padel reminders: T-48/T-36/T-24/T-23 + status transitions.
+- Email is secondary, only for critical/security communications.
 
-## Offline
-- Partial cache (recent offers + wallet + last detail).
-- Short TTL.
+## 6.1) Padel state notifications (MVP)
+- PENDING → MATCHMAKING → CONFIRMED/EXPIRED.
+- Reminders em T-48, T-36, T-24, T-23 (ajustáveis).
 
-## Analytics
-- Adapter layer prepared; provider pending.
-- Events: screen_view, taps, checkout funnel, purchase, resume/abandon, social, padel.
+## 7) Data/performance/analytics
+- Partial offline cache (recent discover, wallet, detail snapshots).
+- TanStack Query with resilient retry/stale policies.
+- Analytics adapter required (provider pending); track screen/tap/funnel/purchase/resume/social/padel.
 
-## Release criteria (TestFlight internal)
-- Onboarding solid with skips.
-- Discover + search + agora smooth.
-- Native checkout stable, resume works.
-- Wallet + QR + Apple Wallet Pass works.
-- Social basic + event chat works.
-- Crash-free, acceptable performance.
+## 7.1) Performance baselines
+- Thumbnails “small” no feed + lazy loading.
+- Prefetch de detalhe no tap.
+- Skeletons + transições suaves (Apple-like).
 
-## Current status (mobile)
-- Base: Expo Router + NativeWind + TanStack Query + Zustand.
-- Liquid Glass primitives done (LiquidBackground, GlassCard, GlassPill, SectionHeader).
-- Discover feed uses real API + featured carousel + filters + search + skeletons.
-- Event detail styled + transition.
+## 8) TestFlight readiness criteria
+- Smooth onboarding with skips.
+- Discover + Agora + Search stable.
+- Checkout flow stable with resume.
+- Wallet list/detail/QR stable.
+- Social and event chat basics functional.
+- Crash-free in internal testing with acceptable performance.
 
-## Next execution (Phase 2.1)
-- Commit assets separately (icons/splash).
-- Validate expo start -c on iOS.
-- Implement global search screen (offers + users + orgs).
-- Expand offer detail transitions.
+## 9) Current implementation status (developer branch)
+- Foundation stack active: Expo Router + NativeWind + TanStack Query + Zustand.
+- Liquid glass primitives active: `LiquidBackground`, `GlassCard`, `GlassPill`, `SectionHeader`.
+- ✅ (1) Auth + onboarding complete: Apple/Google/email+password/OTP/magic link, onboarding with skips (padel/localização opcionais).
+- ✅ (2) Discover + Agora complete: Discover split (Padel/Eventos/Serviços) + filtros + live hubs + feed personalizado.
+- ✅ (3) Global search complete: ofertas + utilizadores + organizações com estados loading/empty/error.
+- Discover uses real data + featured rails + filters (kind/preço/cidade/data) + search + richer cards (distância quando disponível) + auto paginação.
+- Event cards now include ticket type summary + price range + attendance + availability pills, with shared image transitions to detail.
+- Search screen now includes loading skeletons and better caching defaults.
+- Discover cards now show availability pills (ticket types) + optional distance pill and prefetch detail routes for smoother transitions.
+- Event detail has upgraded visual transition + ticket type selection + pre-checkout summary.
+- Checkout stub screen added (native checkout flow placeholder; no external browser).
+- Agora tab implemented with real timeline/personalized feed.
+- Network tab implemented with real suggestions + follow/unfollow actions.
+- Wallet is being implemented with real list/detail API and QR rendering.

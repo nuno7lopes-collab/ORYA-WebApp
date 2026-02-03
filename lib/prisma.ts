@@ -160,6 +160,75 @@ function applyEnvToCreateMany(data: unknown, envValue: string) {
   return withEnvData(data, envValue);
 }
 
+const EVENT_SCHEMA_SAFE_SELECT = {
+  id: true,
+  slug: true,
+  title: true,
+  description: true,
+  type: true,
+  templateType: true,
+  liveHubVisibility: true,
+  organizationId: true,
+  startsAt: true,
+  endsAt: true,
+  locationName: true,
+  locationCity: true,
+  address: true,
+  locationSource: true,
+  locationProviderId: true,
+  locationFormattedAddress: true,
+  locationComponents: true,
+  locationOverrides: true,
+  latitude: true,
+  longitude: true,
+  pricingMode: true,
+  isFree: true,
+  inviteOnly: true,
+  publicAccessMode: true,
+  participantAccessMode: true,
+  publicTicketTypeIds: true,
+  participantTicketTypeIds: true,
+  status: true,
+  timezone: true,
+  coverImageUrl: true,
+  liveStreamUrl: true,
+  createdAt: true,
+  updatedAt: true,
+  ownerUserId: true,
+  deletedAt: true,
+  isDeleted: true,
+  resaleMode: true,
+  fee_mode_override: true,
+  platform_fee_bps_override: true,
+  platform_fee_fixed_cents_override: true,
+  feeMode: true,
+  payoutMode: true,
+} satisfies Prisma.EventSelect;
+
+function isMissingColumnError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
+}
+
+function canApplyEventReadFallback(args: Record<string, unknown>) {
+  return !("select" in args && args.select !== undefined);
+}
+
+function withEventSafeReadSelect(args: Record<string, unknown>) {
+  const nextArgs: Record<string, unknown> = { ...args };
+  const include = nextArgs.include;
+  if (include && typeof include === "object" && !Array.isArray(include)) {
+    const select: Record<string, unknown> = { ...EVENT_SCHEMA_SAFE_SELECT };
+    for (const [key, value] of Object.entries(include as Record<string, unknown>)) {
+      select[key] = value;
+    }
+    delete nextArgs.include;
+    nextArgs.select = select;
+    return nextArgs;
+  }
+  nextArgs.select = { ...EVENT_SCHEMA_SAFE_SELECT };
+  return nextArgs;
+}
+
 const envModels = ENV_MODELS;
 
 function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
@@ -175,6 +244,20 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
           if (!delegate) return query(args);
 
           const safeArgs = (args ?? {}) as Record<string, unknown>;
+          const executeReadWithEventFallback = async (
+            operationArgs: Record<string, unknown>,
+            run: (finalArgs: Record<string, unknown>) => Promise<unknown>,
+          ) => {
+            try {
+              return await run(operationArgs);
+            } catch (error) {
+              if (model !== "Event" || !isMissingColumnError(error) || !canApplyEventReadFallback(operationArgs)) {
+                throw error;
+              }
+              const fallbackArgs = withEventSafeReadSelect(operationArgs);
+              return run(fallbackArgs);
+            }
+          };
 
           switch (operation) {
             case "findUnique":
@@ -182,7 +265,10 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
               const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
               const where = mergeEnvWhere(normalized, envValue);
               const method = operation === "findUniqueOrThrow" ? "findFirstOrThrow" : "findFirst";
-              return (delegate as any)[method]({ ...safeArgs, where });
+              const operationArgs = { ...safeArgs, where };
+              return executeReadWithEventFallback(operationArgs, (finalArgs) =>
+                (delegate as any)[method](finalArgs),
+              );
             }
             case "findFirst":
             case "findFirstOrThrow":
@@ -192,7 +278,13 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             case "groupBy": {
               const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
               const where = mergeEnvWhere(normalized, envValue);
-              return (delegate as any)[operation]({ ...safeArgs, where });
+              const operationArgs = { ...safeArgs, where };
+              if (operation === "findFirst" || operation === "findFirstOrThrow" || operation === "findMany") {
+                return executeReadWithEventFallback(operationArgs, (finalArgs) =>
+                  (delegate as any)[operation](finalArgs),
+                );
+              }
+              return (delegate as any)[operation](operationArgs);
             }
             case "create": {
               return (delegate as any)[operation]({
@@ -208,9 +300,13 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             }
             case "update": {
               const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
-              await (delegate as any).findFirstOrThrow({
+              const guardArgs: Record<string, unknown> = {
                 where: mergeEnvWhere(normalized, envValue),
-              });
+              };
+              if (model === "Event") {
+                guardArgs.select = { id: true };
+              }
+              await (delegate as any).findFirstOrThrow(guardArgs);
               const where = stripEnvFromWhere(normalized) ?? normalized;
               return (delegate as any)[operation]({
                 ...safeArgs,
@@ -228,9 +324,13 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             }
             case "delete": {
               const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
-              await (delegate as any).findFirstOrThrow({
+              const guardArgs: Record<string, unknown> = {
                 where: mergeEnvWhere(normalized, envValue),
-              });
+              };
+              if (model === "Event") {
+                guardArgs.select = { id: true };
+              }
+              await (delegate as any).findFirstOrThrow(guardArgs);
               const where = stripEnvFromWhere(normalized) ?? normalized;
               return (delegate as any)[operation]({ ...safeArgs, where });
             }
@@ -244,7 +344,11 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
             case "upsert": {
               const normalized = expandCompositeWhere(safeArgs.where) ?? safeArgs.where;
               const lookupWhere = mergeEnvWhere(normalized, envValue);
-              const existing = await (delegate as any).findFirst({ where: lookupWhere });
+              const existing = await (delegate as any).findFirst(
+                model === "Event"
+                  ? { where: lookupWhere, select: { id: true } }
+                  : { where: lookupWhere },
+              );
               if (existing) {
                 const where = stripEnvFromWhere(normalized) ?? normalized;
                 return (delegate as any).update({

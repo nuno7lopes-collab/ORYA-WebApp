@@ -72,7 +72,23 @@ export async function confirmPendingBooking({
 }: ConfirmBookingParams): Promise<ConfirmBookingResult> {
   const booking = await tx.booking.findUnique({
     where: { id: bookingId },
-    include: {
+    select: {
+      id: true,
+      organizationId: true,
+      serviceId: true,
+      userId: true,
+      status: true,
+      startsAt: true,
+      durationMinutes: true,
+      partySize: true,
+      professionalId: true,
+      resourceId: true,
+      pendingExpiresAt: true,
+      createdAt: true,
+      snapshotTimezone: true,
+      confirmationSnapshot: true,
+      confirmationSnapshotCreatedAt: true,
+      confirmationSnapshotVersion: true,
       policyRef: { select: { id: true, policyId: true } },
       service: {
         select: {

@@ -267,8 +267,32 @@ async function loadPromoSnapshots(ids: number[]) {
   });
   return map;
 }
+const eventWithTicketsSelect = {
+  id: true,
+  slug: true,
+  title: true,
+  startsAt: true,
+  endsAt: true,
+  locationName: true,
+  locationCity: true,
+  address: true,
+  locationSource: true,
+  locationFormattedAddress: true,
+  locationComponents: true,
+  locationOverrides: true,
+  ticketTypes: {
+    select: {
+      id: true,
+      price: true,
+      currency: true,
+      totalQuantity: true,
+      soldQuantity: true,
+    },
+  },
+} satisfies Prisma.EventSelect;
+
 type EventWithTickets = Prisma.EventGetPayload<{
-  include: { ticketTypes: true };
+  select: typeof eventWithTicketsSelect;
 }>;
 
 type ParsedItem = { ticketTypeId: number; quantity: number };
@@ -351,7 +375,12 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       await prisma.$transaction(async (tx) => {
         const resale = await tx.ticketResale.findUnique({
           where: { id: resaleId },
-          include: { ticket: true },
+          select: {
+            id: true,
+            status: true,
+            ticketId: true,
+            ticket: { select: { eventId: true } },
+          },
         });
 
         if (!resale || !resale.ticket) {
@@ -533,7 +562,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     if (!Number.isNaN(idNum)) {
       eventRecord = await prisma.event.findUnique({
         where: { id: idNum },
-        include: { ticketTypes: true },
+        select: eventWithTicketsSelect,
       });
     }
   }
@@ -541,7 +570,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   if (!eventRecord && typeof meta.eventSlug === "string") {
     eventRecord = await prisma.event.findUnique({
       where: { slug: meta.eventSlug },
-      include: { ticketTypes: true },
+      select: eventWithTicketsSelect,
     });
   }
 
@@ -1372,7 +1401,23 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
   await prisma.$transaction(async (tx) => {
     const pairing = await tx.padelPairing.findUnique({
       where: { id: pairingId },
-      include: { slots: true },
+      select: {
+        id: true,
+        eventId: true,
+        organizationId: true,
+        payment_mode: true,
+        pairingStatus: true,
+        player1UserId: true,
+        player2UserId: true,
+        slots: {
+          select: {
+            id: true,
+            slot_role: true,
+            slotStatus: true,
+            paymentStatus: true,
+          },
+        },
+      },
     });
     if (!pairing || pairing.payment_mode !== PadelPaymentMode.SPLIT) {
       throw new Error("PAIRING_NOT_SPLIT");
@@ -1416,9 +1461,9 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
 
     const saleSummary =
       (purchaseId
-        ? await tx.saleSummary.findUnique({ where: { purchaseId } })
+        ? await tx.saleSummary.findUnique({ where: { purchaseId }, select: { id: true } })
         : null) ||
-      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id } }));
+      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id }, select: { id: true } }));
 
     const summaryData = {
       eventId,
@@ -1887,7 +1932,19 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
   await prisma.$transaction(async (tx) => {
     const pairing = await tx.padelPairing.findUnique({
       where: { id: pairingId },
-      include: { slots: true },
+      select: {
+        id: true,
+        payment_mode: true,
+        pairingStatus: true,
+        slots: {
+          select: {
+            id: true,
+            slot_role: true,
+            profileId: true,
+            playerProfileId: true,
+          },
+        },
+      },
     });
     if (!pairing || pairing.payment_mode !== PadelPaymentMode.FULL) {
       throw new Error("PAIRING_NOT_FULL");
@@ -1949,9 +2006,9 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
 
     const saleSummary =
       (purchaseId
-        ? await tx.saleSummary.findUnique({ where: { purchaseId } })
+        ? await tx.saleSummary.findUnique({ where: { purchaseId }, select: { id: true } })
         : null) ||
-      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id } }));
+      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id }, select: { id: true } }));
 
     const summaryData = {
       eventId,
@@ -2139,7 +2196,10 @@ async function publishPaymentRefunded(params: {
   const paymentId = params.paymentId;
   if (!paymentId) return;
   await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({ where: { id: paymentId } });
+    const payment = await tx.payment.findUnique({
+      where: { id: paymentId },
+      select: { status: true, organizationId: true, sourceType: true, sourceId: true },
+    });
     if (!payment) return;
     if (payment.status === PaymentStatus.REFUNDED) return;
     await tx.payment.update({
@@ -2368,7 +2428,19 @@ async function handlePadelSplitRefund(
     for (const pairingId of pairingIds) {
       const pairing = await tx.padelPairing.findUnique({
         where: { id: pairingId },
-        include: { slots: true },
+        select: {
+          id: true,
+          partnerInviteToken: true,
+          partnerLinkToken: true,
+          partnerLinkExpiresAt: true,
+          slots: {
+            select: {
+              id: true,
+              ticketId: true,
+              paymentStatus: true,
+            },
+          },
+        },
       });
       if (!pairing) continue;
 

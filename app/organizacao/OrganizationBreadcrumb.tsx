@@ -9,8 +9,10 @@ const SECTION_LABELS: Record<string, string> = {
   overview: "Visão geral",
   modulos: "Ferramentas",
   eventos: "Eventos",
-  "padel-hub": "Hub Padel",
-  calendar: "Reservas",
+  "padel-hub": "Padel Clube",
+  "padel-club": "Padel Clube",
+  "padel-tournaments": "Padel Torneios",
+  calendar: "Calendário",
   clubs: "Clubes",
   courts: "Campos",
   categories: "Categorias",
@@ -71,13 +73,15 @@ function resolveLabel(
   if (pathname.startsWith("/organizacao/torneios")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     const padelLabel = padel ? SECTION_LABELS[padel] : null;
-    if (section === "padel-hub" && padelLabel) {
-      return `Padel e torneios · ${padelLabel}`;
+    const isPadelSection =
+      section === "padel-hub" || section === "padel-club" || section === "padel-tournaments";
+    if (isPadelSection && padelLabel) {
+      return `${sectionLabel ?? "Padel"} · ${padelLabel}`;
     }
     if (sectionLabel && section !== "eventos") {
-      return `Padel e torneios · ${sectionLabel}`;
+      return `Padel Torneios · ${sectionLabel}`;
     }
-    return "Padel e torneios";
+    return "Padel Torneios";
   }
   if (pathname.startsWith("/organizacao/eventos")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
@@ -111,14 +115,14 @@ function resolveLabel(
   if (pathname.startsWith("/organizacao/pagamentos/invoices")) return "Faturação";
   if (pathname.startsWith("/organizacao/tournaments/") && pathname.endsWith("/finance")) return "Finanças do torneio";
   if (pathname.startsWith("/organizacao/tournaments/") && pathname.endsWith("/live")) return "Live do torneio";
-  if (pathname.startsWith("/organizacao/tournaments/")) return "Padel e torneios";
+  if (pathname.startsWith("/organizacao/tournaments/")) return "Padel Torneios";
   if (pathname.startsWith("/organizacao/staff")) return "Equipa";
   if (pathname.startsWith("/organizacao/settings")) return "Definições";
   const objectiveLabel = OBJECTIVE_LABELS[tab];
   const sectionKey =
     tab === "promote" && section === "marketing" && marketing
       ? marketing
-      : section === "padel-hub" && padel
+      : (section === "padel-hub" || section === "padel-club" || section === "padel-tournaments") && padel
         ? padel
         : section;
   const sectionLabel = sectionKey ? SECTION_LABELS[sectionKey] : null;

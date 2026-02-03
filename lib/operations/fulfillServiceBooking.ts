@@ -421,8 +421,20 @@ export async function fulfillServiceBookingIntent(
       let booking = bookingId
         ? await tx.booking.findUnique({
             where: { id: bookingId },
-            include: {
-              availability: true,
+            select: {
+              id: true,
+              organizationId: true,
+              userId: true,
+              serviceId: true,
+              availabilityId: true,
+              startsAt: true,
+              status: true,
+              paymentIntentId: true,
+              locationText: true,
+              snapshotTimezone: true,
+              availability: {
+                select: { id: true, capacity: true, status: true },
+              },
               policyRef: { select: { policyId: true } },
               service: { select: { title: true, coverImageUrl: true, defaultLocationText: true } },
             },
@@ -432,7 +444,20 @@ export async function fulfillServiceBookingIntent(
       const availabilityWithService = availabilityId
         ? await tx.availability.findUnique({
             where: { id: availabilityId },
-            include: { service: true },
+            select: {
+              id: true,
+              serviceId: true,
+              status: true,
+              capacity: true,
+              startsAt: true,
+              durationMinutes: true,
+              service: {
+                select: {
+                  unitPriceCents: true,
+                  currency: true,
+                },
+              },
+            },
           })
         : null;
 

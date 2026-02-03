@@ -102,7 +102,25 @@ async function _GET(req: NextRequest) {
       where: { AND: filters },
       orderBy: { startsAt: "asc" },
       take: take + 1, // +1 para sabermos se há mais páginas
-      include: {
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        description: true,
+        startsAt: true,
+        endsAt: true,
+        locationName: true,
+        address: true,
+        locationCity: true,
+        locationFormattedAddress: true,
+        locationSource: true,
+        locationComponents: true,
+        locationOverrides: true,
+        latitude: true,
+        longitude: true,
+        coverImageUrl: true,
+        templateType: true,
+        isFree: true,
         ticketTypes: {
           select: {
             price: true,
@@ -132,10 +150,7 @@ async function _GET(req: NextRequest) {
         e.ticketTypes && e.ticketTypes.length > 0
           ? Math.min(...e.ticketTypes.map((t) => t.price ?? 0)) / 100
           : null;
-      const isGratis = deriveIsFreeEvent({
-        pricingMode: e.pricingMode ?? undefined,
-        ticketPrices: e.ticketTypes?.map((t) => t.price ?? 0) ?? [],
-      });
+      const isGratis = e.isFree || deriveIsFreeEvent({ ticketPrices: e.ticketTypes?.map((t) => t.price ?? 0) ?? [] });
 
       const onSaleCount = e.ticketTypes?.filter((t) => t.status === "ON_SALE").length ?? 0;
       const soldOutCount = e.ticketTypes?.filter((t) => t.status === "SOLD_OUT").length ?? 0;

@@ -305,11 +305,15 @@ type OperationModule = (typeof OPERATION_MODULES)[number];
 const OPERATION_LABELS: Record<OperationModule, string> = {
   EVENTOS: "Eventos",
   RESERVAS: "Reservas",
-  TORNEIOS: "Padel e torneios",
+  TORNEIOS: "Padel",
 };
 
 const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA", "CRM"] as const;
 type OptionalModule = (typeof OPTIONAL_MODULES)[number];
+const LEGACY_PADEL_SECTION = "padel-hub";
+const PADEL_CLUB_SECTION = "padel-club";
+const PADEL_TOURNAMENTS_SECTION = "padel-tournaments";
+const PADEL_MANAGE_SECTIONS = [PADEL_CLUB_SECTION, PADEL_TOURNAMENTS_SECTION] as const;
 const PRIMARY_TOOL_KEYS = new Set<string>([
   "EVENTOS",
   "RESERVAS",
@@ -433,8 +437,16 @@ function OrganizacaoPageInner({
   const sectionParamRaw = searchParams?.get("section") ?? null;
   const marketingParamRaw = searchParams?.get("marketing");
   const activeObjective = mapTabToObjective(tabParamRaw);
-  const normalizedSection = sectionParamRaw ?? defaultSection ?? undefined;
-  const scrollSection = sectionParamRaw ?? undefined;
+  const normalizedSectionParam =
+    sectionParamRaw === LEGACY_PADEL_SECTION ? PADEL_CLUB_SECTION : sectionParamRaw;
+  const normalizedDefaultSection =
+    defaultSection === LEGACY_PADEL_SECTION ? PADEL_CLUB_SECTION : defaultSection;
+  const normalizedSection = normalizedSectionParam ?? normalizedDefaultSection ?? undefined;
+  const scrollSection = normalizedSectionParam ?? undefined;
+  const isPadelManageSection =
+    sectionParamRaw === LEGACY_PADEL_SECTION ||
+    sectionParamRaw === PADEL_CLUB_SECTION ||
+    sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
 
   useEffect(() => {
     const statusParam = searchParams?.get("status");
@@ -569,12 +581,12 @@ function OrganizacaoPageInner({
       pathname?.startsWith("/organizacao/torneios") ||
       pathname?.startsWith("/organizacao/padel") ||
       pathname?.startsWith("/organizacao/tournaments") ||
-      sectionParamRaw === "padel-hub");
+      isPadelManageSection);
   const eventsScope = useMemo<"PADEL" | "EVENTOS">(() => {
-    if (isTorneiosRoute || sectionParamRaw === "padel-hub") return "PADEL";
+    if (isTorneiosRoute || isPadelManageSection) return "PADEL";
     if (isEventosRoute) return "EVENTOS";
     return isTorneiosOrg ? "PADEL" : "EVENTOS";
-  }, [isEventosRoute, isTorneiosOrg, isTorneiosRoute, sectionParamRaw]);
+  }, [isEventosRoute, isPadelManageSection, isTorneiosOrg, isTorneiosRoute]);
   const eventsScopeQuery = eventsScope === "PADEL" ? "templateType=PADEL" : "excludeTemplateType=PADEL";
   const eventsScopeSuffix = `?${eventsScopeQuery}`;
   const eventsScopeAmp = `&${eventsScopeQuery}`;
@@ -805,7 +817,7 @@ function OrganizacaoPageInner({
       manage: [
         "eventos",
         "reservas",
-        ...(showPadelHub ? ["padel-hub"] : []),
+        ...(showPadelHub ? [...PADEL_MANAGE_SECTIONS] : []),
         ...(hasInscricoesModule ? ["inscricoes"] : []),
       ],
       promote: ["marketing"],
@@ -1818,13 +1830,13 @@ function OrganizacaoPageInner({
       {
         id: "torneios",
         moduleKey: "TORNEIOS",
-        title: "Padel e torneios",
-        summary: "Torneios e ligas de padel num só lugar.",
-        bullets: ["Inscrições + equipas", "Calendário de jogos", "Live + chat + anúncios"],
+        title: "Padel",
+        summary: "Ferramenta A (Clube) + Ferramenta B (Torneios), com deep links.",
+        bullets: ["A: Clube + courts + staff", "B: Torneios + live ops", "Integrações reservas/finanças/CRM"],
         status: canAccessTorneios ? (isTorneiosActive ? "active" : "optional") : "locked",
         href: canAccessTorneios
           ? isTorneiosActive
-            ? "/organizacao/torneios"
+            ? "/organizacao/padel/clube"
             : modulesSetupHref
           : undefined,
         eyebrow: "Operações",
@@ -2027,7 +2039,7 @@ function OrganizacaoPageInner({
     const manageSections = [
       "eventos",
       "reservas",
-      ...(showPadelHub ? ["padel-hub"] : []),
+      ...(showPadelHub ? [...PADEL_MANAGE_SECTIONS] : []),
       ...(hasInscricoesModule ? ["inscricoes"] : []),
     ];
     const analyzeSections = canViewFinance
@@ -3419,12 +3431,29 @@ function OrganizacaoPageInner({
         </section>
       )}
 
-      {activeObjective === "manage" && activeSection === "padel-hub" && showPadelHub && (
-        <section className={cn("space-y-4", fadeClass)} id="padel-hub">
+      {activeObjective === "manage" && activeSection === PADEL_CLUB_SECTION && showPadelHub && (
+        <section className={cn("space-y-4", fadeClass)} id={PADEL_CLUB_SECTION}>
           {organization?.id ? (
             <PadelHubSection
               organizationId={organization.id}
               organizationKind={organization.organizationKind ?? null}
+              toolMode="CLUB"
+            />
+          ) : (
+            <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">
+              Organização indisponível para carregar o hub.
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeObjective === "manage" && activeSection === PADEL_TOURNAMENTS_SECTION && showPadelHub && (
+        <section className={cn("space-y-4", fadeClass)} id={PADEL_TOURNAMENTS_SECTION}>
+          {organization?.id ? (
+            <PadelHubSection
+              organizationId={organization.id}
+              organizationKind={organization.organizationKind ?? null}
+              toolMode="TOURNAMENTS"
             />
           ) : (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">

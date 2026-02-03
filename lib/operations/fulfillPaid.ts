@@ -107,7 +107,21 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    include: { ticketTypes: true },
+    select: {
+      id: true,
+      organizationId: true,
+      title: true,
+      coverImageUrl: true,
+      locationName: true,
+      startsAt: true,
+      timezone: true,
+      ticketTypes: {
+        select: {
+          id: true,
+          currency: true,
+        },
+      },
+    },
   });
   if (!event) return false;
 
@@ -118,9 +132,9 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
     // Evitar conflito por purchaseId já existente: se já existir, atualizamos, senão criamos.
     const existingSummary =
       (purchaseId
-        ? await tx.saleSummary.findUnique({ where: { purchaseId } })
+        ? await tx.saleSummary.findUnique({ where: { purchaseId }, select: { id: true } })
         : null) ||
-      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id } }));
+      (await tx.saleSummary.findUnique({ where: { paymentIntentId: intent.id }, select: { id: true } }));
 
     const baseData = {
       eventId: event.id,

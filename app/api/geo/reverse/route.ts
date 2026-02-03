@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
-import { getGeoProvider, resolveGeoSourceProvider } from "@/lib/geo/provider";
+import { mapGeoError } from "@/lib/geo/errors";
+import { getGeoResolver } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
 import { upsertAddressFromGeoDetails } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { AddressSourceProvider } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -47,38 +49,45 @@ async function _GET(req: NextRequest) {
   }
 
   const lang = resolveLang(req);
-  const cacheKey = buildCacheKey(["geo-reverse", lat.toFixed(6), lng.toFixed(6), lang]);
+  const sourceProviderParam = req.nextUrl.searchParams.get("sourceProvider");
+  const sourceProvider =
+    sourceProviderParam?.trim().toUpperCase() === AddressSourceProvider.APPLE_MAPS
+      ? AddressSourceProvider.APPLE_MAPS
+      : null;
+  const cacheKey = buildCacheKey(["geo-reverse", lat.toFixed(6), lng.toFixed(6), lang, sourceProvider ?? ""]);
   const cached = getCache(cacheKey);
   if (cached) {
     return jsonWrap({ ok: true, item: cached }, { headers: { "Cache-Control": "public, max-age=600" } });
   }
 
-  const provider = getGeoProvider();
+  const resolver = getGeoResolver();
   try {
-    const item = await provider.reverse({ lat, lng, lang });
+    const resolved = await resolver.reverse({ lat, lng, lang, sourceProvider: sourceProvider ?? undefined });
+    const item = resolved.data;
     if (!item) {
       return jsonWrap({ ok: false, error: "Localização não encontrada." }, { status: 404 });
     }
-    const providerSource = resolveGeoSourceProvider("reverse");
-    const resolved = await upsertAddressFromGeoDetails({ details: item, provider: providerSource });
-    if (!resolved.ok) {
+    const saved = await upsertAddressFromGeoDetails({ details: item, provider: resolved.sourceProvider });
+    if (!saved.ok) {
       return jsonWrap({ ok: false, error: "Falha no reverse geocode." }, { status: 502 });
     }
     const payload = {
       ...item,
-      formattedAddress: resolved.address.formattedAddress,
-      lat: resolved.address.latitude,
-      lng: resolved.address.longitude,
-      addressId: resolved.address.id,
-      canonical: resolved.address.canonical as Record<string, unknown>,
-      confidenceScore: resolved.address.confidenceScore,
-      validationStatus: resolved.address.validationStatus,
+      formattedAddress: saved.address.formattedAddress,
+      lat: saved.address.latitude,
+      lng: saved.address.longitude,
+      addressId: saved.address.id,
+      canonical: saved.address.canonical as Record<string, unknown>,
+      confidenceScore: saved.address.confidenceScore,
+      validationStatus: saved.address.validationStatus,
+      sourceProvider: resolved.sourceProvider,
     };
     setCache(cacheKey, payload, CACHE_TTL_MS);
     return jsonWrap({ ok: true, item: payload }, { headers: { "Cache-Control": "public, max-age=600" } });
   } catch (err) {
     console.error("[geo/reverse] erro", err);
-    return jsonWrap({ ok: false, error: "Falha no reverse geocode." }, { status: 502 });
+    const { status, message } = mapGeoError(err, "Falha no reverse geocode.");
+    return jsonWrap({ ok: false, error: message }, { status });
   }
 }
 export const GET = withApiEnvelope(_GET);

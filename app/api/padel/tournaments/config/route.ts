@@ -13,6 +13,80 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
+const TOURNAMENT_CONFIG_SELECT = {
+  id: true,
+  eventId: true,
+  organizationId: true,
+  format: true,
+  numberOfCourts: true,
+  ruleSetId: true,
+  ruleSetVersionId: true,
+  defaultCategoryId: true,
+  enabledFormats: true,
+  isInterclub: true,
+  teamSize: true,
+  createdAt: true,
+  updatedAt: true,
+  padelV2Enabled: true,
+  splitDeadlineHours: true,
+  padelClubId: true,
+  partnerClubIds: true,
+  advancedSettings: true,
+  lifecycleStatus: true,
+  publishedAt: true,
+  lockedAt: true,
+  liveAt: true,
+  completedAt: true,
+  cancelledAt: true,
+  lifecycleUpdatedAt: true,
+  eligibilityType: true,
+  ruleSet: {
+    select: {
+      id: true,
+      organizationId: true,
+      name: true,
+      tieBreakRules: true,
+      pointsTable: true,
+      enabledFormats: true,
+      season: true,
+      year: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  },
+  ruleSetVersion: {
+    select: {
+      id: true,
+      tournamentConfigId: true,
+      version: true,
+      sourceRuleSetId: true,
+      name: true,
+      tieBreakRules: true,
+      pointsTable: true,
+      enabledFormats: true,
+      season: true,
+      year: true,
+      createdAt: true,
+      createdByUserId: true,
+    },
+  },
+  category: {
+    select: {
+      id: true,
+      label: true,
+      genderRestriction: true,
+      minLevel: true,
+      maxLevel: true,
+      isDefault: true,
+      isActive: true,
+      season: true,
+      year: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  },
+} satisfies Prisma.PadelTournamentConfigSelect;
+
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -40,11 +114,7 @@ async function _GET(req: NextRequest) {
   const [initialConfig, tournament] = await Promise.all([
     prisma.padelTournamentConfig.findUnique({
       where: { eventId },
-      include: {
-        ruleSet: true,
-        ruleSetVersion: true,
-        category: true,
-      },
+      select: TOURNAMENT_CONFIG_SELECT,
     }),
     prisma.tournament.findUnique({
       where: { eventId },
@@ -73,11 +143,7 @@ async function _GET(req: NextRequest) {
     });
     config = await prisma.padelTournamentConfig.findUnique({
       where: { eventId },
-      include: {
-        ruleSet: true,
-        ruleSetVersion: true,
-        category: true,
-      },
+      select: TOURNAMENT_CONFIG_SELECT,
     });
   }
 
@@ -588,7 +654,7 @@ async function _POST(req: NextRequest) {
 
       return tx.padelTournamentConfig.findUnique({
         where: { id: upserted.id },
-        include: { ruleSet: true, ruleSetVersion: true, category: true },
+        select: TOURNAMENT_CONFIG_SELECT,
       });
     });
 

@@ -1522,7 +1522,7 @@ Instruções: Se encontrasse, remover imediatamente. Qualquer funcionalidade pre
 interno deve ser remanejada: ou criar endpoint público seguro ou usar action do Next (server
 action) para invocar internamente. 
 (P1) Acesso Cron Externo: Documentar como chamar endpoints cron/internos em produção. 
-Status: Parcial – No doc de env, instruções de como armazenar secrets no AWS e Vercel
+Status: Parcial – No doc de env, instruções de como armazenar secrets no AWS
 . 
 Instruções: Escrever runbook "Ops Endpoints" com lista de endpoints internos (e.g.  /api/
 cron/payouts/release  –  libera  payouts;
@@ -1617,7 +1617,7 @@ Escrever de forma objetiva e armazenar em docs/runbooks/*.md .
 Status: Não implementado – Requer ferramentas externas (talvez fase 2). 
 Instruções: Se usando AWS, considerar CloudWatch metrics para: utilização de CPU/memória,
 contagem  de  erros  5xx.  Configurar  um  endpoint  /api/internal/health  que  verifica
-componentes (db conectividade, supabase, fila) e retorna status. Em Vercel/AppRunner, ajustar
+componentes (db conectividade, supabase, fila) e retorna status. Em AWS App Runner/ECS, ajustar
 monitor para pingar esse endpoint. Definir alertas (email/Slack) se serviço cair ou se taxa de erro
 subir acima de limiar. 
 (P2) SLO/SLI Definição: Documentar internamente quais são nossos objetivos de serviço. 
@@ -1639,7 +1639,7 @@ Análise do Código & Config atual:
 estão  presentes  nos  sistemas  de  CI/CD  e  produção.  Por  exemplo,  QR_SECRET_KEY  (usado  para
 assinatura de QRs offline), RESEND_API_KEY  (envio de email), chaves da Apple (Sign-in e APNs) em
 base64, etc.
--  CI/CD: Não  identificado  arquivo  CI  (talvez  usando  Vercel  auto-deploy?).  Espera-se  que  a  branch
+-  CI/CD: Não  identificado  arquivo  CI  (talvez  usando  auto-deploy no AWS).  Espera-se  que  a  branch
 develop  seja implantada em ambiente de staging, e a main em produção. Precisamos definir gating –
 ou seja, só mergear para main quando v10 estiver completo (como já dito).
 - AWS Infra: O doc de env menciona uso de AWS Secrets Manager e App Runner/ECS. Provavelmente a
@@ -1663,7 +1663,7 @@ parece planejado para v10, exceto Staff PWA mencionado na fase 2.
 
 Plano de Ação:
 -  (P0) Checklist de Variáveis de Ambiente: Conferir e inserir todas as variáveis nas plataformas de
-deploy (Vercel e/ou AWS).
+deploy (AWS).
 - Status: Em andamento – Precisamos atualizar segredos com valores de produção.
 - Instruções: Passar pela lista do envs_required.md :
 - Garantir chaves Stripe (secret e webhook secret) em Prod e Staging.
@@ -1675,19 +1675,17 @@ cron).
 Após isso, fazer deploy de teste e verificar que nada quebra por falta de env. 
 (P0) Configuração do Deploy AWS: Implementar pipeline de deploy para branch develop
 (staging) e main (production). 
-Status: Por fazer – Se usando Vercel para front, talvez queira manter lá e usar AWS apenas para
+Status: Por fazer – Definir arquitetura AWS para front e API, mantendo um único alvo de deploy.
 funções longas (cron)? Precisamos clarificar. Mas dado mention de App Runner, supõe app
 monolítico em Node. 
 Instruções: Preparar container Docker da app (Next.js pode rodar serverless ou container). App
-Runner aceita container direto. Alternativamente, hostear via Vercel (que cuida do Node
-Lambdas) e ter um worker separado para outbox. Avaliar custo/complexidade. No curto prazo,
+Runner aceita container direto. Alternativamente, usar ECS/Fargate para API e worker outbox. Avaliar custo/complexidade. No curto prazo,
 talvez mais rápido: 
-Colocar front+api no Vercel (mais simples, mas cron/internal routes precisam secret e
-talvez Vercel cron jobs para chamá-los). 
+Colocar front+api em App Runner/CloudFront (mais simples de manter AWS-first, com cron via EventBridge). 
 Montar um pequeno worker (script Node) para rodar a cada minuto processando outbox
 (pode ser container no AWS ECS scheduled).
 Decidir e documentar. O blueprint final quer AWS-first infra, então App Runner/ECS é
-preferível. Se tempo curto, iniciar em Vercel e migrar Fase 2. 
+preferível. Se tempo curto, iniciar em App Runner e evoluir para ECS na Fase 2. 
 Instruções: Backup  DB: Configurar  backup  automatizado  do  Supabase  para  S3  (blueprint
 12.6.2) – Supabase talvez já faça diário, mas exportar para nosso bucket seria prudente. 
 (P1) Testes Finais em Mobile: Passar um pente-fino nos principais fluxos no celular. 

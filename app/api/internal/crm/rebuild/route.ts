@@ -25,7 +25,7 @@ async function _POST(req: NextRequest) {
       requestId:
         req.headers.get("x-request-id") ||
         req.headers.get("x-correlation-id") ||
-        req.headers.get("x-vercel-id") ||
+        req.headers.get("x-amzn-trace-id") ||
         null,
     });
     if (!orgResult.ok) {

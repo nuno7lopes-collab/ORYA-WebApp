@@ -12,6 +12,7 @@ import {
   PadelPaymentMode,
   PadelPairingJoinMode,
   OrganizationMemberRole,
+  Prisma,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -46,6 +47,45 @@ import { requireActiveEntitlementForTicket } from "@/lib/entitlements/accessChec
 import { ensurePadelPlayerProfileId, upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+
+const pairingSlotSelect = {
+  id: true,
+  slot_role: true,
+  slotStatus: true,
+  paymentStatus: true,
+  profileId: true,
+  invitedContact: true,
+  invitedUserId: true,
+  playerProfile: {
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      level: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSlotSelect;
+
+const pairingReadSelect = {
+  id: true,
+  organizationId: true,
+  eventId: true,
+  categoryId: true,
+  player1UserId: true,
+  player2UserId: true,
+  payment_mode: true,
+  partnerInviteToken: true,
+  pairingStatus: true,
+  slots: {
+    select: pairingSlotSelect,
+  },
+  event: {
+    select: {
+      organizationId: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 async function syncPlayersFromSlots({
   organizationId,
@@ -537,7 +577,54 @@ async function _POST(req: NextRequest) {
     if (matched && partnerSlotId) {
       const pairingReturn = await prisma.padelPairing.findUnique({
         where: { id: matched.id },
-        include: { slots: true },
+        select: {
+          id: true,
+          eventId: true,
+          organizationId: true,
+          categoryId: true,
+          player1UserId: true,
+          player2UserId: true,
+          payment_mode: true,
+          pairingStatus: true,
+          pairingJoinMode: true,
+          createdByUserId: true,
+          createdByTicketId: true,
+          partnerInviteToken: true,
+          partnerInviteUsedAt: true,
+          partnerLinkToken: true,
+          partnerLinkExpiresAt: true,
+          lockedUntil: true,
+          isPublicOpen: true,
+          deadlineAt: true,
+          partnerSwapAllowedUntilAt: true,
+          graceUntilAt: true,
+          partnerInvitedAt: true,
+          partnerAcceptedAt: true,
+          partnerPaidAt: true,
+          captainSecondChargedAt: true,
+          guaranteeStatus: true,
+          paymentMethodId: true,
+          secondChargePaymentIntentId: true,
+          createdAt: true,
+          updatedAt: true,
+          slots: {
+            select: {
+              id: true,
+              pairingId: true,
+              ticketId: true,
+              profileId: true,
+              invitedUserId: true,
+              slot_role: true,
+              slotStatus: true,
+              paymentStatus: true,
+              invitedContact: true,
+              isPublicOpen: true,
+              createdAt: true,
+              updatedAt: true,
+              playerProfileId: true,
+            },
+          },
+        },
       });
       if (pairingReturn) {
         return jsonWrap(
@@ -880,10 +967,7 @@ async function _GET(req: NextRequest) {
   if (Number.isFinite(pairingId)) {
     const pairing = await prisma.padelPairing.findUnique({
       where: { id: pairingId },
-      include: {
-        slots: { include: { playerProfile: true } },
-        event: { select: { organizationId: true } },
-      },
+      select: pairingReadSelect,
     });
     if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 

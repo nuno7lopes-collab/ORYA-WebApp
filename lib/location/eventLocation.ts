@@ -1,5 +1,6 @@
 type LocationComponents = {
   address?: Record<string, unknown> | null;
+  canonical?: Record<string, unknown> | null;
   road?: string | null;
   houseNumber?: string | null;
   postalCode?: string | null;
@@ -14,7 +15,7 @@ export type EventLocationInput = {
   locationName?: string | null;
   locationCity?: string | null;
   address?: string | null;
-  locationSource?: "OSM" | "MANUAL" | null;
+  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress?: string | null;
   locationComponents?: LocationComponents | Record<string, unknown> | null;
   locationOverrides?: LocationOverrides | Record<string, unknown> | null;
@@ -35,6 +36,16 @@ export type EventLocationResolved = {
 
 const pickString = (value: unknown) => (typeof value === "string" ? value.trim() || null : null);
 const normalizeToken = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
+const isCanonicalAddress = (value: unknown): value is Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return (
+    "addressLine1" in value ||
+    "addressLine2" in value ||
+    "houseNumber" in value ||
+    "postalCode" in value ||
+    "street" in value
+  );
+};
 
 export function resolveEventLocation(input: EventLocationInput): EventLocationResolved {
   const locationName = pickString(input.locationName);
@@ -54,10 +65,18 @@ export function resolveEventLocation(input: EventLocationInput): EventLocationRe
     input.locationComponents && typeof input.locationComponents === "object"
       ? (input.locationComponents as LocationComponents)
       : null;
-  const componentsAddress =
-    rawComponents?.address && typeof rawComponents.address === "object"
-      ? (rawComponents.address as Record<string, unknown>)
+  const rawRecord =
+    rawComponents && typeof rawComponents === "object"
+      ? (rawComponents as Record<string, unknown>)
       : null;
+  const componentsAddress =
+    rawRecord?.address && typeof rawRecord.address === "object"
+      ? (rawRecord.address as Record<string, unknown>)
+      : null;
+  const canonical =
+    (isCanonicalAddress(rawRecord?.canonical) ? (rawRecord?.canonical as Record<string, unknown>) : null) ||
+    (isCanonicalAddress(componentsAddress) ? componentsAddress : null) ||
+    (isCanonicalAddress(rawRecord) ? rawRecord : null);
 
   const fallbackRoad = address ? address.split(",")[0]?.trim() || null : null;
   const resolvedRoad =
@@ -66,20 +85,24 @@ export function resolveEventLocation(input: EventLocationInput): EventLocationRe
     pickString(componentsAddress?.pedestrian) ||
     pickString(componentsAddress?.footway) ||
     pickString(componentsAddress?.path) ||
+    pickString(canonical?.street) ||
     fallbackRoad;
   const resolvedHouse =
     overrideHouse ||
     pickString(rawComponents?.houseNumber) ||
     pickString(componentsAddress?.house_number) ||
     pickString(componentsAddress?.house_name) ||
+    pickString(canonical?.houseNumber) ||
     null;
   const resolvedPostal =
     overridePostal ||
     pickString(rawComponents?.postalCode) ||
     pickString(componentsAddress?.postcode) ||
+    pickString(canonical?.postalCode) ||
     null;
   const resolvedCity =
     locationCity ||
+    pickString(canonical?.city) ||
     pickString(componentsAddress?.city) ||
     pickString(componentsAddress?.town) ||
     pickString(componentsAddress?.village) ||
@@ -87,10 +110,12 @@ export function resolveEventLocation(input: EventLocationInput): EventLocationRe
     pickString(componentsAddress?.county) ||
     pickString(componentsAddress?.state) ||
     null;
-  const resolvedCountry = pickString(componentsAddress?.country);
+  const resolvedCountry = pickString(canonical?.country) || pickString(componentsAddress?.country);
 
-  const line1 = [resolvedRoad, resolvedHouse].filter(Boolean).join(" ").trim();
-  const line2 = [resolvedPostal, resolvedCity].filter(Boolean).join(" ").trim();
+  const line1 =
+    pickString(canonical?.addressLine1) || [resolvedRoad, resolvedHouse].filter(Boolean).join(" ").trim();
+  const line2 =
+    pickString(canonical?.addressLine2) || [resolvedPostal, resolvedCity].filter(Boolean).join(" ").trim();
   const structuredAddressRaw = [line1, line2, resolvedCountry].filter(Boolean).join(", ").trim();
   const structuredAddress = structuredAddressRaw || null;
   const hasPreciseAddress =

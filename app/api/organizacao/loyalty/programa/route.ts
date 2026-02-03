@@ -55,9 +55,43 @@ export async function GET(req: NextRequest) {
 
     const program = await prisma.loyaltyProgram.findUnique({
       where: { organizationId: organization.id },
-      include: {
-        rules: true,
-        rewards: true,
+      select: {
+        id: true,
+        organizationId: true,
+        status: true,
+        name: true,
+        pointsName: true,
+        pointsExpiryDays: true,
+        termsUrl: true,
+        createdAt: true,
+        updatedAt: true,
+        rules: {
+          select: {
+            id: true,
+            name: true,
+            trigger: true,
+            points: true,
+            maxPointsPerDay: true,
+            maxPointsPerUser: true,
+            conditions: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        rewards: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            pointsCost: true,
+            stock: true,
+            payload: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
       },
     });
 

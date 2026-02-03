@@ -176,6 +176,57 @@ function filterDiscoverByPrice(
   });
 }
 
+function mapSearchItemToPublicEventCardWithPrice(
+  event: Pick<
+    SearchIndexItem,
+    | "sourceId"
+    | "slug"
+    | "title"
+    | "description"
+    | "startsAt"
+    | "endsAt"
+    | "status"
+    | "templateType"
+    | "pricingMode"
+    | "isGratis"
+    | "priceFromCents"
+    | "coverImageUrl"
+    | "hostName"
+    | "hostUsername"
+    | "locationName"
+    | "locationCity"
+    | "address"
+    | "latitude"
+    | "longitude"
+    | "locationFormattedAddress"
+    | "locationSource"
+  >,
+): PublicEventCardWithPrice {
+  return toPublicEventCardWithPriceFromIndex({
+    sourceId: event.sourceId,
+    slug: event.slug,
+    title: event.title,
+    description: event.description ?? null,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    status: event.status,
+    templateType: event.templateType ?? null,
+    pricingMode: event.pricingMode ?? null,
+    isGratis: event.isGratis,
+    priceFromCents: event.priceFromCents ?? null,
+    coverImageUrl: event.coverImageUrl ?? null,
+    hostName: event.hostName ?? null,
+    hostUsername: event.hostUsername ?? null,
+    locationName: event.locationName ?? null,
+    locationCity: event.locationCity ?? null,
+    address: event.address ?? null,
+    latitude: event.latitude ?? null,
+    longitude: event.longitude ?? null,
+    locationFormattedAddress: event.locationFormattedAddress ?? null,
+    locationSource: event.locationSource ?? null,
+  });
+}
+
 export async function listPublicDiscoverIndex(
   params: DiscoverParams,
 ): Promise<{ items: SearchIndexItem[]; nextCursor: string | null }> {
@@ -210,34 +261,26 @@ export async function listPublicDiscover(
 
   const { items, nextCursor } = await listPublicDiscoverIndex(params);
 
-  const computed: PublicEventCardWithPrice[] = items.map((event) =>
-    toPublicEventCardWithPriceFromIndex({
-      sourceId: event.sourceId,
-      slug: event.slug,
-      title: event.title,
-      description: event.description ?? null,
-      startsAt: event.startsAt,
-      endsAt: event.endsAt,
-      status: event.status,
-      templateType: event.templateType ?? null,
-      pricingMode: event.pricingMode ?? null,
-      isGratis: event.isGratis,
-      priceFromCents: event.priceFromCents ?? null,
-      coverImageUrl: event.coverImageUrl ?? null,
-      hostName: event.hostName ?? null,
-      hostUsername: event.hostUsername ?? null,
-      locationName: event.locationName ?? null,
-      locationCity: event.locationCity ?? null,
-      address: event.address ?? null,
-      latitude: event.latitude ?? null,
-      longitude: event.longitude ?? null,
-      locationFormattedAddress: event.locationFormattedAddress ?? null,
-      locationSource: event.locationSource ?? null,
-    }),
-  );
+  const computed: PublicEventCardWithPrice[] = items.map(mapSearchItemToPublicEventCardWithPrice);
 
   const filtered = filterDiscoverByPrice(computed, priceMinCents, priceMaxCents);
   const publicItems: PublicEventCard[] = filtered.map(({ _priceFromCents, ...rest }) => rest);
 
   return { items: publicItems, nextCursor };
+}
+
+export async function getPublicDiscoverBySlug(slug: string): Promise<PublicEventCard | null> {
+  const item = await prisma.searchIndexItem.findFirst({
+    where: {
+      visibility: SearchIndexVisibility.PUBLIC,
+      slug,
+    },
+  });
+
+  if (!item) {
+    return null;
+  }
+
+  const { _priceFromCents, ...event } = mapSearchItemToPublicEventCardWithPrice(item);
+  return event;
 }

@@ -1662,6 +1662,7 @@ model Event {
   locationFormattedAddress          String?                 @map("location_formatted_address")
   locationComponents                Json?                   @map("location_components")
   locationOverrides                 Json?                   @map("location_overrides")
+  addressId                         String?                 @map("address_id") @db.Uuid
   latitude                          Float?                  @map("lat")
   longitude                         Float?                  @map("lng")
   pricingMode                       EventPricingMode        @default(STANDARD) @map("pricing_mode")
@@ -1688,6 +1689,7 @@ model Event {
   feeMode                           FeeMode                 @default(INCLUDED) @map("fee_mode")
   payoutMode                        PayoutMode              @default(ORGANIZATION) @map("payout_mode")
   organization                         Organization?              @relation(fields: [organizationId], references: [id])
+  addressRef                          Address?                   @relation(fields: [addressId], references: [id], onDelete: SetNull)
   notifications                     Notification[]          @relation("NotificationEvent")
   eventMatchSlots                  EventMatchSlot[]
   padelPairings                     PadelPairing[]
@@ -1717,6 +1719,7 @@ model Event {
   @@index([type, status])
   @@index([ownerUserId])
   @@index([organizationId])
+  @@index([addressId], map: "events_address_idx")
   @@map("events")
   @@schema("app_v3")
 }
@@ -2465,6 +2468,7 @@ model Address {
   updatedAt              DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   lookups                AddressLookup[]
   padelClubs             PadelClub[]
+  events                 Event[]
 
   @@index([sourceProvider], map: "addresses_provider_idx")
   @@map("addresses")
@@ -4751,6 +4755,7 @@ enum EventTemplateType {
 }
 
 enum LocationSource {
+  APPLE_MAPS
   OSM
   MANUAL
 

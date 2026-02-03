@@ -123,9 +123,22 @@ export async function POST(req: NextRequest) {
   const tokenHash = hashToken(qrToken);
   const tokenRow = await prisma.entitlementQrToken.findUnique({
     where: { tokenHash },
-    include: {
+    select: {
+      expiresAt: true,
       entitlement: {
-        include: { checkins: { select: { resultCode: true, checkedInAt: true } } },
+        select: {
+          id: true,
+          eventId: true,
+          type: true,
+          status: true,
+          ownerKey: true,
+          policyVersionApplied: true,
+          snapshotTitle: true,
+          snapshotVenueName: true,
+          snapshotStartAt: true,
+          snapshotTimezone: true,
+          checkins: { select: { resultCode: true, checkedInAt: true } },
+        },
       },
     },
   });

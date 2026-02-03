@@ -52,6 +52,18 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           checkinMethods: true,
         },
       },
+      addressRef: {
+        select: {
+          formattedAddress: true,
+          canonical: true,
+          latitude: true,
+          longitude: true,
+          sourceProvider: true,
+          sourceProviderPlaceId: true,
+          confidenceScore: true,
+          validationStatus: true,
+        },
+      },
     },
   });
 
@@ -133,6 +145,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           locationName: event.locationName,
           locationCity: event.locationCity,
           address: event.address,
+          addressId: (event as { addressId?: string | null }).addressId ?? null,
           locationSource: event.locationSource,
           locationProviderId: event.locationProviderId,
           locationFormattedAddress: event.locationFormattedAddress,
@@ -140,6 +153,18 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           locationOverrides: event.locationOverrides as Record<string, unknown> | null,
           latitude: event.latitude,
           longitude: event.longitude,
+          addressRef: event.addressRef
+            ? {
+                formattedAddress: event.addressRef.formattedAddress,
+                canonical: event.addressRef.canonical as Record<string, unknown> | null,
+                latitude: event.addressRef.latitude,
+                longitude: event.addressRef.longitude,
+                sourceProvider: event.addressRef.sourceProvider,
+                sourceProviderPlaceId: event.addressRef.sourceProviderPlaceId,
+                confidenceScore: event.addressRef.confidenceScore,
+                validationStatus: event.addressRef.validationStatus,
+              }
+            : null,
           templateType: event.templateType,
           isGratis: isGratis,
           coverImageUrl: event.coverImageUrl,

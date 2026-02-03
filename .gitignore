@@ -36,9 +36,6 @@ yarn-error.log*
 .env*
 !**/.env.example
 
-# vercel
-.vercel
-
 # local artifacts
 .dev.log
 Arquivo*.zip
@@ -46,10 +43,10 @@ Arquivo.zip
 11.7.0
 .cache/
 .expo/
+.tmp/
 
 # nested web app artifacts
 /web/.next/
-/web/.vercel/
 
 # typescript
 *.tsbuildinfo

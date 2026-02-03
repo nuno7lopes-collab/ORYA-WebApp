@@ -169,7 +169,7 @@ type OrganizationEvent = {
   locationName: string | null;
   locationCity: string | null;
   address: string | null;
-  locationSource: "OSM" | "MANUAL" | null;
+  locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress: string | null;
   locationComponents: Record<string, unknown> | null;
   locationOverrides: Record<string, unknown> | null;
@@ -474,7 +474,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           locationFormattedAddress: true,
           locationComponents: true,
           locationOverrides: true,
-          pricingMode: true,
+          isFree: true,
           timezone: true,
           templateType: true,
           coverImageUrl: true,
@@ -594,10 +594,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
     const orgEvents: OrganizationEvent[] = events.map((event) => {
       const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
-      const isGratis = deriveIsFreeEvent({
-        pricingMode: event.pricingMode ?? undefined,
-        ticketPrices,
-      });
+      const isGratis = event.isFree || deriveIsFreeEvent({ ticketPrices });
       const locationComponents =
         event.locationComponents && typeof event.locationComponents === "object"
           ? (event.locationComponents as Record<string, unknown>)

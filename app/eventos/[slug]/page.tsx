@@ -223,24 +223,6 @@ export default async function EventPage({
     return notFound();
   }
 
-  type EventWithTickets = Prisma.EventGetPayload<{
-    include: {
-      ticketTypes: {
-        include: {
-          padelEventCategoryLink: {
-            include: { category: { select: { label: true } } };
-          };
-        };
-      };
-      padelCategoryLinks: {
-        include: { category: { select: { label: true } } };
-      };
-    };
-  }>;
-
-  type TicketTypeWithVisibility =
-    EventWithTickets["ticketTypes"][number] & { isVisible?: boolean | null };
-
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -250,68 +232,94 @@ export default async function EventPage({
     : null;
   const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
 
-  const event = await prisma.event.findUnique({
-    where: { slug },
-    include: {
-      ticketTypes: {
-        include: {
-          padelEventCategoryLink: {
-            include: { category: { select: { label: true } } },
+  const eventSelect = {
+    id: true,
+    slug: true,
+    title: true,
+    description: true,
+    startsAt: true,
+    endsAt: true,
+    locationName: true,
+    locationCity: true,
+    address: true,
+    locationSource: true,
+    locationFormattedAddress: true,
+    locationComponents: true,
+    locationOverrides: true,
+    latitude: true,
+    longitude: true,
+    pricingMode: true,
+    status: true,
+    templateType: true,
+    coverImageUrl: true,
+    timezone: true,
+    liveHubVisibility: true,
+    organizationId: true,
+    ticketTypes: {
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        currency: true,
+        totalQuantity: true,
+        soldQuantity: true,
+        startsAt: true,
+        endsAt: true,
+        status: true,
+        sortOrder: true,
+        padelEventCategoryLinkId: true,
+        padelEventCategoryLink: {
+          select: {
+            padelCategoryId: true,
+            category: { select: { label: true } },
           },
         },
       },
-      padelCategoryLinks: {
-        include: { category: { select: { label: true } } },
-      },
-      padelTournamentConfig: true,
-      accessPolicies: {
-        orderBy: { policyVersion: "desc" },
-        take: 1,
-        select: { mode: true },
-      },
-      organization: {
-        select: {
-          username: true,
-          publicName: true,
-          businessName: true,
-          brandingAvatarUrl: true,
-          status: true,
-        },
+    },
+    padelCategoryLinks: {
+      select: {
+        id: true,
+        padelCategoryId: true,
+        isEnabled: true,
+        category: { select: { label: true } },
       },
     },
+    padelTournamentConfig: {
+      select: {
+        padelV2Enabled: true,
+        advancedSettings: true,
+        lifecycleStatus: true,
+        defaultCategoryId: true,
+      },
+    },
+    accessPolicies: {
+      orderBy: { policyVersion: "desc" },
+      take: 1,
+      select: { mode: true },
+    },
+    organization: {
+      select: {
+        username: true,
+        publicName: true,
+        businessName: true,
+        brandingAvatarUrl: true,
+        status: true,
+      },
+    },
+  } satisfies Prisma.EventSelect;
+
+  type EventWithTickets = Prisma.EventGetPayload<{ select: typeof eventSelect }>;
+
+  const event = await prisma.event.findUnique({
+    where: { slug },
+    select: eventSelect,
   });
   if (!event || !event.organizationId) {
     const normalized = slugify(slug);
     if (normalized && normalized !== slug) {
       const fallback = await prisma.event.findUnique({
         where: { slug: normalized },
-        include: {
-          ticketTypes: {
-            include: {
-              padelEventCategoryLink: {
-                include: { category: { select: { label: true } } },
-              },
-            },
-          },
-          padelCategoryLinks: {
-            include: { category: { select: { label: true } } },
-          },
-          padelTournamentConfig: true,
-          accessPolicies: {
-            orderBy: { policyVersion: "desc" },
-            take: 1,
-            select: { mode: true },
-          },
-          organization: {
-            select: {
-              username: true,
-              publicName: true,
-              businessName: true,
-              brandingAvatarUrl: true,
-              status: true,
-            },
-          },
-        },
+        select: eventSelect,
       });
       if (fallback && fallback.organizationId) {
         redirect(`/eventos/${fallback.slug}`);
@@ -323,8 +331,7 @@ export default async function EventPage({
     pricingMode: event.pricingMode ?? undefined,
     ticketPrices: event.ticketTypes.map((t) => t.price ?? 0),
   });
-  const ticketTypesWithVisibility = event.ticketTypes as TicketTypeWithVisibility[];
-  const visibleTicketTypes = ticketTypesWithVisibility.filter((t) => t.isVisible ?? true);
+  const visibleTicketTypes = event.ticketTypes;
   const accessPolicy = event.accessPolicies?.[0] ?? null;
   const accessMode = resolveEventAccessMode(accessPolicy);
   const isInviteRestricted = accessMode === EventAccessMode.INVITE_ONLY;
@@ -593,7 +600,7 @@ export default async function EventPage({
             ? true
             : remaining > 0 && !eventEnded
           : false,
-      isVisible: t.isVisible ?? true,
+      isVisible: true,
       padelCategoryId: t.padelEventCategoryLink?.padelCategoryId ?? null,
       padelCategoryLabel: t.padelEventCategoryLink?.category?.label ?? null,
       padelCategoryLinkId: t.padelEventCategoryLinkId ?? null,
@@ -1145,6 +1152,26 @@ export default async function EventPage({
                       <span>Classificações</span>
                     </div>
                     <h3 className="mt-3 text-xl font-semibold">Classificações</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
+                    <Link
+                      href={`/eventos/${slug}/ranking`}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
+                    >
+                      Ranking
+                    </Link>
+                    <Link
+                      href={`/eventos/${slug}/calendario`}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
+                    >
+                      Calendário
+                    </Link>
+                    <Link
+                      href={`/eventos/${slug}/monitor`}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
+                    >
+                      Monitor TV
+                    </Link>
                   </div>
                 </div>
 

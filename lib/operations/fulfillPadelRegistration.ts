@@ -81,8 +81,22 @@ export async function fulfillPadelRegistrationIntent(
 
   const registration = await prisma.padelRegistration.findUnique({
     where: { id: payment.sourceId },
-    include: {
-      lines: true,
+    select: {
+      id: true,
+      eventId: true,
+      pairingId: true,
+      buyerIdentityId: true,
+      currency: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          unitAmount: true,
+          totalAmount: true,
+          label: true,
+          pairingSlotId: true,
+        },
+      },
       event: {
         select: {
           id: true,
@@ -113,7 +127,27 @@ export async function fulfillPadelRegistrationIntent(
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true },
+    select: {
+      id: true,
+      eventId: true,
+      organizationId: true,
+      payment_mode: true,
+      paymentMethodId: true,
+      player1UserId: true,
+      player2UserId: true,
+      pairingStatus: true,
+      slots: {
+        select: {
+          id: true,
+          slot_role: true,
+          slotStatus: true,
+          paymentStatus: true,
+          profileId: true,
+          invitedUserId: true,
+          invitedContact: true,
+        },
+      },
+    },
   });
   if (!pairing) return false;
 
@@ -206,7 +240,20 @@ export async function fulfillPadelRegistrationIntent(
 
     const updated = await tx.padelPairing.findUnique({
       where: { id: pairingId },
-      include: { slots: true },
+      select: {
+        id: true,
+        eventId: true,
+        organizationId: true,
+        payment_mode: true,
+        pairingStatus: true,
+        slots: {
+          select: {
+            id: true,
+            slotStatus: true,
+            paymentStatus: true,
+          },
+        },
+      },
     });
     if (!updated) throw new Error("PAIRING_NOT_FOUND");
 
@@ -408,17 +455,20 @@ export async function fulfillPadelRegistrationIntent(
   });
 
   if (ownerUserId) {
+    const crmOrganizationId = registration.event.organizationId ?? pairing.organizationId;
     try {
-      await ingestCrmInteraction({
-        organizationId: registration.organizationId,
-        userId: ownerUserId,
-        type: "PADEL_MATCH_PAYMENT",
-        sourceType: CrmInteractionSource.EVENT,
-        sourceId: purchaseId,
-        occurredAt: new Date(),
-        amountCents: intent.amount ?? 0,
-        currency: (snapshot?.currency ?? registration.currency ?? "EUR").toUpperCase(),
-      });
+      if (crmOrganizationId) {
+        await ingestCrmInteraction({
+          organizationId: crmOrganizationId,
+          userId: ownerUserId,
+          type: "PADEL_MATCH_PAYMENT",
+          sourceType: CrmInteractionSource.EVENT,
+          sourceId: purchaseId,
+          occurredAt: new Date(),
+          amountCents: intent.amount ?? 0,
+          currency: (snapshot?.currency ?? registration.currency ?? "EUR").toUpperCase(),
+        });
+      }
     } catch {}
   }
 

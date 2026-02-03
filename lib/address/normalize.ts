@@ -51,8 +51,10 @@ const normalizeCity = (address: Record<string, unknown>, fallback?: string | nul
     address.municipality,
     address.county,
     address.locality,
+    address.subLocality,
     address.suburb,
     address.state,
+    address.administrativeArea,
   );
 
 const normalizeRegion = (address: Record<string, unknown>) =>
@@ -60,6 +62,8 @@ const normalizeRegion = (address: Record<string, unknown>) =>
     address.state,
     address.region,
     address.administrativeArea,
+    address.subAdministrativeArea,
+    address.stateCode,
     address.county,
     address.province,
   );
@@ -68,12 +72,19 @@ const normalizeCountry = (address: Record<string, unknown>) =>
   pickString(address.country, address.countryName, address.country_name);
 
 const normalizeCountryCode = (address: Record<string, unknown>) =>
-  pickString(address.countryCode, address.country_code, address.country_code_iso, address.countryCodeISO);
+  pickString(
+    address.countryCode,
+    address.country_code,
+    address.country_code_iso,
+    address.countryCodeISO,
+    address.isoCountryCode,
+  );
 
 const normalizeStreet = (address: Record<string, unknown>) =>
   pickString(
     address.road,
     address.street,
+    address.streetName,
     address.thoroughfare,
     address.pedestrian,
     address.footway,
@@ -81,7 +92,13 @@ const normalizeStreet = (address: Record<string, unknown>) =>
   );
 
 const normalizeHouseNumber = (address: Record<string, unknown>) =>
-  pickString(address.house_number, address.houseNumber, address.subThoroughfare, address.house_name);
+  pickString(
+    address.house_number,
+    address.houseNumber,
+    address.streetNumber,
+    address.subThoroughfare,
+    address.house_name,
+  );
 
 const normalizePostalCode = (address: Record<string, unknown>) =>
   pickString(address.postcode, address.postalCode, address.zip, address.zipCode);

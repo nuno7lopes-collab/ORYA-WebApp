@@ -2,11 +2,30 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const pairingSelect = {
+  id: true,
+  organizationId: true,
+  createdByUserId: true,
+  slots: {
+    select: {
+      id: true,
+      slotStatus: true,
+      isPublicOpen: true,
+    },
+  },
+  event: {
+    select: {
+      organizationId: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 // Toggle public/open slot (MVP): capitão ou staff OWNER/ADMIN
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +44,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: { slots: true, event: { select: { organizationId: true } } },
+    select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
@@ -57,7 +76,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
             }
           : undefined,
       },
-      include: { slots: true },
+      select: pairingSelect,
     });
     return jsonWrap({ ok: true, pairing: updated }, { status: 200 });
   } catch (err) {

@@ -763,7 +763,11 @@ export async function PATCH(req: NextRequest) {
 
       const updatedInvite = await tx.organizationMemberInvite.findUnique({
         where: { id: invite.id },
-        include: {
+        select: {
+          id: true,
+          role: true,
+          targetIdentifier: true,
+          targetUserId: true,
           invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
           targetUser: {
             select: {

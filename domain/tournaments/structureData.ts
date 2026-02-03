@@ -5,12 +5,46 @@ import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 export async function getTournamentStructure(tournamentId: number) {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    include: {
+    select: {
+      id: true,
+      format: true,
+      tieBreakRules: true,
+      generationSeed: true,
       stages: {
         orderBy: { order: "asc" },
-        include: {
-          groups: { orderBy: { order: "asc" }, include: { matches: true } },
-          matches: true,
+        select: {
+          id: true,
+          name: true,
+          stageType: true,
+          groups: {
+            orderBy: { order: "asc" },
+            select: {
+              id: true,
+              name: true,
+              matches: {
+                select: {
+                  id: true,
+                  groupId: true,
+                  pairing1Id: true,
+                  pairing2Id: true,
+                  round: true,
+                  startAt: true,
+                  status: true,
+                },
+              },
+            },
+          },
+          matches: {
+            select: {
+              id: true,
+              groupId: true,
+              pairing1Id: true,
+              pairing2Id: true,
+              round: true,
+              startAt: true,
+              status: true,
+            },
+          },
         },
       },
       event: {

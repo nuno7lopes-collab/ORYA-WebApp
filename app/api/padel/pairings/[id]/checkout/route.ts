@@ -6,6 +6,7 @@ import {
   PadelEligibilityType,
   PadelPaymentMode,
   PadelPairingPaymentStatus,
+  Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -19,6 +20,36 @@ import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+
+const pairingSelect = {
+  id: true,
+  eventId: true,
+  organizationId: true,
+  categoryId: true,
+  createdByUserId: true,
+  pairingStatus: true,
+  pairingJoinMode: true,
+  payment_mode: true,
+  deadlineAt: true,
+  partnerInviteToken: true,
+  player1UserId: true,
+  event: {
+    select: {
+      id: true,
+      slug: true,
+      organizationId: true,
+    },
+  },
+  slots: {
+    select: {
+      id: true,
+      slot_role: true,
+      slotStatus: true,
+      paymentStatus: true,
+      profileId: true,
+    },
+  },
+} satisfies Prisma.PadelPairingSelect;
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -42,10 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: {
-      slots: true,
-      event: { select: { organizationId: true, slug: true, id: true } },
-    },
+    select: pairingSelect,
   });
   if (!pairing) return fail("NOT_FOUND", "Pairing não encontrado.", 404);
   if (inviteToken && pairing.partnerInviteToken && pairing.partnerInviteToken !== inviteToken) {

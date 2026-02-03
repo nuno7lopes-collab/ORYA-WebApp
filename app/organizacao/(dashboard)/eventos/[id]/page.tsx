@@ -36,7 +36,7 @@ type EventWithTickets = {
   locationName: string | null;
   locationCity: string | null;
   address: string | null;
-  locationSource: "OSM" | "MANUAL" | null;
+  locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress: string | null;
   locationComponents: Record<string, unknown> | null;
   locationOverrides: Record<string, unknown> | null;
@@ -342,7 +342,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     : [];
   const backHref = eventRouteBase;
   const liveHref = `${eventRouteBase}/${event.id}/live`;
-  const hubBaseHref = isPadelEvent ? `${eventRouteBase}?section=padel-hub` : null;
+  const hubBaseHref = isPadelEvent ? `${eventRouteBase}?section=padel-tournaments` : null;
   const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
   const hubClubHref = hubBaseHref ? `${hubBaseHref}&padel=clubs` : null;
   const hubCourtsHref = hubBaseHref ? `${hubBaseHref}&padel=courts` : null;
@@ -433,6 +433,92 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   if (!liveHubReady) liveIssues.push("LiveHub desativado");
 
   const generateMatchesHref = isPadelEvent ? "#padel-torneio" : null;
+  const publicPageHref = `/eventos/${event.slug}`;
+  const monitorHref = `/eventos/${event.slug}/monitor`;
+  const scoreHref = `/eventos/${event.slug}/score`;
+  const calendarPublicHref = `/eventos/${event.slug}/calendario`;
+  const rankingPublicHref = `/eventos/${event.slug}/ranking`;
+
+  const actionToneClasses = (tone: "primary" | "success" | "warning" | "neutral") => {
+    switch (tone) {
+      case "primary":
+        return "border-[#6BFFFF]/45 bg-[#6BFFFF]/10 text-white hover:border-[#6BFFFF]/70";
+      case "success":
+        return "border-emerald-400/45 bg-emerald-400/10 text-emerald-50 hover:border-emerald-400/70";
+      case "warning":
+        return "border-amber-400/45 bg-amber-400/10 text-amber-50 hover:border-amber-400/70";
+      default:
+        return "border-white/15 bg-white/5 text-white/80 hover:border-white/35";
+    }
+  };
+
+  const opsActions = isPadelEvent
+    ? [
+        {
+          key: "public",
+          label: "Página pública",
+          description: "Partilha o torneio com jogadores.",
+          href: publicPageHref,
+          tone: "primary" as const,
+          external: true,
+        },
+        {
+          key: "live",
+          label: "Live Ops",
+          description: readyForLive ? "Live pronto para abrir." : liveIssues.join(" · ") || "Configura o live.",
+          href: liveHref,
+          tone: readyForLive ? ("success" as const) : ("warning" as const),
+        },
+        {
+          key: "monitor",
+          label: "Monitor TV",
+          description: "Ecrã para courts e público.",
+          href: monitorHref,
+          tone: "neutral" as const,
+          external: true,
+        },
+        {
+          key: "placar",
+          label: "Placar ao vivo",
+          description: "Resultados em tempo real.",
+          href: scoreHref,
+          tone: "neutral" as const,
+          external: true,
+        },
+        {
+          key: "calendar",
+          label: "Calendário público",
+          description: "Agenda e horários por court.",
+          href: calendarPublicHref,
+          tone: "neutral" as const,
+          external: true,
+        },
+        {
+          key: "ranking",
+          label: "Ranking público",
+          description: "Classificação por pontos.",
+          href: rankingPublicHref,
+          tone: "neutral" as const,
+          external: true,
+        },
+        {
+          key: "widgets",
+          label: "Widgets & exports",
+          description: "Embed e ficheiros oficiais.",
+          href: "#padel-widgets",
+          tone: "neutral" as const,
+          external: false,
+        },
+        {
+          key: "governance",
+          label: "Roles & lifecycle",
+          description: "Direção, árbitros e estado.",
+          href: "#padel-governance",
+          tone: "neutral" as const,
+          external: false,
+        },
+      ]
+    : [];
 
   const timeline = isPadelEvent && padelLifecycleStatus
     ? TOURNAMENT_LIFECYCLE_ORDER.map((key, idx) => {
@@ -477,15 +563,66 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 Live Ops
               </a>
             )}
-            <a
-              href={`/eventos/${event.slug}`}
-              className={CTA_PRIMARY}
-            >
+            <a href={publicPageHref} className={CTA_PRIMARY}>
               Ver página pública
             </a>
           </div>
         </div>
       </div>
+
+      {isPadelEvent && (
+        <section className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1126]/75 to-[#050810]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Operação premium</p>
+              <h2 className="text-xl font-semibold text-white">Atalhos do torneio</h2>
+              <p className="text-[12px] text-white/65">
+                Abrir live, monitor, calendário e distribuição com um clique.
+              </p>
+            </div>
+            <span
+              className={`rounded-full border px-3 py-1 text-[11px] ${
+                readyForLive
+                  ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
+                  : "border-amber-400/50 bg-amber-500/10 text-amber-50"
+              }`}
+            >
+              {readyForLive ? "Live pronto" : "Pré-live"}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {opsActions.map((action) => (
+              <a
+                key={action.key}
+                href={action.href}
+                target={action.external ? "_blank" : undefined}
+                rel={action.external ? "noreferrer" : undefined}
+                className={`group rounded-2xl border px-4 py-3 text-left transition ${actionToneClasses(action.tone)}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">{action.label}</p>
+                  <span className="text-[10px] text-white/50 group-hover:text-white/80">→</span>
+                </div>
+                <p className="mt-1 text-[11px] text-white/60">{action.description}</p>
+              </a>
+            ))}
+          </div>
+          {(generateIssues.length > 0 || liveIssues.length > 0) && (
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
+              {generateIssues.length > 0 && (
+                <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1">
+                  Geração de jogos: {generateIssues.join(" · ")}
+                </span>
+              )}
+              {liveIssues.length > 0 && (
+                <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1">
+                  Live: {liveIssues.join(" · ")}
+                </span>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.1fr)]">
         <div className="space-y-3 rounded-2xl border border-white/14 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-5 backdrop-blur-xl">
@@ -738,11 +875,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl border border-[#6BFFFF]/40 bg-[#02040b]/95 backdrop-blur-xl px-4 py-3.5">
-            <p className="text-[11px] text-[#6BFFFF]/80">
-              {ticketsSoldLabel}
-            </p>
+      <section id="padel-finance" className="scroll-mt-24 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-[#6BFFFF]/40 bg-[#02040b]/95 backdrop-blur-xl px-4 py-3.5">
+          <p className="text-[11px] text-[#6BFFFF]/80">
+            {ticketsSoldLabel}
+          </p>
             <p className="mt-1 text-2xl font-semibold tracking-tight">
               {totalTicketsSold}
             </p>
@@ -771,17 +908,16 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               {revenueHint}
             </p>
           </div>
-        </div>
-      </div>
+      </section>
 
       {isPadelEvent && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <section id="padel-governance" className="scroll-mt-24 grid grid-cols-1 gap-4 md:grid-cols-2">
           <PadelTournamentLifecyclePanel eventId={event.id} />
           <PadelTournamentRolesPanel eventId={event.id} />
-        </div>
+        </section>
       )}
 
-      <section className="rounded-2xl border border-white/12 bg-black/40 backdrop-blur-xl p-5 space-y-4">
+      <section id="padel-categories" className="scroll-mt-24 rounded-2xl border border-white/12 bg-black/40 backdrop-blur-xl p-5 space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-white/90">
@@ -1021,6 +1157,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           </>
         )}
       </section>
+
+      </div>
 
       <EventAttendeesPanel eventId={event.id} isPadelEvent={isPadelEvent} />
 

@@ -31,7 +31,12 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
     await prisma.$transaction(async (tx) => {
       const resale = await tx.ticketResale.findUnique({
         where: { id: resaleId },
-        include: { ticket: true },
+        select: {
+          id: true,
+          status: true,
+          ticketId: true,
+          ticket: { select: { eventId: true } },
+        },
       });
 
       if (!resale || !resale.ticket) {

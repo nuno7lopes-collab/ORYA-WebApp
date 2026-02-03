@@ -112,7 +112,6 @@ export const env = {
     "NEXT_PUBLIC_SITE_URL",
     "NEXT_PUBLIC_APP_URL",
     "SITE_URL",
-    "VERCEL_URL",
   ),
   uploadsBucket:
     process.env.SUPABASE_STORAGE_BUCKET_UPLOADS ??

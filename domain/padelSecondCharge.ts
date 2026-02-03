@@ -20,7 +20,21 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
   const now = params.now ?? new Date();
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: params.pairingId },
-    include: { slots: true },
+    select: {
+      id: true,
+      eventId: true,
+      payment_mode: true,
+      secondChargePaymentIntentId: true,
+      paymentMethodId: true,
+      player1UserId: true,
+      player2UserId: true,
+      slots: {
+        select: {
+          id: true,
+          paymentStatus: true,
+        },
+      },
+    },
   });
   if (!pairing) return { ok: false, code: "PAIRING_NOT_FOUND" } as const;
   if (pairing.payment_mode !== "SPLIT") return { ok: true, code: "NOT_SPLIT" } as const;
@@ -75,7 +89,22 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
 
   const registration = await prisma.padelRegistration.findUnique({
     where: { pairingId: pairing.id },
-    include: { lines: true },
+    select: {
+      id: true,
+      organizationId: true,
+      buyerIdentityId: true,
+      currency: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          unitAmount: true,
+          totalAmount: true,
+          label: true,
+          pairingSlotId: true,
+        },
+      },
+    },
   });
   if (!registration) {
     return { ok: false, code: "REGISTRATION_NOT_FOUND" } as const;

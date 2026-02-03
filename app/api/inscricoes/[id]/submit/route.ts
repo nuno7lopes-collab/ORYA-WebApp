@@ -54,8 +54,23 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
 
     const form = await prisma.organizationForm.findUnique({
       where: { id: formId },
-      include: {
-        fields: { orderBy: { order: "asc" } },
+      select: {
+        id: true,
+        status: true,
+        startAt: true,
+        endAt: true,
+        capacity: true,
+        waitlistEnabled: true,
+        fields: {
+          orderBy: { order: "asc" },
+          select: {
+            id: true,
+            label: true,
+            fieldType: true,
+            required: true,
+            options: true,
+          },
+        },
         organization: { select: { id: true, status: true, username: true } },
       },
     });

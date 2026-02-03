@@ -26,10 +26,12 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   EventTemplateType,
   LiveHubVisibility,
+  LocationSource,
   PadelEligibilityType,
   PayoutMode,
   ResaleMode,
   Prisma,
+  AddressSourceProvider,
   padel_format,
   OrganizationModule,
 } from "@prisma/client";
@@ -69,6 +71,7 @@ type CreateOrganizationEventBody = {
   locationFormattedAddress?: string | null;
   locationComponents?: Record<string, unknown> | null;
   locationOverrides?: Record<string, unknown> | null;
+  addressId?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
@@ -141,6 +144,34 @@ function slugify(input: string): string {
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
+  if (!canonical || typeof canonical !== "object") return null;
+  const record = canonical as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const ADDRESS_SELECT = {
+  id: true,
+  formattedAddress: true,
+  canonical: true,
+  latitude: true,
+  longitude: true,
+  sourceProvider: true,
+  sourceProviderPlaceId: true,
+  confidenceScore: true,
+  validationStatus: true,
+} satisfies Prisma.AddressSelect;
+
+const mapAddressProviderToLocationSource = (provider?: AddressSourceProvider | null) => {
+  if (!provider || provider === AddressSourceProvider.MANUAL) return LocationSource.MANUAL;
+  if (provider === AddressSourceProvider.APPLE_MAPS) return LocationSource.APPLE_MAPS;
+  return LocationSource.OSM;
+};
 
 async function generateUniqueSlug(baseSlug: string) {
   const existing = await prisma.event.findMany({
@@ -275,7 +306,12 @@ export async function POST(req: NextRequest) {
     const locationCity = body.locationCity?.trim() ?? "";
     const address = body.address?.trim() || null;
     const locationSourceRaw = typeof body.locationSource === "string" ? body.locationSource.toUpperCase() : null;
-    const locationSource = locationSourceRaw === "OSM" ? "OSM" : "MANUAL";
+    const locationSource =
+      locationSourceRaw === "APPLE_MAPS"
+        ? LocationSource.APPLE_MAPS
+        : locationSourceRaw === "OSM"
+          ? LocationSource.OSM
+          : LocationSource.MANUAL;
     const locationProviderId =
       typeof body.locationProviderId === "string" ? body.locationProviderId.trim() || null : null;
     const locationFormattedAddress =
@@ -284,6 +320,7 @@ export async function POST(req: NextRequest) {
       body.locationComponents && typeof body.locationComponents === "object"
         ? (body.locationComponents as Prisma.InputJsonValue)
         : null;
+    const addressIdInput = typeof body.addressId === "string" ? body.addressId.trim() || null : null;
     const rawOverrides =
       body.locationOverrides && typeof body.locationOverrides === "object"
         ? (body.locationOverrides as Record<string, unknown>)
@@ -318,18 +355,44 @@ export async function POST(req: NextRequest) {
       return fail(400, "Título é obrigatório.");
     }
 
+    const addressRecord = addressIdInput
+      ? await prisma.address.findUnique({ where: { id: addressIdInput }, select: ADDRESS_SELECT })
+      : null;
+    if (addressIdInput && !addressRecord) {
+      return fail(400, "Morada inválida.");
+    }
+
     if (!startsAtRaw) {
       return fail(400, "Data/hora de início é obrigatória.");
     }
 
-    const isLocationTbd = locationSource === "MANUAL" && !locationName && !locationCity && !address;
-    if (!locationCity && !isLocationTbd) {
+    const canonical = addressRecord?.canonical ?? null;
+    const resolvedLocationSource = addressRecord
+      ? mapAddressProviderToLocationSource(addressRecord.sourceProvider)
+      : locationSource;
+    const resolvedLocationProviderId = addressRecord ? addressRecord.sourceProviderPlaceId || null : locationProviderId;
+    const resolvedLocationFormattedAddress = addressRecord
+      ? addressRecord.formattedAddress
+      : locationFormattedAddress;
+    const resolvedLocationComponents = addressRecord ? (canonical as Prisma.InputJsonValue) : locationComponents;
+    const resolvedLatitude = addressRecord ? addressRecord.latitude : latitude;
+    const resolvedLongitude = addressRecord ? addressRecord.longitude : longitude;
+    const resolvedAddress =
+      addressRecord?.formattedAddress ||
+      pickCanonicalField(canonical, "addressLine1", "street", "road") ||
+      address ||
+      null;
+    const resolvedCity =
+      locationCity || pickCanonicalField(canonical, "city", "addressLine2", "locality") || "";
+
+    const isLocationTbd =
+      resolvedLocationSource === LocationSource.MANUAL && !locationName && !resolvedCity && !resolvedAddress;
+    if (!resolvedCity && !isLocationTbd) {
       return fail(400, "Cidade é obrigatória.");
     }
-    if (locationSource === "OSM") {
-      const hasCoords = Number.isFinite(latitude ?? NaN) && Number.isFinite(longitude ?? NaN);
-      if (!locationProviderId || !hasCoords) {
-        return fail(400, "Localização OSM inválida.");
+    if (resolvedLocationSource !== LocationSource.MANUAL) {
+      if (!addressRecord) {
+        return fail(400, "Seleciona uma morada normalizada.");
       }
     }
     // Permitimos cidades fora da whitelist para não bloquear dados existentes
@@ -723,19 +786,20 @@ export async function POST(req: NextRequest) {
           type: "ORGANIZATION_EVENT",
           templateType,
           ownerUserId: profile.id,
-          organization: organization?.id ? { connect: { id: organization.id } } : undefined,
+          organizationId: organization?.id ?? null,
           startsAt,
           endsAt,
           locationName,
-          locationCity,
-          address,
-          locationSource,
-          locationProviderId,
-          locationFormattedAddress,
-          locationComponents: locationComponents ?? undefined,
+          locationCity: resolvedCity,
+          address: resolvedAddress,
+          locationSource: resolvedLocationSource,
+          locationProviderId: resolvedLocationProviderId,
+          locationFormattedAddress: resolvedLocationFormattedAddress,
+          locationComponents: resolvedLocationComponents ?? undefined,
           locationOverrides: locationOverrides ?? undefined,
-          latitude: Number.isFinite(latitude ?? NaN) ? latitude : null,
-          longitude: Number.isFinite(longitude ?? NaN) ? longitude : null,
+          latitude: Number.isFinite(resolvedLatitude ?? NaN) ? resolvedLatitude : null,
+          longitude: Number.isFinite(resolvedLongitude ?? NaN) ? resolvedLongitude : null,
+          addressId: addressRecord?.id ?? null,
           pricingMode,
           liveHubVisibility,
           status: "PUBLISHED",

@@ -23,9 +23,7 @@ const CANONICAL_HOST = (process.env.CANONICAL_HOST ?? "").trim().toLowerCase();
 const CANONICAL_PROTOCOL = (process.env.CANONICAL_PROTOCOL ?? "https").trim().toLowerCase();
 const FORCE_HTTPS = process.env.FORCE_HTTPS !== "0";
 
-const IS_PROD = process.env.VERCEL_ENV
-  ? process.env.VERCEL_ENV === "production"
-  : process.env.NODE_ENV === "production";
+const IS_PROD = process.env.NODE_ENV === "production";
 const ALLOW_LOCAL_ADMIN = process.env.ALLOW_LOCAL_ADMIN === "1";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
 const SENSITIVE_PATH_PREFIXES = [
@@ -93,7 +91,6 @@ function getClientIp(req: NextRequest) {
     req.headers.get("x-forwarded-for") ??
     req.headers.get("x-real-ip") ??
     req.headers.get("cf-connecting-ip") ??
-    req.headers.get("x-vercel-forwarded-for") ??
     "";
   const candidate = forwarded.split(",")[0] ?? "";
   return normalizeIp(candidate);

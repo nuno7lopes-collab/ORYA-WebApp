@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export default async function PadelCategoryPage() {
   const target = await appendOrganizationIdToRedirectHref(
-    "/organizacao/torneios?section=padel-hub&padel=categories",
+    "/organizacao/torneios?section=padel-tournaments&padel=categories",
   );
   redirect(target);
 }

@@ -55,6 +55,66 @@ const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
 const INTENT_BUILD_FINGERPRINT = "INTENT_PATCH_v2";
 
+const pairingSlotSelect = {
+  id: true,
+  slot_role: true,
+  slotStatus: true,
+  paymentStatus: true,
+  ticketId: true,
+  profileId: true,
+  invitedContact: true,
+  invitedUserId: true,
+} satisfies Prisma.PadelPairingSlotSelect;
+
+const pairingEventSelect = {
+  id: true,
+  slug: true,
+  title: true,
+  status: true,
+  isDeleted: true,
+  startsAt: true,
+  timezone: true,
+  coverImageUrl: true,
+  locationName: true,
+  organizationId: true,
+  organization: {
+    select: {
+      feeMode: true,
+      platformFeeBps: true,
+      platformFeeFixedCents: true,
+      orgType: true,
+      stripeAccountId: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+    },
+  },
+} satisfies Prisma.EventSelect;
+
+const pairingForIntentSelect = {
+  id: true,
+  organizationId: true,
+  eventId: true,
+  categoryId: true,
+  pairingStatus: true,
+  payment_mode: true,
+  pairingJoinMode: true,
+  partnerInviteToken: true,
+  partnerLinkExpiresAt: true,
+  deadlineAt: true,
+  registration: { select: { id: true, status: true, buyerIdentityId: true } },
+  event: { select: pairingEventSelect },
+  slots: { select: pairingSlotSelect },
+} satisfies Prisma.PadelPairingSelect;
+
+const padelRegistrationLineSelect = {
+  id: true,
+  pairingSlotId: true,
+  label: true,
+  qty: true,
+  unitAmount: true,
+  totalAmount: true,
+} satisfies Prisma.PadelRegistrationLineSelect;
+
 type CheckoutItem = {
   ticketId: string | number;
   quantity: number;
@@ -219,35 +279,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
 
   const pairing = await prisma.padelPairing.findUnique({
     where: { id: pairingId },
-    include: {
-      slots: true,
-      registration: { select: { id: true, status: true, buyerIdentityId: true } },
-      event: {
-        select: {
-          id: true,
-          slug: true,
-          title: true,
-          status: true,
-          isDeleted: true,
-          startsAt: true,
-          timezone: true,
-          coverImageUrl: true,
-          locationName: true,
-          organizationId: true,
-          organization: {
-            select: {
-              feeMode: true,
-              platformFeeBps: true,
-              platformFeeFixedCents: true,
-              orgType: true,
-              stripeAccountId: true,
-              stripeChargesEnabled: true,
-              stripePayoutsEnabled: true,
-            },
-          },
-        },
-      },
-    },
+    select: pairingForIntentSelect,
   });
   if (!pairing?.event || pairing.event.isDeleted) {
     return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
@@ -466,7 +498,12 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
 
   const registration = await prisma.padelRegistration.findUnique({
     where: { id: registrationId },
-    include: { lines: true },
+    select: {
+      id: true,
+      lines: {
+        select: padelRegistrationLineSelect,
+      },
+    },
   });
   if (!registration || !registration.lines.length) {
     return intentError("PADEL_REGISTRATION_LINES_EMPTY", "Inscrição inválida.", {
@@ -1066,7 +1103,11 @@ async function _POST(req: NextRequest) {
 
       const resale = await prisma.ticketResale.findUnique({
         where: { id: resaleId },
-        include: {
+        select: {
+          id: true,
+          status: true,
+          sellerUserId: true,
+          price: true,
           ticket: {
             select: { id: true, ticketTypeId: true, status: true, userId: true, eventId: true },
           },
@@ -1093,12 +1134,7 @@ async function _POST(req: NextRequest) {
         });
       }
 
-      const resalePriceCents =
-        typeof (resale as any).priceCents === "number"
-          ? (resale as any).priceCents
-          : typeof (resale as any).price === "number"
-            ? (resale as any).price
-            : null;
+      const resalePriceCents = typeof resale.price === "number" ? resale.price : null;
 
       if (!Number.isFinite(resalePriceCents) || Number(resalePriceCents) <= 0) {
         return intentError("INVALID_RESALE_PRICE", "Preço de revenda inválido.", { httpStatus: 400 });
@@ -2242,7 +2278,12 @@ async function _POST(req: NextRequest) {
         const pairing = groupPairing
           ? await prisma.padelPairing.findUnique({
               where: { id: groupPairing.id },
-              include: { slots: true },
+              select: {
+                id: true,
+                slots: {
+                  select: pairingSlotSelect,
+                },
+              },
             })
           : null;
         const slot = pairing?.slots.find((s) => s.id === bodySlotId) ?? null;

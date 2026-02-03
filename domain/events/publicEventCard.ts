@@ -29,9 +29,24 @@ export type PublicEventCard = {
   hostUsername: string | null;
   status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT";
   isHighlighted: boolean;
+  ticketTypes?: PublicEventTicketType[];
 };
 
 export type PublicEventCardWithPrice = PublicEventCard & { _priceFromCents: number | null };
+
+export type PublicEventTicketType = {
+  id: number;
+  name: string;
+  description: string | null;
+  price: number;
+  currency: string | null;
+  status: "ON_SALE" | "UPCOMING" | "CLOSED" | "SOLD_OUT" | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  totalQuantity: number | null;
+  soldQuantity: number | null;
+  sortOrder: number | null;
+};
 
 type PublicEventCardInput = {
   id: number;
@@ -55,7 +70,21 @@ type PublicEventCardInput = {
   locationOverrides: unknown | null;
   coverImageUrl: string | null;
   pricingMode: string | null;
-  ticketTypes?: Array<{ price: number | null }> | null;
+  ticketTypes?:
+    | Array<{
+        id: number;
+        name: string;
+        description: string | null;
+        price: number;
+        currency: string | null;
+        status: string | null;
+        startsAt: Date | string | null;
+        endsAt: Date | string | null;
+        totalQuantity: number | null;
+        soldQuantity: number | null;
+        sortOrder: number | null;
+      }>
+    | null;
 };
 
 type PublicEventCardIndexInput = {
@@ -136,6 +165,22 @@ export function toPublicEventCardWithPrice(params: {
     coverImageUrl: event.coverImageUrl,
   });
 
+  const ticketTypes: PublicEventTicketType[] | undefined = Array.isArray(event.ticketTypes)
+    ? event.ticketTypes.map((ticket) => ({
+        id: ticket.id,
+        name: ticket.name,
+        description: ticket.description ?? null,
+        price: ticket.price,
+        currency: ticket.currency ?? null,
+        status: (ticket.status as PublicEventTicketType["status"]) ?? null,
+        startsAt: ticket.startsAt ? new Date(ticket.startsAt).toISOString() : null,
+        endsAt: ticket.endsAt ? new Date(ticket.endsAt).toISOString() : null,
+        totalQuantity: ticket.totalQuantity ?? null,
+        soldQuantity: ticket.soldQuantity ?? null,
+        sortOrder: ticket.sortOrder ?? null,
+      }))
+    : undefined;
+
   return {
     id: event.id,
     type: "EVENT",
@@ -170,6 +215,7 @@ export function toPublicEventCardWithPrice(params: {
     hostUsername,
     status: resolvePublicEventStatus({ status: event.status, endsAt: event.endsAt }),
     isHighlighted,
+    ticketTypes,
     _priceFromCents: priceFromCents,
   };
 }
