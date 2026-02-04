@@ -51,7 +51,7 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const resolved = await params;
   const slug = resolved?.slug;
-  const headersList = headers();
+  const headersList = await headers();
   const acceptLanguage = headersList.get("accept-language");
   const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
 

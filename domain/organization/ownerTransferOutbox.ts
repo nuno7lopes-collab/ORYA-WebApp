@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOwnerTransferEmail } from "@/lib/emailSender";
-import { sendEmail } from "@/lib/resendClient";
+import { sendEmail } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 

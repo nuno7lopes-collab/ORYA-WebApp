@@ -1,4 +1,5 @@
 import { buildResponseHeaders, getRequestContext, type RequestContext } from "@/lib/http/requestContext";
+import { setRequestAuthHeader } from "@/lib/http/authContext";
 import { respondError, respondLegacy } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
 
@@ -236,6 +237,7 @@ export function withApiEnvelope<Req extends Request, Args extends any[]>(
   handler: (req: Req, ...args: Args) => Promise<Response> | Response,
 ): (req: Req, ...args: Args) => Promise<Response> {
   return async (req: Req, ...args: Args) => {
+    setRequestAuthHeader(req?.headers ?? null);
     const ctx = getRequestContext(req);
     try {
       const result = await handler(req, ...args);

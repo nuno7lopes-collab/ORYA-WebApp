@@ -55,6 +55,11 @@ model Profile {
   loyaltyLedgerEntries                                             LoyaltyLedger[]
   organizationInvitesSent                                             OrganizationMemberInvite[] @relation("OrganizationMemberInviteInviter")
   organizationInvitesReceived                                         OrganizationMemberInvite[] @relation("OrganizationMemberInviteTarget")
+  bookingInvitesSent                                                  BookingInvite[]          @relation("BookingInviteInvitedBy")
+  bookingParticipants                                                 BookingParticipant[]     @relation("BookingParticipantUser")
+  bookingSplitsCreated                                                BookingSplit[]           @relation("BookingSplitCreatedBy")
+  bookingSplitParticipants                                            BookingSplitParticipant[] @relation("BookingSplitParticipantUser")
+  scheduleDelaysCreated                                               ScheduleDelay[]          @relation("ScheduleDelayCreatedBy")
   eventInvitesSent                                                 EventInvite[]           @relation("EventInviteInviter")
   eventInvitesReceived                                             EventInvite[]           @relation("EventInviteTarget")
   organization_members_organization_members_invited_by_user_idToprofiles OrganizationMember[]       @relation("organization_members_invited_by_user_idToprofiles")
@@ -258,6 +263,9 @@ model Organization {
   refundPolicyVersions    RefundPolicyVersion[]
   services                Service[]
   bookings                Booking[]
+  bookingInvites          BookingInvite[]
+  bookingSplits           BookingSplit[]
+  scheduleDelays          ScheduleDelay[]
   chatThreads             ChatThread[]
   chatConversations       ChatConversation[]
   internalChatChannels    InternalChatChannel[]
@@ -4018,8 +4026,9 @@ model BookingInvite {
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  invitedBy       Profile  @relation(fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  invitedBy       Profile  @relation("BookingInviteInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
   participant     BookingParticipant?
+  splitParticipants BookingSplitParticipant[] @relation("BookingSplitParticipantInvite")
 
   @@index([bookingId])
   @@index([organizationId])
@@ -4041,7 +4050,7 @@ model BookingParticipant {
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   invite          BookingInvite? @relation(fields: [inviteId], references: [id], onDelete: SetNull)
-  user            Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user            Profile? @relation("BookingParticipantUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([bookingId])
   @@index([inviteId])
@@ -4056,7 +4065,7 @@ model BookingSplit {
   id              Int      @id @default(autoincrement())
   bookingId       Int      @unique @map("booking_id")
   organizationId  Int      @map("organization_id")
-  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
   pricingMode     BookingSplitPricingMode @default(FIXED) @map("pricing_mode")
   status          BookingSplitStatus @default(OPEN)
   currency        String   @default("EUR")
@@ -4067,7 +4076,7 @@ model BookingSplit {
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy       Profile  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdBy       Profile?  @relation("BookingSplitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   participants    BookingSplitParticipant[]
 
   @@index([organizationId])
@@ -4093,8 +4102,8 @@ model BookingSplitParticipant {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   split           BookingSplit @relation(fields: [splitId], references: [id], onDelete: Cascade)
-  invite          BookingInvite? @relation(fields: [inviteId], references: [id], onDelete: SetNull)
-  user            Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invite          BookingInvite? @relation("BookingSplitParticipantInvite", fields: [inviteId], references: [id], onDelete: SetNull)
+  user            Profile? @relation("BookingSplitParticipantUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([splitId])
   @@index([inviteId])
@@ -4118,7 +4127,7 @@ model ScheduleDelay {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy       Profile?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdBy       Profile?     @relation("ScheduleDelayCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, scopeType, scopeId])
   @@index([organizationId, effectiveFrom])

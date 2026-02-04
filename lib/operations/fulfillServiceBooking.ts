@@ -49,6 +49,192 @@ function buildOwnerKey(userId: string | null) {
   return userId ? `user:${userId}` : "unknown";
 }
 
+async function resolveStripeFee(intent: Stripe.PaymentIntent, amountCents: number) {
+  let stripeFeeCents: number | null = null;
+  let stripeChargeId: string | null = null;
+
+  try {
+    if (intent.latest_charge) {
+      const chargeId =
+        typeof intent.latest_charge === "string"
+          ? intent.latest_charge
+          : intent.latest_charge?.id;
+      if (chargeId) {
+        const charge = await retrieveCharge(chargeId, {
+          expand: ["balance_transaction"],
+        });
+        stripeChargeId = charge.id ?? null;
+        const balanceTx = charge.balance_transaction as Stripe.BalanceTransaction | null;
+        if (balanceTx?.fee != null) stripeFeeCents = balanceTx.fee;
+      }
+    }
+  } catch (err) {
+    logError("fulfill_service_booking.balance_transaction_failed", err, { paymentIntentId: intent.id });
+  }
+
+  if (stripeFeeCents == null) {
+    stripeFeeCents = await estimateStripeFee(amountCents);
+  }
+
+  return { stripeFeeCents, stripeChargeId };
+}
+
+async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Promise<boolean> {
+  const meta = intent.metadata ?? {};
+  const splitParticipantId = parseId(meta.bookingSplitParticipantId);
+  if (!splitParticipantId) return false;
+
+  const bookingId = parseId(meta.bookingId);
+  const splitId = parseId(meta.bookingSplitId);
+  const organizationId = parseId(meta.organizationId);
+  const userId = typeof meta.userId === "string" ? meta.userId : null;
+  const platformFeeCents = parseNumber(meta.platformFeeCents) ?? 0;
+
+  const amountCents = intent.amount_received ?? intent.amount ?? 0;
+  const { stripeFeeCents, stripeChargeId } = await resolveStripeFee(intent, amountCents);
+
+  await prisma.$transaction(async (tx) => {
+    const participant = await tx.bookingSplitParticipant.findUnique({
+      where: { id: splitParticipantId },
+      include: {
+        split: {
+          include: {
+            booking: {
+              select: {
+                id: true,
+                status: true,
+                organizationId: true,
+                userId: true,
+                serviceId: true,
+                availabilityId: true,
+                startsAt: true,
+                snapshotTimezone: true,
+                locationText: true,
+                service: {
+                  select: {
+                    title: true,
+                    coverImageUrl: true,
+                    defaultLocationText: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!participant || !participant.split || !participant.split.booking) {
+      throw new Error("BOOKING_SPLIT_PARTICIPANT_NOT_FOUND");
+    }
+    if (splitId && participant.splitId !== splitId) {
+      throw new Error("BOOKING_SPLIT_MISMATCH");
+    }
+    if (bookingId && participant.split.booking.id !== bookingId) {
+      throw new Error("BOOKING_SPLIT_BOOKING_MISMATCH");
+    }
+
+    if (participant.status !== "PAID") {
+      await tx.bookingSplitParticipant.update({
+        where: { id: participant.id },
+        data: {
+          status: "PAID",
+          paidAt: new Date(),
+          paymentIntentId: intent.id,
+          shareCents: amountCents,
+          platformFeeCents,
+        },
+      });
+    }
+
+    const existingTransaction = await tx.transaction.findFirst({
+      where: { stripePaymentIntentId: intent.id },
+      select: { id: true },
+    });
+    if (!existingTransaction) {
+      await tx.transaction.create({
+        data: {
+          organizationId: organizationId ?? participant.split.booking.organizationId,
+          userId: userId ?? participant.userId ?? participant.split.booking.userId,
+          amountCents,
+          currency: (intent.currency ?? "eur").toUpperCase(),
+          stripeChargeId,
+          stripePaymentIntentId: intent.id,
+          platformFeeCents,
+          stripeFeeCents: stripeFeeCents ?? 0,
+          payoutStatus: "PENDING",
+          metadata: {
+            bookingId: participant.split.booking.id,
+            bookingSplitId: participant.splitId,
+            bookingSplitParticipantId: participant.id,
+          },
+        },
+      });
+    }
+
+    const remaining = await tx.bookingSplitParticipant.count({
+      where: { splitId: participant.splitId, status: { not: "PAID" } },
+    });
+    if (remaining > 0) return;
+
+    await tx.bookingSplit.update({
+      where: { id: participant.splitId },
+      data: { status: "COMPLETED" },
+    });
+
+    const booking = participant.split.booking;
+    if (!booking || booking.status === "CONFIRMED") return;
+    if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(booking.status)) {
+      return;
+    }
+
+    const result = await confirmPendingBooking({
+      tx,
+      bookingId: booking.id,
+      now: new Date(),
+      ignoreExpiry: true,
+      paymentMeta: null,
+    });
+    if (!result.ok) {
+      throw new Error(result.code);
+    }
+
+    await ensureConfirmationSnapshot({
+      tx,
+      bookingId: booking.id,
+      now: new Date(),
+      policyIdHint: parseId(meta.policyId),
+      paymentMeta: null,
+    });
+
+    const purchaseIdResolved = await resolveBookingPurchaseId({
+      tx,
+      intent,
+      bookingId: booking.id,
+    });
+    await upsertBookingEntitlement({
+      tx,
+      booking,
+      purchaseId: purchaseIdResolved,
+      ownerUserId: booking.userId,
+    });
+
+    await recordOrganizationAudit(tx, {
+      organizationId: organizationId ?? booking.organizationId,
+      actorUserId: userId ?? booking.userId,
+      action: "BOOKING_CREATED",
+      metadata: {
+        bookingId: booking.id,
+        serviceId: booking.serviceId ?? null,
+        availabilityId: booking.availabilityId ?? null,
+        policyId: parseId(meta.policyId) ?? null,
+      },
+    });
+  });
+
+  return true;
+}
+
 async function resolveBookingPurchaseId(params: {
   tx: Prisma.TransactionClient;
   intent: Stripe.PaymentIntent;
@@ -260,6 +446,8 @@ export async function fulfillServiceBookingIntent(
   intent: Stripe.PaymentIntent,
 ): Promise<boolean> {
   const meta = intent.metadata ?? {};
+  const handledSplit = await fulfillSplitParticipantIntent(intent);
+  if (handledSplit) return true;
   const isServiceBooking =
     meta.serviceBooking === "1" ||
     meta.serviceBooking === "true" ||

@@ -6,6 +6,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { BookingInviteStatus } from "@prisma/client";
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { getBookingState, isBookingConfirmed } from "@/lib/reservas/bookingState";
 
 function errorCodeForStatus(status: number) {
   if (status === 404) return "NOT_FOUND";
@@ -70,6 +71,28 @@ async function _GET(
                 brandingAvatarUrl: true,
               },
             },
+            splitPayment: {
+              select: {
+                id: true,
+                status: true,
+                pricingMode: true,
+                currency: true,
+                totalCents: true,
+                shareCents: true,
+                deadlineAt: true,
+                participants: {
+                  select: {
+                    id: true,
+                    inviteId: true,
+                    status: true,
+                    baseShareCents: true,
+                    shareCents: true,
+                    platformFeeCents: true,
+                    paidAt: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -78,6 +101,10 @@ async function _GET(
     if (!invite || !invite.booking) {
       return fail(404, "Convite não encontrado.");
     }
+
+    const split = invite.booking.splitPayment;
+    const participant =
+      split?.participants?.find((item) => item.inviteId === invite.id) ?? null;
 
     return respondOk(ctx, {
       invite: {
@@ -93,12 +120,24 @@ async function _GET(
         id: invite.booking.id,
         startsAt: invite.booking.startsAt,
         durationMinutes: invite.booking.durationMinutes,
-        status: invite.booking.status,
+        status: getBookingState(invite.booking),
         locationText: invite.booking.locationText,
         snapshotTimezone: invite.booking.snapshotTimezone,
       },
       service: invite.booking.service,
       organization: invite.booking.organization,
+      split: split
+        ? {
+            id: split.id,
+            status: split.status,
+            pricingMode: split.pricingMode,
+            currency: split.currency,
+            totalCents: split.totalCents,
+            shareCents: split.shareCents,
+            deadlineAt: split.deadlineAt,
+            participant,
+          }
+        : null,
     });
   } catch (err) {
     console.error("GET /api/convites/[token] error:", err);
@@ -155,6 +194,12 @@ async function _POST(
                 officialEmailVerifiedAt: true,
               },
             },
+            splitPayment: {
+              select: {
+                status: true,
+                deadlineAt: true,
+              },
+            },
           },
         },
       },
@@ -163,8 +208,14 @@ async function _POST(
     if (!invite || !invite.booking) {
       return fail(404, "Convite não encontrado.");
     }
-    if (invite.booking.status !== "CONFIRMED") {
-      return fail(409, "Esta reserva já não está confirmada.");
+    if (!isBookingConfirmed(invite.booking)) {
+      const split = invite.booking.splitPayment;
+      if (!split || split.status !== "OPEN") {
+        return fail(409, "Esta reserva já não está confirmada.");
+      }
+      if (split.deadlineAt && split.deadlineAt < new Date()) {
+        return fail(409, "O prazo para responder expirou.");
+      }
     }
 
     if (invite.status === response) {
@@ -201,8 +252,16 @@ async function _POST(
             status: "CONFIRMED",
           },
         });
+        await tx.bookingSplitParticipant.updateMany({
+          where: { inviteId: invite.id, status: { not: "PAID" } },
+          data: { status: "PENDING" },
+        });
       } else if (response === BookingInviteStatus.DECLINED) {
         await tx.bookingParticipant.deleteMany({ where: { inviteId: invite.id } });
+        await tx.bookingSplitParticipant.updateMany({
+          where: { inviteId: invite.id, status: { not: "PAID" } },
+          data: { status: "CANCELLED" },
+        });
       }
 
       return updatedInvite;

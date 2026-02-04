@@ -1105,9 +1105,9 @@ export default function ReservasDashboardPage() {
       const delayMinutes = Number.isFinite(Number(overrideMinutes))
         ? Math.max(0, Math.round(Number(overrideMinutes)))
         : Math.max(0, Math.round(Number(delayMinutesDraft)));
-      const res = await fetch(\"/api/organizacao/reservas/delays\", {
-        method: \"POST\",
-        headers: { \"Content-Type\": \"application/json\" },
+      const res = await fetch("/api/organizacao/reservas/delays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scopeType: delayScope.scopeType,
           scopeId: delayScope.scopeId,
@@ -1120,13 +1120,13 @@ export default function ReservasDashboardPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.delay) {
-        throw new Error(json?.message || json?.error || \"Erro ao atualizar atraso.\");
+        throw new Error(json?.message || json?.error || "Erro ao atualizar atraso.");
       }
       await mutateDelay();
       await mutateBookings();
       await mutateUpcoming();
     } catch (err) {
-      setDelayError(err instanceof Error ? err.message : \"Erro ao atualizar atraso.\");
+      setDelayError(err instanceof Error ? err.message : "Erro ao atualizar atraso.");
     } finally {
       setDelaySaving(false);
     }

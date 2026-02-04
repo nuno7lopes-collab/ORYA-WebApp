@@ -405,7 +405,15 @@ export default function ReservasBookingClient({
     : null;
   const baseServiceCents = selectedService?.unitPriceCents ?? 0;
   const packageOptions = useMemo(
-    () => (selectedService?.packages ?? []).slice().sort((a, b) => b.recommended - a.recommended || a.sortOrder - b.sortOrder || a.id - b.id),
+    () =>
+      (selectedService?.packages ?? [])
+        .slice()
+        .sort(
+          (a, b) =>
+            Number(b.recommended ?? 0) - Number(a.recommended ?? 0) ||
+            (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+            a.id - b.id,
+        ),
     [selectedService?.packages],
   );
   const selectedPackage =

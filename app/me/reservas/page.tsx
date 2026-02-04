@@ -71,6 +71,33 @@ type BookingInviteItem = {
   createdAt: string;
 };
 
+type SplitParticipantForm = {
+  inviteId: number;
+  label: string;
+  contact: string | null;
+  status: BookingInviteItem["status"];
+  include: boolean;
+  amount: string;
+  percent: string;
+  paidAt?: string | null;
+};
+
+type SplitState = {
+  bookingId: number;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  status: "NONE" | "OPEN" | "COMPLETED" | "CANCELLED";
+  pricingMode: "FIXED" | "DYNAMIC";
+  dynamicMode: "AMOUNT" | "PERCENT";
+  fixedShare: string;
+  deadlineAt: string;
+  participants: SplitParticipantForm[];
+  totalCents: number;
+  paidCents: number;
+  currency: string;
+};
+
 function formatDeadline(deadline: string | null) {
   if (!deadline) return null;
   const date = new Date(deadline);
@@ -103,6 +130,37 @@ function formatHoldDeadline(pendingExpiresAt: string | null, createdAt: string) 
       : new Date(created.getTime() + BOOKING_HOLD_MINUTES * 60 * 1000);
   if (Number.isNaN(expiresAt.getTime())) return null;
   return expiresAt.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatMoney(cents: number, currency: string) {
+  return `${(cents / 100).toFixed(2)} ${currency}`;
+}
+
+function formatCentsInput(cents: number) {
+  return (cents / 100).toFixed(2);
+}
+
+function parseAmountToCents(value: string) {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * 100);
+}
+
+function parsePercentToBps(value: string) {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * 100);
+}
+
+function distributeEvenly(total: number, count: number) {
+  if (count <= 0) return [];
+  const base = Math.floor(total / count);
+  const remainder = total - base * count;
+  return Array.from({ length: count }, (_, idx) => base + (idx < remainder ? 1 : 0));
 }
 
 export default function MinhasReservasPage() {
@@ -153,6 +211,7 @@ export default function MinhasReservasPage() {
     copiedToken: string | null;
     resendingId: number | null;
   } | null>(null);
+  const [splitState, setSplitState] = useState<SplitState | null>(null);
 
   const items = data?.items ?? [];
   const loadError = data && data.ok === false ? data.error ?? "Erro ao carregar reservas." : null;
@@ -435,13 +494,120 @@ export default function MinhasReservasPage() {
           }))
         : [];
       setInviteState((prev) => (prev ? { ...prev, loading: false, items } : prev));
+
+      const booking = items.find((item) => item.id === bookingId) ?? null;
+      if (!booking) return;
+
+      setSplitState({
+        bookingId,
+        loading: true,
+        saving: false,
+        error: null,
+        status: "NONE",
+        pricingMode: "FIXED",
+        dynamicMode: "AMOUNT",
+        fixedShare: "",
+        deadlineAt: "",
+        participants: [],
+        totalCents: booking.price ?? 0,
+        paidCents: 0,
+        currency: booking.currency ?? "EUR",
+      });
+
+      const splitRes = await fetch(`/api/me/reservas/${bookingId}/split`);
+      const splitJson = await splitRes.json().catch(() => null);
+      if (!splitRes.ok || !splitJson?.ok) {
+        setSplitState((prev) =>
+          prev
+            ? {
+                ...prev,
+                loading: false,
+                error: splitJson?.message || splitJson?.error || "Erro ao carregar pagamento dividido.",
+              }
+            : prev,
+        );
+        return;
+      }
+
+      const split = splitJson?.data?.split ?? null;
+      const baseTotal = split?.baseTotalCents ?? booking.price ?? 0;
+      const paidCents = split?.paidCents ?? 0;
+      const participants: SplitParticipantForm[] = items.map((invite) => {
+        const label = invite.targetName || invite.targetContact || "Convidado";
+        const splitParticipant = split?.participants?.find((item: any) => item.inviteId === invite.id);
+        const baseShare = splitParticipant?.baseShareCents ?? 0;
+        const percentValue =
+          baseTotal > 0 ? ((baseShare / baseTotal) * 100).toFixed(2).replace(/\.00$/, "") : "";
+        return {
+          inviteId: invite.id,
+          label,
+          contact: invite.targetContact ?? null,
+          status: invite.status,
+          include: Boolean(splitParticipant) || invite.status !== "DECLINED",
+          amount: baseShare > 0 ? formatCentsInput(baseShare) : "",
+          percent: baseShare > 0 ? percentValue : "",
+          paidAt: splitParticipant?.paidAt ?? null,
+        };
+      });
+
+      const fixedShare =
+        split?.pricingMode === "FIXED" && typeof split?.shareCents === "number"
+          ? formatCentsInput(split.shareCents)
+          : "";
+
+      const autoFixedShare =
+        split && split.pricingMode === "FIXED"
+          ? fixedShare
+          : (() => {
+              const included = participants.filter((p) => p.include);
+              if (included.length === 0) return "";
+              if (baseTotal % included.length !== 0) return "";
+              return formatCentsInput(baseTotal / included.length);
+            })();
+
+      if (!split) {
+        const included = participants.filter((p) => p.include);
+        if (included.length > 0) {
+          const evenCents = distributeEvenly(baseTotal, included.length);
+          included.forEach((participant, idx) => {
+            participant.amount = formatCentsInput(evenCents[idx] ?? 0);
+            participant.percent = ((evenCents[idx] ?? 0) / (baseTotal || 1) * 100)
+              .toFixed(2)
+              .replace(/\.00$/, "");
+          });
+        }
+      }
+
+      setSplitState((prev) =>
+        prev
+          ? {
+              ...prev,
+              loading: false,
+              status: split?.status ?? "NONE",
+              pricingMode: split?.pricingMode === "DYNAMIC" ? "DYNAMIC" : "FIXED",
+              dynamicMode: split?.pricingMode === "DYNAMIC" ? "AMOUNT" : "AMOUNT",
+              fixedShare: autoFixedShare,
+              deadlineAt: split?.deadlineAt ? split.deadlineAt.slice(0, 16) : "",
+              participants,
+              totalCents: baseTotal,
+              paidCents,
+              currency: split?.currency ?? booking.currency ?? "EUR",
+            }
+          : prev,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao carregar convites.";
       setInviteState((prev) => (prev ? { ...prev, loading: false, error: message } : prev));
+      setSplitState((prev) =>
+        prev ? { ...prev, loading: false, error: message } : prev,
+      );
     }
   };
 
-  const closeInvites = () => setInviteState(null);
+  const closeInvites = () => {
+    setInviteState(null);
+    setSplitState(null);
+  };
 
   const submitInvite = async () => {
     if (!inviteState || inviteState.saving) return;
@@ -504,6 +670,25 @@ export default function MinhasReservasPage() {
             }
           : prev,
       );
+      setSplitState((prev) => {
+        if (!prev) return prev;
+        const existingIds = new Set(prev.participants.map((p) => p.inviteId));
+        const newParticipants = created.map((invite: any) => ({
+          inviteId: invite.id,
+          label: invite.targetName || invite.targetContact || "Convidado",
+          contact: invite.targetContact ?? null,
+          status: invite.status,
+          include: invite.status !== "DECLINED",
+          amount: "",
+          percent: "",
+          paidAt: null,
+        }));
+        const merged = [
+          ...prev.participants,
+          ...newParticipants.filter((p: SplitParticipantForm) => !existingIds.has(p.inviteId)),
+        ];
+        return { ...prev, participants: merged };
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao enviar convite.";
       setInviteState((prev) => (prev ? { ...prev, saving: false, error: message, notice: null } : prev));

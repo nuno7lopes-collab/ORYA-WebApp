@@ -194,10 +194,11 @@ async function _POST(req: NextRequest) {
     if (!scopeType) {
       return fail(400, "Scope inválido.");
     }
-    if (scopeType !== AvailabilityScopeType.ORGANIZATION && (!Number.isFinite(scopeId) || scopeId <= 0)) {
+    const scopeIdValue = scopeId ?? Number.NaN;
+    if (scopeType !== AvailabilityScopeType.ORGANIZATION && (!Number.isFinite(scopeIdValue) || scopeIdValue <= 0)) {
       return fail(400, "Scope ID inválido.");
     }
-    const normalizedScopeId = scopeType === AvailabilityScopeType.ORGANIZATION ? 0 : Math.round(scopeId ?? 0);
+    const normalizedScopeId = scopeType === AvailabilityScopeType.ORGANIZATION ? 0 : Math.round(scopeIdValue);
 
     const delayMinutesRaw = Number(payload?.delayMinutes ?? payload?.minutes ?? 0);
     if (!Number.isFinite(delayMinutesRaw) || delayMinutesRaw < 0) {

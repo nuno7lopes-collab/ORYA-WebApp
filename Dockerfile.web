@@ -17,10 +17,8 @@ RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
-COPY config/supabase-root-2021.pem /tmp/supabase-root-2021.pem
 RUN apk add --no-cache bash curl aws-cli python3 ca-certificates \
   && curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /usr/local/share/ca-certificates/rds-global.pem \
-  && cp /tmp/supabase-root-2021.pem /usr/local/share/ca-certificates/supabase-root-2021.crt \
   && update-ca-certificates
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt

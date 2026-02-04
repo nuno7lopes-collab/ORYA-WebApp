@@ -10,6 +10,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { BookingInviteStatus } from "@prisma/client";
 import crypto from "crypto";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { isBookingConfirmed } from "@/lib/reservas/bookingState";
 
 const MAX_INVITES = 20;
 
@@ -51,7 +52,10 @@ function generateToken(existing: Set<string>) {
   return token;
 }
 
-async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -109,7 +113,12 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   }
 }
 
-async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+type NormalizedInvite = { contact: string; name: string; message: string };
+
+async function _POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -154,12 +163,18 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (booking.userId !== user.id) {
       return fail(403, "Sem permissões.");
     }
-    if (booking.status !== "CONFIRMED") {
-      return fail(409, "Só podes convidar após confirmação.");
+    if (!isBookingConfirmed(booking)) {
+      const split = await prisma.bookingSplit.findUnique({
+        where: { bookingId },
+        select: { status: true },
+      });
+      if (!split || split.status !== "OPEN") {
+        return fail(409, "Só podes convidar após confirmação.");
+      }
     }
 
-    const invites = invitesPayload
-      .map((invite: any) => {
+    const invites: NormalizedInvite[] = invitesPayload
+      .map((invite: any): NormalizedInvite => {
         const contactRaw = typeof invite?.contact === "string" ? invite.contact : "";
         const contact = normalizeContact(contactRaw);
         const name = typeof invite?.name === "string" ? invite.name.trim() : "";
@@ -235,37 +250,36 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           }),
         ]);
 
-        if (!bookingDetails?.startsAt) {
-          return;
-        }
-        const baseUrl = getAppBaseUrl().replace(/\/+$/, "");
-        const serviceTitle = bookingDetails.service?.title || "Serviço";
-        const organizationName =
-          bookingDetails.organization?.publicName ||
-          bookingDetails.organization?.businessName ||
-          "Organização";
-        const inviterName = inviterProfile?.fullName || inviterProfile?.username || null;
-        const startsAt = bookingDetails.startsAt;
-        const timeZone = bookingDetails.snapshotTimezone ?? null;
+        if (bookingDetails?.startsAt) {
+          const baseUrl = getAppBaseUrl().replace(/\/+$/, "");
+          const serviceTitle = bookingDetails.service?.title || "Serviço";
+          const organizationName =
+            bookingDetails.organization?.publicName ||
+            bookingDetails.organization?.businessName ||
+            "Organização";
+          const inviterName = inviterProfile?.fullName || inviterProfile?.username || null;
+          const startsAt = bookingDetails.startsAt;
+          const timeZone = bookingDetails.snapshotTimezone ?? null;
 
-        await Promise.allSettled(
-          emailInvites.map((invite) =>
-            queueBookingInviteEmail({
-              dedupeKey: `booking_invite:${invite.id}`,
-              recipient: invite.targetContact ?? "",
-              bookingId,
-              organizationId: booking.organizationId,
-              serviceTitle,
-              organizationName,
-              startsAt,
-              timeZone,
-              inviteUrl: `${baseUrl}/convites/${invite.token}`,
-              inviterName,
-              guestName: invite.targetName ?? null,
-              message: invite.message ?? null,
-            }),
-          ),
-        );
+          await Promise.allSettled(
+            emailInvites.map((invite) =>
+              queueBookingInviteEmail({
+                dedupeKey: `booking_invite:${invite.id}`,
+                recipient: invite.targetContact ?? "",
+                bookingId,
+                organizationId: booking.organizationId,
+                serviceTitle,
+                organizationName,
+                startsAt,
+                timeZone,
+                inviteUrl: `${baseUrl}/convites/${invite.token}`,
+                inviterName,
+                guestName: invite.targetName ?? null,
+                message: invite.message ?? null,
+              }),
+            ),
+          );
+        }
       } catch (err) {
         console.warn("booking invite email enqueue failed", err);
       }

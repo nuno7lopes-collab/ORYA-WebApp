@@ -80,10 +80,10 @@ Transformar o backend já fechado em operação premium de UI/UX, com:
 
 ## Fase P3 — UX global premium (Blueprint F1-C/F2)
 
-- [ ] Command actions por contexto (torneio/clube) com atalhos de teclado.
-- [ ] Context drawer com “estado operacional de hoje” (split pendente, waitlist, conflitos, live alerts).
-- [ ] Multi-idioma consistente em páginas públicas de torneio e jogo.
-- [ ] Uniformizar microcopy de estados (pending/matchmaking/confirmed/expired) em todas as superfícies.
+- [x] Command actions por contexto (torneio/clube) com atalhos de teclado.
+- [x] Context drawer com “estado operacional de hoje” (split pendente, waitlist, conflitos, live alerts).
+- [x] Multi-idioma consistente em páginas públicas de torneio e jogo.
+- [x] Uniformizar microcopy de estados (pending/matchmaking/confirmed/expired) em todas as superfícies.
 
 ## 5) Política de legacy
 

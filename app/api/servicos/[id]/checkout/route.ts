@@ -57,6 +57,9 @@ export async function POST(
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, serviceId },
       include: {
+        splitPayment: {
+          select: { status: true },
+        },
         service: {
           select: {
             id: true,
@@ -100,6 +103,9 @@ export async function POST(
     }
     if (!["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
       return fail("RESERVA_INATIVA", "Reserva inativa.", 409);
+    }
+    if (booking.splitPayment?.status === "OPEN") {
+      return fail("SPLIT_ACTIVE", "Pagamento dividido ativo.", 409);
     }
 
     const pendingExpiry =

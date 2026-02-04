@@ -6,8 +6,8 @@ import PadelOpenPairingsClient from "./PadelOpenPairingsClient";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default function PadelDuplasPage() {
-  const headersList = headers();
+export default async function PadelDuplasPage() {
+  const headersList = await headers();
   const acceptLanguage = headersList.get("accept-language");
   const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
   return (

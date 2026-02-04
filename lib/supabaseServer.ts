@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies, headers } from "next/headers";
 import { env } from "@/lib/env";
 import { cache } from "react";
+import { getRequestAuthHeader } from "@/lib/http/authContext";
 
 function decodeBase64Cookie(raw: string) {
   const BASE64_PREFIX = "base64-";
@@ -54,7 +55,8 @@ export async function createSupabaseServer() {
   const cookieStore = (await cookies());
   const headersStore = await headers();
   const hostHeader = headersStore.get("host");
-  const bearerToken = extractBearerToken(headersStore.get("authorization"));
+  const rawAuthHeader = headersStore.get("authorization") ?? getRequestAuthHeader();
+  const bearerToken = extractBearerToken(rawAuthHeader);
   const cookieDomain =
     env.supabaseCookieDomain || resolveCookieDomainFromHost(hostHeader);
   const isLocalhostDomain =
@@ -116,6 +118,15 @@ export async function createSupabaseServer() {
       },
     }
   );
+
+  // If we have a bearer token (mobile app), ensure auth.getUser() uses it.
+  if (bearerToken) {
+    const authAny = supabase.auth as typeof supabase.auth & {
+      getUser: (jwt?: string) => ReturnType<typeof supabase.auth.getUser>;
+    };
+    const originalGetUser = authAny.getUser.bind(authAny);
+    authAny.getUser = (jwt?: string) => originalGetUser(jwt ?? bearerToken);
+  }
 
   return supabase;
 }

@@ -231,6 +231,20 @@ export async function updateBooking(
   });
 }
 
+export async function ensureBookingPendingExpiry(params: {
+  tx: Prisma.TransactionClient;
+  bookingId: number;
+  pendingExpiresAt: Date | null;
+  deadlineAt: Date;
+}) {
+  const { tx, bookingId, pendingExpiresAt, deadlineAt } = params;
+  if (pendingExpiresAt && pendingExpiresAt >= deadlineAt) return;
+  await tx.booking.update({
+    where: { id: bookingId },
+    data: { pendingExpiresAt: deadlineAt },
+  });
+}
+
 export async function cancelBooking(
   input: BookingCommandBase &
     BookingCommandTx & {

@@ -137,7 +137,7 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
 export default async function EventosFeedPage({ searchParams }: PageProps) {
   const resolved = (await searchParams) ?? {};
   const search = resolved.q?.trim() ?? "";
-  const headersList = headers();
+  const headersList = await headers();
   const acceptLanguage = headersList.get("accept-language");
   const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
   const events = await loadEvents(search);

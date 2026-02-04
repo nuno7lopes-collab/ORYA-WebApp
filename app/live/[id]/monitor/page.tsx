@@ -20,7 +20,7 @@ export default async function MonitorPage({ params }: PageProps) {
   const resolved = await params;
   const tournamentId = Number(resolved.id);
   if (!Number.isFinite(tournamentId)) notFound();
-  const headersList = headers();
+  const headersList = await headers();
   const acceptLanguage = headersList.get("accept-language");
   const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
 

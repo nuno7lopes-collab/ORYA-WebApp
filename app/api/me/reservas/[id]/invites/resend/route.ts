@@ -8,6 +8,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { queueBookingInviteEmail } from "@/domain/notifications/email";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { isBookingConfirmed } from "@/lib/reservas/bookingState";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -68,8 +69,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (booking.userId !== user.id) {
       return fail(403, "Sem permissões.");
     }
-    if (booking.status !== "CONFIRMED") {
-      return fail(409, "Só podes reenviar convites em reservas confirmadas.");
+    if (!isBookingConfirmed(booking)) {
+      const split = await prisma.bookingSplit.findUnique({
+        where: { bookingId },
+        select: { status: true },
+      });
+      if (!split || split.status !== "OPEN") {
+        return fail(409, "Só podes reenviar convites em reservas confirmadas.");
+      }
     }
 
     const invite = await prisma.bookingInvite.findFirst({
