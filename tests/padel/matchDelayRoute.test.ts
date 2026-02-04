@@ -37,6 +37,36 @@ beforeEach(async () => {
 });
 
 describe("padel match delay route", () => {
+  it("bloqueia sem permissão EDIT", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
+    });
+    prisma.eventMatchSlot.findUnique.mockResolvedValue({
+      id: 50,
+      status: "PENDING",
+      event: {
+        id: 10,
+        organizationId: 99,
+        startsAt: new Date(),
+        endsAt: new Date(),
+        padelTournamentConfig: { padelClubId: null, partnerClubIds: [], advancedSettings: {} },
+      },
+    });
+    getActiveOrganizationForUser.mockResolvedValue({
+      organization: { id: 99 },
+      membership: { role: "STAFF", rolePack: null },
+    });
+    ensureMemberModuleAccess.mockResolvedValue({ ok: false });
+
+    const req = new NextRequest("http://localhost/api/padel/matches/50/delay", {
+      method: "POST",
+      body: JSON.stringify({ reason: "rain", clearSchedule: true, autoReschedule: false }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: "50" }) });
+    expect(res.status).toBe(403);
+  });
+
   it("regista audit com metadata", async () => {
     createSupabaseServer.mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },

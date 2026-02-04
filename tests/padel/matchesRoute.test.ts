@@ -61,6 +61,39 @@ describe("padel matches route", () => {
     expect(res.status).toBe(401);
   });
 
+  it("bloqueia update sem permissão EDIT", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
+    });
+    prisma.eventMatchSlot.findUnique.mockResolvedValue({
+      id: 10,
+      eventId: 5,
+      status: "PENDING",
+      score: {},
+      scoreSets: null,
+      pairingAId: 1,
+      pairingBId: 2,
+      winnerPairingId: null,
+      startTime: null,
+      courtId: null,
+      courtNumber: null,
+      event: { organizationId: 99 },
+    });
+    getActiveOrganizationForUser.mockResolvedValue({
+      organization: { id: 99 },
+      membership: { role: "STAFF", rolePack: null },
+    });
+    ensureMemberModuleAccess.mockResolvedValue({ ok: false });
+
+    const req = new NextRequest("http://localhost/api/padel/matches", {
+      method: "POST",
+      body: JSON.stringify({ id: 10, status: "IN_PROGRESS" }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(403);
+  });
+
   it("atualiza match quando permissões são válidas", async () => {
     createSupabaseServer.mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },

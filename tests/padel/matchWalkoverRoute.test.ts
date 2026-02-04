@@ -49,6 +49,33 @@ beforeEach(async () => {
 });
 
 describe("padel match walkover route", () => {
+  it("bloqueia sem permissão EDIT", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
+    });
+    prisma.eventMatchSlot.findUnique.mockResolvedValue({
+      id: 1,
+      pairingAId: 11,
+      pairingBId: 12,
+      eventId: 5,
+      status: "PENDING",
+      event: { organizationId: 99 },
+    });
+    getActiveOrganizationForUser.mockResolvedValue({
+      organization: { id: 99 },
+      membership: { role: "STAFF", rolePack: null },
+    });
+    ensureMemberModuleAccess.mockResolvedValue({ ok: false });
+
+    const req = new NextRequest("http://localhost/api/padel/matches/1/walkover", {
+      method: "POST",
+      body: JSON.stringify({ winner: "A" }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    expect(res.status).toBe(403);
+  });
+
   it("marca walkover e grava audit", async () => {
     createSupabaseServer.mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
