@@ -14,12 +14,14 @@ export async function getTournamentStructure(tournamentId: number) {
         orderBy: { order: "asc" },
         select: {
           id: true,
+          order: true,
           name: true,
           stageType: true,
           groups: {
             orderBy: { order: "asc" },
             select: {
               id: true,
+              order: true,
               name: true,
               matches: {
                 select: {
@@ -28,8 +30,13 @@ export async function getTournamentStructure(tournamentId: number) {
                   pairing1Id: true,
                   pairing2Id: true,
                   round: true,
+                  roundLabel: true,
                   startAt: true,
+                  courtId: true,
                   status: true,
+                  score: true,
+                  nextMatchId: true,
+                  nextSlot: true,
                 },
               },
             },
@@ -41,8 +48,13 @@ export async function getTournamentStructure(tournamentId: number) {
               pairing1Id: true,
               pairing2Id: true,
               round: true,
+              roundLabel: true,
               startAt: true,
+              courtId: true,
               status: true,
+              score: true,
+              nextMatchId: true,
+              nextSlot: true,
             },
           },
         },

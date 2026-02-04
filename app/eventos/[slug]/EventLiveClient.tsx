@@ -12,9 +12,9 @@ import { Avatar } from "@/components/ui/avatar";
 import ChatThread from "@/components/chat/ChatThread";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { resolveLocale, t } from "@/lib/i18n";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-const LOCALE = "pt-PT";
 const DEFAULT_TIMEZONE = "Europe/Lisbon";
 
 type PairingMeta = {
@@ -81,20 +81,20 @@ type GoalLimitsConfig = {
   roundLimits?: Record<string, number> | null;
 } | null;
 
-function formatDateRange(start?: string, end?: string, timeZone: string = DEFAULT_TIMEZONE) {
+function formatDateRange(start?: string, end?: string, locale: string = "pt-PT", timeZone: string = DEFAULT_TIMEZONE) {
   if (!start) return "";
   const startDate = new Date(start);
   const endDate = end ? new Date(end) : null;
-  const day = startDate.toLocaleDateString(LOCALE, { day: "2-digit", month: "long", timeZone });
-  const time = startDate.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit", timeZone });
+  const day = startDate.toLocaleDateString(locale, { day: "2-digit", month: "long", timeZone });
+  const time = startDate.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone });
   if (!endDate) return `${day} · ${time}`;
-  const endTime = endDate.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit", timeZone });
+  const endTime = endDate.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone });
   return `${day} · ${time} - ${endTime}`;
 }
 
-function formatTime(value?: string | null, timeZone: string = DEFAULT_TIMEZONE) {
-  if (!value) return "Por definir";
-  return new Date(value).toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit", timeZone });
+function formatTimeLabel(value: string | null | undefined, locale: string, timeZone: string = DEFAULT_TIMEZONE) {
+  if (!value) return t("timeTbd", locale);
+  return new Date(value).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone });
 }
 
 function formatCountdown(start?: string, nowMs?: number) {
@@ -111,14 +111,23 @@ function formatCountdown(start?: string, nowMs?: number) {
   return `${minutes}m ${seconds}s`;
 }
 
-function getEventStatusLabel(start?: string, end?: string) {
-  if (!start) return "Por anunciar";
+type EventStatusKey = "TBD" | "UPCOMING" | "LIVE" | "DONE";
+
+function getEventStatusKey(start: string | undefined, end: string | undefined): EventStatusKey {
+  if (!start) return "TBD";
   const now = new Date();
   const startsAt = new Date(start);
   const endsAt = end ? new Date(end) : null;
-  if (now < startsAt) return "Próximo";
-  if (endsAt && now > endsAt) return "Concluído";
-  return "A decorrer";
+  if (now < startsAt) return "UPCOMING";
+  if (endsAt && now > endsAt) return "DONE";
+  return "LIVE";
+}
+
+function getEventStatusLabel(status: EventStatusKey, locale: string) {
+  if (status === "TBD") return t("eventAnnounced", locale);
+  if (status === "UPCOMING") return t("eventUpcoming", locale);
+  if (status === "DONE") return t("eventFinished", locale);
+  return t("eventLive", locale);
 }
 
 function compareMatchOrder(a: MatchPayload, b: MatchPayload) {
@@ -234,13 +243,20 @@ function resolveBracketAdvancement(matches: MatchPayload[]) {
   return cloned;
 }
 
-function buildRoundLabels(totalRounds: number) {
-  if (totalRounds <= 1) return ["Final"];
-  if (totalRounds === 2) return ["Meias", "Final"];
-  if (totalRounds === 3) return ["Quartos", "Meias", "Final"];
-  if (totalRounds === 4) return ["Oitavos", "Quartos", "Meias", "Final"];
-  if (totalRounds === 5) return ["R32", "Oitavos", "Quartos", "Meias", "Final"];
-  return ["R64", "R32", "Oitavos", "Quartos", "Meias", "Final"];
+function buildRoundLabels(totalRounds: number, locale?: string | null) {
+  const finalLabel = t("roundFinal", locale);
+  const semiLabel = t("roundSemifinal", locale);
+  const quarterLabel = t("roundQuarterfinal", locale);
+  const roundOf16 = t("roundOf16", locale);
+  const roundOf32 = t("roundOf32", locale);
+  const roundOf64 = t("roundOf64", locale);
+
+  if (totalRounds <= 1) return [finalLabel];
+  if (totalRounds === 2) return [semiLabel, finalLabel];
+  if (totalRounds === 3) return [quarterLabel, semiLabel, finalLabel];
+  if (totalRounds === 4) return [roundOf16, quarterLabel, semiLabel, finalLabel];
+  if (totalRounds === 5) return [roundOf32, roundOf16, quarterLabel, semiLabel, finalLabel];
+  return [roundOf64, roundOf32, roundOf16, quarterLabel, semiLabel, finalLabel];
 }
 
 function normalizeGoalLimits(input: GoalLimitsConfig): GoalLimitsConfig {
@@ -378,18 +394,23 @@ function renderPairingName(id: number | null | undefined, pairings: Record<numbe
   return <span className={className}>{content}</span>;
 }
 
-function RoleBadge({ role }: { role: LiveHubViewerRole }) {
+function RoleBadge({ role, locale }: { role: LiveHubViewerRole; locale: string }) {
   const style =
     role === "ORGANIZATION"
       ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
       : role === "PARTICIPANT"
         ? "border-sky-400/40 bg-sky-500/10 text-sky-100"
         : "border-white/15 bg-white/5 text-white/70";
-  const label = role === "ORGANIZATION" ? "Organização" : role === "PARTICIPANT" ? "Participante" : "Público";
+  const label =
+    role === "ORGANIZATION"
+      ? t("roleOrganization", locale)
+      : role === "PARTICIPANT"
+        ? t("roleParticipant", locale)
+        : t("rolePublic", locale);
   return <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${style}`}>{label}</span>;
 }
 
-function SponsorsStrip({ organization }: { organization: { publicName?: string | null } | null }) {
+function SponsorsStrip({ organization, locale }: { organization: { publicName?: string | null } | null; locale: string }) {
   const sponsorLabels = organization?.publicName ? [organization.publicName] : [];
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -405,11 +426,11 @@ function SponsorsStrip({ organization }: { organization: { publicName?: string |
               </span>
             ))
           ) : (
-            <span className="text-sm text-white/60">Sponsors em breve</span>
+            <span className="text-sm text-white/60">{t("sponsorsSoon", locale)}</span>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-white/50">
-          <span>Powered by</span>
+          <span>{t("poweredBy", locale)}</span>
           <span className="text-white/80">ORYA</span>
         </div>
       </div>
@@ -422,6 +443,7 @@ function MatchCard({
   pairings,
   highlight,
   timeZone,
+  locale,
   size = "md",
   showCourt,
 }: {
@@ -429,6 +451,7 @@ function MatchCard({
   pairings: Record<number, PairingMeta>;
   highlight?: boolean;
   timeZone: string;
+  locale: string;
   size?: "md" | "lg";
   showCourt: boolean;
 }) {
@@ -436,12 +459,12 @@ function MatchCard({
   const metaClass = size === "lg" ? "text-xs" : "text-[11px]";
   const statusClass = size === "lg" ? "text-[11px]" : "text-[11px]";
   const scoreClass = size === "lg" ? "text-sm" : "text-xs";
-  const timeLabel = formatTime(match.startAt, timeZone);
-  const metaParts = [`Jogo #${match.id}`];
+  const timeLabel = formatTimeLabel(match.startAt, locale, timeZone);
+  const metaParts = [`${t("matchLabel", locale)} #${match.id}`];
   if (match.round) metaParts.push(`R${match.round}`);
   metaParts.push(timeLabel);
   if (showCourt) {
-    metaParts.push(match.courtId ? `Campo ${match.courtId}` : "Campo —");
+    metaParts.push(match.courtId ? `${t("court", locale)} ${match.courtId}` : `${t("court", locale)} —`);
   }
   return (
     <div
@@ -485,6 +508,7 @@ function OrganizationMatchEditor({
   locked = false,
   lockedReason,
   canResolveDispute = false,
+  locale,
 }: {
   match: MatchPayload;
   tournamentId: number;
@@ -493,6 +517,7 @@ function OrganizationMatchEditor({
   locked?: boolean;
   lockedReason?: string | null;
   canResolveDispute?: boolean;
+  locale: string;
 }) {
   const [score, setScore] = useState(() => ({
     a: match.score?.goals?.a ?? 0,
@@ -541,12 +566,12 @@ function OrganizationMatchEditor({
 
   const pushScore = async (nextA: number, nextB: number) => {
     if (locked) {
-      setError(lockedReason || "Este jogo está bloqueado.");
+      setError(lockedReason || t("matchLocked", locale));
       return;
     }
     const expected = expectedUpdatedAtRef.current ?? match.updatedAt ?? null;
     if (!expected) {
-      setError("Sem versão do jogo.");
+      setError(t("matchVersionMissing", locale));
       return;
     }
     setSaving(true);
@@ -565,11 +590,11 @@ function OrganizationMatchEditor({
     savingRef.current = false;
     if (!json?.ok) {
       if (json?.error === "MATCH_CONFLICT") {
-        setError("Resultados atualizados noutro local. A atualizar...");
+        setError(t("matchConflictUpdated", locale));
         onUpdated();
         return;
       }
-      setError(json?.error || "Falha ao guardar resultado.");
+      setError(json?.error || t("matchSaveError", locale));
       return;
     }
     if (json?.match?.updatedAt) {
@@ -584,7 +609,7 @@ function OrganizationMatchEditor({
 
   const adjust = (side: "A" | "B", delta: number) => {
     if (locked) {
-      setError(lockedReason || "Este jogo está bloqueado.");
+      setError(lockedReason || t("matchLocked", locale));
       return;
     }
     const nextA = clampScore(side === "A" ? score.a + delta : score.a);
@@ -604,20 +629,20 @@ function OrganizationMatchEditor({
   const overrideWinner = async (side: "A" | "B") => {
     if (saving) return;
     if (locked) {
-      setError(lockedReason || "Este jogo está bloqueado.");
+      setError(lockedReason || t("matchLocked", locale));
       return;
     }
     const expected = expectedUpdatedAtRef.current ?? match.updatedAt ?? null;
     if (!expected) {
-      setError("Sem versão do jogo.");
+      setError(t("matchVersionMissing", locale));
       return;
     }
     const pairingId = side === "A" ? match.pairing1Id : match.pairing2Id;
     if (!pairingId) {
-      setError("Sem jogador atribuído.");
+      setError(t("matchPlayerMissing", locale));
       return;
     }
-    const confirmed = window.confirm("Confirmar override manual? Isto vai marcar o jogo como terminado.");
+    const confirmed = window.confirm(t("matchOverrideConfirm", locale));
     if (!confirmed) return;
     const nextA = side === "A" ? goalLimit : 0;
     const nextB = side === "B" ? goalLimit : 0;
@@ -640,11 +665,11 @@ function OrganizationMatchEditor({
     savingRef.current = false;
     if (!json?.ok) {
       if (json?.error === "MATCH_CONFLICT") {
-        setError("Resultados atualizados noutro local. A atualizar...");
+        setError(t("matchConflictUpdated", locale));
         onUpdated();
         return;
       }
-      setError(json?.error || "Falha ao aplicar override.");
+      setError(json?.error || t("matchOverrideError", locale));
       return;
     }
     if (json?.match?.updatedAt) {
@@ -657,15 +682,15 @@ function OrganizationMatchEditor({
   const markDisputed = async () => {
     if (saving || disputePending) return;
     if (locked) {
-      setError(lockedReason || "Este jogo está bloqueado.");
+      setError(lockedReason || t("matchLocked", locale));
       return;
     }
     const expected = expectedUpdatedAtRef.current ?? match.updatedAt ?? null;
     if (!expected) {
-      setError("Sem versão do jogo.");
+      setError(t("matchVersionMissing", locale));
       return;
     }
-    const confirmed = window.confirm("Marcar este jogo como disputado? Isto vai bloquear o avanço automático.");
+    const confirmed = window.confirm(t("matchDisputeConfirm", locale));
     if (!confirmed) return;
     setDisputePending(true);
     setError(null);
@@ -682,13 +707,13 @@ function OrganizationMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || "Falha ao marcar disputa.");
+        setError(json?.error || t("matchDisputeMarkError", locale));
         return;
       }
       if (json?.match?.updatedAt) {
         expectedUpdatedAtRef.current = json.match.updatedAt as string;
       }
-      setInfo("Jogo marcado como disputado.");
+      setInfo(t("matchDisputeMarked", locale));
       onUpdated();
     } finally {
       setDisputePending(false);
@@ -698,15 +723,15 @@ function OrganizationMatchEditor({
   const resolveDispute = async () => {
     if (saving || disputePending) return;
     if (!canResolveDispute) {
-      setError("Apenas ADMIN pode resolver a disputa.");
+      setError(t("matchDisputeAdminOnly", locale));
       return;
     }
     const expected = expectedUpdatedAtRef.current ?? match.updatedAt ?? null;
     if (!expected) {
-      setError("Sem versão do jogo.");
+      setError(t("matchVersionMissing", locale));
       return;
     }
-    const confirmed = window.confirm("Resolver disputa e reabrir o jogo?");
+    const confirmed = window.confirm(t("matchDisputeResolveConfirm", locale));
     if (!confirmed) return;
     setDisputePending(true);
     setError(null);
@@ -724,13 +749,13 @@ function OrganizationMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || "Falha ao resolver disputa.");
+        setError(json?.error || t("matchDisputeResolveError", locale));
         return;
       }
       if (json?.match?.updatedAt) {
         expectedUpdatedAtRef.current = json.match.updatedAt as string;
       }
-      setInfo("Disputa resolvida.");
+      setInfo(t("matchDisputeResolved", locale));
       onUpdated();
     } finally {
       setDisputePending(false);
@@ -748,7 +773,7 @@ function OrganizationMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || "Undo indisponível.");
+        setError(json?.error || t("matchUndoUnavailable", locale));
         return;
       }
       if (json?.match?.updatedAt) {
@@ -758,7 +783,7 @@ function OrganizationMatchEditor({
         a: json?.match?.score?.goals?.a ?? 0,
         b: json?.match?.score?.goals?.b ?? 0,
       });
-      setInfo("Última ação desfeita.");
+      setInfo(t("matchUndoSuccess", locale));
       onUpdated();
     } finally {
       setUndoing(false);
@@ -768,7 +793,9 @@ function OrganizationMatchEditor({
   return (
     <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
       <div className="flex items-center justify-between">
-        <span className="text-white text-sm">Golos (limite {goalLimit})</span>
+        <span className="text-white text-sm">
+          {t("matchGoalsLabel", locale).replace("{limit}", String(goalLimit))}
+        </span>
       </div>
       <div className="mt-2 grid gap-2 text-xs text-white/70">
         {(["A", "B"] as const).map((side) => {
@@ -776,7 +803,9 @@ function OrganizationMatchEditor({
           const finished = score.a === goalLimit || score.b === goalLimit;
           return (
             <div key={`${match.id}-score-${side}`} className="flex items-center justify-between gap-2">
-              <span className="text-white/60">{side === "A" ? "Jogador A" : "Jogador B"}</span>
+              <span className="text-white/60">
+                {side === "A" ? t("matchPlayerA", locale) : t("matchPlayerB", locale)}
+              </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -809,7 +838,7 @@ function OrganizationMatchEditor({
           disabled={undoing || saving}
           className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/40 disabled:opacity-60"
         >
-          {undoing ? "A desfazer…" : "Undo (60s)"}
+          {undoing ? t("matchUndoing", locale) : t("matchUndoLabel", locale)}
         </button>
         {match.status === "DISPUTED" ? (
           <button
@@ -818,7 +847,11 @@ function OrganizationMatchEditor({
             disabled={disputePending || saving || !canResolveDispute}
             className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
           >
-            {disputePending ? "A resolver…" : canResolveDispute ? "Resolver disputa" : "Resolver disputa (ADMIN)"}
+            {disputePending
+              ? t("matchDisputeResolving", locale)
+              : canResolveDispute
+                ? t("matchDisputeResolve", locale)
+                : t("matchDisputeResolveAdmin", locale)}
           </button>
         ) : (
           <button
@@ -827,16 +860,16 @@ function OrganizationMatchEditor({
             disabled={disputePending || saving || locked}
             className="rounded-full border border-rose-400/40 px-3 py-1 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-60"
           >
-            {disputePending ? "A marcar…" : "Marcar disputa"}
+            {disputePending ? t("matchDisputeMarking", locale) : t("matchDisputeMark", locale)}
           </button>
         )}
       </div>
       <details className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
         <summary className="cursor-pointer uppercase tracking-[0.18em] text-[11px]">
-          Override manual
+          {t("matchOverrideLabel", locale)}
         </summary>
         <div className="mt-2 space-y-2">
-          <p className="text-[11px] text-amber-100/80">Usa só em casos excecionais.</p>
+          <p className="text-[11px] text-amber-100/80">{t("matchOverrideHint", locale)}</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -844,7 +877,10 @@ function OrganizationMatchEditor({
               onClick={() => overrideWinner("A")}
               className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
             >
-              Forçar {match.pairing1Id ? `Jogador #${match.pairing1Id}` : "Jogador A"}
+              {t("matchOverrideForcePlayer", locale).replace(
+                "{player}",
+                match.pairing1Id ? `#${match.pairing1Id}` : t("matchPlayerA", locale),
+              )}
             </button>
             <button
               type="button"
@@ -852,11 +888,18 @@ function OrganizationMatchEditor({
               onClick={() => overrideWinner("B")}
               className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
             >
-              Forçar {match.pairing2Id ? `Jogador #${match.pairing2Id}` : "Jogador B"}
+              {t("matchOverrideForcePlayer", locale).replace(
+                "{player}",
+                match.pairing2Id ? `#${match.pairing2Id}` : t("matchPlayerB", locale),
+              )}
             </button>
           </div>
         </div>
       </details>
+      <div className="mt-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/60">
+        <p className="uppercase tracking-[0.18em] text-white/60">{t("walkoverRulesTitle", locale)}</p>
+        <p className="mt-1">{t("walkoverRulesHint", locale)}</p>
+      </div>
     </div>
   );
 }
@@ -868,6 +911,7 @@ function PadelMatchEditor({
   locked = false,
   lockedReason,
   canResolveDispute = false,
+  locale,
 }: {
   match: MatchPayload;
   eventId: number;
@@ -875,6 +919,7 @@ function PadelMatchEditor({
   locked?: boolean;
   lockedReason?: string | null;
   canResolveDispute?: boolean;
+  locale: string;
 }) {
   const [scoreText, setScoreText] = useState(() => formatPadelSetsText(match.score));
   const [saving, setSaving] = useState(false);
@@ -889,7 +934,7 @@ function PadelMatchEditor({
 
   const ensureUnlocked = () => {
     if (!locked) return true;
-    setError(lockedReason || "Este jogo está bloqueado.");
+    setError(lockedReason || t("matchLocked", locale));
     return false;
   };
 
@@ -898,11 +943,11 @@ function PadelMatchEditor({
     const trimmed = scoreText.trim();
     const sets = parsePadelSetsText(trimmed);
     if (trimmed && sets.length === 0) {
-      setError("Resultado inválido. Usa formato 6-4, 6-3.");
+      setError(t("scoreInvalidFormat", locale));
       return;
     }
     if (status === "DONE" && sets.length === 0) {
-      setError("Indica o resultado final (ex: 6-3, 6-4).");
+      setError(t("scoreFinalRequired", locale));
       return;
     }
     setSaving(true);
@@ -923,14 +968,14 @@ function PadelMatchEditor({
       if (!res.ok || !json?.ok) {
         const message =
           json?.error === "MATCH_DISPUTED"
-            ? "Jogo em disputa. Apenas ADMIN pode editar."
+            ? t("matchDisputeEditAdmin", locale)
             : json?.error === "INVALID_SCORE"
-              ? "Resultado inválido. Confirma os sets."
-              : "Erro ao guardar resultado.";
+              ? t("scoreInvalidSets", locale)
+              : t("matchSaveError", locale);
         setError(message);
         return;
       }
-      setInfo(status === "DONE" ? "Resultado guardado." : "Parcial atualizado.");
+      setInfo(status === "DONE" ? t("matchResultSaved", locale) : t("matchPartialUpdated", locale));
       onUpdated();
     } finally {
       setSaving(false);
@@ -941,10 +986,10 @@ function PadelMatchEditor({
     if (!ensureUnlocked()) return;
     const pairingId = side === "A" ? match.pairing1Id : match.pairing2Id;
     if (!pairingId) {
-      setError("Sem dupla atribuída.");
+      setError(t("matchPairingMissing", locale));
       return;
     }
-    const confirmed = window.confirm("Confirmar override manual? Isto vai marcar o jogo como terminado.");
+    const confirmed = window.confirm(t("matchOverrideConfirm", locale));
     if (!confirmed) return;
     setSaving(true);
     setError(null);
@@ -961,10 +1006,10 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || "Falha ao aplicar override.");
+        setError(json?.error || t("matchOverrideError", locale));
         return;
       }
-      setInfo("Override aplicado.");
+      setInfo(t("matchOverrideApplied", locale));
       onUpdated();
     } finally {
       setSaving(false);
@@ -975,12 +1020,12 @@ function PadelMatchEditor({
     if (!ensureUnlocked()) return;
     if (saving || disputePending) return;
     if (match.status !== "DONE") {
-      setError("Só podes disputar jogos terminados.");
+      setError(t("matchDisputeOnlyFinished", locale));
       return;
     }
-    const reason = window.prompt("Motivo da disputa?")?.trim() ?? "";
+    const reason = window.prompt(t("matchDisputeReasonPrompt", locale))?.trim() ?? "";
     if (reason.length < 5) {
-      setError("Indica um motivo com pelo menos 5 caracteres.");
+      setError(t("matchDisputeReasonMin", locale));
       return;
     }
     setDisputePending(true);
@@ -994,10 +1039,10 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || "Falha ao marcar disputa.");
+        setError(json?.error || t("matchDisputeMarkError", locale));
         return;
       }
-      setInfo("Jogo marcado como disputado.");
+      setInfo(t("matchDisputeMarked", locale));
       onUpdated();
     } finally {
       setDisputePending(false);
@@ -1007,12 +1052,12 @@ function PadelMatchEditor({
   const resolveDispute = async () => {
     if (saving || disputePending) return;
     if (!canResolveDispute) {
-      setError("Apenas ADMIN pode resolver a disputa.");
+      setError(t("matchDisputeAdminOnly", locale));
       return;
     }
-    const confirmed = window.confirm("Resolver disputa?");
+    const confirmed = window.confirm(t("matchDisputeResolvePrompt", locale));
     if (!confirmed) return;
-    const resolutionNote = window.prompt("Nota de resolução (opcional)")?.trim() ?? "";
+    const resolutionNote = window.prompt(t("matchDisputeResolveNote", locale))?.trim() ?? "";
     setDisputePending(true);
     setError(null);
     setInfo(null);
@@ -1024,10 +1069,10 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || "Falha ao resolver disputa.");
+        setError(json?.error || t("matchDisputeResolveError", locale));
         return;
       }
-      setInfo("Disputa resolvida.");
+      setInfo(t("matchDisputeResolved", locale));
       onUpdated();
     } finally {
       setDisputePending(false);
@@ -1047,10 +1092,10 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || "Undo indisponível.");
+        setError(json?.error || t("matchUndoUnavailable", locale));
         return;
       }
-      setInfo("Última ação desfeita.");
+      setInfo(t("matchUndoSuccess", locale));
       onUpdated();
     } finally {
       setUndoing(false);
@@ -1060,17 +1105,17 @@ function PadelMatchEditor({
   return (
     <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
       <div className="flex items-center justify-between">
-        <span className="text-white text-sm">Sets</span>
+        <span className="text-white text-sm">{t("matchSetsLabel", locale)}</span>
       </div>
       <div className="mt-2 space-y-2 text-xs text-white/70">
         <input
           value={scoreText}
           onChange={(e) => setScoreText(e.target.value)}
-          placeholder="6-4, 6-3"
+          placeholder={t("scorePlaceholder", locale)}
           className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
           disabled={locked}
         />
-        <p className="text-[11px] text-white/50">Formato: 6-4, 6-3</p>
+        <p className="text-[11px] text-white/50">{t("scoreFormatHint", locale)}</p>
       </div>
       {error && <p className="mt-2 text-[11px] text-rose-300">{error}</p>}
       {info && <p className="mt-2 text-[11px] text-emerald-200">{info}</p>}
@@ -1081,7 +1126,7 @@ function PadelMatchEditor({
           disabled={saving || locked}
           className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/40 disabled:opacity-60"
         >
-          {saving ? "A guardar…" : "Guardar parcial"}
+          {saving ? t("matchSaving", locale) : t("matchSavePartial", locale)}
         </button>
         <button
           type="button"
@@ -1089,7 +1134,7 @@ function PadelMatchEditor({
           disabled={saving || locked}
           className="rounded-full border border-emerald-400/40 px-3 py-1 text-[11px] text-emerald-100 hover:border-emerald-200/70 disabled:opacity-60"
         >
-          {saving ? "A guardar…" : "Finalizar"}
+          {saving ? t("matchSaving", locale) : t("matchFinalize", locale)}
         </button>
         <button
           type="button"
@@ -1097,7 +1142,7 @@ function PadelMatchEditor({
           disabled={undoing || saving}
           className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/40 disabled:opacity-60"
         >
-          {undoing ? "A desfazer…" : "Undo (60s)"}
+          {undoing ? t("matchUndoing", locale) : t("matchUndoLabel", locale)}
         </button>
         {match.status === "DISPUTED" ? (
           <button
@@ -1106,7 +1151,11 @@ function PadelMatchEditor({
             disabled={disputePending || saving || !canResolveDispute}
             className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
           >
-            {disputePending ? "A resolver…" : canResolveDispute ? "Resolver disputa" : "Resolver disputa (ADMIN)"}
+            {disputePending
+              ? t("matchDisputeResolving", locale)
+              : canResolveDispute
+                ? t("matchDisputeResolve", locale)
+                : t("matchDisputeResolveAdmin", locale)}
           </button>
         ) : (
           <button
@@ -1115,14 +1164,16 @@ function PadelMatchEditor({
             disabled={disputePending || saving || locked || match.status !== "DONE"}
             className="rounded-full border border-rose-400/40 px-3 py-1 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-60"
           >
-            {disputePending ? "A marcar…" : "Marcar disputa"}
+            {disputePending ? t("matchDisputeMarking", locale) : t("matchDisputeMark", locale)}
           </button>
         )}
       </div>
       <details className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-        <summary className="cursor-pointer uppercase tracking-[0.18em] text-[11px]">Override manual</summary>
+        <summary className="cursor-pointer uppercase tracking-[0.18em] text-[11px]">
+          {t("matchOverrideLabel", locale)}
+        </summary>
         <div className="mt-2 space-y-2">
-          <p className="text-[11px] text-amber-100/80">Usa só em casos excecionais.</p>
+          <p className="text-[11px] text-amber-100/80">{t("matchOverrideHint", locale)}</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -1130,7 +1181,7 @@ function PadelMatchEditor({
               onClick={() => overrideWinner("A")}
               className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
             >
-              Forçar {match.pairing1Id ? `Dupla #${match.pairing1Id}` : "Dupla A"}
+              {t("matchOverrideForce", locale).replace("{pairing}", match.pairing1Id ? `#${match.pairing1Id}` : "A")}
             </button>
             <button
               type="button"
@@ -1138,7 +1189,7 @@ function PadelMatchEditor({
               onClick={() => overrideWinner("B")}
               className="rounded-full border border-amber-400/40 px-3 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
             >
-              Forçar {match.pairing2Id ? `Dupla #${match.pairing2Id}` : "Dupla B"}
+              {t("matchOverrideForce", locale).replace("{pairing}", match.pairing2Id ? `#${match.pairing2Id}` : "B")}
             </button>
           </div>
         </div>
@@ -1152,12 +1203,14 @@ function LiveHubTv({
   tournament,
   pairings,
   timeZone,
+  locale,
   showCourt,
 }: {
   event: EventPayload;
   tournament: any;
   pairings: Record<number, PairingMeta>;
   timeZone: string;
+  locale: string;
   showCourt: boolean;
 }) {
   const matches = tournament.stages.flatMap((s: any) => [...s.matches, ...s.groups.flatMap((g: any) => g.matches)]);
@@ -1190,35 +1243,39 @@ function LiveHubTv({
     <div className="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-6">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.4em] text-white/60">Modo TV</p>
+          <p className="text-[11px] uppercase tracking-[0.4em] text-white/60">{t("tvModeLabel", locale)}</p>
           <h1 className="text-4xl font-semibold text-white">{event.title}</h1>
-          <p className="text-white/60">{formatDateRange(event.startsAt, event.endsAt, timeZone)}</p>
+          <p className="text-white/60">{formatDateRange(event.startsAt, event.endsAt, locale, timeZone)}</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70">
-          Atualiza automaticamente
+          {t("monitorSubtitle", locale)}
         </div>
       </header>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-3xl border border-white/10 bg-white/5 p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Agora a jogar</h2>
-            <span className="text-white/60 text-sm">{live.length} ativos</span>
+            <h2 className="text-xl font-semibold">{t("nowPlaying", locale)}</h2>
+            <span className="text-white/60 text-sm">
+              {live.length} {t("matches", locale)}
+            </span>
           </div>
-          {live.length === 0 && <p className="text-white/60">Sem jogos em curso.</p>}
+          {live.length === 0 && <p className="text-white/60">{t("noLiveMatches", locale)}</p>}
           {live.map((m: MatchPayload) => (
-            <MatchCard key={`live-${m.id}`} match={m} pairings={pairings} timeZone={timeZone} size="lg" showCourt={showCourt} />
+            <MatchCard key={`live-${m.id}`} match={m} pairings={pairings} timeZone={timeZone} locale={locale} size="lg" showCourt={showCourt} />
           ))}
         </section>
 
         <section className="rounded-3xl border border-white/10 bg-white/5 p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Próximos jogos</h2>
-            <span className="text-white/60 text-sm">{upcoming.length} agendados</span>
+            <h2 className="text-xl font-semibold">{t("upcomingMatches", locale)}</h2>
+            <span className="text-white/60 text-sm">
+              {upcoming.length} {t("matches", locale)}
+            </span>
           </div>
-          {upcoming.length === 0 && <p className="text-white/60">Sem jogos agendados.</p>}
+          {upcoming.length === 0 && <p className="text-white/60">{t("noUpcomingMatches", locale)}</p>}
           {upcoming.map((m: MatchPayload) => (
-            <MatchCard key={`up-${m.id}`} match={m} pairings={pairings} timeZone={timeZone} size="lg" showCourt={showCourt} />
+            <MatchCard key={`up-${m.id}`} match={m} pairings={pairings} timeZone={timeZone} locale={locale} size="lg" showCourt={showCourt} />
           ))}
         </section>
       </div>
@@ -1226,12 +1283,14 @@ function LiveHubTv({
       {tvBracketMatches.length > 0 && (
         <section className="rounded-3xl border border-white/10 bg-white/5 p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Bracket</h2>
-            <span className="text-white/60 text-sm">{tvBracketMatches.length} jogos</span>
+            <h2 className="text-xl font-semibold">{t("bracket", locale)}</h2>
+            <span className="text-white/60 text-sm">
+              {tvBracketMatches.length} {t("matches", locale)}
+            </span>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {tvBracketMatches.map((match: MatchPayload) => (
-              <MatchCard key={`tv-bracket-${match.id}`} match={match} pairings={pairings} timeZone={timeZone} size="lg" showCourt={showCourt} />
+              <MatchCard key={`tv-bracket-${match.id}`} match={match} pairings={pairings} timeZone={timeZone} locale={locale} size="lg" showCourt={showCourt} />
             ))}
           </div>
         </section>
@@ -1239,20 +1298,20 @@ function LiveHubTv({
       {tvBracketMatches.length === 0 && tvGroupStages.length > 0 && (
         <section className="rounded-3xl border border-white/10 bg-white/5 p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Tabela</h2>
-            <span className="text-white/60 text-sm">Classificações</span>
+            <h2 className="text-xl font-semibold">{t("standings", locale)}</h2>
+            <span className="text-white/60 text-sm">{t("standings", locale)}</span>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {tvGroupStages.map((stage: any) =>
               stage.groups.map((group: any) => (
                 <div key={`tv-group-${group.id}`} className="rounded-2xl border border-white/10 bg-black/30 p-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-white font-semibold">{group.name || "Grupo"}</h3>
+                    <h3 className="text-white font-semibold">{group.name || t("groupLabel", locale)}</h3>
                     <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">{stage.stageType}</span>
                   </div>
                   <div className="mt-3 space-y-2 text-sm">
                     {(group.standings ?? []).length === 0 && (
-                      <p className="text-white/60">Sem classificação disponível.</p>
+                      <p className="text-white/60">{t("noStandings", locale)}</p>
                     )}
                     {(group.standings ?? []).map((row: any, idx: number) => (
                       <div key={`tv-group-${group.id}-${row.pairingId}`} className="flex items-center justify-between text-white/80">
@@ -1282,6 +1341,7 @@ function BracketRoundsView({
   eventId,
   onUpdated,
   goalLimits,
+  locale,
   highlightPairingId,
   canResolveDispute,
   scoreMode = "GOALS",
@@ -1294,6 +1354,7 @@ function BracketRoundsView({
   eventId?: number | null;
   onUpdated: () => void;
   goalLimits: GoalLimitsConfig;
+  locale: string;
   highlightPairingId?: number | null;
   canResolveDispute?: boolean;
   scoreMode?: "GOALS" | "PADEL";
@@ -1310,10 +1371,11 @@ function BracketRoundsView({
   const rounds = Object.keys(matchesByRound)
     .map((r) => Number(r))
     .sort((a, b) => a - b);
-  const roundLabels = buildRoundLabels(rounds.length);
+  const roundLabels = buildRoundLabels(rounds.length, locale);
+  const roundFallback = (round: number) => `${t("roundLabel", locale)} ${round}`;
   const finalRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
   const roundLabelMap = rounds.reduce((acc, round, idx) => {
-    acc[round] = roundLabels[idx] || `Ronda ${round}`;
+    acc[round] = roundLabels[idx] || roundFallback(round);
     return acc;
   }, {} as Record<number, string>);
   const treeRowHeight = 32;
@@ -1418,9 +1480,9 @@ function BracketRoundsView({
     const isDisputed = match.status === "DISPUTED";
     const isLocked = Boolean(options?.locked || isDisputed);
     const lockedReason = isDisputed
-      ? "Jogo em disputa. Resolve antes de editar."
+      ? t("matchDisputeLocked", locale)
       : options?.locked
-        ? "Esta fase ainda não está ativa."
+      ? t("matchPhaseInactive", locale)
         : null;
     const useCompact = Boolean(options?.compact);
     const isHighlighted =
@@ -1450,17 +1512,17 @@ function BracketRoundsView({
       <div key={`list-${match.id}`} className={wrapperClass} style={options?.style}>
         {isLive && (
           <span className="absolute -top-2 left-3 rounded-full border border-emerald-400/60 bg-emerald-500/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-emerald-100">
-            Live
+            {t("liveLabel", locale)}
           </span>
         )}
         {isDisputed && (
           <span className="absolute -top-2 left-3 rounded-full border border-rose-400/60 bg-rose-500/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-rose-100">
-            Disputa
+            {t("scoreDispute", locale)}
           </span>
         )}
         {isFinal && (
           <span className="absolute -top-2 right-3 rounded-full border border-amber-300/70 bg-amber-500/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-amber-100">
-            Final
+            {t("roundFinal", locale)}
           </span>
         )}
         {isFinal ? (
@@ -1499,6 +1561,7 @@ function BracketRoundsView({
                 locked={isLocked}
                 lockedReason={lockedReason}
                 canResolveDispute={canResolveDispute}
+                locale={locale}
               />
             ) : (
               <OrganizationMatchEditor
@@ -1509,6 +1572,7 @@ function BracketRoundsView({
                 locked={isLocked}
                 lockedReason={lockedReason}
                 canResolveDispute={canResolveDispute}
+                locale={locale}
               />
             )}
           </div>
@@ -1547,9 +1611,9 @@ function BracketRoundsView({
     }, {} as Record<number, number>);
     const rightRounds = [...leftRounds].reverse();
     const columnLabels = [
-      ...leftRounds.map((round) => roundLabelMap[round] || `Ronda ${round}`),
-      roundLabelMap[lastRound] || `Ronda ${lastRound}`,
-      ...rightRounds.map((round) => roundLabelMap[round] || `Ronda ${round}`),
+      ...leftRounds.map((round) => roundLabelMap[round] || roundFallback(round)),
+      roundLabelMap[lastRound] || roundFallback(lastRound),
+      ...rightRounds.map((round) => roundLabelMap[round] || roundFallback(round)),
     ];
     const roundMatches = (round: number) =>
       (matchesByRound[round] ?? []).slice().sort((a, b) => compareBracketOrder(a, b));
@@ -1644,7 +1708,7 @@ function BracketRoundsView({
         {semiRound && (
           <div className="space-y-2">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
-              {roundLabelMap[semiRound] || `Ronda ${semiRound}`}
+              {roundLabelMap[semiRound] || roundFallback(semiRound)}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               {semiMatches.map((match) =>
@@ -1656,7 +1720,7 @@ function BracketRoundsView({
         {finalMatch && (
           <div className="space-y-2">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
-              {roundLabelMap[finalRound] || `Ronda ${finalRound}`}
+              {roundLabelMap[finalRound] || roundFallback(finalRound)}
             </p>
             <div className="mx-auto max-w-sm">
               {renderListMatch(finalMatch, { final: true, accent: true, locked: roundIsLocked(finalRound) })}
@@ -1673,7 +1737,7 @@ function BracketRoundsView({
         {rounds.map((round, idx) => (
           <div key={`full-round-${round}`} className="space-y-2">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
-              {roundLabels[idx] || `Ronda ${round}`}
+              {roundLabels[idx] || roundFallback(round)}
             </p>
             {(matchesByRound[round] ?? [])
               .slice()
@@ -1714,7 +1778,7 @@ function BracketRoundsView({
                   isLocked ? "cursor-not-allowed" : "hover:border-white/40"
                 } ${isActive ? "ring-1 ring-white/30" : ""}`}
               >
-                <span>{roundLabelMap[round] || `Ronda ${round}`}</span>
+                <span>{roundLabelMap[round] || roundFallback(round)}</span>
                 {isCompleted && (
                   <span className="ml-2 rounded-full border border-purple-400/50 bg-purple-500/20 px-1.5 py-0.5 text-[10px] text-purple-100">
                     Concluida
@@ -1775,7 +1839,8 @@ function BracketRoundsView({
 function OneVOneBracket({
   stage,
   pairings,
-  eventStatus,
+  eventStatusKey,
+  locale,
   isOrganizationEdit,
   tournamentId,
   eventId,
@@ -1786,7 +1851,8 @@ function OneVOneBracket({
 }: {
   stage: { matches?: MatchPayload[]; name?: string | null } | null;
   pairings: Record<number, PairingMeta>;
-  eventStatus: string;
+  eventStatusKey: EventStatusKey;
+  locale: string;
   isOrganizationEdit: boolean;
   tournamentId: number | null;
   eventId?: number | null;
@@ -1798,9 +1864,9 @@ function OneVOneBracket({
   if (!stage || !stage.matches || stage.matches.length === 0) {
     return (
       <section className="rounded-3xl border border-white/10 bg-white/5 p-5 text-white/70">
-        <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">Bracket</p>
-        <h2 className="mt-2 text-xl font-semibold text-white">Chave em preparação</h2>
-        <p className="text-sm text-white/60">Em breve os jogos vão aparecer aqui.</p>
+        <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">{t("bracket", locale)}</p>
+        <h2 className="mt-2 text-xl font-semibold text-white">{t("bracketPreparing", locale)}</h2>
+        <p className="text-sm text-white/60">{t("bracketPreparingHint", locale)}</p>
       </section>
     );
   }
@@ -1809,10 +1875,12 @@ function OneVOneBracket({
     <section className="rounded-3xl border border-white/10 bg-white/5 p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">Bracket</p>
-          <h2 className="text-xl font-semibold text-white">{stage.name || "Eliminatórias 1v1"}</h2>
+          <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">{t("bracket", locale)}</p>
+          <h2 className="text-xl font-semibold text-white">{stage.name || t("oneVoneElims", locale)}</h2>
         </div>
-        <span className="text-xs text-white/50">{eventStatus === "Próximo" ? "Pré-evento" : "Ao vivo"}</span>
+        <span className="text-xs text-white/50">
+          {eventStatusKey === "UPCOMING" ? t("preEventLabel", locale) : t("eventLive", locale)}
+        </span>
       </div>
       <BracketRoundsView
         matches={stage.matches}
@@ -1822,6 +1890,7 @@ function OneVOneBracket({
         eventId={eventId}
         onUpdated={onUpdated}
         goalLimits={goalLimits}
+        locale={locale}
         canResolveDispute={canResolveDispute}
         scoreMode={scoreMode}
       />
@@ -1834,7 +1903,8 @@ function OneVOneLiveLayout({
   organization,
   tournament,
   pairings,
-  eventStatus,
+  eventStatusKey,
+  locale,
   countdownLabel,
   nowMatch,
   championLabel,
@@ -1854,7 +1924,8 @@ function OneVOneLiveLayout({
   organization: { id: number; publicName: string; username: string | null; brandingAvatarUrl: string | null } | null;
   tournament: any;
   pairings: Record<number, PairingMeta>;
-  eventStatus: string;
+  eventStatusKey: EventStatusKey;
+  locale: string;
   countdownLabel: string | null;
   nowMatch: MatchPayload | null;
   championLabel: string | null;
@@ -1875,10 +1946,10 @@ function OneVOneLiveLayout({
   const streamHref = streamEmbed.href;
   const streamLabel =
     streamEmbed.provider === "youtube"
-      ? "Abrir no YouTube"
+      ? t("openYoutube", locale)
       : streamEmbed.provider === "twitch"
-        ? "Abrir na Twitch"
-        : "Abrir stream";
+        ? t("openTwitch", locale)
+        : t("openStream", locale);
   const [streamUrl, setStreamUrl] = useState(event.liveStreamUrl ?? "");
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMessage, setConfigMessage] = useState<string | null>(null);
@@ -1907,7 +1978,7 @@ function OneVOneLiveLayout({
       locationComponents: event.locationComponents,
       locationOverrides: event.locationOverrides,
     },
-    "Local a anunciar",
+    t("locationTbd", locale),
   );
 
   const nowLabelParts = nowMatch
@@ -1916,13 +1987,13 @@ function OneVOneLiveLayout({
   const nowLabel = nowLabelParts.length ? nowLabelParts.join(" vs ") : null;
   const scoreLabel = nowMatch ? formatScore(nowMatch.score) : null;
   const heroStatus =
-    eventStatus === "A decorrer"
-      ? `Ao vivo${nowLabel ? ` · Agora a jogar: ${nowLabel}${scoreLabel && scoreLabel !== "—" ? ` (${scoreLabel})` : ""}` : ""}`
-      : eventStatus === "Concluído"
+    eventStatusKey === "LIVE"
+      ? `${t("eventLive", locale)}${nowLabel ? ` · ${t("nowPlaying", locale)}: ${nowLabel}${scoreLabel && scoreLabel !== "—" ? ` (${scoreLabel})` : ""}` : ""}`
+      : eventStatusKey === "DONE"
         ? championLabel
-          ? `Concluído · Campeão: ${championLabel}`
-          : "Concluído"
-        : "A live começa em breve";
+          ? `${t("eventFinished", locale)} · ${t("championLabel", locale)}: ${championLabel}`
+          : t("eventFinished", locale)
+        : t("liveStartsSoon", locale);
 
   const hasHeroSponsor = Boolean(sponsors?.hero?.logoUrl || sponsors?.hero?.label);
   const nowSponsor = sponsors?.nowPlaying ?? null;
@@ -1943,9 +2014,10 @@ function OneVOneLiveLayout({
         .filter((r): r is number => Number.isFinite(r) && r > 0)
         .sort((a, b) => a - b)
     : [];
-  const roundLabels = buildRoundLabels(roundNumbers.length);
+  const roundFallback = (round: number) => `${t("roundLabel", locale)} ${round}`;
+  const roundLabels = buildRoundLabels(roundNumbers.length, locale);
   const roundLabelMap = roundNumbers.reduce((acc, round, idx) => {
-    acc[round] = roundLabels[idx] || `Ronda ${round}`;
+    acc[round] = roundLabels[idx] || roundFallback(round);
     return acc;
   }, {} as Record<number, string>);
   const nowSummary = nowMatch ? getScoreSummary(nowMatch.score) : null;
@@ -1986,7 +2058,7 @@ function OneVOneLiveLayout({
     try {
       if (isPadelLive) {
         if (!organization?.id) {
-          setConfigMessage("Organização indisponível.");
+          setConfigMessage(t("organizationUnavailable", locale));
           return;
         }
         await fetch("/api/padel/tournaments/config", {
@@ -2006,10 +2078,10 @@ function OneVOneLiveLayout({
           body: JSON.stringify({ matchId }),
         });
       }
-      setConfigMessage(matchId ? "Override aplicado." : "Override removido.");
+      setConfigMessage(matchId ? t("overrideApplied", locale) : t("overrideRemoved", locale));
       onRefresh();
     } catch {
-      setConfigMessage("Erro ao atualizar override.");
+      setConfigMessage(t("overrideUpdateError", locale));
     } finally {
       setSavingConfig(false);
       setTimeout(() => setConfigMessage(null), 2000);
@@ -2032,7 +2104,7 @@ function OneVOneLiveLayout({
       }
       if (isPadelLive) {
         if (!organization?.id) {
-          setConfigMessage("Organização indisponível.");
+          setConfigMessage(t("organizationUnavailable", locale));
           return;
         }
         await fetch("/api/padel/tournaments/config", {
@@ -2074,10 +2146,10 @@ function OneVOneLiveLayout({
           }),
         });
       }
-      setConfigMessage("Configuração guardada.");
+      setConfigMessage(t("configSaved", locale));
       onRefresh();
     } catch {
-      setConfigMessage("Erro ao guardar configuração.");
+      setConfigMessage(t("configSaveError", locale));
     } finally {
       setSavingConfig(false);
       setTimeout(() => setConfigMessage(null), 2000);
@@ -2120,7 +2192,7 @@ function OneVOneLiveLayout({
         className="flex items-center justify-between gap-4"
       >
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Sponsor principal</p>
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">{t("mainSponsor", locale)}</p>
           {sponsors?.hero?.label && <p className="text-white/80">{sponsors.hero.label}</p>}
         </div>
         {sponsors?.hero?.logoUrl && (
@@ -2138,19 +2210,25 @@ function OneVOneLiveLayout({
   const nowPlayingSection = (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Agora a jogar</h3>
+        <h3 className="text-lg font-semibold text-white">{t("nowPlaying", locale)}</h3>
         <div className="flex items-center gap-2 text-xs text-white/50">
           {overrideActive && (
             <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-white/70">
-              Override
+              {t("overrideLabel", locale)}
             </span>
           )}
-          <span>{nowMatch ? (nowIsLive ? "Ao vivo" : "Último") : "Sem"}</span>
+          <span>
+            {nowMatch
+              ? nowIsLive
+                ? t("liveNowLabel", locale)
+                : t("latestLabel", locale)
+              : t("noneLabel", locale)}
+          </span>
         </div>
       </div>
       {nowSponsor && (
         <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
-          <span className="uppercase tracking-[0.2em] text-white/50">Sponsor do jogo</span>
+          <span className="uppercase tracking-[0.2em] text-white/50">{t("matchSponsor", locale)}</span>
           <div className="flex items-center gap-2">
             {nowSponsor.logoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -2164,7 +2242,7 @@ function OneVOneLiveLayout({
           </div>
         </div>
       )}
-      {!nowMatch && <p className="text-sm text-white/60">Sem jogos em curso.</p>}
+      {!nowMatch && <p className="text-sm text-white/60">{t("noLiveMatches", locale)}</p>}
       {nowMatch && (
         <div
           className={`rounded-2xl border p-4 ${
@@ -2195,7 +2273,7 @@ function OneVOneLiveLayout({
             </div>
             <div className="flex flex-col items-center gap-2 text-center">
               <span className="text-[11px] uppercase tracking-[0.3em] text-white/50">
-                {nowIsLive ? "Agora a jogar" : "Resultado"}
+                {nowIsLive ? t("nowPlaying", locale) : t("resultLabel", locale)}
               </span>
               <span className="text-sm font-semibold text-white/80">VS</span>
             </div>
@@ -2238,17 +2316,19 @@ function OneVOneLiveLayout({
   return (
     <div className="space-y-8">
       <header className="rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.2),transparent_55%),linear-gradient(135deg,rgba(6,8,20,0.9),rgba(15,18,35,0.8))] p-6 text-center">
-        <p className="text-[12px] uppercase tracking-[0.45em] text-white/50">Live</p>
-        <h1 className="mt-2 text-3xl font-semibold text-white md:text-4xl">{event.title} — Live</h1>
+        <p className="text-[12px] uppercase tracking-[0.45em] text-white/50">{t("liveLabel", locale)}</p>
+        <h1 className="mt-2 text-3xl font-semibold text-white md:text-4xl">
+          {event.title} — {t("liveLabel", locale)}
+        </h1>
         <p className="mt-2 text-sm text-white/60">
           {locationLabel}
-          {playerCount ? ` · ${playerCount} jogadores` : ""}
-          {" · Eliminatórias 1v1"}
+          {playerCount ? ` · ${playerCount} ${t("playersLabel", locale)}` : ""}
+          {` · ${t("oneVoneElims", locale)}`}
         </p>
         <p className="mt-2 text-sm text-white/70">{heroStatus}</p>
-        {eventStatus === "Próximo" && countdownLabel && (
+        {eventStatusKey === "UPCOMING" && countdownLabel && (
           <div className="mx-auto mt-4 inline-flex items-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">O evento começa em</span>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">{t("eventStartsIn", locale)}</span>
             <span className="text-lg font-semibold text-white">{countdownLabel}</span>
           </div>
         )}
@@ -2260,12 +2340,14 @@ function OneVOneLiveLayout({
         <section className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Live stream</p>
-              <h2 className="text-lg font-semibold text-white">{embedUrl ? "Em direto" : "Live em breve"}</h2>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">{t("liveStreamLabel", locale)}</p>
+              <h2 className="text-lg font-semibold text-white">
+                {embedUrl ? t("liveNowLabel", locale) : t("liveStartsSoon", locale)}
+              </h2>
             </div>
-            {eventStatus === "A decorrer" && (
+            {eventStatusKey === "LIVE" && (
               <span className="rounded-full border border-rose-400/50 bg-rose-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-rose-200">
-                Live
+                {t("liveLabel", locale)}
               </span>
             )}
           </div>
@@ -2276,12 +2358,12 @@ function OneVOneLiveLayout({
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
                 className="h-full w-full"
-                title="Live stream"
+                title={t("liveStreamLabel", locale)}
               />
             </div>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-black/40 p-6 text-sm text-white/70">
-              A live vai começar em breve. Assim que o link estiver ativo aparece aqui.
+              {t("liveStartsSoonDesc", locale)}
             </div>
           )}
           {!embedUrl && streamHref && (
@@ -2301,7 +2383,11 @@ function OneVOneLiveLayout({
               onClick={onToggleFollow}
               className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:border-white/40 disabled:opacity-60"
             >
-              {followPending ? "A atualizar…" : isFollowing ? "A seguir" : "Segue para receber notificação"}
+              {followPending
+                ? t("followUpdating", locale)
+                : isFollowing
+                  ? t("followedLabel", locale)
+                  : t("followToNotify", locale)}
             </button>
           )}
           <div className="flex items-center gap-2 pt-2 text-[11px] uppercase tracking-[0.18em] text-white/50">
@@ -2316,7 +2402,7 @@ function OneVOneLiveLayout({
                     : "border-white/15 bg-white/5 text-white/60"
                 }`}
               >
-                {tab === "chat" ? "Chat" : tab === "stats" ? "Stats" : "Regras"}
+                {tab === "chat" ? t("tabChat", locale) : tab === "stats" ? t("tabStats", locale) : t("tabRules", locale)}
               </button>
             ))}
           </div>
@@ -2328,24 +2414,26 @@ function OneVOneLiveLayout({
                 canPostAnnouncements={canPostAnnouncements}
               />
             )}
-            {activeTab === "stats" && "Stats do torneio em breve."}
+            {activeTab === "stats" && t("statsSoon", locale)}
             {activeTab === "rules" && (
               <ul className="space-y-1 text-sm text-white/70">
                 {isPadelLive ? (
                   <>
-                    <li>Resultados por sets (ex: 6-4, 6-3).</li>
-                    <li>Desempates conforme regras configuradas.</li>
-                    <li>Fair play obrigatório.</li>
-                    <li>Decisões do staff são finais.</li>
+                    <li>{t("padelRulesSets", locale)}</li>
+                    <li>{t("padelRulesTieBreak", locale)}</li>
+                    <li>{t("padelRulesFairPlay", locale)}</li>
+                    <li>{t("padelRulesStaffFinal", locale)}</li>
                   </>
                 ) : (
                   <>
-                    <li>Jogo a eliminar direto (1v1).</li>
-                    <li>Vence quem atingir o limite.</li>
-                    <li>Limite padrão: {goalDefaultLimit}.</li>
-                    {goalRoundOverrides && <li>Limites por ronda configurados.</li>}
-                    <li>Fair play obrigatório.</li>
-                    <li>Decisões do staff são finais.</li>
+                    <li>{t("oneVoneRulesElimination", locale)}</li>
+                    <li>{t("oneVoneRulesLimitWin", locale)}</li>
+                    <li>
+                      {t("oneVoneRulesDefaultLimit", locale)} {goalDefaultLimit}.
+                    </li>
+                    {goalRoundOverrides && <li>{t("oneVoneRulesRoundLimits", locale)}</li>}
+                    <li>{t("padelRulesFairPlay", locale)}</li>
+                    <li>{t("padelRulesStaffFinal", locale)}</li>
                   </>
                 )}
               </ul>
@@ -2359,7 +2447,8 @@ function OneVOneLiveLayout({
       <OneVOneBracket
         stage={bracketStage}
         pairings={pairings}
-        eventStatus={eventStatus}
+        eventStatusKey={eventStatusKey}
+        locale={locale}
         isOrganizationEdit={isOrganizationEdit}
         tournamentId={tournament?.id ?? null}
         eventId={event.id}
@@ -2391,13 +2480,15 @@ function OneVOneLiveLayout({
         </section>
       )}
 
-      {showSponsors && !hasHeroSponsor && sideSponsors.length === 0 && <SponsorsStrip organization={organization} />}
+      {showSponsors && !hasHeroSponsor && sideSponsors.length === 0 && (
+        <SponsorsStrip organization={organization} locale={locale} />
+      )}
 
       {isOrganizationEdit && (
         <section className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-white">Live Ops (overlay)</h3>
-            <span className="text-xs text-white/50">Organização</span>
+            <h3 className="text-base font-semibold text-white">{t("liveOpsLabel", locale)}</h3>
+            <span className="text-xs text-white/50">{t("roleOrganization", locale)}</span>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 p-3 space-y-2">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Agora a jogar</p>
@@ -2410,7 +2501,7 @@ function OneVOneLiveLayout({
                 }}
                 className="min-w-[220px] flex-1 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
               >
-                <option value="">Automático</option>
+                <option value="">{t("liveOpsAutoMode", locale)}</option>
                 {flatMatches
                   .filter((m) => m.pairing1Id && m.pairing2Id)
                   .sort(compareMatchOrder)
@@ -2418,7 +2509,7 @@ function OneVOneLiveLayout({
                     const label = `${pairingLabelPlain(match.pairing1Id, pairings)} vs ${pairingLabelPlain(match.pairing2Id, pairings)}`;
                     return (
                       <option key={`featured-${match.id}`} value={match.id}>
-                        #{match.id} · {label || "Jogo"}
+                        #{match.id} · {label || t("matchLabel", locale)}
                       </option>
                     );
                   })}
@@ -2429,7 +2520,7 @@ function OneVOneLiveLayout({
                 onClick={() => saveFeaturedMatch(featuredDraft ?? null)}
                 className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/80 hover:border-white/40 disabled:opacity-60"
               >
-                {savingConfig ? "A guardar…" : "Aplicar override"}
+                {savingConfig ? t("matchSaving", locale) : t("liveOpsApplyOverride", locale)}
               </button>
               <button
                 type="button"
@@ -2437,11 +2528,13 @@ function OneVOneLiveLayout({
                 onClick={() => saveFeaturedMatch(null)}
                 className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/60 hover:border-white/40 disabled:opacity-60"
               >
-                Reset automático
+                {t("liveOpsResetAuto", locale)}
               </button>
             </div>
             {featuredMatchId && (
-              <p className="text-[11px] text-white/50">Override ativo no jogo #{featuredMatchId}.</p>
+              <p className="text-[11px] text-white/50">
+                {t("liveOpsOverrideActive", locale).replace("{id}", String(featuredMatchId))}
+              </p>
             )}
           </div>
           {configMessage && <p className="text-xs text-white/60">{configMessage}</p>}
@@ -2449,7 +2542,7 @@ function OneVOneLiveLayout({
             <>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm text-white/70">URL da livestream</label>
+                  <label className="text-sm text-white/70">{t("liveOpsStreamUrlLabel", locale)}</label>
                   <input
                     value={streamUrl}
                     onChange={(e) => setStreamUrl(e.target.value)}
@@ -2463,12 +2556,12 @@ function OneVOneLiveLayout({
                       rel="noreferrer"
                       className="text-xs text-white/60 hover:text-white"
                     >
-                      Testar embed ↗
+                      {t("liveOpsTestEmbed", locale)}
                     </a>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm text-white/70">Sponsor principal</label>
+                  <label className="text-sm text-white/70">{t("mainSponsor", locale)}</label>
                   <input
                     value={sponsorDraft?.hero?.label ?? ""}
                     onChange={(e) =>
@@ -2477,7 +2570,7 @@ function OneVOneLiveLayout({
                         hero: { ...(prev?.hero ?? {}), label: e.target.value },
                       }))
                     }
-                    placeholder="Nome do sponsor"
+                    placeholder={t("liveOpsSponsorNamePlaceholder", locale)}
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   />
                   <input
@@ -2488,7 +2581,7 @@ function OneVOneLiveLayout({
                         hero: { ...(prev?.hero ?? {}), logoUrl: e.target.value },
                       }))
                     }
-                    placeholder="URL do logo"
+                    placeholder={t("liveOpsSponsorLogoPlaceholder", locale)}
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   />
                   <input
@@ -2499,12 +2592,12 @@ function OneVOneLiveLayout({
                         hero: { ...(prev?.hero ?? {}), url: e.target.value },
                       }))
                     }
-                    placeholder="Link (site/Instagram)"
+                    placeholder={t("liveOpsSponsorLinkPlaceholder", locale)}
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm text-white/70">Sponsor agora a jogar</label>
+                  <label className="text-sm text-white/70">{t("liveOpsNowPlayingSponsor", locale)}</label>
                   <input
                     value={sponsorDraft?.nowPlaying?.label ?? ""}
                     onChange={(e) =>
@@ -2513,7 +2606,7 @@ function OneVOneLiveLayout({
                         nowPlaying: { ...(prev?.nowPlaying ?? {}), label: e.target.value },
                       }))
                     }
-                    placeholder="Nome do sponsor"
+                    placeholder={t("liveOpsSponsorNamePlaceholder", locale)}
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   />
                   <input
@@ -2524,7 +2617,7 @@ function OneVOneLiveLayout({
                         nowPlaying: { ...(prev?.nowPlaying ?? {}), logoUrl: e.target.value },
                       }))
                     }
-                    placeholder="URL do logo"
+                    placeholder={t("liveOpsSponsorLogoPlaceholder", locale)}
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   />
                   <input
@@ -2535,7 +2628,7 @@ function OneVOneLiveLayout({
                         nowPlaying: { ...(prev?.nowPlaying ?? {}), url: e.target.value },
                       }))
                     }
-                    placeholder="Link (site/Instagram)"
+                    placeholder={t("liveOpsSponsorLinkPlaceholder", locale)}
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   />
                 </div>
@@ -2547,7 +2640,10 @@ function OneVOneLiveLayout({
                   return (
                     <div key={slotKey} className="space-y-2">
                       <label className="text-sm text-white/70">
-                        Sponsor {slotKey === "sideA" ? "secundário A" : "secundário B"}
+                        {t("liveOpsSideSponsor", locale).replace(
+                          "{side}",
+                          slotKey === "sideA" ? "A" : "B",
+                        )}
                       </label>
                       <input
                         value={slot?.label ?? ""}
@@ -2557,7 +2653,7 @@ function OneVOneLiveLayout({
                             [slotKey]: { ...(slot ?? {}), label: e.target.value },
                           }))
                         }
-                        placeholder="Nome"
+                        placeholder={t("liveOpsSponsorNamePlaceholder", locale)}
                         className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                       />
                       <input
@@ -2568,7 +2664,7 @@ function OneVOneLiveLayout({
                             [slotKey]: { ...(slot ?? {}), logoUrl: e.target.value },
                           }))
                         }
-                        placeholder="URL do logo"
+                        placeholder={t("liveOpsSponsorLogoPlaceholder", locale)}
                         className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                       />
                       <input
@@ -2579,7 +2675,7 @@ function OneVOneLiveLayout({
                             [slotKey]: { ...(slot ?? {}), url: e.target.value },
                           }))
                         }
-                        placeholder="Link (site/Instagram)"
+                        placeholder={t("liveOpsSponsorLinkPlaceholder", locale)}
                         className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                       />
                     </div>
@@ -2590,12 +2686,12 @@ function OneVOneLiveLayout({
               {!isPadelLive && (
                 <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Regras de golos</p>
-                    <h4 className="text-sm font-semibold text-white">Limite por ronda</h4>
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">{t("liveOpsGoalsRules", locale)}</p>
+                    <h4 className="text-sm font-semibold text-white">{t("liveOpsGoalsLimitTitle", locale)}</h4>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <label className="space-y-1 text-sm text-white/70">
-                      <span>Limite padrão</span>
+                      <span>{t("liveOpsGoalsDefaultLabel", locale)}</span>
                       <input
                         type="number"
                         min={1}
@@ -2607,7 +2703,7 @@ function OneVOneLiveLayout({
                     </label>
                     {roundNumbers.map((round) => (
                       <label key={`round-limit-${round}`} className="space-y-1 text-sm text-white/70">
-                        <span>{roundLabelMap[round] || `Ronda ${round}`}</span>
+                        <span>{roundLabelMap[round] || roundFallback(round)}</span>
                         <input
                           type="number"
                           min={1}
@@ -2629,12 +2725,12 @@ function OneVOneLiveLayout({
                   onClick={saveLiveConfig}
                   className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100 hover:border-emerald-300/70 disabled:opacity-60"
                 >
-                  {savingConfig ? "A guardar…" : "Guardar configuração"}
+                  {savingConfig ? t("matchSaving", locale) : t("liveOpsSaveConfig", locale)}
                 </button>
               </div>
             </>
           ) : (
-            <p className="text-xs text-white/50">Avançado: só ADMIN.</p>
+            <p className="text-xs text-white/50">{t("liveOpsAdminOnly", locale)}</p>
           )}
         </section>
       )}
@@ -2645,12 +2741,15 @@ function OneVOneLiveLayout({
 export default function EventLiveClient({
   slug,
   variant = "full",
+  locale: localeOverride,
 }: {
   slug: string;
   variant?: "full" | "inline";
+  locale?: string | null;
 }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const locale = resolveLocale(localeOverride ?? searchParams?.get("lang"));
   const { isLoggedIn } = useUser();
   const { openModal } = useAuthModal();
   const [showFullBracket, setShowFullBracket] = useState(false);
@@ -2709,13 +2808,13 @@ export default function EventLiveClient({
   }, []);
 
   if (error) {
-    return <div className="p-4 text-white/70">Erro a carregar live.</div>;
+    return <div className="p-4 text-white/70">{t("liveLoadError", locale)}</div>;
   }
   if (!data) {
-    return <div className="p-4 text-white/70">A carregar…</div>;
+    return <div className="p-4 text-white/70">{t("loadingLabel", locale)}</div>;
   }
   if (!data?.ok) {
-    return <div className="p-4 text-white/70">Live indisponível para este evento.</div>;
+    return <div className="p-4 text-white/70">{t("liveUnavailable", locale)}</div>;
   }
 
   const event: EventPayload = data.event;
@@ -2743,14 +2842,14 @@ export default function EventLiveClient({
     const visibility = access?.liveHubVisibility ?? "PUBLIC";
     const message =
       visibility === "DISABLED"
-        ? "O LiveHub foi desativado pelo organização."
+        ? t("liveHubDisabled", locale)
         : visibility === "PRIVATE"
-          ? "O LiveHub está reservado para participantes."
-          : "O LiveHub está indisponível.";
+          ? t("liveHubPrivate", locale)
+          : t("liveHubUnavailable", locale);
     return (
       <div className="rounded-3xl border border-white/10 bg-black/40 p-6 text-white/70 space-y-2">
-        <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">Acesso reservado</p>
-        <h2 className="text-xl font-semibold text-white">Este LiveHub não está disponível agora.</h2>
+        <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">{t("accessRestrictedLabel", locale)}</p>
+        <h2 className="text-xl font-semibold text-white">{t("liveHubUnavailableTitle", locale)}</h2>
         <p className="text-sm text-white/60">{message}</p>
       </div>
     );
@@ -2790,7 +2889,7 @@ export default function EventLiveClient({
 
   if (isTv && tournamentView) {
     return (
-      <LiveHubTv event={event} tournament={tournamentView} pairings={pairings} timeZone={timeZone} showCourt={showCourt} />
+      <LiveHubTv event={event} tournament={tournamentView} pairings={pairings} timeZone={timeZone} locale={locale} showCourt={showCourt} />
     );
   }
 
@@ -2840,7 +2939,8 @@ export default function EventLiveClient({
   const modules: LiveHubModule[] = Array.isArray(liveHub?.modules) ? (liveHub.modules as LiveHubModule[]) : [];
   const resolvedModules: LiveHubModule[] =
     event.liveStreamUrl && !modules.includes("VIDEO") ? ["VIDEO", ...modules] : modules;
-  const eventStatus = getEventStatusLabel(event.startsAt, event.endsAt);
+  const eventStatusKey = getEventStatusKey(event.startsAt, event.endsAt);
+  const eventStatus = getEventStatusLabel(eventStatusKey, locale);
   const countdownLabel = formatCountdown(event.startsAt, nowMs);
   const goalLimits = normalizeGoalLimits(tournamentView?.goalLimits as GoalLimitsConfig);
   const sponsors = (tournamentView?.sponsors as SponsorsConfig) ?? null;
@@ -2872,7 +2972,7 @@ export default function EventLiveClient({
   const organizationEditHref = (() => {
     const defaultBase =
       event.templateType === "PADEL"
-        ? `/organizacao/torneios/${event.id}/live`
+        ? `/organizacao/padel/torneios/${event.id}/live`
         : `/organizacao/eventos/${event.id}/live`;
     const base = isOrganizationRoute && pathname ? pathname : defaultBase;
     const params = new URLSearchParams(searchParams?.toString());
@@ -2888,11 +2988,11 @@ export default function EventLiveClient({
 
   const startFirstMatch = async () => {
     if (!tournamentView || !firstPlayableMatch) {
-      setStartMessage("Sem jogos completos para iniciar.");
+      setStartMessage(t("liveOpsNoPlayable", locale));
       return;
     }
     if (event.templateType !== "PADEL" && !firstPlayableMatch.updatedAt) {
-      setStartMessage("Sem versão do jogo.");
+      setStartMessage(t("matchVersionMissing", locale));
       return;
     }
     setStartingMatchId(firstPlayableMatch.id);
@@ -2921,13 +3021,13 @@ export default function EventLiveClient({
             );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setStartMessage(json?.error || "Erro ao começar o jogo.");
+        setStartMessage(json?.error || t("liveOpsStartError", locale));
         return;
       }
-      setStartMessage("Jogo iniciado.");
+      setStartMessage(t("liveOpsStartSuccess", locale));
       mutate();
     } catch {
-      setStartMessage("Erro ao começar o jogo.");
+      setStartMessage(t("liveOpsStartError", locale));
     } finally {
       setStartingMatchId(null);
     }
@@ -2942,9 +3042,9 @@ export default function EventLiveClient({
     const hero = sponsors?.hero;
     const inlineStatus = nowMatch
       ? nowMatch.status === "IN_PROGRESS" || nowMatch.status === "LIVE"
-        ? "Ao vivo"
-        : "Último"
-      : "Sem";
+        ? t("liveNowLabel", locale)
+        : t("latestLabel", locale)
+      : t("noneLabel", locale);
     return (
       <div className="space-y-4">
         {hero && (
@@ -2956,7 +3056,7 @@ export default function EventLiveClient({
               className="flex items-center justify-between gap-4"
             >
               <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Sponsor principal</p>
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">{t("mainSponsor", locale)}</p>
                 {hero.label && <p className="text-white/80">{hero.label}</p>}
               </div>
               {hero.logoUrl && (
@@ -2972,15 +3072,16 @@ export default function EventLiveClient({
         )}
         <section className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Agora a jogar</h3>
+            <h3 className="text-lg font-semibold text-white">{t("nowPlaying", locale)}</h3>
             <span className="text-xs text-white/50">{inlineStatus}</span>
           </div>
-          {!nowMatch && <p className="text-sm text-white/60">Sem jogos em curso.</p>}
+          {!nowMatch && <p className="text-sm text-white/60">{t("noLiveMatches", locale)}</p>}
           {nowMatch && (
             <MatchCard
               match={nowMatch}
               pairings={pairings}
               timeZone={timeZone}
+              locale={locale}
               size="lg"
               showCourt={showCourt}
             />
@@ -2996,9 +3097,9 @@ export default function EventLiveClient({
       <div className="space-y-6">
         {variant === "full" && viewerRole === "ORGANIZATION" && canEditMatches && isOrganizationRoute && !isOrganizationEdit && (
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-            Estás em modo público.{" "}
+            {t("liveOpsPublicMode", locale)}{" "}
             <Link href={organizationEditHref} className="text-white underline">
-              Ativar overlay do organização
+              {t("liveOpsActivateOverlay", locale)}
             </Link>
             .
           </div>
@@ -3007,10 +3108,10 @@ export default function EventLiveClient({
           <section className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Arranque</p>
-                <p className="text-sm text-white/70">Começa o primeiro jogo pendente.</p>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">{t("liveOpsKickoffLabel", locale)}</p>
+                <p className="text-sm text-white/70">{t("liveOpsKickoffHint", locale)}</p>
                 {nextPendingLabel && (
-                  <p className="text-[11px] text-white/50">Próximo: {nextPendingLabel}</p>
+                  <p className="text-[11px] text-white/50">{t("nextLabel", locale)}: {nextPendingLabel}</p>
                 )}
               </div>
               <button
@@ -3019,7 +3120,7 @@ export default function EventLiveClient({
                 disabled={!firstPlayableMatch || Boolean(startingMatchId)}
                 className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-[12px] font-semibold text-emerald-100 hover:border-emerald-300/70 disabled:opacity-60"
               >
-                {startingMatchId ? "A iniciar…" : "Começar jogos"}
+                {startingMatchId ? t("liveOpsStarting", locale) : t("liveOpsStartLabel", locale)}
               </button>
             </div>
             {startMessage && <p className="mt-2 text-[11px] text-white/60">{startMessage}</p>}
@@ -3030,7 +3131,8 @@ export default function EventLiveClient({
           organization={organization}
           tournament={tournamentView}
           pairings={pairings}
-          eventStatus={eventStatus}
+          eventStatusKey={eventStatusKey}
+          locale={locale}
           countdownLabel={countdownLabel}
           nowMatch={nowMatch}
           championLabel={championLabel}
@@ -3055,34 +3157,34 @@ export default function EventLiveClient({
     switch (mod) {
       case "HERO": {
         const statusTone =
-          eventStatus === "A decorrer"
+          eventStatusKey === "LIVE"
             ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
-            : eventStatus === "Próximo"
+            : eventStatusKey === "UPCOMING"
               ? "border-sky-400/40 bg-sky-500/10 text-sky-100"
-              : eventStatus === "Concluído"
+              : eventStatusKey === "DONE"
                 ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
                 : "border-white/15 bg-white/5 text-white/70";
         return (
           <section key="hero" className="rounded-3xl border border-white/10 bg-black/40 p-5 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
-                <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">LiveHub</p>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">{t("liveHubLabel", locale)}</p>
                 <h1 className="text-2xl font-semibold text-white md:text-3xl">{event.title}</h1>
-                <p className="text-white/70 text-sm">{formatDateRange(event.startsAt, event.endsAt, timeZone)}</p>
+                <p className="text-white/70 text-sm">{formatDateRange(event.startsAt, event.endsAt, locale, timeZone)}</p>
                 {locationLabel && (
                   <p className="text-white/50 text-sm">{locationLabel}</p>
                 )}
-                {eventStatus === "Próximo" && countdownLabel && (
-                  <p className="text-sm text-white/60">Começa em {countdownLabel}</p>
+                {eventStatusKey === "UPCOMING" && countdownLabel && (
+                  <p className="text-sm text-white/60">{t("eventStartsIn", locale)} {countdownLabel}</p>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <RoleBadge role={viewerRole} />
+                <RoleBadge role={viewerRole} locale={locale} />
                 <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${statusTone}`}>
                   {eventStatus}
                 </span>
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  Modo automático
+                  {t("autoModeLabel", locale)}
                 </span>
               </div>
             </div>
@@ -3091,13 +3193,15 @@ export default function EventLiveClient({
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                 <Avatar
                   src={organization.brandingAvatarUrl}
-                  name={organization.publicName || "Organização"}
+                  name={organization.publicName || t("roleOrganization", locale)}
                   className="h-10 w-10 border border-white/10"
                   textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
                   fallbackText="OR"
                 />
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Organizado por</p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+                    {t("organizedByLabel", locale)}
+                  </p>
                   <p className="text-white font-medium">{organization.publicName}</p>
                   {organization.username && <p className="text-white/50 text-xs">@{organization.username}</p>}
                 </div>
@@ -3112,20 +3216,18 @@ export default function EventLiveClient({
         const streamHref = streamEmbed.href;
         const streamLabel =
           streamEmbed.provider === "youtube"
-            ? "Abrir no YouTube"
+            ? t("openYoutube", locale)
             : streamEmbed.provider === "twitch"
-              ? "Abrir na Twitch"
-              : "Abrir stream";
+              ? t("openTwitch", locale)
+              : t("openStream", locale);
         if (!embedUrl) {
           return (
             <section key="video" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">Live</p>
-                <h2 className="text-lg font-semibold text-white">Live stream em breve</h2>
+                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">{t("liveLabel", locale)}</p>
+                <h2 className="text-lg font-semibold text-white">{t("liveStartsSoon", locale)}</h2>
               </div>
-              <p className="text-sm text-white/60">
-                Ainda não existe uma livestream ativa. Assim que o link estiver disponível, aparece aqui.
-              </p>
+              <p className="text-sm text-white/60">{t("liveStartsSoonDesc", locale)}</p>
               {streamHref && (
                 <a
                   href={streamHref}
@@ -3143,7 +3245,11 @@ export default function EventLiveClient({
                   onClick={toggleFollow}
                   className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:border-white/40 disabled:opacity-60"
                 >
-                  {followPending ? "A atualizar…" : isFollowing ? "A seguir" : "Segue para receber notificação"}
+                  {followPending
+                    ? t("followUpdating", locale)
+                    : isFollowing
+                      ? t("followedLabel", locale)
+                      : t("followToNotify", locale)}
                 </button>
               )}
             </section>
@@ -3153,8 +3259,8 @@ export default function EventLiveClient({
           <section key="video" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">Live</p>
-                <h2 className="text-lg font-semibold text-white">Assistir agora</h2>
+                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">{t("liveLabel", locale)}</p>
+                <h2 className="text-lg font-semibold text-white">{t("watchNow", locale)}</h2>
               </div>
               {streamHref && (
                 <a
@@ -3173,7 +3279,7 @@ export default function EventLiveClient({
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
                 className="h-full w-full"
-                title="Live stream"
+                title={t("watchStream", locale)}
               />
             </div>
           </section>
@@ -3182,21 +3288,23 @@ export default function EventLiveClient({
       case "NOW_PLAYING": {
         if (!tournamentView) {
           return (
-            <EmptyCard key="now" title="Agora a jogar">
-              Sem torneio associado.
+            <EmptyCard key="now" title={t("nowPlaying", locale)}>
+              {t("noTournamentLinked", locale)}
             </EmptyCard>
           );
         }
         return (
           <section key="now" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">Agora a jogar</h2>
-              <span className="text-xs text-white/50">{liveMatches.length} em jogo</span>
+              <h2 className="text-lg font-semibold text-white">{t("nowPlaying", locale)}</h2>
+              <span className="text-xs text-white/50">
+                {liveMatches.length} {t("matches", locale)}
+              </span>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {liveMatches.length === 0 && <p className="text-white/60">Sem jogos em curso.</p>}
+              {liveMatches.length === 0 && <p className="text-white/60">{t("noLiveMatches", locale)}</p>}
               {liveMatches.map((match) => (
-                <MatchCard key={`now-${match.id}`} match={match} pairings={pairings} timeZone={timeZone} highlight showCourt={showCourt} />
+                <MatchCard key={`now-${match.id}`} match={match} pairings={pairings} timeZone={timeZone} locale={locale} highlight showCourt={showCourt} />
               ))}
             </div>
           </section>
@@ -3205,19 +3313,21 @@ export default function EventLiveClient({
       case "NEXT_MATCHES": {
         if (!tournamentView) {
           return (
-            <EmptyCard key="next" title="Próximos jogos">
-              Sem torneio associado.
+            <EmptyCard key="next" title={t("upcomingMatches", locale)}>
+              {t("noTournamentLinked", locale)}
             </EmptyCard>
           );
         }
         return (
           <section key="next" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">Próximos jogos</h2>
-              <span className="text-xs text-white/50">{upcomingMatches.length} previstos</span>
+              <h2 className="text-lg font-semibold text-white">{t("upcomingMatches", locale)}</h2>
+              <span className="text-xs text-white/50">
+                {upcomingMatches.length} {t("matches", locale)}
+              </span>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {upcomingMatches.length === 0 && <p className="text-white/60">Sem jogos agendados.</p>}
+              {upcomingMatches.length === 0 && <p className="text-white/60">{t("noUpcomingMatches", locale)}</p>}
               {upcomingMatches.map((match) => {
                 const highlight =
                   (pairingIdFromQuery &&
@@ -3231,6 +3341,7 @@ export default function EventLiveClient({
                     pairings={pairings}
                     highlight={highlight}
                     timeZone={timeZone}
+                    locale={locale}
                     showCourt={showCourt}
                   />
                 );
@@ -3242,21 +3353,23 @@ export default function EventLiveClient({
       case "RESULTS": {
         if (!tournamentView) {
           return (
-            <EmptyCard key="results" title="Resultados">
-              Sem torneio associado.
+            <EmptyCard key="results" title={t("resultsLabel", locale)}>
+              {t("noTournamentLinked", locale)}
             </EmptyCard>
           );
         }
         return (
           <section key="results" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">Resultados recentes</h2>
-              <span className="text-xs text-white/50">{recentResults.length} jogos</span>
+              <h2 className="text-lg font-semibold text-white">{t("recentResults", locale)}</h2>
+              <span className="text-xs text-white/50">
+                {recentResults.length} {t("matches", locale)}
+              </span>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {recentResults.length === 0 && <p className="text-white/60">Sem resultados registados.</p>}
+              {recentResults.length === 0 && <p className="text-white/60">{t("noResults", locale)}</p>}
               {recentResults.map((match) => (
-                <MatchCard key={`res-${match.id}`} match={match} pairings={pairings} timeZone={timeZone} showCourt={showCourt} />
+                <MatchCard key={`res-${match.id}`} match={match} pairings={pairings} timeZone={timeZone} locale={locale} showCourt={showCourt} />
               ))}
             </div>
           </section>
@@ -3265,8 +3378,8 @@ export default function EventLiveClient({
       case "BRACKET": {
         if (!tournamentView) {
           return (
-            <EmptyCard key="bracket" title="Bracket">
-              Sem torneio associado.
+            <EmptyCard key="bracket" title={t("bracket", locale)}>
+              {t("noTournamentLinked", locale)}
             </EmptyCard>
           );
         }
@@ -3292,8 +3405,8 @@ export default function EventLiveClient({
             <section key="bracket" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">Bracket</p>
-                  <h2 className="text-lg font-semibold text-white">Chave completa</h2>
+                  <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">{t("bracket", locale)}</p>
+                  <h2 className="text-lg font-semibold text-white">{t("fullBracket", locale)}</h2>
                 </div>
                 {bracketHasEarlyRounds && (
                   <button
@@ -3301,7 +3414,7 @@ export default function EventLiveClient({
                     onClick={() => setShowFullBracket((prev) => !prev)}
                     className="hidden md:inline-flex rounded-full border border-white/15 px-3 py-1 text-xs text-white/70 hover:border-white/40"
                   >
-                    {showFullBracket ? "Mostrar menos" : "Ver bracket completo"}
+                    {showFullBracket ? t("showLess", locale) : t("showFullBracket", locale)}
                   </button>
                 )}
               </div>
@@ -3311,7 +3424,7 @@ export default function EventLiveClient({
                   return (
                     <div key={stage.id} className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-white font-semibold">{stage.name || "Playoffs"}</h3>
+                        <h3 className="text-white font-semibold">{stage.name || t("playoffsLabel", locale)}</h3>
                         <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">{stage.stageType}</span>
                       </div>
                       <BracketRoundsView
@@ -3322,6 +3435,7 @@ export default function EventLiveClient({
                         eventId={event.id}
                         onUpdated={onRefresh}
                         goalLimits={goalLimits}
+                        locale={locale}
                         highlightPairingId={highlightPairingId}
                         canResolveDispute={canResolveDispute}
                         scoreMode={event.templateType === "PADEL" ? "PADEL" : "GOALS"}
@@ -3339,20 +3453,20 @@ export default function EventLiveClient({
           return (
             <section key="bracket" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">Tabela</p>
-                <h2 className="text-lg font-semibold text-white">Classificação dos grupos</h2>
+                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">{t("standings", locale)}</p>
+                <h2 className="text-lg font-semibold text-white">{t("groupStandings", locale)}</h2>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 {stages.map((stage: any) =>
                   stage.groups?.map((group: any) => (
                     <div key={`group-${group.id}`} className="rounded-2xl border border-white/10 bg-black/30 p-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-white font-semibold">{group.name || "Grupo"}</h3>
+                        <h3 className="text-white font-semibold">{group.name || t("groupLabel", locale)}</h3>
                         <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">{stage.stageType}</span>
                       </div>
                       <div className="mt-3 space-y-2">
                         {(group.standings ?? []).length === 0 && (
-                          <p className="text-sm text-white/60">Sem classificação disponível.</p>
+                          <p className="text-sm text-white/60">{t("noStandings", locale)}</p>
                         )}
                         {(group.standings ?? []).map((row: any, idx: number) => {
                           return (
@@ -3375,16 +3489,16 @@ export default function EventLiveClient({
         }
 
         return (
-          <EmptyCard key="bracket" title="Bracket">
-            Sem chave definida.
+          <EmptyCard key="bracket" title={t("bracket", locale)}>
+            {t("noBracket", locale)}
           </EmptyCard>
         );
       }
       case "CHAMPION": {
         if (!tournamentView) {
           return (
-            <EmptyCard key="champ" title="Campeão">
-              Sem torneio associado.
+            <EmptyCard key="champ" title={t("championLabel", locale)}>
+              {t("noTournamentLinked", locale)}
             </EmptyCard>
           );
         }
@@ -3392,8 +3506,8 @@ export default function EventLiveClient({
         const meta = pairingMeta(championId, pairings);
         if (!championId || !meta) {
           return (
-            <EmptyCard key="champ" title="Campeão">
-              Ainda não existe campeão definido.
+            <EmptyCard key="champ" title={t("championLabel", locale)}>
+              {t("noChampion", locale)}
             </EmptyCard>
           );
         }
@@ -3404,7 +3518,7 @@ export default function EventLiveClient({
                 🏆
               </div>
               <div>
-                <p className="text-[11px] uppercase tracking-[0.3em] text-amber-100/70">Campeão</p>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-amber-100/70">{t("championLabel", locale)}</p>
                 <div className="text-xl font-semibold text-white">
                   {renderPairingName(championId, pairings)}
                 </div>
@@ -3416,10 +3530,10 @@ export default function EventLiveClient({
       case "SUMMARY": {
         return (
           <section key="summary" className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-2">
-            <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">Resumo</p>
-            <h2 className="text-lg font-semibold text-white">Sobre este evento</h2>
+            <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">{t("summaryLabel", locale)}</p>
+            <h2 className="text-lg font-semibold text-white">{t("aboutEventTitle", locale)}</h2>
             <p className="text-white/70 text-sm leading-relaxed">
-              {event.description?.trim() || "Descrição em breve."}
+              {event.description?.trim() || t("descriptionSoon", locale)}
             </p>
           </section>
         );
@@ -3428,22 +3542,22 @@ export default function EventLiveClient({
         const ctaCopy =
           viewerRole === "PUBLIC"
             ? ticketCopy.isPadel
-              ? "Queres aparecer como participante? Garante a tua inscrição."
-              : "Queres aparecer como participante? Garante o teu bilhete."
-            : "Já tens acesso como participante. Aproveita o LiveHub.";
+              ? t("ctaPublicPadel", locale)
+              : t("ctaPublicTicket", locale)
+            : t("liveHubParticipantHint", locale);
         const ctaLabel =
           viewerRole === "PUBLIC"
             ? ticketCopy.isPadel
               ? ticketCopy.buyLabel
-              : "Garantir lugar"
+              : t("ctaPublicTicketAction", locale)
             : ticketCopy.isPadel
-              ? "Ver a minha inscrição"
-              : "Ver o meu bilhete";
+              ? t("ctaMemberPadel", locale)
+              : t("ctaMemberTicket", locale);
         return (
           <section key="cta" className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">Participação</p>
+                <p className="text-[11px] uppercase tracking-[0.25em] text-white/60">{t("ctaParticipationLabel", locale)}</p>
                 <p className="text-white/80">{ctaCopy}</p>
               </div>
               <Link
@@ -3457,7 +3571,7 @@ export default function EventLiveClient({
         );
       }
       case "SPONSORS": {
-        return <SponsorsStrip organization={organization} />;
+        return <SponsorsStrip organization={organization} locale={locale} />;
       }
       default:
         return null;
@@ -3471,16 +3585,16 @@ export default function EventLiveClient({
       {viewerRole === "ORGANIZATION" && canEditMatches && tournamentView && isOrganizationRoute && (
         <section className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Gestão rápida</h2>
-            <span className="text-xs text-white/50">Organização</span>
+            <h2 className="text-lg font-semibold text-white">{t("liveOpsQuickManageTitle", locale)}</h2>
+            <span className="text-xs text-white/50">{t("roleOrganization", locale)}</span>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Arranque</p>
-                <p className="text-sm text-white/70">Começa o primeiro jogo pendente.</p>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">{t("liveOpsKickoffLabel", locale)}</p>
+                <p className="text-sm text-white/70">{t("liveOpsKickoffHint", locale)}</p>
                 {nextPendingLabel && (
-                  <p className="text-[11px] text-white/50">Próximo: {nextPendingLabel}</p>
+                  <p className="text-[11px] text-white/50">{t("nextLabel", locale)}: {nextPendingLabel}</p>
                 )}
               </div>
               <button
@@ -3489,7 +3603,7 @@ export default function EventLiveClient({
                 disabled={!firstPlayableMatch || Boolean(startingMatchId)}
                 className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-[12px] font-semibold text-emerald-100 hover:border-emerald-300/70 disabled:opacity-60"
               >
-                {startingMatchId ? "A iniciar…" : "Começar jogos"}
+                {startingMatchId ? t("liveOpsStarting", locale) : t("liveOpsStartLabel", locale)}
               </button>
             </div>
             {startMessage && <p className="mt-2 text-[11px] text-white/60">{startMessage}</p>}
@@ -3500,7 +3614,7 @@ export default function EventLiveClient({
               .slice(0, 6)
               .map((match) => (
                 <div key={`edit-${match.id}`} className="space-y-2">
-                  <MatchCard match={match} pairings={pairings} timeZone={timeZone} showCourt={showCourt} />
+                  <MatchCard match={match} pairings={pairings} timeZone={timeZone} locale={locale} showCourt={showCourt} />
                   {event.templateType === "PADEL" ? (
                     <PadelMatchEditor
                       match={match}
@@ -3509,12 +3623,13 @@ export default function EventLiveClient({
                       locked={roundIsLockedGlobal(match.round ?? 0) || match.status === "DISPUTED"}
                       lockedReason={
                         match.status === "DISPUTED"
-                          ? "Jogo em disputa. Resolve antes de editar."
+                          ? t("matchDisputeLocked", locale)
                           : roundIsLockedGlobal(match.round ?? 0)
-                            ? "Esta fase ainda não está ativa."
+                          ? t("matchPhaseInactive", locale)
                             : null
                       }
                       canResolveDispute={canResolveDispute}
+                      locale={locale}
                     />
                   ) : (
                     <OrganizationMatchEditor
@@ -3525,18 +3640,19 @@ export default function EventLiveClient({
                       locked={roundIsLockedGlobal(match.round ?? 0) || match.status === "DISPUTED"}
                       lockedReason={
                         match.status === "DISPUTED"
-                          ? "Jogo em disputa. Resolve antes de editar."
+                          ? t("matchDisputeLocked", locale)
                           : roundIsLockedGlobal(match.round ?? 0)
-                            ? "Esta fase ainda não está ativa."
+                          ? t("matchPhaseInactive", locale)
                             : null
                       }
                       canResolveDispute={canResolveDispute}
+                      locale={locale}
                     />
                   )}
                 </div>
               ))}
             {flatMatches.filter((m) => m.status !== "DONE").length === 0 && (
-              <p className="text-white/60">Sem jogos pendentes para editar.</p>
+              <p className="text-white/60">{t("liveOpsNoPending", locale)}</p>
             )}
           </div>
         </section>

@@ -2,7 +2,7 @@ import { Stack, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getSharedEnv, tokens } from "@orya/shared";
+import { tokens } from "@orya/shared";
 import { useStripe, isPlatformPaySupported } from "@stripe/stripe-react-native";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -11,6 +11,7 @@ import { useCheckoutStore } from "../../features/checkout/store";
 import { createCheckoutIntent, fetchCheckoutStatus } from "../../features/checkout/api";
 import { CheckoutMethod } from "../../features/checkout/types";
 import { useAuth } from "../../lib/auth";
+import { getMobileEnv } from "../../lib/env";
 
 const formatMoney = (cents: number, currency?: string | null): string => {
   if (!Number.isFinite(cents)) return "—";
@@ -29,7 +30,7 @@ export default function CheckoutScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const env = getSharedEnv();
+  const env = getMobileEnv();
   const stripeKey = env.stripePublishableKey ?? "";
   const merchantId = env.appleMerchantId ?? null;
   const [applePaySupported, setApplePaySupported] = useState(false);

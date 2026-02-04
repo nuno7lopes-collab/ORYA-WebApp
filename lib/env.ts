@@ -7,7 +7,10 @@ const required = [
   "SUPABASE_SERVICE_ROLE",
   "DATABASE_URL",
   "QR_SECRET_KEY",
-  "RESEND_API_KEY",
+  "SES_REGION",
+  "SES_IDENTITY_DOMAIN",
+  "SES_SMTP_USERNAME",
+  "SES_SMTP_PASSWORD",
 ] as const;
 
 type EnvKey = (typeof required)[number];
@@ -25,7 +28,10 @@ const testFallbacks: Partial<Record<EnvKey, string>> = {
   SUPABASE_SERVICE_ROLE: "test-service-role-key",
   DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable",
   QR_SECRET_KEY: "test-qr-secret",
-  RESEND_API_KEY: "test-resend-key",
+  SES_REGION: "eu-west-1",
+  SES_IDENTITY_DOMAIN: "orya.pt",
+  SES_SMTP_USERNAME: "test-ses-user",
+  SES_SMTP_PASSWORD: "test-ses-password",
 };
 
 function getEnv(key: EnvKey, fallbackKeys: string[] = []): string {
@@ -101,11 +107,14 @@ export const env = {
     "",
   dbUrl: sanitizePgUrl(getEnv("DATABASE_URL")),
   qrSecretKey: getEnv("QR_SECRET_KEY"),
-  resendApiKey: getEnv("RESEND_API_KEY"),
-  resendFrom:
-    process.env.RESEND_FROM ??
-    process.env.RESEND_FROM_EMAIL ??
-    "no-reply@orya.pt",
+  sesRegion: getEnv("SES_REGION"),
+  sesIdentityDomain: getEnv("SES_IDENTITY_DOMAIN"),
+  sesSmtpUsername: getEnv("SES_SMTP_USERNAME"),
+  sesSmtpPassword: getEnv("SES_SMTP_PASSWORD"),
+  emailFrom:
+    process.env.EMAIL_FROM ??
+    process.env.SES_FROM_EMAIL ??
+    undefined,
   appBaseUrl: getOptionalUrlEnv(
     "APP_BASE_URL",
     "NEXT_PUBLIC_BASE_URL",

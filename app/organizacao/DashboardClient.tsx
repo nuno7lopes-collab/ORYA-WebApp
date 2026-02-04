@@ -449,6 +449,20 @@ function OrganizacaoPageInner({
     sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
 
   useEffect(() => {
+    if (!pathname || pathname.startsWith("/organizacao/padel")) return;
+    if (activeObjective !== "manage") return;
+    if (normalizedSection !== PADEL_CLUB_SECTION && normalizedSection !== PADEL_TOURNAMENTS_SECTION) return;
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.set("section", normalizedSection);
+    if (!params.get("padel")) {
+      params.set("padel", normalizedSection === PADEL_TOURNAMENTS_SECTION ? "tournaments" : "clubs");
+    }
+    params.delete("tab");
+    const basePath = normalizedSection === PADEL_CLUB_SECTION ? "/organizacao/padel/clube" : "/organizacao/padel/torneios";
+    router.replace(`${basePath}?${params.toString()}`);
+  }, [activeObjective, normalizedSection, pathname, router, searchParams]);
+
+  useEffect(() => {
     const statusParam = searchParams?.get("status");
     const catParam = searchParams?.get("cat");
     const clubParam = searchParams?.get("club");
@@ -597,12 +611,22 @@ function OrganizacaoPageInner({
     primaryOperation === "RESERVAS"
       ? { label: "Criar serviço", href: "/organizacao/reservas?create=service", singular: "serviço", plural: "serviços" }
       : primaryOperation === "TORNEIOS"
-        ? { label: "Criar torneio", href: "/organizacao/torneios/novo", singular: "torneio", plural: "torneios" }
+        ? {
+            label: "Criar torneio",
+            href: "/organizacao/padel/torneios/novo",
+            singular: "torneio",
+            plural: "torneios",
+          }
         : { label: "Criar evento", href: "/organizacao/eventos/novo", singular: "evento", plural: "eventos" };
   const manageCreateMeta = isEventosRoute
     ? { label: "Criar evento", href: "/organizacao/eventos/novo", singular: "evento", plural: "eventos" }
     : isPadelContext
-      ? { label: "Criar torneio", href: "/organizacao/torneios/novo", singular: "torneio", plural: "torneios" }
+      ? {
+          label: "Criar torneio",
+          href: "/organizacao/padel/torneios/novo",
+          singular: "torneio",
+          plural: "torneios",
+        }
       : primaryCreateMeta;
   const managePrimaryLabel = isPadelContext ? "Padel" : "Eventos";
   const managePrimaryLabelLower = isPadelContext ? "torneio" : "evento";
@@ -610,7 +634,7 @@ function OrganizacaoPageInner({
   const managePrimarySingularLabel = manageCreateMeta.singular;
   const salesUnitLabel = isPadelContext ? "Inscrições" : "Bilhetes";
   const salesCountLabel = isPadelContext ? "Inscrições registadas" : "Bilhetes vendidos";
-  const eventRouteBase = isPadelContext ? "/organizacao/torneios" : "/organizacao/eventos";
+  const eventRouteBase = isPadelContext ? "/organizacao/padel/torneios" : "/organizacao/eventos";
   const loading = userLoading || organizationLoading || (Boolean(orgMeUrl) && !organizationData);
   const paymentsStatus = organizationData?.paymentsStatus ?? "NO_STRIPE";
   const paymentsMode = organizationData?.paymentsMode ?? "CONNECT";

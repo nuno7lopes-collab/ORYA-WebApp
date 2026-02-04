@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
+import { getActiveSession } from "./session";
 
 type AuthState = {
   loading: boolean;
@@ -19,11 +20,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session ?? null);
-      setLoading(false);
-    });
+    const hydrate = async () => {
+      const nextSession = await getActiveSession();
+
+      if (mounted) {
+        setSession(nextSession);
+        setLoading(false);
+      }
+    };
+
+    hydrate();
     const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
     });

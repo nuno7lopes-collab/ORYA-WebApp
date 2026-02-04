@@ -6,8 +6,9 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -33,6 +34,17 @@ async function _GET(req: NextRequest) {
       roles: [...ROLE_ALLOWLIST],
     });
     if (!organization || !membership) {
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+    }
+    const permission = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.TORNEIOS,
+      required: "VIEW",
+    });
+    if (!permission.ok) {
       return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 

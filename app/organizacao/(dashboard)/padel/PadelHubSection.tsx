@@ -30,10 +30,12 @@ type Player = {
   fullName: string;
   email: string | null;
   phone: string | null;
+  gender?: string | null;
   level: string | null;
   isActive: boolean;
   createdAt: string | Date;
   tournamentsCount?: number;
+  noShowCount?: number;
   profile?: {
     id: string;
     username: string | null;

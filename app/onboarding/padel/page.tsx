@@ -172,16 +172,18 @@ function PadelOnboardingContent() {
           clubName: clubName.trim() || null,
         }),
       });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; code?: string } | null;
-      if (!res.ok || !data?.ok) {
-        const message =
-          data?.code === "USERNAME_TAKEN"
-            ? "Este @ ja esta a ser usado."
-            : data?.error === "INVALID_PHONE"
-              ? "Telemovel invalido."
-              : data?.error || "Nao foi possivel guardar.";
-        throw new Error(message);
-      }
+        const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; code?: string } | null;
+        if (!res.ok || !data?.ok) {
+          const message =
+            data?.code === "USERNAME_TAKEN"
+              ? "Este @ ja esta a ser usado."
+              : data?.error === "INVALID_PHONE"
+                ? "Telemovel invalido."
+                : data?.error === "GENDER_REQUIRED"
+                  ? "Seleciona o género."
+                : data?.error || "Nao foi possivel guardar.";
+          throw new Error(message);
+        }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("orya:profile-updated"));
       }

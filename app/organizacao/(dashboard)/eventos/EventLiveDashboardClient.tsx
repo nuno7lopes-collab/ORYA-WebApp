@@ -35,7 +35,7 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
 
   const basePath =
     event.templateType === "PADEL"
-      ? `/organizacao/torneios/${event.id}/live`
+      ? `/organizacao/padel/torneios/${event.id}/live`
       : `/organizacao/eventos/${event.id}/live`;
 
   return (

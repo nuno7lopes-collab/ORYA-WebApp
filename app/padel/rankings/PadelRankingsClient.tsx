@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import { resolveLocale, t } from "@/lib/i18n";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -30,13 +31,8 @@ type PadelRankingsClientProps = {
   organizationId?: number | null;
   showFilters?: boolean;
   compact?: boolean;
+  locale?: string | null;
 };
-
-const PERIOD_OPTIONS = [
-  { label: "30 dias", value: 30 },
-  { label: "90 dias", value: 90 },
-  { label: "12 meses", value: 365 },
-];
 
 function toneForPosition(position: number) {
   if (position === 1) return "border-[#6BFFFF]/40 bg-[#6BFFFF]/10 text-white";
@@ -51,10 +47,21 @@ export default function PadelRankingsClient({
   organizationId,
   showFilters = true,
   compact = false,
+  locale,
 }: PadelRankingsClientProps) {
+  const resolvedLocale = resolveLocale(locale);
   const [periodDays, setPeriodDays] = useState<number>(90);
   const [level, setLevel] = useState("");
   const [city, setCity] = useState("");
+
+  const periodOptions = useMemo(
+    () => [
+      { label: t("period30Days", resolvedLocale), value: 30 },
+      { label: t("period90Days", resolvedLocale), value: 90 },
+      { label: t("period12Months", resolvedLocale), value: 365 },
+    ],
+    [resolvedLocale],
+  );
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -78,7 +85,7 @@ export default function PadelRankingsClient({
   });
 
   const items = Array.isArray(data?.items) ? data?.items : [];
-  const errorLabel = data?.ok === false ? data?.error || "Erro ao carregar ranking." : null;
+  const errorLabel = data?.ok === false ? data?.error || t("rankingLoadError", resolvedLocale) : null;
   const top = items.slice(0, 3);
   const rest = items.slice(3);
 
@@ -87,9 +94,11 @@ export default function PadelRankingsClient({
       {showFilters && (
         <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-3">
           <div className="space-y-1">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Filtros</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
+              {t("filtersLabel", resolvedLocale)}
+            </p>
             <p className="text-xs text-white/70">
-              Ajusta período, cidade ou nível de jogo.
+              {t("filtersHint", resolvedLocale)}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -98,7 +107,7 @@ export default function PadelRankingsClient({
               onChange={(event) => setPeriodDays(Number(event.target.value))}
               className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80"
             >
-              {PERIOD_OPTIONS.map((option) => (
+              {periodOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -108,14 +117,14 @@ export default function PadelRankingsClient({
               type="text"
               value={city}
               onChange={(event) => setCity(event.target.value)}
-              placeholder="Cidade"
+              placeholder={t("cityPlaceholder", resolvedLocale)}
               className="w-28 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80 placeholder:text-white/40"
             />
             <input
               type="text"
               value={level}
               onChange={(event) => setLevel(event.target.value)}
-              placeholder="Nível"
+              placeholder={t("levelPlaceholder", resolvedLocale)}
               className="w-24 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80 placeholder:text-white/40"
             />
           </div>
@@ -128,11 +137,11 @@ export default function PadelRankingsClient({
         </div>
       ) : isLoading ? (
         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/60">
-          A carregar ranking...
+          {t("rankingLoading", resolvedLocale)}
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/60">
-          Ainda não há pontos suficientes para gerar ranking.
+          {t("rankingEmpty", resolvedLocale)}
         </div>
       ) : (
         <>
@@ -147,10 +156,12 @@ export default function PadelRankingsClient({
               >
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">#{entry.position}</p>
                 <p className="mt-2 text-lg font-semibold text-white">{entry.player.fullName}</p>
-                <p className="text-[12px] text-white/70">{entry.points} pts</p>
+                <p className="text-[12px] text-white/70">
+                  {entry.points} {t("pointsShort", resolvedLocale)}
+                </p>
                 {entry.player.level && (
                   <span className="mt-2 inline-flex rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
-                    Nível {entry.player.level}
+                    {t("levelLabel", resolvedLocale)} {entry.player.level}
                   </span>
                 )}
               </div>
@@ -159,8 +170,10 @@ export default function PadelRankingsClient({
 
           <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3">
             <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-white/60">
-              <span>Ranking completo</span>
-              <span>{items.length} atletas</span>
+              <span>{t("fullRankingLabel", resolvedLocale)}</span>
+              <span>
+                {items.length} {t("playersLabel", resolvedLocale)}
+              </span>
             </div>
             <div className="mt-3 space-y-2">
               {rest.map((entry) => (
@@ -173,11 +186,15 @@ export default function PadelRankingsClient({
                     <div>
                       <p className="text-sm text-white/90">{entry.player.fullName}</p>
                       {entry.player.level && (
-                        <p className="text-[11px] text-white/50">Nível {entry.player.level}</p>
+                        <p className="text-[11px] text-white/50">
+                          {t("levelLabel", resolvedLocale)} {entry.player.level}
+                        </p>
                       )}
                     </div>
                   </div>
-                  <span className="text-[12px] text-white/70">{entry.points} pts</span>
+                  <span className="text-[12px] text-white/70">
+                    {entry.points} {t("pointsShort", resolvedLocale)}
+                  </span>
                 </div>
               ))}
             </div>

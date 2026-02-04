@@ -29,6 +29,12 @@ vi.mock("@/lib/prisma", () => {
     }),
   };
   const padelPairing = {
+    findUnique: vi.fn(() => ({
+      id: pairingState?.id ?? 0,
+      player1UserId: null,
+      player2UserId: null,
+      slots: [],
+    })),
     update: vi.fn(({ data }: any) => {
       Object.assign(pairingState, data);
       return pairingState;

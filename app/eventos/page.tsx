@@ -9,6 +9,8 @@ import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { defaultBlurDataURL } from "@/lib/image";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { headers } from "next/headers";
+import { resolveLocale, t } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +39,9 @@ type PageProps = {
   searchParams?: { q?: string } | Promise<{ q?: string }>;
 };
 
-function formatDate(date?: Date | null) {
-  if (!date) return "Data a anunciar";
-  return date.toLocaleString("pt-PT", {
+function formatDate(date: Date | null | undefined, locale: string) {
+  if (!date) return t("dateTbd", locale);
+  return date.toLocaleString(locale, {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -135,6 +137,9 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
 export default async function EventosFeedPage({ searchParams }: PageProps) {
   const resolved = (await searchParams) ?? {};
   const search = resolved.q?.trim() ?? "";
+  const headersList = headers();
+  const acceptLanguage = headersList.get("accept-language");
+  const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
   const events = await loadEvents(search);
   const organizationId = await resolveOrganizationIdFromCookies();
   const createEventHref = appendOrganizationIdToHref("/organizacao/eventos/novo", organizationId);
@@ -149,10 +154,10 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
             </span>
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Explorar eventos
+                {t("eventsFeedTitle", locale)}
               </p>
               <p className="text-sm text-white/80">
-                Descobre o que está a acontecer perto de ti (e onde devias estar).
+                {t("eventsFeedSubtitle", locale)}
               </p>
             </div>
           </div>
@@ -161,7 +166,7 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
             href={createEventHref}
             className={`${CTA_PRIMARY} hidden sm:inline-flex px-4 py-1.5 text-xs active:scale-95`}
           >
-            + Criar evento
+            + {t("eventsFeedCreate", locale)}
           </Link>
         </div>
       </header>
@@ -176,14 +181,14 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
               <input
                 name="q"
                 defaultValue={search}
-                placeholder="Pesquisar por evento, local ou vibe..."
+                placeholder={t("eventsFeedSearchPlaceholder", locale)}
                 className="w-full rounded-full bg-black/60 border border-white/15 pl-8 pr-24 py-2 text-xs outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/60 transition"
               />
               <button
                 type="submit"
                 className="absolute right-1 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full bg-white/90 text-[11px] font-medium text-black hover:bg-white"
               >
-                Pesquisar
+                {t("eventsFeedSearchButton", locale)}
               </button>
             </div>
           </form>
@@ -192,7 +197,7 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
           {events.length === 0 ? (
             <p className="text-sm text-white/60 col-span-full">
-              Ainda não há eventos. Tenta ajustar a pesquisa ou criar o primeiro evento.
+              {t("eventsFeedEmpty", locale)}
             </p>
           ) : (
             events.map((ev, index) => {
@@ -239,13 +244,13 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
                       />
                     ) : (
                       <div className="h-full w-full bg-[radial-gradient(circle_at_top,_#FF00C8_0,_#02020a_65%)] flex items-center justify-center text-xs text-white/60">
-                        ORYA • Evento
+                        {t("eventCardFallbackLabel", locale)}
                       </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/25 to-black/70" />
                     {ev.isGratis && (
                       <span className="absolute bottom-2 left-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-semibold text-[#6BFFFF] border border-[#6BFFFF]/40">
-                        Evento gratuito
+                        {t("eventCardFree", locale)}
                       </span>
                     )}
                   </div>
@@ -253,11 +258,11 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
                   <div className="p-3.5 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] text-white/60">
-                        {formatDate(ev.startsAt)}
+                        {formatDate(ev.startsAt, locale)}
                       </p>
                       {ev.priceFrom !== null && !ev.isGratis && (
                         <p className="text-[11px] text-white">
-                          desde{" "}
+                          {t("eventCardFrom", locale)}{" "}
                           <span className="font-semibold">{ev.priceFrom} € </span>
                         </p>
                       )}
@@ -266,7 +271,7 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
                     <h2 className="text-sm font-semibold line-clamp-2">{ev.title}</h2>
 
                     <p className="text-[11px] text-white/60 line-clamp-2">
-                      {ev.description || "Sem descrição adicionada."}
+                      {ev.description || t("eventCardNoDescription", locale)}
                     </p>
 
                     <div className="flex items-center justify-between gap-2 mt-2">

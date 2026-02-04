@@ -262,8 +262,17 @@ export default function OrganizationTopBar({
       if (pathname?.startsWith("/organizacao/padel/torneios/novo")) return "torneios-criar";
       if (pathname?.startsWith("/organizacao/padel")) return padelParam ?? padelFallback;
       if (pathname?.startsWith("/organizacao/eventos/novo")) return "create";
-      if (pathname?.startsWith("/organizacao/torneios/novo")) return "torneios-criar";
-      if (pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/tournaments")) {
+      if (
+        pathname?.startsWith("/organizacao/padel/torneios/novo") ||
+        pathname?.startsWith("/organizacao/torneios/novo")
+      ) {
+        return "torneios-criar";
+      }
+      if (
+        pathname?.startsWith("/organizacao/padel/torneios") ||
+        pathname?.startsWith("/organizacao/torneios") ||
+        pathname?.startsWith("/organizacao/tournaments")
+      ) {
         return "torneios";
       }
       if (pathname?.startsWith("/organizacao/eventos")) return "eventos";

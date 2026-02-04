@@ -910,7 +910,7 @@ export default function OrganizationTournamentLivePage({ params }: PageProps) {
     const event = data?.tournament?.event ?? null;
     const eventId = event?.id;
     if (Number.isFinite(eventId)) {
-      const basePath = event?.templateType === "PADEL" ? "/organizacao/torneios" : "/organizacao/eventos";
+      const basePath = event?.templateType === "PADEL" ? "/organizacao/padel/torneios" : "/organizacao/eventos";
       router.replace(`${basePath}/${eventId}/live?tab=bracket`);
     }
   }, [data?.tournament?.event, router]);

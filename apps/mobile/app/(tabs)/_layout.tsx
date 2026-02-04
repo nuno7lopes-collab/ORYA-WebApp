@@ -8,7 +8,7 @@ import { ActivityIndicator, View } from "react-native";
 
 export default function TabsLayout() {
   const { loading, session } = useAuth();
-  const profileQuery = useProfileSummary(Boolean(session));
+  const profileQuery = useProfileSummary(Boolean(session), session?.access_token ?? null);
 
   if (loading || (session && profileQuery.isLoading)) {
     return (

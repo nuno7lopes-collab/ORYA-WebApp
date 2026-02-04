@@ -5,7 +5,8 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { Prisma } from "@prisma/client";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_LIMIT = 30;
@@ -40,11 +41,20 @@ async function _GET(req: NextRequest) {
   });
   if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const limit = clampLimit(req.nextUrl.searchParams.get("limit"));
   const action = req.nextUrl.searchParams.get("action")?.trim() || null;

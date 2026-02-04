@@ -91,30 +91,28 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-2">
               <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">
-                Calendário público
+                {t("publicCalendarTitle", locale)}
               </p>
               <h1 className="text-2xl font-semibold md:text-3xl">{event.title}</h1>
-              <p className="text-sm text-white/70">
-                Agenda oficial com horários por court e ordem de jogo.
-              </p>
+              <p className="text-sm text-white/70">{t("publicCalendarSubtitle", locale)}</p>
               <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
                 <Link
                   href={`/eventos/${slug}`}
                   className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                 >
-                  Página pública
+                  {t("publicPageLabel", locale)}
                 </Link>
                 <Link
                   href={`/eventos/${slug}/ranking`}
                   className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                 >
-                  Ranking
+                  {t("rankingLabel", locale)}
                 </Link>
                 <Link
                   href={`/eventos/${slug}/monitor`}
                   className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                 >
-                  Monitor TV
+                  {t("monitorLabel", locale)}
                 </Link>
               </div>
             </div>

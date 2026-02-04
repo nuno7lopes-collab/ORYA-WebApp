@@ -8,7 +8,7 @@ import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isValidWebsite } from "@/lib/validation/organization";
 import { normalizeOrganizationAvatarUrl, normalizeOrganizationCoverUrl } from "@/lib/profileMedia";
-import { Resend } from "resend";
+import { sendEmail } from "@/lib/emailClient";
 import { requireOrganizationIdFromRequest } from "@/lib/organizationId";
 import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
@@ -24,9 +24,6 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-const resendApiKey = process.env.RESEND_API_KEY;
-const resendFromEmail = process.env.RESEND_FROM_EMAIL;
-const resendClient = resendApiKey ? new Resend(resendApiKey) : null;
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -658,10 +655,9 @@ async function _PATCH(req: NextRequest) {
     const alertsSales = typeof alertsSalesEnabled === "boolean" ? alertsSalesEnabled : organization.alertsSalesEnabled;
     const shouldNotifyAlertsEnabled =
       alertsSalesProvided && alertsSalesEnabled === true && organization.alertsSalesEnabled !== true;
-    if (alertsTarget && alertsSales && shouldNotifyAlertsEnabled && resendClient && resendFromEmail) {
+    if (alertsTarget && alertsSales && shouldNotifyAlertsEnabled) {
       try {
-        await resendClient.emails.send({
-          from: resendFromEmail,
+        await sendEmail({
           to: alertsTarget,
           subject: "Alertas de vendas ORYA ativados",
           text: "Passaste a receber alertas de vendas nesta caixa de email. Se não foste tu, desativa nas definições do organização.",

@@ -239,9 +239,9 @@ export default function InscricaoDetailPage() {
     }
     setSubmissionItems((prev) => {
       if (prev.length === 0) return submissionsData.items;
-      const updates = new Map(submissionsData.items.map((item) => [item.id, item]));
-      const updated = prev.map((item) => updates.get(item.id) ?? item);
-      const existingIds = new Set(updated.map((item) => item.id));
+      const updates = new Map<number, SubmissionItem>(submissionsData.items.map((item) => [item.id, item] as const));
+      const updated: SubmissionItem[] = prev.map((item) => updates.get(item.id) ?? item);
+      const existingIds = new Set<number>(updated.map((item) => item.id));
       const newItems = submissionsData.items.filter((item) => !existingIds.has(item.id));
       return newItems.length > 0 ? [...newItems, ...updated] : updated;
     });

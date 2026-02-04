@@ -3,7 +3,7 @@ import { createNotification } from "@/lib/notifications";
 import { resolveSegmentUserIds } from "@/lib/crm/segmentQuery";
 import { normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { sendCrmCampaignEmail } from "@/lib/emailSender";
-import { assertResendReady } from "@/lib/resendClient";
+import { assertEmailReady } from "@/lib/emailClient";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import {
@@ -190,7 +190,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
 
     if (emailEnabled) {
       try {
-        assertResendReady();
+        assertEmailReady();
       } catch (err) {
         emailEnabled = false;
         if (!inAppEnabled) {

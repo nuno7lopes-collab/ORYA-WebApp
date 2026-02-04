@@ -155,17 +155,21 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: registrationCheck.code }, { status: 409 });
   }
 
-  if (
+  const nowTs = Date.now();
+  const graceExpired =
+    pairing.payment_mode === PadelPaymentMode.SPLIT &&
+    pairing.graceUntilAt &&
+    pairing.graceUntilAt.getTime() < nowTs;
+  const deadlineExpired =
     pairing.payment_mode === PadelPaymentMode.SPLIT &&
     pairing.deadlineAt &&
-    pairing.deadlineAt.getTime() < Date.now() &&
-    pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
+    pairing.deadlineAt.getTime() < nowTs;
+  if (
+    pairing.payment_mode === PadelPaymentMode.SPLIT &&
+    pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID &&
+    (graceExpired || deadlineExpired)
   ) {
     return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 409 });
-  }
-
-  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-    return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
   }
   if (pairing.payment_mode === PadelPaymentMode.FULL) {
     const captainSlot = pairing.slots.find((slot) => slot.slot_role === "CAPTAIN");
@@ -260,13 +264,19 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     playerLevel: profile?.padelLevel ?? null,
   });
   if (!categoryAccess.ok) {
-    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY") {
       return jsonWrap(
         { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
         { status: 409 },
       );
     }
     return jsonWrap({ ok: false, error: categoryAccess.code }, { status: 409 });
+  }
+  if (categoryAccess.warning === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    return jsonWrap(
+      { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
+      { status: 409 },
+    );
   }
 
   try {

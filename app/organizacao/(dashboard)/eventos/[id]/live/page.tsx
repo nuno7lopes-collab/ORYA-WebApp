@@ -40,7 +40,7 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
   });
   if (!event || !event.organizationId) notFound();
 
-  const fallbackHref = event.templateType === "PADEL" ? "/organizacao/torneios" : "/organizacao/eventos";
+  const fallbackHref = event.templateType === "PADEL" ? "/organizacao/padel/torneios" : "/organizacao/eventos";
 
   const { organization, membership } = await getActiveOrganizationForUser(data.user.id, {
     organizationId: event.organizationId,

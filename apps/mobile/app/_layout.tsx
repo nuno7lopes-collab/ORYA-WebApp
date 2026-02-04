@@ -8,10 +8,17 @@ import { queryClient } from "../lib/queryClient";
 import { StatusBar } from "expo-status-bar";
 import { PushGate } from "../components/notifications/PushGate";
 import { StripeProvider } from "@stripe/stripe-react-native";
-import { getSharedEnv } from "@orya/shared";
+import { LogBox } from "react-native";
+import { getMobileEnv } from "../lib/env";
+
+LogBox.ignoreLogs([
+  "SafeAreaView has been deprecated",
+  "expo-notifications: Android Push notifications",
+  "`expo-notifications` functionality is not fully supported in Expo Go",
+]);
 
 export default function RootLayout() {
-  const env = getSharedEnv();
+  const env = getMobileEnv();
   const stripeKey = env.stripePublishableKey ?? "";
   const merchantIdentifier = env.appleMerchantId ?? undefined;
 

@@ -2,6 +2,7 @@
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
+import { t } from "@/lib/i18n";
 
 export type WaveStatus = "on_sale" | "upcoming" | "closed" | "sold_out";
 
@@ -30,6 +31,7 @@ type WavesSectionClientProps = {
   // para sabermos se devemos ir para checkout ou fazer “join” direto
   isGratisEvent?: boolean;
   checkoutUiVariant?: "DEFAULT" | "PADEL";
+  locale?: string | null;
   padelMeta?: {
     eventId: number;
     organizationId: number | null;
@@ -44,13 +46,14 @@ export default function WavesSectionClient({
   tickets: initialTickets,
   isGratisEvent,
   checkoutUiVariant = "DEFAULT",
+  locale,
   padelMeta,
   inviteEmail,
 }: WavesSectionClientProps) {
   const { abrirCheckout, atualizarDados } = useCheckout();
   const tickets = initialTickets;
-  const ticketCopy = getTicketCopy(checkoutUiVariant);
-  const freeCtaLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : "Garantir lugar";
+  const ticketCopy = getTicketCopy(checkoutUiVariant, locale);
+  const freeCtaLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : t("ctaPublicTicketAction", locale);
   const inviteAdditional =
     inviteEmail && inviteEmail.trim()
       ? { guestEmail: inviteEmail.trim(), guestEmailConfirm: inviteEmail.trim() }
@@ -67,6 +70,7 @@ export default function WavesSectionClient({
       ? Math.min(...purchasableTickets.map((t) => t.price))
       : null;
   const isGratisLabel = Boolean(isGratisEvent);
+  const noTicketsLabel = t("noTicketsAvailable", locale).replace("{items}", ticketCopy.plural);
 
   return (
     <div className="mt-6 w-full">
@@ -77,13 +81,13 @@ export default function WavesSectionClient({
             <span className="text-white font-semibold">{ticketCopy.freeLabel}</span>
           ) : minPrice !== null ? (
             <>
-              A partir de{" "}
+              {t("fromLabel", locale)}{" "}
               <span className="text-white font-semibold">
                 {minPrice.toFixed(2)}€
               </span>
             </>
           ) : (
-            <span className="text-white/60">Sem {ticketCopy.plural} disponíveis</span>
+            <span className="text-white/60">{noTicketsLabel}</span>
           )}
         </p>
 
@@ -129,7 +133,7 @@ export default function WavesSectionClient({
           className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm shadow-[0_12px_30px_rgba(124,255,234,0.18)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {purchasableTickets.length === 0
-            ? "Esgotado"
+            ? t("availabilitySoldOut", locale)
             : isGratisLabel
               ? freeCtaLabel
               : ticketCopy.buyLabel}

@@ -2,13 +2,15 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, SourceType, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, SourceType, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const normalizeReason = (value: unknown) => (typeof value === "string" ? value.trim() : "");
@@ -69,11 +71,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   }
   const organizationId = match.event.organizationId;
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   if (match.status !== padel_match_status.PENDING) {
     return jsonWrap({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
@@ -119,6 +130,23 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       tx,
     );
     return outbox;
+  });
+
+  await recordOrganizationAuditSafe({
+    organizationId,
+    actorUserId: user.id,
+    action: "PADEL_MATCH_DELAY",
+    metadata: {
+      matchId: match.id,
+      eventId: match.event.id,
+      reason: reason || null,
+      clearSchedule,
+      autoReschedule,
+      windowStart: windowStartOverride ? windowStartOverride.toISOString() : null,
+      windowEnd: windowEndOverride ? windowEndOverride.toISOString() : null,
+    },
+    ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+    userAgent: req.headers.get("user-agent") || null,
   });
 
   return jsonWrap({ ok: true, queued: true, eventId: outbox.eventId }, { status: 202 });

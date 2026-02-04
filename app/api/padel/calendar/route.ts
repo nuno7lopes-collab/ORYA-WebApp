@@ -2,14 +2,15 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, Prisma, SoftBlockScope } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, Prisma, SoftBlockScope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { queueMatchChanged } from "@/domain/notifications/tournament";
-import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
+import { evaluateCandidate, type AgendaCandidate, type AgendaCandidateType, type ConflictDecision } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createHardBlock, deleteHardBlock, updateHardBlock } from "@/domain/hardBlocks/commands";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
@@ -54,6 +55,28 @@ const buildMatchWindow = (match: {
       : match.startTime);
   return { start, end: end ?? start };
 };
+
+const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
+  HARD_BLOCK: "bloqueio",
+  MATCH_SLOT: "jogo",
+  BOOKING: "reserva",
+  SOFT_BLOCK: "bloqueio suave",
+};
+
+function buildAgendaWarning(decision: ConflictDecision, candidateType: AgendaCandidateType) {
+  if (!decision.allowed || decision.conflicts.length === 0) return null;
+  const primary = decision.conflicts[0];
+  const candidateLabel = AGENDA_TYPE_LABEL[candidateType] ?? "agendamento";
+  const conflictLabel = AGENDA_TYPE_LABEL[primary.withType] ?? "registo";
+  return {
+    message: `Aviso: ${candidateLabel} sobrepõe-se a ${conflictLabel}.`,
+    details: {
+      blockedByType: primary.withType,
+      blockedBySourceId: primary.withSourceId,
+      reason: decision.reason,
+    },
+  };
+}
 
 async function loadCourtCandidates(params: {
   organizationId: number;
@@ -170,7 +193,7 @@ function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflict
   };
 }
 
-async function ensureOrganization(req: NextRequest) {
+async function ensureOrganization(req: NextRequest, required: "VIEW" | "EDIT" = "EDIT") {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -178,11 +201,20 @@ async function ensureOrganization(req: NextRequest) {
   if (!user) return { error: "UNAUTHENTICATED" as const, status: 401 };
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return { error: "NO_ORGANIZATION" as const, status: 403 };
+  if (!organization || !membership) return { error: "NO_ORGANIZATION" as const, status: 403 };
+  const permission = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required,
+  });
+  if (!permission.ok) return { error: "FORBIDDEN" as const, status: 403 };
   return { organization, userId: user.id };
 }
 
@@ -193,7 +225,7 @@ const getRequestMeta = (req: NextRequest) => {
 };
 
 async function _GET(req: NextRequest) {
-  const check = await ensureOrganization(req);
+  const check = await ensureOrganization(req, "VIEW");
   if ("error" in check) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
@@ -478,6 +510,7 @@ async function _POST(req: NextRequest) {
     if (!decision.allowed) {
       return jsonWrap(agendaConflictResponse(decision), { status: 409 });
     }
+    const agendaWarning = buildAgendaWarning(decision, "HARD_BLOCK");
 
     const lockKey = `padel_block_${event.id}_${courtId ?? "any"}`;
     const lock = await acquireLock(lockKey);
@@ -519,7 +552,7 @@ async function _POST(req: NextRequest) {
         ...getRequestMeta(req),
       });
 
-      return jsonWrap({ ok: true, block }, { status: 201 });
+      return jsonWrap({ ok: true, block, ...(agendaWarning ? { warning: agendaWarning } : {}) }, { status: 201 });
     } finally {
       await releaseLock(lockKey);
     }
@@ -694,6 +727,7 @@ async function _PATCH(req: NextRequest) {
     if (!decision.allowed) {
       return jsonWrap(agendaConflictResponse(decision), { status: 409 });
     }
+    const agendaWarning = buildAgendaWarning(decision, "HARD_BLOCK");
 
     const lockKey = `padel_block_${block.eventId}_${typeof courtId === "number" ? courtId : block.courtId ?? "any"}`;
     const lock = await acquireLock(lockKey);
@@ -743,7 +777,10 @@ async function _PATCH(req: NextRequest) {
       },
       ...getRequestMeta(req),
     });
-    return jsonWrap({ ok: true, block: updated ?? block }, { status: 200 });
+    return jsonWrap(
+      { ok: true, block: updated ?? block, ...(agendaWarning ? { warning: agendaWarning } : {}) },
+      { status: 200 },
+    );
   }
 
   if (type === "availability") {
@@ -947,6 +984,7 @@ async function _PATCH(req: NextRequest) {
     if (!decision.allowed) {
       return jsonWrap(agendaConflictResponse(decision), { status: 409 });
     }
+    const agendaWarning = buildAgendaWarning(decision, "MATCH_SLOT");
 
     if (desiredStart && desiredEnd && (courtId || match.courtId)) {
       const overlappingMatch = await prisma.eventMatchSlot.findFirst({
@@ -997,6 +1035,8 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
+    let playerConflictWarning: { matchId: number; message: string } | null = null;
+
     // Colisão por jogador/dupla (pairing A/B) se houver info
     if (desiredStart && desiredEnd && (match.pairingAId || match.pairingBId)) {
       const pairingConditions = [
@@ -1029,10 +1069,10 @@ async function _PATCH(req: NextRequest) {
         const otherStart = overlappingPlayerMatch.plannedStartAt || overlappingPlayerMatch.startTime;
         const otherEnd = overlappingPlayerMatch.plannedEndAt || overlappingPlayerMatch.startTime;
         if (otherStart && otherEnd && overlapsWithBuffer(desiredStart, desiredEnd, otherStart, otherEnd)) {
-          return jsonWrap(
-            { ok: false, error: "Jogador/dupla já tem jogo neste horário." },
-            { status: 409 },
-          );
+          playerConflictWarning = {
+            matchId: overlappingPlayerMatch.id,
+            message: "Jogador/dupla já tem jogo neste horário.",
+          };
         }
       }
     }
@@ -1132,7 +1172,20 @@ async function _PATCH(req: NextRequest) {
         });
       }
     }
-    return jsonWrap({ ok: true, match: updated ?? null }, { status: 200 });
+    const warningMessages = [
+      playerConflictWarning?.message ?? null,
+      agendaWarning?.message ?? null,
+    ].filter(Boolean) as string[];
+    const warning = warningMessages.length > 0 ? { message: warningMessages.join(" ") } : null;
+
+    return jsonWrap(
+      {
+        ok: true,
+        match: updated ?? null,
+        ...(warning ? { warning } : {}),
+      },
+      { status: 200 },
+    );
   }
 
   return jsonWrap({ ok: false, error: "INVALID_TYPE" }, { status: 400 });

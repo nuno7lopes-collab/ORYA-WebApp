@@ -2,13 +2,14 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef } from "react";
 import { Animated, Image, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getSharedEnv, tokens } from "@orya/shared";
+import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useWalletDetail } from "../../features/wallet/hooks";
 import { ApiError } from "../../lib/api";
+import { getMobileEnv } from "../../lib/env";
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "Data por anunciar";
@@ -69,7 +70,7 @@ export default function WalletDetailScreen() {
     ]).start();
   }, [data, fade, translate]);
 
-  const baseUrl = getSharedEnv().apiBaseUrl.replace(/\/$/, "");
+  const baseUrl = getMobileEnv().apiBaseUrl.replace(/\/$/, "");
   const qrUrl = data?.qrToken ? `${baseUrl}/api/qr/${encodeURIComponent(data.qrToken)}?theme=dark` : null;
   const passUrl = data?.passUrl ?? null;
 

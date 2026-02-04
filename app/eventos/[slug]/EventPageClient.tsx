@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import ModalCheckout from "@/app/components/checkout/ModalCheckout";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
+import { t } from "@/lib/i18n";
+import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
 
 type WaveTicket = {
   id: string;
@@ -25,6 +27,7 @@ type EventPageClientProps = {
   slug: string;
   uiTickets: WaveTicket[];
   checkoutUiVariant: "DEFAULT" | "PADEL";
+  locale?: string | null;
   padelMeta?: {
     eventId: number;
     organizationId: number | null;
@@ -55,15 +58,17 @@ export default function EventPageClient({
   slug,
   uiTickets,
   checkoutUiVariant,
+  locale,
   padelMeta,
   defaultPadelTicketId,
 }: EventPageClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { abrirCheckout, atualizarDados, irParaPasso } = useCheckout();
-  const ticketCopy = getTicketCopy(checkoutUiVariant);
-  const fallbackTicketLabel = ticketCopy.isPadel ? "Inscrição Padel" : "Bilhete ORYA";
-  const invalidTicketLabel = ticketCopy.isPadel ? "Inscrição inválida" : "Bilhete inválido";
+  const ticketCopy = getTicketCopy(checkoutUiVariant, locale);
+  const fallbackTicketLabel = ticketCopy.isPadel
+    ? t("ticketLabelPadel", locale)
+    : t("ticketLabelDefault", locale);
   const inviteHandledRef = useRef<string | null>(null);
   const checkoutHandledRef = useRef(false);
   const pairingHandledRef = useRef<string | null>(null);
@@ -92,6 +97,9 @@ export default function EventPageClient({
     if (uiTickets && uiTickets.length > 0) return uiTickets;
     return [];
   }, [uiTickets]);
+
+  const pairingIdValue = pairingIdParam ? Number(pairingIdParam) : null;
+  const showPairingCard = Number.isFinite(pairingIdValue);
 
   useEffect(() => {
     const wantsCheckout = searchParams.get("checkout");
@@ -156,29 +164,29 @@ export default function EventPageClient({
         const resolveInviteError = (code?: string | null) => {
           switch (code) {
             case "EVENT_NOT_PUBLISHED":
-              return "As inscrições ainda não estão abertas.";
+              return t("inviteErrorEventNotPublished", locale);
             case "INSCRIPTIONS_NOT_OPEN":
-              return "As inscrições ainda não abriram.";
+              return t("inviteErrorInscriptionNotOpen", locale);
             case "INSCRIPTIONS_CLOSED":
-              return "As inscrições já fecharam.";
+              return t("inviteErrorInscriptionClosed", locale);
             case "TOURNAMENT_STARTED":
-              return "O torneio já começou.";
+              return t("inviteErrorTournamentStarted", locale);
             case "INVITE_EXPIRED":
-              return "Este convite expirou.";
+              return t("inviteErrorInviteExpired", locale);
             case "INVITE_ALREADY_USED":
-              return "Este convite já foi utilizado.";
+              return t("inviteErrorInviteUsed", locale);
             case "PAIRING_EXPIRED":
-              return "Este convite expirou.";
+              return t("inviteErrorPairingExpired", locale);
             case "PAIRING_CANCELLED":
-              return "Esta dupla foi cancelada.";
+              return t("inviteErrorPairingCancelled", locale);
             case "CATEGORY_PLAYERS_FULL":
-              return "Categoria cheia.";
+              return t("inviteErrorCategoryFull", locale);
             case "NOT_FOUND":
-              return "Este convite já não existe.";
+              return t("inviteErrorNotFound", locale);
             case "EVENT_NOT_FOUND":
-              return "O evento associado ao convite não foi encontrado.";
+              return t("inviteErrorEventNotFound", locale);
             default:
-              return code || "Convite inválido.";
+              return code || t("inviteErrorDefault", locale);
           }
         };
         const res = await fetch(`/api/padel/pairings/claim/${encodeURIComponent(inviteToken)}`);
@@ -208,7 +216,7 @@ export default function EventPageClient({
           pairing.slots[0];
 
         if (!pendingSlot) {
-          throw new Error("Não foi possível identificar o slot da dupla.");
+          throw new Error(t("inviteSlotMissing", locale));
         }
 
         const ticketTypes: Array<{ id: number; name: string; price: number; currency?: string | null }> =
@@ -236,7 +244,7 @@ export default function EventPageClient({
           : fallbackTicket?.id ?? null;
 
         if (!ticketId) {
-          throw new Error(`${invalidTicketLabel} para este convite.`);
+          throw new Error(t("invalidTicketForInvite", locale));
         }
 
         const unitPrice =
@@ -276,7 +284,7 @@ export default function EventPageClient({
         };
 
         if (pendingSlot.paymentStatus === "PAID") {
-          showInviteNotice("Pagamento confirmado. A tua dupla já está ativa.", "success");
+          showInviteNotice(t("invitePaymentConfirmed", locale), "success");
           clearInviteToken();
           return;
         }
@@ -313,7 +321,10 @@ export default function EventPageClient({
         clearInviteToken();
       } catch (err) {
         console.error("[EventPageClient] convite padel", err);
-        showInviteNotice(err instanceof Error ? err.message : "Erro ao processar o convite.", "error");
+        showInviteNotice(
+          err instanceof Error ? err.message : t("inviteProcessError", locale),
+          "error",
+        );
       }
     };
 
@@ -335,6 +346,7 @@ export default function EventPageClient({
     router,
     searchParams,
     slug,
+    locale,
   ]);
 
   useEffect(() => {
@@ -349,7 +361,7 @@ export default function EventPageClient({
         const res = await fetch(`/api/padel/pairings?id=${encodeURIComponent(pairingIdParam)}`);
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok || !json?.pairing?.id) {
-          throw new Error(json?.error || "Não foi possível abrir o checkout.");
+          throw new Error(json?.error || t("inviteCheckoutUnavailable", locale));
         }
 
         if (cancelled) return;
@@ -361,7 +373,7 @@ export default function EventPageClient({
             : pairing.slots.find((s) => s.slotStatus === "PENDING" || s.paymentStatus === "UNPAID");
 
         if (!pendingSlot) {
-          showInviteNotice("Não existe pagamento pendente para esta dupla.", "error");
+          showInviteNotice(t("inviteNoPendingPayment", locale), "error");
           return;
         }
 
@@ -380,7 +392,7 @@ export default function EventPageClient({
 
         const ticketId = fallbackTicket?.id ?? null;
         if (!ticketId) {
-          throw new Error(`${invalidTicketLabel} para este checkout.`);
+          throw new Error(t("invalidTicketForCheckout", locale));
         }
 
         const unitPrice =
@@ -442,7 +454,10 @@ export default function EventPageClient({
         irParaPasso(2);
       } catch (err) {
         console.error("[EventPageClient] pairing checkout", err);
-        showInviteNotice(err instanceof Error ? err.message : "Erro ao abrir checkout.", "error");
+        showInviteNotice(
+          err instanceof Error ? err.message : t("inviteCheckoutError", locale),
+          "error",
+        );
       }
     };
 
@@ -464,6 +479,7 @@ export default function EventPageClient({
     promoParam,
     slotIdParam,
     slug,
+    locale,
   ]);
 
   return (
@@ -479,6 +495,17 @@ export default function EventPageClient({
           >
             {inviteNotice.message}
           </div>
+        </div>
+      )}
+      {showPairingCard && (
+        <div className="fixed bottom-6 right-6 z-40 w-[320px] max-w-[90vw]">
+          <PairingInviteCard
+            title="Estado da dupla"
+            payload={{ pairingId: pairingIdValue as number }}
+            fallbackUrl="/me/carteira"
+            fallbackLabel="Ver carteira"
+            compact
+          />
         </div>
       )}
       <ModalCheckout />

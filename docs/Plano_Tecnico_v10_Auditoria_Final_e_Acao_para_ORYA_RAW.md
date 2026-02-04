@@ -1320,13 +1320,13 @@ de uso aceitos). Para v1, isso implica garantir que um usuário tenha aceitado o
 registrar,  e  opcionalmente  ter  configurações  para  optar  por  marketing.  Privacidade:  deve  haver
 funcionalidade de deleção de conta (DSAR – Data Subject Access Request), possivelmente com fluxo de
 confirmação (ex.: solicitar deleção, email de confirmação, etc.). Notificações: O sistema de notificações
-(emails  principalmente)  foi  implementado  via  Resend  e  outbox  (D6  done  –  “Notificações  como
+(emails  principalmente)  foi  implementado  via  SES  e  outbox  (D6  done  –  “Notificações  como
 serviço”
 ). Push notifications via APNs também integradas (Apple push), mas isso requer app móvel
 ou PWA. 
 Análise do Código (develop):
 - Mecanismo de notificação: existe domain/notifications/*  e possivelmente templates de email. A
-entrega de emails transacionais está configurada através de Resend API e é acionada por outbox
+entrega de emails transacionais está configurada através de AWS SES e é acionada por outbox
 events. Por exemplo, ao criar uma reserva, deve existir outbox de “BookingConfirmationEmail”. Como
 isso foi concluído no v9, acreditamos que funciona (mas testar alguns fluxos para ver se email chega).
 - Consentimentos: Existe tabela UserConsent + endpoints user/org; ingest CRM respeita consentimentos.
@@ -1637,7 +1637,7 @@ pelo menos garantir PWA funcional em iOS.
 Análise do Código & Config atual:
 - Envs: A lista de envs obrigatórias está clara em envs_required.md . Precisamos verificar se todos
 estão  presentes  nos  sistemas  de  CI/CD  e  produção.  Por  exemplo,  QR_SECRET_KEY  (usado  para
-assinatura de QRs offline), RESEND_API_KEY  (envio de email), chaves da Apple (Sign-in e APNs) em
+assinatura de QRs offline), SES_SMTP_USERNAME/SES_SMTP_PASSWORD (envio de email), chaves da Apple (Sign-in e APNs) em
 base64, etc.
 -  CI/CD: Não  identificado  arquivo  CI  (talvez  usando  auto-deploy no AWS).  Espera-se  que  a  branch
 develop  seja implantada em ambiente de staging, e a main em produção. Precisamos definir gating –

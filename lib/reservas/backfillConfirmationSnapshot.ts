@@ -77,6 +77,24 @@ export async function backfillBookingConfirmationSnapshots(
       createdAt: true,
       updatedAt: true,
       policyRef: { select: { policyId: true } },
+      addons: {
+        select: {
+          addonId: true,
+          label: true,
+          deltaMinutes: true,
+          deltaPriceCents: true,
+          quantity: true,
+          sortOrder: true,
+        },
+      },
+      bookingPackage: {
+        select: {
+          packageId: true,
+          label: true,
+          durationMinutes: true,
+          priceCents: true,
+        },
+      },
       service: {
         select: {
           policyId: true,

@@ -2,14 +2,24 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, PadelEligibilityType, Prisma, padel_format } from "@prisma/client";
+import {
+  OrganizationMemberRole,
+  OrganizationModule,
+  PadelEligibilityType,
+  PadelRegistrationStatus,
+  Prisma,
+  TournamentFormat,
+  padel_format,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { normalizePadelScoreRules, type PadelScoreRules } from "@/domain/padel/score";
 import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -110,6 +120,15 @@ async function _GET(req: NextRequest) {
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const viewPermission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!viewPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const [initialConfig, tournament] = await Promise.all([
     prisma.padelTournamentConfig.findUnique({
@@ -202,6 +221,7 @@ async function _POST(req: NextRequest) {
     hasFormat && typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
       ? (body.format as padel_format)
       : null;
+  const confirmFormatChange = body?.confirmFormatChange === true;
   const hasNumberOfCourts = Object.prototype.hasOwnProperty.call(body, "numberOfCourts");
   const numberOfCourtsRaw =
     hasNumberOfCourts && (typeof body.numberOfCourts === "number" || typeof body.numberOfCourts === "string")
@@ -519,12 +539,23 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
   }
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationIdBody,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization || organization.id !== organizationIdBody) {
+  if (!organization || !membership || organization.id !== organizationIdBody) {
     return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  }
+  const editPermission = await ensureMemberModuleAccess({
+    organizationId: organizationIdBody,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!editPermission.ok) {
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   try {
@@ -549,6 +580,17 @@ async function _POST(req: NextRequest) {
       const formatEffective = format ?? existing?.format ?? null;
       if (!formatEffective) {
         throw new Error("MISSING_FIELDS");
+      }
+      if (hasFormat && existing?.format && formatEffective !== existing.format) {
+        const confirmedCount = await tx.padelRegistration.count({
+          where: {
+            eventId,
+            status: PadelRegistrationStatus.CONFIRMED,
+          },
+        });
+        if (confirmedCount > 0 && !confirmFormatChange) {
+          throw new Error("FORMAT_CHANGE_CONFIRMATION_REQUIRED");
+        }
       }
 
       const resolvedIsInterclub = hasIsInterclub ? Boolean(isInterclub) : existing?.isInterclub ?? false;
@@ -662,6 +704,58 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
+    const advancedSettings = (config.advancedSettings ?? {}) as Record<string, unknown>;
+    const registrationEndsAtRaw =
+      typeof advancedSettings.registrationEndsAt === "string" ? advancedSettings.registrationEndsAt : null;
+    const registrationEndsAt =
+      registrationEndsAtRaw && !Number.isNaN(new Date(registrationEndsAtRaw).getTime())
+        ? new Date(registrationEndsAtRaw)
+        : null;
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: {
+        id: true,
+        templateType: true,
+        startsAt: true,
+        tournament: { select: { id: true, inscriptionDeadlineAt: true } },
+      },
+    });
+    if (event?.templateType === "PADEL") {
+      const fallbackDeadline =
+        event.startsAt && !Number.isNaN(new Date(event.startsAt).getTime())
+          ? new Date(event.startsAt.getTime() - 24 * 60 * 60 * 1000)
+          : null;
+      const targetDeadline = registrationEndsAt ?? fallbackDeadline;
+      if (targetDeadline) {
+        if (event.tournament?.id) {
+          const currentDeadline = event.tournament.inscriptionDeadlineAt;
+          const shouldUpdate =
+            !currentDeadline || currentDeadline.getTime() !== targetDeadline.getTime();
+          if (shouldUpdate) {
+            const res = await updateTournament({
+              tournamentId: event.tournament.id,
+              actorUserId: user.id,
+              data: { inscriptionDeadlineAt: targetDeadline },
+            });
+            if (!res.ok) {
+              throw new Error("TOURNAMENT_SYNC_FAILED");
+            }
+          }
+        } else {
+          const res = await createTournamentForEvent({
+            eventId: event.id,
+            format: TournamentFormat.MANUAL,
+            config: { padelFormat: config.format ?? "UNKNOWN" },
+            actorUserId: user.id,
+            inscriptionDeadlineAt: targetDeadline,
+          });
+          if (!res.ok) {
+            throw new Error("TOURNAMENT_SYNC_FAILED");
+          }
+        }
+      }
+    }
+
     return jsonWrap({ ok: true, config }, { status: 200 });
   } catch (err) {
     if (err instanceof Error) {
@@ -671,8 +765,14 @@ async function _POST(req: NextRequest) {
       if (err.message === "FORMAT_NOT_SUPPORTED") {
         return jsonWrap({ ok: false, error: "FORMAT_NOT_SUPPORTED" }, { status: 400 });
       }
+      if (err.message === "FORMAT_CHANGE_CONFIRMATION_REQUIRED") {
+        return jsonWrap({ ok: false, error: "FORMAT_CHANGE_CONFIRMATION_REQUIRED" }, { status: 409 });
+      }
       if (err.message === "TEAM_SIZE_REQUIRED") {
         return jsonWrap({ ok: false, error: "TEAM_SIZE_REQUIRED" }, { status: 400 });
+      }
+      if (err.message === "TOURNAMENT_SYNC_FAILED") {
+        return jsonWrap({ ok: false, error: "TOURNAMENT_SYNC_FAILED" }, { status: 500 });
       }
     }
     console.error("[padel/tournaments/config][POST]", err);

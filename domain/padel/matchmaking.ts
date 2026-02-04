@@ -31,7 +31,7 @@ type PairingCandidate = {
   deadlineAt: Date | null;
   createdAt: Date;
   registration: { status: PadelRegistrationStatus } | null;
-  player1: { gender: string | null; padelLevel: string | null } | null;
+  player1: { gender: string | null; padelLevel: string | null; padelPreferredSide: string | null } | null;
   category: { genderRestriction: string | null; minLevel: string | null; maxLevel: string | null } | null;
   slots: Array<{
     id: number;
@@ -96,6 +96,17 @@ function isEligiblePair(params: {
   }
 
   return true;
+}
+
+function preferenceScore(
+  hostSide: string | null | undefined,
+  partnerSide: string | null | undefined,
+) {
+  const hostAny = !hostSide || hostSide === "QUALQUER";
+  const partnerAny = !partnerSide || partnerSide === "QUALQUER";
+  if (hostAny || partnerAny) return 0;
+  if (hostSide === partnerSide) return 1;
+  return 0;
 }
 
 async function mergePairings(params: {
@@ -296,7 +307,7 @@ export async function matchmakeOpenPairings(params: {
     orderBy: { createdAt: "asc" },
     include: {
       registration: { select: { status: true } },
-      player1: { select: { gender: true, padelLevel: true } },
+      player1: { select: { gender: true, padelLevel: true, padelPreferredSide: true } },
       category: { select: { genderRestriction: true, minLevel: true, maxLevel: true } },
       slots: {
         select: {
@@ -321,6 +332,7 @@ export async function matchmakeOpenPairings(params: {
     const host = candidates[i];
     if (used.has(host.id)) continue;
     let selected: PairingCandidate | null = null;
+    let selectedScore = Number.POSITIVE_INFINITY;
 
     for (let j = i + 1; j < candidates.length; j += 1) {
       const partner = candidates[j];
@@ -328,8 +340,15 @@ export async function matchmakeOpenPairings(params: {
       if (host.player1UserId && partner.player1UserId && host.player1UserId === partner.player1UserId) continue;
       if (host.categoryId !== partner.categoryId) continue;
       if (!isEligiblePair({ eligibilityType: params.eligibilityType, host, partner })) continue;
-      selected = partner;
-      break;
+      const score = preferenceScore(host.player1?.padelPreferredSide, partner.player1?.padelPreferredSide);
+      if (!selected || score < selectedScore) {
+        selected = partner;
+        selectedScore = score;
+        if (score === 0) {
+          // Perfect/neutral match found; keep earliest in queue.
+          break;
+        }
+      }
     }
 
     if (!selected) {

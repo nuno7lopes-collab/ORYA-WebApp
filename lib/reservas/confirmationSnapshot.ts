@@ -3,12 +3,16 @@ import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
 
-export const BOOKING_CONFIRMATION_SNAPSHOT_VERSION = 1;
+export const BOOKING_CONFIRMATION_SNAPSHOT_VERSION = 4;
 
 type BookingPolicyRow = {
   id: number;
   policyType: string;
+  allowCancellation: boolean | null;
   cancellationWindowMinutes: number | null;
+  cancellationPenaltyBps: number | null;
+  allowReschedule: boolean | null;
+  rescheduleWindowMinutes: number | null;
   guestBookingAllowed: boolean | null;
   allowPayAtVenue: boolean | null;
   depositRequired: boolean | null;
@@ -37,12 +41,30 @@ type BookingRow = {
   currency: string | null;
   policyRef: { policyId: number } | null;
   service: BookingServiceRow | null;
+  bookingPackage?: {
+    packageId: number | null;
+    label: string;
+    durationMinutes: number;
+    priceCents: number;
+  } | null;
+  addons?: Array<{
+    addonId: number | null;
+    label: string;
+    deltaMinutes: number;
+    deltaPriceCents: number;
+    quantity: number;
+    sortOrder: number;
+  }> | null;
 };
 
 export type BookingPolicySnapshot = {
   policyId: number;
   policyType: string;
+  allowCancellation: boolean;
   cancellationWindowMinutes: number | null;
+  cancellationPenaltyBps: number;
+  allowReschedule: boolean;
+  rescheduleWindowMinutes: number | null;
   guestBookingAllowed: boolean;
   allowPayAtVenue: boolean;
   depositRequired: boolean;
@@ -66,12 +88,36 @@ export type BookingPricingSnapshot = {
   combinedFeeEstimateCents: number;
 };
 
+export type BookingAddonSnapshotItem = {
+  addonId: number | null;
+  label: string;
+  deltaMinutes: number;
+  deltaPriceCents: number;
+  quantity: number;
+  sortOrder: number;
+};
+
+export type BookingAddonsSnapshot = {
+  items: BookingAddonSnapshotItem[];
+  totalDeltaMinutes: number;
+  totalDeltaPriceCents: number;
+};
+
+export type BookingPackageSnapshot = {
+  packageId: number | null;
+  label: string;
+  durationMinutes: number;
+  priceCents: number;
+};
+
 export type BookingConfirmationSnapshot = {
   version: number;
   createdAt: string;
   currency: string;
   policySnapshot: BookingPolicySnapshot;
   pricingSnapshot: BookingPricingSnapshot;
+  packageSnapshot?: BookingPackageSnapshot | null;
+  addonsSnapshot?: BookingAddonsSnapshot | null;
 };
 
 export type BookingConfirmationPaymentMeta = {
@@ -127,7 +173,11 @@ async function resolvePolicy(params: {
       select: {
         id: true,
         policyType: true,
+        allowCancellation: true,
         cancellationWindowMinutes: true,
+        cancellationPenaltyBps: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
         guestBookingAllowed: true,
         allowPayAtVenue: true,
         depositRequired: true,
@@ -145,7 +195,11 @@ async function resolvePolicy(params: {
       select: {
         id: true,
         policyType: true,
+        allowCancellation: true,
         cancellationWindowMinutes: true,
+        cancellationPenaltyBps: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
         guestBookingAllowed: true,
         allowPayAtVenue: true,
         depositRequired: true,
@@ -159,7 +213,11 @@ async function resolvePolicy(params: {
       select: {
         id: true,
         policyType: true,
+        allowCancellation: true,
         cancellationWindowMinutes: true,
+        cancellationPenaltyBps: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
         guestBookingAllowed: true,
         allowPayAtVenue: true,
         depositRequired: true,
@@ -172,16 +230,67 @@ async function resolvePolicy(params: {
 }
 
 function buildPolicySnapshot(policy: BookingPolicyRow): BookingPolicySnapshot {
+  const cancellationWindowMinutes =
+    typeof policy.cancellationWindowMinutes === "number" ? policy.cancellationWindowMinutes : null;
+  const rescheduleWindowMinutesRaw =
+    typeof policy.rescheduleWindowMinutes === "number" ? policy.rescheduleWindowMinutes : null;
+  const rescheduleWindowMinutes =
+    rescheduleWindowMinutesRaw === null ? cancellationWindowMinutes : rescheduleWindowMinutesRaw;
+
   return {
     policyId: policy.id,
     policyType: policy.policyType,
-    cancellationWindowMinutes:
-      typeof policy.cancellationWindowMinutes === "number" ? policy.cancellationWindowMinutes : null,
+    allowCancellation: Boolean(policy.allowCancellation),
+    cancellationWindowMinutes,
+    cancellationPenaltyBps: Math.max(0, Math.min(10000, toInt(policy.cancellationPenaltyBps) ?? 0)),
+    allowReschedule: Boolean(policy.allowReschedule),
+    rescheduleWindowMinutes,
     guestBookingAllowed: Boolean(policy.guestBookingAllowed),
     allowPayAtVenue: Boolean(policy.allowPayAtVenue),
     depositRequired: Boolean(policy.depositRequired),
     depositAmountCents: Math.max(0, toInt(policy.depositAmountCents) ?? 0),
     noShowFeeCents: Math.max(0, toInt(policy.noShowFeeCents) ?? 0),
+  };
+}
+
+function buildAddonsSnapshot(
+  addons: BookingRow["addons"] | null | undefined,
+): BookingAddonsSnapshot | null {
+  if (!addons || !Array.isArray(addons) || addons.length === 0) return null;
+  const items = addons
+    .map((addon) => ({
+      addonId: addon.addonId ?? null,
+      label: addon.label,
+      deltaMinutes: addon.deltaMinutes ?? 0,
+      deltaPriceCents: addon.deltaPriceCents ?? 0,
+      quantity: addon.quantity ?? 1,
+      sortOrder: addon.sortOrder ?? 0,
+    }))
+    .filter((addon) => addon.quantity > 0);
+  if (items.length === 0) return null;
+  const totalDeltaMinutes = items.reduce((sum, item) => sum + item.deltaMinutes * item.quantity, 0);
+  const totalDeltaPriceCents = items.reduce(
+    (sum, item) => sum + item.deltaPriceCents * item.quantity,
+    0,
+  );
+  return {
+    items: items.sort((a, b) => a.sortOrder - b.sortOrder || (a.addonId ?? 0) - (b.addonId ?? 0)),
+    totalDeltaMinutes,
+    totalDeltaPriceCents,
+  };
+}
+
+function buildPackageSnapshot(
+  bookingPackage: BookingRow["bookingPackage"] | null | undefined,
+): BookingPackageSnapshot | null {
+  if (!bookingPackage) return null;
+  const label = typeof bookingPackage.label === "string" ? bookingPackage.label.trim() : "";
+  if (!label) return null;
+  return {
+    packageId: bookingPackage.packageId ?? null,
+    label,
+    durationMinutes: Math.max(0, bookingPackage.durationMinutes ?? 0),
+    priceCents: Math.max(0, bookingPackage.priceCents ?? 0),
   };
 }
 
@@ -289,6 +398,8 @@ export async function buildBookingConfirmationSnapshot({
       currency,
       policySnapshot: buildPolicySnapshot(policy),
       pricingSnapshot,
+      packageSnapshot: buildPackageSnapshot(booking.bookingPackage ?? null),
+      addonsSnapshot: buildAddonsSnapshot(booking.addons ?? null),
     },
   };
 }
@@ -306,12 +417,27 @@ function parsePolicySnapshot(raw: unknown): BookingPolicySnapshot | null {
       ? null
       : clampNonNegative(raw.cancellationWindowMinutes, -1);
 
+  const allowCancellation = raw.allowCancellation == null ? true : Boolean(raw.allowCancellation);
+  const cancellationPenaltyBps = clampNonNegative(raw.cancellationPenaltyBps);
+  const allowReschedule = raw.allowReschedule == null ? true : Boolean(raw.allowReschedule);
+  const rescheduleWindowMinutes =
+    raw.rescheduleWindowMinutes === null || raw.rescheduleWindowMinutes == null
+      ? null
+      : clampNonNegative(raw.rescheduleWindowMinutes, -1);
+
   return {
     policyId,
     policyType,
+    allowCancellation,
     cancellationWindowMinutes:
       typeof cancellationWindowMinutes === "number" && cancellationWindowMinutes >= 0
         ? cancellationWindowMinutes
+        : null,
+    cancellationPenaltyBps: Math.max(0, Math.min(10000, cancellationPenaltyBps)),
+    allowReschedule,
+    rescheduleWindowMinutes:
+      typeof rescheduleWindowMinutes === "number" && rescheduleWindowMinutes >= 0
+        ? rescheduleWindowMinutes
         : null,
     guestBookingAllowed: Boolean(raw.guestBookingAllowed),
     allowPayAtVenue: Boolean(raw.allowPayAtVenue),
@@ -348,6 +474,47 @@ function parsePricingSnapshot(raw: unknown): BookingPricingSnapshot | null {
   };
 }
 
+function parseAddonsSnapshot(raw: unknown): BookingAddonsSnapshot | null {
+  if (!isRecord(raw)) return null;
+  const itemsRaw = raw.items;
+  if (!Array.isArray(itemsRaw)) return null;
+  const items: BookingAddonSnapshotItem[] = itemsRaw
+    .map((item) => {
+      if (!isRecord(item)) return null;
+      return {
+        addonId: typeof item.addonId === "number" ? item.addonId : null,
+        label: typeof item.label === "string" ? item.label : "",
+        deltaMinutes: clampNonNegative(item.deltaMinutes),
+        deltaPriceCents: clampNonNegative(item.deltaPriceCents),
+        quantity: Math.max(1, clampNonNegative(item.quantity, 1)),
+        sortOrder: clampNonNegative(item.sortOrder),
+      };
+    })
+    .filter((item): item is BookingAddonSnapshotItem => item !== null && item.label.length > 0);
+  if (items.length === 0) return null;
+  const totalDeltaMinutes =
+    typeof raw.totalDeltaMinutes === "number"
+      ? Math.max(0, raw.totalDeltaMinutes)
+      : items.reduce((sum, item) => sum + item.deltaMinutes * item.quantity, 0);
+  const totalDeltaPriceCents =
+    typeof raw.totalDeltaPriceCents === "number"
+      ? Math.max(0, raw.totalDeltaPriceCents)
+      : items.reduce((sum, item) => sum + item.deltaPriceCents * item.quantity, 0);
+  return { items, totalDeltaMinutes, totalDeltaPriceCents };
+}
+
+function parsePackageSnapshot(raw: unknown): BookingPackageSnapshot | null {
+  if (!isRecord(raw)) return null;
+  const label = typeof raw.label === "string" ? raw.label.trim() : "";
+  if (!label) return null;
+  return {
+    packageId: typeof raw.packageId === "number" ? raw.packageId : null,
+    label,
+    durationMinutes: clampNonNegative(raw.durationMinutes),
+    priceCents: clampNonNegative(raw.priceCents),
+  };
+}
+
 export function parseBookingConfirmationSnapshot(raw: unknown): BookingConfirmationSnapshot | null {
   if (!isRecord(raw)) return null;
   const policySnapshot = parsePolicySnapshot(raw.policySnapshot);
@@ -360,6 +527,8 @@ export function parseBookingConfirmationSnapshot(raw: unknown): BookingConfirmat
       : new Date().toISOString();
   const currencyRaw =
     typeof raw.currency === "string" && raw.currency.trim() ? raw.currency : "EUR";
+  const addonsSnapshot = parseAddonsSnapshot(raw.addonsSnapshot);
+  const packageSnapshot = parsePackageSnapshot(raw.packageSnapshot);
 
   return {
     version,
@@ -367,6 +536,8 @@ export function parseBookingConfirmationSnapshot(raw: unknown): BookingConfirmat
     currency: currencyRaw.toUpperCase(),
     policySnapshot,
     pricingSnapshot,
+    packageSnapshot,
+    addonsSnapshot,
   };
 }
 
@@ -382,13 +553,35 @@ export function getSnapshotCancellationWindowMinutes(raw: unknown): number | nul
   return getPolicySnapshot(raw)?.cancellationWindowMinutes ?? null;
 }
 
+export function getSnapshotRescheduleWindowMinutes(raw: unknown): number | null {
+  const policy = getPolicySnapshot(raw);
+  if (!policy) return null;
+  return policy.rescheduleWindowMinutes ?? policy.cancellationWindowMinutes ?? null;
+}
+
+export function getSnapshotCancellationPenaltyBps(raw: unknown): number {
+  return getPolicySnapshot(raw)?.cancellationPenaltyBps ?? 0;
+}
+
+export function getSnapshotAllowCancellation(raw: unknown): boolean {
+  return getPolicySnapshot(raw)?.allowCancellation ?? true;
+}
+
+export function getSnapshotAllowReschedule(raw: unknown): boolean {
+  return getPolicySnapshot(raw)?.allowReschedule ?? true;
+}
+
 export function getSnapshotTotalCents(raw: unknown): number | null {
   const pricing = getPricingSnapshot(raw);
   if (!pricing) return null;
   return pricing.totalCents;
 }
 
-export type SnapshotRefundRule = "FULL_REFUND" | "NO_SHOW_FEE" | "FULL_FORFEIT";
+export type SnapshotRefundRule =
+  | "FULL_REFUND"
+  | "CLIENT_CANCEL_KEEP_FEES"
+  | "NO_SHOW_FEE"
+  | "FULL_FORFEIT";
 
 export type SnapshotRefundComputation = {
   currency: string;
@@ -396,18 +589,49 @@ export type SnapshotRefundComputation = {
   penaltyCents: number;
   refundCents: number;
   rule: SnapshotRefundRule;
+  feesRetainedCents?: number;
 };
 
-export function computeCancellationRefundFromSnapshot(raw: unknown): SnapshotRefundComputation | null {
+export function computeCancellationRefundFromSnapshot(
+  raw: unknown,
+  params?: { actor?: "CLIENT" | "ORG"; stripeFeeCentsActual?: number | null },
+): SnapshotRefundComputation | null {
   const snapshot = parseBookingConfirmationSnapshot(raw);
   if (!snapshot) return null;
   const totalCents = snapshot.pricingSnapshot.totalCents;
+  const actor = params?.actor ?? "CLIENT";
+  if (actor === "ORG") {
+    return {
+      currency: snapshot.currency,
+      totalCents,
+      penaltyCents: 0,
+      refundCents: totalCents,
+      rule: "FULL_REFUND",
+      feesRetainedCents: 0,
+    };
+  }
+
+  const baseCents = snapshot.pricingSnapshot.baseCents;
+  const cardPlatformFeeCents = snapshot.pricingSnapshot.cardPlatformFeeCents;
+  const stripeFeeCentsEstimate = snapshot.pricingSnapshot.stripeFeeEstimateCents;
+  const oryaFeeEstimateCents = Math.max(
+    0,
+    snapshot.pricingSnapshot.combinedFeeEstimateCents - stripeFeeCentsEstimate - cardPlatformFeeCents,
+  );
+  const stripeFeeCents = Math.max(0, params?.stripeFeeCentsActual ?? stripeFeeCentsEstimate);
+  const feesRetainedCents = Math.max(0, oryaFeeEstimateCents + stripeFeeCents + cardPlatformFeeCents);
+  const penaltyBps = Math.max(0, Math.min(10_000, snapshot.policySnapshot.cancellationPenaltyBps ?? 0));
+  const penaltyCents = Math.max(0, Math.round((Math.max(0, baseCents) * penaltyBps) / 10_000));
+
+  const refundCents = Math.max(0, totalCents - feesRetainedCents - penaltyCents);
+
   return {
     currency: snapshot.currency,
     totalCents,
-    penaltyCents: 0,
-    refundCents: totalCents,
-    rule: "FULL_REFUND",
+    penaltyCents,
+    refundCents,
+    rule: "CLIENT_CANCEL_KEEP_FEES",
+    feesRetainedCents,
   };
 }
 

@@ -493,8 +493,6 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:LOG_LEVEL::"
             - Name: LOG_FORMAT
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:LOG_FORMAT::"
-            - Name: SENTRY_DSN
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:SENTRY_DSN::"
             - Name: XRAY_DAEMON_ADDRESS
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:XRAY_DAEMON_ADDRESS::"
             - Name: XRAY_ENABLED
@@ -547,10 +545,18 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APNS_PRIVATE_KEY_BASE64::"
             - Name: APNS_TOPIC
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APNS_TOPIC::"
-            - Name: RESEND_API_KEY
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_API_KEY::"
-            - Name: RESEND_FROM_EMAIL
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_FROM_EMAIL::"
+            - Name: ADMIN_TOTP_ENCRYPTION_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ADMIN_TOTP_ENCRYPTION_KEY::"
+            - Name: ADMIN_USER_IDS
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ADMIN_USER_IDS::"
+            - Name: ADMIN_ACTION_IP_ALLOWLIST
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ADMIN_ACTION_IP_ALLOWLIST::"
+            - Name: ADMIN_BREAK_GLASS_TOKEN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ADMIN_BREAK_GLASS_TOKEN::"
+            - Name: ADMIN_MFA_REQUIRED
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ADMIN_MFA_REQUIRED::"
+            - Name: INFRA_READ_ONLY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:INFRA_READ_ONLY::"
             - Name: SES_REGION
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_REGION::"
             - Name: SES_IDENTITY_DOMAIN
@@ -618,12 +624,6 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_SECRET_KEY::"
             - Name: STRIPE_WEBHOOK_SECRET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_WEBHOOK_SECRET::"
-            - Name: RESEND_API_KEY
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_API_KEY::"
-            - Name: RESEND_FROM_EMAIL
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:RESEND_FROM_EMAIL::"
-            - Name: SENTRY_DSN
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:SENTRY_DSN::"
           LogConfiguration:
             LogDriver: awslogs
             Options:

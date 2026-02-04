@@ -175,7 +175,7 @@ export default function InfraClient({
         setBusy(null);
       }
     },
-    [busy, loadStatus, targetEnv, confirmProd],
+    [busy, loadStatus, targetEnv, confirmProd, mfaCode, recoveryCode],
   );
 
   const outputs = useMemo(() => status.data?.outputs ?? {}, [status.data]);
@@ -389,6 +389,16 @@ export default function InfraClient({
     loadUsage();
     loadAlerts();
   }, [loadStatus, loadCost, loadUsage, loadAlerts]);
+
+  const actionGuardMessage = infraReadOnly
+    ? "Infra em modo apenas leitura. Define INFRA_READ_ONLY=false e reinicia o servidor para ativar ações."
+    : mfaStatus.data?.configMissing
+      ? "2FA indisponível: define ADMIN_TOTP_ENCRYPTION_KEY (32 bytes) e reinicia o servidor."
+      : mfaStatus.data?.enabled
+        ? null
+        : "Ativa o 2FA (Google Auth) para poderes executar ações de infra.";
+  const actionsLocked = Boolean(actionGuardMessage);
+  const disableActionButtons = actionsLocked || Boolean(busy);
 
   return (
     <div className="space-y-6">
@@ -679,153 +689,169 @@ export default function InfraClient({
         </div>
       </div>
 
-      {!infraReadOnly && (
-        <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Controlos</p>
-          <h3 className="mb-4 text-sm font-semibold text-white/90">Operações</h3>
+      <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Controlos</p>
+        <h3 className="mb-4 text-sm font-semibold text-white/90">Operações</h3>
 
+        {actionGuardMessage && (
+          <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100/80">
+            {actionGuardMessage}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
+          <label className="inline-flex items-center gap-2">
+            <span>Target</span>
+            <select
+              className="rounded-md bg-white/10 px-2 py-1 text-sm text-white"
+              value={targetEnv}
+              onChange={(e) => setTargetEnv(e.target.value as "prod" | "test")}
+              disabled={disableActionButtons}
+            >
+              <option value="prod">PROD</option>
+              <option value="test">TEST</option>
+            </select>
+          </label>
+          {targetEnv === "prod" && (
+            <label className="inline-flex items-center gap-2">
+              <span>Confirmação</span>
+              <input
+                className="rounded-md bg-white/10 px-2 py-1 text-xs text-white placeholder:text-white/40"
+                placeholder="Escreve PROD"
+                value={confirmProd}
+                onChange={(e) => setConfirmProd(e.target.value)}
+                disabled={disableActionButtons}
+              />
+            </label>
+          )}
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={withAlb}
+              onChange={(e) => setWithAlb(e.target.checked)}
+              disabled={disableActionButtons}
+            />
+            Criar ALB
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={enableWorker}
+              onChange={(e) => setEnableWorker(e.target.checked)}
+              disabled={disableActionButtons}
+            />
+            Worker (Spot)
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <button
+            className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-60"
+            onClick={() => callAction("start", "/api/admin/infra/start", { withAlb, enableWorker })}
+            disabled={disableActionButtons}
+          >
+            Start Prod
+          </button>
+          <button
+            className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100 hover:bg-amber-500/20 disabled:opacity-60"
+            onClick={() => callAction("soft_pause", "/api/admin/infra/soft-pause")}
+            disabled={disableActionButtons}
+          >
+            Soft Pause Prod
+          </button>
+          <button
+            className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 hover:bg-rose-500/20 disabled:opacity-60"
+            onClick={() => callAction("hard_pause", "/api/admin/infra/hard-pause")}
+            disabled={disableActionButtons}
+          >
+            Hard Pause Prod
+          </button>
+          <button
+            className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-100 hover:bg-sky-500/20 disabled:opacity-60"
+            onClick={() => callAction("resume", "/api/admin/infra/resume", { withAlb, enableWorker })}
+            disabled={disableActionButtons}
+          >
+            Resume Prod
+          </button>
+          <button
+            className="rounded-xl border border-indigo-400/40 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/20 disabled:opacity-60"
+            onClick={() => callAction("deploy", "/api/admin/infra/deploy", { withAlb, enableWorker })}
+            disabled={disableActionButtons}
+          >
+            Deploy Release
+          </button>
+          <button
+            className="rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm text-white/90 hover:bg-white/15 disabled:opacity-60"
+            onClick={() => callAction("migrate", "/api/admin/infra/migrate")}
+            disabled={disableActionButtons}
+          >
+            Run Migrations
+          </button>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
           <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
-            <label className="inline-flex items-center gap-2">
-              <span>Target</span>
-              <select
-                className="rounded-md bg-white/10 px-2 py-1 text-sm text-white"
-                value={targetEnv}
-                onChange={(e) => setTargetEnv(e.target.value as "prod" | "test")}
-              >
-                <option value="prod">PROD</option>
-                <option value="test">TEST</option>
-              </select>
-            </label>
-            {targetEnv === "prod" && (
-              <label className="inline-flex items-center gap-2">
-                <span>Confirmação</span>
-                <input
-                  className="rounded-md bg-white/10 px-2 py-1 text-xs text-white placeholder:text-white/40"
-                  placeholder="Escreve PROD"
-                  value={confirmProd}
-                  onChange={(e) => setConfirmProd(e.target.value)}
-                />
-              </label>
-            )}
-            <label className="inline-flex items-center gap-2">
-              <input type="checkbox" checked={withAlb} onChange={(e) => setWithAlb(e.target.checked)} />
-              Criar ALB
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input type="checkbox" checked={enableWorker} onChange={(e) => setEnableWorker(e.target.checked)} />
-              Worker (Spot)
-            </label>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <button
-              className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-500/20"
-              onClick={() => callAction("start", "/api/admin/infra/start", { withAlb, enableWorker })}
-              disabled={!!busy}
-            >
-              Start Prod
-            </button>
-            <button
-              className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100 hover:bg-amber-500/20"
-              onClick={() => callAction("soft_pause", "/api/admin/infra/soft-pause")}
-              disabled={!!busy}
-            >
-              Soft Pause Prod
-            </button>
-            <button
-              className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 hover:bg-rose-500/20"
-              onClick={() => callAction("hard_pause", "/api/admin/infra/hard-pause")}
-              disabled={!!busy}
-            >
-              Hard Pause Prod
-            </button>
-            <button
-              className="rounded-xl border border-sky-400/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-100 hover:bg-sky-500/20"
-              onClick={() => callAction("resume", "/api/admin/infra/resume", { withAlb, enableWorker })}
-              disabled={!!busy}
-            >
-              Resume Prod
-            </button>
-            <button
-              className="rounded-xl border border-indigo-400/40 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/20"
-              onClick={() => callAction("deploy", "/api/admin/infra/deploy", { withAlb, enableWorker })}
-              disabled={!!busy}
-            >
-              Deploy Release
-            </button>
-            <button
-              className="rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm text-white/90 hover:bg-white/15"
-              onClick={() => callAction("migrate", "/api/admin/infra/migrate")}
-              disabled={!!busy}
-            >
-              Run Migrations
-            </button>
-          </div>
-
-          <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/50">Rotate Secrets</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <select
-                    className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-sm text-white"
-                    value={secretEnv}
-                    onChange={(e) => setSecretEnv(e.target.value as typeof secretEnvs[number])}
-                  >
-                    {secretEnvs.map((env) => (
-                      <option key={env} value={env}>
-                        {env}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-sm text-white"
-                    value={secretGroup}
-                    onChange={(e) => setSecretGroup(e.target.value as typeof secretGroups[number])}
-                  >
-                    {secretGroups.map((group) => (
-                      <option key={group} value={group}>
-                        {group}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="rounded-lg border border-white/30 bg-white/10 px-3 py-1 text-sm text-white/90 hover:bg-white/15"
-                    onClick={() =>
-                      callAction("rotate_secrets", "/api/admin/infra/rotate-secrets", {
-                        env: secretEnv,
-                        group: secretGroup,
-                      })
-                    }
-                    disabled={!!busy}
-                  >
-                    Rotacionar
-                  </button>
-                </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-white/50">Rotate Secrets</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <select
+                  className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-sm text-white disabled:opacity-60"
+                  value={secretEnv}
+                  onChange={(e) => setSecretEnv(e.target.value as typeof secretEnvs[number])}
+                  disabled={disableActionButtons}
+                >
+                  {secretEnvs.map((env) => (
+                    <option key={env} value={env}>
+                      {env}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-sm text-white disabled:opacity-60"
+                  value={secretGroup}
+                  onChange={(e) => setSecretGroup(e.target.value as typeof secretGroups[number])}
+                  disabled={disableActionButtons}
+                >
+                  {secretGroups.map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="rounded-lg border border-white/30 bg-white/10 px-3 py-1 text-sm text-white/90 hover:bg-white/15 disabled:opacity-60"
+                  onClick={() =>
+                    callAction("rotate_secrets", "/api/admin/infra/rotate-secrets", {
+                      env: secretEnv,
+                      group: secretGroup,
+                    })
+                  }
+                  disabled={disableActionButtons}
+                >
+                  Rotacionar
+                </button>
               </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {!infraReadOnly && (
-        <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Última operação</p>
-          {action ? (
-            <div className="mt-3 space-y-2 text-sm text-white/80">
-              <p>Action: {action.action}</p>
-              <p>OK: {String(action.ok)}</p>
-              <p>requestId: {action.requestId}</p>
-              <p>correlationId: {action.correlationId}</p>
-              <pre className="max-h-60 overflow-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
-                {JSON.stringify(action.payload, null, 2)}
-              </pre>
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-white/60">Nenhuma ação executada nesta sessão.</p>
-          )}
-        </div>
-      )}
+      <div className="rounded-2xl border border-white/10 bg-[rgba(9,13,22,0.88)] p-5 shadow-[0_24px_60px_rgba(2,6,14,0.45)]">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Última operação</p>
+        {action ? (
+          <div className="mt-3 space-y-2 text-sm text-white/80">
+            <p>Action: {action.action}</p>
+            <p>OK: {String(action.ok)}</p>
+            <p>requestId: {action.requestId}</p>
+            <p>correlationId: {action.correlationId}</p>
+            <pre className="max-h-60 overflow-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
+              {JSON.stringify(action.payload, null, 2)}
+            </pre>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-white/60">Nenhuma ação executada nesta sessão.</p>
+        )}
+      </div>
     </div>
   );
 }

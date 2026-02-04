@@ -2,7 +2,7 @@
 
 Objetivo: garantir entrega de emails e push notifications.
 
-## Email (Resend)
+## Email (SES SMTP)
 - Envio via `email_outbox` e worker `SEND_EMAIL_OUTBOX`.
 - Templates: PURCHASE_CONFIRMED, ENTITLEMENT_DELIVERED, REFUND, IMPORTANT_UPDATE, OWNER_TRANSFER.
 
@@ -22,7 +22,7 @@ select status, error_code, sent_at from app_v3.email_outbox where purchase_id = 
 - `APNS_TOPIC`
 
 ## Troubleshooting rapido
-1) Confirmar envs (Resend/APNS).
+1) Confirmar envs (SES/APNS).
 2) Verificar outbox status (PENDING/FAILED).
 3) Reprocessar worker (`/api/cron/operations`).
 

@@ -6,8 +6,9 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -20,11 +21,20 @@ async function _GET(req: NextRequest) {
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: readRoles,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  const viewPermission = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!viewPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
 
@@ -74,11 +84,20 @@ async function _POST(req: NextRequest) {
 
   const organizationIdParam = body.organizationId ?? resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const parsedOrgId = parseOrganizationId(organizationIdParam);
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: writeRoles,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  const editPermission = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const id = typeof body.id === "number" ? body.id : null;
   const name = typeof body.name === "string" ? body.name.trim() : "";

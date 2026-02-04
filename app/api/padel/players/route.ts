@@ -2,10 +2,11 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { Gender, OrganizationMemberRole, PadelPreferredSide, Prisma } from "@prisma/client";
+import { Gender, OrganizationMemberRole, OrganizationModule, PadelPreferredSide, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -20,11 +21,20 @@ async function _GET(req: NextRequest) {
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const players = await prisma.padelPlayerProfile.findMany({
     where: { organizationId: organization.id },
@@ -73,17 +83,82 @@ async function _GET(req: NextRequest) {
 
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
   const crmMap = new Map(crmCustomers.map((customer) => [customer.userId, customer]));
+  const profileIds = players.map((player) => player.id);
+
+  const pairingSlots = profileIds.length
+    ? await prisma.padelPairingSlot.findMany({
+        where: { playerProfileId: { in: profileIds } },
+        select: { playerProfileId: true, pairingId: true },
+      })
+    : [];
+
+  const pairingCounts = profileIds.length
+    ? await prisma.padelPairingSlot.groupBy({
+        by: ["playerProfileId"],
+        where: { playerProfileId: { in: profileIds } },
+        _count: { _all: true },
+      })
+    : [];
+
+  const pairingCountMap = new Map<number, number>();
+  pairingCounts.forEach((row) => {
+    if (row.playerProfileId == null) return;
+    pairingCountMap.set(row.playerProfileId, row._count._all ?? 0);
+  });
+
+  const pairingToPlayers = new Map<number, number[]>();
+  pairingSlots.forEach((slot) => {
+    if (!slot.pairingId || !slot.playerProfileId) return;
+    const list = pairingToPlayers.get(slot.pairingId) ?? [];
+    list.push(slot.playerProfileId);
+    pairingToPlayers.set(slot.pairingId, list);
+  });
+
+  const pairingIds = Array.from(pairingToPlayers.keys());
+  const noShowCounts = new Map<number, number>();
+
+  if (pairingIds.length > 0) {
+    const walkoverMatches = await prisma.eventMatchSlot.findMany({
+      where: {
+        status: "DONE",
+        OR: [{ pairingAId: { in: pairingIds } }, { pairingBId: { in: pairingIds } }],
+      },
+      select: { pairingAId: true, pairingBId: true, score: true },
+    });
+
+    walkoverMatches.forEach((match) => {
+      const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
+      const resultType = typeof score.resultType === "string" ? score.resultType : null;
+      const isWalkover = score.walkover === true || resultType === "WALKOVER";
+      if (!isWalkover) return;
+      const winnerSide = typeof score.winnerSide === "string" ? score.winnerSide : null;
+      if (winnerSide !== "A" && winnerSide !== "B") return;
+      const loserPairingId = winnerSide === "A" ? match.pairingBId : match.pairingAId;
+      if (!loserPairingId) return;
+      const playersInPairing = pairingToPlayers.get(loserPairingId) ?? [];
+      playersInPairing.forEach((playerProfileId) => {
+        noShowCounts.set(playerProfileId, (noShowCounts.get(playerProfileId) ?? 0) + 1);
+      });
+    });
+  }
 
   const items = players.map((player) => {
     if (!player.userId) {
       return {
         ...player,
+        gender: player.gender ?? null,
+        level: player.level ?? null,
+        tournamentsCount: pairingCountMap.get(player.id) ?? 0,
+        noShowCount: noShowCounts.get(player.id) ?? 0,
         profile: null,
         crm: null,
       };
     }
     const profile = profileMap.get(player.userId) ?? null;
     const crm = crmMap.get(player.userId) ?? null;
+    const pairingCount = pairingCountMap.get(player.id) ?? 0;
+    const crmTotal = crm?.totalTournaments ?? 0;
+    const tournamentsCount = Math.max(pairingCount, crmTotal);
     const resolvedFullName = crm?.displayName ?? profile?.fullName ?? player.fullName;
     const resolvedEmail = crm?.contactEmail ?? profile?.users?.email ?? player.email ?? null;
     const resolvedPhone = crm?.contactPhone ?? profile?.contactPhone ?? player.phone ?? null;
@@ -94,16 +169,18 @@ async function _GET(req: NextRequest) {
       phone: resolvedPhone,
       gender: profile?.gender ?? player.gender ?? null,
       level: profile?.padelLevel ?? player.level ?? null,
+      tournamentsCount,
+      noShowCount: noShowCounts.get(player.id) ?? 0,
       preferredSide: profile?.padelPreferredSide ?? player.preferredSide ?? null,
       clubName: profile?.padelClubName ?? player.clubName ?? null,
       profile: profile
         ? {
-            id: profile.id,
-            username: profile.username,
-            fullName: profile.fullName,
-            avatarUrl: profile.avatarUrl,
-          }
-        : null,
+          id: profile.id,
+          username: profile.username,
+          fullName: profile.fullName,
+          avatarUrl: profile.avatarUrl,
+        }
+      : null,
       crm: crm
         ? {
             id: crm.id,
@@ -134,11 +211,20 @@ async function _POST(req: NextRequest) {
 
   const organizationIdParam = body.organizationId ?? resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   const parsedOrgId = parseOrganizationId(organizationIdParam);
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : fullName;

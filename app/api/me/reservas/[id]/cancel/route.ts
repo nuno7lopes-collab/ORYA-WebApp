@@ -11,6 +11,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   computeCancellationRefundFromSnapshot,
   getSnapshotCancellationWindowMinutes,
+  getSnapshotAllowCancellation,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
 
@@ -127,7 +128,9 @@ export async function POST(
         isPending ? null : cancellationWindowMinutes,
         now,
       );
-      const canCancel = isPending || (booking.status === "CONFIRMED" && decision.allowed);
+      const allowCancellation = snapshot ? getSnapshotAllowCancellation(snapshot) : true;
+      const canCancel =
+        isPending || (booking.status === "CONFIRMED" && allowCancellation && decision.allowed);
 
       if (!canCancel) {
         return {
@@ -151,8 +154,21 @@ export async function POST(
 
       const refundRequired =
         !!booking.paymentIntentId &&
-        (isPending || (booking.status === "CONFIRMED" && decision.allowed));
-      const refundComputation = snapshot ? computeCancellationRefundFromSnapshot(snapshot) : null;
+        (isPending || (booking.status === "CONFIRMED" && allowCancellation && decision.allowed));
+      const txAny = tx as any;
+      const stripeFeeRow =
+        booking.paymentIntentId && txAny?.transaction?.findFirst
+          ? await txAny.transaction.findFirst({
+              where: { stripePaymentIntentId: booking.paymentIntentId },
+              select: { stripeFeeCents: true },
+            })
+          : null;
+      const refundComputation = snapshot
+        ? computeCancellationRefundFromSnapshot(snapshot, {
+            actor: "CLIENT",
+            stripeFeeCentsActual: stripeFeeRow?.stripeFeeCents ?? null,
+          })
+        : null;
       const refundAmountCents = refundComputation?.refundCents ?? null;
 
       await recordOrganizationAudit(tx, {

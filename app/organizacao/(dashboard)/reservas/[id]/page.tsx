@@ -52,6 +52,29 @@ type ServicePack = {
   isActive: boolean;
 };
 
+type ServicePackage = {
+  id: number;
+  label: string;
+  description: string | null;
+  durationMinutes: number;
+  priceCents: number;
+  recommended: boolean;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+type ServiceAddon = {
+  id: number;
+  label: string;
+  description: string | null;
+  deltaMinutes: number;
+  deltaPriceCents: number;
+  maxQty: number | null;
+  category: string | null;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 type PolicyItem = {
   id: number;
   name: string;
@@ -95,6 +118,8 @@ export default function ServicoDetalhePage() {
   const serviceKey = serviceId ? `/api/organizacao/servicos/${serviceId}` : null;
   const packsEnabled = false;
   const packsKey = packsEnabled && serviceId ? `/api/organizacao/servicos/${serviceId}/packs` : null;
+  const addonsKey = serviceId ? `/api/organizacao/servicos/${serviceId}/addons` : null;
+  const packagesKey = serviceId ? `/api/organizacao/servicos/${serviceId}/packages` : null;
 
   const { data: serviceData, mutate: mutateService } = useSWR<{ ok: boolean; service: Service }>(
     serviceKey,
@@ -116,9 +141,19 @@ export default function ServicoDetalhePage() {
     packsKey,
     fetcher,
   );
+  const { data: addonsData, mutate: mutateAddons } = useSWR<{ ok: boolean; items: ServiceAddon[] }>(
+    addonsKey,
+    fetcher,
+  );
+  const { data: packagesData, mutate: mutatePackages } = useSWR<{ ok: boolean; items: ServicePackage[] }>(
+    packagesKey,
+    fetcher,
+  );
 
   const service = serviceData?.service ?? null;
   const packs = packsEnabled ? packsData?.items ?? [] : [];
+  const addons = addonsData?.items ?? [];
+  const packages = packagesData?.items ?? [];
   const policies = policiesData?.items ?? [];
   const professionals = professionalsData?.items ?? [];
   const resources = resourcesData?.items ?? [];
@@ -142,6 +177,29 @@ export default function ServicoDetalhePage() {
   const [linkedResourceIds, setLinkedResourceIds] = useState<number[]>([]);
   const [serviceSaving, setServiceSaving] = useState(false);
   const [serviceError, setServiceError] = useState<string | null>(null);
+
+  const [addonLabel, setAddonLabel] = useState("");
+  const [addonDescription, setAddonDescription] = useState("");
+  const [addonDeltaMinutes, setAddonDeltaMinutes] = useState("15");
+  const [addonDeltaPrice, setAddonDeltaPrice] = useState("5");
+  const [addonMaxQty, setAddonMaxQty] = useState("");
+  const [addonCategory, setAddonCategory] = useState("");
+  const [addonSortOrder, setAddonSortOrder] = useState("0");
+  const [addonSaving, setAddonSaving] = useState(false);
+  const [addonError, setAddonError] = useState<string | null>(null);
+  const [addonDrafts, setAddonDrafts] = useState<Record<number, { label: string; description: string; deltaMinutes: string; deltaPrice: string; maxQty: string; category: string; sortOrder: string; isActive: boolean }>>({});
+  const [addonSavingId, setAddonSavingId] = useState<number | null>(null);
+
+  const [packageLabel, setPackageLabel] = useState("");
+  const [packageDescription, setPackageDescription] = useState("");
+  const [packageDuration, setPackageDuration] = useState("60");
+  const [packagePrice, setPackagePrice] = useState("0");
+  const [packageRecommended, setPackageRecommended] = useState(true);
+  const [packageSortOrder, setPackageSortOrder] = useState("0");
+  const [packageSaving, setPackageSaving] = useState(false);
+  const [packageError, setPackageError] = useState<string | null>(null);
+  const [packageDrafts, setPackageDrafts] = useState<Record<number, { label: string; description: string; durationMinutes: string; price: string; recommended: boolean; sortOrder: string; isActive: boolean }>>({});
+  const [packageSavingId, setPackageSavingId] = useState<number | null>(null);
 
   const [packQuantity, setPackQuantity] = useState("5");
   const [packPrice, setPackPrice] = useState("90");
@@ -167,6 +225,41 @@ export default function ServicoDetalhePage() {
     setLinkedProfessionalIds(service.professionalLinks?.map((link) => link.professionalId) ?? []);
     setLinkedResourceIds(service.resourceLinks?.map((link) => link.resourceId) ?? []);
   }, [service]);
+
+  useEffect(() => {
+    if (!addonsData?.items) return;
+    const draftMap: Record<number, { label: string; description: string; deltaMinutes: string; deltaPrice: string; maxQty: string; category: string; sortOrder: string; isActive: boolean }> = {};
+    addonsData.items.forEach((addon) => {
+      draftMap[addon.id] = {
+        label: addon.label ?? "",
+        description: addon.description ?? "",
+        deltaMinutes: String(addon.deltaMinutes ?? 0),
+        deltaPrice: ((addon.deltaPriceCents ?? 0) / 100).toFixed(2),
+        maxQty: addon.maxQty != null ? String(addon.maxQty) : "",
+        category: addon.category ?? "",
+        sortOrder: String(addon.sortOrder ?? 0),
+        isActive: addon.isActive,
+      };
+    });
+    setAddonDrafts(draftMap);
+  }, [addonsData?.items]);
+
+  useEffect(() => {
+    if (!packagesData?.items) return;
+    const draftMap: Record<number, { label: string; description: string; durationMinutes: string; price: string; recommended: boolean; sortOrder: string; isActive: boolean }> = {};
+    packagesData.items.forEach((pkg) => {
+      draftMap[pkg.id] = {
+        label: pkg.label ?? "",
+        description: pkg.description ?? "",
+        durationMinutes: String(pkg.durationMinutes ?? 0),
+        price: ((pkg.priceCents ?? 0) / 100).toFixed(2),
+        recommended: pkg.recommended,
+        sortOrder: String(pkg.sortOrder ?? 0),
+        isActive: pkg.isActive,
+      };
+    });
+    setPackageDrafts(draftMap);
+  }, [packagesData?.items]);
 
   useEffect(() => {
     if (!packsEnabled || !packsData?.items) return;
@@ -292,6 +385,161 @@ export default function ServicoDetalhePage() {
     } finally {
       setServiceSaving(false);
     }
+  };
+
+  const handleAddonCreate = async () => {
+    if (!serviceId) return;
+    setAddonSaving(true);
+    setAddonError(null);
+    try {
+      const res = await fetch(`/api/organizacao/servicos/${serviceId}/addons`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: addonLabel.trim(),
+          description: addonDescription.trim(),
+          deltaMinutes: Math.round(Number(addonDeltaMinutes)),
+          deltaPriceCents: Math.round(Number(addonDeltaPrice) * 100),
+          maxQty: addonMaxQty.trim() ? Math.round(Number(addonMaxQty)) : null,
+          category: addonCategory.trim(),
+          sortOrder: Math.round(Number(addonSortOrder)),
+          isActive: true,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.addon) {
+        throw new Error(json?.error || "Erro ao criar add-on.");
+      }
+      setAddonLabel("");
+      setAddonDescription("");
+      setAddonDeltaMinutes("15");
+      setAddonDeltaPrice("5");
+      setAddonMaxQty("");
+      setAddonCategory("");
+      setAddonSortOrder("0");
+      mutateAddons();
+    } catch (err) {
+      setAddonError(err instanceof Error ? err.message : "Erro ao criar add-on.");
+    } finally {
+      setAddonSaving(false);
+    }
+  };
+
+  const handleAddonUpdate = async (addonId: number) => {
+    if (!serviceId) return;
+    const draft = addonDrafts[addonId];
+    if (!draft) return;
+    setAddonSavingId(addonId);
+    setAddonError(null);
+    try {
+      const res = await fetch(`/api/organizacao/servicos/${serviceId}/addons/${addonId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: draft.label,
+          description: draft.description,
+          deltaMinutes: Math.round(Number(draft.deltaMinutes)),
+          deltaPriceCents: Math.round(Number(draft.deltaPrice) * 100),
+          maxQty: draft.maxQty.trim() ? Math.round(Number(draft.maxQty)) : null,
+          category: draft.category,
+          sortOrder: Math.round(Number(draft.sortOrder)),
+          isActive: draft.isActive,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.addon) {
+        throw new Error(json?.error || "Erro ao atualizar add-on.");
+      }
+      mutateAddons();
+    } catch (err) {
+      setAddonError(err instanceof Error ? err.message : "Erro ao atualizar add-on.");
+    } finally {
+      setAddonSavingId(null);
+    }
+  };
+
+  const handleAddonDisable = async (addonId: number) => {
+    if (!serviceId) return;
+    await fetch(`/api/organizacao/servicos/${serviceId}/addons/${addonId}`, {
+      method: "DELETE",
+    });
+    mutateAddons();
+  };
+
+  const handlePackageCreate = async () => {
+    if (!serviceId) return;
+    setPackageSaving(true);
+    setPackageError(null);
+    try {
+      const res = await fetch(`/api/organizacao/servicos/${serviceId}/packages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: packageLabel.trim(),
+          description: packageDescription.trim(),
+          durationMinutes: Math.round(Number(packageDuration)),
+          priceCents: Math.round(Number(packagePrice) * 100),
+          recommended: packageRecommended,
+          sortOrder: Math.round(Number(packageSortOrder)),
+          isActive: true,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.package) {
+        throw new Error(json?.error || "Erro ao criar pacote.");
+      }
+      setPackageLabel("");
+      setPackageDescription("");
+      setPackageDuration("60");
+      setPackagePrice("0");
+      setPackageRecommended(true);
+      setPackageSortOrder("0");
+      mutatePackages();
+    } catch (err) {
+      setPackageError(err instanceof Error ? err.message : "Erro ao criar pacote.");
+    } finally {
+      setPackageSaving(false);
+    }
+  };
+
+  const handlePackageUpdate = async (packageId: number) => {
+    if (!serviceId) return;
+    const draft = packageDrafts[packageId];
+    if (!draft) return;
+    setPackageSavingId(packageId);
+    setPackageError(null);
+    try {
+      const res = await fetch(`/api/organizacao/servicos/${serviceId}/packages/${packageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: draft.label,
+          description: draft.description,
+          durationMinutes: Math.round(Number(draft.durationMinutes)),
+          priceCents: Math.round(Number(draft.price) * 100),
+          recommended: draft.recommended,
+          sortOrder: Math.round(Number(draft.sortOrder)),
+          isActive: draft.isActive,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.package) {
+        throw new Error(json?.error || "Erro ao atualizar pacote.");
+      }
+      mutatePackages();
+    } catch (err) {
+      setPackageError(err instanceof Error ? err.message : "Erro ao atualizar pacote.");
+    } finally {
+      setPackageSavingId(null);
+    }
+  };
+
+  const handlePackageDisable = async (packageId: number) => {
+    if (!serviceId) return;
+    await fetch(`/api/organizacao/servicos/${serviceId}/packages/${packageId}`, {
+      method: "DELETE",
+    });
+    mutatePackages();
   };
 
   const handlePackCreate = async () => {
@@ -642,6 +890,474 @@ export default function ServicoDetalhePage() {
               </div>
             )}
           </div>
+        </div>
+      </section>
+
+      <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
+        <div>
+          <h2 className="text-base font-semibold text-white">Pacotes</h2>
+          <p className={DASHBOARD_MUTED}>
+            Cria pacotes com duração e preço fixos. Útil para experiências e festas.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="text-sm text-white/80">Nome do pacote</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={packageLabel}
+              onChange={(e) => setPackageLabel(e.target.value)}
+              placeholder="Ex: Pacote Festa Premium"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">Descrição (opcional)</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={packageDescription}
+              onChange={(e) => setPackageDescription(e.target.value)}
+              placeholder="Ex: inclui animador e bolo"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="text-sm text-white/80">Duração (min)</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={packageDuration}
+              onChange={(e) => setPackageDuration(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">Preço</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={packagePrice}
+              onChange={(e) => setPackagePrice(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">Ordem</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={packageSortOrder}
+              onChange={(e) => setPackageSortOrder(e.target.value)}
+            />
+          </div>
+          <div className="flex items-end gap-2">
+            <label className="flex items-center gap-2 text-sm text-white/80">
+              <input
+                type="checkbox"
+                checked={packageRecommended}
+                onChange={(e) => setPackageRecommended(e.target.checked)}
+              />
+              Recomendado
+            </label>
+          </div>
+        </div>
+
+        <div className="flex items-end">
+          <button
+            type="button"
+            className={CTA_PRIMARY}
+            onClick={handlePackageCreate}
+            disabled={packageSaving}
+          >
+            {packageSaving ? "A criar..." : "Criar pacote"}
+          </button>
+        </div>
+
+        {packageError && (
+          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+            {packageError}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {packages.length === 0 && (
+            <p className="text-[12px] text-white/60">Sem pacotes criados.</p>
+          )}
+          {packages.map((pkg) => {
+            const draft = packageDrafts[pkg.id];
+            if (!draft) return null;
+            return (
+              <div key={pkg.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      {draft.label || pkg.label}
+                    </p>
+                    <p className="text-[12px] text-white/60">
+                      {draft.durationMinutes || pkg.durationMinutes} min ·{" "}
+                      {draft.price
+                        ? `${draft.price} ${service?.currency ?? "EUR"}`
+                        : formatMoney(pkg.priceCents, service?.currency ?? "EUR")}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-white/50">
+                    {draft.recommended ? <span>Recomendado</span> : null}
+                    <span>{pkg.isActive ? "Ativo" : "Inativo"}</span>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-[12px] text-white/70">
+                    Nome
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.label}
+                      onChange={(e) =>
+                        setPackageDrafts((prev) => ({
+                          ...prev,
+                          [pkg.id]: { ...draft, label: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-[12px] text-white/70">
+                    Descrição
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.description}
+                      onChange={(e) =>
+                        setPackageDrafts((prev) => ({
+                          ...prev,
+                          [pkg.id]: { ...draft, description: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="text-[12px] text-white/70">
+                    Duração (min)
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.durationMinutes}
+                      onChange={(e) =>
+                        setPackageDrafts((prev) => ({
+                          ...prev,
+                          [pkg.id]: { ...draft, durationMinutes: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-[12px] text-white/70">
+                    Preço
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.price}
+                      onChange={(e) =>
+                        setPackageDrafts((prev) => ({
+                          ...prev,
+                          [pkg.id]: { ...draft, price: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-[12px] text-white/70">
+                    Ordem
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.sortOrder}
+                      onChange={(e) =>
+                        setPackageDrafts((prev) => ({
+                          ...prev,
+                          [pkg.id]: { ...draft, sortOrder: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px] text-white/70">
+                    <input
+                      type="checkbox"
+                      checked={draft.recommended}
+                      onChange={(e) =>
+                        setPackageDrafts((prev) => ({
+                          ...prev,
+                          [pkg.id]: { ...draft, recommended: e.target.checked },
+                        }))
+                      }
+                    />
+                    Recomendado
+                  </label>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="flex items-center gap-2 text-[12px] text-white/70">
+                    <input
+                      type="checkbox"
+                      checked={draft.isActive}
+                      onChange={(e) =>
+                        setPackageDrafts((prev) => ({
+                          ...prev,
+                          [pkg.id]: { ...draft, isActive: e.target.checked },
+                        }))
+                      }
+                    />
+                    Ativo
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={CTA_PRIMARY}
+                    onClick={() => handlePackageUpdate(pkg.id)}
+                    disabled={packageSavingId === pkg.id}
+                  >
+                    {packageSavingId === pkg.id ? "A guardar..." : "Guardar"}
+                  </button>
+                  <button type="button" className={CTA_DANGER} onClick={() => handlePackageDisable(pkg.id)}>
+                    Desativar
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
+        <div>
+          <h2 className="text-base font-semibold text-white">Extras (add-ons)</h2>
+          <p className={DASHBOARD_MUTED}>
+            Cria extras que ajustam tempo e preço. Os clientes escolhem ao reservar.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="text-sm text-white/80">Nome do extra</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={addonLabel}
+              onChange={(e) => setAddonLabel(e.target.value)}
+              placeholder="Ex: Barba"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">Descrição (opcional)</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={addonDescription}
+              onChange={(e) => setAddonDescription(e.target.value)}
+              placeholder="Ex: acabamento premium"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="text-sm text-white/80">+Minutos</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={addonDeltaMinutes}
+              onChange={(e) => setAddonDeltaMinutes(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">+Preço</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={addonDeltaPrice}
+              onChange={(e) => setAddonDeltaPrice(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">Max qty (opcional)</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={addonMaxQty}
+              onChange={(e) => setAddonMaxQty(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">Ordem</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={addonSortOrder}
+              onChange={(e) => setAddonSortOrder(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="text-sm text-white/80">Categoria (opcional)</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={addonCategory}
+              onChange={(e) => setAddonCategory(e.target.value)}
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              className={CTA_PRIMARY}
+              onClick={handleAddonCreate}
+              disabled={addonSaving}
+            >
+              {addonSaving ? "A criar..." : "Criar extra"}
+            </button>
+          </div>
+        </div>
+
+        {addonError && (
+          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+            {addonError}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {addons.length === 0 && (
+            <p className="text-[12px] text-white/60">Sem extras criados.</p>
+          )}
+          {addons.map((addon) => {
+            const draft = addonDrafts[addon.id];
+            if (!draft) return null;
+            return (
+              <div key={addon.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      {draft.label || addon.label}
+                    </p>
+                    <p className="text-[12px] text-white/60">
+                      +{draft.deltaMinutes || addon.deltaMinutes} min ·{" "}
+                      {draft.deltaPrice
+                        ? `${draft.deltaPrice} ${service?.currency ?? "EUR"}`
+                        : formatMoney(addon.deltaPriceCents, service?.currency ?? "EUR")}
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-white/50">{addon.isActive ? "Ativo" : "Inativo"}</span>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-[12px] text-white/70">
+                    Nome
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.label}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, label: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-[12px] text-white/70">
+                    Descrição
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.description}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, description: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="text-[12px] text-white/70">
+                    +Minutos
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.deltaMinutes}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, deltaMinutes: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-[12px] text-white/70">
+                    +Preço
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.deltaPrice}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, deltaPrice: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-[12px] text-white/70">
+                    Max qty
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.maxQty}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, maxQty: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-[12px] text-white/70">
+                    Ordem
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.sortOrder}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, sortOrder: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-[12px] text-white/70">
+                    Categoria
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={draft.category}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, category: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px] text-white/70">
+                    <input
+                      type="checkbox"
+                      checked={draft.isActive}
+                      onChange={(e) =>
+                        setAddonDrafts((prev) => ({
+                          ...prev,
+                          [addon.id]: { ...draft, isActive: e.target.checked },
+                        }))
+                      }
+                    />
+                    Ativo
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={CTA_PRIMARY}
+                    onClick={() => handleAddonUpdate(addon.id)}
+                    disabled={addonSavingId === addon.id}
+                  >
+                    {addonSavingId === addon.id ? "A guardar..." : "Guardar"}
+                  </button>
+                  <button type="button" className={CTA_DANGER} onClick={() => handleAddonDisable(addon.id)}>
+                    Desativar
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 

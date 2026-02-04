@@ -122,6 +122,24 @@ const jobs = [
     intervalMs: getInterval("CRON_PADEL_EXPIRE_INTERVAL_MS", 300000),
   },
   {
+    name: "padel-split-reminders",
+    method: "POST",
+    path: "/api/cron/padel/split-reminders",
+    intervalMs: getInterval("CRON_PADEL_SPLIT_REMINDERS_INTERVAL_MS", 300000),
+  },
+  {
+    name: "padel-matchmaking",
+    method: "POST",
+    path: "/api/cron/padel/matchmaking",
+    intervalMs: getInterval("CRON_PADEL_MATCHMAKING_INTERVAL_MS", 300000),
+  },
+  {
+    name: "padel-waitlist",
+    method: "POST",
+    path: "/api/cron/padel/waitlist",
+    intervalMs: getInterval("CRON_PADEL_WAITLIST_INTERVAL_MS", 300000),
+  },
+  {
     name: "padel-reminders",
     method: "POST",
     path: "/api/cron/padel/reminders",

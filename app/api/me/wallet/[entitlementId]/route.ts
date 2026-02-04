@@ -99,7 +99,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   const passAvailable =
     isWalletPassEnabled() &&
     actions.canShowQr &&
-    ent.type === "TICKET" &&
+    ent.type === "EVENT_TICKET" &&
     ["ACTIVE", "USED"].includes(ent.status.toUpperCase());
   const passUrl = passAvailable
     ? `${getAppBaseUrl()}/api/me/wallet/${encodeURIComponent(ent.id)}/pass`
@@ -132,6 +132,25 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     canDecline: boolean;
     canPay: boolean;
     userSlotRole: string | null;
+  } = null;
+
+  let paymentBreakdown: null | {
+    totalPaidCents: number;
+    platformFeeCents: number;
+    cardPlatformFeeCents: number;
+    stripeFeeCents: number;
+    feesTotalCents: number;
+    netCents: number;
+    currency: string;
+    status: string | null;
+    feeMode: string | null;
+    paymentMethod: string | null;
+  } = null;
+  let refundSummary: null | {
+    baseAmountCents: number;
+    feesExcludedCents: number;
+    refundedAt: Date | null;
+    reason: string | null;
   } = null;
 
   if (ent.eventId && ent.purchaseId) {
@@ -232,6 +251,67 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     }
   }
 
+  if (ent.purchaseId) {
+    const purchaseId = ent.purchaseId;
+    const saleSummary = await prisma.saleSummary.findFirst({
+      where: {
+        OR: [{ purchaseId }, { paymentIntentId: purchaseId }],
+      },
+      select: {
+        totalCents: true,
+        platformFeeCents: true,
+        cardPlatformFeeCents: true,
+        stripeFeeCents: true,
+        netCents: true,
+        currency: true,
+        status: true,
+        feeMode: true,
+        paymentMethod: true,
+      },
+    });
+    if (saleSummary) {
+      const totalPaidCents = saleSummary.totalCents ?? 0;
+      const platformFeeCents = saleSummary.platformFeeCents ?? 0;
+      const cardPlatformFeeCents = saleSummary.cardPlatformFeeCents ?? 0;
+      const stripeFeeCents = saleSummary.stripeFeeCents ?? 0;
+      const feesTotalCents = platformFeeCents + cardPlatformFeeCents + stripeFeeCents;
+      const netCents = saleSummary.netCents ?? Math.max(0, totalPaidCents - feesTotalCents);
+      paymentBreakdown = {
+        totalPaidCents,
+        platformFeeCents,
+        cardPlatformFeeCents,
+        stripeFeeCents,
+        feesTotalCents,
+        netCents,
+        currency: saleSummary.currency ?? "EUR",
+        status: saleSummary.status ?? null,
+        feeMode: saleSummary.feeMode ?? null,
+        paymentMethod: saleSummary.paymentMethod ?? null,
+      };
+    }
+
+    const refund = await prisma.refund.findFirst({
+      where: {
+        OR: [{ purchaseId }, { paymentIntentId: purchaseId }],
+      },
+      orderBy: { refundedAt: "desc" },
+      select: {
+        baseAmountCents: true,
+        feesExcludedCents: true,
+        refundedAt: true,
+        reason: true,
+      },
+    });
+    if (refund) {
+      refundSummary = {
+        baseAmountCents: refund.baseAmountCents ?? 0,
+        feesExcludedCents: refund.feesExcludedCents ?? 0,
+        refundedAt: refund.refundedAt ?? null,
+        reason: refund.reason ?? null,
+      };
+    }
+  }
+
   return jsonWrap({
     entitlementId: ent.id,
     type: ent.type,
@@ -250,6 +330,8 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     qrToken,
     pairing: pairingSummary,
     pairingActions,
+    payment: paymentBreakdown,
+    refund: refundSummary,
     event: event?.slug
       ? {
           id: event.id,

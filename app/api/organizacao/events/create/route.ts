@@ -19,12 +19,14 @@ import { SourceType, EventPricingMode } from "@prisma/client";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
+import { createTournamentForEvent } from "@/domain/tournaments/commands";
 import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
 import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   EventTemplateType,
+  EventStatus,
   LiveHubVisibility,
   LocationSource,
   PadelEligibilityType,
@@ -34,6 +36,7 @@ import {
   AddressSourceProvider,
   padel_format,
   OrganizationModule,
+  TournamentFormat,
 } from "@prisma/client";
 
 const ALLOWED_PADEL_FORMATS = new Set<padel_format>([
@@ -61,6 +64,8 @@ type CreateOrganizationEventBody = {
   description?: string;
   startsAt?: string;
   endsAt?: string;
+  status?: string;
+  timezone?: string;
   locationName?: string;
   locationCity?: string;
   templateType?: string; // PADEL | OTHER
@@ -350,6 +355,11 @@ export async function POST(req: NextRequest) {
     const payoutModeRequested =
       body.payoutMode?.toUpperCase() === "PLATFORM" ? PayoutMode.PLATFORM : PayoutMode.ORGANIZATION;
     const payoutMode: PayoutMode = isPlatformAccount ? PayoutMode.PLATFORM : payoutModeRequested;
+    const statusRaw = typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
+    const eventStatus: EventStatus =
+      statusRaw === "DRAFT" || statusRaw === "PUBLISHED" ? (statusRaw as EventStatus) : EventStatus.PUBLISHED;
+    const timezone =
+      typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : null;
 
     if (!title) {
       return fail(400, "Título é obrigatório.");
@@ -802,7 +812,8 @@ export async function POST(req: NextRequest) {
           addressId: addressRecord?.id ?? null,
           pricingMode,
           liveHubVisibility,
-          status: "PUBLISHED",
+          status: eventStatus,
+          ...(timezone ? { timezone } : {}),
           resaleMode,
           coverImageUrl,
           payoutMode,
@@ -870,6 +881,8 @@ export async function POST(req: NextRequest) {
       const padelV2Enabled = padelConfigInput?.padelV2Enabled ?? true;
       const courtIds = resolvedCourtIds;
       const staffIds = resolvedStaffIds;
+      const lifecycleNow = new Date();
+      const lifecycleStatus = eventStatus === EventStatus.PUBLISHED ? "PUBLISHED" : "DRAFT";
       const computedCourts = Math.max(1, courtIds.length || padelConfigInput.numberOfCourts || 1);
       const requestedFormat =
         typeof padelConfigInput.format === "string" ? padelConfigInput.format : null;
@@ -902,6 +915,9 @@ export async function POST(req: NextRequest) {
             teamSize: isInterclub ? teamSize ?? undefined : null,
             padelV2Enabled,
             advancedSettings: { ...baseAdvanced, courtIds, staffIds },
+            lifecycleStatus,
+            ...(eventStatus === EventStatus.PUBLISHED ? { publishedAt: lifecycleNow } : {}),
+            lifecycleUpdatedAt: lifecycleNow,
           },
           update: {
             padelClubId,
@@ -916,6 +932,13 @@ export async function POST(req: NextRequest) {
             teamSize: isInterclub ? teamSize ?? undefined : null,
             padelV2Enabled,
             advancedSettings: { ...baseAdvanced, courtIds, staffIds },
+            ...(body?.status
+              ? {
+                  lifecycleStatus,
+                  ...(eventStatus === EventStatus.PUBLISHED ? { publishedAt: lifecycleNow } : {}),
+                  lifecycleUpdatedAt: lifecycleNow,
+                }
+              : {}),
           },
         });
         if (config.ruleSetId) {
@@ -983,6 +1006,40 @@ export async function POST(req: NextRequest) {
         select: { id: true, padelCategoryId: true },
       });
       padelCategoryLinkMap = new Map(links.map((link) => [link.padelCategoryId, link.id]));
+    }
+
+    if (templateType === "PADEL") {
+      const advanced =
+        advancedSettings && typeof advancedSettings === "object"
+          ? (advancedSettings as Record<string, unknown>)
+          : null;
+      const registrationEndsAtRaw =
+        advanced && typeof advanced.registrationEndsAt === "string" ? advanced.registrationEndsAt : null;
+      const registrationEndsAt =
+        registrationEndsAtRaw && !Number.isNaN(new Date(registrationEndsAtRaw).getTime())
+          ? new Date(registrationEndsAtRaw)
+          : null;
+      const fallbackDeadline = startsAt
+        ? new Date(startsAt.getTime() - 24 * 60 * 60 * 1000)
+        : null;
+      const inscriptionDeadlineAt = registrationEndsAt ?? fallbackDeadline ?? null;
+      const requestedFormat =
+        typeof padelConfigInput?.format === "string" ? padelConfigInput.format : null;
+      const padelFormat =
+        requestedFormat && ALLOWED_PADEL_FORMATS.has(requestedFormat as padel_format)
+          ? (requestedFormat as padel_format)
+          : padel_format.TODOS_CONTRA_TODOS;
+      try {
+        await createTournamentForEvent({
+          eventId: event.id,
+          format: TournamentFormat.MANUAL,
+          config: { padelFormat },
+          actorUserId: profile.id,
+          ...(inscriptionDeadlineAt ? { inscriptionDeadlineAt } : {}),
+        });
+      } catch (err) {
+        console.warn("[organização/events/create] criar tournament falhou", err);
+      }
     }
 
     if (templateType !== "PADEL") {

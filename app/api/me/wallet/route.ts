@@ -179,7 +179,7 @@ async function _GET(req: NextRequest) {
         const passAvailable =
           isWalletPassEnabled() &&
           actions.canShowQr &&
-          e.type === "TICKET" &&
+          e.type === "EVENT_TICKET" &&
           ["ACTIVE", "USED"].includes(e.status.toUpperCase());
 
         let qrToken: string | null = null;

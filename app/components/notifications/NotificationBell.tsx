@@ -5,8 +5,10 @@ import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { pt } from "date-fns/locale";
+import { enUS, es, pt } from "date-fns/locale";
 import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
+import { useSearchParams } from "next/navigation";
+import { resolveLocale, t } from "@/lib/i18n";
 
 type NotificationDto = {
   id: string;
@@ -25,25 +27,11 @@ type NotificationDto = {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const TYPE_LABEL: Record<string, string> = {
-  ORGANIZATION_INVITE: "Convite de organização",
-  PAIRING_INVITE: "Convite para dupla",
-  EVENT_SALE: "Venda",
-  STRIPE_STATUS: "Stripe",
-  EVENT_REMINDER: "Lembrete",
-  FOLLOW_REQUEST: "Pedido para seguir",
-  FOLLOW_ACCEPT: "Pedido aceite",
-  FOLLOWED_YOU: "Segue-te",
-  MARKETING_PROMO_ALERT: "Marketing",
-  CRM_CAMPAIGN: "Campanha",
-  SYSTEM_ANNOUNCE: "Sistema",
-  CHAT_OPEN: "Chat",
-  CHAT_ANNOUNCEMENT: "Chat",
-  CHAT_MESSAGE: "Mensagem de chat",
-};
-
 export function NotificationBell({ organizationId }: { organizationId?: number | null }) {
   const { user } = useUser();
+  const searchParams = useSearchParams();
+  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const distanceLocale = locale === "en-US" ? enUS : locale === "es-ES" ? es : pt;
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "sales" | "invites" | "marketing" | "system">("all");
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -78,6 +66,25 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
   const unreadCount = useMemo(
     () => items.filter((n) => n.isRead === false || (!n.isRead && !n.readAt)).length,
     [items],
+  );
+  const typeLabels = useMemo(
+    () => ({
+      ORGANIZATION_INVITE: t("notificationsTypeOrganizationInvite", locale),
+      PAIRING_INVITE: t("notificationsTypePairingInvite", locale),
+      EVENT_SALE: t("notificationsTypeEventSale", locale),
+      STRIPE_STATUS: t("notificationsTypeStripe", locale),
+      EVENT_REMINDER: t("notificationsTypeReminder", locale),
+      FOLLOW_REQUEST: t("notificationsTypeFollowRequest", locale),
+      FOLLOW_ACCEPT: t("notificationsTypeFollowAccept", locale),
+      FOLLOWED_YOU: t("notificationsTypeFollowedYou", locale),
+      MARKETING_PROMO_ALERT: t("notificationsTypeMarketing", locale),
+      CRM_CAMPAIGN: t("notificationsTypeCampaign", locale),
+      SYSTEM_ANNOUNCE: t("notificationsTypeSystem", locale),
+      CHAT_OPEN: t("notificationsTypeChat", locale),
+      CHAT_ANNOUNCEMENT: t("notificationsTypeChat", locale),
+      CHAT_MESSAGE: t("notificationsTypeChatMessage", locale),
+    }),
+    [locale],
   );
 
   useEffect(() => {
@@ -116,7 +123,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
     const groups: Record<string, NotificationDto[]> = {};
     for (const n of items) {
       const date = new Date(n.createdAt);
-      const key = date.toLocaleDateString("pt-PT");
+      const key = date.toLocaleDateString(locale);
       groups[key] = groups[key] ? [...groups[key], n] : [n];
     }
     return groups;
@@ -128,7 +135,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="relative flex h-11 w-11 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition sm:h-10 sm:w-10"
-        aria-label="Notificações"
+        aria-label={t("notificationBellLabel", locale)}
       >
         <BellIcon className="h-4 w-4 text-amber-100" />
         {unreadCount > 0 && (
@@ -145,24 +152,24 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
         >
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-semibold text-white">
-              {organizationId ? "Notificações da organização" : "Notificações"}
+              {organizationId ? t("notificationsOrgTitle", locale) : t("notificationsTitle", locale)}
             </span>
             <button
               type="button"
               className="text-[11px] text-white/60 hover:text-white"
               onClick={markAll}
             >
-              Marcar todas como lidas
+              {t("notificationsMarkAllRead", locale)}
             </button>
           </div>
 
           <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
               {[
-                { key: "all", label: "Todas" },
-                { key: "sales", label: "Vendas" },
-                { key: "invites", label: "Convites" },
-                { key: "marketing", label: "Marketing" },
-                { key: "system", label: "Sistema" },
+                { key: "all", label: t("notificationsFilterAll", locale) },
+                { key: "sales", label: t("notificationsFilterSales", locale) },
+                { key: "invites", label: t("notificationsFilterInvites", locale) },
+                { key: "marketing", label: t("notificationsFilterMarketing", locale) },
+                { key: "system", label: t("notificationsFilterSystem", locale) },
               ].map((item) => (
               <button
                 key={item.key}
@@ -181,7 +188,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
 
           {items.length === 0 && (
             <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-3 text-xs text-white/60">
-              {organizationId ? "Sem notificações da organização ainda." : "Sem notificações ainda."}
+              {organizationId ? t("notificationsEmptyOrg", locale) : t("notificationsEmpty", locale)}
             </div>
           )}
 
@@ -201,8 +208,8 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                     {(() => {
                       const typeLabel =
                         n.type === "FOLLOWED_YOU" && n.meta?.isMutual
-                          ? "Segue-te de volta"
-                          : TYPE_LABEL[n.type] ?? "Atualização";
+                          ? t("notificationsTypeFollowedBack", locale)
+                          : typeLabels[n.type as keyof typeof typeLabels] ?? t("notificationsTypeUpdateFallback", locale);
                       return (
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -214,7 +221,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                         )}
                       </div>
                       <span className="text-[11px] text-white/45">
-                        {formatDistanceToNow(new Date(n.createdAt), { locale: pt, addSuffix: true })}
+                        {formatDistanceToNow(new Date(n.createdAt), { locale: distanceLocale, addSuffix: true })}
                       </span>
                     </div>
                       );

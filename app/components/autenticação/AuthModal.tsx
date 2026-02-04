@@ -89,6 +89,7 @@ function AuthModalContent({
         window.localStorage.removeItem("orya_pending_email");
         window.localStorage.removeItem("orya_pending_step");
         window.localStorage.removeItem("orya_otp_last_sent_at");
+        window.localStorage.removeItem("orya_otp_type");
       } catch {
         /* ignore */
       }
@@ -325,6 +326,9 @@ function AuthModalContent({
           window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
           window.localStorage.setItem("orya_pending_email", cleanEmail);
           window.localStorage.setItem("orya_pending_step", "verify");
+          if (data?.otpType === "magiclink" || data?.otpType === "signup") {
+            window.localStorage.setItem("orya_otp_type", data.otpType);
+          }
         }
       }
     } catch (err) {
@@ -516,6 +520,10 @@ function AuthModalContent({
         window.localStorage.setItem("orya_pending_email", emailToUse);
         window.localStorage.setItem("orya_pending_step", "verify");
         window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
+        window.localStorage.setItem(
+          "orya_otp_type",
+          json?.otpType === "magiclink" ? "magiclink" : "signup",
+        );
       }
       setOtpCooldown(RESEND_COOLDOWN);
       setEmail(emailToUse);
@@ -550,11 +558,34 @@ function AuthModalContent({
       return;
     }
 
-    const { error: verifyError } = await supabaseBrowser.auth.verifyOtp({
-      type: "signup",
+    const storedType =
+      typeof window !== "undefined" ? window.localStorage.getItem("orya_otp_type") : null;
+    const preferredType =
+      storedType === "magiclink" ? "magiclink" : "signup";
+    const fallbackType =
+      preferredType === "signup" ? "magiclink" : "signup";
+
+    let { error: verifyError } = await supabaseBrowser.auth.verifyOtp({
+      type: preferredType as any,
       email: emailToUse,
       token: cleanOtp,
     });
+
+    if (verifyError) {
+      const fallback = await supabaseBrowser.auth.verifyOtp({
+        type: fallbackType as any,
+        email: emailToUse,
+        token: cleanOtp,
+      });
+      if (!fallback.error) {
+        verifyError = null;
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("orya_otp_type", fallbackType);
+        }
+      } else {
+        verifyError = fallback.error;
+      }
+    }
 
     if (verifyError) {
       const message = verifyError.message || "Código inválido ou expirado. Verifica o email ou pede novo código.";

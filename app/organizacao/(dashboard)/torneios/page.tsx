@@ -1,42 +1,23 @@
 export const runtime = "nodejs";
 
 import { redirect } from "next/navigation";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { AuthGate } from "@/app/components/autenticação/AuthGate";
-import DashboardClient from "@/app/organizacao/DashboardClient";
-import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organizationModules";
-import { prisma } from "@/lib/prisma";
-import { OrganizationStatus } from "@prisma/client";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToRedirectHref } from "@/lib/organizationId";
 
-export default async function OrganizationTorneiosPage() {
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+type Props = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
 
-  if (!user) {
-    return <AuthGate />;
+export default async function OrganizationTorneiosPage({ searchParams }: Props) {
+  const params = new URLSearchParams();
+  if (searchParams) {
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (typeof value === "string") params.set(key, value);
+      if (Array.isArray(value) && value[0]) params.set(key, value[0]);
+    });
   }
-
-  const { organization } = await getActiveOrganizationForUser(user.id, {
-    allowFallback: true,
-    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
-  });
-
-  if (!organization) {
-    redirect("/organizacao/organizations");
-  }
-
-  const { activeModules } = await getOrganizationActiveModules(
-    organization.id,
-    (organization as { primaryModule?: string | null }).primaryModule ?? null,
-    prisma,
+  const target = await appendOrganizationIdToRedirectHref(
+    `/organizacao/padel/torneios?${params.toString()}`,
+    searchParams,
   );
-  if (!hasAnyActiveModule(activeModules, ["TORNEIOS"])) {
-    redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id));
-  }
-
-  return <DashboardClient hasOrganization defaultObjective="manage" defaultSection="padel-tournaments" />;
+  redirect(target);
 }

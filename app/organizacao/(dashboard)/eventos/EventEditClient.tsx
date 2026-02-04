@@ -246,7 +246,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const ticketLabelArticle = isPadel ? "da" : "do";
   const ticketLabelThis = isPadel ? "esta inscrição" : "este bilhete";
   const ticketLabelNew = isPadel ? "nova inscrição" : "novo bilhete";
-  const eventRouteBase = isPadel ? "/organizacao/torneios" : "/organizacao/eventos";
+  const eventRouteBase = isPadel ? "/organizacao/padel/torneios" : "/organizacao/eventos";
   const organizationPrimaryModule =
     (organizationStatus as { organization?: { primaryModule?: string | null } } | null)?.organization
       ?.primaryModule ?? null;

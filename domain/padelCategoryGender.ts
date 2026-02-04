@@ -39,5 +39,9 @@ export function validatePadelCategoryGender(
     return { ok: true };
   }
 
+  if (restriction === "MIXED_FREE") {
+    return { ok: true };
+  }
+
   return { ok: true };
 }

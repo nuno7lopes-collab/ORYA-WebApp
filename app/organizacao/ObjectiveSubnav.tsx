@@ -82,8 +82,8 @@ export default function ObjectiveSubnav({
   const moduleBasePath =
     pathname?.startsWith("/organizacao/eventos")
       ? "/organizacao/eventos"
-      : pathname?.startsWith("/organizacao/torneios")
-        ? "/organizacao/torneios"
+      : pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/padel")
+        ? "/organizacao/padel/torneios"
         : null;
   const operationOverride =
     pathname?.startsWith("/organizacao/reservas")

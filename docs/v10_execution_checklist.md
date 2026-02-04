@@ -413,7 +413,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 - [x] Notificações por Email
   - Estado real: DONE — envio via email outbox/worker com template refund e receipts.
   - Evidência: `app/api/internal/worker/operations/route.ts:200-340`, `lib/emailSender.ts:120-210`, `tests/finance/refundService.test.ts:1-140`.
-  - Ação exata: validar deliverability em staging (Resend logs).
+  - Ação exata: validar deliverability em staging (SES logs).
   - Risco/Impacto: baixo (outbox + retries).
 
 - [x] Notificações Push
@@ -488,10 +488,10 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ## Bloco 13 — Observabilidade, Runbooks e SLOs
 
 ### P0
-- [x] Configuração de Logs e Erros (Sentry ou equivalente)
-  - Estado real: DONE — captura server/client via Sentry SDKs + logger central.
-  - Evidência: `lib/observability/logger.ts:6-64`, `app/components/ClientSentryInit.tsx:1-24`, `docs/envs_required.md:6-36`.
-  - Ação exata: configurar `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` nos ambientes.
+- [x] Configuração de Logs e Erros (CloudWatch + logger central)
+  - Estado real: DONE — logs estruturados + requestId/correlationId com envio para CloudWatch.
+  - Evidência: `lib/observability/logger.ts:1-80`, `infra/ecs/orya-ecs-stack.yaml:430-520`, `docs/envs_required.md:1-40`.
+  - Ação exata: garantir retenção e filtros no CloudWatch.
   - Risco/Impacto: baixo.
 
 ### P1
@@ -503,7 +503,7 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 
 - [x] Métricas e Alertas
   - Estado real: DONE — health inclui contagens críticas + runbook de métricas/alertas + budgets/alarms configurados.
-  - Evidência: `domain/ops/health.ts:1-50`, `docs/runbooks/metrics-alerts.md:1-60`, `docs/observability/sentry-integration.md:1-40`, `reports/infra_alerts_2026-02-01.md`.
+  - Evidência: `domain/ops/health.ts:1-50`, `docs/runbooks/metrics-alerts.md:1-60`, `reports/infra_alerts_2026-02-01.md`.
   - Ação exata: manter budgets e alarms ativos; validar SNS subscription admin@orya.pt.
   - Risco/Impacto: baixo (instrumentação mínima + alertas ativos).
 

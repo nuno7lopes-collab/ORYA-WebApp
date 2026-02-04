@@ -1,10 +1,7 @@
-
-
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { resend } from "@/lib/resend";
-import { env } from "@/lib/env";
+import { sendEmail } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
@@ -18,7 +15,8 @@ async function _POST(req: NextRequest) {
     }
 
     const ctx = getRequestContext(req);
-    const { email } = await req.json();
+    const body = (await req.json().catch(() => null)) as { email?: string } | null;
+    const email = (body?.email ?? "").trim().toLowerCase();
 
     if (!email) {
       return jsonWrap(
@@ -27,7 +25,7 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    // Gera novo OTP de signup e envia via Resend (mesmo template do send-otp)
+    // Gera novo OTP de signup e envia via SES SMTP (mesmo template do send-otp)
     const limiter = await rateLimit(req, {
       windowMs: 10 * 60 * 1000,
       max: 5,
@@ -43,7 +41,9 @@ async function _POST(req: NextRequest) {
 
     const siteUrl = getAppBaseUrl();
 
-    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+    let otpType: "signup" | "magiclink" = "signup";
+
+    let link = await supabaseAdmin.auth.admin.generateLink({
       type: "signup",
       email,
       password: undefined,
@@ -52,19 +52,29 @@ async function _POST(req: NextRequest) {
       },
     } as any);
 
-    if (error) {
+    if (link.error) {
       const errorCode =
-        typeof error === "object" && error && "code" in error
-          ? (error as { code?: string }).code
+        typeof link.error === "object" && link.error && "code" in link.error
+          ? (link.error as { code?: string }).code
           : undefined;
+
+      // O utilizador pode já existir (ex: signup iniciado/pendente ou email não confirmado).
+      // Para esses casos, usamos magiclink para gerar OTP e concluir confirmação/sign-in.
       if (errorCode === "email_exists") {
-        return jsonWrap(
-          { error: "Email já registado. Usa login ou Google.", code: "email_exists" },
-          { status: 409 },
-        );
+        otpType = "magiclink";
+        link = await supabaseAdmin.auth.admin.generateLink({
+          type: "magiclink",
+          email,
+          options: {
+            redirectTo: `${siteUrl}/auth/callback`,
+          },
+        } as any);
       }
+    }
+
+    if (link.error) {
       console.error("[resend-otp] generateLink error", {
-        error,
+        error: link.error,
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
@@ -74,7 +84,7 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    if (!data?.properties?.email_otp) {
+    if (!link.data?.properties?.email_otp) {
       console.error("[resend-otp] missing email_otp in response", {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
@@ -85,7 +95,7 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    const code: string = data.properties.email_otp;
+    const code: string = link.data.properties.email_otp;
 
     const html = `
       <table width="100%" cellspacing="0" cellpadding="0" style="background:#0b0b12;padding:32px 0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;">
@@ -119,14 +129,13 @@ async function _POST(req: NextRequest) {
     `;
 
     try {
-      await resend.emails.send({
-        from: env.resendFrom,
+      await sendEmail({
         to: email,
         subject: `Código ORYA: ${code}`,
         html,
       });
     } catch (mailErr) {
-      console.error("[resend-otp] resend error", {
+      console.error("[resend-otp] email send error", {
         mailErr,
         env: process.env.NODE_ENV,
         requestId: ctx.requestId,
@@ -138,7 +147,7 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    return jsonWrap({ success: true });
+    return jsonWrap({ ok: true, success: true, otpType });
   } catch (err) {
     const ctx = getRequestContext(req);
     console.error("Erro em /api/auth/resend-otp:", {

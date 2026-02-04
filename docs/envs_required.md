@@ -8,11 +8,13 @@ Keep secrets out of git. Use single-line base64 for Apple keys.
 - DIRECT_URL (Prisma)
 - APP_ENV (prod|test; optional override, otherwise inferred from host)
 - QR_SECRET_KEY
-- RESEND_API_KEY
-- RESEND_FROM_EMAIL (recommended)
+- SES_REGION
+- SES_IDENTITY_DOMAIN
+- SES_SMTP_USERNAME
+- SES_SMTP_PASSWORD
+- EMAIL_FROM (optional, defaults to noreply@SES_IDENTITY_DOMAIN)
 - APP_BASE_URL / NEXT_PUBLIC_BASE_URL (recommended, used by checkout flows)
 - ORYA_CRON_SECRET (required for /api/internal + /api/cron)
-- SENTRY_DSN (error tracking)
 
 ## Supabase
 Required:
@@ -106,6 +108,4 @@ Infra evidence:
 - CI can use dummy values for non-prod gates (do not use real secrets).
 
 ## Client (optional)
-- NEXT_PUBLIC_SENTRY_DSN (error tracking in browser)
-- NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE
 - NEXT_PUBLIC_APP_ENV (prod|test override for client)

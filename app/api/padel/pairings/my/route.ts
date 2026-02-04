@@ -134,9 +134,15 @@ async function _GET(req: NextRequest) {
         : Promise.resolve([]),
     ]);
 
-    const configByEventId = new Map(configs.map((c) => [c.eventId, c]));
-    const categoryById = new Map(categories.map((c) => [c.id, c]));
-    const captainById = new Map(captains.map((c) => [c.id, c]));
+    const configByEventId = new Map<number, (typeof configs)[number]>(
+      configs.map((c) => [c.eventId, c] as const),
+    );
+    const categoryById = new Map<number, (typeof categories)[number]>(
+      categories.map((c) => [c.id, c] as const),
+    );
+    const captainById = new Map<string, (typeof captains)[number]>(
+      captains.map((c) => [c.id, c] as const),
+    );
 
     const onboardingMissing = getPadelOnboardingMissing({
       profile,

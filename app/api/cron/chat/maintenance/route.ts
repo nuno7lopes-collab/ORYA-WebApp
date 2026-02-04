@@ -84,8 +84,12 @@ async function _GET(req: NextRequest) {
           : Promise.resolve([]),
       ]);
 
-      const eventMap = new Map(events.map((event) => [event.id, event]));
-      const bookingMap = new Map(bookings.map((booking) => [booking.id, booking]));
+      const eventMap = new Map<number, (typeof events)[number]>(
+        events.map((event) => [event.id, event] as const),
+      );
+      const bookingMap = new Map<number, (typeof bookings)[number]>(
+        bookings.map((booking) => [booking.id, booking] as const),
+      );
 
       for (const thread of threadsToNotify) {
         const recipients = membersByThread.get(thread.id) ?? [];

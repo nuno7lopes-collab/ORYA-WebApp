@@ -1,13 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canSwapPartner } from "@/domain/padel/pairingPolicy";
-import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
-import { computeGraceUntil } from "@/domain/padelDeadlines";
+import { mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { PadelPairingPaymentStatus, PadelPairingSlotStatus, PadelRegistrationStatus } from "@prisma/client";
 import { readNumericParam } from "@/lib/routeParams";
-import { randomUUID } from "crypto";
+import { cancelPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -23,6 +23,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     where: { id: pairingId },
     select: {
       id: true,
+      eventId: true,
       organizationId: true,
       player1UserId: true,
       player2UserId: true,
@@ -55,53 +56,77 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (partnerSlot.paymentStatus === PadelPairingPaymentStatus.PAID) {
     return jsonWrap({ ok: false, error: "PARTNER_LOCKED" }, { status: 409 });
   }
-  if (partnerSlot.profileId) {
-    const now = new Date();
-    const swapToken = randomUUID();
-    const swapExpiresAt = computeGraceUntil(now);
-    const updated = await prisma.padelPairing.update({
-      where: { id: pairing.id },
-      data: {
-        partnerLinkToken: swapToken,
-        partnerLinkExpiresAt: swapExpiresAt,
-      },
-      select: { partnerLinkToken: true, partnerLinkExpiresAt: true },
-    });
-    return jsonWrap(
-      {
-        ok: false,
-        error: "PARTNER_CONFIRMATION_REQUIRED",
-        swapToken: updated.partnerLinkToken,
-        swapExpiresAt: updated.partnerLinkExpiresAt?.toISOString() ?? null,
-      },
-      { status: 409 },
-    );
+
+  const purchaseId = `padel:${pairing.id}:slot:${partnerSlot.id}`;
+  const paymentEvent = await prisma.paymentEvent.findUnique({
+    where: { purchaseId },
+    select: { stripePaymentIntentId: true },
+  });
+  if (paymentEvent?.stripePaymentIntentId) {
+    try {
+      const intent = await retrievePaymentIntent(paymentEvent.stripePaymentIntentId);
+      if (intent.status !== "succeeded" && intent.status !== "canceled") {
+        await cancelPaymentIntent(intent.id).catch((err) => {
+          console.warn("[padel/pairings/swap] falha ao cancelar intent pendente", err);
+        });
+      }
+    } catch (err) {
+      console.warn("[padel/pairings/swap] falha ao recuperar intent pendente", err);
+    }
   }
 
   // Liberta o parceiro (slot) sem mexer em pagamentos; fluxos de pagamento devem ser tratados noutra rota
-  await prisma.padelPairing.update({
-    where: { id: pairing.id },
-    data: {
-      player2UserId: null,
-      partnerAcceptedAt: null,
-      partnerPaidAt: null,
-      partnerInviteUsedAt: null,
-      pairingStatus: "INCOMPLETE",
-      slots: {
-        update: {
-          where: { id: partnerSlot.id },
-          data: {
-            profileId: null,
-            playerProfileId: null,
-            ticketId: null,
-            slotStatus: PadelPairingSlotStatus.PENDING,
-            paymentStatus: PadelPairingPaymentStatus.UNPAID,
-            invitedContact: null,
-            invitedUserId: null,
+  await prisma.$transaction(async (tx) => {
+    await tx.padelPairing.update({
+      where: { id: pairing.id },
+      data: {
+        player2UserId: null,
+        partnerAcceptedAt: null,
+        partnerPaidAt: null,
+        partnerInviteUsedAt: null,
+        partnerInvitedAt: null,
+        partnerLinkToken: null,
+        partnerLinkExpiresAt: null,
+        pairingStatus: "INCOMPLETE",
+        slots: {
+          update: {
+            where: { id: partnerSlot.id },
+            data: {
+              profileId: null,
+              playerProfileId: null,
+              ticketId: null,
+              slotStatus: PadelPairingSlotStatus.PENDING,
+              paymentStatus: PadelPairingPaymentStatus.UNPAID,
+              invitedContact: null,
+              invitedUserId: null,
+            },
           },
         },
       },
+    });
+
+    await upsertPadelRegistrationForPairing(tx, {
+      pairingId: pairing.id,
+      organizationId: pairing.organizationId,
+      eventId: pairing.eventId,
+      status: PadelRegistrationStatus.PENDING_PARTNER,
+    });
+  });
+
+  await recordOrganizationAuditSafe({
+    organizationId: pairing.organizationId,
+    actorUserId: authData.user.id,
+    action: "PADEL_PAIRING_SWAP_REQUESTED",
+    entityType: "padel_pairing",
+    entityId: String(pairing.id),
+    metadata: {
+      eventId: pairing.eventId,
+      pairingId: pairing.id,
+      partnerSlotId: partnerSlot.id,
+      lifecycleStatus,
     },
+    ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+    userAgent: req.headers.get("user-agent") || null,
   });
 
   return jsonWrap({ ok: true }, { status: 200 });

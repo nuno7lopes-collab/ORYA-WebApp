@@ -49,7 +49,7 @@ export default function PadelMixNovoPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Não foi possível criar o Mix.");
       }
-      router.push(appendOrganizationIdToHref(`/organizacao/torneios/${json.eventId}`, organizationId));
+      router.push(appendOrganizationIdToHref(`/organizacao/padel/torneios/${json.eventId}`, organizationId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar o Mix.");
     } finally {

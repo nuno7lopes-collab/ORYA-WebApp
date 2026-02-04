@@ -1,7 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
-import { getSharedEnv } from "@orya/shared";
+import { getMobileEnv } from "./env";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const { supabaseUrl, supabaseAnonKey } = getSharedEnv();
+const shared = getMobileEnv();
+const supabaseUrl = shared.supabaseUrl;
+const supabaseAnonKey = shared.supabaseAnonKey;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
@@ -11,8 +14,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "", {
   auth: {
+    storage: AsyncStorage,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
+    flowType: "pkce",
   },
 });

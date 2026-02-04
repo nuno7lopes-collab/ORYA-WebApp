@@ -1,5 +1,4 @@
 import { getRequestContext } from "@/lib/http/requestContext";
-import * as SentryNode from "@sentry/node";
 
 type LogContext = Record<string, unknown> & {
   requestId?: string | null;
@@ -7,19 +6,6 @@ type LogContext = Record<string, unknown> & {
 };
 
 type ResolveOptions = { fallbackToRequestContext?: boolean };
-
-let sentryInitialized = false;
-
-function ensureSentry() {
-  if (sentryInitialized) return;
-  if (!process.env.SENTRY_DSN) return;
-  SentryNode.init({
-    dsn: process.env.SENTRY_DSN,
-    environment: process.env.NODE_ENV ?? "development",
-    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0),
-  });
-  sentryInitialized = true;
-}
 
 function normalizeError(err: unknown) {
   if (err instanceof Error) {
@@ -60,13 +46,4 @@ export function logError(scope: string, err: unknown, context?: LogContext, opts
   const payload = resolveContext(context, opts);
   const errorPayload = normalizeError(err);
   console.error(`[${scope}]`, { ...payload, error: errorPayload });
-
-  ensureSentry();
-  const sentry = (globalThis as any)?.Sentry ?? SentryNode;
-  if (sentry?.captureException && process.env.SENTRY_DSN) {
-    sentry.captureException(err, {
-      extra: { ...payload, scope },
-      tags: { scope },
-    });
-  }
 }

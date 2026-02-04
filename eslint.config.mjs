@@ -49,6 +49,15 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-require-imports": "off",
     },
   },
+  {
+    // React Native / Expo (apps/mobile) doesn't map 1:1 to web a11y rules (e.g. alt on <Image />),
+    // and some React compiler rules are too strict/noisy for RN animation patterns.
+    files: ["apps/mobile/**/*.{ts,tsx,js,jsx}"],
+    rules: {
+      ...Object.fromEntries(Object.keys(A11Y_P0_RULES).map((key) => [key, "off"])),
+      "react-hooks/refs": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

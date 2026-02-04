@@ -9,6 +9,7 @@ import {
 import { attemptPadelSecondChargeForPairing } from "@/domain/padelSecondCharge";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
+import { queuePairingConfirmed, queueDeadlineExpired } from "@/domain/notifications/splitPayments";
 
 type PadelRegistrationOutboxPayload = {
   registrationId?: string;
@@ -35,9 +36,32 @@ async function syncPairingLifecycleFromRegistration(payload: PadelRegistrationOu
   if (!payload.registrationId) throw new Error("PADREG_OUTBOX_MISSING_REGISTRATION");
   const registration = await prisma.padelRegistration.findUnique({
     where: { id: payload.registrationId },
-    select: { id: true, pairingId: true },
+    select: { id: true, pairingId: true, status: true },
   });
   if (!registration?.pairingId) return { ok: false, code: "PAIRING_NOT_FOUND" } as const;
+  if (registration.status === "CONFIRMED") {
+    const pairing = await prisma.padelPairing.findUnique({
+      where: { id: registration.pairingId },
+      select: {
+        id: true,
+        player1UserId: true,
+        player2UserId: true,
+        slots: { select: { profileId: true, invitedUserId: true } },
+      },
+    });
+    if (pairing) {
+      const userIds = new Set<string>();
+      if (pairing.player1UserId) userIds.add(pairing.player1UserId);
+      if (pairing.player2UserId) userIds.add(pairing.player2UserId);
+      pairing.slots.forEach((slot) => {
+        if (slot.profileId) userIds.add(slot.profileId);
+        if (slot.invitedUserId) userIds.add(slot.invitedUserId);
+      });
+      if (userIds.size > 0) {
+        await queuePairingConfirmed(pairing.id, Array.from(userIds));
+      }
+    }
+  }
   return { ok: true, code: "SYNCED_NOOP" } as const;
 }
 
@@ -126,6 +150,28 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
       data: { status: "CANCELLED" },
     });
   });
+
+  const pairingUsers = await prisma.padelPairing.findUnique({
+    where: { id: pairingId },
+    select: {
+      id: true,
+      player1UserId: true,
+      player2UserId: true,
+      slots: { select: { profileId: true, invitedUserId: true } },
+    },
+  });
+  if (pairingUsers) {
+    const userIds = new Set<string>();
+    if (pairingUsers.player1UserId) userIds.add(pairingUsers.player1UserId);
+    if (pairingUsers.player2UserId) userIds.add(pairingUsers.player2UserId);
+    pairingUsers.slots.forEach((slot) => {
+      if (slot.profileId) userIds.add(slot.profileId);
+      if (slot.invitedUserId) userIds.add(slot.invitedUserId);
+    });
+    if (userIds.size > 0) {
+      await queueDeadlineExpired(pairingId, Array.from(userIds));
+    }
+  }
 
   await Promise.all(
     payments.map((payment) => {

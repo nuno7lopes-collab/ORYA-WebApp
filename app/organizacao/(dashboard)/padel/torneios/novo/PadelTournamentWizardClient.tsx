@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
+import { trackEvent } from "@/lib/analytics";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { computeMatchSlots, estimateMaxTeamsForSlots } from "@/lib/padel/capacityRecommendation";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -46,6 +48,8 @@ type PadelRuleSet = {
 type Court = {
   id: number;
   name: string;
+  indoor?: boolean | null;
+  displayOrder?: number | null;
   isActive: boolean;
 };
 
@@ -73,10 +77,49 @@ const ELIGIBILITY_OPTIONS = [
   { value: "MIXED", label: "Mistos" },
 ];
 
+const TIMEZONE_OPTIONS = [
+  "Europe/Lisbon",
+  "Europe/Madrid",
+  "Europe/London",
+  "UTC",
+  "America/New_York",
+  "America/Sao_Paulo",
+  "America/Mexico_City",
+  "Africa/Maputo",
+];
+
 const asNumber = (value: string) => {
   const normalized = value.replace(",", ".");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+const formatDateTimeLocal = (value: string | Date) => {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(
+    date.getHours(),
+  )}:${pad2(date.getMinutes())}`;
+};
+
+const parseDateTimeLocal = (value: string) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const toIsoFromLocalInput = (value: string) => {
+  const date = parseDateTimeLocal(value);
+  return date ? date.toISOString() : null;
+};
+
+const shiftDateTimeLocal = (value: string, minutes: number) => {
+  const date = parseDateTimeLocal(value);
+  if (!date) return "";
+  const shifted = new Date(date.getTime() + minutes * 60 * 1000);
+  return formatDateTimeLocal(shifted);
 };
 
 const pickCanonicalField = (canonical: Record<string, unknown> | null | undefined, keys: string[]) => {
@@ -128,10 +171,21 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  const [timezone, setTimezone] = useState("Europe/Lisbon");
+  const [registrationStartsAt, setRegistrationStartsAt] = useState("");
+  const [registrationEndsAt, setRegistrationEndsAt] = useState("");
+  const [scheduleWindowStart, setScheduleWindowStart] = useState("");
+  const [scheduleWindowEnd, setScheduleWindowEnd] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("60");
+  const [slotMinutes, setSlotMinutes] = useState("15");
+  const [bufferMinutes, setBufferMinutes] = useState("5");
+  const [minRestMinutes, setMinRestMinutes] = useState("10");
+  const [schedulePriority, setSchedulePriority] = useState<"GROUPS_FIRST" | "KNOCKOUT_FIRST">("GROUPS_FIRST");
   const [selectedClubId, setSelectedClubId] = useState<string>("");
   const [format, setFormat] = useState<string>(PADEL_FORMATS[0]?.value ?? "TODOS_CONTRA_TODOS");
   const [eligibility, setEligibility] = useState<string>("OPEN");
   const [splitDeadlineHours, setSplitDeadlineHours] = useState<string>("48");
+  const [waitlistEnabled, setWaitlistEnabled] = useState(true);
   const [isInterclub, setIsInterclub] = useState(false);
   const [teamSize, setTeamSize] = useState("4");
   const [ruleSetId, setRuleSetId] = useState<string>("");
@@ -139,8 +193,10 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   const [defaultCategoryId, setDefaultCategoryId] = useState<number | null>(null);
   const [useAllCourts, setUseAllCourts] = useState(true);
   const [selectedCourtIds, setSelectedCourtIds] = useState<number[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [savingMode, setSavingMode] = useState<"DRAFT" | "PUBLISH" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draftEventId, setDraftEventId] = useState<number | null>(null);
+  const saving = savingMode !== null;
 
   const { data: clubsRes } = useSWR<{ ok?: boolean; items?: PadelClub[] }>(
     organizationId ? `/api/padel/clubs?organizationId=${organizationId}&includeInactive=0` : null,
@@ -217,6 +273,37 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     }
   }, [categoryDrafts, categories, defaultCategoryId]);
 
+  useEffect(() => {
+    if (typeof Intl === "undefined") return;
+    const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (resolved && timezone === "Europe/Lisbon") {
+      setTimezone(resolved);
+    }
+    // run once to avoid overriding manual changes
+  }, []);
+
+  useEffect(() => {
+    if (!registrationStartsAt) {
+      const now = formatDateTimeLocal(new Date());
+      if (now) setRegistrationStartsAt(now);
+    }
+    // run once to preserve manual clears
+  }, []);
+
+  useEffect(() => {
+    if (!startsAt) return;
+    if (!registrationEndsAt) {
+      const shifted = shiftDateTimeLocal(startsAt, -24 * 60);
+      if (shifted) setRegistrationEndsAt(shifted);
+    }
+    if (!scheduleWindowStart) {
+      setScheduleWindowStart(startsAt);
+    }
+    if (!scheduleWindowEnd) {
+      setScheduleWindowEnd(endsAt || startsAt);
+    }
+  }, [startsAt, endsAt, registrationEndsAt, scheduleWindowStart, scheduleWindowEnd]);
+
   const selectedClub = useMemo(
     () => clubs.find((club) => club.id === Number(selectedClubId)) ?? null,
     [clubs, selectedClubId],
@@ -227,6 +314,91 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     () => categories.filter((cat) => categoryDrafts[cat.id]?.selected),
     [categories, categoryDrafts],
   );
+
+  const activeCourts = useMemo(() => courts.filter((court) => court.isActive), [courts]);
+  const resolvedCourts = useMemo(() => {
+    if (useAllCourts) return activeCourts;
+    const selected = new Set(selectedCourtIds);
+    return activeCourts.filter((court) => selected.has(court.id));
+  }, [activeCourts, selectedCourtIds, useAllCourts]);
+  const courtsCount = resolvedCourts.length;
+
+  const registrationWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    const regStart = parseDateTimeLocal(registrationStartsAt);
+    const regEnd = parseDateTimeLocal(registrationEndsAt);
+    const eventStart = parseDateTimeLocal(startsAt);
+    if (regStart && regEnd && regStart >= regEnd) {
+      warnings.push("A janela de inscrições começa depois do fim.");
+    }
+    if (regEnd && eventStart && regEnd >= eventStart) {
+      warnings.push("O fim das inscrições precisa de ser antes do início do torneio.");
+    }
+    return warnings;
+  }, [registrationStartsAt, registrationEndsAt, startsAt]);
+
+  const scheduleWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    const windowStart = parseDateTimeLocal(scheduleWindowStart || startsAt);
+    const windowEnd = parseDateTimeLocal(scheduleWindowEnd || endsAt || startsAt);
+    if (windowStart && windowEnd && windowStart >= windowEnd) {
+      warnings.push("A janela de calendário termina antes do início.");
+    }
+    return warnings;
+  }, [scheduleWindowStart, scheduleWindowEnd, startsAt, endsAt]);
+
+  const capacityWarnings = useMemo(() => {
+    const windowStart = parseDateTimeLocal(scheduleWindowStart || startsAt);
+    const windowEnd = parseDateTimeLocal(scheduleWindowEnd || endsAt || startsAt);
+    if (!windowStart || !windowEnd || windowEnd <= windowStart) return null;
+    const duration = asNumber(durationMinutes) ?? 60;
+    const buffer = asNumber(bufferMinutes) ?? 5;
+    const courts = Math.max(1, courtsCount || 1);
+    const totalSlots = computeMatchSlots({
+      start: windowStart,
+      end: windowEnd,
+      courts,
+      durationMinutes: duration,
+      bufferMinutes: buffer,
+    });
+    if (!totalSlots || selectedCategories.length === 0) {
+      return null;
+    }
+    const slotsPerCategory = Math.max(1, Math.floor(totalSlots / selectedCategories.length));
+    const warnings = selectedCategories
+      .map((category) => {
+        const draft = categoryDrafts[category.id];
+        const capacity = asNumber(draft?.capacityTeams ?? "") ?? null;
+        if (!capacity || capacity <= 0) return null;
+        const formatValue = draft?.format || format;
+        const recommended = estimateMaxTeamsForSlots({
+          format: formatValue,
+          totalSlots: slotsPerCategory,
+        });
+        if (recommended && capacity > recommended) {
+          return {
+            categoryId: category.id,
+            label: category.label,
+            capacity,
+            recommended,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as Array<{ categoryId: number; label: string; capacity: number; recommended: number }>;
+    return { totalSlots, slotsPerCategory, warnings, courts };
+  }, [
+    scheduleWindowStart,
+    scheduleWindowEnd,
+    startsAt,
+    endsAt,
+    durationMinutes,
+    bufferMinutes,
+    courtsCount,
+    selectedCategories,
+    categoryDrafts,
+    format,
+  ]);
 
   const toggleCategory = (id: number) => {
     setCategoryDrafts((prev) => {
@@ -247,8 +419,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     );
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (mode: "DRAFT" | "PUBLISH") => {
     setError(null);
+    setDraftEventId(null);
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError("Indica o título do torneio.");
@@ -263,14 +436,23 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       setError("Seleciona um clube.");
       return;
     }
-    if (selectedCategories.length === 0) {
-      setError("Seleciona pelo menos uma categoria.");
+    if (mode === "PUBLISH" && selectedCategories.length === 0) {
+      setError("Seleciona pelo menos uma categoria para publicar.");
       return;
     }
     if (!location.providerId || !Number.isFinite(location.latitude ?? NaN) || !Number.isFinite(location.longitude ?? NaN)) {
       setError("A morada do clube precisa de estar normalizada.");
       return;
     }
+    if (mode === "PUBLISH" && registrationWarnings.length > 0) {
+      setError(registrationWarnings[0]);
+      return;
+    }
+    if (mode === "PUBLISH" && scheduleWarnings.length > 0) {
+      setError(scheduleWarnings[0]);
+      return;
+    }
+
     const teamSizeValue = isInterclub ? asNumber(teamSize) : null;
     if (isInterclub) {
       if (!teamSizeValue || teamSizeValue < 2) {
@@ -293,11 +475,28 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     });
 
     const hasPaid = categoryConfigs.some((cfg) => (cfg.pricePerPlayer ?? 0) > 0);
+    const scheduleDuration = asNumber(durationMinutes) ?? 60;
+    const scheduleSlot = asNumber(slotMinutes) ?? 15;
+    const scheduleBuffer = asNumber(bufferMinutes) ?? 5;
+    const scheduleRest = asNumber(minRestMinutes) ?? 10;
+    const numberOfCourts = Math.max(1, courtsCount || 1);
+    const courtIdsPayload = useAllCourts ? activeCourts.map((court) => court.id) : selectedCourtIds;
+    const courtsFromClubs = (resolvedCourts.length > 0 ? resolvedCourts : activeCourts).map((court, idx) => ({
+      id: court.id,
+      clubId: clubIdValue,
+      clubName: selectedClub?.name ?? null,
+      name: court.name,
+      indoor: court.indoor ?? null,
+      displayOrder: typeof court.displayOrder === "number" ? court.displayOrder : idx,
+    }));
+
     const payload = {
       title: trimmedTitle,
       description: description.trim() || null,
       startsAt,
       endsAt: endsAt || startsAt,
+      status: "DRAFT",
+      timezone: timezone || undefined,
       locationName: selectedClub?.name ?? null,
       locationCity: location.city || null,
       address: location.formatted || null,
@@ -320,12 +519,39 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         isInterclub,
         teamSize: isInterclub && teamSizeValue ? Math.floor(teamSizeValue) : null,
         categoryConfigs,
-        ...(useAllCourts ? {} : { courtIds: selectedCourtIds }),
+        courtIds: courtIdsPayload,
+        numberOfCourts,
         padelV2Enabled: true,
+        advancedSettings: {
+          waitlistEnabled,
+          registrationStartsAt: toIsoFromLocalInput(registrationStartsAt),
+          registrationEndsAt: toIsoFromLocalInput(registrationEndsAt),
+          gameDurationMinutes: Number.isFinite(scheduleDuration) ? Math.max(1, Math.round(scheduleDuration)) : null,
+          scheduleDefaults: {
+            windowStart: toIsoFromLocalInput(scheduleWindowStart),
+            windowEnd: toIsoFromLocalInput(scheduleWindowEnd),
+            durationMinutes: Number.isFinite(scheduleDuration) ? Math.max(1, Math.round(scheduleDuration)) : null,
+            slotMinutes: Number.isFinite(scheduleSlot) ? Math.max(5, Math.round(scheduleSlot)) : null,
+            bufferMinutes: Number.isFinite(scheduleBuffer) ? Math.max(0, Math.round(scheduleBuffer)) : null,
+            minRestMinutes: Number.isFinite(scheduleRest) ? Math.max(0, Math.round(scheduleRest)) : null,
+            priority: schedulePriority,
+          },
+          courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
+        },
       },
     };
 
-    setSaving(true);
+    if (mode === "PUBLISH" && capacityWarnings?.warnings?.length) {
+      trackEvent("padel_capacity_warning", {
+        title: trimmedTitle,
+        totalSlots: capacityWarnings.totalSlots,
+        slotsPerCategory: capacityWarnings.slotsPerCategory,
+        courts: capacityWarnings.courts,
+        warnings: capacityWarnings.warnings,
+      });
+    }
+
+    setSavingMode(mode);
     try {
       const res = await fetch(`/api/organizacao/events/create?organizationId=${organizationId}`, {
         method: "POST",
@@ -338,15 +564,44 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         throw new Error(message);
       }
       const eventId = json?.data?.event?.id ?? json?.event?.id;
-      if (eventId) {
-        router.push(appendOrganizationIdToHref(`/organizacao/torneios/${eventId}`, organizationId));
+      if (!eventId) {
+        router.push(appendOrganizationIdToHref("/organizacao/padel/torneios", organizationId));
         return;
       }
-      router.push(appendOrganizationIdToHref("/organizacao/torneios", organizationId));
+
+      if (mode === "PUBLISH") {
+        const publishRes = await fetch("/api/padel/tournaments/lifecycle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId, nextStatus: "PUBLISHED" }),
+        });
+        const publishJson = await publishRes.json().catch(() => null);
+        if (!publishRes.ok || publishJson?.ok === false) {
+          const missing = Array.isArray(publishJson?.missing) ? publishJson.missing : [];
+          const missingLabels: Record<string, string> = {
+            PADEL_V2_DISABLED: "Padel V2 não ativo",
+            FORMAT_MISSING: "Formato do torneio",
+            CLUB_MISSING: "Clube",
+            COURTS_MISSING: "Courts",
+            CATEGORIES_MISSING: "Categorias",
+            CATEGORY_PRICES_MISSING: "Preços por categoria",
+            REGISTRATION_WINDOW_INVALID: "Janela de inscrições inválida",
+            REGISTRATION_END_AFTER_START: "Fim das inscrições após início",
+          };
+          const missingLabel = missing.length
+            ? missing.map((code: string) => missingLabels[code] || code).join(", ")
+            : publishJson?.error || "Não foi possível publicar.";
+          setError(`Publicação bloqueada: ${missingLabel}.`);
+          setDraftEventId(eventId);
+          return;
+        }
+      }
+
+      router.push(appendOrganizationIdToHref(`/organizacao/padel/torneios/${eventId}`, organizationId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar torneio.");
     } finally {
-      setSaving(false);
+      setSavingMode(null);
     }
   };
 
@@ -429,13 +684,188 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         </section>
 
         <section className="grid gap-6 rounded-3xl border border-white/10 bg-[#0b1322] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+          <div>
+            <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Inscrições & agenda</p>
+            <p className="text-sm text-white/70">
+              Define timezone, janela de inscrições e padrões para o calendário (auto-schedule).
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Timezone</span>
+              <input
+                list="padel-timezones"
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                placeholder="Europe/Lisbon"
+              />
+            </label>
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Inscrições abrem</span>
+              <input
+                type="datetime-local"
+                value={registrationStartsAt}
+                onChange={(e) => setRegistrationStartsAt(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Inscrições fecham (T-24)</span>
+              <input
+                type="datetime-local"
+                value={registrationEndsAt}
+                onChange={(e) => setRegistrationEndsAt(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+          </div>
+          <datalist id="padel-timezones">
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={`tz-${tz}`} value={tz} />
+            ))}
+          </datalist>
+
+          {registrationWarnings.length > 0 && (
+            <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
+              {registrationWarnings.map((warning) => (
+                <p key={`reg-warning-${warning}`}>{warning}</p>
+              ))}
+            </div>
+          )}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Janela calendário início</span>
+              <input
+                type="datetime-local"
+                value={scheduleWindowStart}
+                onChange={(e) => setScheduleWindowStart(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Janela calendário fim</span>
+              <input
+                type="datetime-local"
+                value={scheduleWindowEnd}
+                onChange={(e) => setScheduleWindowEnd(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Duração jogo (min)</span>
+              <input
+                type="number"
+                min={10}
+                value={durationMinutes}
+                onChange={(e) => setDurationMinutes(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Slot (min)</span>
+              <input
+                type="number"
+                min={5}
+                value={slotMinutes}
+                onChange={(e) => setSlotMinutes(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Buffer (min)</span>
+              <input
+                type="number"
+                min={0}
+                value={bufferMinutes}
+                onChange={(e) => setBufferMinutes(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Descanso (min)</span>
+              <input
+                type="number"
+                min={0}
+                value={minRestMinutes}
+                onChange={(e) => setMinRestMinutes(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 text-sm text-white/70">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Prioridade agenda</span>
+              <select
+                value={schedulePriority}
+                onChange={(e) =>
+                  setSchedulePriority(e.target.value === "KNOCKOUT_FIRST" ? "KNOCKOUT_FIRST" : "GROUPS_FIRST")
+                }
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+              >
+                <option value="GROUPS_FIRST">Grupos primeiro</option>
+                <option value="KNOCKOUT_FIRST">Eliminatórias primeiro</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/80">
+              <input
+                type="checkbox"
+                checked={waitlistEnabled}
+                onChange={(e) => setWaitlistEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+              />
+              Waitlist ativa (quando não há vaga)
+            </label>
+          </div>
+
+          {scheduleWarnings.length > 0 && (
+            <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
+              {scheduleWarnings.map((warning) => (
+                <p key={`schedule-warning-${warning}`}>{warning}</p>
+              ))}
+            </div>
+          )}
+
+          {capacityWarnings && (
+            <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
+              <p className="font-semibold">Capacidade recomendada (estimativa)</p>
+              <p>
+                Com {capacityWarnings.courts} courts cabem ~{capacityWarnings.totalSlots} jogos na janela. Isso dá ~
+                {capacityWarnings.slotsPerCategory} jogos por categoria.
+              </p>
+              {capacityWarnings.warnings.length > 0 ? (
+                <div className="mt-2 space-y-1">
+                  {capacityWarnings.warnings.map((warning) => (
+                    <p key={`cap-warning-${warning.categoryId}`}>
+                      • {warning.label}: capacidade {warning.capacity} &gt; recomendado {warning.recommended}
+                    </p>
+                  ))}
+                  <p className="mt-2 text-[11px] text-amber-200/80">Aviso apenas, não bloqueia publicação.</p>
+                </div>
+              ) : (
+                <p className="mt-2 text-emerald-200/80">Capacidades dentro da recomendação.</p>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="grid gap-6 rounded-3xl border border-white/10 bg-[#0b1322] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Categorias</p>
               <p className="text-sm text-white/70">Configura níveis e preços por categoria.</p>
             </div>
             <Link
-              href={appendOrganizationIdToHref("/organizacao/torneios?section=padel-tournaments&padel=categories", organizationId)}
+              href={appendOrganizationIdToHref(
+                "/organizacao/padel/torneios?section=padel-tournaments&padel=manage",
+                organizationId,
+              )}
               className="text-[12px] text-white/70 underline"
             >
               Gerir categorias
@@ -672,14 +1102,34 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           </div>
         )}
 
+        {draftEventId && (
+          <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            Rascunho criado.{" "}
+            <Link
+              href={appendOrganizationIdToHref(`/organizacao/padel/torneios/${draftEventId}`, organizationId)}
+              className="underline"
+            >
+              Abrir torneio
+            </Link>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => handleSubmit("DRAFT")}
+            disabled={saving}
+            className="rounded-full border border-white/30 px-6 py-3 text-sm font-semibold text-white shadow disabled:opacity-60"
+          >
+            {savingMode === "DRAFT" ? "A guardar…" : "Guardar rascunho"}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSubmit("PUBLISH")}
             disabled={saving}
             className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-black shadow disabled:opacity-60"
           >
-            {saving ? "A criar…" : "Criar torneio"}
+            {savingMode === "PUBLISH" ? "A publicar…" : "Publicar"}
           </button>
           <span className="text-[12px] text-white/60">Wizard dedicado a Padel. Sem bilhetes.</span>
         </div>

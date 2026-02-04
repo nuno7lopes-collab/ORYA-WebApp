@@ -1,6 +1,6 @@
 "use server";
 
-import { sendEmail, assertResendReady } from "@/lib/resendClient";
+import { sendEmail, assertEmailReady } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import {
@@ -31,7 +31,7 @@ type PurchaseEmailInput = {
 };
 
 export async function sendPurchaseConfirmationEmail(input: PurchaseEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const { subject, html, text } = renderPurchaseConfirmationEmail({
     eventTitle: input.eventTitle,
     eventSlug: input.eventSlug,
@@ -70,7 +70,7 @@ type StoreOrderEmailInput = {
 };
 
 export async function sendStoreOrderConfirmationEmail(input: StoreOrderEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const { subject, html, text } = renderStoreOrderConfirmationEmail({
     storeName: input.storeName,
     orderNumber: input.orderNumber,
@@ -100,7 +100,7 @@ type DeliveredEmailInput = {
 };
 
 export async function sendEntitlementDeliveredEmail(input: DeliveredEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const when = input.startsAt
     ? format(new Date(input.startsAt), "dd/MM/yyyy HH:mm")
     : null;
@@ -127,7 +127,7 @@ Ver na carteira: ${input.ticketUrl}
 type ClaimEmailInput = { to: string; eventTitle: string; ticketUrl: string };
 
 export async function sendClaimEmail(input: ClaimEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const subject = `✅ Claim concluído – ${input.eventTitle}`;
   const text = `Reassociação feita. Vê os teus bilhetes em ${input.ticketUrl}`;
   const html = `
@@ -149,7 +149,7 @@ type RefundEmailInput = {
 };
 
 export async function sendRefundEmail(input: RefundEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const subject = `💸 Refund processado – ${input.eventTitle}`;
   const amount =
     typeof input.amountRefundedBaseCents === "number"
@@ -179,7 +179,7 @@ type ImportantUpdateEmailInput = {
 };
 
 export async function sendImportantUpdateEmail(input: ImportantUpdateEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const subject = `ℹ️ Atualização importante – ${input.eventTitle}`;
   const text = `${input.message}\n${input.ticketUrl ? `Detalhes: ${input.ticketUrl}` : ""}`;
   const html = `
@@ -192,6 +192,86 @@ export async function sendImportantUpdateEmail(input: ImportantUpdateEmailInput)
   return sendEmail({ to: input.to, subject, html, text });
 }
 
+type BookingInviteEmailInput = {
+  to: string;
+  serviceTitle: string;
+  organizationName: string;
+  startsAt: string | Date | null;
+  timeZone?: string | null;
+  inviteUrl: string;
+  inviterName?: string | null;
+  guestName?: string | null;
+  message?: string | null;
+};
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatDateTime(value: string | Date | null, timeZone?: string | null) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat("pt-PT", {
+      dateStyle: "full",
+      timeStyle: "short",
+      timeZone: timeZone || undefined,
+    }).format(date);
+  } catch (err) {
+    return date.toLocaleString("pt-PT", { dateStyle: "full", timeStyle: "short" });
+  }
+}
+
+export async function sendBookingInviteEmail(input: BookingInviteEmailInput) {
+  assertEmailReady();
+  const serviceTitle = input.serviceTitle?.trim() || "Serviço";
+  const organizationName = input.organizationName?.trim() || "Organização";
+  const inviteUrl = input.inviteUrl;
+  const dateLabel = formatDateTime(input.startsAt ?? null, input.timeZone);
+  const guestNameRaw = input.guestName?.trim() || null;
+  const inviterNameRaw = input.inviterName?.trim() || null;
+  const messageRaw = input.message?.trim() || null;
+  const guestName = guestNameRaw ? escapeHtml(guestNameRaw) : null;
+  const inviterName = inviterNameRaw ? escapeHtml(inviterNameRaw) : null;
+  const message = messageRaw ? escapeHtml(messageRaw) : null;
+
+  const subject = `Convite para ${serviceTitle} – ${organizationName}`;
+  const text = [
+    guestNameRaw ? `Olá ${guestNameRaw},` : "Olá,",
+    inviterNameRaw
+      ? `${inviterNameRaw} convidou-te para uma reserva.`
+      : "Tens um convite para uma reserva.",
+    `${serviceTitle} · ${organizationName}`,
+    dateLabel ? `Quando: ${dateLabel}` : null,
+    messageRaw ? `Mensagem: ${messageRaw}` : null,
+    `Responder: ${inviteUrl}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `
+    <div style="font-family: Arial,sans-serif; color:#0f172a;">
+      <h2>Convite para ${escapeHtml(serviceTitle)}</h2>
+      <p>${guestName ? `Olá ${guestName},` : "Olá,"}</p>
+      <p>
+        ${inviterName ? `${inviterName} convidou-te` : "Foste convidado"} para uma reserva em
+        <strong>${escapeHtml(organizationName)}</strong>.
+      </p>
+      <p><strong>${escapeHtml(serviceTitle)}</strong>${dateLabel ? ` · ${dateLabel}` : ""}</p>
+      ${message ? `<p><em>Mensagem:</em> ${message}</p>` : ""}
+      <p><a href="${inviteUrl}" style="color:#2563eb;font-weight:bold;">Responder ao convite</a></p>
+    </div>
+  `;
+
+  return sendEmail({ to: input.to, subject, html, text });
+}
+
 type TournamentEmailInput = {
   to: string;
   eventTitle: string;
@@ -201,7 +281,7 @@ type TournamentEmailInput = {
 };
 
 export async function sendTournamentScheduleEmail(input: TournamentEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const { subject, html, text } = renderTournamentScheduleEmail({
     eventTitle: input.eventTitle,
     scheduleHtml: input.scheduleHtml,
@@ -227,7 +307,7 @@ type OwnerTransferEmailInput = {
 };
 
 export async function sendOwnerTransferEmail(input: OwnerTransferEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const baseUrl = getAppBaseUrl();
   const confirmPath = appendOrganizationIdToHref(
     `/organizacao/owner/confirm?token=${encodeURIComponent(input.token)}`,
@@ -259,7 +339,7 @@ type OfficialEmailVerificationInput = {
 };
 
 export async function sendOfficialEmailVerificationEmail(input: OfficialEmailVerificationInput) {
-  assertResendReady();
+  assertEmailReady();
   const baseUrl = getAppBaseUrl();
   const confirmPath = appendOrganizationIdToHref(
     `/organizacao/settings/verify?token=${encodeURIComponent(input.token)}`,
@@ -294,7 +374,7 @@ type CrmCampaignEmailInput = {
 };
 
 export async function sendCrmCampaignEmail(input: CrmCampaignEmailInput) {
-  assertResendReady();
+  assertEmailReady();
   const { html, text } = renderCrmCampaignEmail({
     organizationName: input.organizationName,
     title: input.title,

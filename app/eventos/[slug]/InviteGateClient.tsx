@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import WavesSectionClient, { type WaveTicket } from "./WavesSectionClient";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
+import { t } from "@/lib/i18n";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -16,6 +17,7 @@ type InviteGateClientProps = {
   usernameNormalized: string | null;
   uiTickets: WaveTicket[];
   checkoutUiVariant: "DEFAULT" | "PADEL";
+  locale?: string | null;
   padelMeta?: {
     eventId: number;
     organizationId: number | null;
@@ -41,6 +43,7 @@ export default function InviteGateClient({
   usernameNormalized,
   uiTickets,
   checkoutUiVariant,
+  locale,
   padelMeta,
 }: InviteGateClientProps) {
   const [identifier, setIdentifier] = useState("");
@@ -53,7 +56,7 @@ export default function InviteGateClient({
   const searchParams = useSearchParams();
   const inviteTokenParam = searchParams.get("inviteToken");
   const tokenHandledRef = useRef<string | null>(null);
-  const ticketCopy = getTicketCopy(checkoutUiVariant);
+  const ticketCopy = getTicketCopy(checkoutUiVariant, locale);
   const freeLabelLower = ticketCopy.freeLabel.toLowerCase();
 
   useEffect(() => {
@@ -83,7 +86,7 @@ export default function InviteGateClient({
           | null;
         if (cancelled) return;
         if (!res.ok || !json?.ok || !json.allow) {
-          throw new Error(json?.reason || "Convite inválido.");
+          throw new Error(json?.reason || t("inviteErrorDefault", locale));
         }
         setInviteType("email");
         setInviteNormalized(typeof json.normalized === "string" ? json.normalized : null);
@@ -96,7 +99,7 @@ export default function InviteGateClient({
         setInviteType(null);
         setInviteNormalized(null);
         setInviteTicketTypeId(null);
-        setError(err instanceof Error ? err.message : "Não foi possível validar o convite.");
+        setError(err instanceof Error ? err.message : t("inviteGateCheckError", locale));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -107,12 +110,12 @@ export default function InviteGateClient({
     return () => {
       cancelled = true;
     };
-  }, [inviteTokenParam, checkoutUiVariant, slug]);
+  }, [inviteTokenParam, checkoutUiVariant, slug, locale]);
 
   const handleCheck = async () => {
     const trimmed = identifier.trim();
     if (!trimmed) {
-      setError("Indica o email ou @username do convite.");
+      setError(t("inviteGatePrompt", locale));
       return;
     }
     setLoading(true);
@@ -125,13 +128,13 @@ export default function InviteGateClient({
       });
       const json = (await res.json().catch(() => null)) as CheckResponse | null;
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Não foi possível validar o convite.");
+        throw new Error(json?.error || t("inviteGateCheckError", locale));
       }
       if (!json.invited) {
         setValidated(false);
         setInviteType(null);
         setInviteNormalized(null);
-        setError("Sem convite válido para este evento.");
+        setError(t("inviteGateNoInvite", locale));
         return;
       }
       const type = json.type === "username" ? "username" : "email";
@@ -142,7 +145,7 @@ export default function InviteGateClient({
       setValidated(false);
       setInviteType(null);
       setInviteNormalized(null);
-      setError(err instanceof Error ? err.message : "Não foi possível validar o convite.");
+      setError(err instanceof Error ? err.message : t("inviteGateCheckError", locale));
     } finally {
       setLoading(false);
     }
@@ -170,29 +173,29 @@ export default function InviteGateClient({
   const gateMessage = (() => {
     if (!validated) return null;
     if (!isAuthenticated) {
-      return "Convite validado. Inicia sessão com a conta convidada para continuar.";
+      return t("inviteGateLoginToContinue", locale);
     }
     if (inviteType === "email") {
       if (!inviteNormalized || !userEmailNormalized || inviteNormalized !== userEmailNormalized) {
-        return "Este convite não corresponde ao email desta conta.";
+        return t("inviteGateEmailMismatch", locale);
       }
       if (isGratis && !hasUsername) {
-        return `Define um username na tua conta para concluir a ${freeLabelLower}.`;
+        return t("inviteGateUsernameRequired", locale).replace("{action}", freeLabelLower);
       }
       return isGratis
-        ? `Convite validado. Podes continuar a ${freeLabelLower}.`
-        : "Convite validado. Podes continuar o checkout.";
+        ? t("inviteGateContinueFree", locale).replace("{action}", freeLabelLower)
+        : t("inviteGateContinueCheckout", locale);
     }
     if (inviteType === "username") {
       if (!hasUsername) {
-        return "Define um username na tua conta para continuar.";
+        return t("inviteGateUsernameRequiredShort", locale);
       }
       if (!inviteNormalized || !usernameNormalized || inviteNormalized !== usernameNormalized) {
-        return "Este convite não corresponde ao teu username.";
+        return t("inviteGateUsernameMismatch", locale);
       }
       return isGratis
-        ? `Convite validado. Podes continuar a ${freeLabelLower}.`
-        : "Convite validado. Podes continuar o checkout.";
+        ? t("inviteGateContinueFree", locale).replace("{action}", freeLabelLower)
+        : t("inviteGateContinueCheckout", locale);
     }
     return null;
   })();
@@ -201,25 +204,25 @@ export default function InviteGateClient({
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(6,10,24,0.9))] px-4 py-4 text-sm text-white/85 shadow-[0_18px_45px_rgba(0,0,0,0.55)]">
         <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-          <span>Acesso exclusivo</span>
+          <span>{t("inviteGateExclusiveAccess", locale)}</span>
           <span className="h-1 w-1 rounded-full bg-white/30" />
-          <span>Convites ORYA</span>
+          <span>{t("inviteGateOryaInvites", locale)}</span>
         </div>
-        <p className="mt-2 text-base font-semibold text-white">Este evento é apenas por convite.</p>
+        <p className="mt-2 text-base font-semibold text-white">{t("inviteGateEventInviteOnly", locale)}</p>
         <p className="text-[12px] text-white/65">
-          Só convidados podem ver o checkout. Valida o teu convite para desbloquear o acesso.
+          {t("inviteGateHelper", locale)}
         </p>
       </div>
 
       <div className="rounded-2xl border border-white/12 bg-black/50 px-4 py-4 text-sm text-white/80">
         <label className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-          Tenho convite
+          {t("inviteGateHaveInvite", locale)}
         </label>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <input
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
-            placeholder="Email do convite ou @username"
+            placeholder={t("inviteGatePlaceholder", locale)}
             className="w-full rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/60"
           />
           <button
@@ -228,7 +231,7 @@ export default function InviteGateClient({
             disabled={loading}
             className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10 disabled:opacity-60"
           >
-            {loading ? "A validar…" : "Validar"}
+            {loading ? t("inviteGateValidating", locale) : t("inviteGateValidate", locale)}
           </button>
         </div>
         {error && <p className="mt-2 text-[12px] font-semibold text-amber-100">{error}</p>}
@@ -237,8 +240,8 @@ export default function InviteGateClient({
         {!validated && !error && (
           <p className="mt-2 text-[12px] text-white/60">
             {isAuthenticated
-              ? "Se não tiveres convite, não consegues continuar."
-              : "Sem convite válido não consegues aceder ao evento."}
+              ? t("inviteGateNoInviteAuthenticated", locale)
+              : t("inviteGateNoInviteUnauthenticated", locale)}
           </p>
         )}
       </div>
@@ -248,6 +251,7 @@ export default function InviteGateClient({
           slug={slug}
           tickets={restrictedTickets}
           checkoutUiVariant={checkoutUiVariant}
+          locale={locale}
           padelMeta={padelMeta}
           inviteEmail={inviteType === "email" ? inviteNormalized ?? undefined : undefined}
         />
@@ -259,13 +263,14 @@ export default function InviteGateClient({
           tickets={restrictedTickets}
           isGratisEvent
           checkoutUiVariant={checkoutUiVariant}
+          locale={locale}
           padelMeta={padelMeta}
         />
       )}
 
       {!validated && identifier.trim() && EMAIL_REGEX.test(identifier.trim()) && !isGratis && (
         <div className="rounded-xl border border-white/12 bg-black/50 px-3.5 py-2.5 text-[11px] text-white/65">
-          Usa o mesmo email na tua conta para desbloquear o convite.
+          {t("inviteGateUseSameEmail", locale)}
         </div>
       )}
     </div>

@@ -200,6 +200,71 @@ export async function deliverNotificationOutboxItem(item: {
     if (resultType === "INJURY") return "Lesão";
     return "—";
   };
+  const resolvePairingContext = async (pairingId: number | null, userId: string, token?: string | null) => {
+    if (!Number.isFinite(pairingId ?? NaN)) {
+      return {
+        pairing: null,
+        eventTitle: null,
+        eventSlug: null,
+        organizationId: null,
+        eventId: null,
+        ctaUrl: "/me/carteira",
+      };
+    }
+    const pairing = await prisma.padelPairing.findUnique({
+      where: { id: pairingId as number },
+      select: {
+        id: true,
+        partnerInviteToken: true,
+        event: { select: { id: true, title: true, slug: true, organizationId: true } },
+      },
+    });
+    const eventTitle = pairing?.event?.title ?? null;
+    const eventSlug = pairing?.event?.slug ?? null;
+    let entitlementId: string | null = null;
+    if (Number.isFinite(pairingId)) {
+      const ticket = await prisma.ticket.findFirst({
+        where: {
+          pairingId: pairingId as number,
+          OR: [{ userId }, { ownerUserId: userId }],
+        },
+        select: {
+          purchaseId: true,
+          saleSummary: { select: { purchaseId: true, paymentIntentId: true } },
+        },
+      });
+      const purchaseId =
+        ticket?.purchaseId ?? ticket?.saleSummary?.purchaseId ?? ticket?.saleSummary?.paymentIntentId ?? null;
+      if (purchaseId) {
+        const entitlement = await prisma.entitlement.findFirst({
+          where: {
+            purchaseId,
+            ownerUserId: userId,
+            type: "PADEL_ENTRY",
+          },
+          select: { id: true },
+        });
+        entitlementId = entitlement?.id ?? null;
+      }
+    }
+    const resolvedToken =
+      typeof token === "string" && token.trim().length > 0 ? token.trim() : pairing?.partnerInviteToken ?? null;
+    const ctaUrl = entitlementId
+      ? `/me/bilhetes/${entitlementId}`
+      : resolvedToken && eventSlug
+        ? `/eventos/${eventSlug}?inviteToken=${encodeURIComponent(resolvedToken)}`
+        : eventSlug
+          ? `/eventos/${eventSlug}?pairingId=${pairingId}`
+          : "/me/carteira";
+    return {
+      pairing,
+      eventTitle,
+      eventSlug,
+      organizationId: pairing?.event?.organizationId ?? null,
+      eventId: pairing?.event?.id ?? null,
+      ctaUrl,
+    };
+  };
 
   if (item.notificationType === "LOYALTY_EARNED" || item.notificationType === "LOYALTY_SPENT") {
     const pointsRaw = typeof payload.points === "number" ? payload.points : Number(payload.points);
@@ -361,6 +426,183 @@ export async function deliverNotificationOutboxItem(item: {
       sourceEventId,
     });
     await maybeSendPush(item.userId, { title: notification.title ?? "Convite para dupla", body: notification.body ?? "", deepLink: ctaUrl });
+    return notification;
+  }
+
+  if (item.notificationType === "PAIRING_REMINDER" || item.notificationType === "PAIRING_WINDOW_OPEN") {
+    const pairingId = typeof payload.pairingId === "number" ? payload.pairingId : Number(payload.pairingId);
+    const stage = typeof payload.stage === "string" ? payload.stage : null;
+    const deadlineAtRaw = typeof payload.deadlineAt === "string" ? payload.deadlineAt : null;
+    const { eventTitle, ctaUrl, organizationId, eventId } = await resolvePairingContext(pairingId, item.userId, null);
+    const isWindow = item.notificationType === "PAIRING_WINDOW_OPEN";
+    const title = isWindow ? "Janela aberta para regularizar" : "Lembrete da dupla";
+    const baseBody = eventTitle ? `Torneio ${eventTitle}.` : "Torneio Padel.";
+    const stageLabel =
+      stage === "T-48"
+        ? "Faltam 48h."
+        : stage === "T-36"
+          ? "Faltam 36h."
+          : stage === "T-24"
+            ? "Últimas 24h."
+            : stage === "T-23"
+              ? "Prazo ultrapassado."
+              : stage
+                ? `Prazo ${stage}.`
+                : "";
+    const deadlineLabel = deadlineAtRaw ? `Prazo: ${formatTime(new Date(deadlineAtRaw))}.` : "";
+    const windowLabel = isWindow ? "Tens 1h para regularizar o pagamento/convite." : "";
+    const body = [baseBody, stageLabel, windowLabel, deadlineLabel].filter(Boolean).join(" ");
+
+    const notification = await createNotificationRecord({
+      userId: item.userId,
+      type: NotificationType.SYSTEM_ANNOUNCE,
+      title,
+      body,
+      payload: payloadJson,
+      ctaUrl,
+      ctaLabel: "Ver inscrição",
+      priority: isWindow || stage === "T-24" ? "HIGH" : "NORMAL",
+      organizationId: organizationId ?? undefined,
+      eventId: eventId ?? undefined,
+      sourceEventId,
+    });
+    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    return notification;
+  }
+
+  if (item.notificationType === "PAIRING_CONFIRMED") {
+    const pairingId = typeof payload.pairingId === "number" ? payload.pairingId : Number(payload.pairingId);
+    const { eventTitle, ctaUrl, organizationId, eventId } = await resolvePairingContext(pairingId, item.userId, null);
+    const title = "Dupla confirmada";
+    const body = eventTitle ? `A tua dupla está confirmada no torneio ${eventTitle}.` : "A tua dupla está confirmada.";
+    const notification = await createNotificationRecord({
+      userId: item.userId,
+      type: NotificationType.SYSTEM_ANNOUNCE,
+      title,
+      body,
+      payload: payloadJson,
+      ctaUrl,
+      ctaLabel: "Ver inscrição",
+      priority: "HIGH",
+      organizationId: organizationId ?? undefined,
+      eventId: eventId ?? undefined,
+      sourceEventId,
+    });
+    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    return notification;
+  }
+
+  if (item.notificationType === "DEADLINE_EXPIRED") {
+    const pairingId = typeof payload.pairingId === "number" ? payload.pairingId : Number(payload.pairingId);
+    const { eventTitle, ctaUrl, organizationId, eventId } = await resolvePairingContext(pairingId, item.userId, null);
+    const title = "Prazo expirado";
+    const body = eventTitle
+      ? `O prazo da dupla expirou no torneio ${eventTitle}.`
+      : "O prazo da dupla expirou.";
+    const notification = await createNotificationRecord({
+      userId: item.userId,
+      type: NotificationType.SYSTEM_ANNOUNCE,
+      title,
+      body,
+      payload: payloadJson,
+      ctaUrl,
+      ctaLabel: "Ver detalhes",
+      priority: "HIGH",
+      organizationId: organizationId ?? undefined,
+      eventId: eventId ?? undefined,
+      sourceEventId,
+    });
+    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    return notification;
+  }
+
+  if (item.notificationType === "OFFSESSION_ACTION_REQUIRED") {
+    const pairingId = typeof payload.pairingId === "number" ? payload.pairingId : Number(payload.pairingId);
+    const { eventTitle, ctaUrl, organizationId, eventId } = await resolvePairingContext(pairingId, item.userId, null);
+    const title = "Pagamento pendente";
+    const body = eventTitle
+      ? `Há um pagamento pendente para a dupla no torneio ${eventTitle}.`
+      : "Há um pagamento pendente para a tua dupla.";
+    const notification = await createNotificationRecord({
+      userId: item.userId,
+      type: NotificationType.SYSTEM_ANNOUNCE,
+      title,
+      body,
+      payload: payloadJson,
+      ctaUrl,
+      ctaLabel: "Regularizar",
+      priority: "HIGH",
+      organizationId: organizationId ?? undefined,
+      eventId: eventId ?? undefined,
+      sourceEventId,
+    });
+    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    return notification;
+  }
+
+  if (item.notificationType === "PAIRING_REFUND") {
+    const pairingId = typeof payload.pairingId === "number" ? payload.pairingId : Number(payload.pairingId);
+    const refundCents = typeof payload.refundBaseCents === "number" ? payload.refundBaseCents : Number(payload.refundBaseCents);
+    const currency = typeof payload.currency === "string" ? payload.currency : "EUR";
+    const { eventTitle, ctaUrl, organizationId, eventId } = await resolvePairingContext(pairingId, item.userId, null);
+    const refundLabel =
+      Number.isFinite(refundCents) && refundCents >= 0
+        ? (refundCents / 100).toLocaleString("pt-PT", { style: "currency", currency })
+        : null;
+    const title = "Reembolso processado";
+    const body = eventTitle
+      ? refundLabel
+        ? `Reembolso ${refundLabel} no torneio ${eventTitle}.`
+        : `Reembolso processado no torneio ${eventTitle}.`
+      : refundLabel
+        ? `Reembolso ${refundLabel} processado.`
+        : "Reembolso processado.";
+    const notification = await createNotificationRecord({
+      userId: item.userId,
+      type: NotificationType.SYSTEM_ANNOUNCE,
+      title,
+      body,
+      payload: payloadJson,
+      ctaUrl,
+      ctaLabel: "Ver estado",
+      priority: "HIGH",
+      organizationId: organizationId ?? undefined,
+      eventId: eventId ?? undefined,
+      sourceEventId,
+    });
+    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    return notification;
+  }
+
+  if (item.notificationType === "WAITLIST_JOINED" || item.notificationType === "WAITLIST_PROMOTED") {
+    const eventIdRaw = typeof payload.eventId === "number" ? payload.eventId : Number(payload.eventId);
+    const event = Number.isFinite(eventIdRaw)
+      ? await prisma.event.findUnique({
+          where: { id: eventIdRaw },
+          select: { id: true, title: true, slug: true, organizationId: true },
+        })
+      : null;
+    const eventTitle = event?.title ?? "Torneio Padel";
+    const ctaUrl = event?.slug ? `/eventos/${event.slug}` : "/eventos";
+    const promoted = item.notificationType === "WAITLIST_PROMOTED";
+    const title = promoted ? "Vaga confirmada" : "Lista de espera";
+    const body = promoted
+      ? `A tua inscrição saiu da lista de espera em ${eventTitle}. Conclui o pagamento para garantir a vaga.`
+      : `Entraste na lista de espera para ${eventTitle}. Vais ser notificado quando existir vaga.`;
+    const notification = await createNotificationRecord({
+      userId: item.userId,
+      type: NotificationType.SYSTEM_ANNOUNCE,
+      title,
+      body,
+      payload: payloadJson,
+      ctaUrl,
+      ctaLabel: promoted ? "Abrir torneio" : "Ver torneio",
+      priority: promoted ? "HIGH" : "NORMAL",
+      organizationId: event?.organizationId ?? undefined,
+      eventId: event?.id ?? undefined,
+      sourceEventId,
+    });
+    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
     return notification;
   }
 

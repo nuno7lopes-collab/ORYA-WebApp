@@ -25,6 +25,7 @@ node_modules/
 .DS_Store
 *.pem
 *_PRIVATE_KEY_BASE64.txt
+infra/apple/.well-known/apple-developer-merchantid-domain-association*
 
 # debug
 npm-debug.log*

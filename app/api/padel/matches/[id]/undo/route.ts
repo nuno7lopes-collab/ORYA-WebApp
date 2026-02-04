@@ -2,10 +2,11 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, Prisma } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutAdvance";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
@@ -65,11 +66,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "EVENT_MISMATCH" }, { status: 409 });
   }
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const recentLogs = await prisma.organizationAuditLog.findMany({
     where: { organizationId, action: "PADEL_MATCH_RESULT" },

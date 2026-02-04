@@ -246,10 +246,6 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
     return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 409 });
   }
 
-  // SPLIT sem pagamento do parceiro: devolve ação para checkout
-  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-    return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_PARTNER" }, { status: 402 });
-  }
   if (pairing.payment_mode === PadelPaymentMode.FULL) {
     const captainSlot = pairing.slots.find((s) => s.slot_role === "CAPTAIN");
     if (!captainSlot || captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
@@ -259,11 +255,19 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
       return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
     }
   }
-  if (
+  const nowTs = Date.now();
+  const graceExpired =
+    pairing.payment_mode === PadelPaymentMode.SPLIT &&
+    pairing.graceUntilAt &&
+    pairing.graceUntilAt.getTime() < nowTs;
+  const deadlineExpired =
     pairing.payment_mode === PadelPaymentMode.SPLIT &&
     pairing.deadlineAt &&
-    pairing.deadlineAt.getTime() < Date.now() &&
-    pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
+    pairing.deadlineAt.getTime() < nowTs;
+  if (
+    pairing.payment_mode === PadelPaymentMode.SPLIT &&
+    pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID &&
+    (graceExpired || deadlineExpired)
   ) {
     return jsonWrap({ ok: false, error: "PAIRING_EXPIRED" }, { status: 409 });
   }
@@ -380,13 +384,19 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
     playerLevel: partnerProfile?.padelLevel ?? null,
   });
   if (!categoryAccess.ok) {
-    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY") {
       return jsonWrap(
         { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
         { status: 409 },
       );
     }
     return jsonWrap({ ok: false, error: categoryAccess.code }, { status: 409 });
+  }
+  if (categoryAccess.warning === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    return jsonWrap(
+      { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
+      { status: 409 },
+    );
   }
 
   try {

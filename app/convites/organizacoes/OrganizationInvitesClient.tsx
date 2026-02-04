@@ -9,6 +9,7 @@ import { RoleBadge } from "@/app/organizacao/RoleBadge";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { cn } from "@/lib/utils";
 import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { resolveLocale, t } from "@/lib/i18n";
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
 
@@ -46,14 +47,6 @@ type InvitesResponse = {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-const STATUS_LABEL: Record<InviteStatus, string> = {
-  PENDING: "Pendente",
-  EXPIRED: "Expirado",
-  ACCEPTED: "Aceite",
-  DECLINED: "Recusado",
-  CANCELLED: "Cancelado",
-};
-
 const STATUS_STYLES: Record<InviteStatus, string> = {
   PENDING: "border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
   EXPIRED: "border-white/15 bg-white/5 text-white/55",
@@ -71,6 +64,7 @@ export default function OrganizationInvitesClient({
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const locale = resolveLocale(searchParams.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const orgIdFallback = getOrganizationIdFromBrowser();
@@ -109,9 +103,11 @@ export default function OrganizationInvitesClient({
       });
       const payload = await res.json();
       if (!res.ok || !payload?.ok) {
-        setActionMessage(payload?.error ?? "Não foi possível atualizar o convite.");
+        setActionMessage(payload?.error ?? t("orgInvitesActionError", locale));
       } else {
-        setActionMessage(action === "ACCEPT" ? "Convite aceite. Já podes entrar na organização." : "Convite recusado.");
+        setActionMessage(
+          action === "ACCEPT" ? t("orgInvitesAcceptedMessage", locale) : t("orgInvitesDeclinedMessage", locale),
+        );
         await mutate();
         if (action === "ACCEPT") {
           try {
@@ -132,7 +128,7 @@ export default function OrganizationInvitesClient({
       }
     } catch (err) {
       console.error("[convites][action]", err);
-      setActionMessage("Não foi possível atualizar o convite.");
+      setActionMessage(t("orgInvitesActionError", locale));
     } finally {
       setActionLoading((prev) => ({ ...prev, [invite.id]: false }));
     }
@@ -144,24 +140,22 @@ export default function OrganizationInvitesClient({
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_28px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Convites</p>
-              <h1 className="text-2xl font-semibold">Convites de organização</h1>
-              <p className="text-sm text-white/60">
-                Aceita ou recusa convites sem precisares de criar uma organização.
-              </p>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">{t("orgInvitesKicker", locale)}</p>
+              <h1 className="text-2xl font-semibold">{t("orgInvitesTitle", locale)}</h1>
+              <p className="text-sm text-white/60">{t("orgInvitesSubtitle", locale)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={orgHomeHref}
                 className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 transition hover:border-white/30"
               >
-                Ir para organizações
+                {t("orgInvitesGoOrgs", locale)}
               </Link>
               <Link
                 href={orgBecomeHref}
                 className="rounded-full border border-white/20 bg-gradient-to-r from-cyan-300/80 via-sky-300/80 to-purple-300/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#05060f] shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition hover:brightness-110"
               >
-                Criar organização
+                {t("orgInvitesCreateOrg", locale)}
               </Link>
             </div>
           </div>
@@ -183,22 +177,30 @@ export default function OrganizationInvitesClient({
 
         {!isLoading && invites.length === 0 && (
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.4)]">
-            <h2 className="text-xl font-semibold">Sem convites pendentes</h2>
-            <p className="mt-2 text-sm text-white/60">
-              Quando receberes um convite para uma organização, ele aparece aqui.
-            </p>
+            <h2 className="text-xl font-semibold">{t("orgInvitesEmptyTitle", locale)}</h2>
+            <p className="mt-2 text-sm text-white/60">{t("orgInvitesEmptyBody", locale)}</p>
           </div>
         )}
 
         <div className="grid gap-4">
           {invites.map((invite) => {
-            const orgName = invite.organization?.publicName ?? invite.organization?.businessName ?? "Organização";
+            const orgName =
+              invite.organization?.publicName ?? invite.organization?.businessName ?? t("orgInvitesFallbackOrg", locale);
             const orgHandle = invite.organization?.username ? `@${invite.organization.username}` : null;
             const locationLabel = [invite.organization?.city, invite.organization?.entityType].filter(Boolean).join(" · ");
             const cardHighlight = focusedInviteId === invite.id;
             const invitedByName =
-              invite.invitedBy?.fullName ?? invite.invitedBy?.username ?? "Equipa ORYA";
-            const statusLabel = STATUS_LABEL[invite.status];
+              invite.invitedBy?.fullName ?? invite.invitedBy?.username ?? t("orgInvitesFallbackInviter", locale);
+            const statusLabel =
+              invite.status === "PENDING"
+                ? t("orgInvitesStatusPending", locale)
+                : invite.status === "EXPIRED"
+                  ? t("orgInvitesStatusExpired", locale)
+                  : invite.status === "ACCEPTED"
+                    ? t("orgInvitesStatusAccepted", locale)
+                    : invite.status === "DECLINED"
+                      ? t("orgInvitesStatusDeclined", locale)
+                      : t("orgInvitesStatusCancelled", locale);
             const statusClass = STATUS_STYLES[invite.status];
             const coverUrl = getProfileCoverUrl(invite.organization?.brandingCoverUrl ?? null, {
               width: 1200,
@@ -239,7 +241,9 @@ export default function OrganizationInvitesClient({
                       )}
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Organização</p>
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">
+                        {t("orgInvitesOrgLabel", locale)}
+                      </p>
                       <h3 className="text-lg font-semibold">{orgName}</h3>
                       {orgHandle && <p className="text-xs text-white/60">{orgHandle}</p>}
                       {locationLabel && <p className="text-xs text-white/50">{locationLabel}</p>}
@@ -256,10 +260,15 @@ export default function OrganizationInvitesClient({
 
                 <div className="relative z-10 mt-4 flex flex-col gap-4 border-t border-white/10 pt-4 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-1 text-sm text-white/70">
-                    <p>Convidado por <span className="text-white/90">{invitedByName}</span>.</p>
+                    <p>
+                      {t("orgInvitesInvitedBy", locale).replace("{name}", invitedByName)}
+                    </p>
                     {invite.expiresAt && invite.status === "PENDING" && (
                       <p className="text-xs text-white/50">
-                        Expira em {new Date(invite.expiresAt).toLocaleDateString("pt-PT")}.
+                        {t("orgInvitesExpires", locale).replace(
+                          "{date}",
+                          new Date(invite.expiresAt).toLocaleDateString(locale),
+                        )}
                       </p>
                     )}
                   </div>
@@ -269,7 +278,7 @@ export default function OrganizationInvitesClient({
                         href={`/${invite.organization.username}`}
                         className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/75 transition hover:border-white/30"
                       >
-                        Ver página
+                        {t("orgInvitesViewPage", locale)}
                       </Link>
                     )}
                     {invite.status === "PENDING" && invite.canRespond && (
@@ -280,7 +289,7 @@ export default function OrganizationInvitesClient({
                           onClick={() => handleInviteAction(invite, "DECLINE")}
                           className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 disabled:opacity-50"
                         >
-                          Recusar
+                          {t("orgInvitesDecline", locale)}
                         </button>
                         <button
                           type="button"
@@ -288,13 +297,13 @@ export default function OrganizationInvitesClient({
                           onClick={() => handleInviteAction(invite, "ACCEPT")}
                           className="rounded-full border border-cyan-200/40 bg-gradient-to-r from-cyan-300/80 via-sky-300/80 to-indigo-300/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#05060f] shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition hover:brightness-110 disabled:opacity-60"
                         >
-                          Aceitar
+                          {t("orgInvitesAccept", locale)}
                         </button>
                       </>
                     )}
                     {invite.status !== "PENDING" && (
                       <span className="text-xs uppercase tracking-[0.2em] text-white/45">
-                        Convite {statusLabel.toLowerCase()}
+                        {t("orgInvitesStatusPrefix", locale).replace("{status}", statusLabel.toLowerCase())}
                       </span>
                     )}
                   </div>

@@ -73,6 +73,33 @@ async function _GET(
             officialEmailVerifiedAt: true,
           },
         },
+        addons: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            label: true,
+            description: true,
+            deltaMinutes: true,
+            deltaPriceCents: true,
+            maxQty: true,
+            category: true,
+            sortOrder: true,
+          },
+        },
+        packages: {
+          where: { isActive: true },
+          orderBy: [{ recommended: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            label: true,
+            description: true,
+            durationMinutes: true,
+            priceCents: true,
+            recommended: true,
+            sortOrder: true,
+          },
+        },
       },
     });
 

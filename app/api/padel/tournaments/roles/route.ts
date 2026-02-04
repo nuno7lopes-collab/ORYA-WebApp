@@ -5,7 +5,8 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { OrganizationMemberRole, PadelTournamentRole, SourceType } from "@prisma/client";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationMemberRole, OrganizationModule, PadelTournamentRole, SourceType } from "@prisma/client";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -50,6 +51,15 @@ async function _GET(req: NextRequest) {
     roles: READ_ROLES,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const viewPermission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!viewPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const assignments = await prisma.padelTournamentRoleAssignment.findMany({
     where: { eventId, organizationId: organization.id },
@@ -105,6 +115,15 @@ async function _POST(req: NextRequest) {
     roles: WRITE_ROLES,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const editPermission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const userIdRaw = typeof body.userId === "string" ? body.userId.trim() : "";
   const identifier = typeof body.identifier === "string" ? body.identifier.trim() : "";
@@ -182,7 +201,7 @@ async function _POST(req: NextRequest) {
     await recordOrganizationAuditSafe({
       organizationId: organization.id,
       actorUserId: user.id,
-      action: "padel_tournament.role_assigned",
+      action: "PADEL_TOURNAMENT_ROLE_ASSIGNED",
       entityType: "padel_tournament_role",
       entityId: String(assignment.id),
       metadata: { eventId, role, userId: targetUserId },
@@ -221,6 +240,15 @@ async function _DELETE(req: NextRequest) {
     roles: WRITE_ROLES,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const editPermission = await ensureMemberModuleAccess({
+    organizationId: assignment.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const { ip, userAgent } = getRequestMeta(req);
 
@@ -246,7 +274,7 @@ async function _DELETE(req: NextRequest) {
   await recordOrganizationAuditSafe({
     organizationId: assignment.organizationId,
     actorUserId: user.id,
-    action: "padel_tournament.role_removed",
+    action: "PADEL_TOURNAMENT_ROLE_REMOVED",
     entityType: "padel_tournament_role",
     entityId: String(assignment.id),
     metadata: { eventId: assignment.eventId, role: assignment.role, userId: assignment.userId },

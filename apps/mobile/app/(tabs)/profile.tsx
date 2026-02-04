@@ -1,5 +1,5 @@
-import { Image, Linking, Pressable, ScrollView, Text, View } from "react-native";
-import * as Notifications from "expo-notifications";
+import { Image, Linking, Pressable, ScrollView, Text, View, Platform } from "react-native";
+import Constants from "expo-constants";
 import { supabase } from "../../lib/supabase";
 import { i18n, tokens } from "@orya/shared";
 import { GlassSurface } from "../../components/glass/GlassSurface";
@@ -8,6 +8,7 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { useProfileAgenda, useProfileSummary } from "../../features/profile/hooks";
 import { useEffect, useState } from "react";
+import { useAuth } from "../../lib/auth";
 
 const formatAgendaDate = (value: string): string => {
   const parsed = new Date(value);
@@ -28,9 +29,13 @@ const initialFrom = (name?: string | null, email?: string | null): string => {
 
 export default function ProfileScreen() {
   const t = i18n.pt.profile;
-  const summary = useProfileSummary();
-  const agenda = useProfileAgenda();
-  const [pushStatus, setPushStatus] = useState<"loading" | "granted" | "denied" | "undetermined">("loading");
+  const { session } = useAuth();
+  const accessToken = session?.access_token ?? null;
+  const summary = useProfileSummary(true, accessToken);
+  const agenda = useProfileAgenda(accessToken);
+  const [pushStatus, setPushStatus] = useState<
+    "loading" | "granted" | "denied" | "undetermined" | "unsupported"
+  >("loading");
   const profile = summary.data;
   const agendaData = agenda.data?.items ?? [];
   const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
@@ -45,16 +50,25 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     let mounted = true;
-    Notifications.getPermissionsAsync()
-      .then((status) => {
+    const resolveStatus = async () => {
+      if (Platform.OS !== "ios" || !Constants.isDevice || Constants.appOwnership === "expo") {
+        if (mounted) setPushStatus("unsupported");
+        return;
+      }
+
+      try {
+        const Notifications = await import("expo-notifications");
+        const status = await Notifications.getPermissionsAsync();
         if (!mounted) return;
         if (status.granted) setPushStatus("granted");
         else if (status.status === "denied") setPushStatus("denied");
         else setPushStatus("undetermined");
-      })
-      .catch(() => {
+      } catch {
         if (mounted) setPushStatus("undetermined");
-      });
+      }
+    };
+
+    resolveStatus();
     return () => {
       mounted = false;
     };
@@ -177,35 +191,46 @@ export default function ProfileScreen() {
               <View>
                 <Text className="text-white/70 text-sm">Estado</Text>
                 <Text className="text-white text-base font-semibold mt-1">
-                  {pushStatus === "loading"
-                    ? "A verificar…"
-                    : pushStatus === "granted"
-                      ? "Ativas"
-                      : pushStatus === "denied"
-                        ? "Bloqueadas"
+                {pushStatus === "loading"
+                  ? "A verificar…"
+                  : pushStatus === "granted"
+                    ? "Ativas"
+                    : pushStatus === "denied"
+                      ? "Bloqueadas"
+                      : pushStatus === "unsupported"
+                        ? "Indisponível no Expo Go"
                         : "Por ativar"}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  if (pushStatus === "granted") {
-                    Linking.openSettings();
-                    return;
-                  }
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                if (pushStatus === "unsupported") {
+                  return;
+                }
+                if (pushStatus === "granted") {
+                  Linking.openSettings();
+                  return;
+                }
+                import("expo-notifications").then((Notifications) => {
                   Notifications.requestPermissionsAsync().then((status) => {
                     if (status.granted) setPushStatus("granted");
                     else if (status.status === "denied") setPushStatus("denied");
                     else setPushStatus("undetermined");
                   });
-                }}
-                className="rounded-full border border-white/10 bg-white/10 px-4 py-2"
-                style={{ minHeight: tokens.layout.touchTarget }}
-              >
-                <Text className="text-white text-sm font-semibold">
-                  {pushStatus === "granted" ? "Abrir definições" : "Ativar"}
-                </Text>
-              </Pressable>
-            </View>
+                });
+              }}
+              className="rounded-full border border-white/10 bg-white/10 px-4 py-2"
+              style={{ minHeight: tokens.layout.touchTarget }}
+            >
+              <Text className="text-white text-sm font-semibold">
+                {pushStatus === "unsupported"
+                  ? "Requer build"
+                  : pushStatus === "granted"
+                    ? "Abrir definições"
+                    : "Ativar"}
+              </Text>
+            </Pressable>
+          </View>
             <Text className="text-white/55 text-xs mt-3">
               Enviamos lembretes de eventos, cancelamentos e updates importantes (incl. padel T-48/T-24).
             </Text>

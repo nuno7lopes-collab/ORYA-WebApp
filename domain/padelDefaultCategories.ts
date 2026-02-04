@@ -44,6 +44,7 @@ export const sortPadelCategories = <T extends { label: string; genderRestriction
     MALE: 1,
     FEMALE: 2,
     MIXED: 3,
+    MIXED_FREE: 4,
   };
   return [...categories].sort((a, b) => {
     const orderA = genderOrder[a.genderRestriction ?? ""] ?? 99;

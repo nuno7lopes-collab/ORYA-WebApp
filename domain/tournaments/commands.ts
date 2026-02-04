@@ -29,8 +29,9 @@ export async function createTournamentForEvent(input: {
   config: Record<string, unknown>;
   actorUserId: string;
   correlationId?: string | null;
+  inscriptionDeadlineAt?: Date | null;
 }) {
-  const { eventId, format, config, actorUserId, correlationId } = input;
+  const { eventId, format, config, actorUserId, correlationId, inscriptionDeadlineAt } = input;
   if (!Number.isFinite(eventId)) {
     return { ok: false as const, error: "EVENT_ID_REQUIRED" };
   }
@@ -38,7 +39,7 @@ export async function createTournamentForEvent(input: {
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findUnique({
       where: { id: eventId },
-      select: { id: true, organizationId: true, templateType: true, tournament: { select: { id: true } } },
+      select: { id: true, organizationId: true, templateType: true, startsAt: true, tournament: { select: { id: true } } },
     });
     if (event?.organizationId == null) return { ok: false as const, error: "NOT_FOUND" };
     const organizationId = event.organizationId;
@@ -49,8 +50,19 @@ export async function createTournamentForEvent(input: {
       return { ok: true as const, tournamentId: event.tournament.id, created: false };
     }
 
+    const resolvedDeadline =
+      inscriptionDeadlineAt && !Number.isNaN(new Date(inscriptionDeadlineAt).getTime()) ? inscriptionDeadlineAt : null;
+    const fallbackDeadline =
+      event.startsAt && !Number.isNaN(new Date(event.startsAt).getTime())
+        ? new Date(event.startsAt.getTime() - 24 * 60 * 60 * 1000)
+        : null;
     const tournament = await tx.tournament.create({
-      data: { eventId, format, config: config as Prisma.InputJsonValue },
+      data: {
+        eventId,
+        format,
+        config: config as Prisma.InputJsonValue,
+        ...(resolvedDeadline || fallbackDeadline ? { inscriptionDeadlineAt: resolvedDeadline ?? fallbackDeadline } : {}),
+      },
       select: { id: true },
     });
 

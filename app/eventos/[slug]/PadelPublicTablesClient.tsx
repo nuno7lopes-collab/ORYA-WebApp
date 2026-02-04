@@ -153,10 +153,11 @@ export default function PadelPublicTablesClient({
     };
   }, [eventId, mutateMatches, mutateStandings]);
 
-  const standingsGroups = useMemo(
-    () => Object.entries(standings).sort((a, b) => a[0].localeCompare(b[0])),
-    [standings],
-  );
+  const standingsGroups = useMemo(() => {
+    const entries = Object.entries(standings) as Array<[string, StandingsRow[]]>;
+    entries.sort((a, b) => a[0].localeCompare(b[0]));
+    return entries;
+  }, [standings]);
 
   const pairingNameMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -174,7 +175,7 @@ export default function PadelPublicTablesClient({
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
-    const roundOrder = Object.entries(roundCounts)
+    const roundOrder = (Object.entries(roundCounts) as Array<[string, number]>)
       .sort((a, b) => b[1] - a[1])
       .map(([label]) => label);
     const rounds = new Map<string, Match[]>();
@@ -198,7 +199,9 @@ export default function PadelPublicTablesClient({
           id: m.id,
           start: date,
           label: `${pairingName(m.pairingA, locale)} vs ${pairingName(m.pairingB, locale)}`,
-          court: m.courtName || (m.courtNumber ? `Quadra ${m.courtNumber}` : ""),
+          court:
+            m.courtName ||
+            (m.courtNumber ? `${t("court", locale)} ${m.courtNumber}` : t("court", locale)),
           status: m.status,
           score: formatScoreLabel(m, locale),
         };

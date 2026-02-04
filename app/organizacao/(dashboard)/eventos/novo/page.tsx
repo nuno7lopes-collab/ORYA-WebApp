@@ -474,7 +474,7 @@ export function NewOrganizationEventPage({
   const ticketLabelIndefinite = isPadelPreset ? "uma" : "um";
   const freeTicketPlaceholder = isPadelPreset ? "Inscrição" : "Entrada";
   const freeTicketLabel = isPadelPreset ? "Inscrição grátis" : "Entrada grátis";
-  const detailBasePath = isPadelPreset ? "/organizacao/torneios" : "/organizacao/eventos";
+  const detailBasePath = isPadelPreset ? "/organizacao/padel/torneios" : "/organizacao/eventos";
   const isPadelWizard = forcePreset === "padel";
   const wizardTitle = isPadelWizard ? "Criar torneio de padel" : `Criar novo ${primaryLabel}`;
   const wizardSubtitle = isPadelWizard
@@ -1507,7 +1507,7 @@ export function NewOrganizationEventPage({
                         Procurar no diretorio
                       </button>
                       <Link
-                        href="/organizacao/torneios?section=padel-club&padel=clubs"
+                        href="/organizacao/padel/clube?section=padel-club&padel=clubs"
                         className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                       >
                         Criar clube rapido
@@ -4782,7 +4782,7 @@ export function NewOrganizationEventPage({
                       <p className="text-[12px] text-white/70">Configuração</p>
                     </div>
                     <Link
-                      href="/organizacao/torneios?section=padel-club"
+                      href="/organizacao/padel/clube?section=padel-club"
                       className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15"
                     >
                       Hub
@@ -4849,7 +4849,7 @@ export function NewOrganizationEventPage({
                             Abrir diretorio
                           </button>
                           <Link
-                            href="/organizacao/torneios?section=padel-club&padel=clubs"
+                            href="/organizacao/padel/clube?section=padel-club&padel=clubs"
                             className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                           >
                             Criar clube rapido

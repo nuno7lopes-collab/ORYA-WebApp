@@ -5,7 +5,8 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { OrganizationMemberRole, PadelTournamentLifecycleStatus, SourceType } from "@prisma/client";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationMemberRole, OrganizationModule, PadelTournamentLifecycleStatus, SourceType, TournamentFormat } from "@prisma/client";
 import {
   canTransitionLifecycle,
   getAllowedLifecycleTransitions,
@@ -14,6 +15,7 @@ import {
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
 
 const READ_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const WRITE_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -73,6 +75,15 @@ async function _GET(req: NextRequest) {
     roles: READ_ROLES,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const viewPermission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!viewPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const lifecycle = event.padelTournamentConfig;
   const transitions = getAllowedLifecycleTransitions(lifecycle.lifecycleStatus);
@@ -115,6 +126,7 @@ async function _POST(req: NextRequest) {
       status: true,
       templateType: true,
       organizationId: true,
+      startsAt: true,
       padelTournamentConfig: {
         select: {
           id: true,
@@ -137,6 +149,66 @@ async function _POST(req: NextRequest) {
     roles: WRITE_ROLES,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const editPermission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+
+  if (nextStatus === PadelTournamentLifecycleStatus.PUBLISHED) {
+    const [config, categoryLinks] = await Promise.all([
+      prisma.padelTournamentConfig.findUnique({
+        where: { eventId: event.id },
+        select: {
+          id: true,
+          format: true,
+          padelClubId: true,
+          numberOfCourts: true,
+          advancedSettings: true,
+          padelV2Enabled: true,
+        },
+      }),
+      prisma.padelEventCategoryLink.findMany({
+        where: { eventId: event.id, isEnabled: true },
+        select: { id: true, pricePerPlayerCents: true, currency: true },
+      }),
+    ]);
+    const missing: string[] = [];
+    if (!config?.padelV2Enabled) missing.push("PADEL_V2_DISABLED");
+    if (!config?.format) missing.push("FORMAT_MISSING");
+    if (!config?.padelClubId) missing.push("CLUB_MISSING");
+    if (!config?.numberOfCourts || config.numberOfCourts < 1) missing.push("COURTS_MISSING");
+    if (!categoryLinks.length) {
+      missing.push("CATEGORIES_MISSING");
+    } else if (categoryLinks.some((link) => link.pricePerPlayerCents === null || link.currency === null)) {
+      missing.push("CATEGORY_PRICES_MISSING");
+    }
+    const advanced = (config?.advancedSettings || {}) as {
+      registrationStartsAt?: string | null;
+      registrationEndsAt?: string | null;
+    };
+    const registrationStartsAt =
+      advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
+        ? new Date(advanced.registrationStartsAt)
+        : null;
+    const registrationEndsAt =
+      advanced.registrationEndsAt && !Number.isNaN(new Date(advanced.registrationEndsAt).getTime())
+        ? new Date(advanced.registrationEndsAt)
+        : null;
+    if (registrationStartsAt && registrationEndsAt && registrationStartsAt >= registrationEndsAt) {
+      missing.push("REGISTRATION_WINDOW_INVALID");
+    }
+    if (registrationEndsAt && event.startsAt && registrationEndsAt >= event.startsAt) {
+      missing.push("REGISTRATION_END_AFTER_START");
+    }
+    if (missing.length > 0) {
+      return jsonWrap({ ok: false, error: "TOURNAMENT_NOT_READY", missing }, { status: 409 });
+    }
+  }
 
   const current = event.padelTournamentConfig.lifecycleStatus;
   if (current === nextStatus) {
@@ -212,13 +284,73 @@ async function _POST(req: NextRequest) {
   await recordOrganizationAuditSafe({
     organizationId: event.organizationId,
     actorUserId: user.id,
-    action: "padel_tournament.lifecycle",
+    action: "PADEL_TOURNAMENT_LIFECYCLE",
     entityType: "event",
     entityId: String(event.id),
     metadata: { fromStatus: current, toStatus: nextStatus, eventStatus: nextEventStatus },
     ip,
     userAgent,
   });
+
+  try {
+    if (["PUBLISHED", "LOCKED", "LIVE", "COMPLETED"].includes(nextStatus)) {
+      const syncEvent = await prisma.event.findUnique({
+        where: { id: event.id },
+        select: {
+          id: true,
+          templateType: true,
+          startsAt: true,
+          tournament: { select: { id: true, inscriptionDeadlineAt: true } },
+          padelTournamentConfig: { select: { format: true, advancedSettings: true } },
+        },
+      });
+      if (syncEvent?.templateType === "PADEL" && syncEvent.padelTournamentConfig) {
+        const advanced = (syncEvent.padelTournamentConfig.advancedSettings ?? {}) as Record<string, unknown>;
+        const registrationEndsAtRaw =
+          typeof advanced.registrationEndsAt === "string" ? advanced.registrationEndsAt : null;
+        const registrationEndsAt =
+          registrationEndsAtRaw && !Number.isNaN(new Date(registrationEndsAtRaw).getTime())
+            ? new Date(registrationEndsAtRaw)
+            : null;
+        const fallbackDeadline =
+          syncEvent.startsAt && !Number.isNaN(new Date(syncEvent.startsAt).getTime())
+            ? new Date(syncEvent.startsAt.getTime() - 24 * 60 * 60 * 1000)
+            : null;
+        const targetDeadline = registrationEndsAt ?? fallbackDeadline;
+        if (targetDeadline) {
+          if (syncEvent.tournament?.id) {
+            const currentDeadline = syncEvent.tournament.inscriptionDeadlineAt;
+            const shouldUpdate =
+              !currentDeadline || currentDeadline.getTime() !== targetDeadline.getTime();
+            if (shouldUpdate) {
+              const res = await updateTournament({
+                tournamentId: syncEvent.tournament.id,
+                actorUserId: user.id,
+                data: { inscriptionDeadlineAt: targetDeadline },
+              });
+              if (!res.ok) {
+                throw new Error("TOURNAMENT_SYNC_FAILED");
+              }
+            }
+          } else {
+            const res = await createTournamentForEvent({
+              eventId: syncEvent.id,
+              format: TournamentFormat.MANUAL,
+              config: { padelFormat: syncEvent.padelTournamentConfig.format ?? "UNKNOWN" },
+              actorUserId: user.id,
+              inscriptionDeadlineAt: targetDeadline,
+            });
+            if (!res.ok) {
+              throw new Error("TOURNAMENT_SYNC_FAILED");
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[padel/tournaments/lifecycle][sync]", err);
+    return jsonWrap({ ok: false, error: "TOURNAMENT_SYNC_FAILED" }, { status: 500 });
+  }
 
   return jsonWrap({ ok: true, lifecycle: updated, eventStatus: nextEventStatus }, { status: 200 });
 }

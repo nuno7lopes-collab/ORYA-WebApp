@@ -24,7 +24,7 @@ export default function FormField({
   inputProps,
 }: FormFieldProps) {
   const describedBy = useMemo(() => {
-    const ids = [];
+    const ids: string[] = [];
     if (hint) ids.push(`${id}-hint`);
     if (error) ids.push(`${id}-error`);
     return ids.length ? ids.join(" ") : undefined;

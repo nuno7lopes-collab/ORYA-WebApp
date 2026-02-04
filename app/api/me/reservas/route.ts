@@ -7,8 +7,12 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   getSnapshotCancellationWindowMinutes,
+  getSnapshotRescheduleWindowMinutes,
+  getSnapshotAllowCancellation,
+  getSnapshotAllowReschedule,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
+import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -57,6 +61,25 @@ export async function GET(req: NextRequest) {
         partySize: true,
         snapshotTimezone: true,
         confirmationSnapshot: true,
+        addons: {
+          select: {
+            addonId: true,
+            label: true,
+            deltaMinutes: true,
+            deltaPriceCents: true,
+            quantity: true,
+            sortOrder: true,
+          },
+          orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        },
+        bookingPackage: {
+          select: {
+            packageId: true,
+            label: true,
+            durationMinutes: true,
+            priceCents: true,
+          },
+        },
         professional: {
           select: {
             id: true,
@@ -78,7 +101,10 @@ export async function GET(req: NextRequest) {
                 id: true,
                 name: true,
                 policyType: true,
+                allowCancellation: true,
                 cancellationWindowMinutes: true,
+                allowReschedule: true,
+                rescheduleWindowMinutes: true,
               },
             },
           },
@@ -92,7 +118,10 @@ export async function GET(req: NextRequest) {
                 id: true,
                 name: true,
                 policyType: true,
+                allowCancellation: true,
                 cancellationWindowMinutes: true,
+                allowReschedule: true,
+                rescheduleWindowMinutes: true,
               },
             },
             organization: {
@@ -128,7 +157,10 @@ export async function GET(req: NextRequest) {
             organizationId: true,
             name: true,
             policyType: true,
+            allowCancellation: true,
             cancellationWindowMinutes: true,
+            allowReschedule: true,
+            rescheduleWindowMinutes: true,
           },
         })
       : [];
@@ -137,6 +169,32 @@ export async function GET(req: NextRequest) {
     defaults.forEach((policy) => {
       defaultByOrganization.set(policy.organizationId, policy);
     });
+
+    const delayMapsByOrganization = new Map<number, Awaited<ReturnType<typeof loadScheduleDelays>>>();
+    for (const orgId of organizationIds) {
+      const orgBookings = bookings.filter((booking) => booking.organizationId === orgId);
+      const professionalIds = Array.from(
+        new Set(
+          orgBookings
+            .map((booking) => booking.professional?.id)
+            .filter((id): id is number => typeof id === "number"),
+        ),
+      );
+      const resourceIds = Array.from(
+        new Set(
+          orgBookings
+            .map((booking) => booking.resource?.id)
+            .filter((id): id is number => typeof id === "number"),
+        ),
+      );
+      const delayMap = await loadScheduleDelays({
+        tx: prisma,
+        organizationId: orgId,
+        professionalIds,
+        resourceIds,
+      });
+      delayMapsByOrganization.set(orgId, delayMap);
+    }
 
     const now = new Date();
 
@@ -153,7 +211,10 @@ export async function GET(req: NextRequest) {
             id: snapshot.policySnapshot.policyId,
             name: snapshot.policySnapshot.policyType,
             policyType: snapshot.policySnapshot.policyType,
+            allowCancellation: snapshot.policySnapshot.allowCancellation,
             cancellationWindowMinutes: snapshot.policySnapshot.cancellationWindowMinutes,
+            allowReschedule: snapshot.policySnapshot.allowReschedule,
+            rescheduleWindowMinutes: snapshot.policySnapshot.rescheduleWindowMinutes,
             snapshotVersion: snapshot.version,
           }
         : policyRaw
@@ -161,7 +222,10 @@ export async function GET(req: NextRequest) {
               id: policyRaw.id,
               name: policyRaw.name,
               policyType: policyRaw.policyType,
+              allowCancellation: policyRaw.allowCancellation ?? true,
               cancellationWindowMinutes: policyRaw.cancellationWindowMinutes,
+              allowReschedule: policyRaw.allowReschedule ?? true,
+              rescheduleWindowMinutes: policyRaw.rescheduleWindowMinutes ?? null,
               snapshotVersion: null,
             }
           : null;
@@ -176,9 +240,26 @@ export async function GET(req: NextRequest) {
         now,
       );
       const snapshotRequired = booking.status === "CONFIRMED" && !snapshot;
+      const allowCancellation = snapshot ? getSnapshotAllowCancellation(snapshot) : policy?.allowCancellation ?? true;
       const canCancel =
         !snapshotRequired &&
-        (isPending || (booking.status === "CONFIRMED" && cancellationDecision.allowed));
+        (isPending || (booking.status === "CONFIRMED" && allowCancellation && cancellationDecision.allowed));
+
+      const rescheduleWindowMinutes = snapshot
+        ? getSnapshotRescheduleWindowMinutes(snapshot)
+        : policy?.rescheduleWindowMinutes ?? null;
+      const rescheduleDecision = decideCancellation(
+        booking.startsAt,
+        isPending ? null : rescheduleWindowMinutes,
+        now,
+      );
+      const allowReschedule = snapshot ? getSnapshotAllowReschedule(snapshot) : policy?.allowReschedule ?? true;
+      const canReschedule =
+        !snapshotRequired &&
+        booking.status === "CONFIRMED" &&
+        allowReschedule &&
+        rescheduleWindowMinutes != null &&
+        rescheduleDecision.allowed;
 
       return {
         id: booking.id,
@@ -192,6 +273,39 @@ export async function GET(req: NextRequest) {
         pendingExpiresAt: booking.pendingExpiresAt,
         assignmentMode: booking.assignmentMode,
         partySize: booking.partySize ?? null,
+        addons: booking.addons?.map((addon) => ({
+          addonId: addon.addonId,
+          label: addon.label,
+          deltaMinutes: addon.deltaMinutes,
+          deltaPriceCents: addon.deltaPriceCents,
+          quantity: addon.quantity,
+          sortOrder: addon.sortOrder,
+        })) ?? [],
+        ...(() => {
+          const delayMap = delayMapsByOrganization.get(booking.organizationId);
+          const delay = delayMap
+            ? resolveBookingDelay({
+                startsAt: booking.startsAt,
+                assignmentMode: booking.assignmentMode,
+                professionalId: booking.professional?.id ?? null,
+                resourceId: booking.resource?.id ?? null,
+                delayMap,
+              })
+            : { delayMinutes: 0, estimatedStartsAt: null, reason: null };
+          return {
+            estimatedStartsAt: delay.estimatedStartsAt ? delay.estimatedStartsAt.toISOString() : null,
+            delayMinutes: delay.delayMinutes,
+            delayReason: delay.reason,
+          };
+        })(),
+        package: booking.bookingPackage
+          ? {
+              packageId: booking.bookingPackage.packageId,
+              label: booking.bookingPackage.label,
+              durationMinutes: booking.bookingPackage.durationMinutes,
+              priceCents: booking.bookingPackage.priceCents,
+            }
+          : null,
         professional: booking.professional
           ? {
               id: booking.professional.id,
@@ -212,6 +326,11 @@ export async function GET(req: NextRequest) {
           allowed: canCancel,
           reason: canCancel ? null : snapshotRequired ? "SNAPSHOT_REQUIRED" : cancellationDecision.reason,
           deadline: cancellationDecision.deadline,
+        },
+        reschedule: {
+          allowed: canReschedule,
+          reason: canReschedule ? null : snapshotRequired ? "SNAPSHOT_REQUIRED" : rescheduleDecision.reason,
+          deadline: rescheduleDecision.deadline,
         },
       };
     });

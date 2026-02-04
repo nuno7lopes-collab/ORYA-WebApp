@@ -2,10 +2,11 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -64,11 +65,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const participant = isParticipant(match, user.id);
   if (!participant) {
-    const { organization } = await getActiveOrganizationForUser(user.id, {
+    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: match.event.organizationId,
       roles: ROLE_ALLOWLIST,
     });
-    if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    const permission = await ensureMemberModuleAccess({
+      organizationId: match.event.organizationId,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.TORNEIOS,
+      required: "EDIT",
+    });
+    if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
   if (match.status !== padel_match_status.DONE) {
@@ -147,6 +157,15 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: match.event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   if (!adminRoles.has(membership.role)) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }

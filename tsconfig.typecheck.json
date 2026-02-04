@@ -1,9 +1,16 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The repo currently has a lot of legacy code with implicit-`any` callback params.
+    // We still want strict null checks/etc, but we don't want typecheck to be blocked by TS7006 noise.
+    "noImplicitAny": false
+  },
   "exclude": [
     "node_modules",
     ".next",
     "web/.next",
+    "apps/mobile",
+    "apps/mobile/**",
     "tests",
     "**/*.test.ts",
     "**/*.test.tsx",

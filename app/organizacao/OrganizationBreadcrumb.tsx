@@ -68,9 +68,19 @@ function resolveLabel(
   if (pathname.startsWith("/organizacao/chat") || pathname.startsWith("/organizacao/mensagens")) {
     return "Chat interno";
   }
-  if (pathname.startsWith("/organizacao/torneios/") && pathname.endsWith("/edit")) return "Editar torneio";
-  if (pathname.startsWith("/organizacao/torneios/") && pathname.endsWith("/live")) return "Gerir · Preparar live";
-  if (pathname.startsWith("/organizacao/torneios")) {
+  if (
+    (pathname.startsWith("/organizacao/padel/torneios/") || pathname.startsWith("/organizacao/torneios/")) &&
+    pathname.endsWith("/edit")
+  ) {
+    return "Editar torneio";
+  }
+  if (
+    (pathname.startsWith("/organizacao/padel/torneios/") || pathname.startsWith("/organizacao/torneios/")) &&
+    pathname.endsWith("/live")
+  ) {
+    return "Gerir · Preparar live";
+  }
+  if (pathname.startsWith("/organizacao/padel/torneios") || pathname.startsWith("/organizacao/torneios")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     const padelLabel = padel ? SECTION_LABELS[padel] : null;
     const isPadelSection =

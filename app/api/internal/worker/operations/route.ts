@@ -11,7 +11,7 @@ import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { appendChargebackLedgerEntries, appendDisputeFeeReversal } from "@/domain/finance/ledgerAdjustments";
-import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType } from "@prisma/client";
+import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus } from "@prisma/client";
 import { EntitlementV7Status, mapV7StatusToLegacy } from "@/lib/entitlements/status";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
@@ -23,6 +23,7 @@ import {
   sendClaimEmail,
   sendRefundEmail,
   sendImportantUpdateEmail,
+  sendBookingInviteEmail,
 } from "@/lib/emailSender";
 import { fulfillResaleIntent } from "@/lib/operations/fulfillResale";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
@@ -48,9 +49,11 @@ import { sweepPendingProcessorFees } from "@/domain/finance/reconciliationSweep"
 import { publishOutboxBatch } from "@/domain/outbox/publisher";
 import { consumeOpsFeedBatch } from "@/domain/opsFeed/consumer";
 import { handlePadelRegistrationOutboxEvent } from "@/domain/padelRegistrationOutbox";
+import { transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
 import { handleLoyaltyOutboxEvent } from "@/domain/loyaltyOutbox";
 import { handleTournamentOutboxEvent } from "@/domain/tournaments/outbox";
 import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
+import { queuePairingRefund } from "@/domain/notifications/splitPayments";
 import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
 import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
@@ -94,6 +97,7 @@ type OperationRecord = {
   purchaseId: string | null;
   stripeEventId: string | null;
   eventId?: number | null;
+  pairingId?: number | null;
 };
 
 type OperationsBatchStats = {
@@ -154,6 +158,43 @@ async function markEntitlementsStatusByPurchase(purchaseId: string, status: Enti
   await prisma.entitlement.updateMany({
     where: { purchaseId },
     data: { status: legacyStatus },
+  });
+}
+
+async function markPadelRegistrationRefundedByPayment(params: {
+  paymentId?: string | null;
+  reason?: string | null;
+  correlationId?: string | null;
+}) {
+  const paymentId = params.paymentId?.trim() ?? null;
+  if (!paymentId) return;
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    select: { sourceType: true, sourceId: true },
+  });
+  if (!payment || payment.sourceType !== SourceType.PADEL_REGISTRATION || !payment.sourceId) return;
+
+  await prisma.$transaction(async (tx) => {
+    const registration = await tx.padelRegistration.findUnique({
+      where: { id: payment.sourceId },
+      select: { id: true, pairingId: true, organizationId: true, eventId: true, status: true },
+    });
+    if (!registration || registration.status === PadelRegistrationStatus.REFUNDED) return;
+    if (!registration.pairingId) {
+      await tx.padelRegistration.update({
+        where: { id: registration.id },
+        data: { status: PadelRegistrationStatus.REFUNDED },
+      });
+      return;
+    }
+    await transitionPadelRegistrationStatus(tx, {
+      pairingId: registration.pairingId,
+      organizationId: registration.organizationId,
+      eventId: registration.eventId,
+      status: PadelRegistrationStatus.REFUNDED,
+      reason: params.reason ?? "REFUND",
+      correlationId: params.correlationId ?? null,
+    });
   });
 }
 
@@ -372,6 +413,20 @@ async function processSendEmailOutbox(op: OperationRecord) {
           eventTitle: tpl?.eventTitle ?? "Atualização ORYA",
           message: tpl?.message ?? "Atualização relevante sobre o teu acesso.",
           ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
+        });
+        break;
+      }
+      case "BOOKING_INVITE": {
+        await sendBookingInviteEmail({
+          to: recipient,
+          serviceTitle: tpl?.serviceTitle ?? "Serviço",
+          organizationName: tpl?.organizationName ?? "Organização",
+          startsAt: tpl?.startsAt ?? null,
+          timeZone: tpl?.timeZone ?? null,
+          inviteUrl: tpl?.inviteUrl ? absUrl(tpl.inviteUrl) : absUrl("/convites"),
+          inviterName: tpl?.inviterName ?? null,
+          guestName: tpl?.guestName ?? null,
+          message: tpl?.message ?? null,
         });
         break;
       }
@@ -1344,12 +1399,28 @@ async function processRefundSingle(op: OperationRecord) {
     source: "operations.refund",
   });
 
+  await markPadelRegistrationRefundedByPayment({
+    paymentId: paymentId ?? purchaseId,
+    reason,
+    correlationId: String(op.id),
+  });
+
   await maybeSendRefundEmail({
     purchaseId,
     eventId,
     reason,
     amountRefundedBaseCents: res.baseAmountCents ?? null,
   });
+
+  if (op.pairingId) {
+    const notifyCtx = await resolveRefundNotificationContext(purchaseId);
+    if (notifyCtx.userId) {
+      await queuePairingRefund(op.pairingId, [notifyCtx.userId], {
+        refundBaseCents: res.baseAmountCents ?? null,
+        currency: notifyCtx.currency ?? "EUR",
+      });
+    }
+  }
 }
 
 async function resolveRefundRecipientEmail(purchaseId: string) {
@@ -1371,6 +1442,28 @@ async function resolveRefundRecipientEmail(purchaseId: string) {
   }
 
   return null;
+}
+
+async function resolveRefundNotificationContext(purchaseId: string) {
+  const saleSummary = await prisma.saleSummary.findUnique({
+    where: { purchaseId },
+    select: { ownerUserId: true, userId: true, currency: true },
+  });
+  if (saleSummary?.ownerUserId || saleSummary?.userId) {
+    return {
+      userId: saleSummary.ownerUserId ?? saleSummary.userId ?? null,
+      currency: saleSummary.currency ?? "EUR",
+    };
+  }
+
+  const ticket = await prisma.ticket.findFirst({
+    where: { purchaseId },
+    select: { ownerUserId: true, userId: true },
+  });
+  return {
+    userId: ticket?.ownerUserId ?? ticket?.userId ?? null,
+    currency: "EUR",
+  };
 }
 
 async function maybeSendRefundEmail(params: {

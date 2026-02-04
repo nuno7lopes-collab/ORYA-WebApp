@@ -15,7 +15,7 @@ import {
 import type { PricingSnapshot } from "@/domain/finance/checkout";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
-import { upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
+import { resolveRegistrationStatusFromSlots, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
@@ -245,6 +245,7 @@ export async function fulfillPadelRegistrationIntent(
         eventId: true,
         organizationId: true,
         payment_mode: true,
+        pairingJoinMode: true,
         pairingStatus: true,
         slots: {
           select: {
@@ -257,10 +258,11 @@ export async function fulfillPadelRegistrationIntent(
     });
     if (!updated) throw new Error("PAIRING_NOT_FOUND");
 
-    const allPaid = updated.slots.every((slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID);
-    const nextRegistrationStatus = allPaid
-      ? PadelRegistrationStatus.CONFIRMED
-      : PadelRegistrationStatus.PENDING_PAYMENT;
+    const allPaid = updated.slots.length > 0 && updated.slots.every((slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID);
+    const nextRegistrationStatus = resolveRegistrationStatusFromSlots({
+      pairingJoinMode: updated.pairingJoinMode,
+      slots: updated.slots,
+    });
 
     await upsertPadelRegistrationForPairing(tx, {
       pairingId,

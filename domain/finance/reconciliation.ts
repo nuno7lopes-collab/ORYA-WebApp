@@ -63,6 +63,7 @@ export async function reconcilePaymentFees(
         sourceId: true,
         pricingSnapshotJson: true,
         processorFeesStatus: true,
+        processorFeesActual: true,
       },
     });
     if (!payment) {

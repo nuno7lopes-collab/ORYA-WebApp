@@ -24,6 +24,10 @@ def replace_value(value):
         m = placeholder_re.search(value)
         if m:
             name = m.group(1)
+            if ":" in name:
+                secret, key = name.split(":", 1)
+                secret_name = f"orya/prod/{secret}"
+                return f"arn:aws:secretsmanager:{region}:{account}:secret:{secret_name}:{key}::"
             return f"arn:aws:secretsmanager:{region}:{account}:secret:orya/prod/{name}"
         return value
     if isinstance(value, list):

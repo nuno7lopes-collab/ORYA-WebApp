@@ -174,7 +174,34 @@ export default function PromoCodesClient() {
   const events = useMemo(() => data?.events ?? [], [data]);
   const promos = useMemo(() => data?.promoCodes ?? [], [data]);
   const promoStats = useMemo(() => data?.promoStats ?? [], [data]);
-  const promoStatsMap = useMemo(() => new Map(promoStats.map((s) => [s.promoCodeId, s])), [promoStats]);
+  type PromoStatsForUi = {
+    tickets: number;
+    grossCents: number;
+    discountCents: number;
+    netCents: number;
+    usesTotal: number;
+    usersUnique: number;
+  };
+  const promoStatsMap = useMemo(
+    () =>
+      new Map<number, PromoStatsForUi>(
+        promoStats.map(
+          (s) =>
+            [
+              s.promoCodeId,
+              {
+                tickets: s.tickets ?? 0,
+                grossCents: s.grossCents ?? 0,
+                discountCents: s.discountCents ?? 0,
+                netCents: s.netCents ?? 0,
+                usesTotal: s.usesTotal ?? 0,
+                usersUnique: s.usersUnique ?? 0,
+              },
+            ] as const,
+        ),
+      ),
+    [promoStats],
+  );
   const promoters = useMemo(
     () =>
       membersData?.items?.filter((member) => member.role === "PROMOTER") ?? [],
@@ -361,8 +388,15 @@ export default function PromoCodesClient() {
 
   const formatEuro = (cents: number) => `${(cents / 100).toFixed(2)} €`;
   const formatDateTime = (iso: string) => new Date(iso).toLocaleString("pt-PT");
-  const statsFor = (promoId: number) =>
-    promoStatsMap.get(promoId) ?? { tickets: 0, grossCents: 0, discountCents: 0, netCents: 0, usesTotal: 0, usersUnique: 0 };
+  const statsFor = (promoId: number): PromoStatsForUi =>
+    promoStatsMap.get(promoId) ?? {
+      tickets: 0,
+      grossCents: 0,
+      discountCents: 0,
+      netCents: 0,
+      usesTotal: 0,
+      usersUnique: 0,
+    };
 
   const previewPrice = 20; // € exemplo
   const preview = useMemo(() => {

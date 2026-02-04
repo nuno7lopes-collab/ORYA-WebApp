@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { resend } from "@/lib/resend";
+import { sendEmail } from "@/lib/emailClient";
 import { env } from "@/lib/env";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
@@ -129,15 +129,14 @@ async function _POST(req: NextRequest) {
     }
 
     try {
-      await resend.emails.send({
-        from: env.resendFrom,
+      await sendEmail({
         to: rawEmail,
         subject: "Redefinir password · ORYA",
         html: buildEmailHtml(actionLink),
         text: `Recebemos um pedido de redefinição de password. Abre o link para escolher nova password: ${actionLink}`,
       });
     } catch (mailErr) {
-      console.error("[password/reset-request] resend error", {
+      console.error("[password/reset-request] email send error", {
         mailErr,
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,

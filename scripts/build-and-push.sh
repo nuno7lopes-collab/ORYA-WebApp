@@ -8,12 +8,8 @@ WEB_REPO=${WEB_REPO:-orya-web}
 WORKER_REPO=${WORKER_REPO:-orya-worker}
 SHA=${GIT_SHA:-$(git rev-parse --short=12 HEAD)}
 if [[ -z "${DOCKER_PLATFORM:-}" ]]; then
-  ARCH=$(uname -m)
-  if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
-    DOCKER_PLATFORM="linux/arm64"
-  else
-    DOCKER_PLATFORM="linux/amd64"
-  fi
+  # ECS Fargate in this account runs linux/amd64; default to amd64 to avoid pull failures.
+  DOCKER_PLATFORM="linux/amd64"
 fi
 TARGET=all
 

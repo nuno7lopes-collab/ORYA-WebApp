@@ -6,6 +6,8 @@ import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection } from "@/lib/reservas/serviceAddons";
+import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const LOOKAHEAD_DAYS = 21;
@@ -125,30 +127,6 @@ async function _GET(
       serviceKind: service.kind,
     });
 
-    if (service.unitPriceCents > 0) {
-      const isPlatformOrg = service.organization?.orgType === "PLATFORM";
-      const gate = getPaidSalesGate({
-        officialEmail: service.organization?.officialEmail ?? null,
-        officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
-        stripeAccountId: service.organization?.stripeAccountId ?? null,
-        stripeChargesEnabled: service.organization?.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: service.organization?.stripePayoutsEnabled ?? false,
-        requireStripe: !isPlatformOrg,
-      });
-      if (!gate.ok) {
-        return jsonWrap(
-          {
-            ok: false,
-            error: "PAYMENTS_NOT_READY",
-            message: formatPaidSalesGateMessage(gate, "Pagamentos indisponíveis. Para ativar,"),
-            missingEmail: gate.missingEmail,
-            missingStripe: gate.missingStripe,
-          },
-          { status: 409 },
-        );
-      }
-    }
-
     const timezone = service.organization?.timezone || "Europe/Lisbon";
     const dateParam = req.nextUrl.searchParams.get("date");
     const dayParam = req.nextUrl.searchParams.get("day");
@@ -159,6 +137,13 @@ async function _GET(
     const assignmentMode = assignmentConfig.mode;
     const professionalId = parsePositiveInt(req.nextUrl.searchParams.get("professionalId"));
     const partySize = parsePositiveInt(req.nextUrl.searchParams.get("partySize"));
+    const durationOverride = parsePositiveInt(req.nextUrl.searchParams.get("durationMinutes"));
+    const addonSelection = normalizeAddonSelection(req.nextUrl.searchParams.get("addons"));
+    const packageIdRaw = req.nextUrl.searchParams.get("packageId");
+    const packageId = parsePackageId(packageIdRaw);
+    if (packageIdRaw && !packageId) {
+      return jsonWrap({ ok: false, error: "Pacote inválido." }, { status: 400 });
+    }
 
     if (!assignmentConfig.isCourtService && partySize) {
       return jsonWrap(getResourceModeBlockedPayload(), { status: 409 });
@@ -196,6 +181,76 @@ async function _GET(
           select: { id: true },
         });
         scopeIds = professionals.map((professional) => professional.id);
+      }
+    }
+
+    let effectiveDurationMinutes = service.durationMinutes;
+    let effectivePriceCents = service.unitPriceCents ?? 0;
+    let baseDurationMinutes = service.durationMinutes;
+    let basePriceCents = service.unitPriceCents ?? 0;
+    if (packageId) {
+      const packageResolution = await resolveServicePackageSelection({
+        tx: prisma,
+        serviceId: service.id,
+        packageId,
+      });
+      if (!packageResolution.ok) {
+        return jsonWrap({ ok: false, error: packageResolution.error }, { status: 400 });
+      }
+      const base = applyPackageBase({
+        baseDurationMinutes: service.durationMinutes,
+        basePriceCents: service.unitPriceCents ?? 0,
+        pkg: packageResolution.package,
+      });
+      baseDurationMinutes = base.durationMinutes;
+      basePriceCents = base.priceCents;
+    }
+    if (addonSelection.length > 0) {
+      const addonResolution = await resolveServiceAddonSelection({
+        tx: prisma,
+        serviceId: service.id,
+        selection: addonSelection,
+      });
+      if (!addonResolution.ok) {
+        return jsonWrap({ ok: false, error: addonResolution.error }, { status: 400 });
+      }
+      const totals = applyAddonTotals({
+        baseDurationMinutes,
+        basePriceCents,
+        totalDeltaMinutes: addonResolution.totalDeltaMinutes,
+        totalDeltaPriceCents: addonResolution.totalDeltaPriceCents,
+      });
+      effectiveDurationMinutes = totals.durationMinutes;
+      effectivePriceCents = totals.priceCents;
+    } else {
+      effectiveDurationMinutes = baseDurationMinutes;
+      effectivePriceCents = basePriceCents;
+    }
+    if (durationOverride) {
+      effectiveDurationMinutes = durationOverride;
+    }
+
+    if (effectivePriceCents > 0) {
+      const isPlatformOrg = service.organization?.orgType === "PLATFORM";
+      const gate = getPaidSalesGate({
+        officialEmail: service.organization?.officialEmail ?? null,
+        officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
+        stripeAccountId: service.organization?.stripeAccountId ?? null,
+        stripeChargesEnabled: service.organization?.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: service.organization?.stripePayoutsEnabled ?? false,
+        requireStripe: !isPlatformOrg,
+      });
+      if (!gate.ok) {
+        return jsonWrap(
+          {
+            ok: false,
+            error: "PAYMENTS_NOT_READY",
+            message: formatPaidSalesGateMessage(gate, "Pagamentos indisponíveis. Para ativar,"),
+            missingEmail: gate.missingEmail,
+            missingStripe: gate.missingStripe,
+          },
+          { status: 409 },
+        );
       }
     }
 
@@ -262,7 +317,7 @@ async function _GET(
         rangeStart,
         rangeEnd,
         timezone,
-        durationMinutes: service.durationMinutes,
+        durationMinutes: effectiveDurationMinutes,
         stepMinutes: SLOT_STEP_MINUTES,
         now,
         scopeType: scope.scopeType,

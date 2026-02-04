@@ -14,8 +14,12 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
+import { useAuth } from "../../lib/auth";
+import { supabase } from "../../lib/supabase";
+import { getActiveSession } from "../../lib/session";
 import {
   INTEREST_OPTIONS,
+  PADEL_GENDERS,
   PADEL_LEVELS,
   InterestId,
   OnboardingStep,
@@ -92,6 +96,7 @@ const GhostButton = ({
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { session, loading: authLoading } = useAuth();
   const [step, setStep] = useState<OnboardingStep>("basic");
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
@@ -99,6 +104,7 @@ export default function OnboardingScreen() {
     "idle" | "checking" | "available" | "taken" | "invalid"
   >("idle");
   const [interests, setInterests] = useState<InterestId[]>([]);
+  const [padelGender, setPadelGender] = useState<string | null>(null);
   const [padelLevel, setPadelLevel] = useState<string | null>(null);
   const [locationConsent, setLocationConsent] = useState<"GRANTED" | "DENIED" | null>(null);
   const [saving, setSaving] = useState(false);
@@ -108,6 +114,12 @@ export default function OnboardingScreen() {
 
   const fade = useRef(new Animated.Value(0)).current;
   const translate = useRef(new Animated.Value(18)).current;
+
+  useEffect(() => {
+    if (!authLoading && !session) {
+      router.replace("/(auth)/sign-in");
+    }
+  }, [authLoading, session, router]);
 
   useEffect(() => {
     fade.setValue(0);
@@ -133,6 +145,7 @@ export default function OnboardingScreen() {
   }, [fullName, username, usernameStatus]);
 
   const canContinueInterests = interests.length > 0;
+  const canContinuePadel = Boolean(padelGender);
 
   const handleCheckUsername = async () => {
     const normalized = sanitizeUsername(username);
@@ -142,7 +155,8 @@ export default function OnboardingScreen() {
     }
     try {
       setUsernameStatus("checking");
-      const available = await checkUsernameAvailability(normalized);
+      const token = session?.access_token ?? (await getActiveSession())?.access_token ?? null;
+      const available = await checkUsernameAvailability(normalized, token);
       setUsernameStatus(available ? "available" : "taken");
     } catch (err: any) {
       setUsernameStatus("invalid");
@@ -160,32 +174,54 @@ export default function OnboardingScreen() {
 
   const handleFinish = async () => {
     try {
+      const activeSession = session ?? (await getActiveSession());
+      if (!activeSession?.access_token) {
+        await supabase.auth.signOut();
+        Alert.alert("Sessão expirada", "Inicia sessão novamente para concluir.");
+        router.replace("/(auth)/sign-in");
+        return;
+      }
+
+      const accessToken = activeSession.access_token;
       setSaving(true);
       const normalizedUsername = sanitizeUsername(username);
       await saveBasicProfile({
         fullName: fullName.trim(),
         username: normalizedUsername,
         favouriteCategories: interests,
+        accessToken,
       });
 
-      if (padelLevel) {
-        await savePadelOnboarding({ level: padelLevel });
+      if (padelGender || padelLevel) {
+        await savePadelOnboarding({ gender: padelGender, level: padelLevel, accessToken });
       }
 
       if (locationConsent === "GRANTED") {
-        await saveLocationConsent({ consent: "GRANTED", preferredGranularity: "COARSE" });
+        await saveLocationConsent({
+          consent: "GRANTED",
+          preferredGranularity: "COARSE",
+          accessToken,
+        });
         await saveLocationCoarse({
           city: ipLocation?.city ?? null,
           region: ipLocation?.region ?? null,
           source: "IP",
+          accessToken,
         });
       } else if (locationConsent === "DENIED") {
-        await saveLocationConsent({ consent: "DENIED" });
+        await saveLocationConsent({ consent: "DENIED", accessToken });
       }
 
       router.replace("/(tabs)");
     } catch (err: any) {
-      Alert.alert("Erro", err?.message ?? "Não foi possível concluir o onboarding.");
+      const message = err?.message ?? "Não foi possível concluir o onboarding.";
+      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+        await supabase.auth.signOut();
+        Alert.alert("Sessão expirada", "Entra novamente para continuar.");
+        router.replace("/(auth)/sign-in");
+        return;
+      }
+      Alert.alert("Erro", message);
     } finally {
       setSaving(false);
     }
@@ -265,10 +301,37 @@ export default function OnboardingScreen() {
       case "padel":
         return (
           <GlassSurface intensity={52}>
-            <Text className="text-white text-lg font-semibold mb-2">Padel (opcional)</Text>
+            <Text className="text-white text-lg font-semibold mb-2">Padel</Text>
             <Text className="text-white/60 text-sm mb-6">
-              Diz-nos o teu nível para recomendações e matchmaking.
+              Precisamos do género para garantir compatibilidade. O nível é opcional.
             </Text>
+            <Text className="text-white/60 text-xs uppercase tracking-[0.2em] mb-3">Género</Text>
+            <View className="flex-row gap-2 mb-6">
+              {PADEL_GENDERS.map((gender) => {
+                const active = padelGender === gender.id;
+                return (
+                  <Pressable
+                    key={gender.id}
+                    onPress={() => setPadelGender(gender.id)}
+                    style={({ pressed }) => [
+                      {
+                        flex: 1,
+                        paddingVertical: 14,
+                        borderRadius: 16,
+                        borderWidth: 1,
+                        borderColor: active ? "rgba(52,211,153,0.6)" : "rgba(255,255,255,0.12)",
+                        backgroundColor: pressed || active ? "rgba(52,211,153,0.12)" : "rgba(255,255,255,0.04)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      },
+                    ]}
+                  >
+                    <Text className="text-white font-semibold">{gender.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text className="text-white/60 text-xs uppercase tracking-[0.2em] mb-3">Nível (opcional)</Text>
             <View className="gap-2">
               {PADEL_LEVELS.map((level) => {
                 const active = padelLevel === level;
@@ -292,7 +355,7 @@ export default function OnboardingScreen() {
                 );
               })}
             </View>
-            <Text className="text-xs text-white/50 mt-4">Podes saltar e preencher mais tarde.</Text>
+            <Text className="text-xs text-white/50 mt-4">Podes escolher o nível mais tarde.</Text>
           </GlassSurface>
         );
       case "location":
@@ -381,7 +444,10 @@ export default function OnboardingScreen() {
               </GlassCard>
               <GlassCard intensity={35} padding={12}>
                 <Text className="text-xs text-white/50">Padel</Text>
-                <Text className="text-white font-semibold">{padelLevel ?? "Ainda não definido"}</Text>
+                <Text className="text-white font-semibold">
+                  {padelGender === "MALE" ? "Masculino" : padelGender === "FEMALE" ? "Feminino" : "—"}
+                  {padelLevel ? ` · ${padelLevel}` : " · Sem nível"}
+                </Text>
               </GlassCard>
               <GlassCard intensity={35} padding={12}>
                 <Text className="text-xs text-white/50">Localização</Text>
@@ -402,6 +468,7 @@ export default function OnboardingScreen() {
   const handleNext = () => {
     if (step === "basic" && !canContinueBasic) return;
     if (step === "interests" && !canContinueInterests) return;
+    if (step === "padel" && !canContinuePadel) return;
     const next = steps[stepIndex + 1];
     if (next) setStep(next);
   };
@@ -451,11 +518,12 @@ export default function OnboardingScreen() {
                 onPress={handleNext}
                 disabled={
                   (step === "basic" && !canContinueBasic) ||
-                  (step === "interests" && !canContinueInterests)
+                  (step === "interests" && !canContinueInterests) ||
+                  (step === "padel" && !canContinuePadel)
                 }
               />
             )}
-            {step !== "finish" && step !== "basic" ? (
+            {step !== "finish" && step !== "basic" && step !== "padel" ? (
               <GhostButton label="Saltar" onPress={handleNext} />
             ) : null}
           </View>

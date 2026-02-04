@@ -1,5 +1,5 @@
 export type PadelCategoryLevelResult =
-  | { ok: true }
+  | { ok: true; warning?: "LEVEL_REQUIRED_FOR_CATEGORY" | "CATEGORY_LEVEL_MISMATCH" }
   | { ok: false; code: "LEVEL_REQUIRED_FOR_CATEGORY" | "CATEGORY_LEVEL_MISMATCH" };
 
 const normalizeLevel = (value?: string | null) => (value ?? "").trim().toUpperCase();
@@ -22,7 +22,7 @@ export function validatePadelCategoryLevel(
   const player = normalizeLevel(playerLevel);
 
   if (!min && !max) return { ok: true };
-  if (!player) return { ok: false, code: "LEVEL_REQUIRED_FOR_CATEGORY" };
+  if (!player) return { ok: true, warning: "LEVEL_REQUIRED_FOR_CATEGORY" };
 
   const playerNum = parseLevelNumber(player);
   const minNum = min ? parseLevelNumber(min) : null;
@@ -32,7 +32,7 @@ export function validatePadelCategoryLevel(
     const lower = minNum ?? Number.NEGATIVE_INFINITY;
     const upper = maxNum ?? Number.POSITIVE_INFINITY;
     if (playerNum < lower || playerNum > upper) {
-      return { ok: false, code: "CATEGORY_LEVEL_MISMATCH" };
+      return { ok: true, warning: "CATEGORY_LEVEL_MISMATCH" };
     }
     return { ok: true };
   }
@@ -41,7 +41,7 @@ export function validatePadelCategoryLevel(
     value
       ? player === value
         ? { ok: true }
-        : { ok: false, code: "CATEGORY_LEVEL_MISMATCH" }
+        : { ok: true, warning: "CATEGORY_LEVEL_MISMATCH" }
       : { ok: true };
 
   if (min && max && min === max) return enforceValue(min);

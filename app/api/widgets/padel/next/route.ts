@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
@@ -20,7 +21,7 @@ function fail(
   return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const slug = req.nextUrl.searchParams.get("slug");
@@ -116,3 +117,5 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+
+export const GET = withApiEnvelope(_GET);

@@ -11,8 +11,8 @@ export type IpLocationResponse = {
   granularity?: string | null;
 };
 
-export const fetchIpLocation = async (): Promise<IpLocationResponse> => {
-  const response = await api.request<unknown>("/api/location/ip");
+export const fetchIpLocation = async (accessToken?: string | null): Promise<IpLocationResponse> => {
+  const response = await api.requestWithAccessToken<unknown>("/api/location/ip", accessToken);
   return unwrapApiResponse<IpLocationResponse>(response);
 };
 
@@ -20,8 +20,9 @@ export const saveBasicProfile = async (payload: {
   fullName: string;
   username: string;
   favouriteCategories: InterestId[];
+  accessToken?: string | null;
 }): Promise<void> => {
-  await api.request("/api/profiles/save-basic", {
+  await api.requestWithAccessToken("/api/profiles/save-basic", payload.accessToken, {
     method: "POST",
     body: JSON.stringify({
       fullName: payload.fullName,
@@ -31,8 +32,11 @@ export const saveBasicProfile = async (payload: {
   });
 };
 
-export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
-  const response = await api.request<unknown>("/api/profiles/check-username", {
+export const checkUsernameAvailability = async (
+  username: string,
+  accessToken?: string | null,
+): Promise<boolean> => {
+  const response = await api.requestWithAccessToken<unknown>("/api/profiles/check-username", accessToken, {
     method: "POST",
     body: JSON.stringify({ username }),
   });
@@ -41,11 +45,14 @@ export const checkUsernameAvailability = async (username: string): Promise<boole
 };
 
 export const savePadelOnboarding = async (payload: {
+  gender?: string | null;
   level?: string | null;
+  accessToken?: string | null;
 }): Promise<void> => {
-  await api.request("/api/padel/onboarding", {
+  await api.requestWithAccessToken("/api/padel/onboarding", payload.accessToken, {
     method: "POST",
     body: JSON.stringify({
+      gender: payload.gender ?? null,
       level: payload.level ?? null,
     }),
   });
@@ -54,8 +61,9 @@ export const savePadelOnboarding = async (payload: {
 export const saveLocationConsent = async (payload: {
   consent: "PENDING" | "GRANTED" | "DENIED";
   preferredGranularity?: "COARSE" | "PRECISE" | null;
+  accessToken?: string | null;
 }): Promise<void> => {
-  await api.request("/api/me/location/consent", {
+  await api.requestWithAccessToken("/api/me/location/consent", payload.accessToken, {
     method: "POST",
     body: JSON.stringify({
       consent: payload.consent,
@@ -68,8 +76,9 @@ export const saveLocationCoarse = async (payload: {
   city?: string | null;
   region?: string | null;
   source: "IP" | "GPS" | "WIFI" | "MANUAL";
+  accessToken?: string | null;
 }): Promise<void> => {
-  await api.request("/api/me/location/coarse", {
+  await api.requestWithAccessToken("/api/me/location/coarse", payload.accessToken, {
     method: "POST",
     body: JSON.stringify({
       city: payload.city ?? null,

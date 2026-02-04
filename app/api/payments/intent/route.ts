@@ -95,12 +95,14 @@ const pairingForIntentSelect = {
   organizationId: true,
   eventId: true,
   categoryId: true,
+  createdByUserId: true,
   pairingStatus: true,
   payment_mode: true,
   pairingJoinMode: true,
   partnerInviteToken: true,
   partnerLinkExpiresAt: true,
   deadlineAt: true,
+  graceUntilAt: true,
   registration: { select: { id: true, status: true, buyerIdentityId: true } },
   event: { select: pairingEventSelect },
   slots: { select: pairingSlotSelect },
@@ -303,15 +305,29 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
 
   const pendingSlot =
     pairing.slots.find((slot) => slot.slotStatus === PadelPairingSlotStatus.PENDING) ?? null;
-  const targetSlot =
-    (slotIdInput && pairing.slots.find((slot) => slot.id === slotIdInput)) ||
+  const captainSlot = pairing.slots.find((slot) => slot.slot_role === PadelPairingSlotRole.CAPTAIN) ?? null;
+  const partnerSlot = pairing.slots.find((slot) => slot.slot_role === PadelPairingSlotRole.PARTNER) ?? null;
+  const explicitSlot = slotIdInput ? pairing.slots.find((slot) => slot.id === slotIdInput) ?? null : null;
+  let targetSlot =
+    explicitSlot ??
     (scenario === "GROUP_SPLIT"
-      ? pendingSlot
-      : pairing.slots.find((slot) => slot.slot_role === PadelPairingSlotRole.CAPTAIN) ??
-        pairing.slots[0] ??
-        null);
+      ? pendingSlot ??
+        (partnerSlot && partnerSlot.paymentStatus !== PadelPairingPaymentStatus.PAID ? partnerSlot : null) ??
+        (captainSlot && captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID ? captainSlot : null)
+      : captainSlot ?? pairing.slots[0] ?? null);
   if (!targetSlot) {
     return intentError("PAIRING_SLOT_REQUIRED", "Slot da dupla em falta.", { httpStatus: 400 });
+  }
+
+  if (
+    scenario === "GROUP_SPLIT" &&
+    targetSlot.slot_role === PadelPairingSlotRole.PARTNER &&
+    targetSlot.slotStatus !== PadelPairingSlotStatus.FILLED
+  ) {
+    const isCaptain = captainSlot?.profileId === userId || pairing.createdByUserId === userId;
+    if (isCaptain && captainSlot && captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+      targetSlot = captainSlot;
+    }
   }
 
   if (scenario === "GROUP_SPLIT" && targetSlot.paymentStatus === PadelPairingPaymentStatus.PAID) {
@@ -319,6 +335,22 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
   }
 
   if (scenario === "GROUP_SPLIT" && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+    return intentError("PAIRING_EXPIRED", "A dupla expirou.", { httpStatus: 410 });
+  }
+
+  if (
+    scenario === "GROUP_SPLIT" &&
+    targetSlot.slot_role === PadelPairingSlotRole.PARTNER &&
+    targetSlot.slotStatus !== PadelPairingSlotStatus.FILLED
+  ) {
+    return intentError("PARTNER_ACCEPT_REQUIRED", "O parceiro precisa aceitar antes de pagar.", {
+      httpStatus: 409,
+      status: "FAILED",
+      nextAction: "ACCEPT",
+    });
+  }
+
+  if (scenario === "GROUP_SPLIT" && pairing.graceUntilAt && pairing.graceUntilAt.getTime() < Date.now()) {
     return intentError("PAIRING_EXPIRED", "A dupla expirou.", { httpStatus: 410 });
   }
 
@@ -776,7 +808,7 @@ type IntentStatus =
   | "PAID"
   | "FAILED";
 
-type NextAction = "NONE" | "PAY_NOW" | "CONFIRM_GUARANTEE" | "CONTACT_SUPPORT" | "LOGIN" | "CONNECT_STRIPE";
+type NextAction = "NONE" | "PAY_NOW" | "CONFIRM_GUARANTEE" | "CONTACT_SUPPORT" | "LOGIN" | "CONNECT_STRIPE" | "ACCEPT";
 
 function intentError(
   code: string,

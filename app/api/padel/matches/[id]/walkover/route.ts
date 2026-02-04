@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { OrganizationMemberRole, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { canMarkWalkover } from "@/domain/padel/pairingPolicy";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { readNumericParam } from "@/lib/routeParams";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { buildWalkoverSets, normalizePadelScoreRules } from "@/domain/padel/score";
@@ -55,11 +56,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "MISSING_PAIRINGS" }, { status: 400 });
   }
 
-  const { organization } = await getActiveOrganizationForUser(authData.user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(authData.user.id, {
     organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) {
+  if (!organization || !membership) {
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  const permission = await ensureMemberModuleAccess({
+    organizationId,
+    userId: authData.user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 

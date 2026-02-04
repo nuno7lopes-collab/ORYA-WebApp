@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { resolveLocale, t } from "@/lib/i18n";
 
 type Props = {
   eventId: number;
@@ -25,6 +26,7 @@ export default function PadelSignupInline({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
   const [loadingFull, setLoadingFull] = useState(false);
   const [loadingSplit, setLoadingSplit] = useState(false);
 
@@ -41,7 +43,7 @@ export default function PadelSignupInline({
 
   const createPairing = async (mode: "FULL" | "SPLIT") => {
     if (!canProceed) {
-      alert("Sem configuração válida para inscrição Padel.");
+      alert(t("padelSignupConfigMissing", locale));
       return;
     }
     const setLoading = mode === "FULL" ? setLoadingFull : setLoadingSplit;
@@ -62,31 +64,31 @@ export default function PadelSignupInline({
         switch (code) {
           case "CATEGORY_FULL":
           case "CATEGORY_PLAYERS_FULL":
-            return "Categoria cheia. Tenta outra ou aguarda vaga.";
+            return t("padelSignupCategoryFull", locale);
           case "ALREADY_IN_CATEGORY":
-            return "Já estás inscrito nesta categoria.";
+            return t("padelSignupAlreadyInCategory", locale);
           case "MAX_CATEGORIES":
-            return "Já atingiste o limite de categorias neste torneio.";
+            return t("padelSignupMaxCategories", locale);
           case "EVENT_FULL":
-            return "Torneio cheio. Aguarda vaga na lista de espera.";
+            return t("padelSignupEventFull", locale);
           case "EVENT_NOT_PUBLISHED":
-            return "As inscrições ainda não estão abertas.";
+            return t("padelRegistrationEventNotPublished", locale);
           case "INSCRIPTIONS_NOT_OPEN":
-            return "As inscrições ainda não abriram.";
+            return t("padelRegistrationNotOpen", locale);
           case "INSCRIPTIONS_CLOSED":
-            return "As inscrições já fecharam.";
+            return t("padelRegistrationClosed", locale);
           case "TOURNAMENT_STARTED":
-            return "O torneio já começou. Inscrições encerradas.";
+            return t("padelSignupTournamentStarted", locale);
           case "SPLIT_DEADLINE_PASSED":
-            return "Já passou o prazo para pagamento dividido.";
+            return t("padelSignupSplitDeadlinePassed", locale);
           case "CATEGORY_GENDER_MISMATCH":
-            return "Esta categoria exige uma dupla compatível com o género definido.";
+            return t("padelSignupCategoryGenderMismatch", locale);
           case "CATEGORY_LEVEL_MISMATCH":
-            return "O teu nível não é compatível com esta categoria.";
+            return t("padelSignupCategoryLevelMismatch", locale);
           case "GENDER_REQUIRED_FOR_TOURNAMENT":
-            return "Define o teu género para validar a elegibilidade.";
+            return t("padelSignupGenderRequired", locale);
           default:
-            return "Não foi possível iniciar inscrição Padel.";
+            return t("padelSignupErrorDefault", locale);
         }
       };
       if (!res.ok || !json?.ok) {
@@ -97,11 +99,11 @@ export default function PadelSignupInline({
         throw new Error(resolvePadelError(json?.error));
       }
       if (json?.waitlist) {
-        alert("Ficaste na lista de espera. Avisamos assim que houver vaga.");
+        alert(t("padelSignupWaitlist", locale));
         return;
       }
       if (!json?.pairing?.id) {
-        throw new Error(json?.error || "Não foi possível iniciar inscrição Padel.");
+        throw new Error(json?.error || t("padelSignupErrorDefault", locale));
       }
       const pairingId = json.pairing.id as number;
       if (mode === "SPLIT") {
@@ -111,7 +113,7 @@ export default function PadelSignupInline({
       }
     } catch (err) {
       console.error("[PadelSignupInline] erro", err);
-      alert(err instanceof Error ? err.message : "Erro ao iniciar inscrição.");
+      alert(err instanceof Error ? err.message : t("padelSignupStartError", locale));
     } finally {
       setLoading(false);
     }
@@ -123,8 +125,8 @@ export default function PadelSignupInline({
     <div className="space-y-3 rounded-xl border border-white/15 bg-black/45 p-4">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="text-xs uppercase tracking-[0.14em] text-white/60">Padel (duplas)</p>
-          <h4 className="text-lg font-semibold text-white">Escolhe pagamento</h4>
+          <p className="text-xs uppercase tracking-[0.14em] text-white/60">{t("padelSignupTitle", locale)}</p>
+          <h4 className="text-lg font-semibold text-white">{t("padelSignupChoosePayment", locale)}</h4>
         </div>
       </div>
       <div className="space-y-2">
@@ -134,7 +136,7 @@ export default function PadelSignupInline({
           onClick={() => createPairing("FULL")}
           className="w-full rounded-full bg-white text-black px-4 py-2 font-semibold shadow hover:brightness-105 disabled:opacity-60"
         >
-          {loadingFull ? "A preparar…" : "Pagar dupla"}
+          {loadingFull ? t("padelSignupPreparing", locale) : t("padelSignupPayTeam", locale)}
         </button>
         <button
           type="button"
@@ -142,10 +144,10 @@ export default function PadelSignupInline({
           onClick={() => createPairing("SPLIT")}
           className="w-full rounded-full border border-white/20 px-4 py-2 font-semibold text-white hover:bg-white/10 disabled:opacity-60"
         >
-          {loadingSplit ? "A preparar…" : "Pagar lugar"}
+          {loadingSplit ? t("padelSignupPreparing", locale) : t("padelSignupPaySpot", locale)}
         </button>
         {!canProceed && (
-          <p className="text-[12px] text-amber-200">Inscrições indisponíveis.</p>
+          <p className="text-[12px] text-amber-200">{t("padelSignupUnavailable", locale)}</p>
         )}
       </div>
     </div>

@@ -91,6 +91,17 @@ const formatBookingStatus = (status: string) => {
   }
 };
 
+const formatInviteStatus = (status: string) => {
+  if (status === "ACCEPTED") return "Aceite";
+  if (status === "DECLINED") return "Recusado";
+  return "Pendente";
+};
+
+const formatParticipantStatus = (status: string) => {
+  if (status === "CANCELLED") return "Cancelado";
+  return "Confirmado";
+};
+
 const formatClientLabel = (client: ClientItem) =>
   client.fullName?.trim() ||
   (client.username ? `@${client.username}` : "") ||
@@ -249,8 +260,13 @@ type BookingItem = {
   price: number;
   currency: string;
   createdAt: string;
+  estimatedStartsAt?: string | null;
+  delayMinutes?: number | null;
+  delayReason?: string | null;
   assignmentMode?: string | null;
   partySize?: number | null;
+  inviteSummary?: { total: number; accepted: number; declined: number; pending: number };
+  participantSummary?: { total: number; confirmed: number; cancelled: number };
   court?: { id: number; name: string | null } | null;
   professional?: { id: number; name: string; user?: { fullName?: string | null; avatarUrl?: string | null } | null } | null;
   resource?: { id: number; label: string; capacity: number } | null;
@@ -301,6 +317,23 @@ type BookingCheckout = {
   bookingId: number;
 };
 
+type InviteItem = {
+  id: number;
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | string;
+  targetName: string | null;
+  targetContact: string | null;
+  respondedAt: string | null;
+  createdAt: string;
+};
+
+type ParticipantItem = {
+  id: number;
+  status: "CONFIRMED" | "CANCELLED" | string;
+  name: string | null;
+  contact: string | null;
+  createdAt: string;
+  inviteId: number | null;
+};
 
 type CalendarView = "day" | "week";
 type CalendarTab = "agenda" | "availability";
@@ -390,6 +423,12 @@ export default function ReservasDashboardPage() {
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null);
   const [drawerBooking, setDrawerBooking] = useState<BookingItem | null>(null);
+  const participantsKey = drawerBooking ? `/api/organizacao/reservas/${drawerBooking.id}/participants` : null;
+  const { data: participantsData } = useSWR<{
+    ok: boolean;
+    invites: InviteItem[];
+    participants: ParticipantItem[];
+  }>(participantsKey, fetcher);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
@@ -413,6 +452,12 @@ export default function ReservasDashboardPage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [checkout, setCheckout] = useState<BookingCheckout | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [delayMinutesDraft, setDelayMinutesDraft] = useState("0");
+  const [delayReasonDraft, setDelayReasonDraft] = useState("");
+  const [delayNotify, setDelayNotify] = useState(true);
+  const [delayNotifyWindow, setDelayNotifyWindow] = useState("24");
+  const [delaySaving, setDelaySaving] = useState(false);
+  const [delayError, setDelayError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [serviceDrawerOpen, setServiceDrawerOpen] = useState(false);
   const [serviceTitle, setServiceTitle] = useState("");
@@ -727,6 +772,28 @@ export default function ReservasDashboardPage() {
     ? activeResources.filter((resource) => selectedServiceResourceIds.includes(resource.id))
     : activeResources;
 
+  const delayScope = useMemo(() => {
+    if (filterMode === "RESOURCE" && selectedResourceId) {
+      const label = resources.find((resource) => resource.id === selectedResourceId)?.label ?? "Recurso";
+      return { scopeType: "RESOURCE", scopeId: selectedResourceId, label };
+    }
+    if (filterMode === "PROFESSIONAL" && selectedProfessionalId) {
+      const label = professionals.find((professional) => professional.id === selectedProfessionalId)?.name ?? "Profissional";
+      return { scopeType: "PROFESSIONAL", scopeId: selectedProfessionalId, label };
+    }
+    return { scopeType: "ORGANIZATION", scopeId: 0, label: "Organização" };
+  }, [filterMode, selectedProfessionalId, selectedResourceId, professionals, resources]);
+
+  const delayKey =
+    organizationId && Number.isFinite(organizationId)
+      ? `/api/organizacao/reservas/delays?scopeType=${delayScope.scopeType}&scopeId=${delayScope.scopeId}&organizationId=${organizationId}`
+      : null;
+  const { data: delayData, mutate: mutateDelay } = useSWR<{ ok: boolean; delay: { id: number; delayMinutes: number; reason: string | null; effectiveFrom: string } | null }>(
+    delayKey,
+    fetcher,
+  );
+  const activeDelay = delayData?.delay ?? null;
+
   useEffect(() => {
     if (!isStaffMember) return;
     if (filterMode !== "PROFESSIONAL") return;
@@ -734,6 +801,16 @@ export default function ReservasDashboardPage() {
       setSelectedProfessionalId(activeProfessionals[0].id);
     }
   }, [isStaffMember, filterMode, selectedProfessionalId, activeProfessionals]);
+
+  useEffect(() => {
+    if (!activeDelay) {
+      setDelayMinutesDraft("0");
+      setDelayReasonDraft("");
+      return;
+    }
+    setDelayMinutesDraft(String(activeDelay.delayMinutes ?? 0));
+    setDelayReasonDraft(activeDelay.reason ?? "");
+  }, [activeDelay?.id, delayScope.scopeType, delayScope.scopeId]);
 
   useEffect(() => {
     if (!selectedCreateService) return;
@@ -887,6 +964,37 @@ export default function ReservasDashboardPage() {
     !drawerBookingClosed &&
     ["CONFIRMED", "PENDING_CONFIRMATION", "PENDING"].includes(drawerBooking.status) &&
     drawerBookingStarted;
+  const inviteSummary = useMemo(() => {
+    const fallback = { total: 0, accepted: 0, declined: 0, pending: 0 };
+    if (!drawerBooking) return fallback;
+    if (drawerBooking.inviteSummary) return drawerBooking.inviteSummary;
+    const invites = participantsData?.invites ?? [];
+    return invites.reduce(
+      (acc, invite) => {
+        if (invite.status === "ACCEPTED") acc.accepted += 1;
+        else if (invite.status === "DECLINED") acc.declined += 1;
+        else acc.pending += 1;
+        acc.total += 1;
+        return acc;
+      },
+      { ...fallback },
+    );
+  }, [drawerBooking, participantsData?.invites]);
+  const participantSummary = useMemo(() => {
+    const fallback = { total: 0, confirmed: 0, cancelled: 0 };
+    if (!drawerBooking) return fallback;
+    if (drawerBooking.participantSummary) return drawerBooking.participantSummary;
+    const participants = participantsData?.participants ?? [];
+    return participants.reduce(
+      (acc, participant) => {
+        if (participant.status === "CONFIRMED") acc.confirmed += 1;
+        else acc.cancelled += 1;
+        acc.total += 1;
+        return acc;
+      },
+      { ...fallback },
+    );
+  }, [drawerBooking, participantsData?.participants]);
 
   const handleShiftRange = (direction: -1 | 1) => {
     const delta = calendarView === "week" ? 7 : 1;
@@ -986,6 +1094,41 @@ export default function ReservasDashboardPage() {
       setRescheduleError(err instanceof Error ? err.message : "Erro ao reagendar reserva.");
     } finally {
       setRescheduleBusy(false);
+    }
+  };
+
+  const handleDelaySave = async (overrideMinutes?: number) => {
+    if (!organizationId || !Number.isFinite(organizationId)) return;
+    setDelaySaving(true);
+    setDelayError(null);
+    try {
+      const delayMinutes = Number.isFinite(Number(overrideMinutes))
+        ? Math.max(0, Math.round(Number(overrideMinutes)))
+        : Math.max(0, Math.round(Number(delayMinutesDraft)));
+      const res = await fetch(\"/api/organizacao/reservas/delays\", {
+        method: \"POST\",
+        headers: { \"Content-Type\": \"application/json\" },
+        body: JSON.stringify({
+          scopeType: delayScope.scopeType,
+          scopeId: delayScope.scopeId,
+          delayMinutes,
+          reason: delayReasonDraft.trim(),
+          notify: delayNotify,
+          notifyWindowHours: Number(delayNotifyWindow) || 24,
+          organizationId,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.delay) {
+        throw new Error(json?.message || json?.error || \"Erro ao atualizar atraso.\");
+      }
+      await mutateDelay();
+      await mutateBookings();
+      await mutateUpcoming();
+    } catch (err) {
+      setDelayError(err instanceof Error ? err.message : \"Erro ao atualizar atraso.\");
+    } finally {
+      setDelaySaving(false);
     }
   };
 
@@ -1614,6 +1757,11 @@ export default function ReservasDashboardPage() {
                                 {positions.map((item) => {
                                   const start = new Date(item.booking.startsAt);
                                   const end = new Date(start.getTime() + item.booking.durationMinutes * 60000);
+                                  const estimatedStart = item.booking.estimatedStartsAt
+                                    ? new Date(item.booking.estimatedStartsAt)
+                                    : null;
+                                  const showEstimate =
+                                    estimatedStart && estimatedStart.getTime() !== start.getTime();
                                   const assignedLabel =
                                     item.booking.professional?.name || item.booking.resource?.label || null;
                                   const width = 100 / item.laneCount;
@@ -1656,6 +1804,11 @@ export default function ReservasDashboardPage() {
                                       <div className="text-[10px] text-white/70">
                                         {formatTimeLabel(start, timezone)}–{formatTimeLabel(end, timezone)}
                                       </div>
+                                      {showEstimate && (
+                                        <div className="text-[10px] text-amber-100/80">
+                                          Estimado {formatTimeLabel(estimatedStart, timezone)}
+                                        </div>
+                                      )}
                                       {assignedLabel && (
                                         <div className="text-[10px] text-white/60">{assignedLabel}</div>
                                       )}
@@ -1695,6 +1848,79 @@ export default function ReservasDashboardPage() {
             <div className="flex items-center justify-between text-sm text-white/70">
               <span>Receita confirmada</span>
               <span>{formatCurrency(confirmedRevenueCents, "EUR")}</span>
+            </div>
+          </section>
+
+          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}> 
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">Atrasos</p>
+              <p className="text-sm text-white/70">Escopo: {delayScope.label}</p>
+              {activeDelay && activeDelay.delayMinutes > 0 && (
+                <p className="mt-1 text-[12px] text-amber-100/80">
+                  Ativo · +{activeDelay.delayMinutes} min desde{" "}
+                  {formatTimeLabel(new Date(activeDelay.effectiveFrom), timezone)}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                className="w-20 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={delayMinutesDraft}
+                onChange={(e) => setDelayMinutesDraft(e.target.value)}
+                placeholder="0"
+              />
+              <span className="text-sm text-white/60">min</span>
+            </div>
+            <input
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={delayReasonDraft}
+              onChange={(e) => setDelayReasonDraft(e.target.value)}
+              placeholder="Motivo (opcional)"
+            />
+            <div className="flex items-center gap-2 text-[12px] text-white/70">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-white/30 bg-white/10"
+                checked={delayNotify}
+                onChange={(e) => setDelayNotify(e.target.checked)}
+              />
+              <span>Notificar clientes afetados</span>
+            </div>
+            {delayNotify && (
+              <div className="flex items-center gap-2 text-[12px] text-white/60">
+                <span>Janela</span>
+                <input
+                  className="w-16 rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-[12px] text-white"
+                  value={delayNotifyWindow}
+                  onChange={(e) => setDelayNotifyWindow(e.target.value)}
+                  placeholder="24"
+                />
+                <span>horas</span>
+              </div>
+            )}
+            {delayError && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                {delayError}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={CTA_PRIMARY}
+                onClick={() => handleDelaySave()}
+                disabled={delaySaving}
+              >
+                {delaySaving ? "A atualizar..." : "Aplicar atraso"}
+              </button>
+              <button
+                type="button"
+                className={CTA_SECONDARY}
+                onClick={() => handleDelaySave(0)}
+                disabled={delaySaving}
+              >
+                Limpar
+              </button>
             </div>
           </section>
 
@@ -1749,6 +1975,9 @@ export default function ReservasDashboardPage() {
             <div className="space-y-2">
               {upcomingBookings.map((booking) => {
                 const start = new Date(booking.startsAt);
+                const estimatedStart = booking.estimatedStartsAt ? new Date(booking.estimatedStartsAt) : null;
+                const showEstimate =
+                  estimatedStart && estimatedStart.getTime() !== start.getTime();
                 return (
                   <button
                     key={booking.id}
@@ -1765,6 +1994,11 @@ export default function ReservasDashboardPage() {
                     <p className="text-[11px] text-white/60">
                       {formatLongDate(start, timezone)} · {formatTimeLabel(start, timezone)}
                     </p>
+                    {showEstimate && (
+                      <p className="text-[11px] text-amber-100/80">
+                        Estimado {formatTimeLabel(estimatedStart, timezone)}
+                      </p>
+                    )}
                     <p className="text-[11px] text-white/60">
                       {booking.user?.fullName || booking.user?.username || "Cliente"}
                     </p>
@@ -1947,6 +2181,15 @@ export default function ReservasDashboardPage() {
                   {formatLongDate(new Date(drawerBooking.startsAt), timezone)} · {formatTimeLabel(new Date(drawerBooking.startsAt), timezone)}
                 </p>
               </div>
+              {drawerBooking.estimatedStartsAt && (
+                <div>
+                  <p className="text-white/50">Hora estimada</p>
+                  <p className="text-white">
+                    {formatTimeLabel(new Date(drawerBooking.estimatedStartsAt), timezone)}
+                    {drawerBooking.delayMinutes ? ` (+${drawerBooking.delayMinutes} min)` : ""}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-white/50">Duracao</p>
                 <p className="text-white">{drawerBooking.durationMinutes} min</p>
@@ -1977,7 +2220,76 @@ export default function ReservasDashboardPage() {
                   <p className="text-white">{drawerBooking.partySize} pax</p>
                 </div>
               )}
+              {(inviteSummary.total > 0 || participantSummary.total > 0) && (
+                <div>
+                  <p className="text-white/50">Participantes</p>
+                  <p className="text-white text-[12px]">
+                    {participantSummary.confirmed} confirmados
+                    {inviteSummary.pending ? ` · ${inviteSummary.pending} pendentes` : ""}
+                    {inviteSummary.declined ? ` · ${inviteSummary.declined} recusados` : ""}
+                  </p>
+                </div>
+              )}
             </div>
+
+            {drawerBooking && (
+              <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">RSVP</p>
+                  <p className="text-[12px] text-white/60">
+                    {participantSummary.confirmed}/{inviteSummary.total || participantSummary.total} confirmados
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {(participantsData?.participants ?? []).length === 0 && (participantsData?.invites ?? []).length === 0 ? (
+                    <p className="text-[12px] text-white/50">Sem convites.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(participantsData?.invites ?? []).map((invite) => {
+                        const label =
+                          invite.targetName ||
+                          invite.targetContact ||
+                          "Convidado";
+                        return (
+                          <div key={`invite-${invite.id}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-sm text-white">{label}</p>
+                                {invite.targetContact && (
+                                  <p className="text-[12px] text-white/60">{invite.targetContact}</p>
+                                )}
+                              </div>
+                              <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
+                                {formatInviteStatus(invite.status)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {(participantsData?.participants ?? []).length > 0 && (
+                        <div className="pt-2 text-[12px] text-white/50">
+                          Confirmados:
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(participantsData?.participants ?? []).map((participant) => {
+                              const label =
+                                participant.name || participant.contact || "Participante";
+                              return (
+                                <span
+                                  key={`participant-${participant.id}`}
+                                  className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70"
+                                >
+                                  {label} · {formatParticipantStatus(participant.status)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {!drawerBookingClosed && (
               <div className="mt-6 space-y-3">

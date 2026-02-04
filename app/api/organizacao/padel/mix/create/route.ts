@@ -11,6 +11,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { padel_format, EventAccessMode, EventTemplateType, OrganizationModule } from "@prisma/client";
 import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
 import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
@@ -46,7 +47,7 @@ type MixPayload = {
   locationCity?: string;
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -225,3 +226,5 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+
+export const POST = withApiEnvelope(_POST);

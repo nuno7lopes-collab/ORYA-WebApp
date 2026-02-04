@@ -18,10 +18,16 @@ export type OnboardingPayload = {
   fullName: string;
   username: string;
   interests: InterestId[];
+  padelGender?: string | null;
   padelLevel?: string | null;
   locationCity?: string | null;
   locationRegion?: string | null;
 };
+
+export const PADEL_GENDERS = [
+  { id: "MALE", label: "Masculino" },
+  { id: "FEMALE", label: "Feminino" },
+] as const;
 
 export const PADEL_LEVELS = [
   "Iniciante",
@@ -30,4 +36,5 @@ export const PADEL_LEVELS = [
   "Competitivo",
 ] as const;
 
+export type PadelGender = (typeof PADEL_GENDERS)[number]["id"];
 export type PadelLevel = (typeof PADEL_LEVELS)[number];

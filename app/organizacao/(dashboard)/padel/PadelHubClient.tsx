@@ -9,6 +9,7 @@ import { trackEvent } from "@/lib/analytics";
 import { formatCurrency } from "@/lib/i18n";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
+import { computeMatchSlots } from "@/lib/padel/capacityRecommendation";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import {
@@ -87,10 +88,12 @@ type Player = {
   fullName: string;
   email: string | null;
   phone: string | null;
+  gender?: string | null;
   level: string | null;
   isActive: boolean;
   createdAt: string | Date;
   tournamentsCount?: number;
+  noShowCount?: number;
   profile?: {
     id: string;
     username: string | null;
@@ -249,6 +252,23 @@ type PadelOverviewResponse = {
   error?: string;
 };
 
+type PadelOpsSummaryResponse = {
+  ok: boolean;
+  summary?: {
+    pendingSplitCount: number;
+    pendingCount?: number;
+    confirmedCount?: number;
+    conversionRate?: number | null;
+    avgMatchmakingMinutes?: number | null;
+    waitlistCount: number;
+    liveMatchesCount: number;
+    delayedMatchesCount: number;
+    refundPendingCount: number;
+    invalidStateCount?: number;
+    updatedAt: string;
+  };
+};
+
 type CalendarBlock = {
   id: number;
   startAt: string | Date;
@@ -311,13 +331,15 @@ type CalendarResponse = {
 };
 
 const PADEL_TABS = [
+  "create",
   "tournaments",
   "calendar",
+  "manage",
   "clubs",
   "courts",
   "categories",
-  "players",
   "teams",
+  "players",
   "community",
   "trainers",
   "lessons",
@@ -334,15 +356,17 @@ const CLUB_TOOL_TABS: ReadonlyArray<PadelTab> = [
   "lessons",
 ];
 const TOURNAMENTS_TOOL_TABS: ReadonlyArray<PadelTab> = [
+  "create",
   "tournaments",
   "calendar",
-  "categories",
-  "teams",
+  "manage",
   "players",
 ];
 const TAB_LABELS: Record<PadelTab, string> = {
+  create: "Criar torneio",
   tournaments: "Torneios",
   calendar: "Calendário",
+  manage: "Gestão",
   clubs: "Clubes",
   courts: "Courts",
   categories: "Categorias",
@@ -361,6 +385,23 @@ const CTA_PAD_PRIMARY_SM = `${CTA_PRIMARY} px-3 py-1.5 text-[12px] disabled:opac
 const CTA_PAD_SECONDARY_SM = `${CTA_SECONDARY} px-3 py-2 text-[12px]`;
 const MAIN_CATEGORY_LIMIT = 18;
 const OPERATION_MODE_STORAGE_KEY = "orya_padel_operation_mode";
+
+const resolvePadelTabParam = (value: string | null, toolMode: PadelToolMode): PadelTab | null => {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase() as PadelTab;
+  if (!PADEL_TABS.includes(normalized)) return null;
+  if (toolMode === "TOURNAMENTS") {
+    if (normalized === "categories" || normalized === "teams") return "manage";
+    if (normalized === "clubs" || normalized === "courts" || normalized === "community" || normalized === "trainers" || normalized === "lessons") {
+      return null;
+    }
+    return normalized;
+  }
+  if (normalized === "create" || normalized === "tournaments" || normalized === "calendar" || normalized === "manage") {
+    return null;
+  }
+  return normalized;
+};
 
 type Props = {
   organizationId: number;
@@ -415,6 +456,7 @@ const CATEGORY_GENDER_OPTIONS = [
   { value: "MALE", label: "Masculino" },
   { value: "FEMALE", label: "Feminino" },
   { value: "MIXED", label: "Misto" },
+  { value: "MIXED_FREE", label: "Misto livre" },
 ];
 const CATEGORY_LEVEL_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 const TRAINER_STATUS_LABEL: Record<TrainerItem["reviewStatus"], string> = {
@@ -978,15 +1020,18 @@ export default function PadelHubClient({
   const eventIdParam = searchParams?.get("eventId") || null;
   const eventId = eventIdParam && Number.isFinite(Number(eventIdParam)) ? Number(eventIdParam) : null;
   const allowedTabs = toolMode === "CLUB" ? CLUB_TOOL_TABS : TOURNAMENTS_TOOL_TABS;
+  const resolvedPadelTab = resolvePadelTabParam(padelSectionParam, toolMode);
   const defaultTab = toolMode === "TOURNAMENTS" ? (eventId ? "calendar" : "tournaments") : "clubs";
   const fallbackTab = (allowedTabs.includes(defaultTab as PadelTab) ? defaultTab : allowedTabs[0]) as PadelTab;
-  const initialTab = allowedTabs.includes(padelSectionParam as PadelTab)
-    ? (padelSectionParam as PadelTab)
-    : fallbackTab;
+  const initialTab = resolvedPadelTab && allowedTabs.includes(resolvedPadelTab) ? resolvedPadelTab : fallbackTab;
   const activeSection = TOOL_SECTION_BY_MODE[toolMode];
 
   const [activeTab, setActiveTab] = useState<PadelTab>(initialTab);
   const [switchingTab, setSwitchingTab] = useState(false);
+  const [showOpsDrawer, setShowOpsDrawer] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const commandInputRef = useRef<HTMLInputElement | null>(null);
   const [clubs, setClubs] = useState<PadelClub[]>(initialClubs);
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -1059,6 +1104,10 @@ export default function PadelHubClient({
   const [postError, setPostError] = useState<string | null>(null);
   const [postMessage, setPostMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [genderFilter, setGenderFilter] = useState<"ALL" | "MALE" | "FEMALE" | "UNKNOWN">("ALL");
+  const [levelFilter, setLevelFilter] = useState<string>("ALL");
+  const [historyFilter, setHistoryFilter] = useState<"ALL" | "WITH" | "NONE">("ALL");
+  const [noShowFilter, setNoShowFilter] = useState<"ALL" | "WITH" | "NONE">("ALL");
   const [calendarScope, setCalendarScope] = useState<"week" | "day">("week");
   const [calendarView, setCalendarView] = useState<"timeline" | "list">("timeline");
   const [calendarViewTouched, setCalendarViewTouched] = useState(false);
@@ -1226,6 +1275,11 @@ export default function PadelHubClient({
     fetcher,
     { revalidateOnFocus: false },
   );
+  const { data: opsSummaryRes } = useSWR<PadelOpsSummaryResponse>(
+    eventId ? `/api/padel/ops/summary?eventId=${eventId}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
   const padelConfig = padelConfigRes?.config ?? null;
   const scheduleDefaults = (padelConfig?.advancedSettings?.scheduleDefaults ?? {}) as {
     windowStart?: string | null;
@@ -1238,8 +1292,8 @@ export default function PadelHubClient({
   };
 
   useEffect(() => {
-    if (padelSectionParam && allowedTabs.includes(padelSectionParam as PadelTab) && padelSectionParam !== activeTab) {
-      setActiveTab(padelSectionParam as PadelTab);
+    if (resolvedPadelTab && allowedTabs.includes(resolvedPadelTab) && resolvedPadelTab !== activeTab) {
+      setActiveTab(resolvedPadelTab);
       setSwitchingTab(false);
       return;
     }
@@ -1247,7 +1301,7 @@ export default function PadelHubClient({
       setActiveTab(fallbackTab);
       setSwitchingTab(false);
     }
-  }, [activeTab, allowedTabs, fallbackTab, padelSectionParam]);
+  }, [activeTab, allowedTabs, fallbackTab, resolvedPadelTab]);
 
   useEffect(() => {
     const timer = switchingTab ? setTimeout(() => setSwitchingTab(false), 280) : null;
@@ -1255,6 +1309,41 @@ export default function PadelHubClient({
       if (timer) clearTimeout(timer);
     };
   }, [switchingTab]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && key === "k") {
+        event.preventDefault();
+        setShowCommandPalette(true);
+        return;
+      }
+      if (key === "escape") {
+        setShowCommandPalette(false);
+        setShowOpsDrawer(false);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", handler);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("keydown", handler);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showCommandPalette) return;
+    const timer = setTimeout(() => commandInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [showCommandPalette]);
+
+  useEffect(() => {
+    if (showCommandPalette) {
+      setCommandQuery("");
+    }
+  }, [showCommandPalette]);
 
   useEffect(() => {
     if (!calendarData && !padelConfig) return;
@@ -1337,13 +1426,15 @@ export default function PadelHubClient({
     const params = new URLSearchParams(searchParams?.toString() || "");
     params.set("section", activeSection);
     params.set("padel", section);
-    const isModuleRoute = pathname?.startsWith("/organizacao/torneios");
+    const isModuleRoute =
+      pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/padel");
+    const moduleBasePath = toolMode === "CLUB" ? "/organizacao/padel/clube" : "/organizacao/padel/torneios";
     if (isModuleRoute) {
       params.delete("tab");
     } else {
       params.set("tab", "manage");
     }
-    const basePath = isModuleRoute ? "/organizacao/torneios" : "/organizacao";
+    const basePath = isModuleRoute ? moduleBasePath : "/organizacao";
     router.replace(`${basePath}?${params.toString()}`, { scroll: false });
     setLastAction(null);
   };
@@ -1357,13 +1448,15 @@ export default function PadelHubClient({
     }
     params.set("section", activeSection);
     params.set("padel", "calendar");
-    const isModuleRoute = pathname?.startsWith("/organizacao/torneios");
+    const isModuleRoute =
+      pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/padel");
+    const moduleBasePath = toolMode === "CLUB" ? "/organizacao/padel/clube" : "/organizacao/padel/torneios";
     if (isModuleRoute) {
       params.delete("tab");
     } else {
       params.set("tab", "manage");
     }
-    const basePath = isModuleRoute ? "/organizacao/torneios" : "/organizacao";
+    const basePath = isModuleRoute ? moduleBasePath : "/organizacao";
     router.replace(`${basePath}?${params.toString()}`, { scroll: false });
   };
 
@@ -1432,23 +1525,120 @@ export default function PadelHubClient({
   const overviewFeesLabel = padelOverview
     ? formatCurrency(padelOverview.feesCents ?? 0, overviewCurrency)
     : "—";
+  const opsSummary = opsSummaryRes?.ok ? opsSummaryRes.summary ?? null : null;
+  const opsAlerts = useMemo(() => {
+    if (!opsSummary) return [];
+    const alerts: Array<{ key: string; label: string }> = [];
+    if (opsSummary.pendingSplitCount > 0) {
+      alerts.push({
+        key: "pending-split",
+        label: `${opsSummary.pendingSplitCount} duplas pendentes (split).`,
+      });
+    }
+    if (opsSummary.waitlistCount > 0) {
+      alerts.push({
+        key: "waitlist",
+        label: `${opsSummary.waitlistCount} em waitlist.`,
+      });
+    }
+    if (opsSummary.delayedMatchesCount > 0) {
+      alerts.push({
+        key: "delayed",
+        label: `${opsSummary.delayedMatchesCount} jogos atrasados.`,
+      });
+    }
+    if (opsSummary.refundPendingCount > 0) {
+      alerts.push({
+        key: "refunds",
+        label: `${opsSummary.refundPendingCount} reembolsos pendentes.`,
+      });
+    }
+    if ((opsSummary.invalidStateCount ?? 0) > 0) {
+      alerts.push({
+        key: "invalid",
+        label: `${opsSummary.invalidStateCount} inconsistências de estado.`,
+      });
+    }
+    if (opsSummary.liveMatchesCount > 0) {
+      alerts.push({
+        key: "live",
+        label: `${opsSummary.liveMatchesCount} jogos a decorrer.`,
+      });
+    }
+    return alerts;
+  }, [opsSummary]);
+  const opsUpdatedLabel = opsSummary?.updatedAt
+    ? new Date(opsSummary.updatedAt).toLocaleString("pt-PT", { hour: "2-digit", minute: "2-digit" })
+    : "—";
+  const conversionLabel =
+    opsSummary && typeof opsSummary.conversionRate === "number"
+      ? `${Math.round(opsSummary.conversionRate * 100)}%`
+      : "—";
+  const matchmakingLabel =
+    opsSummary && typeof opsSummary.avgMatchmakingMinutes === "number"
+      ? `${Math.max(0, opsSummary.avgMatchmakingMinutes)} min`
+      : "—";
+  const opsCounters = useMemo(
+    () => [
+      { key: "pending", label: "Split pendente", value: opsSummary?.pendingSplitCount ?? 0 },
+      { key: "conversion", label: "Conversão", value: conversionLabel },
+      { key: "matchmaking", label: "Matchmaking médio", value: matchmakingLabel },
+      { key: "waitlist", label: "Waitlist", value: opsSummary?.waitlistCount ?? 0 },
+      { key: "live", label: "Jogos live", value: opsSummary?.liveMatchesCount ?? 0 },
+      { key: "delayed", label: "Atrasos", value: opsSummary?.delayedMatchesCount ?? 0 },
+      { key: "refunds", label: "Reembolsos", value: opsSummary?.refundPendingCount ?? 0 },
+      { key: "invalid", label: "Inconsistências", value: opsSummary?.invalidStateCount ?? 0 },
+    ],
+    [opsSummary, conversionLabel, matchmakingLabel],
+  );
+
+  const levelOptions = useMemo(() => {
+    const levels = Array.from(
+      new Set(players.map((player) => (player.level ?? "").trim()).filter(Boolean)),
+    );
+    return levels.sort((a, b) => a.localeCompare(b, "pt-PT", { numeric: true }));
+  }, [players]);
+
+  const resolveHistoryCount = (player: Player) =>
+    Math.max(player.tournamentsCount ?? 0, player.crm?.totalTournaments ?? 0);
 
   const filteredPlayers = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return players;
     return players.filter((p) => {
+      if (genderFilter !== "ALL") {
+        const gender = (p.gender ?? "").trim().toUpperCase();
+        if (genderFilter === "UNKNOWN" && gender) return false;
+        if (genderFilter === "MALE" && gender !== "MALE") return false;
+        if (genderFilter === "FEMALE" && gender !== "FEMALE") return false;
+      }
+
+      if (levelFilter !== "ALL") {
+        const level = (p.level ?? "").trim();
+        if (levelFilter === "UNKNOWN" && level) return false;
+        if (levelFilter !== "UNKNOWN" && level !== levelFilter) return false;
+      }
+
+      const historyCount = resolveHistoryCount(p);
+      if (historyFilter === "WITH" && historyCount <= 0) return false;
+      if (historyFilter === "NONE" && historyCount > 0) return false;
+
+      const noShowCount = p.noShowCount ?? 0;
+      if (noShowFilter === "WITH" && noShowCount <= 0) return false;
+      if (noShowFilter === "NONE" && noShowCount > 0) return false;
+
+      if (!term) return true;
       if (p.fullName.toLowerCase().includes(term)) return true;
       if ((p.email || "").toLowerCase().includes(term)) return true;
       if ((p.profile?.username || "").toLowerCase().includes(term)) return true;
       if ((p.crm?.tags || []).some((tag) => tag.toLowerCase().includes(term))) return true;
       return false;
     });
-  }, [players, search]);
+  }, [players, search, genderFilter, levelFilter, historyFilter, noShowFilter]);
 
   const quickLinks = useMemo(() => {
     if (toolMode === "TOURNAMENTS") {
       return [
-        { label: "Torneios", href: "/organizacao/torneios", desc: "Lista, estados e operação live." },
+        { label: "Torneios", href: "/organizacao/padel/torneios", desc: "Lista, estados e operação live." },
         { label: "Check-in", href: "/organizacao/scan", desc: "Entradas e QR em tempo real." },
         { label: "Inscrições", href: "/organizacao/inscricoes", desc: "Duplas, pagamentos e status." },
         { label: "Finanças", href: "/organizacao/clube/caixa", desc: "Receitas e reconciliação." },
@@ -2857,6 +3047,56 @@ export default function PadelHubClient({
   const calendarEventEnd = calendarData?.eventEndsAt ?? null;
   const calendarTimezone = calendarData?.eventTimezone ?? "Europe/Lisbon";
   const calendarBuffer = calendarData?.bufferMinutes ?? 5;
+
+  const autoScheduleCapacity = useMemo(() => {
+    const parseDate = (value: string | Date | null | undefined) => {
+      if (!value) return null;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    const windowStart = parseDate(autoScheduleForm.start) ?? parseDate(calendarEventStart);
+    const windowEnd = parseDate(autoScheduleForm.end) ?? parseDate(calendarEventEnd);
+    if (!windowStart || !windowEnd || windowEnd <= windowStart) return null;
+
+    const duration = Number(autoScheduleForm.duration);
+    const buffer = Number(autoScheduleForm.buffer);
+    const durationMinutes = Number.isFinite(duration) && duration > 0 ? duration : 60;
+    const bufferMinutes = Number.isFinite(buffer) && buffer >= 0 ? buffer : calendarBuffer;
+
+    const advanced = (padelConfig?.advancedSettings || {}) as {
+      courtsFromClubs?: Array<unknown>;
+      courtIds?: Array<unknown>;
+    };
+    const courtsFromClubs = Array.isArray(advanced.courtsFromClubs) ? advanced.courtsFromClubs.length : 0;
+    const courtsFromIds = Array.isArray(advanced.courtIds) ? advanced.courtIds.length : 0;
+    const courtsCount = courtsFromClubs || courtsFromIds || padelConfig?.numberOfCourts || 0;
+    if (!courtsCount) return null;
+
+    const totalSlots = computeMatchSlots({
+      start: windowStart,
+      end: windowEnd,
+      courts: courtsCount,
+      durationMinutes,
+      bufferMinutes,
+    });
+    if (!totalSlots) return null;
+    return {
+      totalSlots,
+      matchesNeeded: calendarMatchesRaw.length,
+      courts: courtsCount,
+    };
+  }, [
+    autoScheduleForm.start,
+    autoScheduleForm.end,
+    autoScheduleForm.duration,
+    autoScheduleForm.buffer,
+    calendarEventStart,
+    calendarEventEnd,
+    calendarBuffer,
+    calendarMatchesRaw.length,
+    padelConfig?.advancedSettings,
+    padelConfig?.numberOfCourts,
+  ]);
   const [selectedDay, setSelectedDay] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -3094,6 +3334,7 @@ export default function PadelHubClient({
         }
         setCalendarMessage(editingId ? "Atualizado." : "Guardado.");
         toast(editingId ? "Atualizado" : "Guardado", "ok");
+        applyCalendarWarning(json?.warning);
         resetCalendarForms();
         mutateCalendar();
       }
@@ -3128,6 +3369,13 @@ export default function PadelHubClient({
       playerEmail: av.playerEmail || "",
       note: av.note || "",
     });
+  };
+
+  const applyCalendarWarning = (warning: any) => {
+    const message = typeof warning?.message === "string" ? warning.message : null;
+    if (!message) return;
+    setCalendarWarning(message);
+    toast(message, "warn");
   };
 
   const handleDeleteCalendarItem = async (type: "block" | "availability", id: number) => {
@@ -3264,6 +3512,13 @@ export default function PadelHubClient({
         setCalendarMessage(summary);
         toast("Auto-agendamento completo", "ok");
       }
+      const warnings = Array.isArray(json?.warnings) ? json.warnings : [];
+      if (warnings.length > 0) {
+        const first = warnings[0]?.message ? ` ${warnings[0].message}` : "";
+        const warnMsg = `Aviso: ${warnings.length} conflito(s) de agenda.${first}`;
+        setCalendarWarning(warnMsg);
+        toast(warnMsg, "warn");
+      }
       mutateCalendar();
     } catch (err) {
       console.error("[padel/calendar] auto-schedule", err);
@@ -3329,6 +3584,13 @@ export default function PadelHubClient({
       } else {
         setCalendarMessage(summary);
         toast("Simulação completa", "ok");
+      }
+      const warnings = Array.isArray(json?.warnings) ? json.warnings : [];
+      if (warnings.length > 0) {
+        const first = warnings[0]?.message ? ` ${warnings[0].message}` : "";
+        const warnMsg = `Aviso: ${warnings.length} conflito(s) de agenda.${first}`;
+        setCalendarWarning(warnMsg);
+        toast(warnMsg, "warn");
       }
     } catch (err) {
       console.error("[padel/calendar] preview", err);
@@ -3407,6 +3669,132 @@ export default function PadelHubClient({
     }
   };
 
+  const commandActions = useMemo(() => {
+    const actions: Array<{
+      id: string;
+      label: string;
+      description: string;
+      shortcut?: string;
+      run: () => void;
+      enabled?: boolean;
+    }> = [
+      {
+        id: "open-wizard",
+        label: "Criar torneio",
+        description: "Abrir wizard Padel.",
+        shortcut: "G",
+        run: () => router.push("/organizacao/padel/torneios/novo"),
+      },
+      {
+        id: "open-tournaments",
+        label: "Torneios",
+        description: "Lista e gestão de torneios.",
+        shortcut: "T",
+        run: () => setPadelSection("tournaments"),
+      },
+      {
+        id: "open-calendar",
+        label: "Calendário",
+        description: "Agenda e auto-schedule.",
+        shortcut: "C",
+        run: () => setPadelSection("calendar"),
+        enabled: Boolean(eventId),
+      },
+      {
+        id: "open-settings",
+        label: "Gestão",
+        description: "Regras, waitlist, monitor.",
+        shortcut: "S",
+        run: () => setPadelSection("manage"),
+        enabled: Boolean(eventId),
+      },
+      {
+        id: "open-players",
+        label: "Jogadores",
+        description: "Diretório e perfis.",
+        shortcut: "J",
+        run: () => setPadelSection("players"),
+      },
+      {
+        id: "open-live",
+        label: "LiveHub",
+        description: "Abrir painel live.",
+        run: () => {
+          if (!eventId) return;
+          window.open(`/organizacao/padel/torneios/${eventId}/live`, "_blank");
+        },
+        enabled: Boolean(eventId),
+      },
+      {
+        id: "open-monitor",
+        label: "Monitor TV",
+        description: "Abrir monitor público.",
+        run: () => {
+          if (!selectedEvent?.slug) return;
+          window.open(`/eventos/${selectedEvent.slug}/monitor`, "_blank");
+        },
+        enabled: Boolean(selectedEvent?.slug),
+      },
+      {
+        id: "preview-schedule",
+        label: "Simular auto-schedule",
+        description: "Pré-visualizar agenda.",
+        run: () => previewAutoSchedule(),
+        enabled: Boolean(eventId),
+      },
+      {
+        id: "apply-schedule",
+        label: "Aplicar auto-schedule",
+        description: "Gerar calendário real.",
+        run: () => runAutoSchedule(),
+        enabled: Boolean(eventId),
+      },
+      {
+        id: "open-ops",
+        label: "Operacional hoje",
+        description: "Abrir painel de alertas.",
+        shortcut: "O",
+        run: () => setShowOpsDrawer(true),
+        enabled: Boolean(eventId),
+      },
+    ];
+    return actions.filter((action) => action.enabled !== false);
+  }, [eventId, previewAutoSchedule, router, runAutoSchedule, selectedEvent?.slug, setPadelSection]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (showCommandPalette) return;
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag && ["input", "textarea", "select"].includes(tag)) return;
+      const key = event.key.toLowerCase();
+      if (!key || key.length !== 1) return;
+      const action = commandActions.find((cmd) => cmd.shortcut?.toLowerCase() === key);
+      if (!action) return;
+      event.preventDefault();
+      action.run();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", handler);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("keydown", handler);
+      }
+    };
+  }, [commandActions, showCommandPalette]);
+
+  const filteredCommands = useMemo(() => {
+    const query = commandQuery.trim().toLowerCase();
+    if (!query) return commandActions;
+    return commandActions.filter((action) => {
+      const hay = `${action.label} ${action.description}`.toLowerCase();
+      return hay.includes(query);
+    });
+  }, [commandActions, commandQuery]);
+
   const isClubTool = toolMode === "CLUB";
   const toolBadge = isClubTool ? "Ferramenta A · Clube" : "Ferramenta B · Torneios";
   const toolTitle = isClubTool ? "Configuração Padel + Atalhos" : "Gestão de Torneios Padel";
@@ -3433,6 +3821,22 @@ export default function PadelHubClient({
           >
             {toolSwitchLabel}
           </Link>
+          <button
+            type="button"
+            onClick={() => setShowCommandPalette(true)}
+            className={CTA_PAD_SECONDARY_SM}
+          >
+            Comandos ⌘K
+          </button>
+          {!isClubTool && eventId && (
+            <button
+              type="button"
+              onClick={() => setShowOpsDrawer(true)}
+              className={CTA_PAD_SECONDARY_SM}
+            >
+              Ops hoje
+            </button>
+          )}
           {isClubTool ? (
             <Link
               href="/organizacao/padel/mix/novo"
@@ -3442,7 +3846,7 @@ export default function PadelHubClient({
             </Link>
           ) : (
             <Link
-              href="/organizacao/torneios/novo"
+              href="/organizacao/padel/torneios/novo"
               className={CTA_PAD_SECONDARY_SM}
             >
               Criar torneio
@@ -3646,6 +4050,35 @@ export default function PadelHubClient({
 
       {switchingTab && <PadelTabSkeleton />}
 
+      {!switchingTab && activeTab === "create" && (
+        <div className="grid gap-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0 lg:grid-cols-[1.2fr_1fr]">
+          <div className="space-y-3">
+            <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Criar torneio</p>
+            <h2 className="text-2xl font-semibold text-white">Wizard dedicado para Padel</h2>
+            <p className="text-sm text-white/70">
+              Define formato, categorias, preços, courts e publicação num fluxo único. Sem estados impossíveis.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/organizacao/padel/torneios/novo" className={CTA_PAD_PRIMARY_SM}>
+                Abrir wizard
+              </Link>
+              <Link href="/organizacao/padel/mix/novo" className={CTA_PAD_SECONDARY_SM}>
+                Criar Mix rápido
+              </Link>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Checklist rápido</p>
+            <ul className="mt-3 space-y-2 text-[12px] text-white/70">
+              <li>Clube e timezone confirmados.</li>
+              <li>Categorias com preços e capacidade.</li>
+              <li>Duração e intervalos para auto-schedule.</li>
+              <li>Regras e inscrições prontas para publicar.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
       {!switchingTab && activeTab === "tournaments" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3653,7 +4086,7 @@ export default function PadelHubClient({
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Operação de torneios</p>
               <p className="text-sm text-white/70">Lista rápida, estado e atalhos para live/configuração.</p>
             </div>
-            <Link href="/organizacao/torneios/novo" className={CTA_PAD_PRIMARY_SM}>
+            <Link href="/organizacao/padel/torneios/novo" className={CTA_PAD_PRIMARY_SM}>
               Novo torneio
             </Link>
           </div>
@@ -3709,10 +4142,10 @@ export default function PadelHubClient({
                       <span className={`rounded-full border px-2 py-1 text-[11px] ${liveTone}`}>{statusLabel}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Link href={`/organizacao/torneios/${event.id}`} className={CTA_PAD_SECONDARY_SM}>
+                      <Link href={`/organizacao/padel/torneios/${event.id}`} className={CTA_PAD_SECONDARY_SM}>
                         Abrir
                       </Link>
-                      <Link href={`/organizacao/torneios/${event.id}/live`} className={CTA_PAD_SECONDARY_SM}>
+                      <Link href={`/organizacao/padel/torneios/${event.id}/live`} className={CTA_PAD_SECONDARY_SM}>
                         Live
                       </Link>
                       <button
@@ -3964,6 +4397,7 @@ export default function PadelHubClient({
                               } else {
                                 setCalendarMessage("Atualizado via drag & drop.");
                                 toast("Atualizado via drag & drop", "ok");
+                                applyCalendarWarning(json?.warning);
                                 if (kind === "block") {
                                   const prev = calendarBlocks.find((block) => block.id === parsedId);
                                   if (prev) {
@@ -4197,6 +4631,7 @@ export default function PadelHubClient({
                                                 version: m.updatedAt ?? null,
                                               });
                                               toast("Ajustado -1 slot", "ok");
+                                              applyCalendarWarning(json?.warning);
                                               mutateCalendar();
                                             }
                                           } finally {
@@ -4251,6 +4686,7 @@ export default function PadelHubClient({
                                                 version: m.updatedAt ?? null,
                                               });
                                               toast("Ajustado +1 slot", "ok");
+                                              applyCalendarWarning(json?.warning);
                                               mutateCalendar();
                                             }
                                           } finally {
@@ -4390,6 +4826,7 @@ export default function PadelHubClient({
               <ul className="space-y-2 text-[13px] text-white/70">
                 <li>• Bloqueios e indisponibilidades.</li>
                 <li>• Conflitos: sobreposição, dois jogos, fora de horário.</li>
+                <li>• Hierarquia: HardBlock &gt; MatchSlot &gt; Booking &gt; SoftBlock (aviso).</li>
                 <li>• Vista por clube ou todos.</li>
                 <li>• Horas em {calendarTimezone} · buffer {calendarBuffer} min.</li>
               </ul>
@@ -4472,6 +4909,13 @@ export default function PadelHubClient({
                   Descanso mínimo evita jogos seguidos da mesma dupla.
                 </div>
               </div>
+              {autoScheduleCapacity && autoScheduleCapacity.matchesNeeded > autoScheduleCapacity.totalSlots && (
+                <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                  Capacidade recomendada (estimativa): {autoScheduleCapacity.matchesNeeded} jogos para ~
+                  {autoScheduleCapacity.totalSlots} slots ({autoScheduleCapacity.courts} courts). Ajusta janela,
+                  duração ou courts se quiseres mais folga. Este aviso não bloqueia.
+                </div>
+              )}
               {calendarEventStart && calendarEventEnd && (
                 <p className="text-[11px] text-white/60">
                   Janela do evento: {formatZoned(calendarEventStart, calendarTimezone)} →{" "}
@@ -5292,7 +5736,7 @@ export default function PadelHubClient({
         </div>
       )}
 
-      {!switchingTab && activeTab === "categories" && (
+      {!switchingTab && activeTab === "manage" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -5671,12 +6115,55 @@ export default function PadelHubClient({
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
               <p className="text-sm text-white/70">Roster automático. Sem manual.</p>
             </div>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Procurar por nome ou email"
-              className="w-60 rounded-full border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Procurar por nome ou email"
+                className="w-56 rounded-full border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+              />
+              <select
+                value={genderFilter}
+                onChange={(e) => setGenderFilter(e.target.value as "ALL" | "MALE" | "FEMALE" | "UNKNOWN")}
+                className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/80"
+              >
+                <option value="ALL">Género</option>
+                <option value="MALE">Masculino</option>
+                <option value="FEMALE">Feminino</option>
+                <option value="UNKNOWN">Sem género</option>
+              </select>
+              <select
+                value={levelFilter}
+                onChange={(e) => setLevelFilter(e.target.value)}
+                className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/80"
+              >
+                <option value="ALL">Nível</option>
+                <option value="UNKNOWN">Sem nível</option>
+                {levelOptions.map((level) => (
+                  <option key={`level-${level}`} value={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={historyFilter}
+                onChange={(e) => setHistoryFilter(e.target.value as "ALL" | "WITH" | "NONE")}
+                className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/80"
+              >
+                <option value="ALL">Histórico</option>
+                <option value="WITH">Com histórico</option>
+                <option value="NONE">Sem histórico</option>
+              </select>
+              <select
+                value={noShowFilter}
+                onChange={(e) => setNoShowFilter(e.target.value as "ALL" | "WITH" | "NONE")}
+                className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/80"
+              >
+                <option value="ALL">No-shows</option>
+                <option value="WITH">Com no-show</option>
+                <option value="NONE">Sem no-show</option>
+              </select>
+            </div>
           </div>
           <div className="overflow-auto rounded-xl border border-white/10">
             <table className="min-w-full text-left text-sm text-white/80">
@@ -5707,17 +6194,18 @@ export default function PadelHubClient({
                           className="h-8 w-8 rounded-full border border-white/10"
                           textClassName="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/80"
                         />
-                        <div>
-                          <div>{p.fullName}</div>
-                          <p className="text-[11px] text-white/60">
-                            {[
-                              p.profile?.username ? `@${p.profile.username}` : null,
-                              p.level || "Sem nível",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </p>
-                        </div>
+                      <div>
+                        <div>{p.fullName}</div>
+                        <p className="text-[11px] text-white/60">
+                          {[
+                            p.profile?.username ? `@${p.profile.username}` : null,
+                            p.gender === "MALE" ? "Masculino" : p.gender === "FEMALE" ? "Feminino" : "Sem género",
+                            p.level || "Sem nível",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
                       </div>
                     </td>
                     <td className="px-3 py-2">{p.email || "—"}</td>
@@ -5750,7 +6238,12 @@ export default function PadelHubClient({
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <span className={badge("slate")}>{p.tournamentsCount ?? 0} torneios</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={badge("slate")}>{resolveHistoryCount(p)} torneios</span>
+                        <span className={badge((p.noShowCount ?? 0) > 0 ? "amber" : "slate")}>
+                          {p.noShowCount ?? 0} no-shows
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -5760,7 +6253,7 @@ export default function PadelHubClient({
         </div>
       )}
 
-      {!switchingTab && activeTab === "teams" && (
+      {!switchingTab && activeTab === "manage" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -6598,6 +7091,180 @@ export default function PadelHubClient({
                   Cancelar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCommandPalette && (
+        <div
+          className="fixed inset-0 z-[120] flex items-start justify-center bg-black/60 px-4 py-10"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCommandPalette(false);
+          }}
+        >
+          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-gradient-to-br from-[#0b1226]/90 via-[#0b1124]/85 to-[#050912]/95 p-4 shadow-[0_30px_120px_rgba(0,0,0,0.7)]">
+            <div className="flex items-center gap-2">
+              <input
+                ref={commandInputRef}
+                value={commandQuery}
+                onChange={(e) => setCommandQuery(e.target.value)}
+                placeholder="Pesquisar comando…"
+                className="flex-1 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCommandPalette(false)}
+                className="rounded-full border border-white/20 px-3 py-2 text-[12px] text-white/70 hover:border-white/40"
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="mt-3 max-h-80 space-y-2 overflow-auto">
+              {filteredCommands.length === 0 && (
+                <p className="text-[12px] text-white/60">Sem comandos disponíveis para este contexto.</p>
+              )}
+              {filteredCommands.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={() => {
+                    action.run();
+                    setShowCommandPalette(false);
+                  }}
+                  className="w-full rounded-xl border border-white/12 bg-black/35 px-3 py-3 text-left transition hover:border-white/30 hover:bg-white/5"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white">{action.label}</p>
+                      <p className="text-[11px] text-white/60">{action.description}</p>
+                    </div>
+                    {action.shortcut && (
+                      <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] text-white/70">
+                        {action.shortcut}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOpsDrawer && (
+        <div
+          className="fixed inset-0 z-[110] bg-black/50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowOpsDrawer(false);
+          }}
+        >
+          <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-white/15 bg-gradient-to-br from-[#0b1226]/95 via-[#0b1124]/90 to-[#050912]/95 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.7)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Operacional</p>
+                <p className="text-xl font-semibold text-white">Hoje</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOpsDrawer(false)}
+                className="rounded-full border border-white/20 px-3 py-2 text-[12px] text-white/70 hover:border-white/40"
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="mt-4 space-y-3 text-white/80">
+              <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Torneio ativo</p>
+                <p className="text-sm font-semibold text-white">{selectedEvent?.title || "Seleciona um torneio"}</p>
+                <p className="text-[11px] text-white/60">Atualizado às {opsUpdatedLabel}</p>
+              </div>
+              {eventId && opsSummary && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {opsCounters.map((item) => (
+                    <div
+                      key={item.key}
+                      className="rounded-xl border border-white/12 bg-black/40 px-3 py-3"
+                    >
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">{item.label}</p>
+                      <p className="text-xl font-semibold text-white">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {eventId && !opsSummary && (
+                <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-[12px] text-white/70">
+                  A carregar métricas operacionais…
+                </div>
+              )}
+              {eventId && (
+                <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Alertas</p>
+                  {opsAlerts.length === 0 && (
+                    <p className="text-[12px] text-emerald-200/80">Sem alertas críticos agora.</p>
+                  )}
+                  {opsAlerts.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {opsAlerts.map((alert) => (
+                        <div key={alert.key} className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                          {alert.label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!eventId && (
+                <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-[12px] text-white/70">
+                  Abre um torneio para ver métricas operacionais e alertas.
+                </div>
+              )}
+              {eventId && (
+                <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Atalhos</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPadelSection("tournaments")}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
+                    >
+                      Torneios
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPadelSection("calendar")}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
+                    >
+                      Calendário
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPadelSection("manage")}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
+                    >
+                      Gestão
+                    </button>
+                    {selectedEvent?.slug && (
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/eventos/${selectedEvent.slug}/monitor`, "_blank")}
+                        className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
+                      >
+                        Monitor TV
+                      </button>
+                    )}
+                    {eventId && (
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/organizacao/padel/torneios/${eventId}/live`, "_blank")}
+                        className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
+                      >
+                        LiveHub
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -14,6 +14,8 @@ import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/l
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createBooking } from "@/domain/bookings/commands";
+import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection } from "@/lib/reservas/serviceAddons";
+import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const PENDING_HOLD_MINUTES = 10;
@@ -89,6 +91,11 @@ async function _POST(
     const startsAt = startsAtRaw ? new Date(startsAtRaw) : null;
     const locationTextInputRaw = typeof payload?.locationText === "string" ? payload.locationText.trim() : "";
     const locationTextInput = locationTextInputRaw ? locationTextInputRaw.slice(0, 160) : "";
+    const addonSelection = normalizeAddonSelection(payload?.selectedAddons ?? payload?.addons);
+    const packageId = parsePackageId(payload?.packageId);
+    if (payload?.packageId != null && !packageId) {
+      return jsonWrap({ ok: false, error: "Pacote inválido." }, { status: 400 });
+    }
 
     if (!startsAt || Number.isNaN(startsAt.getTime())) {
       return jsonWrap({ ok: false, error: "Horário inválido." }, { status: 400 });
@@ -142,7 +149,52 @@ async function _POST(
       serviceKind: service.kind,
     });
 
-    if (service.unitPriceCents > 0) {
+    const timezone = service.organization?.timezone || "Europe/Lisbon";
+    let addonResolution: Awaited<ReturnType<typeof resolveServiceAddonSelection>> = {
+      ok: true,
+      addons: [],
+      totalDeltaMinutes: 0,
+      totalDeltaPriceCents: 0,
+    };
+    let packageResolution: Awaited<ReturnType<typeof resolveServicePackageSelection>> = {
+      ok: true,
+      package: null,
+    };
+    if (packageId) {
+      packageResolution = await resolveServicePackageSelection({
+        tx: prisma,
+        serviceId: service.id,
+        packageId,
+      });
+      if (!packageResolution.ok) {
+        return jsonWrap({ ok: false, error: packageResolution.error }, { status: 400 });
+      }
+    }
+    if (addonSelection.length > 0) {
+      addonResolution = await resolveServiceAddonSelection({
+        tx: prisma,
+        serviceId: service.id,
+        selection: addonSelection,
+      });
+      if (!addonResolution.ok) {
+        return jsonWrap({ ok: false, error: addonResolution.error }, { status: 400 });
+      }
+    }
+    const base = applyPackageBase({
+      baseDurationMinutes: service.durationMinutes,
+      basePriceCents: service.unitPriceCents ?? 0,
+      pkg: packageResolution.ok ? packageResolution.package : null,
+    });
+    const totals = applyAddonTotals({
+      baseDurationMinutes: base.durationMinutes,
+      basePriceCents: base.priceCents,
+      totalDeltaMinutes: addonResolution.totalDeltaMinutes,
+      totalDeltaPriceCents: addonResolution.totalDeltaPriceCents,
+    });
+    const effectiveDurationMinutes = totals.durationMinutes;
+    const effectivePriceCents = totals.priceCents;
+
+    if (effectivePriceCents > 0) {
       const isPlatformOrg = service.organization?.orgType === "PLATFORM";
       const gate = getPaidSalesGate({
         officialEmail: service.organization?.officialEmail ?? null,
@@ -165,8 +217,6 @@ async function _POST(
         );
       }
     }
-
-    const timezone = service.organization?.timezone || "Europe/Lisbon";
     const minutesOfDay = getMinutesOfDay(startsAt, timezone);
     if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
       return jsonWrap({ ok: false, error: "Horário fora da grelha de 15 minutos." }, { status: 400 });
@@ -272,7 +322,7 @@ async function _POST(
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
     const shouldUseOrgOnly = false;
-    const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
+    const bookingEndsAt = new Date(startsAt.getTime() + effectiveDurationMinutes * 60 * 1000);
     const [templates, overrides, blockingBookings, softBlocks] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
@@ -342,7 +392,7 @@ async function _POST(
         rangeStart: dayStart,
         rangeEnd: dayEnd,
         timezone,
-        durationMinutes: service.durationMinutes,
+        durationMinutes: effectiveDurationMinutes,
         stepMinutes: SLOT_STEP_MINUTES,
         now,
         scopeType: scope.scopeType,
@@ -436,27 +486,58 @@ async function _POST(
       return jsonWrap({ ok: false, error: "Local obrigatório para esta marcação." }, { status: 400 });
     }
 
-    const { booking } = await createBooking({
-      organizationId: service.organizationId,
-      actorUserId: user.id,
-      data: {
-        serviceId: service.id,
+    const { booking } = await prisma.$transaction(async (tx) => {
+      const created = await createBooking({
+        tx,
         organizationId: service.organizationId,
-        userId: user.id,
-        startsAt,
-        durationMinutes: service.durationMinutes,
-        price: service.unitPriceCents,
-        currency: service.currency,
-        status: "PENDING_CONFIRMATION",
-        assignmentMode,
-        professionalId,
-        partySize,
-        pendingExpiresAt,
-        snapshotTimezone: timezone,
-        locationMode: service.locationMode,
-        locationText,
-      },
-      select: { id: true, status: true, pendingExpiresAt: true },
+        actorUserId: user.id,
+        data: {
+          serviceId: service.id,
+          organizationId: service.organizationId,
+          userId: user.id,
+          startsAt,
+          durationMinutes: effectiveDurationMinutes,
+          price: effectivePriceCents,
+          currency: service.currency,
+          status: "PENDING_CONFIRMATION",
+          assignmentMode,
+          professionalId,
+          partySize,
+          pendingExpiresAt,
+          snapshotTimezone: timezone,
+          locationMode: service.locationMode,
+          locationText,
+        },
+        select: { id: true, status: true, pendingExpiresAt: true },
+      });
+
+      if (packageResolution.ok && packageResolution.package) {
+        await tx.bookingPackage.create({
+          data: {
+            bookingId: created.booking.id,
+            packageId: packageResolution.package.packageId,
+            label: packageResolution.package.label,
+            durationMinutes: packageResolution.package.durationMinutes,
+            priceCents: packageResolution.package.priceCents,
+          },
+        });
+      }
+
+      if (addonResolution.ok && addonResolution.addons.length > 0) {
+        await tx.bookingAddon.createMany({
+          data: addonResolution.addons.map((addon) => ({
+            bookingId: created.booking.id,
+            addonId: addon.addonId,
+            label: addon.label,
+            deltaMinutes: addon.deltaMinutes,
+            deltaPriceCents: addon.deltaPriceCents,
+            quantity: addon.quantity,
+            sortOrder: addon.sortOrder,
+          })),
+        });
+      }
+
+      return created;
     });
 
     const { ip, userAgent } = getRequestMeta(req);
@@ -468,6 +549,23 @@ async function _POST(
         bookingId: booking.id,
         serviceId: service.id,
         startsAt: startsAt.toISOString(),
+        package: packageResolution.ok && packageResolution.package
+          ? {
+              packageId: packageResolution.package.packageId,
+              label: packageResolution.package.label,
+              durationMinutes: packageResolution.package.durationMinutes,
+              priceCents: packageResolution.package.priceCents,
+            }
+          : null,
+        addons: addonResolution.ok
+          ? addonResolution.addons.map((addon) => ({
+              addonId: addon.addonId,
+              label: addon.label,
+              quantity: addon.quantity,
+              deltaMinutes: addon.deltaMinutes,
+              deltaPriceCents: addon.deltaPriceCents,
+            }))
+          : [],
       },
       ip,
       userAgent,

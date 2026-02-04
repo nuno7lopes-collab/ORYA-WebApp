@@ -8,7 +8,6 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { CrmInteractionSource, CrmInteractionType, OrganizationMemberRole } from "@prisma/client";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { decideCancellation } from "@/lib/bookingCancellation";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { cancelBooking } from "@/domain/bookings/commands";
@@ -17,7 +16,6 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computeCancellationRefundFromSnapshot,
-  getSnapshotCancellationWindowMinutes,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
 
@@ -168,20 +166,17 @@ async function _POST(
         };
       }
 
-      const decision = decideCancellation(
-        booking.startsAt,
-        isPending ? null : getSnapshotCancellationWindowMinutes(snapshot),
-        now,
-      );
-      const canCancel = isPending || (booking.status === "CONFIRMED" && decision.allowed);
+      // Organization cancellation is allowed regardless of the customer's cancellation window,
+      // but we still block after the booking start time to avoid undefined operational states.
+      const startsAtMs = booking.startsAt?.getTime?.() ?? NaN;
+      const canCancel = isPending || (booking.status === "CONFIRMED" && Number.isFinite(startsAtMs) && startsAtMs > now.getTime());
       if (!canCancel) {
         return {
           error: fail(
             400,
-            "BOOKING_CANCELLATION_WINDOW_EXPIRED",
-            "O prazo de cancelamento já passou.",
+            "BOOKING_CANCELLATION_NOT_ALLOWED",
+            "Já não é possível cancelar esta reserva.",
             false,
-            { deadline: decision.deadline?.toISOString() ?? null },
           ),
         };
       }
@@ -195,8 +190,10 @@ async function _POST(
       });
       const refundRequired =
         !!booking.paymentIntentId &&
-        (isPending || (booking.status === "CONFIRMED" && decision.allowed));
-      const refundComputation = snapshot ? computeCancellationRefundFromSnapshot(snapshot) : null;
+        (isPending || booking.status === "CONFIRMED");
+      const refundComputation = snapshot
+        ? computeCancellationRefundFromSnapshot(snapshot, { actor: "ORG" })
+        : null;
       const refundAmountCents = refundComputation?.refundCents ?? null;
 
       await recordOrganizationAudit(tx, {
@@ -211,7 +208,7 @@ async function _POST(
           actorRole: membership.role,
           reason,
           refundRequired,
-          deadline: decision.deadline?.toISOString() ?? null,
+          deadline: null,
           refundAmountCents,
           snapshotVersion: snapshot?.version ?? null,
           snapshotTimezone: booking.snapshotTimezone,

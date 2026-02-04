@@ -6,9 +6,13 @@ import { promoteNextPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
 import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { queueWaitlistPromoted } from "@/domain/notifications/splitPayments";
+import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
@@ -45,7 +49,7 @@ const ensurePadelPlayerProfile = async (params: { organizationId: number; userId
   await ensurePadelPlayerProfileId(prisma, params);
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -90,7 +94,10 @@ export async function POST(req: NextRequest) {
   }
 
   const [event, config] = await Promise.all([
-    prisma.event.findUnique({ where: { id: eventId }, select: { startsAt: true, status: true } }),
+    prisma.event.findUnique({
+      where: { id: eventId },
+      select: { startsAt: true, status: true, title: true, slug: true, organizationId: true },
+    }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId },
       select: { advancedSettings: true, splitDeadlineHours: true, lifecycleStatus: true },
@@ -150,6 +157,45 @@ export async function POST(req: NextRequest) {
   }
 
   await ensurePadelPlayerProfile({ organizationId: result.organizationId, userId: result.userId });
+  await recordOrganizationAuditSafe({
+    organizationId: result.organizationId,
+    actorUserId: data.user.id,
+    action: "PADEL_WAITLIST_PROMOTE",
+    entityType: "event",
+    entityId: String(eventId),
+    metadata: {
+      eventId,
+      categoryId,
+      entryId: result.entryId,
+      pairingId: result.pairingId,
+      userId: result.userId,
+    },
+    ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+    userAgent: req.headers.get("user-agent") || null,
+  });
+
+  if (event?.organizationId) {
+    const eventTitle = event.title?.trim() || "Torneio Padel";
+    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
+    await queueWaitlistPromoted({
+      userId: result.userId,
+      eventId,
+      pairingId: result.pairingId,
+      categoryId,
+    });
+    await queueImportantUpdateEmail({
+      dedupeKey: `email:padel:waitlist:promoted:${result.entryId}:${result.userId}`,
+      userId: result.userId,
+      eventTitle,
+      message: "A tua inscrição saiu da lista de espera. Conclui o pagamento para garantir a vaga.",
+      ticketUrl: ctaUrl,
+      correlations: {
+        eventId,
+        organizationId: event.organizationId,
+        pairingId: result.pairingId,
+      },
+    });
+  }
   return respondOk(
     ctx,
     { entryId: result.entryId, pairingId: result.pairingId },
@@ -168,3 +214,5 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+
+export const POST = withApiEnvelope(_POST);

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
+import { resolveLocale, t } from "@/lib/i18n";
 import PadelRankingsClient from "@/app/padel/rankings/PadelRankingsClient";
 
 export const dynamic = "force-dynamic";
@@ -9,11 +11,21 @@ export const revalidate = 0;
 
 type PageProps = {
   params: Promise<{ slug: string }> | { slug: string };
+  searchParams?: Record<string, string | string[] | undefined>;
 };
 
-export default async function EventRankingPage({ params }: PageProps) {
+export default async function EventRankingPage({ params, searchParams }: PageProps) {
   const resolved = await params;
   const slug = resolved.slug;
+  const headersList = await headers();
+  const langParam =
+    typeof searchParams?.lang === "string"
+      ? searchParams.lang
+      : Array.isArray(searchParams?.lang)
+        ? searchParams?.lang?.[0]
+        : null;
+  const acceptLanguage = headersList.get("accept-language");
+  const locale = resolveLocale(langParam ?? (acceptLanguage ? acceptLanguage.split(",")[0] : null));
 
   const event = await prisma.event.findUnique({
     where: { slug, isDeleted: false },
@@ -40,29 +52,31 @@ export default async function EventRankingPage({ params }: PageProps) {
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050810]/90 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-2">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Ranking do torneio</p>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">
+                {t("tournamentRankingLabel", locale)}
+              </p>
               <h1 className="text-3xl font-semibold">{event.title}</h1>
               <p className="text-sm text-white/70">
-                Classificação oficial baseada nos resultados registados.
+                {t("tournamentRankingSubtitle", locale)}
               </p>
               <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
                 <Link
                   href={`/eventos/${slug}`}
                   className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                 >
-                  Página pública
+                  {t("publicPageLabel", locale)}
                 </Link>
                 <Link
                   href={`/eventos/${slug}/calendario`}
                   className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                 >
-                  Calendário
+                  {t("calendarLabel", locale)}
                 </Link>
                 <Link
                   href={`/eventos/${slug}/score`}
                   className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                 >
-                  Placar ao vivo
+                  {t("liveScoreButtonLabel", locale)}
                 </Link>
               </div>
             </div>
@@ -79,7 +93,7 @@ export default async function EventRankingPage({ params }: PageProps) {
       </section>
 
       <section className="orya-page-width px-6 pb-16 md:px-10">
-        <PadelRankingsClient eventId={event.id} showFilters={false} />
+        <PadelRankingsClient eventId={event.id} showFilters={false} locale={locale} />
       </section>
     </main>
   );

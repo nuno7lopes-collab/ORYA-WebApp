@@ -31,7 +31,7 @@ const PRIMARY_META: Record<
   },
   TORNEIOS: {
     createLabel: "Criar torneio",
-    createHref: "/organizacao/torneios/novo",
+    createHref: "/organizacao/padel/torneios/novo",
   },
   RESERVAS: {
     createLabel: "Criar serviço",

@@ -1,16 +1,18 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { PadelPointsTable } from "@/lib/padel/validation";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
@@ -36,7 +38,7 @@ function fail(
   return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const rateLimited = await enforcePublicRateLimit(req, {
     keyPrefix: "padel_rankings",
@@ -199,6 +201,8 @@ export async function GET(req: NextRequest) {
   return respondOk(ctx, { items }, { status: 200 });
 }
 
+export const GET = withApiEnvelope(_GET);
+
 export async function POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
@@ -220,11 +224,20 @@ export async function POST(req: NextRequest) {
   });
   if (!event || !event.organizationId) return fail(ctx, 404, "EVENT_NOT_FOUND");
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return fail(ctx, 403, "NO_ORGANIZATION");
+  if (!organization || !membership) return fail(ctx, 403, "NO_ORGANIZATION");
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return fail(ctx, 403, "FORBIDDEN");
 
   const ruleSnapshot = await resolvePadelRuleSetSnapshotForEvent({ eventId });
   const pointsTable: PadelPointsTable = (ruleSnapshot.pointsTable as any) || { WIN: 3, LOSS: 0 };

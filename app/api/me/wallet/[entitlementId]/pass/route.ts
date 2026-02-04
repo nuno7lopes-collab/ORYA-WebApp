@@ -101,7 +101,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   });
 
   const isEligible =
-    ent.type === "TICKET" &&
+    ent.type === "EVENT_TICKET" &&
     actions.canShowQr &&
     ["ACTIVE", "USED"].includes(ent.status.toUpperCase());
 
@@ -127,7 +127,9 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
       barcodeMessage: token,
     });
 
-    return new NextResponse(passBuffer, {
+    // Copy into a non-shared ArrayBuffer (BodyInit doesn't accept SharedArrayBuffer).
+    const body = new Uint8Array(passBuffer);
+    return new NextResponse(body, {
       headers: {
         "Content-Type": "application/vnd.apple.pkpass",
         "Content-Disposition": `attachment; filename=\"orya-${ent.id}.pkpass\"`,

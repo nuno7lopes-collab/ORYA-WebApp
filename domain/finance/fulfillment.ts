@@ -347,7 +347,14 @@ export async function fulfillPaymentIfSucceeded(
 ): Promise<FulfillPaymentResult> {
   const payment = await prisma.payment.findUnique({
     where: { id: input.paymentId },
-    select: { id: true, status: true, sourceType: true },
+    select: {
+      id: true,
+      status: true,
+      sourceType: true,
+      sourceId: true,
+      customerIdentityId: true,
+      pricingSnapshotJson: true,
+    },
   });
   if (!payment) throw new Error("PAYMENT_NOT_FOUND");
   if (payment.status !== PaymentStatus.SUCCEEDED) {

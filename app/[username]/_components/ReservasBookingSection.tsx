@@ -21,6 +21,25 @@ type Service = {
   defaultLocationText?: string | null;
   professionalLinks?: Array<{ professionalId: number }>;
   resourceLinks?: Array<{ resourceId: number }>;
+  addons?: Array<{
+    id: number;
+    label: string;
+    description: string | null;
+    deltaMinutes: number;
+    deltaPriceCents: number;
+    maxQty: number | null;
+    category: string | null;
+    sortOrder: number;
+  }>;
+  packages?: Array<{
+    id: number;
+    label: string;
+    description: string | null;
+    durationMinutes: number;
+    priceCents: number;
+    recommended: boolean;
+    sortOrder: number;
+  }>;
 };
 
 type Professional = {

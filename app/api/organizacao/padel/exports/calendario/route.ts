@@ -5,9 +5,11 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import PDFDocument from "pdfkit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { OrganizationModule } from "@prisma/client";
 
 const buildCalendarPdf = async ({
   title,
@@ -97,11 +99,20 @@ async function _GET(req: NextRequest) {
   });
   if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
-  if (!organization) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId },

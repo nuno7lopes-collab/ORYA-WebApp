@@ -1,17 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchProfileAgenda, fetchProfileSummary } from "./api";
 
-export const useProfileSummary = (enabled = true) =>
+export const useProfileSummary = (enabled = true, accessToken?: string | null) =>
   useQuery({
-    queryKey: ["profile", "summary"],
-    queryFn: fetchProfileSummary,
+    queryKey: ["profile", "summary", accessToken],
+    queryFn: () => fetchProfileSummary(accessToken),
     staleTime: 1000 * 60 * 3,
-    enabled,
+    enabled: enabled && Boolean(accessToken),
   });
 
-export const useProfileAgenda = () =>
+export const useProfileAgenda = (accessToken?: string | null) =>
   useQuery({
-    queryKey: ["profile", "agenda"],
-    queryFn: fetchProfileAgenda,
+    queryKey: ["profile", "agenda", accessToken],
+    queryFn: () => fetchProfileAgenda(accessToken),
     staleTime: 1000 * 60,
+    enabled: Boolean(accessToken),
   });

@@ -6,9 +6,11 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
-import { PadelRegistrationStatus } from "@prisma/client";
-import { queuePairingReminder } from "@/domain/notifications/splitPayments";
+import { PadelPairingGuaranteeStatus, PadelRegistrationStatus } from "@prisma/client";
+import { queuePairingReminder, queuePairingWindowOpen } from "@/domain/notifications/splitPayments";
+import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { computeGraceUntil } from "@/domain/padelDeadlines";
 
 const WINDOW_MINUTES = 30;
 const MAX_PAIRINGS = 500;
@@ -44,25 +46,30 @@ async function _POST(req: NextRequest) {
           startsAt: { gte: windowStart, lte: windowEnd },
           status: { in: ["PUBLISHED", "DATE_CHANGED"] },
         },
-        select: { id: true },
+        select: { id: true, title: true, slug: true, timezone: true, organizationId: true },
         take: 120,
       });
       if (events.length === 0) continue;
 
       const eventIds = events.map((e) => e.id);
-      const pairings = await prisma.padelPairing.findMany({
-        where: {
-          eventId: { in: eventIds },
-          payment_mode: "SPLIT",
-          pairingStatus: { not: "CANCELLED" },
+      const eventById = new Map(events.map((evt) => [evt.id, evt] as const));
+        const pairings = await prisma.padelPairing.findMany({
+          where: {
+            eventId: { in: eventIds },
+            payment_mode: "SPLIT",
+            pairingStatus: { not: "CANCELLED" },
           registration: { status: { in: stage.statuses } },
           ...(stage.key === "T-23" ? { deadlineAt: { lt: now } } : { deadlineAt: { gte: now } }),
         },
-        select: {
-          id: true,
-          deadlineAt: true,
-          player1UserId: true,
-          player2UserId: true,
+          select: {
+            id: true,
+            eventId: true,
+            deadlineAt: true,
+            player1UserId: true,
+            player2UserId: true,
+            graceUntilAt: true,
+          guaranteeStatus: true,
+          registration: { select: { status: true } },
           slots: { select: { profileId: true, invitedUserId: true } },
         },
         take: MAX_PAIRINGS,
@@ -85,9 +92,56 @@ async function _POST(req: NextRequest) {
         }
 
         const deadlineAt = pairing.deadlineAt ? pairing.deadlineAt.toISOString() : null;
+        const eventMeta = eventById.get(pairing.eventId);
+        const eventTitle = eventMeta?.title?.trim() || "Torneio Padel";
+        const ctaUrl = eventMeta?.slug ? `/eventos/${eventMeta.slug}` : "/eventos";
         for (const userId of userIds) {
           await queuePairingReminder(pairing.id, userId, { stage: stage.key, deadlineAt });
           notified += 1;
+        }
+
+        if (stage.key === "T-48") {
+          await queuePairingWindowOpen(pairing.id, Array.from(userIds), deadlineAt);
+        }
+
+        if (stage.key === "T-48" || stage.key === "T-24") {
+          const message =
+            stage.key === "T-48"
+              ? "Faltam 48h para confirmar a dupla. Tens 1h para regularizar o split."
+              : "Últimas 24h para confirmar a dupla. Se não regularizares, a inscrição será cancelada.";
+          await Promise.all(
+            Array.from(userIds).map((userId) =>
+              queueImportantUpdateEmail({
+                dedupeKey: `email:padel:reminder:${stage.key}:${pairing.id}:${userId}`,
+                userId,
+                eventTitle,
+                message,
+                ticketUrl: ctaUrl,
+                correlations: {
+                  eventId: pairing.eventId,
+                  organizationId: eventMeta?.organizationId ?? null,
+                  pairingId: pairing.id,
+                },
+              }),
+            ),
+          );
+        }
+
+        if (stage.key === "T-48") {
+          const registrationStatus = pairing.registration?.status ?? null;
+          if (
+            registrationStatus === PadelRegistrationStatus.PENDING_PARTNER ||
+            registrationStatus === PadelRegistrationStatus.PENDING_PAYMENT
+          ) {
+            const graceUntilAt = pairing.graceUntilAt ?? computeGraceUntil(now);
+            await prisma.padelPairing.update({
+              where: { id: pairing.id },
+              data: {
+                graceUntilAt,
+                guaranteeStatus: PadelPairingGuaranteeStatus.SCHEDULED,
+              },
+            });
+          }
         }
       }
     }

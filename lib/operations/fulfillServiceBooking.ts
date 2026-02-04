@@ -153,6 +153,24 @@ async function ensureConfirmationSnapshot(params: {
       confirmationSnapshot: true,
       confirmationSnapshotVersion: true,
       confirmationSnapshotCreatedAt: true,
+      addons: {
+        select: {
+          addonId: true,
+          label: true,
+          deltaMinutes: true,
+          deltaPriceCents: true,
+          quantity: true,
+          sortOrder: true,
+        },
+      },
+      bookingPackage: {
+        select: {
+          packageId: true,
+          label: true,
+          durationMinutes: true,
+          priceCents: true,
+        },
+      },
       policyRef: { select: { id: true, policyId: true } },
       service: {
         select: {

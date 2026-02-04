@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, Prisma, SourceType } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, Prisma, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -11,7 +11,14 @@ import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { computeAutoSchedulePlan } from "@/domain/padel/autoSchedule";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import {
+  evaluateCandidate,
+  type AgendaCandidate,
+  type AgendaCandidateType,
+  type ConflictDecision,
+} from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -58,11 +65,20 @@ async function ensureOrganization(req: NextRequest) {
   if (!user) return { error: "UNAUTHENTICATED" as const, status: 401 };
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: Number.isFinite(parsedOrgId) ? parsedOrgId : undefined,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return { error: "NO_ORGANIZATION" as const, status: 403 };
+  if (!organization || !membership) return { error: "NO_ORGANIZATION" as const, status: 403 };
+  const permission = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return { error: "FORBIDDEN" as const, status: 403 };
   return { organization, userId: user.id };
 }
 
@@ -99,6 +115,28 @@ function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflict
   return {
     ok: false,
     ...buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" }),
+  };
+}
+
+const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
+  HARD_BLOCK: "bloqueio",
+  MATCH_SLOT: "jogo",
+  BOOKING: "reserva",
+  SOFT_BLOCK: "bloqueio suave",
+};
+
+function buildAgendaWarning(decision: ConflictDecision, candidateType: AgendaCandidateType) {
+  if (!decision.allowed || decision.conflicts.length === 0) return null;
+  const primary = decision.conflicts[0];
+  const candidateLabel = AGENDA_TYPE_LABEL[candidateType] ?? "agendamento";
+  const conflictLabel = AGENDA_TYPE_LABEL[primary.withType] ?? "registo";
+  return {
+    message: `Aviso: ${candidateLabel} sobrepõe-se a ${conflictLabel}.`,
+    details: {
+      blockedByType: primary.withType,
+      blockedBySourceId: primary.withSourceId,
+      reason: decision.reason,
+    },
   };
 }
 
@@ -580,6 +618,7 @@ async function _POST(req: NextRequest) {
       return a.matchId - b.matchId;
     });
 
+    const warnings: Array<{ matchId: number; message: string; details?: Record<string, unknown> }> = [];
     for (const update of sortedUpdates) {
       const bucket = existingByCourt.get(update.courtId);
       if (!bucket) {
@@ -594,6 +633,14 @@ async function _POST(req: NextRequest) {
       const decision = evaluateCandidate({ candidate, existing: bucket });
       if (!decision.allowed) {
         return jsonWrap(agendaConflictResponse(decision), { status: 409 });
+      }
+      const agendaWarning = buildAgendaWarning(decision, candidate.type);
+      if (agendaWarning) {
+        warnings.push({
+          matchId: update.matchId,
+          message: agendaWarning.message,
+          details: agendaWarning.details,
+        });
       }
       bucket.push(candidate);
     }
@@ -659,6 +706,21 @@ async function _POST(req: NextRequest) {
         return outbox;
       });
       outboxEventId = outbox.eventId;
+      await recordOrganizationAuditSafe({
+        organizationId: organization.id,
+        actorUserId: check.userId,
+        action: "PADEL_AUTO_SCHEDULE",
+        metadata: {
+          eventId: event.id,
+          scheduledCount: scheduledUpdates.length,
+          skippedCount: skipped.length,
+          matchIds: targetMatchIds ?? null,
+          priority,
+          minRestMinutes,
+        },
+        ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+        userAgent: req.headers.get("user-agent") || null,
+      });
     }
 
     return jsonWrap(
@@ -672,6 +734,7 @@ async function _POST(req: NextRequest) {
         minRestMinutes,
         queued: !dryRun && scheduledUpdates.length > 0,
         eventId: outboxEventId,
+        warnings,
         scheduled: dryRun
           ? scheduledUpdates.map((update) => ({
               matchId: update.matchId,

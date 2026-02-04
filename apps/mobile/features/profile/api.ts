@@ -51,8 +51,10 @@ const toAgendaStats = (items: AgendaItem[]): ProfileAgendaStats => {
   return { upcoming, past, thisMonth };
 };
 
-export const fetchProfileSummary = async (): Promise<ProfileSummary> => {
-  const response = await api.request<unknown>("/api/me");
+export const fetchProfileSummary = async (
+  accessToken?: string | null,
+): Promise<ProfileSummary> => {
+  const response = await api.requestWithAccessToken<unknown>("/api/me", accessToken);
   const payload = unwrapApiResponse<MePayload>(response);
   const profile = payload.profile ?? null;
   const user = payload.user ?? null;
@@ -77,13 +79,18 @@ export const fetchProfileSummary = async (): Promise<ProfileSummary> => {
   };
 };
 
-export const fetchProfileAgenda = async (): Promise<{
+export const fetchProfileAgenda = async (
+  accessToken?: string | null,
+): Promise<{
   items: AgendaItem[];
   stats: ProfileAgendaStats;
 }> => {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const response = await api.request<unknown>(`/api/me/agenda?month=${month}`);
+  const response = await api.requestWithAccessToken<unknown>(
+    `/api/me/agenda?month=${month}`,
+    accessToken,
+  );
   const payload = unwrapApiResponse<AgendaPayload>(response);
   const items = Array.isArray(payload?.items) ? payload.items : [];
 

@@ -11,7 +11,7 @@ import { OrganizationModule } from "@prisma/client";
 import { ensureUserIsOrganization, setSoleOwner } from "@/lib/organizationRoles";
 import { ensureGroupMemberForOrg, resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
-import { sendEmail } from "@/lib/resendClient";
+import { sendEmail } from "@/lib/emailClient";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
@@ -765,9 +765,16 @@ export async function PATCH(req: NextRequest) {
         where: { id: invite.id },
         select: {
           id: true,
+          organizationId: true,
           role: true,
+          token: true,
           targetIdentifier: true,
           targetUserId: true,
+          expiresAt: true,
+          acceptedAt: true,
+          declinedAt: true,
+          cancelledAt: true,
+          createdAt: true,
           invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
           targetUser: {
             select: {

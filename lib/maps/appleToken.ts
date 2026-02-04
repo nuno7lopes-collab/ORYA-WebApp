@@ -27,7 +27,9 @@ export function mintAppleMapsToken(params?: { now?: Date }) {
   const exp = iat + Math.max(60, Math.min(cfg.ttlSeconds || 900, 3600));
 
   const header = { alg: "ES256", kid: cfg.keyId, typ: "JWT" };
-  const payload = { iss: cfg.teamId, iat, exp };
+  const payload = cfg.origin
+    ? { iss: cfg.teamId, iat, exp, origin: cfg.origin }
+    : { iss: cfg.teamId, iat, exp };
 
   const encodedHeader = base64Url(JSON.stringify(header));
   const encodedPayload = base64Url(JSON.stringify(payload));

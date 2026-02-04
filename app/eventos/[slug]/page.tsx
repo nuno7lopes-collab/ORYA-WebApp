@@ -30,7 +30,7 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { EventAccessMode } from "@prisma/client";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
-import { resolveLocale } from "@/lib/i18n";
+import { resolveLocale, t } from "@/lib/i18n";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -51,11 +51,14 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const resolved = await params;
   const slug = resolved?.slug;
+  const headersList = headers();
+  const acceptLanguage = headersList.get("accept-language");
+  const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
 
   if (!slug) {
     return {
-      title: "Evento | ORYA",
-      description: "Explora eventos na ORYA.",
+      title: t("eventMetaTitleDefault", locale),
+      description: t("eventMetaDescDefault", locale),
     };
   }
 
@@ -87,25 +90,27 @@ export async function generateMetadata(
 
   if (!event || !event.organizationId) {
     return {
-      title: "Evento não encontrado | ORYA",
-      description: "Este evento já não está disponível.",
+      title: t("eventMetaNotFoundTitle", locale),
+      description: t("eventMetaNotFoundDesc", locale),
     };
   }
 
   const location = event.locationName || "ORYA";
-    const baseTitle = event.title || "Evento ORYA";
-    const baseUrl = getAppBaseUrl();
-    const canonicalUrl = `${baseUrl}/eventos/${slug}`;
-    const coverUrl = event.coverImageUrl
-      ? event.coverImageUrl.startsWith("http")
-        ? event.coverImageUrl
-        : `${baseUrl}${event.coverImageUrl.startsWith("/") ? "" : "/"}${event.coverImageUrl}`
-      : null;
+  const baseTitle = event.title || t("eventMetaBaseTitle", locale);
+  const baseUrl = getAppBaseUrl();
+  const canonicalUrl = `${baseUrl}/eventos/${slug}`;
+  const coverUrl = event.coverImageUrl
+    ? event.coverImageUrl.startsWith("http")
+      ? event.coverImageUrl
+      : `${baseUrl}${event.coverImageUrl.startsWith("/") ? "" : "/"}${event.coverImageUrl}`
+    : null;
 
   const description =
     event.description && event.description.trim().length > 0
       ? event.description
-      : `Descobre o evento ${baseTitle} em ${location} na ORYA.`;
+      : t("eventMetaDescFallback", locale)
+          .replace("{event}", baseTitle)
+          .replace("{location}", location);
 
   return {
     metadataBase: new URL(baseUrl),
@@ -363,49 +368,61 @@ export default async function EventPage({
   const canFreeCheckout = Boolean(user) && hasUsername && (!isInviteRestricted || isInvited);
   const allowCheckoutBase = !showInviteGate && (isGratis ? canFreeCheckout : true);
   const isPadel = event.templateType === "PADEL";
-  const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT");
+  const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT", locale);
   const ticketSectionLabel = ticketCopy.pluralCap;
   const freeBadgeLabel = ticketCopy.freeLabel;
-  const ctaFreeLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : "Garantir lugar";
+  const ctaFreeLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : t("ctaReserveSeat", locale);
   const ctaPaidLabel = ticketCopy.viewLabel;
-  const hasTicketLabel = `Já tens ${ticketCopy.articleSingular} ${ticketCopy.singular} para este ${
-    isPadel ? "torneio" : "evento"
-  }`;
-  const ticketSelectLabel = ticketCopy.isPadel ? "Seleciona a tua inscrição" : "Seleciona o teu bilhete";
+  const hasTicketLabel = ticketCopy.isPadel
+    ? t("hasPadelRegistrationLabel", locale)
+    : t("hasEventTicketLabel", locale);
+  const ticketSelectLabel = ticketCopy.isPadel
+    ? t("selectRegistrationLabel", locale)
+    : t("selectTicketLabel", locale);
   const freeInfoDescription = ticketCopy.isPadel
-    ? "Basta garantir a tua inscrição — não há custo."
-    : "Basta garantir o teu lugar — não há custo de bilhete.";
+    ? t("freeRegistrationInfo", locale)
+    : t("freeTicketInfo", locale);
   const freeGateTitle = ticketCopy.freeLabel;
-  const salesNotOpenTitle = ticketCopy.isPadel ? "Inscrições ainda não abriram" : "Vendas ainda não abriram";
+  const salesNotOpenTitle = ticketCopy.isPadel
+    ? t("registrationsNotOpenTitle", locale)
+    : t("salesNotOpenTitle", locale);
   const salesNotOpenDescription = ticketCopy.isPadel
-    ? "As inscrições para este torneio ainda não abriram. Volta mais tarde!"
-    : "As vendas de bilhetes para este evento ainda não abriram. Volta mais tarde!";
-  const salesClosedTitle = ticketCopy.isPadel ? "Inscrições encerradas" : "Vendas encerradas";
+    ? t("registrationsNotOpenDesc", locale)
+    : t("salesNotOpenDesc", locale);
+  const salesClosedTitle = ticketCopy.isPadel
+    ? t("registrationsClosedTitle", locale)
+    : t("salesClosedTitle", locale);
   const salesClosedDescription = ticketCopy.isPadel
-    ? "As inscrições para este torneio já encerraram."
-    : "As vendas para este evento já encerraram.";
-  const soldOutDescription = `Não há mais ${ticketCopy.plural} disponíveis para este ${
-    isPadel ? "torneio" : "evento"
-  }.`;
-  const resalesTitle = ticketCopy.isPadel ? "Inscrições entre utilizadores" : "Bilhetes entre utilizadores";
+    ? t("registrationsClosedDesc", locale)
+    : t("salesClosedDesc", locale);
+  const soldOutDescription = ticketCopy.isPadel
+    ? t("soldOutPadelDesc", locale)
+    : t("soldOutEventDesc", locale);
+  const resalesTitle = ticketCopy.isPadel
+    ? t("resalesTitlePadel", locale)
+    : t("resalesTitleEvent", locale);
   const resalesDescription = ticketCopy.isPadel
-    ? "Estas inscrições são vendidas por outros utilizadores da ORYA."
-    : "Estes bilhetes são vendidos por outros utilizadores da ORYA.";
-  const resalesFallbackLabel = ticketCopy.isPadel ? "Inscrição ORYA" : "Bilhete ORYA";
-  const resalesCtaLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : "Comprar agora";
-  const eventEndedCopy = `Este ${isPadel ? "torneio" : "evento"} já terminou. ${
-    ticketCopy.isPadel ? "As inscrições" : "Os bilhetes"
-  } deixaram de estar disponíveis.`;
+    ? t("resalesDescPadel", locale)
+    : t("resalesDescEvent", locale);
+  const resalesFallbackLabel = ticketCopy.isPadel
+    ? t("resalesFallbackPadel", locale)
+    : t("resalesFallbackEvent", locale);
+  const resalesCtaLabel = ticketCopy.isPadel
+    ? ticketCopy.buyLabel
+    : t("resalesCtaEvent", locale);
+  const eventEndedCopy = ticketCopy.isPadel
+    ? t("eventEndedPadel", locale)
+    : t("eventEndedEvent", locale);
   const freeUsernameGateMessage = isGratis
     ? user
       ? hasUsername
         ? null
         : ticketCopy.isPadel
-          ? "Define um username na tua conta para concluíres a inscrição gratuita."
-          : "Define um username na tua conta para garantires a entrada gratuita."
+          ? t("freeUsernameGatePadel", locale)
+          : t("freeUsernameGateEvent", locale)
       : ticketCopy.isPadel
-        ? "Inicia sessão e define um username para garantires a inscrição."
-        : "Inicia sessão e define um username para garantires o lugar."
+        ? t("freeLoginGatePadel", locale)
+        : t("freeLoginGateEvent", locale)
     : null;
   const checkoutVariant =
     isPadel && event.padelTournamentConfig?.padelV2Enabled ? "PADEL" : "DEFAULT";
@@ -440,24 +457,24 @@ export default async function EventPage({
       : { ok: true as const };
   const padelRegistrationMessage = !padelRegistrationCheck.ok
     ? padelRegistrationCheck.code === "EVENT_NOT_PUBLISHED"
-      ? "As inscrições ainda não estão abertas."
+      ? t("padelRegistrationEventNotPublished", locale)
       : padelRegistrationCheck.code === "INSCRIPTIONS_NOT_OPEN"
-        ? "As inscrições ainda não abriram."
+        ? t("padelRegistrationNotOpen", locale)
         : padelRegistrationCheck.code === "INSCRIPTIONS_CLOSED"
-          ? "As inscrições já fecharam."
+          ? t("padelRegistrationClosed", locale)
           : padelRegistrationCheck.code === "TOURNAMENT_STARTED"
-            ? "O torneio já começou. Inscrições encerradas."
-            : "Inscrições indisponíveis."
+            ? t("padelRegistrationTournamentStarted", locale)
+            : t("padelRegistrationUnavailable", locale)
     : null;
   const padelSnapshot = isPadel ? await buildPadelEventSnapshot(event.id) : null;
   const padelCompetitionLabel = padelSnapshot
     ? padelSnapshot.competitionState === "HIDDEN"
-      ? "Oculto"
+      ? t("competitionHidden", locale)
       : padelSnapshot.competitionState === "DEVELOPMENT"
-        ? "Desenvolvimento"
+        ? t("competitionDevelopment", locale)
         : padelSnapshot.competitionState === "PUBLIC"
-          ? "Público"
-          : "Cancelado"
+          ? t("competitionPublic", locale)
+          : t("competitionCancelled", locale)
     : null;
   const viewParam =
     typeof resolvedSearchParams?.view === "string" ? resolvedSearchParams.view : null;
@@ -476,8 +493,8 @@ export default async function EventPage({
     latitude: event.latitude,
     longitude: event.longitude,
   });
-  const safeLocationName = resolvedLocation.name || "Local a anunciar";
-  const safeLocationAddress = resolvedLocation.displayAddress || "Morada a anunciar";
+  const safeLocationName = resolvedLocation.name || t("locationTbd", locale);
+  const safeLocationAddress = resolvedLocation.displayAddress || t("addressTbd", locale);
   const googleMapsUrl = resolvedLocation.mapQuery
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedLocation.mapQuery)}`
     : null;
@@ -490,7 +507,7 @@ export default async function EventPage({
     event.organization?.status === "ACTIVE"
       ? event.organization?.username ?? null
       : null;
-  const safeOrganization = organizationDisplay || "Organização ORYA";
+  const safeOrganization = organizationDisplay || t("organizationFallback", locale);
   const organizationAvatarUrl = event.organization?.brandingAvatarUrl?.trim() || null;
   const organizationHandle = organizationUsername ? `@${organizationUsername}` : null;
   const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
@@ -503,14 +520,14 @@ export default async function EventPage({
   const startDateObj = event.startsAt;
   const endDateObj = event.endsAt ?? event.startsAt;
 
-  const dateFormatter = new Intl.DateTimeFormat("pt-PT", {
+  const dateFormatter = new Intl.DateTimeFormat(locale, {
     weekday: "long",
     day: "numeric",
     month: "long",
     timeZone: safeTimezone,
   });
 
-  const timeFormatter = new Intl.DateTimeFormat("pt-PT", {
+  const timeFormatter = new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: safeTimezone,
@@ -523,7 +540,7 @@ export default async function EventPage({
   const descriptionText =
     event.description && event.description.trim().length > 0
       ? event.description.trim()
-      : "A descrição deste evento será atualizada em breve.";
+      : t("eventDescriptionSoon", locale);
 
   const cover = getEventCoverUrl(event.coverImageUrl, {
     seed: event.slug ?? event.title ?? String(event.id),
@@ -621,21 +638,21 @@ export default async function EventPage({
   const allClosed = uiTickets.length > 0 && uiTickets.every((t) => t.status === "closed");
   const allSoldOut = uiTickets.length > 0 && uiTickets.every((t) => t.status === "sold_out");
   const availabilityLabel = eventEnded
-    ? "Evento terminado"
+    ? t("availabilityEventEnded", locale)
     : allSoldOut
-      ? "Esgotado"
+      ? t("availabilitySoldOut", locale)
       : anyOnSale
         ? isPadel
-          ? "Inscrições abertas"
-          : "Bilhetes à venda"
+          ? t("availabilityRegistrationsOpen", locale)
+          : t("availabilityTicketsOnSale", locale)
         : anyUpcoming
           ? isPadel
-            ? "Inscrições em breve"
-            : "Vendas em breve"
+            ? t("availabilityRegistrationsSoon", locale)
+            : t("availabilitySalesSoon", locale)
           : allClosed
             ? isPadel
-              ? "Inscrições encerradas"
-              : "Vendas encerradas"
+              ? t("availabilityRegistrationsClosed", locale)
+              : t("availabilitySalesClosed", locale)
             : ticketCopy.pluralCap;
   const availabilityTone = eventEnded || allClosed
     ? "border-white/25 bg-white/10 text-white/70"
@@ -836,10 +853,10 @@ export default async function EventPage({
               className="inline-flex items-center gap-2 text-xs font-medium text-white/75 transition hover:text-white"
             >
               <span className="text-lg leading-none">←</span>
-              <span>Voltar a explorar</span>
+              <span>{t("backToExplore", locale)}</span>
             </Link>
             <div className="hidden items-center gap-2 rounded-full border border-white/12 bg-black/40 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 sm:flex">
-              <span>Evento ORYA</span>
+              <span>{t("oryaEventBadge", locale)}</span>
               <span className="h-1 w-1 rounded-full bg-white/40" />
               {organizationUsername ? (
                 <Link href={`/${organizationUsername}`} className="text-white/80 hover:text-white">
@@ -856,11 +873,11 @@ export default async function EventPage({
               <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
               <div className="relative rounded-3xl border border-white/10 bg-black/55 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl md:p-8 animate-fade-slide">
                 <div className="relative">
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-white/60">
-                    <span>{safeLocationName}</span>
-                    <span className="h-1 w-1 rounded-full bg-white/30" />
-                    <span>{event.locationCity || "Cidade por anunciar"}</span>
-                  </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-white/60">
+                  <span>{safeLocationName}</span>
+                  <span className="h-1 w-1 rounded-full bg-white/30" />
+                  <span>{event.locationCity || t("cityTbd", locale)}</span>
+                </div>
 
                   <div className="mt-4 flex flex-wrap gap-2 text-white/85">
                     <span className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${availabilityTone}`}>
@@ -868,7 +885,7 @@ export default async function EventPage({
                     </span>
                     {isInviteRestricted && (
                       <span className="rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/80">
-                        Só por convite
+                        {t("inviteOnlyLabel", locale)}
                       </span>
                     )}
                     {isGratis ? (
@@ -877,11 +894,11 @@ export default async function EventPage({
                       </span>
                     ) : showPriceFrom ? (
                       <span className="rounded-full border border-fuchsia-400/40 bg-fuchsia-500/15 px-3 py-1.5 text-[11px] font-semibold text-fuchsia-100">
-                        Desde {(displayPriceFrom ?? 0).toFixed(2)} €
+                        {t("priceFromLabel", locale)} {(displayPriceFrom ?? 0).toFixed(2)} €
                       </span>
                     ) : (
                       <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/75">
-                        Preço a anunciar
+                        {t("priceTbd", locale)}
                       </span>
                     )}
                   </div>
@@ -893,7 +910,7 @@ export default async function EventPage({
 
                   <div className="mt-4">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
-                      Organizado por
+                      {t("organizedByLabel", locale)}
                     </p>
                     {organizationUsername ? (
                       <Link
@@ -911,7 +928,7 @@ export default async function EventPage({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-white">{safeOrganization}</span>
                             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/65">
-                              Organização
+                              {t("organizationLabel", locale)}
                             </span>
                           </div>
                           {organizationHandle && (
@@ -932,7 +949,7 @@ export default async function EventPage({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-white">{safeOrganization}</span>
                             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/65">
-                              Organização
+                              {t("organizationLabel", locale)}
                             </span>
                           </div>
                         </div>
@@ -961,7 +978,7 @@ export default async function EventPage({
                       href="#resumo"
                       className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs text-white/80 transition hover:border-white/30 hover:bg-white/10 md:text-sm"
                     >
-                      Ver resumo
+                      {t("viewSummaryLabel", locale)}
                     </a>
                   </div>
                 </div>
@@ -973,7 +990,7 @@ export default async function EventPage({
               <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/12 bg-black/40 shadow-[0_24px_60px_rgba(0,0,0,0.75)]">
                 <Image
                   src={cover}
-                  alt={`Capa do evento ${event.title}`}
+                  alt={`${t("eventCoverAlt", locale)} ${event.title}`}
                   fill
                   priority
                   fetchPriority="high"
@@ -991,7 +1008,7 @@ export default async function EventPage({
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  Data &amp; hora
+                  {t("dateTimeLabel", locale)}
                 </p>
                 <p className="mt-2 text-sm font-semibold text-white/90">
                   {formattedDate}
@@ -1002,13 +1019,13 @@ export default async function EventPage({
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  Local
+                  {t("locationLabel", locale)}
                 </p>
                 <p className="mt-2 text-sm font-semibold text-white/90">
                   {safeLocationName}
                 </p>
                 <p className="text-xs text-white/60">
-                  {event.locationCity || "Cidade a anunciar"}
+                  {event.locationCity || t("cityTbd", locale)}
                 </p>
                 {googleMapsUrl && (
                   <a
@@ -1017,27 +1034,27 @@ export default async function EventPage({
                     rel="noreferrer"
                     className="mt-2 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/10"
                   >
-                    Abrir no Google Maps
+                    {t("openGoogleMaps", locale)}
                   </a>
                 )}
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  Preço
+                  {t("priceLabel", locale)}
                 </p>
                 <p className="mt-2 text-sm font-semibold text-white/90">
                   {isGratis
                     ? freeBadgeLabel
                     : showPriceFrom
                       ? `${(displayPriceFrom ?? 0).toFixed(2)} €`
-                      : "A anunciar"}
+                      : t("priceTbd", locale)}
                 </p>
                 <p className="text-xs text-white/60">
                   {isGratis
                     ? ticketCopy.isPadel
-                      ? "Inscreve-te agora."
-                      : "Reserva o teu lugar agora."
-                    : "Preço final confirmado no checkout."}
+                      ? t("signupNow", locale)
+                      : t("reserveSeatNow", locale)
+                    : t("priceCheckoutHint", locale)}
                 </p>
               </div>
             </div>
@@ -1065,11 +1082,11 @@ export default async function EventPage({
               className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8 animate-fade-slide"
             >
               <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                <span>O que precisas de saber</span>
+                <span>{t("eventSummaryEyebrow", locale)}</span>
                 <span className="h-1 w-1 rounded-full bg-white/30" />
-                <span>Informação essencial</span>
+                <span>{t("eventSummaryEssential", locale)}</span>
               </div>
-              <h2 className="mt-3 text-2xl font-semibold">Resumo do evento</h2>
+              <h2 className="mt-3 text-2xl font-semibold">{t("eventSummaryTitle", locale)}</h2>
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-white/80 md:text-base">
                 {descriptionText}
               </p>
@@ -1079,21 +1096,27 @@ export default async function EventPage({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                    <span>Live</span>
+                    <span>{t("liveLabel", locale)}</span>
                     <span className="h-1 w-1 rounded-full bg-white/30" />
-                    <span>{isPadel ? "Jogos e resultados" : "Atualizações ao vivo"}</span>
+                    <span>{isPadel ? t("liveSectionPadelSubtitle", locale) : t("liveSectionDefaultSubtitle", locale)}</span>
                     {liveHubVisibility !== "PUBLIC" && (
                       <>
                         <span className="h-1 w-1 rounded-full bg-white/30" />
-                        <span>{liveHubVisibility === "PRIVATE" ? "Privado" : "Desativado"}</span>
+                        <span>
+                          {liveHubVisibility === "PRIVATE"
+                            ? t("liveVisibilityPrivate", locale)
+                            : t("liveVisibilityDisabled", locale)}
+                        </span>
                       </>
                     )}
                   </div>
-                  <h3 className="mt-3 text-xl font-semibold">{isPadel ? "Ao vivo" : "Live"}</h3>
+                  <h3 className="mt-3 text-xl font-semibold">
+                    {isPadel ? t("liveSectionTitlePadel", locale) : t("liveSectionTitleDefault", locale)}
+                  </h3>
                   <p className="mt-2 text-xs text-white/60">
                     {isPadel
-                      ? "Jogos, brackets e ranking ao vivo."
-                      : "Destaques e horários ao vivo."}
+                      ? t("liveSectionPadelDescription", locale)
+                      : t("liveSectionDefaultDescription", locale)}
                   </p>
                 </div>
                 {liveHubVisibility !== "DISABLED" && (
@@ -1102,20 +1125,20 @@ export default async function EventPage({
                       href={liveHref}
                       className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
                     >
-                      Abrir live
+                      {t("openLiveLabel", locale)}
                     </Link>
                     <Link
                       href={liveInlineHref}
                       className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
                     >
-                      Ver aqui
+                      {t("viewHereLabel", locale)}
                     </Link>
                     {isPadel && (
                       <Link
                         href={`/eventos/${slug}/score`}
                         className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
                       >
-                        Placar ao vivo
+                        {t("liveScoreButtonLabel", locale)}
                       </Link>
                     )}
                   </div>
@@ -1124,17 +1147,17 @@ export default async function EventPage({
 
               {liveHubVisibility === "DISABLED" ? (
                 <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
-                  O LiveHub deste evento está desativado.
+                  {t("liveHubDisabledMessage", locale)}
                 </div>
               ) : showLiveInline ? (
                 <div className="mt-4">
-                  <EventLiveClient slug={slug} variant="inline" />
+                  <EventLiveClient slug={slug} variant="inline" locale={locale} />
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
                   {isPadel
-                    ? "Abre o modo live para veres resultados e jogos atualizados."
-                    : "Abre o modo live para veres as atualizações do evento."}
+                    ? t("liveHubOpenHintPadel", locale)
+                    : t("liveHubOpenHintDefault", locale)}
                 </div>
               )}
             </section>
@@ -1147,30 +1170,30 @@ export default async function EventPage({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                      <span>Padel</span>
+                      <span>{t("padel", locale)}</span>
                       <span className="h-1 w-1 rounded-full bg-white/30" />
-                      <span>Classificações</span>
+                      <span>{t("standings", locale)}</span>
                     </div>
-                    <h3 className="mt-3 text-xl font-semibold">Classificações</h3>
+                    <h3 className="mt-3 text-xl font-semibold">{t("standings", locale)}</h3>
                   </div>
                   <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
                     <Link
                       href={`/eventos/${slug}/ranking`}
                       className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                     >
-                      Ranking
+                      {t("rankingLabel", locale)}
                     </Link>
                     <Link
                       href={`/eventos/${slug}/calendario`}
                       className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                     >
-                      Calendário
+                      {t("calendarLabel", locale)}
                     </Link>
                     <Link
                       href={`/eventos/${slug}/monitor`}
                       className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                     >
-                      Monitor TV
+                      {t("monitorLabel", locale)}
                     </Link>
                   </div>
                 </div>
@@ -1197,7 +1220,7 @@ export default async function EventPage({
                     <div>
                       <h3 className="text-xl font-semibold">{ticketSectionLabel}</h3>
                       <p className="text-xs text-white/60">
-                        Compra segura com confirmação imediata.
+                        {t("secureCheckoutHint", locale)}
                       </p>
                     </div>
                     <span
@@ -1210,7 +1233,7 @@ export default async function EventPage({
                   <div className="mt-4 grid gap-4 sm:grid-cols-2 md:grid-cols-1">
                     <div className="rounded-xl border border-white/12 bg-black/50 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                       <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                        Data
+                        {t("dateLabel", locale)}
                       </p>
                       <p className="mt-1 text-sm text-white/85">
                         {formattedDate}
@@ -1221,7 +1244,7 @@ export default async function EventPage({
                     </div>
                     <div className="rounded-xl border border-white/12 bg-black/50 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                       <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                        Local
+                        {t("locationLabel", locale)}
                       </p>
                       <p className="mt-1 text-sm text-white/85">
                         {safeLocationName}
@@ -1241,7 +1264,7 @@ export default async function EventPage({
                           </h3>
                           {!isGratis && showPriceFrom && (
                             <span className="text-xs text-white/75">
-                              A partir de{" "}
+                              {t("fromLabel", locale)}{" "}
                               <span className="font-semibold text-white">
                                 {(displayPriceFrom ?? 0).toFixed(2)} €
                               </span>
@@ -1259,16 +1282,17 @@ export default async function EventPage({
                             usernameNormalized={usernameNormalized}
                             uiTickets={uiTickets}
                             checkoutUiVariant={checkoutVariant}
-                              padelMeta={
-                                checkoutVariant === "PADEL"
-                                  ? {
-                                      eventId: event.id,
-                                      organizationId: event.organizationId ?? null,
-                                      categoryId: padelDefaultCategoryId ?? null,
-                                      categoryLinkId: padelDefaultCategoryLinkId ?? null,
+                            locale={locale}
+                            padelMeta={
+                              checkoutVariant === "PADEL"
+                                ? {
+                                    eventId: event.id,
+                                    organizationId: event.organizationId ?? null,
+                                    categoryId: padelDefaultCategoryId ?? null,
+                                    categoryLinkId: padelDefaultCategoryLinkId ?? null,
                                   }
-                                  : undefined
-                              }
+                                : undefined
+                            }
                           />
                         ) : (
                           <>
@@ -1295,18 +1319,18 @@ export default async function EventPage({
                               padelRegistrationMessage ? (
                                 <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 text-sm text-amber-100">
                                   <div>
-                                    <p className="font-semibold">Inscrições indisponíveis</p>
+                                    <p className="font-semibold">{t("registrationsUnavailableTitle", locale)}</p>
                                     <p className="text-[11px] text-amber-100/85">{padelRegistrationMessage}</p>
                                   </div>
                                 </div>
                               ) : uiTickets.length === 0 ? (
                                 <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
-                                  Ainda não há waves configuradas para este evento.
+                                  {t("noTicketWaves", locale)}
                                 </div>
                               ) : allSoldOut ? (
                                 <div className="rounded-xl border border-orange-400/40 bg-orange-500/15 px-3.5 py-2.5 text-sm text-orange-100">
                                   <div>
-                                    <p className="font-semibold">Evento esgotado</p>
+                                    <p className="font-semibold">{t("eventSoldOutTitle", locale)}</p>
                                     <p className="text-[11px] text-orange-100/85">
                                       {soldOutDescription}
                                     </p>
@@ -1336,6 +1360,7 @@ export default async function EventPage({
                                   tickets={uiTickets}
                                   isGratisEvent={isGratis}
                                   checkoutUiVariant={checkoutVariant}
+                                  locale={locale}
                                   padelMeta={
                                     checkoutVariant === "PADEL"
                                       ? {
@@ -1359,13 +1384,15 @@ export default async function EventPage({
                                   {resalesTitle}
                                 </h3>
                                 <span className="text-xs text-white/70">
-                                  {resales.length} oferta
-                                  {resales.length === 1 ? "" : "s"} de revenda
+                                  {resales.length}{" "}
+                                  {resales.length === 1
+                                    ? t("resaleOfferLabel", locale)
+                                    : t("resaleOffersLabel", locale)}
                                 </span>
                               </div>
 
                               <p className="text-xs text-white/65">
-                                {resalesDescription} O pagamento é feito de forma segura através da plataforma.
+                                {resalesDescription} {t("resalesPaymentHint", locale)}
                               </p>
 
                             <div className="space-y-4">
@@ -1381,15 +1408,15 @@ export default async function EventPage({
                                       </span>
                                       {r.seller && (
                                         <span className="text-xs text-white/60">
-                                          por{" "}
+                                          {t("byLabel", locale)}{" "}
                                           {r.seller.username
                                             ? `@${r.seller.username}`
-                                            : r.seller.fullName ?? "utilizador ORYA"}
+                                            : r.seller.fullName ?? t("oryaUserLabel", locale)}
                                         </span>
                                       )}
                                     </div>
                                     <span className="text-xs text-white/65">
-                                      Preço pedido:{" "}
+                                      {t("resalePriceLabel", locale)}{" "}
                                       <span className="font-semibold text-white">
                                         {(r.price / 100).toFixed(2)} €
                                       </span>
@@ -1423,16 +1450,16 @@ export default async function EventPage({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
-                      PADEL
+                      {t("padel", locale)}
                     </p>
-                    <h3 className="text-base font-semibold">Competição em detalhe</h3>
+                    <h3 className="text-base font-semibold">{t("padelCompetitionDetailTitle", locale)}</h3>
                     <p className="text-[12px] text-white/65">
-                      {padelSnapshot.clubName || "Clube a anunciar"} ·{" "}
-                      {padelSnapshot.clubCity || "Cidade em breve"}
+                      {padelSnapshot.clubName || t("padelClubTbd", locale)} ·{" "}
+                      {padelSnapshot.clubCity || t("padelCitySoon", locale)}
                     </p>
                   </div>
                   <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[11px] text-white/75">
-                    Estado: {padelCompetitionLabel ?? padelSnapshot.status}
+                    {t("statusLabel", locale)}: {padelCompetitionLabel ?? padelSnapshot.status}
                   </span>
                 </div>
                 {padelSnapshot.timeline && (
@@ -1451,10 +1478,10 @@ export default async function EventPage({
                         <p className="font-semibold">{step.label}</p>
                         <p className="text-[12px] opacity-80">
                           {step.cancelled
-                            ? "Cancelado"
+                            ? t("cancelledLabel", locale)
                             : step.date
                               ? dateFormatter.format(new Date(step.date))
-                              : "Data a anunciar"}
+                              : t("dateTbd", locale)}
                         </p>
                       </div>
                     ))}
@@ -1463,16 +1490,16 @@ export default async function EventPage({
                 <div className="mt-4 grid gap-3 text-[13px] md:grid-cols-2">
                   <div className="rounded-lg border border-white/10 bg-white/5 p-3">
                     <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                      Clubes
+                      {t("clubsLabel", locale)}
                     </p>
                     <p className="text-white/80">
-                      Principal:{" "}
+                      {t("primaryClubLabel", locale)}{" "}
                       <span className="font-semibold text-white">
-                        {padelSnapshot.clubName || "A anunciar"}
+                        {padelSnapshot.clubName || t("tbdLabel", locale)}
                       </span>
                     </p>
                     <p className="text-white/70">
-                      Parceiros:{" "}
+                      {t("partnerClubsLabel", locale)}{" "}
                       {padelSnapshot.partnerClubs && padelSnapshot.partnerClubs.length > 0
                         ? padelSnapshot.partnerClubs
                             .map((c) => c.name || `Clube ${c.id}`)
@@ -1482,7 +1509,7 @@ export default async function EventPage({
                   </div>
                   <div className="rounded-lg border border-white/10 bg-white/5 p-3">
                     <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                      Courts
+                      {t("courtsLabel", locale)}
                     </p>
                     {padelSnapshot.courts && padelSnapshot.courts.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
@@ -1492,12 +1519,12 @@ export default async function EventPage({
                             className="rounded-full border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
                           >
                             {c.name} {c.clubName ? `· ${c.clubName}` : ""}{" "}
-                            {c.indoor ? "· Indoor" : ""}
+                            {c.indoor ? `· ${t("indoorLabel", locale)}` : ""}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[12px] text-white/70">Courts a definir.</p>
+                      <p className="text-[12px] text-white/70">{t("courtsTbd", locale)}</p>
                     )}
                   </div>
                 </div>
@@ -1510,6 +1537,7 @@ export default async function EventPage({
           slug={event.slug}
           uiTickets={uiTickets}
           checkoutUiVariant={checkoutVariant === "PADEL" ? "PADEL" : "DEFAULT"}
+          locale={locale}
           padelMeta={
             checkoutVariant === "PADEL"
               ? {

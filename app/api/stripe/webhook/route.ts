@@ -22,6 +22,7 @@ import {
   PadelPairingStatus,
   PadelPaymentMode,
   PadelRegistrationStatus,
+  SourceType,
   PaymentMode,
   PaymentEventSource,
   PaymentStatus,
@@ -55,7 +56,7 @@ import { consumeStripeWebhookEvent } from "@/domain/finance/outbox";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
-import { mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
+import { mapRegistrationToPairingLifecycle, resolveRegistrationStatusFromSlots, transitionPadelRegistrationStatus, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import {
   queuePartnerPaid,
@@ -1406,6 +1407,7 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
         eventId: true,
         organizationId: true,
         payment_mode: true,
+        pairingJoinMode: true,
         pairingStatus: true,
         player1UserId: true,
         player2UserId: true,
@@ -1594,10 +1596,11 @@ async function handlePadelSplitPayment(intent: Stripe.PaymentIntent, stripeEvent
       include: { slots: true },
     });
 
-    const allPaid = updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
-    const nextRegistrationStatus = allPaid
-      ? PadelRegistrationStatus.CONFIRMED
-      : PadelRegistrationStatus.PENDING_PAYMENT;
+    const allPaid = updated.slots.length > 0 && updated.slots.every((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
+    const nextRegistrationStatus = resolveRegistrationStatusFromSlots({
+      pairingJoinMode: updated.pairingJoinMode,
+      slots: updated.slots,
+    });
 
     await upsertPadelRegistrationForPairing(tx, {
       pairingId,
@@ -1692,11 +1695,18 @@ async function handleSecondCharge(intent: Stripe.PaymentIntent, stripeEventId?: 
           graceUntilAt: null,
         },
       });
+      const registrationStatus = resolveRegistrationStatusFromSlots({
+        pairingJoinMode: confirmed.pairingJoinMode,
+        slots: slots.map((slot) => ({
+          slotStatus: slot.slotStatus,
+          paymentStatus: PadelPairingPaymentStatus.PAID,
+        })),
+      });
       await upsertPadelRegistrationForPairing(tx, {
         pairingId,
         organizationId: confirmed.organizationId,
         eventId: confirmed.eventId,
-        status: PadelRegistrationStatus.CONFIRMED,
+        status: registrationStatus,
         paymentMode: confirmed.payment_mode,
         secondChargeConfirmed: true,
         reason: "SECOND_CHARGE_CONFIRMED",
@@ -1936,6 +1946,7 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
         id: true,
         payment_mode: true,
         pairingStatus: true,
+        pairingJoinMode: true,
         slots: {
           select: {
             id: true,
@@ -2108,8 +2119,13 @@ async function handlePadelFullPayment(intent: Stripe.PaymentIntent, stripeEventI
     const partnerFilled = Boolean(partnerSlot.profileId || partnerSlot.playerProfileId);
     const partnerSlotStatus = partnerFilled ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING;
     const pairingStatus = partnerSlotStatus === PadelPairingSlotStatus.FILLED ? "COMPLETE" : "INCOMPLETE";
-
-    const registrationStatus = PadelRegistrationStatus.CONFIRMED;
+    const registrationStatus = resolveRegistrationStatusFromSlots({
+      pairingJoinMode: pairing.pairingJoinMode,
+      slots: [
+        { slotStatus: PadelPairingSlotStatus.FILLED, paymentStatus: PadelPairingPaymentStatus.PAID },
+        { slotStatus: partnerSlotStatus, paymentStatus: PadelPairingPaymentStatus.PAID },
+      ],
+    });
     await tx.padelPairing.update({
       where: { id: pairingId },
       data: {
@@ -2201,11 +2217,39 @@ async function publishPaymentRefunded(params: {
       select: { status: true, organizationId: true, sourceType: true, sourceId: true },
     });
     if (!payment) return;
-    if (payment.status === PaymentStatus.REFUNDED) return;
-    await tx.payment.update({
-      where: { id: paymentId },
-      data: { status: PaymentStatus.REFUNDED },
-    });
+    const alreadyRefunded = payment.status === PaymentStatus.REFUNDED;
+    if (!alreadyRefunded) {
+      await tx.payment.update({
+        where: { id: paymentId },
+        data: { status: PaymentStatus.REFUNDED },
+      });
+    }
+
+    if (payment.sourceType === SourceType.PADEL_REGISTRATION && payment.sourceId) {
+      const registration = await tx.padelRegistration.findUnique({
+        where: { id: payment.sourceId },
+        select: { id: true, pairingId: true, organizationId: true, eventId: true, status: true },
+      });
+      if (registration && registration.status !== PadelRegistrationStatus.REFUNDED) {
+        if (registration.pairingId) {
+          await transitionPadelRegistrationStatus(tx, {
+            pairingId: registration.pairingId,
+            organizationId: registration.organizationId,
+            eventId: registration.eventId,
+            status: PadelRegistrationStatus.REFUNDED,
+            reason: "PAYMENT_REFUNDED",
+            correlationId: params.paymentId ?? null,
+          });
+        } else {
+          await tx.padelRegistration.update({
+            where: { id: registration.id },
+            data: { status: PadelRegistrationStatus.REFUNDED },
+          });
+        }
+      }
+    }
+
+    if (alreadyRefunded) return;
     const eventLogId = crypto.randomUUID();
     const payload = {
       eventLogId,

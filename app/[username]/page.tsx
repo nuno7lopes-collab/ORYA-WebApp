@@ -527,9 +527,36 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             coverImageUrl: true,
             locationMode: true,
             defaultLocationText: true,
-              professionalLinks: { select: { professionalId: true } },
-              resourceLinks: { select: { resourceId: true } },
-              packs: {
+            addons: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+              select: {
+                id: true,
+                label: true,
+                description: true,
+                deltaMinutes: true,
+                deltaPriceCents: true,
+                maxQty: true,
+                category: true,
+                sortOrder: true,
+              },
+            },
+            packages: {
+              where: { isActive: true },
+              orderBy: [{ recommended: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+              select: {
+                id: true,
+                label: true,
+                description: true,
+                durationMinutes: true,
+                priceCents: true,
+                recommended: true,
+                sortOrder: true,
+              },
+            },
+            professionalLinks: { select: { professionalId: true } },
+            resourceLinks: { select: { resourceId: true } },
+            packs: {
                 where: allowPaidServices ? { isActive: true } : { id: -1 },
                 orderBy: [{ recommended: "desc" }, { quantity: "asc" }],
                 select: {
@@ -555,6 +582,25 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             coverImageUrl: string | null;
             locationMode: string | null;
             defaultLocationText: string | null;
+            addons?: Array<{
+              id: number;
+              label: string;
+              description: string | null;
+              deltaMinutes: number;
+              deltaPriceCents: number;
+              maxQty: number | null;
+              category: string | null;
+              sortOrder: number;
+            }>;
+            packages?: Array<{
+              id: number;
+              label: string;
+              description: string | null;
+              durationMinutes: number;
+              priceCents: number;
+              recommended: boolean;
+              sortOrder: number;
+            }>;
             packs: Array<{ id: number; quantity: number; packPriceCents: number; label: string | null; recommended: boolean }>;
           }>),
       hasReservasModule

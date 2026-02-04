@@ -1,8 +1,10 @@
 // app/eventos/[slug]/live/page.tsx
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { headers } from "next/headers";
 import EventLiveClient from "../EventLiveClient";
 import { prisma } from "@/lib/prisma";
+import { resolveLocale, t } from "@/lib/i18n";
 
 function slugify(input: string): string {
   return input
@@ -13,9 +15,24 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export default async function EventLivePage({ params }: { params: Promise<{ slug: string }> }) {
-  const resolved = await params;
-  const slug = resolved.slug;
+export default async function EventLivePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams?: Record<string, string | string[] | undefined>;
+  }) {
+    const resolved = await params;
+    const slug = resolved.slug;
+    const headersList = await headers();
+    const langParam =
+      typeof searchParams?.lang === "string"
+        ? searchParams.lang
+        : Array.isArray(searchParams?.lang)
+          ? searchParams?.lang?.[0]
+        : null;
+  const acceptLanguage = headersList.get("accept-language");
+  const locale = resolveLocale(langParam ?? (acceptLanguage ? acceptLanguage.split(",")[0] : null));
   if (!slug) {
     notFound();
   }
@@ -39,10 +56,10 @@ export default async function EventLivePage({ params }: { params: Promise<{ slug
             className="inline-flex items-center gap-2 text-xs font-medium text-white/70 hover:text-white"
           >
             <span className="text-lg leading-none">←</span>
-            <span>Voltar ao evento</span>
+            <span>{t("backToEvent", locale)}</span>
           </Link>
         </div>
-        <EventLiveClient slug={slug} />
+        <EventLiveClient slug={slug} locale={locale} />
       </section>
     </main>
   );

@@ -25,8 +25,10 @@ export SUPABASE_SERVICE_ROLE="$(get_secret SUPABASE_SERVICE_ROLE)"
 export STRIPE_SECRET_KEY="$(get_secret STRIPE_SECRET_KEY)"
 export STRIPE_WEBHOOK_SECRET="$(get_secret STRIPE_WEBHOOK_SECRET)"
 export NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="$(get_secret NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)"
-export RESEND_API_KEY="$(get_secret RESEND_API_KEY)"
-export RESEND_FROM_EMAIL="$(get_secret RESEND_FROM_EMAIL)"
+export SES_REGION="$(get_secret SES_REGION)"
+export SES_IDENTITY_DOMAIN="$(get_secret SES_IDENTITY_DOMAIN)"
+export SES_SMTP_USERNAME="$(get_secret SES_SMTP_USERNAME)"
+export SES_SMTP_PASSWORD="$(get_secret SES_SMTP_PASSWORD)"
 export APPLE_SIGNIN_SERVICE_ID="$(get_secret APPLE_SIGNIN_SERVICE_ID)"
 export APPLE_SIGNIN_REDIRECT_URI="$(get_secret APPLE_SIGNIN_REDIRECT_URI)"
 export APPLE_SIGNIN_TEAM_ID="$(get_secret APPLE_SIGNIN_TEAM_ID)"
@@ -36,7 +38,6 @@ export APNS_TEAM_ID="$(get_secret APNS_TEAM_ID)"
 export APNS_KEY_ID="$(get_secret APNS_KEY_ID)"
 export APNS_PRIVATE_KEY_BASE64="$(get_secret APNS_PRIVATE_KEY_BASE64)"
 export APNS_TOPIC="$(get_secret APNS_TOPIC)"
-export SENTRY_DSN="$(get_secret SENTRY_DSN)"
 
 # Optional admin auth
 export STAGING_ADMIN_EMAIL="$(get_secret STAGING_ADMIN_EMAIL)"
@@ -73,7 +74,7 @@ echo "## DB evidence" >> "$REPORT"
 # TODO: include SQL queries/prints once flows run
 
 echo "" >> "$REPORT"
-echo "## CloudWatch/Sentry" >> "$REPORT"
+echo "## CloudWatch" >> "$REPORT"
 # TODO: include logs/traces with requestId/correlationId
 
 echo "" >> "$REPORT"

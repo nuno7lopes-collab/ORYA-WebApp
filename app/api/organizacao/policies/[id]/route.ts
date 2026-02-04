@@ -90,10 +90,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const payload = await req.json().catch(() => ({}));
     const updates: Record<string, unknown> = {};
     if (typeof payload?.name === "string") updates.name = payload.name.trim();
+    if (typeof payload?.allowCancellation === "boolean") updates.allowCancellation = payload.allowCancellation;
     if (payload?.cancellationWindowMinutes === null) {
       updates.cancellationWindowMinutes = null;
     } else if (Number.isFinite(Number(payload?.cancellationWindowMinutes))) {
       updates.cancellationWindowMinutes = Math.max(0, Math.round(Number(payload.cancellationWindowMinutes)));
+    }
+    if (Number.isFinite(Number(payload?.cancellationPenaltyBps))) {
+      updates.cancellationPenaltyBps = Math.max(0, Math.min(10000, Math.round(Number(payload.cancellationPenaltyBps))));
+    }
+    if (typeof payload?.allowReschedule === "boolean") updates.allowReschedule = payload.allowReschedule;
+    if (payload?.rescheduleWindowMinutes === null) {
+      updates.rescheduleWindowMinutes = null;
+    } else if (Number.isFinite(Number(payload?.rescheduleWindowMinutes))) {
+      updates.rescheduleWindowMinutes = Math.max(0, Math.round(Number(payload.rescheduleWindowMinutes)));
     }
     if (typeof payload?.policyType === "string") {
       const raw = payload.policyType.trim().toUpperCase();
@@ -113,7 +123,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         id: true,
         name: true,
         policyType: true,
+        allowCancellation: true,
         cancellationWindowMinutes: true,
+        cancellationPenaltyBps: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
       },
     });
 

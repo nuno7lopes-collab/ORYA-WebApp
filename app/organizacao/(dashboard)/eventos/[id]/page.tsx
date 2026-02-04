@@ -123,7 +123,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   }
 
   const isPadelEvent = event.templateType === "PADEL";
-  const eventRouteBase = isPadelEvent ? "/organizacao/torneios" : "/organizacao/eventos";
+  const eventRouteBase = isPadelEvent ? "/organizacao/padel/torneios" : "/organizacao/eventos";
   const primaryLabel = isPadelEvent ? "torneio" : "evento";
   const ticketLabelPlural = isPadelEvent ? "inscrições" : "bilhetes";
   const ticketLabelPluralCap = isPadelEvent ? "Inscrições" : "Bilhetes";
@@ -342,11 +342,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     : [];
   const backHref = eventRouteBase;
   const liveHref = `${eventRouteBase}/${event.id}/live`;
-  const hubBaseHref = isPadelEvent ? `${eventRouteBase}?section=padel-tournaments` : null;
+  const hubBaseHref = isPadelEvent ? `/organizacao/padel/torneios?section=padel-tournaments` : null;
   const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
-  const hubClubHref = hubBaseHref ? `${hubBaseHref}&padel=clubs` : null;
-  const hubCourtsHref = hubBaseHref ? `${hubBaseHref}&padel=courts` : null;
-  const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=categories` : null;
+  const hubClubHref = isPadelEvent ? `/organizacao/padel/clube?section=padel-club&padel=clubs` : null;
+  const hubCourtsHref = isPadelEvent ? `/organizacao/padel/clube?section=padel-club&padel=courts` : null;
+  const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=manage` : null;
 
   const activePadelLinks = isPadelEvent ? padelLinks.filter((link) => link.isEnabled !== false) : [];
   const activePadelLinkIds = activePadelLinks.map((link) => link.id);

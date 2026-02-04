@@ -12,10 +12,13 @@ const resolveEmail = (raw?: string | null) => {
 const getUserAgent = () => {
   const explicit = process.env.GEO_USER_AGENT?.trim();
   if (explicit) return explicit;
+  const domain = process.env.SES_IDENTITY_DOMAIN?.trim();
+  const defaultContact = domain ? `support@${domain}` : "support@orya.pt";
   const contact =
     resolveEmail(process.env.GEO_CONTACT_EMAIL) ||
-    resolveEmail(process.env.RESEND_FROM_EMAIL) ||
-    "support@orya.pt";
+    resolveEmail(process.env.EMAIL_FROM) ||
+    resolveEmail(process.env.SES_FROM_EMAIL) ||
+    defaultContact;
   return `ORYA/1.0 (${contact})`;
 };
 

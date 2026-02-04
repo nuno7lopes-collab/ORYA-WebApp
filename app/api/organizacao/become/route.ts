@@ -312,6 +312,7 @@ async function _POST(req: NextRequest) {
       return nextOrganization;
     });
     organization = nextOrganization;
+    if (!organization) throw new Error("ORGANIZATION_MISSING");
 
     // Garante que o perfil tem role de organization
     const roles = Array.isArray(profile.roles) ? profile.roles : [];

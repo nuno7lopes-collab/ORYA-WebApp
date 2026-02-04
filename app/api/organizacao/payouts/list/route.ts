@@ -135,9 +135,15 @@ export async function GET(req: NextRequest) {
         : [],
     ]);
 
-    const eventById = new Map(events.map((ev) => [ev.id, ev]));
-    const bookingById = new Map(bookings.map((bk) => [bk.id, bk]));
-    const pairingById = new Map(pairings.map((pairing) => [pairing.id, pairing]));
+    const eventById = new Map<number, (typeof events)[number]>(
+      events.map((ev) => [ev.id, ev] as const),
+    );
+    const bookingById = new Map<number, (typeof bookings)[number]>(
+      bookings.map((bk) => [bk.id, bk] as const),
+    );
+    const pairingById = new Map<number, (typeof pairings)[number]>(
+      pairings.map((pairing) => [pairing.id, pairing] as const),
+    );
 
     const enriched = trimmed.map((payout) => {
       const parsedId = Number(payout.sourceId);

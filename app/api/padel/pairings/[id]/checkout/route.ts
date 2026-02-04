@@ -18,6 +18,7 @@ import { readNumericParam } from "@/lib/routeParams";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
@@ -31,6 +32,7 @@ const pairingSelect = {
   pairingJoinMode: true,
   payment_mode: true,
   deadlineAt: true,
+  graceUntilAt: true,
   partnerInviteToken: true,
   player1UserId: true,
   event: {
@@ -52,7 +54,7 @@ const pairingSelect = {
 } satisfies Prisma.PadelPairingSelect;
 
 // Apenas valida e delega criação de intent ao endpoint central (/api/payments/intent).
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
     respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
@@ -109,22 +111,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     pairing.payment_mode === PadelPaymentMode.SPLIT
       ? pairing.slots.find((s) => s.slotStatus === "PENDING")
       : null;
+  const captainSlot = pairing.slots.find((slot) => slot.slot_role === "CAPTAIN") ?? null;
+  const partnerSlot = pairing.slots.find((slot) => slot.slot_role === "PARTNER") ?? null;
   if (pairing.payment_mode === PadelPaymentMode.SPLIT) {
-    if (!pending) {
-      return fail("NO_PENDING_SLOT", "Slot pendente em falta.", 400);
+    if (!captainSlot || !partnerSlot) {
+      return fail("SLOT_MISSING", "Slot em falta.", 400);
     }
-    if (pending.paymentStatus === PadelPairingPaymentStatus.PAID) {
-      return fail("SLOT_ALREADY_PAID", "Slot já pago.", 400);
+    if (pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
+      return fail("PAIRING_EXPIRED", "Pairing expirado.", 410);
     }
-  }
-  if (pairing.payment_mode === PadelPaymentMode.SPLIT && pairing.deadlineAt && pairing.deadlineAt.getTime() < Date.now()) {
-    return fail("PAIRING_EXPIRED", "Pairing expirado.", 410);
+    if (pairing.graceUntilAt && pairing.graceUntilAt.getTime() < Date.now()) {
+      return fail("PAIRING_EXPIRED", "Pairing expirado.", 410);
+    }
   }
 
-  // Apenas capitão pode iniciar checkout se for "assume resto"; parceiro também pode iniciar, mas validamos que não há ticket já atribuído
-  const isCaptain = pairing.createdByUserId === user.id;
-  const isPendingOwner = !pending?.profileId || pending.profileId === user.id;
-  if (!isCaptain && !isPendingOwner) {
+  const isCaptain = pairing.createdByUserId === user.id || captainSlot?.profileId === user.id;
+  const isPartner = partnerSlot?.profileId === user.id;
+  if (!isCaptain && !isPartner) {
     return fail("FORBIDDEN", "Sem permissões.", 403);
   }
 
@@ -189,7 +192,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     playerLevel: profile?.padelLevel ?? null,
   });
   if (!categoryAccess.ok) {
-    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY") {
       return fail(
         "PADEL_ONBOARDING_REQUIRED",
         "Onboarding Padel em falta.",
@@ -199,6 +202,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
     return fail(categoryAccess.code, "Categoria inválida.", 409);
+  }
+  if (categoryAccess.warning === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    return fail(
+      "PADEL_ONBOARDING_REQUIRED",
+      "Onboarding Padel em falta.",
+      409,
+      false,
+      { missing: categoryAccess.missing },
+    );
   }
 
   // Não permitir checkout se utilizador já tiver pairing ativo no torneio
@@ -256,12 +268,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return fail("CURRENCY_NOT_SUPPORTED", "Moeda não suportada.", 400);
   }
   const paymentScenario = pairing.payment_mode === PadelPaymentMode.FULL ? "GROUP_FULL" : "GROUP_SPLIT";
-  const payerSlot =
-    pairing.payment_mode === PadelPaymentMode.SPLIT
-      ? pending
-      : pairing.slots.find((slot) => slot.slot_role === "CAPTAIN") ?? pairing.slots[0] ?? null;
+  let payerSlot =
+    pairing.payment_mode === PadelPaymentMode.FULL
+      ? captainSlot ?? pairing.slots.find((slot) => slot.slot_role === "CAPTAIN") ?? pairing.slots[0] ?? null
+      : null;
+
+  if (pairing.payment_mode === PadelPaymentMode.SPLIT && captainSlot && partnerSlot) {
+    const partnerPending = pending && pending.id === partnerSlot.id;
+    if (partnerPending) {
+      if (!isCaptain) {
+        return fail("PARTNER_ACCEPT_REQUIRED", "O parceiro precisa aceitar antes de pagar.", 409);
+      }
+      if (captainSlot.paymentStatus === PadelPairingPaymentStatus.PAID) {
+        return fail("PARTNER_ACCEPT_REQUIRED", "O parceiro precisa aceitar antes de pagar.", 409);
+      }
+      payerSlot = captainSlot;
+    } else {
+      if (partnerSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+        payerSlot = partnerSlot;
+      } else if (captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
+        payerSlot = captainSlot;
+      }
+    }
+  }
+
   if (!payerSlot?.id) {
     return fail("PAIRING_SLOT_REQUIRED", "Slot da dupla em falta.", 400);
+  }
+  if (payerSlot.paymentStatus === PadelPairingPaymentStatus.PAID) {
+    return fail("SLOT_ALREADY_PAID", "Slot já pago.", 400);
   }
 
   let baseUrl = env.appBaseUrl;
@@ -324,3 +359,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return fail("INTENT_ERROR", "Erro ao iniciar checkout.", 500, true);
   }
 }
+
+export const POST = withApiEnvelope(_POST);

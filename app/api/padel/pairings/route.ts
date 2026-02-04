@@ -12,6 +12,7 @@ import {
   PadelPaymentMode,
   PadelPairingJoinMode,
   OrganizationMemberRole,
+  OrganizationModule,
   Prisma,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
@@ -27,6 +28,7 @@ import {
   isWithinMatchmakingWindow,
 } from "@/domain/padelDeadlines";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { checkPadelCategoryCapacity } from "@/domain/padelCategoryCapacity";
 import {
@@ -42,7 +44,8 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { resolveUserIdentifier } from "@/lib/userResolver";
-import { queuePairingInvite } from "@/domain/notifications/splitPayments";
+import { queuePairingInvite, queueWaitlistJoined } from "@/domain/notifications/splitPayments";
+import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { requireActiveEntitlementForTicket } from "@/lib/entitlements/accessChecks";
 import { ensurePadelPlayerProfileId, upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 
@@ -175,6 +178,8 @@ async function _POST(req: NextRequest) {
     where: { id: eventId },
     select: {
       organizationId: true,
+      title: true,
+      slug: true,
       startsAt: true,
       status: true,
       padelTournamentConfig: { select: { padelV2Enabled: true } },
@@ -318,13 +323,19 @@ async function _POST(req: NextRequest) {
     playerLevel: profile?.padelLevel ?? null,
   });
   if (!categoryAccess.ok) {
-    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY" || categoryAccess.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    if (categoryAccess.code === "GENDER_REQUIRED_FOR_CATEGORY") {
       return jsonWrap(
         { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
         { status: 409 },
       );
     }
     return jsonWrap({ ok: false, error: categoryAccess.code }, { status: 409 });
+  }
+  if (categoryAccess.warning === "LEVEL_REQUIRED_FOR_CATEGORY") {
+    return jsonWrap(
+      { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
+      { status: 409 },
+    );
   }
 
   // Invariante: 1 pairing ativo por evento+categoria+user
@@ -898,6 +909,31 @@ async function _POST(req: NextRequest) {
     });
 
     if (result.kind === "WAITLIST") {
+      try {
+        await queueWaitlistJoined({
+          userId: user.id,
+          eventId,
+          categoryId: effectiveCategoryId,
+        });
+        if (event?.title) {
+          const slug = typeof event.slug === "string" ? event.slug : null;
+          const ticketUrl = slug ? `/eventos/${slug}` : "/eventos";
+          await queueImportantUpdateEmail({
+            dedupeKey: `email:padel:waitlist:joined:${eventId}:${user.id}`,
+            userId: user.id,
+            eventTitle: event.title ?? "Torneio Padel",
+            message: "Entraste na lista de espera. Vamos avisar assim que houver vaga.",
+            ticketUrl,
+            correlations: {
+              eventId,
+              organizationId,
+              pairingId: null,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("[padel/pairings][waitlist] notify failed", err);
+      }
       return jsonWrap(
         { ok: true, waitlist: true, entry: { id: result.entry.id, status: result.entry.status } },
         { status: 200 },
@@ -976,11 +1012,22 @@ async function _GET(req: NextRequest) {
       pairing.player2UserId === user.id ||
       pairing.slots.some((s) => s.profileId === user.id);
     if (!isParticipant) {
-      const { organization } = await getActiveOrganizationForUser(user.id, {
+      const { organization, membership } = await getActiveOrganizationForUser(user.id, {
         organizationId: pairing.organizationId,
         roles: ROLE_ALLOWLIST,
       });
-      if (!organization) {
+      if (!organization || !membership) {
+        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+      const permission = await ensureMemberModuleAccess({
+        organizationId: pairing.organizationId,
+        userId: user.id,
+        role: membership.role,
+        rolePack: membership.rolePack,
+        moduleKey: OrganizationModule.TORNEIOS,
+        required: "VIEW",
+      });
+      if (!permission.ok) {
         return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     }
@@ -1027,11 +1074,22 @@ async function _GET(req: NextRequest) {
   if (!event?.organizationId) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) {
+  if (!organization || !membership) {
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!permission.ok) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
@@ -1039,14 +1097,16 @@ async function _GET(req: NextRequest) {
     where: { eventId },
     include: {
       slots: { include: { playerProfile: true } },
+      registration: { select: { status: true } },
     },
     orderBy: [{ createdAt: "asc" }],
   });
 
-  const mapped = pairings.map(({ payment_mode, partnerInviteToken, slots, ...rest }) => ({
+  const mapped = pairings.map(({ payment_mode, partnerInviteToken, slots, registration, ...rest }) => ({
     ...rest,
     paymentMode: payment_mode,
     inviteToken: partnerInviteToken,
+    lifecycleStatus: registration ? mapRegistrationToPairingLifecycle(registration.status, payment_mode) : null,
     slots: slots.map(({ slot_role, ...slotRest }) => ({
       ...slotRest,
       slotRole: slot_role,

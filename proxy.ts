@@ -102,6 +102,17 @@ function getForwardedProto(req: NextRequest) {
   return raw.split(",")[0]?.trim().toLowerCase() ?? "";
 }
 
+function resolveCookieDomainFromHost(hostname: string) {
+  const safeHost = hostname.split(":")[0]?.toLowerCase();
+  if (!safeHost) return "";
+  // Em localhost evitamos "Domain=" (alguns browsers rejeitam e quebra a sessão).
+  if (safeHost === "localhost" || safeHost.endsWith(".localhost")) return "";
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(safeHost) || safeHost.includes(":")) return "";
+  const parts = safeHost.split(".").filter(Boolean);
+  if (parts.length >= 2) return `.${parts.slice(-2).join(".")}`;
+  return "";
+}
+
 function normalizeHeaderValue(value: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -132,6 +143,15 @@ function isSensitivePath(pathname: string) {
     if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return true;
   }
   return false;
+}
+
+function shouldRefreshSupabaseSession(req: NextRequest) {
+  const pathname = req.nextUrl.pathname;
+  if (pathname.startsWith("/me")) return true;
+  if (pathname.startsWith("/organizacao")) return true;
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return true;
+  // Também refresca quando já existem cookies sb-* (evita estado preso em navegação normal)
+  return req.cookies.getAll().some((c) => c.name.startsWith("sb-"));
 }
 
 function buildRedirectUrl(req: NextRequest, protocol: string, host: string) {
@@ -232,10 +252,7 @@ export async function proxy(req: NextRequest) {
     res.headers.set("X-Robots-Tag", "noindex, nofollow");
   }
 
-  const needsSessionRefresh =
-    pathname.startsWith("/me") ||
-    pathname.startsWith("/organizacao") ||
-    isAdminPath;
+  const needsSessionRefresh = shouldRefreshSupabaseSession(req);
 
   if (!supabaseUrl || !supabaseAnonKey || !needsSessionRefresh) {
     return res;
@@ -252,17 +269,27 @@ export async function proxy(req: NextRequest) {
     });
   }
 
+  const envCookieDomain = process.env.NEXT_PUBLIC_SUPABASE_COOKIE_DOMAIN?.trim() || "";
+  const cookieDomain = envCookieDomain || resolveCookieDomainFromHost(hostname);
+  const isSecure = forwardedProto === "https" || req.nextUrl.protocol === "https:";
+
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: cookieDomain
+      ? {
+          domain: cookieDomain,
+          path: "/",
+          sameSite: "lax",
+          ...(isSecure ? { secure: true } : {}),
+        }
+      : undefined,
     cookies: {
-      get(name: string) {
-        const raw = req.cookies.get(name)?.value;
-        return raw ?? undefined;
+      getAll() {
+        return req.cookies.getAll();
       },
-      set(name: string, value: string, options: Record<string, unknown>) {
-        res.cookies.set({ name, value, ...options });
-      },
-      remove(name: string, options: Record<string, unknown>) {
-        res.cookies.set({ name, value: "", ...options, maxAge: 0 });
+      setAll(cookiesToSet) {
+        for (const { name, value, options } of cookiesToSet) {
+          res.cookies.set({ name, value, ...options });
+        }
       },
     },
   });

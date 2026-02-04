@@ -12,9 +12,36 @@ export async function ensureDefaultPolicies(client: TxLike, organizationId: numb
 
   await client.organizationPolicy.createMany({
     data: [
-      { organizationId, name: "Flexivel", policyType: "FLEXIBLE", cancellationWindowMinutes: 1440 },
-      { organizationId, name: "Moderada", policyType: "MODERATE", cancellationWindowMinutes: 2880 },
-      { organizationId, name: "Rigida", policyType: "RIGID", cancellationWindowMinutes: 4320 },
+      {
+        organizationId,
+        name: "Flexivel",
+        policyType: "FLEXIBLE",
+        allowCancellation: true,
+        cancellationWindowMinutes: 1440,
+        cancellationPenaltyBps: 0,
+        allowReschedule: true,
+        rescheduleWindowMinutes: 1440,
+      },
+      {
+        organizationId,
+        name: "Moderada",
+        policyType: "MODERATE",
+        allowCancellation: true,
+        cancellationWindowMinutes: 2880,
+        cancellationPenaltyBps: 0,
+        allowReschedule: true,
+        rescheduleWindowMinutes: 2880,
+      },
+      {
+        organizationId,
+        name: "Rigida",
+        policyType: "RIGID",
+        allowCancellation: true,
+        cancellationWindowMinutes: 4320,
+        cancellationPenaltyBps: 0,
+        allowReschedule: true,
+        rescheduleWindowMinutes: 4320,
+      },
     ],
   });
 }

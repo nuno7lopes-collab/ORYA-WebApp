@@ -17,6 +17,7 @@ import { createBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -194,10 +195,66 @@ async function _GET(req: NextRequest) {
             avatarUrl: true,
           },
         },
+        invites: {
+          select: { status: true },
+        },
+        participants: {
+          select: { status: true },
+        },
       },
     });
 
-    return respondOk(ctx, { items });
+    const professionalIds = Array.from(
+      new Set(items.map((item) => item.professional?.id).filter((id): id is number => typeof id === "number")),
+    );
+    const resourceIds = Array.from(
+      new Set(items.map((item) => item.resource?.id).filter((id): id is number => typeof id === "number")),
+    );
+    const delayMap = await loadScheduleDelays({
+      tx: prisma,
+      organizationId: organization.id,
+      professionalIds,
+      resourceIds,
+    });
+    const itemsWithDelay = items.map((item) => {
+      const delay = resolveBookingDelay({
+        startsAt: item.startsAt,
+        assignmentMode: item.assignmentMode,
+        professionalId: item.professional?.id ?? null,
+        resourceId: item.resource?.id ?? null,
+        delayMap,
+      });
+      const inviteCounts = item.invites.reduce(
+        (acc, invite) => {
+          if (invite.status === "ACCEPTED") acc.accepted += 1;
+          else if (invite.status === "DECLINED") acc.declined += 1;
+          else acc.pending += 1;
+          acc.total += 1;
+          return acc;
+        },
+        { total: 0, accepted: 0, declined: 0, pending: 0 },
+      );
+      const participantCounts = item.participants.reduce(
+        (acc, participant) => {
+          if (participant.status === "CONFIRMED") acc.confirmed += 1;
+          else acc.cancelled += 1;
+          acc.total += 1;
+          return acc;
+        },
+        { total: 0, confirmed: 0, cancelled: 0 },
+      );
+      const { invites: _invites, participants: _participants, ...rest } = item;
+      return {
+        ...rest,
+        inviteSummary: inviteCounts,
+        participantSummary: participantCounts,
+        estimatedStartsAt: delay.estimatedStartsAt ? delay.estimatedStartsAt.toISOString() : null,
+        delayMinutes: delay.delayMinutes,
+        delayReason: delay.reason,
+      };
+    });
+
+    return respondOk(ctx, { items: itemsWithDelay });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");

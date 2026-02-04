@@ -9,6 +9,7 @@ import {
   PadelPaymentMode,
   PadelPairingStatus,
   PadelRegistrationStatus,
+  OrganizationModule,
   Prisma,
 } from "@prisma/client";
 import { Readable } from "node:stream";
@@ -16,6 +17,7 @@ import { Workbook, type CellValue } from "exceljs";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -134,11 +136,20 @@ export async function POST(req: NextRequest) {
   });
   if (!event?.organizationId) return fail(404, "EVENT_NOT_FOUND");
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return fail(403, "FORBIDDEN");
+  if (!organization || !membership) return fail(403, "FORBIDDEN");
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return fail(403, "FORBIDDEN");
   const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "PADEL_IMPORTS" });
   if (!emailGate.ok) {
     return respondError(

@@ -3567,7 +3567,11 @@ model OrganizationPolicy {
   organizationId                 Int                     @map("organization_id")
   name                        String
   policyType                  OrganizationPolicyType  @map("policy_type")
+  allowCancellation           Boolean                 @default(true) @map("allow_cancellation")
   cancellationWindowMinutes   Int?                    @map("cancellation_window_minutes")
+  cancellationPenaltyBps      Int                     @default(0) @map("cancellation_penalty_bps")
+  allowReschedule             Boolean                 @default(true) @map("allow_reschedule")
+  rescheduleWindowMinutes     Int?                    @map("reschedule_window_minutes")
   guestBookingAllowed         Boolean                 @default(false) @map("guest_booking_allowed")
   allowPayAtVenue             Boolean                 @default(false) @map("allow_pay_at_venue")
   depositRequired             Boolean                 @default(false) @map("deposit_required")
@@ -3653,10 +3657,12 @@ model Service {
   policy          OrganizationPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
   instructor      Profile?       @relation("ServiceInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
   packs           ServicePack[]
+  packages        ServicePackage[]
   availabilities  Availability[]
   bookings        Booking[]
   professionalLinks ServiceProfessionalLink[]
   resourceLinks    ServiceResourceLink[]
+  addons           ServiceAddon[]
   creditBalances  ServiceCreditBalance[]
   creditLedger    ServiceCreditLedger[]
   reviews         ServiceReview[]
@@ -3685,6 +3691,53 @@ model ServicePack {
   @@index([serviceId])
   @@index([isActive])
   @@map("service_packs")
+  @@schema("app_v3")
+}
+
+model ServicePackage {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  serviceId       Int      @map("service_id")
+  label           String
+  description     String?
+  durationMinutes Int      @map("duration_minutes")
+  priceCents      Int      @map("price_cents")
+  recommended     Boolean  @default(false)
+  sortOrder       Int      @default(0) @map("sort_order")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  bookingPackages BookingPackage[]
+
+  @@index([serviceId])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("service_packages")
+  @@schema("app_v3")
+}
+
+model ServiceAddon {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  serviceId       Int      @map("service_id")
+  label           String
+  description     String?
+  deltaMinutes    Int      @default(0) @map("delta_minutes")
+  deltaPriceCents Int      @default(0) @map("delta_price_cents")
+  maxQty          Int?     @map("max_qty")
+  category        String?  @map("category")
+  sortOrder       Int      @default(0) @map("sort_order")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  bookingAddons   BookingAddon[]
+
+  @@index([serviceId])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("service_addons")
   @@schema("app_v3")
 }
 
@@ -3888,6 +3941,11 @@ model Booking {
   professional    ReservationProfessional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
   resource        ReservationResource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
   policyRef       BookingPolicyRef?
+  bookingPackage  BookingPackage?
+  addons          BookingAddon[]
+  invites         BookingInvite[]
+  participants    BookingParticipant[]
+  splitPayment    BookingSplit?
   review          ServiceReview?
   creditLedger    ServiceCreditLedger[]
   entitlements    Entitlement[]
@@ -3903,6 +3961,168 @@ model Booking {
   @@index([status])
   @@index([pendingExpiresAt])
   @@map("bookings")
+  @@schema("app_v3")
+}
+
+model BookingPackage {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  bookingId       Int      @unique @map("booking_id")
+  packageId       Int?     @map("package_id")
+  label           String
+  durationMinutes Int      @map("duration_minutes")
+  priceCents      Int      @map("price_cents")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  package         ServicePackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([packageId])
+  @@map("booking_packages")
+  @@schema("app_v3")
+}
+
+model BookingAddon {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  bookingId       Int      @map("booking_id")
+  addonId         Int?     @map("addon_id")
+  label           String
+  deltaMinutes    Int      @default(0) @map("delta_minutes")
+  deltaPriceCents Int      @default(0) @map("delta_price_cents")
+  quantity        Int      @default(1)
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addon           ServiceAddon? @relation(fields: [addonId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([addonId])
+  @@map("booking_addons")
+  @@schema("app_v3")
+}
+
+model BookingInvite {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  bookingId       Int      @map("booking_id")
+  organizationId  Int      @map("organization_id")
+  invitedByUserId String   @map("invited_by_user_id") @db.Uuid
+  token           String   @unique @map("token")
+  targetName      String?  @map("target_name")
+  targetContact   String?  @map("target_contact") @db.Citext
+  message         String?  @map("message")
+  status          BookingInviteStatus @default(PENDING)
+  respondedAt     DateTime? @map("responded_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy       Profile  @relation(fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  participant     BookingParticipant?
+
+  @@index([bookingId])
+  @@index([organizationId])
+  @@index([status])
+  @@map("booking_invites")
+  @@schema("app_v3")
+}
+
+model BookingParticipant {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  bookingId       Int      @map("booking_id")
+  inviteId        Int?     @unique @map("invite_id")
+  userId          String?  @map("user_id") @db.Uuid
+  name            String?  @map("name")
+  contact         String?  @map("contact") @db.Citext
+  status          BookingParticipantStatus @default(CONFIRMED)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  invite          BookingInvite? @relation(fields: [inviteId], references: [id], onDelete: SetNull)
+  user            Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([inviteId])
+  @@index([userId])
+  @@index([status])
+  @@map("booking_participants")
+  @@schema("app_v3")
+}
+
+model BookingSplit {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  bookingId       Int      @unique @map("booking_id")
+  organizationId  Int      @map("organization_id")
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  pricingMode     BookingSplitPricingMode @default(FIXED) @map("pricing_mode")
+  status          BookingSplitStatus @default(OPEN)
+  currency        String   @default("EUR")
+  totalCents      Int      @map("total_cents")
+  shareCents      Int?     @map("share_cents")
+  deadlineAt      DateTime? @map("deadline_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       Profile  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  participants    BookingSplitParticipant[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("booking_splits")
+  @@schema("app_v3")
+}
+
+model BookingSplitParticipant {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  splitId         Int      @map("split_id")
+  inviteId        Int?     @unique @map("invite_id")
+  userId          String?  @map("user_id") @db.Uuid
+  name            String?  @map("name")
+  contact         String?  @map("contact") @db.Citext
+  baseShareCents  Int      @map("base_share_cents")
+  shareCents      Int      @map("share_cents")
+  platformFeeCents Int     @default(0) @map("platform_fee_cents")
+  status          BookingSplitParticipantStatus @default(PENDING)
+  paymentIntentId String?  @map("payment_intent_id")
+  paidAt          DateTime? @map("paid_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  split           BookingSplit @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  invite          BookingInvite? @relation(fields: [inviteId], references: [id], onDelete: SetNull)
+  user            Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([splitId])
+  @@index([inviteId])
+  @@index([userId])
+  @@index([status])
+  @@index([paymentIntentId])
+  @@map("booking_split_participants")
+  @@schema("app_v3")
+}
+
+model ScheduleDelay {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  organizationId  Int      @map("organization_id")
+  scopeType       AvailabilityScopeType @map("scope_type")
+  scopeId         Int      @default(0) @map("scope_id")
+  delayMinutes    Int      @default(0) @map("delay_minutes")
+  reason          String?  @map("reason")
+  effectiveFrom   DateTime @default(now()) @map("effective_from") @db.Timestamptz(6)
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       Profile?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, scopeType, scopeId])
+  @@index([organizationId, effectiveFrom])
+  @@map("schedule_delays")
   @@schema("app_v3")
 }
 
@@ -5453,6 +5673,46 @@ enum BookingStatus {
   COMPLETED
   NO_SHOW
   DISPUTED
+
+  @@schema("app_v3")
+}
+
+enum BookingInviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+
+  @@schema("app_v3")
+}
+
+enum BookingParticipantStatus {
+  CONFIRMED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum BookingSplitStatus {
+  OPEN
+  COMPLETED
+  EXPIRED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum BookingSplitPricingMode {
+  FIXED
+  DYNAMIC
+
+  @@schema("app_v3")
+}
+
+enum BookingSplitParticipantStatus {
+  PENDING
+  PAID
+  EXPIRED
+  CANCELLED
 
   @@schema("app_v3")
 }

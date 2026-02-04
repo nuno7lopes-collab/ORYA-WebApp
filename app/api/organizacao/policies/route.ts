@@ -82,7 +82,11 @@ export async function GET(req: NextRequest) {
         id: true,
         name: true,
         policyType: true,
+        allowCancellation: true,
         cancellationWindowMinutes: true,
+        cancellationPenaltyBps: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
         createdAt: true,
       },
     });
@@ -143,6 +147,19 @@ export async function POST(req: NextRequest) {
         : Number.isFinite(Number(payload?.cancellationWindowMinutes))
           ? Math.max(0, Math.round(Number(payload.cancellationWindowMinutes)))
           : null;
+    const allowCancellation =
+      typeof payload?.allowCancellation === "boolean" ? payload.allowCancellation : true;
+    const cancellationPenaltyBps = Number.isFinite(Number(payload?.cancellationPenaltyBps))
+      ? Math.max(0, Math.min(10000, Math.round(Number(payload.cancellationPenaltyBps))))
+      : 0;
+    const allowReschedule =
+      typeof payload?.allowReschedule === "boolean" ? payload.allowReschedule : true;
+    const rescheduleWindowMinutes =
+      payload?.rescheduleWindowMinutes === null
+        ? null
+        : Number.isFinite(Number(payload?.rescheduleWindowMinutes))
+          ? Math.max(0, Math.round(Number(payload.rescheduleWindowMinutes)))
+          : cancellationWindowMinutes;
 
     if (!name) {
       return fail(400, "Nome é obrigatório.");
@@ -153,13 +170,21 @@ export async function POST(req: NextRequest) {
         organizationId: organization.id,
         name,
         policyType,
-        cancellationWindowMinutes,
+        allowCancellation,
+        cancellationWindowMinutes: allowCancellation ? cancellationWindowMinutes : null,
+        cancellationPenaltyBps,
+        allowReschedule,
+        rescheduleWindowMinutes: allowReschedule ? rescheduleWindowMinutes : null,
       },
       select: {
         id: true,
         name: true,
         policyType: true,
+        allowCancellation: true,
         cancellationWindowMinutes: true,
+        cancellationPenaltyBps: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
       },
     });
 
@@ -172,7 +197,11 @@ export async function POST(req: NextRequest) {
         policyId: policy.id,
         name: policy.name,
         policyType: policy.policyType,
+        allowCancellation: policy.allowCancellation,
         cancellationWindowMinutes: policy.cancellationWindowMinutes,
+        cancellationPenaltyBps: policy.cancellationPenaltyBps,
+        allowReschedule: policy.allowReschedule,
+        rescheduleWindowMinutes: policy.rescheduleWindowMinutes,
       },
       ip,
       userAgent,

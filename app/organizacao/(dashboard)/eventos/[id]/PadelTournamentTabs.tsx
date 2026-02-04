@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { formatCurrency, formatDateTime } from "@/lib/i18n";
+import { useSearchParams } from "next/navigation";
+import { formatCurrency, formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import useSWR from "swr";
 import { DEFAULT_PADEL_SCORE_RULES, type PadelScoreRules } from "@/domain/padel/score";
 
@@ -9,6 +10,7 @@ type Pairing = {
   id: number;
   pairingStatus: string;
   lifecycleStatus?: string | null;
+  pairingJoinMode?: string | null;
   paymentMode: string;
   categoryId?: number | null;
   slots: { id: number; slotRole: string; slotStatus: string; paymentStatus: string; playerProfile?: { displayName?: string | null; fullName?: string | null } | null }[];
@@ -108,13 +110,45 @@ const resolveScoreRulesPresetId = (rules: PadelScoreRules | null) => {
   return match?.id ?? "CUSTOM";
 };
 
-function nameFromSlots(pairing?: Pairing | null) {
+function nameFromSlots(pairing: Pairing | null | undefined, locale: string) {
   if (!pairing) return "—";
   const names = pairing.slots
     .map((s) => s.playerProfile?.displayName || s.playerProfile?.fullName)
     .filter(Boolean) as string[];
-  return names.length ? names.join(" / ") : "Dupla incompleta";
+  return names.length ? names.join(" / ") : t("pairingIncomplete", locale);
 }
+
+const resolvePairingStatusLabel = (pairing: Pairing, locale: string) => {
+  if (pairing.pairingStatus === "CANCELLED") return t("pairingStatusCancelled", locale);
+  if (pairing.lifecycleStatus === "CANCELLED_INCOMPLETE") return t("pairingStatusExpired", locale);
+  const slots = pairing.slots || [];
+  const allFilled = slots.length > 0 && slots.every((slot) => slot.slotStatus === "FILLED");
+  const allPaid = slots.length > 0 && slots.every((slot) => slot.paymentStatus === "PAID");
+  if (allFilled && allPaid) return t("pairingStatusConfirmed", locale);
+  if (pairing.pairingJoinMode === "LOOKING_FOR_PARTNER") return t("pairingStatusMatchmaking", locale);
+  return t("pairingStatusPending", locale);
+};
+
+const resolvePaymentModeLabel = (mode: string, locale: string) => {
+  if (mode === "FULL") return t("paymentModeFull", locale);
+  if (mode === "SPLIT") return t("paymentModeSplit", locale);
+  return mode || "—";
+};
+
+const resolveWaitlistStatusLabel = (status: string, locale: string) => {
+  switch (status) {
+    case "PENDING":
+      return t("waitlistStatusPending", locale);
+    case "PROMOTED":
+      return t("waitlistStatusPromoted", locale);
+    case "CANCELLED":
+      return t("waitlistStatusCancelled", locale);
+    case "EXPIRED":
+      return t("waitlistStatusExpired", locale);
+    default:
+      return status || "—";
+  }
+};
 
 const summarizeAuditMeta = (metadata?: Record<string, unknown>) => {
   if (!metadata || typeof metadata !== "object") return "";
@@ -152,6 +186,8 @@ export default function PadelTournamentTabs({
   eventSlug: string;
   categoriesMeta?: CategoryMeta[];
 }) {
+  const searchParams = useSearchParams();
+  const locale = resolveLocale(searchParams?.get("lang"));
   const [tab, setTab] = useState<"duplas" | "grupos" | "eliminatorias">("duplas");
   const [configMessage, setConfigMessage] = useState<string | null>(null);
   const [widgetBase, setWidgetBase] = useState("");
@@ -172,6 +208,17 @@ export default function PadelTournamentTabs({
   const [koSaving, setKoSaving] = useState<Record<number, boolean>>({});
   const [disputeBusy, setDisputeBusy] = useState<Record<number, boolean>>({});
   const [disputeError, setDisputeError] = useState<Record<number, string | null>>({});
+  const [swapPairingAId, setSwapPairingAId] = useState<string>("");
+  const [swapPairingBId, setSwapPairingBId] = useState<string>("");
+  const [swapBusy, setSwapBusy] = useState(false);
+  const [swapMessage, setSwapMessage] = useState<string | null>(null);
+  const [swapError, setSwapError] = useState<string | null>(null);
+  const [broadcastTitle, setBroadcastTitle] = useState("");
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcastAudience, setBroadcastAudience] = useState<"ALL" | "PLAYERS" | "WAITLIST">("ALL");
+  const [broadcastBusy, setBroadcastBusy] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<string | null>(null);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const categoryOptions = useMemo(
     () =>
       (categoriesMeta || [])
@@ -254,6 +301,18 @@ export default function PadelTournamentTabs({
   const matches: Match[] = Array.isArray(matchesRes?.items) ? (matchesRes.items as Match[]) : emptyMatches;
   const standings: Standings = standingsRes?.standings ?? {};
   const pairingsById = useMemo(() => new Map(pairings.map((pairing) => [pairing.id, pairing])), [pairings]);
+  const swapCandidates = useMemo(
+    () =>
+      pairings.filter((pairing) => {
+        if (pairing.pairingStatus === "CANCELLED") return false;
+        const partnerSlot = pairing.slots.find((slot) => slot.slotRole === "PARTNER");
+        if (!partnerSlot) return false;
+        if (partnerSlot.slotStatus !== "FILLED") return false;
+        if (partnerSlot.paymentStatus === "PAID") return false;
+        return true;
+      }),
+    [pairings],
+  );
   const standingsGroups = useMemo(() => {
     const entries = Object.entries(standings);
     return entries.sort((a, b) => a[0].localeCompare(b[0], "pt-PT", { numeric: true }));
@@ -328,13 +387,22 @@ export default function PadelTournamentTabs({
 
   const pairingNameById = useMemo(() => {
     const map = new Map<number, string>();
-    pairings.forEach((p) => map.set(p.id, nameFromSlots(p)));
+    pairings.forEach((p) => map.set(p.id, nameFromSlots(p, locale)));
     return map;
   }, [pairings]);
 
   const filteredPairings = selectedCategoryId
     ? pairings.filter((p) => p.categoryId === selectedCategoryId)
     : pairings;
+  const matchmakingQueue = filteredPairings.filter(
+    (p) =>
+      p.pairingJoinMode === "LOOKING_FOR_PARTNER" &&
+      p.pairingStatus !== "CANCELLED" &&
+      p.pairingStatus !== "COMPLETE",
+  );
+  const matchmakingFormed = filteredPairings.filter(
+    (p) => p.pairingJoinMode === "LOOKING_FOR_PARTNER" && p.pairingStatus === "COMPLETE",
+  );
   const confirmedPairings = filteredPairings.filter(
     (p) =>
       p.pairingStatus === "COMPLETE" &&
@@ -1106,6 +1174,100 @@ export default function PadelTournamentTabs({
     }
   }
 
+  const canSubmitSwap =
+    swapPairingAId && swapPairingBId && swapPairingAId !== swapPairingBId && !swapBusy;
+
+  async function handleSwapPairings() {
+    if (!eventId) return;
+    const pairingAId = Number(swapPairingAId);
+    const pairingBId = Number(swapPairingBId);
+    if (!Number.isFinite(pairingAId) || !Number.isFinite(pairingBId)) {
+      setSwapError("Seleciona duas duplas válidas.");
+      return;
+    }
+    setSwapBusy(true);
+    setSwapError(null);
+    setSwapMessage(null);
+    try {
+      const res = await fetch("/api/organizacao/padel/pairings/swap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, pairingAId, pairingBId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setSwapMessage("Troca concluída.");
+        setSwapPairingAId("");
+        setSwapPairingBId("");
+        mutatePairings();
+        setTimeout(() => setSwapMessage(null), 2500);
+      } else {
+        const error = data?.error || data?.errorCode;
+        const message =
+          error === "CATEGORY_MISMATCH"
+            ? "Duplas de categorias diferentes."
+            : error === "PARTNER_LOCKED"
+              ? "Parceiro já pago. Troca bloqueada."
+              : error === "PARTNER_MISSING"
+                ? "Uma das duplas não tem parceiro."
+                : error === "DUPLICATE_PLAYER"
+                  ? "Troca cria jogador duplicado."
+                  : error === "SWAP_NOT_ALLOWED"
+                    ? "Troca não permitida."
+                    : "Erro ao trocar parceiros.";
+        setSwapError(message);
+      }
+    } catch (err) {
+      setSwapError("Erro ao trocar parceiros.");
+    } finally {
+      setSwapBusy(false);
+    }
+  }
+
+  async function sendBroadcast() {
+    if (!eventId) return;
+    const message = broadcastMessage.trim();
+    if (!message) {
+      setBroadcastError("Mensagem obrigatória.");
+      return;
+    }
+    setBroadcastBusy(true);
+    setBroadcastError(null);
+    setBroadcastResult(null);
+    try {
+      const res = await fetch("/api/organizacao/padel/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          title: broadcastTitle.trim() || null,
+          message,
+          audience: broadcastAudience,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setBroadcastResult(`Mensagem enviada a ${data?.recipients ?? 0} utilizadores.`);
+        setBroadcastMessage("");
+        setBroadcastTitle("");
+        setTimeout(() => setBroadcastResult(null), 3500);
+      } else {
+        const error = data?.error || data?.errorCode;
+        const message =
+          error === "NO_RECIPIENTS"
+            ? "Sem destinatários elegíveis."
+            : error === "MESSAGE_TOO_LONG"
+              ? "Mensagem demasiado longa."
+              : "Erro ao enviar mensagem.";
+        setBroadcastError(message);
+      }
+    } catch (err) {
+      setBroadcastError("Erro ao enviar mensagem.");
+    } finally {
+      setBroadcastBusy(false);
+    }
+  }
+
   async function promoteWaitlist() {
     if (!eventId) return;
     setConfigMessage(null);
@@ -1585,8 +1747,8 @@ export default function PadelTournamentTabs({
             className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
           >
             <option value="">Seleciona vencedor</option>
-            <option value="A">A · {nameFromSlots(m.pairingA)}</option>
-            <option value="B">B · {nameFromSlots(m.pairingB)}</option>
+            <option value="A">A · {nameFromSlots(m.pairingA, locale)}</option>
+            <option value="B">B · {nameFromSlots(m.pairingB, locale)}</option>
           </select>
         )}
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/70">
@@ -2260,12 +2422,165 @@ export default function PadelTournamentTabs({
               Guardar monitor
             </button>
           </div>
+          <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-3 text-[12px] text-white/80 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Comunicação em massa</p>
+                <p className="text-[12px] text-white/70">Envia aviso rápido a participantes e/ou waitlist.</p>
+              </div>
+              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+                Notificações
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+              <input
+                type="text"
+                value={broadcastTitle}
+                onChange={(e) => setBroadcastTitle(e.target.value)}
+                className="rounded-lg border border-white/15 bg-black/30 px-2 py-2"
+                placeholder="Título (opcional)"
+              />
+              <select
+                value={broadcastAudience}
+                onChange={(e) => setBroadcastAudience(e.target.value as "ALL" | "PLAYERS" | "WAITLIST")}
+                className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px]"
+              >
+                <option value="ALL">Todos</option>
+                <option value="PLAYERS">Participantes</option>
+                <option value="WAITLIST">Waitlist</option>
+              </select>
+            </div>
+            <textarea
+              value={broadcastMessage}
+              onChange={(e) => setBroadcastMessage(e.target.value)}
+              className="min-h-[96px] rounded-lg border border-white/15 bg-black/30 px-2 py-2"
+              placeholder="Mensagem para enviar"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={sendBroadcast}
+                disabled={broadcastBusy}
+                className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 disabled:opacity-50"
+              >
+                {broadcastBusy ? "A enviar..." : "Enviar mensagem"}
+              </button>
+              {broadcastResult && <span className="text-[11px] text-emerald-200">{broadcastResult}</span>}
+              {broadcastError && <span className="text-[11px] text-rose-200">{broadcastError}</span>}
+            </div>
+          </div>
           <p className="text-[11px] text-white/50">Auto-guardado. Valores &gt;= 0.</p>
         </div>
       )}
 
       {tab === "duplas" && (
         <div className="space-y-2">
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[12px] text-white/80 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Matchmaking por categoria</p>
+                <p className="text-[12px] text-white/70">
+                  Fila ativa e duplas formadas para a categoria selecionada.
+                </p>
+              </div>
+              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+                Fila {matchmakingQueue.length} · Formadas {matchmakingFormed.length}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-white/50">Fila</p>
+                {matchmakingQueue.length === 0 ? (
+                  <p className="mt-2 text-[12px] text-white/60">Sem espera ativa.</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {matchmakingQueue.slice(0, 5).map((pairing) => (
+                      <div key={`queue-${pairing.id}`} className="flex items-center justify-between gap-2 text-[12px]">
+                        <span className="font-semibold text-white">{nameFromSlots(pairing, locale)}</span>
+                        <span className="text-white/60">
+                          {resolvePairingStatusLabel(pairing, locale)} · {resolvePaymentModeLabel(pairing.paymentMode, locale)}
+                        </span>
+                      </div>
+                    ))}
+                    {matchmakingQueue.length > 5 && (
+                      <p className="text-[11px] text-white/50">+{matchmakingQueue.length - 5} em fila</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-white/50">Duplas formadas</p>
+                {matchmakingFormed.length === 0 ? (
+                  <p className="mt-2 text-[12px] text-white/60">Sem duplas formadas ainda.</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {matchmakingFormed.slice(0, 5).map((pairing) => (
+                      <div key={`formed-${pairing.id}`} className="flex items-center justify-between gap-2 text-[12px]">
+                        <span className="font-semibold text-white">{nameFromSlots(pairing, locale)}</span>
+                        <span className="text-white/60">
+                          {resolvePairingStatusLabel(pairing, locale)} · {resolvePaymentModeLabel(pairing.paymentMode, locale)}
+                        </span>
+                      </div>
+                    ))}
+                    {matchmakingFormed.length > 5 && (
+                      <p className="text-[11px] text-white/50">
+                        +{matchmakingFormed.length - 5} duplas formadas
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[12px] text-white/80 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Swap admin</p>
+                <p className="text-[12px] text-white/70">Troca parceiros entre duas duplas (antes do pagamento).</p>
+              </div>
+              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+                {swapCandidates.length} elegíveis
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                value={swapPairingAId}
+                onChange={(e) => setSwapPairingAId(e.target.value)}
+                className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px]"
+              >
+                <option value="">Dupla A</option>
+                {swapCandidates.map((pairing) => (
+                  <option key={`swap-a-${pairing.id}`} value={pairing.id}>
+                    #{pairing.id} · {nameFromSlots(pairing, locale)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={swapPairingBId}
+                onChange={(e) => setSwapPairingBId(e.target.value)}
+                className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px]"
+              >
+                <option value="">Dupla B</option>
+                {swapCandidates.map((pairing) => (
+                  <option key={`swap-b-${pairing.id}`} value={pairing.id}>
+                    #{pairing.id} · {nameFromSlots(pairing, locale)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSwapPairings}
+                disabled={!canSubmitSwap}
+                className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 disabled:opacity-50"
+              >
+                {swapBusy ? "A trocar..." : "Trocar parceiros"}
+              </button>
+              {swapMessage && <span className="text-[11px] text-emerald-200">{swapMessage}</span>}
+              {swapError && <span className="text-[11px] text-rose-200">{swapError}</span>}
+            </div>
+          </div>
           <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[12px] text-white/80 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="uppercase tracking-[0.16em] text-[11px] text-white/60">Importar inscritos</span>
@@ -2350,8 +2665,10 @@ export default function PadelTournamentTabs({
           {filteredPairings.map((p) => (
             <div key={p.id} className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm flex items-center justify-between">
               <div>
-                <p className="font-semibold">{nameFromSlots(p)}</p>
-                <p className="text-[11px] text-white/60">{p.pairingStatus} · {p.paymentMode}</p>
+                <p className="font-semibold">{nameFromSlots(p, locale)}</p>
+                <p className="text-[11px] text-white/60">
+                  {resolvePairingStatusLabel(p, locale)} · {resolvePaymentModeLabel(p.paymentMode, locale)}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-2 text-[11px] text-white/70">
@@ -2436,7 +2753,7 @@ export default function PadelTournamentTabs({
                     {item.user?.fullName || item.user?.username || "Jogador"} ·{" "}
                     {item.category?.label || "Categoria"}
                   </span>
-                  <span className="text-white/60">{item.status}</span>
+                  <span className="text-white/60">{resolveWaitlistStatusLabel(item.status, locale)}</span>
                 </div>
               ))}
             </div>
@@ -2464,7 +2781,7 @@ export default function PadelTournamentTabs({
                         <div key={`stand-${row.pairingId}`} className="flex items-center justify-between gap-2 text-[12px]">
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-white/50">#{index + 1}</span>
-                            <span className="font-semibold text-white">{nameFromSlots(pairing)}</span>
+                            <span className="font-semibold text-white">{nameFromSlots(pairing, locale)}</span>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/60">
                             <span>{row.points} pts</span>
@@ -2494,7 +2811,7 @@ export default function PadelTournamentTabs({
                     <span className="rounded-full border border-white/20 px-2.5 py-0.5 text-[11px] text-white/70">
                       Grupo {m.groupLabel || "?"}
                     </span>
-                    <p className="font-semibold">{nameFromSlots(m.pairingA as Pairing)} vs {nameFromSlots(m.pairingB as Pairing)}</p>
+                    <p className="font-semibold">{nameFromSlots(m.pairingA as Pairing, locale)} vs {nameFromSlots(m.pairingB as Pairing, locale)}</p>
                   </div>
                   <span className="text-[11px] text-white/60">{m.status}</span>
                 </div>

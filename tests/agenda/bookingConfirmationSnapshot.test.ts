@@ -13,7 +13,11 @@ import {
 const basePolicy = {
   id: 5,
   policyType: "MODERATE",
+  allowCancellation: true,
   cancellationWindowMinutes: 2880,
+  cancellationPenaltyBps: 0,
+  allowReschedule: true,
+  rescheduleWindowMinutes: 2880,
   guestBookingAllowed: false,
   allowPayAtVenue: false,
   depositRequired: false,
@@ -35,6 +39,22 @@ describe("booking confirmation snapshot", () => {
       price: 10_000,
       currency: "eur",
       policyRef: { policyId: 5 },
+      bookingPackage: {
+        packageId: 9,
+        label: "Pacote Premium",
+        durationMinutes: 120,
+        priceCents: 10_000,
+      },
+      addons: [
+        {
+          addonId: 101,
+          label: "Barba",
+          deltaMinutes: 15,
+          deltaPriceCents: 500,
+          quantity: 1,
+          sortOrder: 0,
+        },
+      ],
       service: {
         policyId: 5,
         unitPriceCents: 10_000,
@@ -66,6 +86,8 @@ describe("booking confirmation snapshot", () => {
     expect(result.snapshot.pricingSnapshot.baseCents).toBe(10_000);
     expect(result.snapshot.pricingSnapshot.totalCents).toBe(11_000);
     expect(result.snapshot.pricingSnapshot.feeCents).toBe(1_000);
+    expect(result.snapshot.addonsSnapshot?.items.length).toBe(1);
+    expect(result.snapshot.packageSnapshot?.label).toBe("Pacote Premium");
   });
 
   it("keeps feeCents at zero when fees are included in the base price", async () => {
@@ -107,6 +129,6 @@ describe("booking confirmation snapshot", () => {
     expect(result.snapshot.pricingSnapshot.feeMode).toBe("INCLUDED");
     expect(result.snapshot.pricingSnapshot.totalCents).toBe(5_000);
     expect(result.snapshot.pricingSnapshot.feeCents).toBe(0);
+    expect(result.snapshot.packageSnapshot).toBeNull();
   });
 });
-

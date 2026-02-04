@@ -3,15 +3,15 @@ import { validatePadelCategoryGender } from "./padelCategoryGender";
 import { validatePadelCategoryLevel } from "./padelCategoryLevel";
 
 export type PadelCategoryAccessResult =
-  | { ok: true }
+  | {
+      ok: true;
+      warning?: "LEVEL_REQUIRED_FOR_CATEGORY" | "CATEGORY_LEVEL_MISMATCH";
+      missing?: { level?: true };
+    }
   | {
       ok: false;
-      code:
-        | "GENDER_REQUIRED_FOR_CATEGORY"
-        | "CATEGORY_GENDER_MISMATCH"
-        | "LEVEL_REQUIRED_FOR_CATEGORY"
-        | "CATEGORY_LEVEL_MISMATCH";
-      missing?: { gender?: true; level?: true };
+      code: "GENDER_REQUIRED_FOR_CATEGORY" | "CATEGORY_GENDER_MISMATCH";
+      missing?: { gender?: true };
     };
 
 export function validatePadelCategoryAccess(params: {
@@ -40,11 +40,12 @@ export function validatePadelCategoryAccess(params: {
     params.maxLevel ?? null,
     params.playerLevel ?? null,
   );
-  if (!levelCheck.ok) {
+
+  if ("warning" in levelCheck && levelCheck.warning) {
     return {
-      ok: false,
-      code: levelCheck.code,
-      missing: levelCheck.code === "LEVEL_REQUIRED_FOR_CATEGORY" ? { level: true } : undefined,
+      ok: true,
+      warning: levelCheck.warning,
+      missing: levelCheck.warning === "LEVEL_REQUIRED_FOR_CATEGORY" ? { level: true } : undefined,
     };
   }
 

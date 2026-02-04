@@ -33,6 +33,25 @@ type Service = {
   defaultLocationText?: string | null;
   professionalLinks?: Array<{ professionalId: number }>;
   resourceLinks?: Array<{ resourceId: number }>;
+  addons?: Array<{
+    id: number;
+    label: string;
+    description: string | null;
+    deltaMinutes: number;
+    deltaPriceCents: number;
+    maxQty: number | null;
+    category: string | null;
+    sortOrder: number;
+  }>;
+  packages?: Array<{
+    id: number;
+    label: string;
+    description: string | null;
+    durationMinutes: number;
+    priceCents: number;
+    recommended: boolean;
+    sortOrder: number;
+  }>;
 };
 
 type Professional = {
@@ -304,6 +323,8 @@ export default function ReservasBookingClient({
   const [activeStep, setActiveStep] = useState<ReservationStep>(allowServiceSelection ? 1 : 2);
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [selectedPartySize, setSelectedPartySize] = useState<number | null>(null);
+  const [selectedAddons, setSelectedAddons] = useState<Record<number, number>>({});
+  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -383,21 +404,68 @@ export default function ReservasBookingClient({
       })
     : null;
   const baseServiceCents = selectedService?.unitPriceCents ?? 0;
+  const packageOptions = useMemo(
+    () => (selectedService?.packages ?? []).slice().sort((a, b) => b.recommended - a.recommended || a.sortOrder - b.sortOrder || a.id - b.id),
+    [selectedService?.packages],
+  );
+  const selectedPackage =
+    selectedPackageId != null
+      ? packageOptions.find((pkg) => pkg.id === selectedPackageId) ?? null
+      : null;
+  const addonOptions = useMemo(
+    () => (selectedService?.addons ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
+    [selectedService?.addons],
+  );
+  const selectedAddonItems = useMemo(() => {
+    if (!addonOptions.length) return [];
+    return addonOptions
+      .map((addon) => {
+        const quantity = selectedAddons[addon.id] ?? 0;
+        if (quantity <= 0) return null;
+        return { ...addon, quantity };
+      })
+      .filter((item): item is (typeof addonOptions)[number] & { quantity: number } => Boolean(item));
+  }, [addonOptions, selectedAddons]);
+  const selectedAddonsPayload = useMemo(
+    () =>
+      selectedAddonItems.map((addon) => ({
+        addonId: addon.id,
+        quantity: addon.quantity,
+      })),
+    [selectedAddonItems],
+  );
+  const addonsParam = selectedAddonsPayload.length > 0 ? JSON.stringify(selectedAddonsPayload) : null;
+  const addonsDeltaMinutes = selectedAddonItems.reduce(
+    (sum, addon) => sum + addon.deltaMinutes * addon.quantity,
+    0,
+  );
+  const addonsDeltaCents = selectedAddonItems.reduce(
+    (sum, addon) => sum + addon.deltaPriceCents * addon.quantity,
+    0,
+  );
+  const baseDurationMinutes = selectedPackage?.durationMinutes ?? selectedService?.durationMinutes ?? 0;
+  const basePriceCents = selectedPackage?.priceCents ?? baseServiceCents;
+  const effectiveDurationMinutes = Math.max(0, baseDurationMinutes + addonsDeltaMinutes);
+  const effectiveBaseCents = Math.max(0, basePriceCents + addonsDeltaCents);
   const priceCurrency = checkout?.currency ?? selectedService?.currency ?? "EUR";
   const basePriceLabel = selectedService ? formatMoney(baseServiceCents, selectedService.currency) : null;
+  const addonsPriceLabel =
+    selectedService && addonsDeltaCents > 0 ? formatMoney(addonsDeltaCents, selectedService.currency) : null;
+  const packagePriceLabel =
+    selectedPackage && selectedService ? formatMoney(selectedPackage.priceCents, selectedService.currency) : null;
   const cardFeeBps =
     checkout?.paymentMethod === "card" && checkout.cardPlatformFeeBps != null
       ? checkout.cardPlatformFeeBps
       : CARD_FEE_BPS;
   const estimatedCardFeeCents =
     paymentMethod === "card" && selectedService
-      ? Math.max(0, Math.round((selectedService.unitPriceCents * cardFeeBps) / 10_000))
+      ? Math.max(0, Math.round((effectiveBaseCents * cardFeeBps) / 10_000))
       : 0;
   const cardFeeCents =
     paymentMethod === "card"
       ? checkout?.cardPlatformFeeCents ?? estimatedCardFeeCents
       : 0;
-  const totalEstimateCents = checkout?.amountCents ?? Math.max(0, baseServiceCents + cardFeeCents);
+  const totalEstimateCents = checkout?.amountCents ?? Math.max(0, effectiveBaseCents + cardFeeCents);
   const totalPriceLabel = selectedService ? formatMoney(totalEstimateCents, priceCurrency) : null;
   const cardFeeLabel = cardFeeBps ? `+${(cardFeeBps / 100).toFixed(0)}%` : "";
   const canAccessStep2 = Boolean(selectedService);
@@ -459,13 +527,19 @@ export default function ReservasBookingClient({
   useEffect(() => {
     if (!selectedService) {
       setLocationText("");
+      setSelectedAddons({});
+      setSelectedPackageId(null);
       return;
     }
     if (selectedService.locationMode === "CHOOSE_AT_BOOKING") {
       setLocationText(selectedService.defaultLocationText ?? "");
+      setSelectedAddons({});
+      setSelectedPackageId(null);
       return;
     }
     setLocationText("");
+    setSelectedAddons({});
+    setSelectedPackageId(null);
   }, [selectedServiceId]);
 
   useEffect(() => {
@@ -479,6 +553,8 @@ export default function ReservasBookingClient({
     setActiveStep(resetStep);
     setSelectedProfessionalId(null);
     setSelectedPartySize(null);
+    setSelectedAddons({});
+    setSelectedPackageId(null);
     setSelectedDay(null);
     setDaySlots([]);
     setSelectedSlot(null);
@@ -550,7 +626,7 @@ export default function ReservasBookingClient({
     setBookingError(null);
     setBookingSuccess(null);
     setPendingSlot(null);
-  }, [assignmentMode, selectedProfessionalId, selectedPartySize]);
+  }, [assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam]);
 
   useEffect(() => {
     if (assignmentMode === "RESOURCE" && !selectedPartySize && activeStep > 2) {
@@ -582,6 +658,12 @@ export default function ReservasBookingClient({
     if (assignmentMode === "RESOURCE" && selectedPartySize) {
       params.set("partySize", String(selectedPartySize));
     }
+    if (selectedPackageId) {
+      params.set("packageId", String(selectedPackageId));
+    }
+    if (addonsParam) {
+      params.set("addons", addonsParam);
+    }
 
     fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, {
       cache: "no-store",
@@ -601,7 +683,7 @@ export default function ReservasBookingClient({
       .finally(() => setCalendarLoading(false));
 
     return () => controller.abort();
-  }, [selectedServiceId, assignmentMode, selectedProfessionalId, selectedPartySize, calendarMonthParam]);
+  }, [selectedServiceId, assignmentMode, selectedProfessionalId, selectedPartySize, calendarMonthParam, addonsParam, selectedPackageId]);
 
   const availabilityMap = useMemo(() => {
     const map = new Map<string, AvailabilityDay>();
@@ -627,6 +709,12 @@ export default function ReservasBookingClient({
     }
     if (assignmentMode === "RESOURCE" && selectedPartySize) {
       params.set("partySize", String(selectedPartySize));
+    }
+    if (selectedPackageId) {
+      params.set("packageId", String(selectedPackageId));
+    }
+    if (addonsParam) {
+      params.set("addons", addonsParam);
     }
 
     fetch(`/api/servicos/${selectedServiceId}/slots?${params.toString()}`, { cache: "no-store" })
@@ -802,6 +890,8 @@ export default function ReservasBookingClient({
           partySize: assignmentMode === "RESOURCE" ? selectedPartySize : null,
           locationText:
             selectedService.locationMode === "CHOOSE_AT_BOOKING" ? locationText.trim() : null,
+          selectedAddons: selectedAddonsPayload,
+          packageId: selectedPackageId,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -922,6 +1012,144 @@ export default function ReservasBookingClient({
     onClose?.();
   };
 
+  const setAddonQuantity = (addonId: number, nextQty: number, maxQty: number | null) => {
+    const upperBound = maxQty && maxQty > 0 ? maxQty : 1;
+    const quantity = Math.max(0, Math.min(upperBound, Math.floor(nextQty)));
+    setSelectedAddons((prev) => {
+      const next = { ...prev };
+      if (quantity <= 0) {
+        delete next[addonId];
+      } else {
+        next[addonId] = quantity;
+      }
+      return next;
+    });
+  };
+
+  const packagesPanel =
+    selectedService && packageOptions.length > 0 ? (
+      <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Pacotes</p>
+            <p className="text-sm font-semibold text-white">Escolhe um pacote</p>
+          </div>
+          <span className="text-[11px] text-white/50">Opcional</span>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setSelectedPackageId(null)}
+            className={`${selectableCardBase} ${selectedPackageId === null ? selectableCardActive : ""}`}
+          >
+            <p className="text-sm font-semibold text-white">Sem pacote</p>
+            <p className="mt-1 text-[12px] text-white/60">
+              {selectedService.durationMinutes} min · {formatMoney(selectedService.unitPriceCents, selectedService.currency)}
+            </p>
+          </button>
+          {packageOptions.map((pkg) => {
+            const active = selectedPackageId === pkg.id;
+            return (
+              <button
+                key={pkg.id}
+                type="button"
+                onClick={() => setSelectedPackageId(pkg.id)}
+                className={`${selectableCardBase} ${active ? selectableCardActive : ""}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-white">{pkg.label}</p>
+                  {pkg.recommended && (
+                    <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-0.5 text-[10px] text-emerald-100">
+                      Recomendado
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-[12px] text-white/60">
+                  {pkg.durationMinutes} min · {formatMoney(pkg.priceCents, selectedService.currency)}
+                </p>
+                {pkg.description && (
+                  <p className="mt-1 text-[11px] text-white/55 line-clamp-2">{pkg.description}</p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
+  const addonsPanel =
+    selectedService && addonOptions.length > 0 ? (
+      <div className="mt-6 rounded-2xl border border-white/12 bg-white/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Extras</p>
+            <p className="text-sm font-semibold text-white">Personaliza o serviço</p>
+          </div>
+          {addonsDeltaCents > 0 || addonsDeltaMinutes > 0 ? (
+            <span className="text-[11px] text-white/60">
+              +{addonsDeltaMinutes} min · +{formatMoney(addonsDeltaCents, selectedService.currency)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-white/50">Opcional</span>
+          )}
+        </div>
+        <div className="mt-3 space-y-2">
+          {addonOptions.map((addon) => {
+            const quantity = selectedAddons[addon.id] ?? 0;
+            const maxQty = addon.maxQty ?? 1;
+            const priceLabel = formatMoney(addon.deltaPriceCents, selectedService.currency);
+            const durationLabel = addon.deltaMinutes ? `${addon.deltaMinutes} min` : "Tempo base";
+            return (
+              <div
+                key={addon.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-white">{addon.label}</p>
+                  <p className="text-[12px] text-white/60">
+                    {addon.description || `${durationLabel} · +${priceLabel}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {maxQty > 1 ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className={ghostButtonClass}
+                        onClick={() => setAddonQuantity(addon.id, quantity - 1, maxQty)}
+                        disabled={quantity <= 0}
+                      >
+                        -
+                      </button>
+                      <span className="min-w-[24px] text-center text-[12px] text-white/80">
+                        {quantity}
+                      </span>
+                      <button
+                        type="button"
+                        className={ghostButtonClass}
+                        onClick={() => setAddonQuantity(addon.id, quantity + 1, maxQty)}
+                        disabled={quantity >= maxQty}
+                      >
+                        +
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className={quantity > 0 ? primaryButtonClass : ghostButtonClass}
+                      onClick={() => setAddonQuantity(addon.id, quantity > 0 ? 0 : 1, maxQty)}
+                    >
+                      {quantity > 0 ? "Selecionado" : "Adicionar"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
   return (
     <section className={mode === "modal" ? "h-full" : "space-y-5 sm:space-y-6"}>
       <div className={cn(shellClass, shellHeightClass, shellRadiusClass)}>
@@ -934,7 +1162,7 @@ export default function ReservasBookingClient({
               <h2 className="text-xl font-semibold text-white sm:text-2xl">Agendar</h2>
                 {selectedService && !allowServiceSelection && (
                   <p className="text-[12px] text-white/60">
-                    {selectedService.title} · {selectedService.durationMinutes} min
+                    {selectedService.title} · {effectiveDurationMinutes} min
                   </p>
                 )}
               </div>
@@ -1059,6 +1287,9 @@ export default function ReservasBookingClient({
                   </div>
                 )}
 
+                {packagesPanel}
+                {addonsPanel}
+
                 <div className="mt-4 flex items-center justify-end">
                   <button
                     type="button"
@@ -1071,6 +1302,9 @@ export default function ReservasBookingClient({
                 </div>
               </div>
             )}
+
+              {!allowServiceSelection && activeStep === 2 && packagesPanel}
+              {!allowServiceSelection && activeStep === 2 && addonsPanel}
 
               {activeStep === 2 && assignmentMode === "PROFESSIONAL" && (
                 <div className={panelClass}>
@@ -1273,7 +1507,7 @@ export default function ReservasBookingClient({
                       <div className="flex items-center justify-between text-[11px] text-white/60">
                         <span className="uppercase tracking-[0.2em]">Horários</span>
                         {selectedService && (
-                          <span>{formatMoney(selectedService.unitPriceCents, selectedService.currency)}</span>
+                          <span>{formatMoney(effectiveBaseCents, selectedService.currency)}</span>
                         )}
                       </div>
                       <h4 className="mt-1 text-sm font-semibold text-white">
@@ -1395,8 +1629,8 @@ export default function ReservasBookingClient({
                       </p>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/70">
                         <span>
-                          {selectedService ? `${selectedService.durationMinutes} min` : ""} ·{" "}
-                          {selectedService ? formatMoney(selectedService.unitPriceCents, selectedService.currency) : ""}
+                          {selectedService ? `${effectiveDurationMinutes} min` : ""} ·{" "}
+                          {selectedService ? formatMoney(effectiveBaseCents, selectedService.currency) : ""}
                         </span>
                       </div>
                       {!checkout && (
@@ -1488,6 +1722,12 @@ export default function ReservasBookingClient({
                             <span>Valor base</span>
                             <span>{basePriceLabel ?? "--"}</span>
                           </div>
+                          {addonsPriceLabel && (
+                            <div className="flex items-center justify-between">
+                              <span>Extras</span>
+                              <span>+{addonsPriceLabel}</span>
+                            </div>
+                          )}
                           {paymentMethod === "card" && cardFeeCents > 0 && (
                             <div className="flex items-center justify-between">
                               <span>Taxa cartão</span>
@@ -1540,11 +1780,29 @@ export default function ReservasBookingClient({
                       </p>
                       {selectedService ? (
                         <p className="mt-1 text-[12px] text-white/60">
-                          {selectedService.durationMinutes} min ·{" "}
-                          {formatMoney(selectedService.unitPriceCents, selectedService.currency)}
+                          {effectiveDurationMinutes} min ·{" "}
+                          {formatMoney(effectiveBaseCents, selectedService.currency)}
                         </p>
                       ) : (
                         <p className="mt-1 text-[12px] text-white/60">Por definir.</p>
+                      )}
+                      {selectedPackage && (
+                        <p className="mt-2 text-[11px] text-white/60">
+                          Pacote: {selectedPackage.label} · {packagePriceLabel}
+                        </p>
+                      )}
+                      {selectedAddonItems.length > 0 && (
+                        <div className="mt-2 space-y-1 text-[11px] text-white/60">
+                          {selectedAddonItems.map((addon) => (
+                            <div key={addon.id} className="flex items-center justify-between gap-2">
+                              <span>
+                                {addon.label}
+                                {addon.quantity > 1 ? ` x${addon.quantity}` : ""}
+                              </span>
+                              <span>+{formatMoney(addon.deltaPriceCents * addon.quantity, selectedService?.currency ?? "EUR")}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                     {allowServiceSelection ? (

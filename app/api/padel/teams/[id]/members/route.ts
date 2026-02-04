@@ -5,20 +5,26 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { OrganizationMemberRole, PadelTeamMemberStatus, PadelTeamRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, PadelTeamMemberStatus, PadelTeamRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 type ResolveTeamResult =
-  | { organization: { id: number }; userId: string; team: { id: number; organizationId: number } }
+  | {
+      organization: { id: number };
+      userId: string;
+      team: { id: number; organizationId: number };
+    }
   | { error: Response };
 
 async function resolveTeam(
   req: NextRequest,
   teamId: number,
   roles: OrganizationMemberRole[],
+  required: "VIEW" | "EDIT",
 ): Promise<ResolveTeamResult> {
   const supabase = await createSupabaseServer();
   const {
@@ -38,11 +44,23 @@ async function resolveTeam(
     return { error };
   }
 
-  const { organization } = await getActiveOrganizationForUser(user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: team.organizationId,
     roles,
   });
-  if (!organization) {
+  if (!organization || !membership) {
+    const error = jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 }) as Response;
+    return { error };
+  }
+  const permission = await ensureMemberModuleAccess({
+    organizationId: team.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required,
+  });
+  if (!permission.ok) {
     const error = jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 }) as Response;
     return { error };
   }
@@ -55,7 +73,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   const teamId = Number(resolved?.id);
   if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
-  const ctx = await resolveTeam(req, teamId, readRoles);
+  const ctx = await resolveTeam(req, teamId, readRoles, "VIEW");
   if ("error" in ctx) return ctx.error;
 
   const members = await prisma.padelTeamMember.findMany({
@@ -76,7 +94,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const teamId = Number(resolved?.id);
   if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
-  const ctx = await resolveTeam(req, teamId, writeRoles);
+  const ctx = await resolveTeam(req, teamId, writeRoles, "EDIT");
   if ("error" in ctx) return ctx.error;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -138,7 +156,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
   const teamId = Number(resolved?.id);
   if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
-  const ctx = await resolveTeam(req, teamId, writeRoles);
+  const ctx = await resolveTeam(req, teamId, writeRoles, "EDIT");
   if ("error" in ctx) return ctx.error;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

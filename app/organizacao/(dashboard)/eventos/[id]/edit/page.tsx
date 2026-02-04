@@ -74,7 +74,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
     pricingMode: event.pricingMode ?? undefined,
     ticketPrices: event.ticketTypes.map((t) => t.price ?? 0),
   });
-  const eventRouteBase = isPadelEvent ? "/organizacao/torneios" : "/organizacao/eventos";
+  const eventRouteBase = isPadelEvent ? "/organizacao/padel/torneios" : "/organizacao/eventos";
   const primaryLabelTitle = isPadelEvent ? "Torneio" : "Evento";
   const fallbackHref = eventRouteBase;
 

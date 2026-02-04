@@ -7,6 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { normalizeEmail } from "@/lib/utils/email";
 import { normalizePhone } from "@/lib/phone";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveLocale, t } from "@/lib/i18n";
 import {
   Gender,
   PadelEligibilityType,
@@ -35,44 +36,49 @@ function normalizeIdentifier(value: string | null | undefined) {
   return trimmed.toLowerCase();
 }
 
-function genderLabel(gender?: Gender | null) {
-  if (gender === "MALE") return "masculino";
-  if (gender === "FEMALE") return "feminino";
-  return "não definido";
+function genderLabel(gender: Gender | null | undefined, locale: string) {
+  if (gender === "MALE") return t("genderLabelMale", locale);
+  if (gender === "FEMALE") return t("genderLabelFemale", locale);
+  return t("genderLabelUnknown", locale);
 }
 
-function eligibilityLabel(eligibilityType: PadelEligibilityType | null | undefined) {
+function eligibilityLabel(eligibilityType: PadelEligibilityType | null | undefined, locale: string) {
   switch (eligibilityType) {
     case "MALE_ONLY":
-      return "Torneio masculino";
+      return t("eligibilityLabelMaleOnly", locale);
     case "FEMALE_ONLY":
-      return "Torneio feminino";
+      return t("eligibilityLabelFemaleOnly", locale);
     case "MIXED":
-      return "Torneio misto";
+      return t("eligibilityLabelMixed", locale);
     default:
-      return "Torneio open";
+      return t("eligibilityLabelOpen", locale);
   }
 }
 
-function categoryLabel(restriction?: string | null) {
+function categoryLabel(restriction: string | null | undefined, locale: string) {
   const value = (restriction ?? "").trim().toUpperCase();
-  if (value === "MALE") return "Categoria masculina";
-  if (value === "FEMALE") return "Categoria feminina";
-  if (value === "MIXED") return "Categoria mista";
-  return "Categoria aberta";
+  if (value === "MALE") return t("categoryLabelMale", locale);
+  if (value === "FEMALE") return t("categoryLabelFemale", locale);
+  if (value === "MIXED") return t("categoryLabelMixed", locale);
+  if (value === "MIXED_FREE") return t("categoryLabelMixedFree", locale);
+  return t("categoryLabelOpen", locale);
 }
 
-function levelLabel(minLevel?: string | null, maxLevel?: string | null) {
+function levelLabel(minLevel: string | null | undefined, maxLevel: string | null | undefined, locale: string) {
   const min = (minLevel ?? "").trim();
   const max = (maxLevel ?? "").trim();
-  if (min && max && min === max) return `Nível ${min}`;
-  if (min && max) return `Nível ${min}-${max}`;
-  if (min) return `Nível ${min}+`;
-  if (max) return `Nível até ${max}`;
-  return "Nível livre";
+  if (min && max && min === max) return t("levelLabelExact", locale).replace("{level}", min);
+  if (min && max) return t("levelLabelRange", locale).replace("{min}", min).replace("{max}", max);
+  if (min) return t("levelLabelMin", locale).replace("{min}", min);
+  if (max) return t("levelLabelMax", locale).replace("{max}", max);
+  return t("levelLabelOpen", locale);
 }
 
 async function _GET(req: NextRequest) {
+  const acceptLanguage = req.headers.get("accept-language");
+  const locale = resolveLocale(
+    req.nextUrl.searchParams.get("lang") ?? (acceptLanguage ? acceptLanguage.split(",")[0] : null),
+  );
   const pairingIdRaw = req.nextUrl.searchParams.get("pairingId");
   const pairingId = Number(pairingIdRaw);
   if (!pairingIdRaw || !Number.isFinite(pairingId)) {
@@ -102,6 +108,7 @@ async function _GET(req: NextRequest) {
         partnerInviteToken: true,
         partnerLinkExpiresAt: true,
         deadlineAt: true,
+        graceUntilAt: true,
         event: { select: { title: true, slug: true } },
         slots: {
           select: {
@@ -192,7 +199,12 @@ async function _GET(req: NextRequest) {
     pairing.deadlineAt &&
     pairing.deadlineAt.getTime() < now &&
     unpaid;
-  const isExpired = expiredInvite || expiredDeadline;
+  const expiredGrace =
+    pairing.payment_mode === PadelPaymentMode.SPLIT &&
+    pairing.graceUntilAt &&
+    pairing.graceUntilAt.getTime() < now &&
+    unpaid;
+  const isExpired = expiredInvite || expiredDeadline || expiredGrace;
 
   let state: InviteState = "AWAITING_PAYMENT";
   let requiredAction: "PAY" | "ACCEPT" | "ONBOARD" | "WAIT_PARTNER" | "SUPPORT" | "NONE" = "NONE";
@@ -245,8 +257,8 @@ async function _GET(req: NextRequest) {
       (tournamentConfig?.eligibilityType as PadelEligibilityType) ?? PadelEligibilityType.OPEN;
     const captainGender = captainProfile?.gender ?? null;
     const partnerGender = partnerProfile?.gender ?? null;
-    const captainGenderLabel = genderLabel(captainGender);
-    const partnerGenderLabel = genderLabel(partnerGender);
+    const captainGenderLabel = genderLabel(captainGender, locale);
+    const partnerGenderLabel = genderLabel(partnerGender, locale);
 
     if (!partnerGender) {
       blockingReason = "PROFILE_INCOMPLETE";
@@ -255,8 +267,8 @@ async function _GET(req: NextRequest) {
         reason: "PROFILE_INCOMPLETE",
         message:
           viewerRole === "INVITED"
-            ? "Define o teu sexo no perfil de padel para continuares."
-            : "O parceiro precisa definir o sexo no perfil de padel.",
+            ? t("pairingGenderRequiredSelf", locale)
+            : t("pairingGenderRequiredPartner", locale),
         captainGender,
         partnerGender,
       };
@@ -271,7 +283,10 @@ async function _GET(req: NextRequest) {
         requiredAction = "NONE";
         blockingDetails = {
           reason: "GENDER_MISMATCH",
-          message: `${eligibilityLabel(eligibilityType)}: capitão ${captainGenderLabel}, parceiro ${partnerGenderLabel}.`,
+          message: t("pairingEligibilitySummary", locale)
+            .replace("{eligibility}", eligibilityLabel(eligibilityType, locale))
+            .replace("{captain}", captainGenderLabel)
+            .replace("{partner}", partnerGenderLabel),
           captainGender,
           partnerGender,
           eligibilityType,
@@ -287,7 +302,10 @@ async function _GET(req: NextRequest) {
           requiredAction = "NONE";
           blockingDetails = {
             reason: "CATEGORY_GENDER_MISMATCH",
-            message: `${categoryLabel(category?.genderRestriction ?? null)}: capitão ${captainGenderLabel}, parceiro ${partnerGenderLabel}.`,
+            message: t("pairingCategorySummary", locale)
+              .replace("{category}", categoryLabel(category?.genderRestriction ?? null, locale))
+              .replace("{captain}", captainGenderLabel)
+              .replace("{partner}", partnerGenderLabel),
             captainGender,
             partnerGender,
             categoryRestriction: category?.genderRestriction ?? null,
@@ -298,34 +316,26 @@ async function _GET(req: NextRequest) {
             category?.maxLevel ?? null,
             partnerProfile?.padelLevel ?? null,
           );
-          if (!categoryLevel.ok) {
-            const requirementLabel = levelLabel(category?.minLevel ?? null, category?.maxLevel ?? null);
-            const partnerLevelLabel = (partnerProfile?.padelLevel ?? "").trim() || "não definido";
-            if (categoryLevel.code === "LEVEL_REQUIRED_FOR_CATEGORY") {
-              blockingReason = "LEVEL_REQUIRED_FOR_CATEGORY";
-              requiredAction = viewerRole === "INVITED" ? "ONBOARD" : "WAIT_PARTNER";
-              blockingDetails = {
-                reason: "LEVEL_REQUIRED_FOR_CATEGORY",
-                message:
-                  viewerRole === "INVITED"
-                    ? "Define o teu nível de padel para continuares."
-                    : "O parceiro precisa definir o nível de padel.",
-                categoryMinLevel: category?.minLevel ?? null,
-                categoryMaxLevel: category?.maxLevel ?? null,
-                partnerLevel: partnerProfile?.padelLevel ?? null,
-              };
-            } else {
-              const partnerLabel = viewerRole === "INVITED" ? "teu" : "do parceiro";
-              blockingReason = "CATEGORY_LEVEL_MISMATCH";
-              requiredAction = "NONE";
-              blockingDetails = {
-                reason: "CATEGORY_LEVEL_MISMATCH",
-                message: `${requirementLabel}: nível ${partnerLabel} ${partnerLevelLabel}.`,
-                categoryMinLevel: category?.minLevel ?? null,
-                categoryMaxLevel: category?.maxLevel ?? null,
-                partnerLevel: partnerProfile?.padelLevel ?? null,
-              };
-            }
+          if (categoryLevel.ok && categoryLevel.warning) {
+            const requirementLabel = levelLabel(category?.minLevel ?? null, category?.maxLevel ?? null, locale);
+            const partnerLevelLabel = (partnerProfile?.padelLevel ?? "").trim() || t("levelLabelUndefined", locale);
+            const partnerLabel =
+              viewerRole === "INVITED" ? t("pairingPartnerLabelSelf", locale) : t("pairingPartnerLabelPartner", locale);
+            blockingDetails = {
+              reason: categoryLevel.warning,
+              message:
+                categoryLevel.warning === "LEVEL_REQUIRED_FOR_CATEGORY"
+                  ? viewerRole === "INVITED"
+                    ? t("pairingLevelRequiredSelf", locale)
+                    : t("pairingLevelRequiredPartner", locale)
+                  : t("pairingLevelMismatch", locale)
+                      .replace("{requirement}", requirementLabel)
+                      .replace("{who}", partnerLabel)
+                      .replace("{level}", partnerLevelLabel),
+              categoryMinLevel: category?.minLevel ?? null,
+              categoryMaxLevel: category?.maxLevel ?? null,
+              partnerLevel: partnerProfile?.padelLevel ?? null,
+            };
           }
         }
       }
@@ -343,6 +353,7 @@ async function _GET(req: NextRequest) {
     state = "ACTION_REQUIRED";
   } else if (pairing.pairingStatus === "COMPLETE") {
     state = "CONFIRMED";
+    requiredAction = "NONE";
   } else if (pairing.payment_mode === PadelPaymentMode.FULL) {
     if (!captainPaid) {
       state = "AWAITING_PAYMENT";
@@ -355,22 +366,25 @@ async function _GET(req: NextRequest) {
       requiredAction = "NONE";
     }
   } else if (pairing.payment_mode === PadelPaymentMode.SPLIT) {
-    if (partnerPaid) {
+    if (!captainPaid) {
+      state = "AWAITING_PAYMENT";
+      requiredAction = viewerRole === "CAPTAIN" ? "PAY" : "WAIT_PARTNER";
+    } else if (!partnerFilled) {
+      state = "AWAITING_ACCEPT";
+      requiredAction = viewerRole === "INVITED" ? "ACCEPT" : "WAIT_PARTNER";
+    } else if (partnerPaid) {
       state = "CONFIRMED";
       requiredAction = "NONE";
     } else {
       state = "AWAITING_PAYMENT";
-      requiredAction = viewerRole === "INVITED" ? "PAY" : "WAIT_PARTNER";
+      requiredAction = "PAY";
     }
   } else {
     state = "AWAITING_PAYMENT";
     requiredAction = viewerRole === "INVITED" ? "PAY" : "WAIT_PARTNER";
   }
 
-  const canAccept =
-    state === "AWAITING_ACCEPT" &&
-    viewerRole === "INVITED" &&
-    pairing.payment_mode === PadelPaymentMode.FULL;
+  const canAccept = state === "AWAITING_ACCEPT" && viewerRole === "INVITED";
   const canDecline =
     viewerRole === "INVITED" &&
     !isCancelled &&
@@ -380,8 +394,8 @@ async function _GET(req: NextRequest) {
   const canPaySplit =
     state === "AWAITING_PAYMENT" &&
     pairing.payment_mode === PadelPaymentMode.SPLIT &&
-    Boolean(partnerSlot && !partnerPaid) &&
-    (viewerRole === "INVITED" || Boolean(partnerSlot?.invitedUserId));
+    ((viewerRole === "CAPTAIN" && (!captainPaid || (partnerFilled && !partnerPaid))) ||
+      (viewerRole === "INVITED" && partnerFilled && !partnerPaid));
   const canPayFull =
     state === "AWAITING_PAYMENT" &&
     pairing.payment_mode === PadelPaymentMode.FULL &&
@@ -489,38 +503,60 @@ async function _GET(req: NextRequest) {
       : null;
 
   const statusLabelMap: Record<InviteState, string> = {
-    AWAITING_PAYMENT: "Pagamento pendente",
-    AWAITING_ACCEPT: "Aguardando confirmação",
-    CONFIRMED: "Dupla confirmada",
-    EXPIRED: "Convite expirado",
-    CANCELLED: "Dupla cancelada",
-    ACTION_REQUIRED: "Ação necessária",
+    AWAITING_PAYMENT: t("pairingStatusPending", locale),
+    AWAITING_ACCEPT: t("pairingStatusPending", locale),
+    CONFIRMED: t("pairingStatusConfirmed", locale),
+    EXPIRED: t("pairingStatusExpired", locale),
+    CANCELLED: t("pairingStatusCancelled", locale),
+    ACTION_REQUIRED: t("pairingStatusPending", locale),
   };
 
   let statusHint: string | null = null;
   if (state === "AWAITING_PAYMENT" && pairing.payment_mode === PadelPaymentMode.FULL) {
     statusHint =
       viewerRole === "CAPTAIN"
-        ? "Falta o teu pagamento para garantir a inscrição."
-        : "A aguardar pagamento do capitão.";
-  } else if (state === "AWAITING_PAYMENT" && viewerRole === "CAPTAIN") {
-    statusHint = "O parceiro ainda não pagou.";
+        ? t("pairingHintAwaitYourPayment", locale)
+        : t("pairingHintAwaitCaptainPayment", locale);
+  } else if (state === "AWAITING_PAYMENT" && pairing.payment_mode === PadelPaymentMode.SPLIT) {
+    if (!captainPaid) {
+      statusHint =
+        viewerRole === "CAPTAIN"
+          ? t("pairingHintAwaitYourPayment", locale)
+          : t("pairingHintAwaitCaptainPayment", locale);
+    } else if (viewerRole === "CAPTAIN") {
+      statusHint = t("pairingHintAwaitPartnerPayment", locale);
+    } else {
+      statusHint = t("pairingHintAwaitYourPaymentPartner", locale);
+    }
   } else if (state === "AWAITING_ACCEPT" && viewerRole === "CAPTAIN") {
-    statusHint = "Aguardamos a confirmação do parceiro.";
+    statusHint = t("pairingHintAwaitPartnerAcceptance", locale);
   } else if (state === "AWAITING_ACCEPT" && viewerRole === "INVITED") {
-    statusHint = "Confirma a tua presença para fechar a dupla.";
+    statusHint = t("pairingHintAwaitYourConfirmation", locale);
   } else if (state === "CANCELLED" && viewerRole === "CAPTAIN") {
-    statusHint = "Podes criar um novo convite ou entrar em matchmaking.";
+    statusHint = t("pairingHintCancelledCaptain", locale);
   } else if (state === "CANCELLED") {
-    statusHint = "Esta dupla foi cancelada.";
+    statusHint = t("pairingHintCancelledViewer", locale);
   } else if (state === "ACTION_REQUIRED" && blockingReason) {
-    statusHint = blockingDetails?.message ?? "A dupla não cumpre os requisitos.";
+    statusHint = blockingDetails?.message ?? t("pairingHintRequirements", locale);
+  }
+
+  let statusLabel = statusLabelMap[state];
+  if (state === "CONFIRMED") {
+    statusLabel = t("pairingStatusConfirmed", locale);
+  } else if (state === "EXPIRED") {
+    statusLabel = t("pairingStatusExpired", locale);
+  } else if (state === "CANCELLED") {
+    statusLabel = t("pairingStatusCancelled", locale);
+  } else if (pairing.pairingJoinMode === "LOOKING_FOR_PARTNER") {
+    statusLabel = t("pairingStatusMatchmaking", locale);
+    if (!statusHint) {
+      statusHint = t("pairingHintMatchmaking", locale);
+    }
   }
 
   const canSwap =
     viewerRole === "CAPTAIN" && partnerSlot
-      ? partnerSlot.paymentStatus !== PadelPairingPaymentStatus.PAID &&
-        partnerSlot.slotStatus !== PadelPairingSlotStatus.FILLED
+      ? partnerSlot.paymentStatus !== PadelPairingPaymentStatus.PAID
       : false;
   const canCancel =
     viewerRole === "CAPTAIN" &&
@@ -534,12 +570,13 @@ async function _GET(req: NextRequest) {
       pairingId: pairing.id,
       viewerRole,
       state,
-      statusLabel: statusLabelMap[state],
+      statusLabel,
       statusHint,
       requiredAction,
       blockingReason,
       blockingDetails,
       paymentMode: pairing.payment_mode,
+      pairingJoinMode: pairing.pairingJoinMode,
       pairingStatus: pairing.pairingStatus,
       lifecycleStatus,
       deadlineAt: pairing.deadlineAt?.toISOString() ?? null,

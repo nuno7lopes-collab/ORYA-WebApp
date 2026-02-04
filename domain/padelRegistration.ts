@@ -1,6 +1,8 @@
 import {
   EventStatus,
   PadelPairingJoinMode,
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
   PadelPaymentMode,
   PadelRegistrationStatus,
   PadelTournamentLifecycleStatus,
@@ -174,6 +176,27 @@ export function resolvePartnerActionStatus(params: { partnerPaid: boolean }): Pa
   return params.partnerPaid ? PadelRegistrationStatus.CONFIRMED : PadelRegistrationStatus.PENDING_PAYMENT;
 }
 
+export function resolveRegistrationStatusFromSlots(params: {
+  pairingJoinMode: PadelPairingJoinMode;
+  slots: Array<{ slotStatus: PadelPairingSlotStatus; paymentStatus: PadelPairingPaymentStatus }>;
+}): PadelRegistrationStatus {
+  const { pairingJoinMode, slots } = params;
+  const hasSlots = slots.length > 0;
+  const allFilled = hasSlots && slots.every((slot) => slot.slotStatus === PadelPairingSlotStatus.FILLED);
+  const allPaid = hasSlots && slots.every((slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID);
+
+  if (allPaid) {
+    return PadelRegistrationStatus.CONFIRMED;
+  }
+  if (allFilled && !allPaid) {
+    return PadelRegistrationStatus.PENDING_PAYMENT;
+  }
+  if (pairingJoinMode === PadelPairingJoinMode.LOOKING_FOR_PARTNER) {
+    return PadelRegistrationStatus.MATCHMAKING;
+  }
+  return PadelRegistrationStatus.PENDING_PARTNER;
+}
+
 const TERMINAL_STATUSES = new Set<PadelRegistrationStatus>([
   PadelRegistrationStatus.EXPIRED,
   PadelRegistrationStatus.CANCELLED,
@@ -214,7 +237,12 @@ export async function transitionPadelRegistrationStatus(
   const allowSameStatusEvents = Boolean(params.emitSecondChargeDue);
   if (fromStatus && fromStatus === status && !allowSameStatusEvents) return existing;
   if (fromStatus && TERMINAL_STATUSES.has(fromStatus) && fromStatus !== status) {
-    throw new Error("PADREG_TERMINAL_STATUS");
+    const allowRefundTransition =
+      status === PadelRegistrationStatus.REFUNDED &&
+      (fromStatus === PadelRegistrationStatus.CANCELLED || fromStatus === PadelRegistrationStatus.EXPIRED);
+    if (!allowRefundTransition) {
+      throw new Error("PADREG_TERMINAL_STATUS");
+    }
   }
   if (status === PadelRegistrationStatus.EXPIRED && fromStatus && !EXPIRE_ALLOWED_FROM.has(fromStatus)) {
     throw new Error("PADREG_EXPIRE_INVALID");

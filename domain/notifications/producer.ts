@@ -93,6 +93,46 @@ export async function notifyPartnerPaid(params: {
   });
 }
 
+export async function notifyPairingWindowOpen(params: {
+  pairingId: number;
+  userId: string;
+  deadlineAt?: string | null;
+}) {
+  const dedupeKey = buildDedupe("PAIRING_WINDOW_OPEN", [params.pairingId, params.userId]);
+  return queue("PAIRING_WINDOW_OPEN", dedupeKey, {
+    userId: params.userId,
+    payload: { pairingId: params.pairingId, deadlineAt: params.deadlineAt ?? null },
+  });
+}
+
+export async function notifyPairingConfirmed(params: {
+  pairingId: number;
+  userId: string;
+}) {
+  const dedupeKey = buildDedupe("PAIRING_CONFIRMED", [params.pairingId, params.userId]);
+  return queue("PAIRING_CONFIRMED", dedupeKey, {
+    userId: params.userId,
+    payload: { pairingId: params.pairingId },
+  });
+}
+
+export async function notifyPairingRefund(params: {
+  pairingId: number;
+  userId: string;
+  refundBaseCents?: number | null;
+  currency?: string | null;
+}) {
+  const dedupeKey = buildDedupe("PAIRING_REFUND", [params.pairingId, params.userId]);
+  return queue("PAIRING_REFUND", dedupeKey, {
+    userId: params.userId,
+    payload: {
+      pairingId: params.pairingId,
+      refundBaseCents: params.refundBaseCents ?? null,
+      currency: params.currency ?? null,
+    },
+  });
+}
+
 export async function notifyDeadlineExpired(params: { pairingId: number; userId: string }) {
   const dedupeKey = buildDedupe("DEADLINE_EXPIRED", [params.pairingId, params.userId]);
   return queue("DEADLINE_EXPIRED", dedupeKey, {
@@ -106,6 +146,40 @@ export async function notifyOffsessionActionRequired(params: { pairingId: number
   return queue("OFFSESSION_ACTION_REQUIRED", dedupeKey, {
     userId: params.userId,
     payload: { pairingId: params.pairingId },
+  });
+}
+
+export async function notifyWaitlistJoined(params: {
+  userId: string;
+  eventId?: number | null;
+  pairingId?: number | null;
+  categoryId?: number | null;
+}) {
+  const dedupeKey = buildDedupe("WAITLIST_JOINED", [params.eventId ?? null, params.userId, params.categoryId ?? null]);
+  return queue("WAITLIST_JOINED", dedupeKey, {
+    userId: params.userId,
+    payload: {
+      eventId: params.eventId ?? null,
+      pairingId: params.pairingId ?? null,
+      categoryId: params.categoryId ?? null,
+    },
+  });
+}
+
+export async function notifyWaitlistPromoted(params: {
+  userId: string;
+  eventId?: number | null;
+  pairingId?: number | null;
+  categoryId?: number | null;
+}) {
+  const dedupeKey = buildDedupe("WAITLIST_PROMOTED", [params.eventId ?? null, params.userId, params.categoryId ?? null]);
+  return queue("WAITLIST_PROMOTED", dedupeKey, {
+    userId: params.userId,
+    payload: {
+      eventId: params.eventId ?? null,
+      pairingId: params.pairingId ?? null,
+      categoryId: params.categoryId ?? null,
+    },
   });
 }
 

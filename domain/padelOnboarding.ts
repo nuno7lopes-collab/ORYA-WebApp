@@ -29,15 +29,12 @@ export function getPadelOnboardingMissing(params: {
   const fullName = profile?.fullName?.trim() ?? "";
   const username = profile?.username?.trim() ?? "";
   const phone = profile?.contactPhone?.trim() ?? "";
-  const level = profile?.padelLevel?.trim() ?? "";
 
   if (!fullName) missing.fullName = true;
   if (!username) missing.username = true;
   if (!email?.trim()) missing.email = true;
   if (!phone) missing.phone = true;
   if (!profile?.gender) missing.gender = true;
-  if (!level) missing.level = true;
-  if (!profile?.padelPreferredSide) missing.preferredSide = true;
 
   return missing;
 }

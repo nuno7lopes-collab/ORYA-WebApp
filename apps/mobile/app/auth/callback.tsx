@@ -10,7 +10,13 @@ import { tokens } from "@orya/shared";
 WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthCallbackScreen() {
-  const params = useLocalSearchParams<{ code?: string; error?: string; error_description?: string }>();
+  const params = useLocalSearchParams<{
+    code?: string;
+    error?: string;
+    error_description?: string;
+    access_token?: string;
+    refresh_token?: string;
+  }>();
   const router = useRouter();
   const [message, setMessage] = useState("A validar sessão...");
 
@@ -21,16 +27,33 @@ export default function AuthCallbackScreen() {
         return;
       }
       const code = Array.isArray(params.code) ? params.code[0] : params.code;
-      if (!code) {
-        setMessage("Código inválido.");
+      const accessToken = Array.isArray(params.access_token) ? params.access_token[0] : params.access_token;
+      const refreshToken = Array.isArray(params.refresh_token) ? params.refresh_token[0] : params.refresh_token;
+
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          setMessage(error.message ?? "Falha ao criar sessão.");
+          return;
+        }
+        router.replace("/");
         return;
       }
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
-      if (error) {
-        setMessage(error.message ?? "Falha ao criar sessão.");
+
+      if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (error) {
+          setMessage(error.message ?? "Falha ao criar sessão.");
+          return;
+        }
+        router.replace("/");
         return;
       }
-      router.replace("/");
+
+      setMessage("Código inválido.");
     };
     run();
   }, [params, router]);

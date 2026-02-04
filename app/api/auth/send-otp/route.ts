@@ -1,8 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { resend } from "@/lib/resend";
-import { env } from "@/lib/env";
+import { sendEmail } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { normalizeAndValidateUsername, checkUsernameAvailability } from "@/lib/globalUsernames";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
@@ -185,14 +184,13 @@ async function _POST(req: NextRequest) {
     }
 
     try {
-      await resend.emails.send({
-        from: env.resendFrom,
+      await sendEmail({
         to: rawEmail,
         subject: `Código ORYA: ${otp}`,
         html: buildEmailHtml(otp),
       });
     } catch (mailErr) {
-      console.error("[send-otp] resend error", {
+      console.error("[send-otp] email send error", {
         mailErr,
         env: process.env.NODE_ENV,
         requestId: ctx.requestId,
@@ -207,7 +205,7 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    return jsonWrap({ ok: true });
+    return jsonWrap({ ok: true, otpType: "signup" });
   } catch (err) {
     const ctx = getRequestContext(req);
     console.error("[send-otp] error:", {

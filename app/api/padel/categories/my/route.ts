@@ -5,8 +5,9 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import {
   buildPadelCategoryKey,
   buildPadelDefaultCategories,
@@ -21,12 +22,23 @@ async function _GET(req: NextRequest) {
     const user = await ensureAuthenticated(supabase);
 
     const organizationId = resolveOrganizationIdFromRequest(req);
-    const { organization } = await getActiveOrganizationForUser(user.id, {
+    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
       roles: ROLE_ALLOWLIST,
     });
-    if (!organization) {
+    if (!organization || !membership) {
       return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+    }
+    const permission = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.TORNEIOS,
+      required: "VIEW",
+    });
+    if (!permission.ok) {
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
@@ -97,12 +109,23 @@ async function _POST(req: NextRequest) {
     if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
     const organizationId = resolveOrganizationIdFromRequest(req);
-    const { organization } = await getActiveOrganizationForUser(user.id, {
+    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
       roles: ROLE_ALLOWLIST,
     });
-    if (!organization) {
+    if (!organization || !membership) {
       return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+    }
+    const permission = await ensureMemberModuleAccess({
+      organizationId: organization.id,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.TORNEIOS,
+      required: "EDIT",
+    });
+    if (!permission.ok) {
+      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
 
     const label = typeof body.label === "string" ? body.label.trim() : "";

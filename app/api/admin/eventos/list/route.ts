@@ -96,20 +96,27 @@ async function _GET(req: NextRequest) {
         : [],
     ]);
 
-    const ticketMap = new Map(ticketStats.map((row) => [row.eventId, row._count._all]));
-    const summaryMap = new Map(
-      summaryStats.map((row) => [
-        row.eventId,
-        {
-          revenueCents: row._sum.subtotalCents ?? 0,
-          revenueTotalCents: row._sum.totalCents ?? 0,
-          platformFeeCents: (row._sum.platformFeeCents ?? 0) + (row._sum.cardPlatformFeeCents ?? 0),
-        },
-      ]),
+    type SummaryRow = { revenueCents: number; revenueTotalCents: number; platformFeeCents: number };
+
+    const ticketMap = new Map<number, number>(
+      ticketStats.map((row) => [row.eventId, row._count._all] as const),
+    );
+    const summaryMap = new Map<number, SummaryRow>(
+      summaryStats.map(
+        (row) =>
+          [
+            row.eventId,
+            {
+              revenueCents: row._sum.subtotalCents ?? 0,
+              revenueTotalCents: row._sum.totalCents ?? 0,
+              platformFeeCents: (row._sum.platformFeeCents ?? 0) + (row._sum.cardPlatformFeeCents ?? 0),
+            },
+          ] as const,
+      ),
     );
 
     const items = trimmed.map((evt) => {
-      const summary = summaryMap.get(evt.id) ?? {
+      const summary: SummaryRow = summaryMap.get(evt.id) ?? {
         revenueCents: 0,
         revenueTotalCents: 0,
         platformFeeCents: 0,

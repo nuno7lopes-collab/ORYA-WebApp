@@ -65,6 +65,10 @@ export default function SignInScreen() {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         if (data?.session) {
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          });
           router.replace("/");
           return;
         }
@@ -77,6 +81,10 @@ export default function SignInScreen() {
       if (!data?.session) {
         throw new Error("Sessão não criada. Verifica o email e a password.");
       }
+      await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
       router.replace("/");
     } catch (err: any) {
       const message = err?.message ?? t.errorGeneric;
@@ -100,11 +108,17 @@ export default function SignInScreen() {
       if (!credential.identityToken) {
         throw new Error("Não foi possível obter o token da Apple.");
       }
-      const { error } = await supabase.auth.signInWithIdToken({
+      const { data, error } = await supabase.auth.signInWithIdToken({
         provider: "apple",
         token: credential.identityToken,
       });
       if (error) throw error;
+      if (data?.session) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+      }
       router.replace("/");
     } catch (err: any) {
       if (err?.code === "ERR_CANCELED") return;
@@ -126,7 +140,26 @@ export default function SignInScreen() {
       });
       if (error) throw error;
       if (data?.url) {
-        await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+        if (result.type === "success" && result.url) {
+          const parsed = Linking.parse(result.url);
+          const params = parsed.queryParams ?? {};
+          const code = typeof params.code === "string" ? params.code : undefined;
+          const accessToken = typeof params.access_token === "string" ? params.access_token : undefined;
+          const refreshToken = typeof params.refresh_token === "string" ? params.refresh_token : undefined;
+          if (code) {
+            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+            if (exchangeError) throw exchangeError;
+          } else if (accessToken && refreshToken) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) throw sessionError;
+          }
+          router.replace("/");
+          return;
+        }
       }
     } catch (err: any) {
       const message = err?.message ?? "Erro ao autenticar.";
@@ -169,12 +202,18 @@ export default function SignInScreen() {
       if (!isValidEmail(email)) {
         throw new Error("Email inválido.");
       }
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: otpCode,
         type: "email",
       });
       if (error) throw error;
+      if (data?.session) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+      }
       router.replace("/");
     } catch (err: any) {
       const message = err?.message ?? "Código inválido.";

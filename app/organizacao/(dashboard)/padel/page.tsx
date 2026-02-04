@@ -38,8 +38,9 @@ export default async function OrganizationPadelRedirect({ searchParams }: Props)
     params.set("padel", section === PADEL_TOURNAMENTS_SECTION ? "calendar" : "clubs");
   }
   params.set("section", section);
+  const basePath = section === PADEL_TOURNAMENTS_SECTION ? "/organizacao/padel/torneios" : "/organizacao/padel/clube";
   const target = await appendOrganizationIdToRedirectHref(
-    `/organizacao/torneios?${params.toString()}`,
+    `${basePath}?${params.toString()}`,
     searchParams,
   );
   redirect(target);

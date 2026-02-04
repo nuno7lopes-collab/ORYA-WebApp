@@ -6,6 +6,7 @@ PROFILE=${AWS_PROFILE:-codex}
 REGION=${AWS_REGION:-${AWS_DEFAULT_REGION:-eu-west-1}}
 SOURCE=/tmp/orya-prod-secrets.json
 SOURCE_DIR=""
+ONLY_ENVS=${ONLY_ENVS:-prod}
 
 ALLOW_PLACEHOLDERS_DEV=${ALLOW_PLACEHOLDERS_DEV:-true}
 COPY_PROD_TO_DEV=${COPY_PROD_TO_DEV:-false}
@@ -39,8 +40,25 @@ function upsert_secret() {
   fi
 }
 
+function env_allowed() {
+  local name="$1"
+  if [[ -z "$ONLY_ENVS" ]]; then
+    return 0
+  fi
+  IFS=',' read -ra envs <<< "$ONLY_ENVS"
+  for e in "${envs[@]}"; do
+    if [[ "$e" == "$name" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 if [[ -n "$SOURCE_DIR" ]]; then
   for env in prod dev; do
+    if ! env_allowed "$env"; then
+      continue
+    fi
     for group in app supabase payments apple email admin; do
       file="$SOURCE_DIR/orya-${env}-${group}.json"
       if [[ ! -f "$file" ]]; then
@@ -52,7 +70,7 @@ if [[ -n "$SOURCE_DIR" ]]; then
   done
 else
   AWS_PROFILE="$PROFILE" AWS_REGION="$REGION" \
-    ALLOW_PLACEHOLDERS_DEV="$ALLOW_PLACEHOLDERS_DEV" COPY_PROD_TO_DEV="$COPY_PROD_TO_DEV" \
+    ALLOW_PLACEHOLDERS_DEV="$ALLOW_PLACEHOLDERS_DEV" COPY_PROD_TO_DEV="$COPY_PROD_TO_DEV" ONLY_ENVS="$ONLY_ENVS" \
     "$SCRIPT_DIR/create-secrets-json.sh" --in "$SOURCE"
 fi
 

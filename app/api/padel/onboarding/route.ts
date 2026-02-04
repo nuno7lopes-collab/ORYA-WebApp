@@ -145,6 +145,10 @@ async function _POST(req: NextRequest) {
     const gender: Gender | null =
       genderRaw === "MALE" || genderRaw === "FEMALE" ? (genderRaw as Gender) : existingProfile.gender ?? null;
 
+    if (!gender) {
+      return jsonWrap({ ok: false, error: "GENDER_REQUIRED" }, { status: 400 });
+    }
+
     const normalizedPhone =
       body.contactPhone !== undefined
         ? normalizePhone(body.contactPhone)

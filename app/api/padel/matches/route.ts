@@ -1,10 +1,11 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { OrganizationMemberRole, padel_match_status, Prisma } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, padel_match_status, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { isValidScore } from "@/lib/padel/validation";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
@@ -12,6 +13,7 @@ import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
@@ -30,7 +32,7 @@ function fail(
   return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const {
@@ -104,7 +106,7 @@ export async function GET(req: NextRequest) {
   return respondOk(ctx, { items: matches }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const {
@@ -152,6 +154,7 @@ export async function POST(req: NextRequest) {
       pairingAId: true,
       pairingBId: true,
       winnerPairingId: true,
+      startTime: true,
       courtId: true,
       courtNumber: true,
       event: { select: { organizationId: true } },
@@ -165,6 +168,17 @@ export async function POST(req: NextRequest) {
   });
   if (!organization || !membership) {
     return fail(ctx, 403, "NO_ORGANIZATION");
+  }
+  const permission = await ensureMemberModuleAccess({
+    organizationId: match.event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) {
+    return fail(ctx, 403, "FORBIDDEN");
   }
 
   const isAdmin = adminRoles.has(membership.role);
@@ -311,6 +325,9 @@ export async function POST(req: NextRequest) {
 
   return respondOk(ctx, { match: updated, outboxEventId }, { status: 200 });
 }
+
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";

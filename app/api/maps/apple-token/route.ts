@@ -11,10 +11,7 @@ async function _GET(_req: NextRequest) {
   try {
     const cfg = getAppleMapsConfig({ allowMissingInDev: true });
     if (!cfg) {
-      return jsonWrap(
-        { ok: false, errorCode: "APPLE_MAPS_MISSING", message: "Apple Maps não configurado." },
-        { status: 503 },
-      );
+      return jsonWrap({ ok: true, result: { provider: "osm" } }, { status: 200 });
     }
     const { token, expiresAt } = mintAppleMapsToken();
     return jsonWrap({ ok: true, token, expiresAt }, { status: 200 });

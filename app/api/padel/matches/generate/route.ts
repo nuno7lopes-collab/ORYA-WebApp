@@ -2,10 +2,11 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, padel_format } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, padel_format } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -55,7 +56,16 @@ async function _POST(req: NextRequest) {
     organizationId: event.organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   const phaseNormalized = phase === "KNOCKOUT" ? "KNOCKOUT" : "GROUPS";
   const isGroupsFormat = format === "GRUPOS_ELIMINATORIAS";
   const existingPolicy = isGroupsFormat ? "error" : "replace";

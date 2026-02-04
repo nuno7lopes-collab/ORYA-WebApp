@@ -10,7 +10,7 @@ import {
   StoreOrderStatus,
 } from "@prisma/client";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
-import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
+import { paymentEventRepo, reconcileSaleSummaryStripeFee } from "@/domain/finance/readModelConsumer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
@@ -333,6 +333,10 @@ async function handlePaymentFeesReconciledOutbox(payload: Record<string, unknown
     processorFeesCents: stripeFeeCents,
     netToOrgCents,
   });
+
+  if (stripeFeeCents !== null) {
+    await reconcileSaleSummaryStripeFee({ paymentId, stripeFeeCents });
+  }
 
   return { ok: true };
 }

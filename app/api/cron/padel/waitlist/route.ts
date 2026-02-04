@@ -9,6 +9,8 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 import { promoteNextPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { queueWaitlistPromoted } from "@/domain/notifications/splitPayments";
+import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 
 const MAX_PROMOTIONS_PER_EVENT = 12;
 
@@ -24,7 +26,7 @@ async function _POST(req: NextRequest) {
         eventId: true;
         splitDeadlineHours: true;
         advancedSettings: true;
-        event: { select: { startsAt: true } };
+        event: { select: { startsAt: true; title: true; slug: true; organizationId: true } };
       };
     }>;
 
@@ -40,7 +42,7 @@ async function _POST(req: NextRequest) {
         eventId: true,
         splitDeadlineHours: true,
         advancedSettings: true,
-        event: { select: { startsAt: true } },
+        event: { select: { startsAt: true, title: true, slug: true, organizationId: true } },
       },
     });
 
@@ -57,6 +59,9 @@ async function _POST(req: NextRequest) {
           ? Math.floor(advanced.maxEntriesTotal)
           : null;
       const eventStartsAt = config.event?.startsAt ?? null;
+      const eventTitle = config.event?.title?.trim() || "Torneio Padel";
+      const eventSlug = config.event?.slug ?? null;
+      const organizationId = config.event?.organizationId ?? null;
 
       for (let i = 0; i < MAX_PROMOTIONS_PER_EVENT; i += 1) {
         try {
@@ -74,6 +79,27 @@ async function _POST(req: NextRequest) {
             break;
           }
           promoted += 1;
+          if (organizationId) {
+            const ctaUrl = eventSlug ? `/eventos/${eventSlug}` : "/eventos";
+            await queueWaitlistPromoted({
+              userId: result.userId,
+              eventId: config.eventId,
+              pairingId: result.pairingId,
+              categoryId: null,
+            });
+            await queueImportantUpdateEmail({
+              dedupeKey: `email:padel:waitlist:promoted:${result.entryId}:${result.userId}`,
+              userId: result.userId,
+              eventTitle,
+              message: "A tua inscrição saiu da lista de espera. Conclui o pagamento para garantir a vaga.",
+              ticketUrl: ctaUrl,
+              correlations: {
+                eventId: config.eventId,
+                organizationId,
+                pairingId: result.pairingId,
+              },
+            });
+          }
         } catch (err) {
           errors.push({ eventId: config.eventId, error: err instanceof Error ? err.message : String(err) });
           break;

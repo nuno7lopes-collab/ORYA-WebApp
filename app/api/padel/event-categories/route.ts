@@ -5,6 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   OrganizationMemberRole,
+  OrganizationModule,
   padel_format,
   PadelPairingSlotStatus,
   PadelPairingStatus,
@@ -13,6 +14,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
@@ -177,6 +179,15 @@ async function _GET(req: NextRequest) {
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "VIEW",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const links = await prisma.padelEventCategoryLink.findMany({
     where: { eventId },
@@ -227,6 +238,15 @@ async function _POST(req: NextRequest) {
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  const permission = await ensureMemberModuleAccess({
+    organizationId: event.organizationId,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.TORNEIOS,
+    required: "EDIT",
+  });
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const organizationCategories = await prisma.padelCategory.findMany({
     where: { organizationId: organization.id },
