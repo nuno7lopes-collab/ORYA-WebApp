@@ -4995,6 +4995,32 @@ export default function PadelHubClient({
                 >
                   HTML
                 </a>
+                <a
+                  href={
+                    eventId
+                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=csv`
+                      : "#"
+                  }
+                  aria-disabled={!eventId}
+                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
+                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
+                  }`}
+                >
+                  CSV
+                </a>
+                <a
+                  href={
+                    eventId
+                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=ics`
+                      : "#"
+                  }
+                  aria-disabled={!eventId}
+                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
+                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
+                  }`}
+                >
+                  ICS
+                </a>
               </div>
               {!eventId && <p className="text-[12px] text-white/55">Seleciona um torneio para exportar.</p>}
             </div>

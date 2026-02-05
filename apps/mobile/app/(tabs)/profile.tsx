@@ -1,4 +1,5 @@
-import { Image, Linking, Pressable, ScrollView, Text, View, Platform } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View, Platform } from "react-native";
+import { Image } from "expo-image";
 import Constants from "expo-constants";
 import { supabase } from "../../lib/supabase";
 import { resetOnboardingDone } from "../../lib/onboardingState";
@@ -100,7 +101,13 @@ export default function ProfileScreen() {
               style={{ height: 140, backgroundColor: "rgba(255,255,255,0.05)" }}
             >
               {coverUrl ? (
-                <Image source={{ uri: coverUrl }} resizeMode="cover" style={{ width: "100%", height: "100%" }} />
+                <Image
+                  source={{ uri: coverUrl }}
+                  contentFit="cover"
+                  style={{ width: "100%", height: "100%" }}
+                  cachePolicy="memory-disk"
+                  transition={160}
+                />
               ) : (
                 <View className="flex-1" />
               )}
@@ -113,8 +120,10 @@ export default function ProfileScreen() {
                 {profile?.avatarUrl ? (
                   <Image
                     source={{ uri: profile.avatarUrl }}
-                    resizeMode="cover"
+                    contentFit="cover"
                     style={{ width: 80, height: 80 }}
+                    cachePolicy="memory-disk"
+                    transition={160}
                   />
                 ) : (
                   <Text className="text-white text-2xl font-semibold">

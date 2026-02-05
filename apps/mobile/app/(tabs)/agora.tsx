@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { FlatList, Platform, Pressable, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -6,19 +7,28 @@ import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { DiscoverEventCard } from "../../features/discover/DiscoverEventCard";
 import { useAgoraFeed } from "../../features/agora/hooks";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
+import { useIpLocation } from "../../features/onboarding/hooks";
 
 export default function AgoraScreen() {
   const { isLoading, isError, hasLive, liveItems, soonItems, upcomingItems, personalizedItems, refetch } =
     useAgoraFeed();
+  const { data: ipLocation } = useIpLocation();
+  const userLat = ipLocation?.approxLatLon?.lat ?? null;
+  const userLon = ipLocation?.approxLatLon?.lon ?? null;
 
   const showSkeleton = isLoading && liveItems.length + soonItems.length + personalizedItems.length === 0;
+  const handleRefresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
+
+  const keyExtractor = useCallback((_: number, index: number) => `agora-${index}`, []);
 
   return (
     <LiquidBackground variant="solid">
       <FlatList
         data={showSkeleton ? [1, 2, 3] : []}
-        keyExtractor={(_, index) => `agora-${index}`}
-        onRefresh={() => refetch()}
+        keyExtractor={keyExtractor}
+        onRefresh={handleRefresh}
         refreshing={isLoading}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
         removeClippedSubviews={Platform.OS === "android"}
@@ -52,10 +62,20 @@ export default function AgoraScreen() {
               <View className="pb-2">
                 <SectionHeader title="Live hubs" subtitle="Eventos a acontecer ou a começar já." />
                 {liveItems.map((item) => (
-                  <DiscoverEventCard key={`live-${item.id}-${item.slug}`} item={item} />
+                  <DiscoverEventCard
+                    key={`live-${item.id}-${item.slug}`}
+                    item={item}
+                    userLat={userLat}
+                    userLon={userLon}
+                  />
                 ))}
                 {soonItems.map((item) => (
-                  <DiscoverEventCard key={`soon-${item.id}-${item.slug}`} item={item} />
+                  <DiscoverEventCard
+                    key={`soon-${item.id}-${item.slug}`}
+                    item={item}
+                    userLat={userLat}
+                    userLon={userLon}
+                  />
                 ))}
               </View>
             ) : null}
@@ -64,7 +84,12 @@ export default function AgoraScreen() {
               <View className="pb-2">
                 <SectionHeader title="A seguir" subtitle="Próximos eventos na tua cidade." />
                 {upcomingItems.slice(0, 3).map((item) => (
-                  <DiscoverEventCard key={`upcoming-${item.id}-${item.slug}`} item={item} />
+                  <DiscoverEventCard
+                    key={`upcoming-${item.id}-${item.slug}`}
+                    item={item}
+                    userLat={userLat}
+                    userLon={userLon}
+                  />
                 ))}
               </View>
             ) : null}
@@ -73,7 +98,12 @@ export default function AgoraScreen() {
               <View>
                 <SectionHeader title="Para ti" subtitle="Seleção personalizada para continuar a explorar." />
                 {personalizedItems.slice(0, 6).map((item) => (
-                  <DiscoverEventCard key={`personalized-${item.id}-${item.slug}`} item={item} />
+                  <DiscoverEventCard
+                    key={`personalized-${item.id}-${item.slug}`}
+                    item={item}
+                    userLat={userLat}
+                    userLon={userLon}
+                  />
                 ))}
               </View>
             ) : null}

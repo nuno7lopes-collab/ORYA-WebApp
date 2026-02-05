@@ -90,12 +90,35 @@ type OrdersSummary = {
 const STATUSES = ["PENDING", "PAID", "FULFILLED", "CANCELLED", "REFUNDED", "PARTIAL_REFUND"] as const;
 const SHIPMENT_STATUSES = ["PENDING", "SHIPPED", "DELIVERED"] as const;
 
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  PENDING: "Pendente",
+  PAID: "Pago",
+  FULFILLED: "Concluida",
+  CANCELLED: "Cancelada",
+  REFUNDED: "Reembolsada",
+  PARTIAL_REFUND: "Reembolso parcial",
+};
+
+const SHIPMENT_STATUS_LABEL: Record<string, string> = {
+  PENDING: "Em preparacao",
+  SHIPPED: "Enviado",
+  DELIVERED: "Entregue",
+};
+
 function formatMoney(cents: number, currency: string) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
 }
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString("pt-PT");
+}
+
+function formatOrderStatus(status: string) {
+  return ORDER_STATUS_LABEL[status] ?? status;
+}
+
+function formatShipmentStatus(status: string) {
+  return SHIPMENT_STATUS_LABEL[status] ?? status;
 }
 
 export default function StoreOrdersPanel({ endpointBase, storeEnabled }: StoreOrdersPanelProps) {
@@ -317,7 +340,7 @@ export default function StoreOrdersPanel({ endpointBase, storeEnabled }: StoreOr
             <option value="">Todos</option>
             {STATUSES.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {formatOrderStatus(status)}
               </option>
             ))}
           </select>
@@ -372,7 +395,7 @@ export default function StoreOrdersPanel({ endpointBase, storeEnabled }: StoreOr
                     {item.orderNumber || `#${item.id}`} · {item.customerName || item.customerEmail || "Cliente"}
                   </p>
                   <p className="text-xs text-white/60">
-                    {formatDate(item.createdAt)} · {item.status}
+                    {formatDate(item.createdAt)} · {formatOrderStatus(item.status)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -484,7 +507,7 @@ export default function StoreOrdersPanel({ endpointBase, storeEnabled }: StoreOr
                   >
                     {STATUSES.map((status) => (
                       <option key={status} value={status}>
-                        {status}
+                        {formatOrderStatus(status)}
                       </option>
                     ))}
                   </select>
@@ -540,7 +563,7 @@ export default function StoreOrdersPanel({ endpointBase, storeEnabled }: StoreOr
                   >
                     {SHIPMENT_STATUSES.map((status) => (
                       <option key={status} value={status}>
-                        {status}
+                        {formatShipmentStatus(status)}
                       </option>
                     ))}
                   </select>
@@ -642,7 +665,7 @@ export default function StoreOrdersPanel({ endpointBase, storeEnabled }: StoreOr
                         >
                           {SHIPMENT_STATUSES.map((status) => (
                             <option key={status} value={status}>
-                              {status}
+                              {formatShipmentStatus(status)}
                             </option>
                           ))}
                         </select>

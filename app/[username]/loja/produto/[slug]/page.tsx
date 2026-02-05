@@ -5,6 +5,7 @@ import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCartOverlay from "@/components/storefront/StorefrontCartOverlay";
 import StorefrontProductClient from "@/components/storefront/StorefrontProductClient";
+import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,11 @@ export default async function StoreProductPage({ params }: PageProps) {
           catalogLocked: true,
           currency: true,
           freeShippingThresholdCents: true,
+          supportEmail: true,
+          supportPhone: true,
+          returnPolicy: true,
+          privacyPolicy: true,
+          termsUrl: true,
         },
       })
     : profile
@@ -58,6 +64,11 @@ export default async function StoreProductPage({ params }: PageProps) {
             catalogLocked: true,
             currency: true,
             freeShippingThresholdCents: true,
+            supportEmail: true,
+            supportPhone: true,
+            returnPolicy: true,
+            privacyPolicy: true,
+            termsUrl: true,
           },
         })
       : null;
@@ -180,6 +191,16 @@ export default async function StoreProductPage({ params }: PageProps) {
             shippingEta={shippingEta}
           />
         </div>
+        <StorefrontFooter
+          storeName={displayName}
+          storePolicies={{
+            supportEmail: store.supportEmail ?? null,
+            supportPhone: store.supportPhone ?? null,
+            returnPolicy: store.returnPolicy ?? null,
+            privacyPolicy: store.privacyPolicy ?? null,
+            termsUrl: store.termsUrl ?? null,
+          }}
+        />
       </div>
       <StorefrontCartOverlay
         storeId={store.id}

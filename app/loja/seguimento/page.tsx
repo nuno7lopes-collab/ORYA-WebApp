@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 
 type OrderLine = {
   id: number;
@@ -44,6 +45,9 @@ type OrderLookup = {
     username: string | null;
     supportEmail: string | null;
     supportPhone: string | null;
+    returnPolicy?: string | null;
+    privacyPolicy?: string | null;
+    termsUrl?: string | null;
   };
   shipping: {
     zoneName: string | null;
@@ -426,6 +430,18 @@ export default function StoreOrderTrackingPage() {
             </Link>
           ) : null}
         </div>
+        {order ? (
+          <StorefrontFooter
+            storeName={order.store.displayName}
+            storePolicies={{
+              supportEmail: order.store.supportEmail ?? null,
+              supportPhone: order.store.supportPhone ?? null,
+              returnPolicy: order.store.returnPolicy ?? null,
+              privacyPolicy: order.store.privacyPolicy ?? null,
+              termsUrl: order.store.termsUrl ?? null,
+            }}
+          />
+        ) : null}
       </div>
     </main>
   );

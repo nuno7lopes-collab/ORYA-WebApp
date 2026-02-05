@@ -11,6 +11,8 @@ import PDFDocument from "pdfkit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { OrganizationModule } from "@prisma/client";
 
+const DEFAULT_MATCH_DURATION_MINUTES = 60;
+
 const buildCalendarPdf = async ({
   title,
   rows,
@@ -83,6 +85,93 @@ const buildCalendarPdf = async ({
   return buffer;
 };
 
+const escapeCsv = (value: string) => {
+  if (value.includes('"') || value.includes(",") || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+};
+
+const buildCalendarCsv = (rows: Array<{ startUtc: string; endUtc: string; timezone: string; court: string; round: string; teams: string; status: string }>) => {
+  const header = ["startUtc", "endUtc", "timezone", "court", "round", "teams", "status"];
+  const lines = [header.join(",")];
+  rows.forEach((row) => {
+    const line = [
+      row.startUtc,
+      row.endUtc,
+      row.timezone,
+      row.court,
+      row.round,
+      row.teams,
+      row.status,
+    ]
+      .map((value) => escapeCsv(value || ""))
+      .join(",");
+    lines.push(line);
+  });
+  return lines.join("\n");
+};
+
+const formatIcsDateTime = (date: Date, timeZone?: string | null) => {
+  if (!timeZone) {
+    return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  }
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}${get("month")}${get("day")}T${get("hour")}${get("minute")}${get("second")}`;
+};
+
+const buildCalendarIcs = ({
+  title,
+  rows,
+  timeZone,
+}: {
+  title: string;
+  rows: Array<{ id: number; start: Date; end: Date; court: string; round: string; teams: string; status: string }>;
+  timeZone: string | null;
+}) => {
+  const now = new Date();
+  const dtstamp = formatIcsDateTime(now, null);
+  const tzid = timeZone ? `;TZID=${timeZone}` : "";
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//ORYA//Padel Calendar//PT",
+    `X-WR-CALNAME:${title}`,
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+  ];
+
+  rows.forEach((row) => {
+    const summary = `${row.round ? `${row.round} · ` : ""}${row.teams}`;
+    const description = `Jogo de padel${row.status ? ` (${row.status})` : ""}`;
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:padel-${row.id}@orya.app`,
+      `DTSTAMP:${dtstamp}`,
+      `DTSTART${tzid}:${formatIcsDateTime(row.start, timeZone)}`,
+      `DTEND${tzid}:${formatIcsDateTime(row.end, timeZone)}`,
+      `SUMMARY:${summary}`,
+      `DESCRIPTION:${description}`,
+      `LOCATION:${row.court}`,
+      "END:VEVENT",
+    );
+  });
+
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+};
+
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -129,6 +218,12 @@ async function _GET(req: NextRequest) {
 
   const rows = matches.map((m) => {
     const start = m.plannedStartAt ?? m.startTime;
+    const fallbackDuration = m.plannedDurationMinutes ?? DEFAULT_MATCH_DURATION_MINUTES;
+    const end = m.plannedEndAt
+      ? m.plannedEndAt
+      : start
+        ? new Date(start.getTime() + fallbackDuration * 60 * 1000)
+        : null;
     const teamA =
       m.pairingA?.slots
         ?.map((slot) => slot.playerProfile?.displayName || slot.playerProfile?.fullName || "")
@@ -140,7 +235,10 @@ async function _GET(req: NextRequest) {
         .filter(Boolean)
         .join(" / ") || t("pairing", locale);
     return {
+      id: m.id,
       start: start ? formatDateTime(start, locale, event.timezone) : "—",
+      startDate: start,
+      endDate: end,
       court: String(m.court?.name || m.courtName || m.courtNumber || m.courtId || t("court", locale)),
       round: m.roundLabel || m.groupLabel || "",
       teams: `${teamA} vs ${teamB}`,
@@ -158,6 +256,56 @@ async function _GET(req: NextRequest) {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${filenameBase}.pdf"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  if (format === "csv") {
+    const csv = buildCalendarCsv(
+      rows
+        .filter((row) => row.startDate && row.endDate)
+        .map((row) => ({
+          startUtc: row.startDate ? row.startDate.toISOString() : "",
+          endUtc: row.endDate ? row.endDate.toISOString() : "",
+          timezone: event.timezone ?? "UTC",
+          court: row.court,
+          round: row.round,
+          teams: row.teams,
+          status: row.status,
+        })),
+    );
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filenameBase}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  if (format === "ics") {
+    const ics = buildCalendarIcs({
+      title: event.title,
+      timeZone: event.timezone ?? null,
+      rows: rows
+        .filter((row) => row.startDate && row.endDate)
+        .map((row) => ({
+          id: row.id,
+          start: row.startDate as Date,
+          end: row.endDate as Date,
+          court: row.court,
+          round: row.round,
+          teams: row.teams,
+          status: row.status,
+        })),
+    });
+    return new NextResponse(ics, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filenameBase}.ics"`,
         "Cache-Control": "no-store",
       },
     });

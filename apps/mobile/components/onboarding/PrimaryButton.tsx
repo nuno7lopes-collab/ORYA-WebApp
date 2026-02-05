@@ -31,7 +31,7 @@ export function PrimaryButton({
       ]}
     >
       <LinearGradient
-        colors={["rgba(248, 251, 255, 0.98)", "rgba(210, 223, 255, 0.94)"]}
+        colors={["rgba(255, 255, 255, 0.98)", "rgba(198, 218, 255, 0.96)"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -49,24 +49,26 @@ export function PrimaryButton({
 
 const styles = StyleSheet.create({
   shell: {
-    minHeight: tokens.layout.touchTarget,
-    borderRadius: 18,
+    minHeight: 54,
+    borderRadius: 20,
     overflow: "hidden",
-    shadowColor: "rgba(0,0,0,0.35)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    shadowColor: "rgba(0,0,0,0.4)",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 4,
   },
   content: {
-    minHeight: tokens.layout.touchTarget,
+    minHeight: 54,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18,
   },
   label: {
     color: "#0b0f1a",
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
   },
 });

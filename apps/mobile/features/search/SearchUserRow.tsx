@@ -1,5 +1,6 @@
 import { memo } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -40,7 +41,13 @@ export const SearchUserRow = memo(function SearchUserRow({
           }}
         >
           {item.avatarUrl ? (
-            <Image source={{ uri: item.avatarUrl }} style={{ width: 44, height: 44 }} />
+            <Image
+              source={{ uri: item.avatarUrl }}
+              style={{ width: 44, height: 44 }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={120}
+            />
           ) : (
             <Ionicons name="person" size={20} color="rgba(255,255,255,0.7)" />
           )}

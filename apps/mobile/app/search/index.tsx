@@ -15,6 +15,7 @@ import { SearchOrganizationRow } from "../../features/search/SearchOrganizationR
 import { useNetworkActions, useOrganizationFollowActions } from "../../features/network/hooks";
 import { useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
+import { useIpLocation } from "../../features/onboarding/hooks";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -46,12 +47,18 @@ export default function SearchScreen() {
   } = useGlobalSearch(debounced);
   const userActions = useNetworkActions();
   const organizationActions = useOrganizationFollowActions();
+  const { data: ipLocation } = useIpLocation();
+  const userLat = ipLocation?.approxLatLon?.lat ?? null;
+  const userLon = ipLocation?.approxLatLon?.lon ?? null;
   const queryLength = debounced.trim().length;
   const showSkeleton = enabled && isLoading;
   const allErrored = offersQuery.isError && usersQuery.isError && orgsQuery.isError;
 
   useEffect(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    const total = offers.length + users.length + organizations.length;
+    if (total <= 24) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
   }, [offers.length, users.length, organizations.length]);
 
   const emptyMessage = useMemo(() => {
@@ -146,9 +153,23 @@ export default function SearchScreen() {
               ) : offers.length > 0 ? (
                 offers.map((item, index) =>
                   item.type === "event" ? (
-                    <DiscoverEventCard key={item.key} item={item.event} itemType="event" index={index} />
+                    <DiscoverEventCard
+                      key={item.key}
+                      item={item.event}
+                      itemType="event"
+                      index={index}
+                      userLat={userLat}
+                      userLon={userLon}
+                    />
                   ) : (
-                    <DiscoverEventCard key={item.key} item={item.service} itemType="service" index={index} />
+                    <DiscoverEventCard
+                      key={item.key}
+                      item={item.service}
+                      itemType="service"
+                      index={index}
+                      userLat={userLat}
+                      userLon={userLon}
+                    />
                   ),
                 )
               ) : null}

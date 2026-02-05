@@ -19,6 +19,9 @@ function buildStoreLabel(store: {
   id: number;
   supportEmail: string | null;
   supportPhone: string | null;
+  returnPolicy: string | null;
+  privacyPolicy: string | null;
+  termsUrl: string | null;
   organization: { username: string | null; publicName: string | null; businessName: string | null } | null;
   ownerUser: { username: string | null; fullName: string | null } | null;
 }) {
@@ -38,6 +41,9 @@ function buildStoreLabel(store: {
     username,
     supportEmail: store.supportEmail ?? null,
     supportPhone: store.supportPhone ?? null,
+    returnPolicy: store.returnPolicy ?? null,
+    privacyPolicy: store.privacyPolicy ?? null,
+    termsUrl: store.termsUrl ?? null,
   };
 }
 
@@ -93,6 +99,9 @@ async function _POST(req: NextRequest) {
             id: true,
             supportEmail: true,
             supportPhone: true,
+            returnPolicy: true,
+            privacyPolicy: true,
+            termsUrl: true,
             organization: { select: { username: true, publicName: true, businessName: true } },
             ownerUser: { select: { username: true, fullName: true } },
           },

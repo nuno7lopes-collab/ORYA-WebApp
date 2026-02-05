@@ -93,6 +93,7 @@ export default function OnboardingScreen() {
   const [usernameStatus, setUsernameStatus] = useState<
     "idle" | "invalid" | "checking" | "available" | "taken" | "error"
   >("idle");
+  const [confirmedUsername, setConfirmedUsername] = useState<string | null>(null);
   const [interests, setInterests] = useState<InterestId[]>([]);
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
   const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
@@ -106,6 +107,10 @@ export default function OnboardingScreen() {
   const usernameCacheRef = useRef<Map<string, boolean>>(new Map());
   const usernameAbortRef = useRef<AbortController | null>(null);
   const usernameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const usernameInflightRef = useRef<{ normalized: string; promise: Promise<boolean> } | null>(null);
+
+  const USERNAME_DEBOUNCE_MS = 300;
+  const USERNAME_TIMEOUT_MS = 6500;
 
   const padelSelected = interests.includes("padel");
   const steps = useMemo<OnboardingStep[]>(
@@ -153,6 +158,10 @@ export default function OnboardingScreen() {
           setPadelLevel((draft.padel?.level as PadelLevel | null) ?? null);
           setLocationHint(draft.location ? { city: draft.location.city, region: draft.location.region } : null);
           setStep(resolveStartStep(draft));
+          if (draft.step >= 1 && draft.username) {
+            setConfirmedUsername(draft.username);
+            usernameCacheRef.current.set(draft.username, true);
+          }
         }
       })
       .finally(() => {
@@ -174,6 +183,12 @@ export default function OnboardingScreen() {
     }
 
     const normalized = usernameValidation.normalized;
+    if (confirmedUsername && normalized === confirmedUsername) {
+      if (usernameStatus !== "available") setUsernameStatus("available");
+      usernameCacheRef.current.set(normalized, true);
+      return;
+    }
+
     if (usernameCacheRef.current.has(normalized)) {
       setUsernameStatus(usernameCacheRef.current.get(normalized) ? "available" : "taken");
       return;
@@ -184,20 +199,43 @@ export default function OnboardingScreen() {
     const controller = new AbortController();
     usernameAbortRef.current = controller;
     if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
+
+    let didTimeout = false;
+    const timeoutId = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, USERNAME_TIMEOUT_MS);
+
     usernameTimerRef.current = setTimeout(async () => {
-      try {
+      const runCheck = async () => {
         const accessToken = session?.access_token ?? (await getActiveSession())?.access_token ?? null;
         const available = await checkUsernameAvailability(normalized, accessToken, controller.signal);
+        return available;
+      };
+      const promise = runCheck();
+      usernameInflightRef.current = { normalized, promise };
+      try {
+        const available = await promise;
+        if (controller.signal.aborted) return;
+        clearTimeout(timeoutId);
         usernameCacheRef.current.set(normalized, available);
         setUsernameStatus(available ? "available" : "taken");
-      } catch (err: any) {
-        if (controller.signal.aborted) return;
+      } catch {
+        if (controller.signal.aborted) {
+          if (didTimeout) setUsernameStatus("error");
+          return;
+        }
         setUsernameStatus("error");
+      } finally {
+        if (usernameInflightRef.current?.normalized === normalized) {
+          usernameInflightRef.current = null;
+        }
       }
-    }, 300);
+    }, USERNAME_DEBOUNCE_MS);
 
     return () => {
       if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
+      clearTimeout(timeoutId);
       controller.abort();
     };
   }, [username, usernameValidation, session?.access_token]);
@@ -237,18 +275,46 @@ export default function OnboardingScreen() {
     router.replace("/auth");
   };
 
+  const handleExitOnboarding = async () => {
+    await resetOnboardingDone();
+    await clearOnboardingDraft();
+    await supabase.auth.signOut();
+    router.replace("/auth");
+  };
+
   const ensureUsernameAvailable = async () => {
     if (!usernameValidation.valid) {
       setUsernameStatus("invalid");
       Alert.alert("Username inválido", usernameValidation.error || USERNAME_RULES_HINT);
       return false;
     }
+    if (confirmedUsername && usernameValidation.normalized === confirmedUsername) {
+      setUsernameStatus("available");
+      usernameCacheRef.current.set(usernameValidation.normalized, true);
+      return true;
+    }
     if (usernameStatus === "available") return true;
-    if (usernameStatus === "checking") return false;
+    if (usernameInflightRef.current?.normalized === usernameValidation.normalized) {
+      try {
+        const available = await usernameInflightRef.current.promise;
+        setUsernameStatus(available ? "available" : "taken");
+        if (!available) {
+          Alert.alert("Username indisponível", "Este username já está a ser utilizado.");
+        }
+        return available;
+      } catch {
+        setUsernameStatus("error");
+        Alert.alert("Erro", "Não foi possível verificar agora.");
+        return false;
+      }
+    }
     setUsernameStatus("checking");
     try {
       const accessToken = await resolveAccessToken();
-      const available = await checkUsernameAvailability(usernameValidation.normalized, accessToken);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), USERNAME_TIMEOUT_MS);
+      const available = await checkUsernameAvailability(usernameValidation.normalized, accessToken, controller.signal);
+      clearTimeout(timeoutId);
       usernameCacheRef.current.set(usernameValidation.normalized, available);
       setUsernameStatus(available ? "available" : "taken");
       if (!available) {
@@ -256,6 +322,11 @@ export default function OnboardingScreen() {
       }
       return available;
     } catch (err: any) {
+      if (String(err?.name ?? "").toLowerCase().includes("abort")) {
+        setUsernameStatus("error");
+        Alert.alert("Erro", "Verificação demorou demasiado. Tenta novamente.");
+        return false;
+      }
       setUsernameStatus("error");
       Alert.alert("Erro", "Não foi possível verificar agora.");
       return false;
@@ -332,6 +403,8 @@ export default function OnboardingScreen() {
         favouriteCategories: interests,
         accessToken,
       });
+      setConfirmedUsername(normalizedUsername);
+      usernameCacheRef.current.set(normalizedUsername, true);
       await persistDraft({
         step: 1,
         fullName: fullName.trim(),
@@ -533,7 +606,7 @@ export default function OnboardingScreen() {
       setStep(prev);
       return;
     }
-    router.replace("/auth");
+    handleExitOnboarding();
   };
 
   const renderUsernameStatus = () => {
@@ -574,8 +647,12 @@ export default function OnboardingScreen() {
         <TextInput
           value={username}
           onChangeText={(value) => {
-            setUsername(sanitizeUsername(value));
+            const next = sanitizeUsername(value);
+            setUsername(next);
             setUsernameStatus("idle");
+            if (confirmedUsername && next !== confirmedUsername) {
+              setConfirmedUsername(null);
+            }
           }}
           placeholder="ex: orya.sofia"
           placeholderTextColor={tokens.colors.textMuted}
@@ -682,7 +759,7 @@ export default function OnboardingScreen() {
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Nível (opcional)</Text>
-        <View style={styles.optionRow}>
+        <View style={styles.levelGrid}>
           {PADEL_LEVELS.map((level) => {
             const active = padelLevel === level;
             return (
@@ -691,6 +768,7 @@ export default function OnboardingScreen() {
                 onPress={() => setPadelLevel(active ? null : level)}
                 style={({ pressed }) => [
                   styles.optionChip,
+                  styles.levelChip,
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
@@ -707,7 +785,6 @@ export default function OnboardingScreen() {
   const renderLocationStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
       <Text style={styles.cardTitle}>Localização</Text>
-      <Text style={styles.cardSubtitle}>Permite para receberes eventos perto de ti.</Text>
 
       {locationError ? <Text style={styles.errorText}>{locationError}</Text> : null}
 
@@ -948,6 +1025,7 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.85)",
     fontSize: 13,
     fontWeight: "600",
+    flexShrink: 1,
   },
   interestLabelActive: {
     color: "#ffffff",
@@ -956,27 +1034,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
+    justifyContent: "space-between",
   },
   optionChip: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
+    paddingVertical: 14,
+    borderRadius: 18,
     borderWidth: 1,
-    minHeight: tokens.layout.touchTarget,
+    minHeight: tokens.layout.touchTarget + 4,
     alignItems: "center",
     justifyContent: "center",
+    width: "48%",
+    shadowColor: "rgba(0,0,0,0.35)",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 3,
   },
   optionChipIdle: {
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   optionChipActive: {
-    borderColor: "rgba(140, 200, 255, 0.6)",
-    backgroundColor: "rgba(92, 175, 255, 0.18)",
-    shadowColor: "rgba(120, 190, 255, 0.4)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    borderColor: "rgba(140, 200, 255, 0.75)",
+    backgroundColor: "rgba(92, 175, 255, 0.24)",
+    shadowColor: "rgba(120, 190, 255, 0.55)",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
   },
   optionChipPressed: {
     transform: [{ scale: 0.98 }],
@@ -988,6 +1073,15 @@ const styles = StyleSheet.create({
   },
   optionLabelActive: {
     color: "#ffffff",
+  },
+  levelGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  levelChip: {
+    width: "30%",
   },
   locationActions: {
     gap: 12,

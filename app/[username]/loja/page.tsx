@@ -7,6 +7,7 @@ import { computeBundleTotals } from "@/lib/store/bundles";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCartOverlay from "@/components/storefront/StorefrontCartOverlay";
 import StorefrontBundleCard from "@/components/storefront/StorefrontBundleCard";
+import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,11 @@ export default async function PublicStorePage({ params }: PageProps) {
           catalogLocked: true,
           currency: true,
           freeShippingThresholdCents: true,
+          supportEmail: true,
+          supportPhone: true,
+          returnPolicy: true,
+          privacyPolicy: true,
+          termsUrl: true,
         },
       })
     : profile
@@ -84,6 +90,11 @@ export default async function PublicStorePage({ params }: PageProps) {
             catalogLocked: true,
             currency: true,
             freeShippingThresholdCents: true,
+            supportEmail: true,
+            supportPhone: true,
+            returnPolicy: true,
+            privacyPolicy: true,
+            termsUrl: true,
           },
         })
       : null;
@@ -597,6 +608,18 @@ export default async function PublicStorePage({ params }: PageProps) {
               </section>
             )}
           </div>
+        ) : null}
+        {storePublic && store ? (
+          <StorefrontFooter
+            storeName={displayName}
+            storePolicies={{
+              supportEmail: store.supportEmail ?? null,
+              supportPhone: store.supportPhone ?? null,
+              returnPolicy: store.returnPolicy ?? null,
+              privacyPolicy: store.privacyPolicy ?? null,
+              termsUrl: store.termsUrl ?? null,
+            }}
+          />
         ) : null}
       </div>
       {storePublic && store ? (

@@ -200,6 +200,20 @@ export default function StorefrontCheckoutClient({
       storePolicies?.termsUrl,
   );
 
+  const policyLinks = useMemo(() => {
+    const links: Array<{ label: string; href: string; external?: boolean }> = [];
+    if (storePolicies?.termsUrl) {
+      links.push({ label: "Termos e condicoes", href: storePolicies.termsUrl, external: true });
+    }
+    if (storePolicies?.returnPolicy) {
+      links.push({ label: "Politica de devolucoes", href: `${storeBaseHref}#politica-devolucoes` });
+    }
+    if (storePolicies?.privacyPolicy) {
+      links.push({ label: "Politica de privacidade", href: `${storeBaseHref}#politica-privacidade` });
+    }
+    return links;
+  }, [storePolicies?.termsUrl, storePolicies?.returnPolicy, storePolicies?.privacyPolicy, storeBaseHref]);
+
   const stripePromise = useMemo(() => {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     return key ? loadStripe(key) : null;
@@ -797,15 +811,20 @@ export default function StorefrontCheckoutClient({
             {hasPolicies ? (
               <div className="rounded-xl border border-white/15 bg-black/40 px-3 py-3 text-[12px] text-white/70 space-y-2">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Políticas</p>
-                {storePolicies?.termsUrl ? (
-                  <a
-                    href={storePolicies.termsUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[12px] text-white/80 underline"
-                  >
-                    Termos e condições
-                  </a>
+                {policyLinks.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {policyLinks.map((link) => (
+                      <a
+                        key={link.label}
+                        href={link.href}
+                        target={link.external ? "_blank" : undefined}
+                        rel={link.external ? "noreferrer" : undefined}
+                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
+                      >
+                        {link.label}
+                      </a>
+                    ))}
+                  </div>
                 ) : null}
                 {storePolicies?.returnPolicy ? (
                   <div className="max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-white/70">
@@ -823,7 +842,7 @@ export default function StorefrontCheckoutClient({
                   </p>
                 )}
                 <p className="text-[11px] text-white/50">
-                  As políticas estão disponíveis no link acima.
+                  As politicas estao disponiveis nos links acima (assumimos que leste e aceitaste).
                 </p>
               </div>
             ) : null}
@@ -910,6 +929,11 @@ export default function StorefrontCheckoutClient({
           <p>
             Pagamento confirmado{checkout?.orderNumber ? ` (${checkout.orderNumber})` : ""}. Vais receber a confirmacao por email.
           </p>
+          {(storePolicies?.supportEmail || storePolicies?.supportPhone) && (
+            <p className="mt-2 text-xs text-emerald-100/80">
+              Suporte: {storePolicies?.supportEmail ?? ""}{storePolicies?.supportEmail && storePolicies?.supportPhone ? " · " : ""}{storePolicies?.supportPhone ?? ""}
+            </p>
+          )}
           <p className="mt-2 text-xs text-emerald-100/80">
             Podes acompanhar a encomenda e descarregar produtos digitais em{" "}
             <Link href="/me/compras/loja" className="underline">

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCheckoutClient from "@/components/storefront/StorefrontCheckoutClient";
+import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,16 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
             }}
           />
         </div>
+        <StorefrontFooter
+          storeName={displayName}
+          storePolicies={{
+            supportEmail: store.supportEmail ?? null,
+            supportPhone: store.supportPhone ?? null,
+            returnPolicy: store.returnPolicy ?? null,
+            privacyPolicy: store.privacyPolicy ?? null,
+            termsUrl: store.termsUrl ?? null,
+          }}
+        />
       </div>
     </main>
   );

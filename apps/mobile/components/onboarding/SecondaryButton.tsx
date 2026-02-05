@@ -35,10 +35,10 @@ export function SecondaryButton({
 
 const styles = StyleSheet.create({
   shell: {
-    minHeight: tokens.layout.touchTarget,
+    minHeight: 50,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(255,255,255,0.25)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,

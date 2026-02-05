@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   FlatList,
   Platform,
@@ -38,6 +38,19 @@ const kindMeta: Array<{ key: DiscoverKind; label: string; subtitle: string }> = 
   { key: "services", label: "Servicos", subtitle: "Reservas e servicos premium." },
 ];
 
+const priceOptions = [
+  { key: "all", label: "Todas" },
+  { key: "free", label: "Gratis" },
+  { key: "paid", label: "Pagas" },
+] as const;
+
+const dateOptions: Array<{ key: DiscoverDateFilter; label: string }> = [
+  { key: "all", label: "Todas" },
+  { key: "today", label: "Hoje" },
+  { key: "weekend", label: "Fim‑de‑semana" },
+  { key: "upcoming", label: "Próximos 7 dias" },
+];
+
 export default function DiscoverScreen() {
   const t = i18n.pt.discover;
   const router = useRouter();
@@ -55,6 +68,8 @@ export default function DiscoverScreen() {
   const debouncedQuery = useDebouncedValue(query, 280);
   const debouncedCity = useDebouncedValue(city, 320);
   const { data: ipLocation } = useIpLocation();
+  const userLat = ipLocation?.approxLatLon?.lat ?? null;
+  const userLon = ipLocation?.approxLatLon?.lon ?? null;
 
   const { data, isFetching, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useDiscoverFeed({ q: debouncedQuery, type: priceFilter, kind, date: dateFilter, city: debouncedCity });
@@ -101,7 +116,9 @@ export default function DiscoverScreen() {
 
   useEffect(() => {
     if (Platform.OS === "android" || Platform.OS === "ios") {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      if (items.length <= 24) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
     }
   }, [items.length]);
 
@@ -111,25 +128,81 @@ export default function DiscoverScreen() {
     }
   }, [city, ipLocation?.city, setCity]);
 
+  const handleRefresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
+
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: DiscoverListItem; index: number }) => {
+      if (item.kind === "skeleton") {
+        return <GlassSkeleton className="mb-4" height={140} />;
+      }
+
+      if (item.offer.type === "event") {
+        return (
+          <DiscoverEventCard
+            item={item.offer.event}
+            itemType="event"
+            index={index}
+            userLat={userLat}
+            userLon={userLon}
+          />
+        );
+      }
+
+      return (
+        <DiscoverEventCard
+          item={item.offer.service}
+          itemType="service"
+          index={index}
+          userLat={userLat}
+          userLon={userLon}
+        />
+      );
+    },
+    [userLat, userLon],
+  );
+
+  const renderFeaturedItem = useCallback(
+    ({ item, index }: { item: Extract<DiscoverOfferCard, { type: "event" }>; index: number }) => (
+      <DiscoverEventCard
+        item={item.event}
+        itemType="event"
+        variant="featured"
+        index={index}
+        userLat={userLat}
+        userLon={userLon}
+      />
+    ),
+    [userLat, userLon],
+  );
+
+  const keyExtractor = useCallback(
+    (item: DiscoverListItem) => (item.kind === "skeleton" ? item.key : item.offer.key),
+    [],
+  );
+
   return (
     <LiquidBackground>
       <FlatList
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 36 }}
         data={listData}
-        keyExtractor={(item) => (item.kind === "skeleton" ? item.key : item.offer.key)}
+        keyExtractor={keyExtractor}
         keyboardShouldPersistTaps="handled"
         refreshing={isFetching && !isFetchingNextPage}
-        onRefresh={() => refetch()}
+        onRefresh={handleRefresh}
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={6}
         maxToRenderPerBatch={6}
         updateCellsBatchingPeriod={40}
         windowSize={7}
-        onEndReached={() => {
-          if (hasNextPage && !isFetchingNextPage) {
-            fetchNextPage();
-          }
-        }}
+        onEndReached={handleEndReached}
         onEndReachedThreshold={0.35}
         ListHeaderComponent={
           <View className="pt-14">
@@ -191,16 +264,12 @@ export default function DiscoverScreen() {
             </View>
 
             <View className="px-5 pb-5 flex-row gap-2">
-              {[
-                { key: "all", label: t.all },
-                { key: "free", label: t.free },
-                { key: "paid", label: t.paid },
-              ].map((item) => {
+              {priceOptions.map((item) => {
                 const active = item.key === priceFilter;
                 return (
                   <Pressable
                     key={item.key}
-                    onPress={() => setPriceFilter(item.key as "all" | "free" | "paid")}
+                    onPress={() => setPriceFilter(item.key)}
                     style={{ minHeight: tokens.layout.touchTarget }}
                     className="overflow-hidden rounded-full border border-white/10"
                   >
@@ -215,7 +284,7 @@ export default function DiscoverScreen() {
                       }}
                     >
                       <Text className={active ? "text-white text-sm font-semibold" : "text-white/70 text-sm"}>
-                        {item.label}
+                        {item.key === "all" ? t.all : item.key === "free" ? t.free : t.paid}
                       </Text>
                     </BlurView>
                   </Pressable>
@@ -258,12 +327,7 @@ export default function DiscoverScreen() {
             </View>
 
             <View className="px-5 pb-5 flex-row flex-wrap gap-2">
-              {[
-                { key: "all", label: "Todas" },
-                { key: "today", label: "Hoje" },
-                { key: "weekend", label: "Fim‑de‑semana" },
-                { key: "upcoming", label: "Próximos 7 dias" },
-              ].map((item) => {
+              {dateOptions.map((item) => {
                 const active = item.key === dateFilter;
                 return (
                   <Pressable
@@ -318,9 +382,7 @@ export default function DiscoverScreen() {
                   initialNumToRender={3}
                   maxToRenderPerBatch={3}
                   windowSize={3}
-                  renderItem={({ item, index }) => (
-                    <DiscoverEventCard item={item.event} itemType="event" variant="featured" index={index} />
-                  )}
+                  renderItem={renderFeaturedItem}
                 />
               </View>
             : null}
@@ -330,17 +392,7 @@ export default function DiscoverScreen() {
             </View>
           </View>
         }
-        renderItem={({ item, index }) => {
-          if (item.kind === "skeleton") {
-            return <GlassSkeleton className="mb-4" height={140} />;
-          }
-
-          if (item.offer.type === "event") {
-            return <DiscoverEventCard item={item.offer.event} itemType="event" index={index} />;
-          }
-
-          return <DiscoverEventCard item={item.offer.service} itemType="service" index={index} />;
-        }}
+        renderItem={renderItem}
         ListFooterComponent={
           !showSkeleton ? (
             <View className="pt-2">

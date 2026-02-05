@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FlatList, Platform, Pressable, Text, View } from "react-native";
 import { i18n, tokens } from "@orya/shared";
 import { GlassSurface } from "../../components/glass/GlassSurface";
@@ -23,24 +23,47 @@ export default function TicketsScreen() {
     [feed.data?.pages],
   );
   const showSkeleton = feed.isLoading && items.length === 0;
-  const listData: WalletListItem[] = showSkeleton
-    ? Array.from({ length: 3 }, (_, index) => ({
-        kind: "skeleton",
-        key: `wallet-skeleton-${index}`,
-      }))
-    : items.map((entitlement) => ({ kind: "entitlement", entitlement }));
+  const listData: WalletListItem[] = useMemo(
+    () =>
+      showSkeleton
+        ? Array.from({ length: 3 }, (_, index) => ({
+            kind: "skeleton",
+            key: `wallet-skeleton-${index}`,
+          }))
+        : items.map((entitlement) => ({ kind: "entitlement", entitlement })),
+    [items, showSkeleton],
+  );
   const emptyLabel =
     mode === "upcoming"
       ? "Sem bilhetes ativos de momento."
       : "Ainda sem histórico no mobile.";
+
+  const handleRefresh = useCallback(() => {
+    feed.refetch();
+  }, [feed]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: WalletListItem }) =>
+      item.kind === "skeleton" ? (
+        <GlassSkeleton className="mb-4" height={198} />
+      ) : (
+        <WalletEntitlementCard item={item.entitlement} />
+      ),
+    [],
+  );
+
+  const keyExtractor = useCallback(
+    (item: WalletListItem) => (item.kind === "skeleton" ? item.key : item.entitlement.entitlementId),
+    [],
+  );
 
   return (
     <LiquidBackground>
       <FlatList
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
         data={listData}
-        keyExtractor={(item) => (item.kind === "skeleton" ? item.key : item.entitlement.entitlementId)}
-        onRefresh={() => feed.refetch()}
+        keyExtractor={keyExtractor}
+        onRefresh={handleRefresh}
         refreshing={feed.isFetching}
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={4}
@@ -103,13 +126,7 @@ export default function TicketsScreen() {
             ) : null}
           </View>
         }
-        renderItem={({ item }) =>
-          item.kind === "skeleton" ? (
-            <GlassSkeleton className="mb-4" height={198} />
-          ) : (
-            <WalletEntitlementCard item={item.entitlement} />
-          )
-        }
+        renderItem={renderItem}
         ListFooterComponent={
           <View className="pt-1">
             {!showSkeleton && !feed.isError && items.length === 0 ? (

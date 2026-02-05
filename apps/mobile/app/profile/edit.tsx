@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -9,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { Stack, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useQueryClient } from "@tanstack/react-query";
@@ -307,7 +307,13 @@ export default function ProfileEditScreen() {
             <Text className="text-white/60 text-xs uppercase tracking-[0.2em] mb-3">Capa</Text>
             <View className="rounded-2xl overflow-hidden border border-white/10 mb-3" style={{ height: 140 }}>
               {coverPreview ? (
-                <Image source={{ uri: coverPreview }} style={{ width: "100%", height: "100%" }} />
+                <Image
+                  source={{ uri: coverPreview }}
+                  style={{ width: "100%", height: "100%" }}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={160}
+                />
               ) : (
                 <View className="flex-1 bg-white/5" />
               )}
@@ -365,7 +371,13 @@ export default function ProfileEditScreen() {
                 className="h-20 w-20 rounded-full border border-white/10 overflow-hidden items-center justify-center bg-white/5"
               >
                 {avatarPreview ? (
-                  <Image source={{ uri: avatarPreview }} style={{ width: 80, height: 80 }} />
+                  <Image
+                    source={{ uri: avatarPreview }}
+                    style={{ width: 80, height: 80 }}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={160}
+                  />
                 ) : (
                   <Text className="text-white/70 text-lg font-semibold">{avatarInitial}</Text>
                 )}

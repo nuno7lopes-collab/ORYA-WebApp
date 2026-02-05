@@ -1,7 +1,7 @@
 import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { PublicEventCard, tokens } from "@orya/shared";
@@ -11,13 +11,14 @@ import { GlassPill } from "../../components/liquid/GlassPill";
 import { DiscoverServiceCard } from "./types";
 import { fetchEventDetail } from "../events/api";
 import { fetchServiceDetail } from "../services/api";
-import { useIpLocation } from "../onboarding/hooks";
 
 type Props = {
   item: PublicEventCard | DiscoverServiceCard;
   itemType?: "event" | "service";
   variant?: "feed" | "featured";
   index?: number;
+  userLat?: number | null;
+  userLon?: number | null;
 };
 
 const isServiceCard = (item: PublicEventCard | DiscoverServiceCard): item is DiscoverServiceCard => {
@@ -245,7 +246,14 @@ const resolveAttendanceSummary = (ticketTypes?: PublicEventCard["ticketTypes"]) 
   return `${sold}+ inscritos`;
 };
 
-export function DiscoverEventCard({ item, itemType, variant = "feed", index = 0 }: Props) {
+export const DiscoverEventCard = memo(function DiscoverEventCard({
+  item,
+  itemType,
+  variant = "feed",
+  index = 0,
+  userLat,
+  userLon,
+}: Props) {
   const isFeatured = variant === "featured";
   const isService = itemType ? itemType === "service" : isServiceCard(item);
   const event = !isService ? (item as PublicEventCard) : null;
@@ -294,74 +302,102 @@ export function DiscoverEventCard({ item, itemType, variant = "feed", index = 0 
   const revealTranslate = useRef(new Animated.Value(14)).current;
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { data: ipLocation } = useIpLocation();
 
-  const cardPrice = isService
-    ? service
-      ? formatServicePrice(service)
-      : "Preco em breve"
-    : event
-      ? formatEventPrice(event)
-      : "Preco em breve";
-  const statusLabel = isService ? "Disponivel" : resolveStatusLabel(event?.status);
-  const distanceLabel =
-    !isService && event?.location
-      ? formatDistanceKm(
-          event.location.lat ?? null,
-          event.location.lng ?? null,
-          ipLocation?.approxLatLon?.lat ?? null,
-          ipLocation?.approxLatLon?.lon ?? null,
-        )
-      : null;
-  const availabilityLabel = !isService
-    ? resolveTicketAvailability(event?.ticketTypes) ?? (event?.isGratis ? "Entrada livre" : null)
-    : null;
-  const ticketSummary = !isService ? resolveTicketSummary(event?.ticketTypes) : null;
-  const attendanceLabel = !isService ? resolveAttendanceSummary(event?.ticketTypes) : null;
-  const showTicketRow = !isService && Boolean(ticketSummary || attendanceLabel || availabilityLabel);
+  const cardPrice = useMemo(
+    () =>
+      isService
+        ? service
+          ? formatServicePrice(service)
+          : "Preco em breve"
+        : event
+          ? formatEventPrice(event)
+          : "Preco em breve",
+    [event, isService, service],
+  );
+  const statusLabel = useMemo(
+    () => (isService ? "Disponivel" : resolveStatusLabel(event?.status)),
+    [event?.status, isService],
+  );
+  const distanceLabel = useMemo(() => {
+    if (isService || !event?.location) return null;
+    return formatDistanceKm(
+      event.location.lat ?? null,
+      event.location.lng ?? null,
+      userLat ?? null,
+      userLon ?? null,
+    );
+  }, [event?.location, isService, userLat, userLon]);
+  const availabilityLabel = useMemo(() => {
+    if (isService) return null;
+    return resolveTicketAvailability(event?.ticketTypes) ?? (event?.isGratis ? "Entrada livre" : null);
+  }, [event?.isGratis, event?.ticketTypes, isService]);
+  const ticketSummary = useMemo(
+    () => (!isService ? resolveTicketSummary(event?.ticketTypes) : null),
+    [event?.ticketTypes, isService],
+  );
+  const attendanceLabel = useMemo(
+    () => (!isService ? resolveAttendanceSummary(event?.ticketTypes) : null),
+    [event?.ticketTypes, isService],
+  );
+  const showTicketRow = useMemo(
+    () => (!isService && Boolean(ticketSummary || attendanceLabel || availabilityLabel)),
+    [availabilityLabel, attendanceLabel, isService, ticketSummary],
+  );
 
-  const eventPreviewParams = event
-    ? {
-        slug: event.slug ?? "",
-        source: "discover",
-        eventTitle: title,
-        coverImageUrl: event.coverImageUrl ?? "",
-        shortDescription: event.shortDescription ?? "",
-        startsAt: event.startsAt ?? "",
-        endsAt: event.endsAt ?? "",
-        locationLabel: location,
-        priceLabel: cardPrice,
-        categoryLabel: category,
-        hostName: host,
-        ...(transitionTag ? { imageTag: transitionTag } : {}),
-      }
-    : undefined;
+  const eventPreviewParams = useMemo(
+    () =>
+      event
+        ? {
+            slug: event.slug ?? "",
+            source: "discover",
+            eventTitle: title,
+            coverImageUrl: event.coverImageUrl ?? "",
+            shortDescription: event.shortDescription ?? "",
+            startsAt: event.startsAt ?? "",
+            endsAt: event.endsAt ?? "",
+            locationLabel: location,
+            priceLabel: cardPrice,
+            categoryLabel: category,
+            hostName: host,
+            ...(transitionTag ? { imageTag: transitionTag } : {}),
+          }
+        : undefined,
+    [event, title, location, cardPrice, category, host, transitionTag],
+  );
 
-  const servicePreviewParams = service
-    ? {
-        id: String(service.id ?? ""),
-        source: "discover",
-        serviceTitle: title,
-        servicePriceLabel: cardPrice,
-        serviceDuration: durationLabel ?? "",
-        serviceKind: resolveServiceKind(service.kind),
-        serviceOrg: host,
-        serviceCity: service.organization.city ?? "",
-        serviceInstructor: instructorLabel ?? "",
-        serviceCoverUrl: serviceCover ?? "",
-        ...(transitionTag ? { imageTag: transitionTag } : {}),
-      }
-    : undefined;
+  const servicePreviewParams = useMemo(
+    () =>
+      service
+        ? {
+            id: String(service.id ?? ""),
+            source: "discover",
+            serviceTitle: title,
+            servicePriceLabel: cardPrice,
+            serviceDuration: durationLabel ?? "",
+            serviceKind: resolveServiceKind(service.kind),
+            serviceOrg: host,
+            serviceCity: service.organization.city ?? "",
+            serviceInstructor: instructorLabel ?? "",
+            serviceCoverUrl: serviceCover ?? "",
+            ...(transitionTag ? { imageTag: transitionTag } : {}),
+          }
+        : undefined,
+    [service, title, cardPrice, durationLabel, host, instructorLabel, serviceCover, transitionTag],
+  );
 
-  const linkHref = isService
-    ? {
-        pathname: "/service/[id]" as const,
-        params: servicePreviewParams,
-      }
-    : {
-        pathname: "/event/[slug]" as const,
-        params: eventPreviewParams,
-      };
+  const linkHref = useMemo(
+    () =>
+      isService
+        ? {
+            pathname: "/service/[id]" as const,
+            params: servicePreviewParams,
+          }
+        : {
+            pathname: "/event/[slug]" as const,
+            params: eventPreviewParams,
+          },
+    [eventPreviewParams, isService, servicePreviewParams],
+  );
 
   useEffect(() => {
     Animated.parallel([
@@ -380,7 +416,7 @@ export function DiscoverEventCard({ item, itemType, variant = "feed", index = 0 
     ]).start();
   }, [index, isFeatured, revealOpacity, revealTranslate]);
 
-  const onPressIn = () => {
+  const onPressIn = useCallback(() => {
     Animated.spring(scale, {
       toValue: 0.98,
       useNativeDriver: true,
@@ -404,15 +440,15 @@ export function DiscoverEventCard({ item, itemType, variant = "feed", index = 0 
         queryFn: () => fetchServiceDetail(String(service.id)),
       });
     }
-  };
+  }, [event?.slug, isService, linkHref, queryClient, router, scale, service?.id]);
 
-  const onPressOut = () => {
+  const onPressOut = useCallback(() => {
     Animated.spring(scale, {
       toValue: 1,
       useNativeDriver: true,
       friction: 7,
     }).start();
-  };
+  }, [scale]);
 
   return (
     <Link href={linkHref} asChild push>
@@ -440,6 +476,8 @@ export function DiscoverEventCard({ item, itemType, variant = "feed", index = 0 
                       contentFit="cover"
                       transition={220}
                       sharedTransitionTag={transitionTag ?? undefined}
+                      cachePolicy="memory-disk"
+                      priority={isFeatured ? "high" : "normal"}
                     />
                     <LinearGradient
                       colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.65)"]}
@@ -575,4 +613,4 @@ export function DiscoverEventCard({ item, itemType, variant = "feed", index = 0 
       </Pressable>
     </Link>
   );
-}
+});

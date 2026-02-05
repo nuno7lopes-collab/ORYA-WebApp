@@ -323,6 +323,8 @@ export default function EventDetail() {
                         contentFit="cover"
                         transition={240}
                         sharedTransitionTag={displayImageTag ?? undefined}
+                        cachePolicy="memory-disk"
+                        priority="high"
                       />
                       <LinearGradient
                         colors={["rgba(0,0,0,0.1)", "rgba(0,0,0,0.7)"]}
@@ -425,6 +427,8 @@ export default function EventDetail() {
                           contentFit="cover"
                           transition={260}
                           sharedTransitionTag={displayImageTag ?? undefined}
+                          cachePolicy="memory-disk"
+                          priority="high"
                         />
                         <LinearGradient
                           colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.7)"]}

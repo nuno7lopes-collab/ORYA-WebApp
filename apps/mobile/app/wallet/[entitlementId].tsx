@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Image,
   Platform,
   Pressable,
   RefreshControl,
@@ -12,6 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { useNavigation } from "@react-navigation/native";
@@ -274,7 +274,9 @@ export default function WalletDetailScreen() {
                       <Image
                         source={{ uri: qrUrl }}
                         style={{ width: 214, height: 214, borderRadius: 10 }}
-                        resizeMode="cover"
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        transition={120}
                       />
                     </View>
                     <Text className="text-white/65 text-xs text-center">

@@ -273,7 +273,7 @@ export default function AuthEmailScreen() {
               ]}
             >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color="#0b0f17" />
             ) : (
               <Text style={styles.primaryText}>{isSignUp ? "Criar conta" : "Entrar"}</Text>
             )}
@@ -411,13 +411,13 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0f172a",
+    backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    shadowColor: "rgba(0,0,0,0.45)",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
+    borderColor: "rgba(12, 18, 28, 0.18)",
+    shadowColor: "rgba(0,0,0,0.32)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
     elevation: 3,
   },
   primaryPressed: {
@@ -430,7 +430,7 @@ const styles = StyleSheet.create({
   primaryText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#ffffff",
+    color: "#0b0f17",
     textAlign: "center",
   },
   toggleLink: {

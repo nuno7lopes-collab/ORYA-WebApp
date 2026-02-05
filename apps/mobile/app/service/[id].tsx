@@ -168,6 +168,8 @@ export default function ServiceDetailScreen() {
                       contentFit="cover"
                       transition={220}
                       sharedTransitionTag={displayImageTag ?? undefined}
+                      cachePolicy="memory-disk"
+                      priority="high"
                     />
                     <LinearGradient
                       colors={["rgba(0,0,0,0.1)", "rgba(0,0,0,0.7)"]}
@@ -262,6 +264,8 @@ export default function ServiceDetailScreen() {
                     contentFit="cover"
                     transition={240}
                     sharedTransitionTag={displayImageTag ?? undefined}
+                    cachePolicy="memory-disk"
+                    priority="high"
                   />
                   <LinearGradient
                     colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.7)"]}

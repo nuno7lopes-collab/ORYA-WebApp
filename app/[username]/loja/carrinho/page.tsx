@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCartOverlay from "@/components/storefront/StorefrontCartOverlay";
+import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 
 export const dynamic = "force-dynamic";
 
@@ -36,12 +37,36 @@ export default async function StoreCartPage({ params }: PageProps) {
   const store = organization
     ? await prisma.store.findFirst({
         where: { ownerOrganizationId: organization.id },
-        select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true, freeShippingThresholdCents: true },
+        select: {
+          id: true,
+          status: true,
+          showOnProfile: true,
+          catalogLocked: true,
+          currency: true,
+          freeShippingThresholdCents: true,
+          supportEmail: true,
+          supportPhone: true,
+          returnPolicy: true,
+          privacyPolicy: true,
+          termsUrl: true,
+        },
       })
     : profile
       ? await prisma.store.findFirst({
           where: { ownerUserId: profile.id },
-          select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true, freeShippingThresholdCents: true },
+          select: {
+            id: true,
+            status: true,
+            showOnProfile: true,
+            catalogLocked: true,
+            currency: true,
+            freeShippingThresholdCents: true,
+            supportEmail: true,
+            supportPhone: true,
+            returnPolicy: true,
+            privacyPolicy: true,
+            termsUrl: true,
+          },
         })
       : null;
 
@@ -72,6 +97,16 @@ export default async function StoreCartPage({ params }: PageProps) {
         <div className="rounded-3xl border border-white/12 bg-white/5 p-6 text-sm text-white/70 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           O carrinho aparece compacto no canto direito. Podes minimizar ou abrir para rever o pedido.
         </div>
+        <StorefrontFooter
+          storeName={displayName}
+          storePolicies={{
+            supportEmail: store.supportEmail ?? null,
+            supportPhone: store.supportPhone ?? null,
+            returnPolicy: store.returnPolicy ?? null,
+            privacyPolicy: store.privacyPolicy ?? null,
+            termsUrl: store.termsUrl ?? null,
+          }}
+        />
       </div>
       <StorefrontCartOverlay
         storeId={store.id}

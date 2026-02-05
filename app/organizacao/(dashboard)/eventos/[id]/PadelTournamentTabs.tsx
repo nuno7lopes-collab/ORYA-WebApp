@@ -2017,6 +2017,18 @@ export default function PadelTournamentTabs({
           Calendário (PDF)
         </a>
         <a
+          href={`/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=csv`}
+          className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+        >
+          Calendário (CSV)
+        </a>
+        <a
+          href={`/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=ics`}
+          className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+        >
+          Calendário (ICS)
+        </a>
+        <a
           href={`/api/organizacao/padel/exports/analytics?eventId=${eventId}&format=xlsx`}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >

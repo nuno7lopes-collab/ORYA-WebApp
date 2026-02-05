@@ -1,5 +1,6 @@
 import { memo } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { tokens } from "@orya/shared";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -45,7 +46,13 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
           }}
         >
           {item.avatarUrl ? (
-            <Image source={{ uri: item.avatarUrl }} style={{ width: 52, height: 52 }} />
+            <Image
+              source={{ uri: item.avatarUrl }}
+              style={{ width: 52, height: 52 }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={120}
+            />
           ) : (
             <Ionicons name="person" size={22} color="rgba(255,255,255,0.7)" />
           )}

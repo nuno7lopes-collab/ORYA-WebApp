@@ -11,6 +11,8 @@ import { SocialFeedItem } from "./types";
 type Props = {
   item: SocialFeedItem;
   index?: number;
+  userLat?: number | null;
+  userLon?: number | null;
 };
 
 const formatRelativeTime = (iso: string): string => {
@@ -30,7 +32,12 @@ const formatRelativeTime = (iso: string): string => {
   }).format(new Date(timestamp));
 };
 
-export const SocialFeedCard = memo(function SocialFeedCard({ item, index = 0 }: Props) {
+export const SocialFeedCard = memo(function SocialFeedCard({
+  item,
+  index = 0,
+  userLat,
+  userLon,
+}: Props) {
   const orgName = item.organization.name || "Organização";
   const timeLabel = formatRelativeTime(item.createdAt);
 
@@ -50,7 +57,13 @@ export const SocialFeedCard = memo(function SocialFeedCard({ item, index = 0 }: 
             }}
           >
             {item.organization.avatarUrl ? (
-              <Image source={{ uri: item.organization.avatarUrl }} style={{ width: 46, height: 46 }} />
+              <Image
+                source={{ uri: item.organization.avatarUrl }}
+                style={{ width: 46, height: 46 }}
+                cachePolicy="memory-disk"
+                transition={120}
+                contentFit="cover"
+              />
             ) : (
               <Ionicons name="business" size={20} color="rgba(255,255,255,0.7)" />
             )}
@@ -74,7 +87,14 @@ export const SocialFeedCard = memo(function SocialFeedCard({ item, index = 0 }: 
         </View>
       </GlassSurface>
 
-      <DiscoverEventCard item={item.event} itemType="event" variant="feed" index={index} />
+      <DiscoverEventCard
+        item={item.event}
+        itemType="event"
+        variant="feed"
+        index={index}
+        userLat={userLat}
+        userLon={userLon}
+      />
     </View>
   );
 });

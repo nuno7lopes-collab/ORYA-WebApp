@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { FlatList, Platform, Pressable, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
@@ -16,6 +16,7 @@ import { FollowRequestCard } from "../../features/network/FollowRequestCard";
 import { SocialSuggestion } from "../../features/network/types";
 import { useSocialFeed } from "../../features/social/hooks";
 import { SocialFeedCard } from "../../features/social/SocialFeedCard";
+import { useIpLocation } from "../../features/onboarding/hooks";
 
 type NetworkListItem =
   | { kind: "skeleton"; key: string }
@@ -27,6 +28,9 @@ export default function NetworkScreen() {
   const followRequests = useFollowRequests();
   const followRequestActions = useFollowRequestActions();
   const socialFeed = useSocialFeed(8);
+  const { data: ipLocation } = useIpLocation();
+  const userLat = ipLocation?.approxLatLon?.lat ?? null;
+  const userLon = ipLocation?.approxLatLon?.lon ?? null;
 
   const feedItems = useMemo(
     () => socialFeed.data?.pages.flatMap((page) => page.items) ?? [],
@@ -41,25 +45,51 @@ export default function NetworkScreen() {
 
   const data = suggestions.data ?? [];
   const showSkeleton = suggestions.isLoading && data.length === 0;
-  const listData: NetworkListItem[] = showSkeleton
-    ? Array.from({ length: 4 }, (_, index) => ({
-        kind: "skeleton",
-        key: `network-skeleton-${index}`,
-      }))
-    : data.map((suggestion) => ({ kind: "suggestion", suggestion }));
+  const listData: NetworkListItem[] = useMemo(
+    () =>
+      showSkeleton
+        ? Array.from({ length: 4 }, (_, index) => ({
+            kind: "skeleton",
+            key: `network-skeleton-${index}`,
+          }))
+        : data.map((suggestion) => ({ kind: "suggestion", suggestion })),
+    [data, showSkeleton],
+  );
+
+  const handleRefresh = useCallback(() => {
+    suggestions.refetch();
+    socialFeed.refetch();
+    followRequests.refetch();
+  }, [followRequests, socialFeed, suggestions]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: NetworkListItem }) =>
+      item.kind === "skeleton" ? (
+        <GlassSkeleton className="mb-3" height={86} />
+      ) : (
+        <NetworkSuggestionCard
+          item={item.suggestion}
+          pending={actions.pendingUserId === item.suggestion.id}
+          onFollow={actions.follow}
+          onUnfollow={actions.unfollow}
+        />
+      ),
+    [actions.follow, actions.pendingUserId, actions.unfollow],
+  );
+
+  const keyExtractor = useCallback(
+    (item: NetworkListItem) => (item.kind === "skeleton" ? item.key : item.suggestion.id),
+    [],
+  );
 
   return (
     <LiquidBackground>
       <FlatList
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
         data={listData}
-        keyExtractor={(item) => (item.kind === "skeleton" ? item.key : item.suggestion.id)}
+        keyExtractor={keyExtractor}
         refreshing={suggestions.isFetching || socialFeed.isFetching || followRequests.isFetching}
-        onRefresh={() => {
-          suggestions.refetch();
-          socialFeed.refetch();
-          followRequests.refetch();
-        }}
+        onRefresh={handleRefresh}
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={5}
         maxToRenderPerBatch={5}
@@ -137,7 +167,7 @@ export default function NetworkScreen() {
                   <GlassSkeleton key={`feed-skeleton-${index}`} className="mb-4" height={240} />
                 ))
               : feedItems.map((item, index) => (
-                  <SocialFeedCard key={item.id} item={item} index={index} />
+                  <SocialFeedCard key={item.id} item={item} index={index} userLat={userLat} userLon={userLon} />
                 ))}
 
             {feedEmpty ? (
@@ -182,18 +212,7 @@ export default function NetworkScreen() {
             ) : null}
           </View>
         }
-        renderItem={({ item }) =>
-          item.kind === "skeleton" ? (
-            <GlassSkeleton className="mb-3" height={86} />
-          ) : (
-            <NetworkSuggestionCard
-              item={item.suggestion}
-              pending={actions.pendingUserId === item.suggestion.id}
-              onFollow={actions.follow}
-              onUnfollow={actions.unfollow}
-            />
-          )
-        }
+        renderItem={renderItem}
         ListFooterComponent={
           !showSkeleton && !suggestions.isError && data.length === 0 ? (
             <GlassCard intensity={48}>
