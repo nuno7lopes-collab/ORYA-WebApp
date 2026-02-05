@@ -2,11 +2,12 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
+ENV PRISMA_SKIP_POSTINSTALL=1
 RUN npm config set fetch-retries 5 \
   && npm config set fetch-retry-mintimeout 20000 \
   && npm config set fetch-retry-maxtimeout 120000 \
   && npm config set cache /tmp/.npm \
-  && npm ci
+  && npm ci --ignore-scripts
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -17,6 +18,8 @@ COPY . .
 ENV NODE_ENV=production
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+RUN apk add --no-cache openssl
+RUN npx prisma generate
 RUN npm run build
 
 FROM node:20-alpine AS runner
