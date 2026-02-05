@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { Redirect, useRouter } from "expo-router";
@@ -15,6 +19,7 @@ import * as Linking from "expo-linking";
 import { LinearGradient } from "expo-linear-gradient";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/auth/GlassCard";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { trackEvent } from "../../lib/analytics";
@@ -54,11 +59,19 @@ export default function AuthEmailScreen() {
   const { loading: authLoading, session } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [showResend, setShowResend] = useState(false);
+  const passwordInputRef = useRef<TextInput>(null);
+
+  const normalizedEmail = normalizeEmail(email);
+  const emailValid = isValidEmail(normalizedEmail);
+  const passwordValid = isSignUp ? password.length >= 6 : password.length > 0;
+  const canSubmit = emailValid && passwordValid;
+  const isSubmitDisabled = loading || !canSubmit;
 
   useEffect(() => {
     setLastAuthMethod("email").catch(() => undefined);
@@ -208,91 +221,121 @@ export default function AuthEmailScreen() {
         />
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Pressable onPress={() => router.back()} accessibilityRole="button" style={styles.backButton}>
-          <Text style={styles.backText}>Voltar</Text>
-        </Pressable>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            <Pressable onPress={() => router.back()} accessibilityRole="button" style={styles.backButton}>
+              <Text style={styles.backText}>Voltar</Text>
+            </Pressable>
 
-        <View style={styles.centerBlock}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Entrar com e-mail</Text>
-            <Text style={styles.subtitle}>Usa o teu e-mail para continuar na ORYA.</Text>
-          </View>
-
-          <GlassCard style={styles.card}>
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                textContentType="emailAddress"
-                value={email}
-                onChangeText={setEmail}
-                placeholder="email@exemplo.pt"
-                placeholderTextColor="rgba(255,255,255,0.35)"
-                accessibilityLabel="Email"
-              />
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                secureTextEntry
-                textContentType={isSignUp ? "newPassword" : "password"}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor="rgba(255,255,255,0.35)"
-                accessibilityLabel="Password"
-              />
-            </View>
-
-            {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
-            {infoMessage ? <Text style={styles.infoText}>{infoMessage}</Text> : null}
-            {showResend ? (
-              <Pressable onPress={handleResend} disabled={loading} style={styles.resendLink}>
-                <Text style={styles.resendText}>Reenviar email de confirmação</Text>
-              </Pressable>
-            ) : null}
-
-            <Pressable
-              onPress={handleEmailAuth}
-              disabled={loading}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && !loading ? styles.primaryPressed : null,
-              ]}
-            >
-              <View style={[styles.primaryInner, loading ? styles.primaryDisabled : null]}>
-                {loading ? (
-                  <ActivityIndicator color="#0b0f17" />
-                ) : (
-                  <Text style={styles.primaryText}>{isSignUp ? "Criar conta" : "Entrar"}</Text>
-                )}
+            <View style={styles.centerBlock}>
+              <View style={styles.header}>
+                <Text style={styles.title}>Entrar com e-mail</Text>
+                <Text style={styles.subtitle}>Usa o teu e-mail para continuar na ORYA.</Text>
               </View>
-            </Pressable>
 
-            <Pressable
-              onPress={() => setIsSignUp((prev) => !prev)}
-              disabled={loading}
-              accessibilityRole="button"
-              style={styles.toggleLink}
-            >
-              <Text style={styles.toggleText}>
-                {isSignUp ? "Já tens conta? Entrar" : "Ainda não tens conta? Criar"}
-              </Text>
-            </Pressable>
-          </GlassCard>
-        </View>
-      </ScrollView>
+              <GlassCard style={styles.card}>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    textContentType="emailAddress"
+                    autoComplete="email"
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="email@exemplo.pt"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    accessibilityLabel="Email"
+                    returnKeyType="next"
+                    onSubmitEditing={() => passwordInputRef.current?.focus()}
+                  />
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>Password</Text>
+                  <View style={styles.inputWrap}>
+                    <TextInput
+                      ref={passwordInputRef}
+                      style={[styles.input, styles.inputWithIcon]}
+                      secureTextEntry={!passwordVisible}
+                      textContentType={isSignUp ? "newPassword" : "password"}
+                      autoComplete="password"
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="••••••••"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      accessibilityLabel="Password"
+                      returnKeyType="go"
+                      onSubmitEditing={() => {
+                        if (canSubmit) handleEmailAuth();
+                      }}
+                    />
+                    <Pressable
+                      onPress={() => setPasswordVisible((prev) => !prev)}
+                      style={styles.passwordToggle}
+                      accessibilityLabel={passwordVisible ? "Esconder password" : "Mostrar password"}
+                    >
+                      <Ionicons
+                        name={passwordVisible ? "eye-off" : "eye"}
+                        size={18}
+                        color="rgba(255,255,255,0.65)"
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+
+                {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+                {infoMessage ? <Text style={styles.infoText}>{infoMessage}</Text> : null}
+                {showResend ? (
+                  <Pressable onPress={handleResend} disabled={loading} style={styles.resendLink}>
+                    <Text style={styles.resendText}>Reenviar email de confirmação</Text>
+                  </Pressable>
+                ) : null}
+
+                <Pressable
+                  onPress={handleEmailAuth}
+                  disabled={isSubmitDisabled}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    pressed && !isSubmitDisabled ? styles.primaryPressed : null,
+                  ]}
+                >
+                  <View style={[styles.primaryInner, isSubmitDisabled ? styles.primaryDisabled : null]}>
+                    {loading ? (
+                      <ActivityIndicator color="#0b0f17" />
+                    ) : (
+                      <Text style={styles.primaryText}>{isSignUp ? "Criar conta" : "Entrar"}</Text>
+                    )}
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setIsSignUp((prev) => !prev)}
+                  disabled={loading}
+                  accessibilityRole="button"
+                  style={styles.toggleLink}
+                >
+                  <Text style={styles.toggleText}>
+                    {isSignUp ? "Já tens conta? Entrar" : "Ainda não tens conta? Criar"}
+                  </Text>
+                </Pressable>
+              </GlassCard>
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </LiquidBackground>
   );
 }
@@ -406,6 +449,20 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
   },
+  inputWrap: {
+    position: "relative",
+  },
+  inputWithIcon: {
+    paddingRight: 44,
+  },
+  passwordToggle: {
+    position: "absolute",
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    minHeight: 44,
+  },
   primaryButton: {
     width: "100%",
     alignItems: "center",
@@ -433,8 +490,11 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.995 }],
   },
   primaryDisabled: {
-    opacity: 0.7,
-    backgroundColor: "rgba(255,255,255,0.85)",
+    opacity: 0.4,
+    backgroundColor: "#ffffff",
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   primaryText: {
     fontSize: 16,

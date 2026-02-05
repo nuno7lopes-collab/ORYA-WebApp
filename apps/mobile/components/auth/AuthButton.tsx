@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   googleText: {
-    color: "#4285F4",
+    color: "#111827",
   },
   emailContainer: {
     backgroundColor: "rgba(255,255,255,0.06)",

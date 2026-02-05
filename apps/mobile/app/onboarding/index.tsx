@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { Redirect, useRouter } from "expo-router";
@@ -99,6 +103,8 @@ export default function OnboardingScreen() {
   const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
   const [locationHint, setLocationHint] = useState<{ city?: string | null; region?: string | null } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const nameInputRef = useRef<TextInput>(null);
+  const usernameInputRef = useRef<TextInput>(null);
   const [loadingDraft, setLoadingDraft] = useState(true);
   const [savingStep, setSavingStep] = useState<OnboardingStep | null>(null);
 
@@ -340,7 +346,12 @@ export default function OnboardingScreen() {
     queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
   };
 
-  const finalizeOnboarding = async (location?: { city?: string | null; region?: string | null }) => {
+  const finalizeOnboarding = async (location?: {
+    city?: string | null;
+    region?: string | null;
+    consent?: "GRANTED" | "DENIED";
+    source?: "GPS" | "IP";
+  }) => {
     try {
       const usernameOk = await ensureUsernameAvailable();
       if (!usernameOk) {
@@ -359,6 +370,21 @@ export default function OnboardingScreen() {
           gender: padelGender,
           preferredSide: padelSide,
           level: padelLevel,
+          accessToken,
+        });
+      }
+      if (location?.consent) {
+        await saveConsentMutation.mutateAsync({
+          consent: location.consent,
+          preferredGranularity: location.consent === "GRANTED" ? "COARSE" : undefined,
+          accessToken,
+        });
+      }
+      if (location && (location.city || location.region)) {
+        await saveCoarseMutation.mutateAsync({
+          city: location.city,
+          region: location.region,
+          source: location.source ?? "IP",
           accessToken,
         });
       }
@@ -508,20 +534,28 @@ export default function OnboardingScreen() {
     setLocationError(null);
     setSavingStep("location");
     try {
-      const accessToken = await resolveAccessToken();
-      if (!accessToken) throw new Error("Sessão expirada.");
+      let locationPayload: {
+        city?: string | null;
+        region?: string | null;
+        consent: "GRANTED" | "DENIED";
+        source: "GPS" | "IP";
+      } = { city: null, region: null, consent: "DENIED", source: "IP" };
 
       if (intent === "allow") {
         const permission = await Location.requestForegroundPermissionsAsync();
         if (permission.status !== Location.PermissionStatus.GRANTED) {
           const ip = await resolveIpLocation();
-          await saveConsentMutation.mutateAsync({ consent: "DENIED", accessToken });
-          await saveCoarseMutation.mutateAsync({ city: ip.city, region: ip.region, source: "IP", accessToken });
+          locationPayload = {
+            city: ip.city ?? null,
+            region: ip.region ?? null,
+            consent: "DENIED",
+            source: "IP",
+          };
           await persistDraft({
             step: 4,
             location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
           });
-          await finalizeOnboarding(ip);
+          await finalizeOnboarding(locationPayload);
           return;
         }
 
@@ -541,35 +575,40 @@ export default function OnboardingScreen() {
           // ignore reverse geocode errors
         }
 
-        await saveConsentMutation.mutateAsync({
+        locationPayload = {
+          city,
+          region,
           consent: "GRANTED",
-          preferredGranularity: "COARSE",
-          accessToken,
-        });
-        await saveCoarseMutation.mutateAsync({ city, region, source: "GPS", accessToken });
+          source: "GPS",
+        };
         await persistDraft({
           step: 4,
           location: { city, region, source: "GPS", consent: "GRANTED" },
         });
-        await finalizeOnboarding({ city, region });
+        await finalizeOnboarding(locationPayload);
         return;
       }
 
       const ip = await resolveIpLocation();
-      await saveConsentMutation.mutateAsync({ consent: "DENIED", accessToken });
-      await saveCoarseMutation.mutateAsync({ city: ip.city, region: ip.region, source: "IP", accessToken });
+      locationPayload = {
+        city: ip.city ?? null,
+        region: ip.region ?? null,
+        consent: "DENIED",
+        source: "IP",
+      };
       await persistDraft({
         step: 4,
         location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
       });
-      await finalizeOnboarding(ip);
+      await finalizeOnboarding(locationPayload);
     } catch (err: any) {
-      const message = err?.message ?? "Não foi possível guardar a localização.";
-      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+      const rawMessage = err?.message ?? "location_error";
+      console.warn("Location flow error", rawMessage, err);
+      if (typeof rawMessage === "string" && (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED"))) {
         await handleAuthError();
         return;
       }
-      setLocationError(message);
+      setLocationError("Não foi possível obter localização agora.");
     } finally {
       setSavingStep(null);
     }
@@ -593,20 +632,50 @@ export default function OnboardingScreen() {
   };
 
   const renderUsernameStatus = () => {
-    if (!username) return null;
-    let message = "";
-    if (usernameStatus === "checking") message = "A verificar…";
-    else if (usernameStatus === "available") message = "Disponível ✓";
-    else if (usernameStatus === "taken") message = "Indisponível";
-    else if (usernameStatus === "invalid") message = usernameValidation.error || USERNAME_RULES_HINT;
-    else if (usernameStatus === "error") message = "Não foi possível verificar agora.";
+    const hasUsername = username.length > 0;
+    const showHint =
+      hasUsername &&
+      (usernameStatus === "idle" || usernameStatus === "checking" || usernameStatus === "available");
+    const statusMessage =
+      usernameStatus === "checking"
+        ? "A verificar…"
+        : usernameStatus === "available"
+          ? "Disponível"
+          : usernameStatus === "taken"
+            ? "Indisponível"
+            : usernameStatus === "invalid"
+              ? usernameValidation.error || USERNAME_RULES_HINT
+              : usernameStatus === "error"
+                ? "Não foi possível verificar agora."
+                : "";
     const tone =
-      usernameStatus === "available"
-        ? styles.helperSuccess
+      usernameStatus === "available" || usernameStatus === "checking"
+        ? styles.helperNeutral
         : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error"
           ? styles.helperError
           : styles.helperText;
-    return message ? <Text style={[styles.helperText, tone]}>{message}</Text> : null;
+
+    if (!hasUsername && !statusMessage) return null;
+
+    return (
+      <View style={styles.helperStack}>
+        {showHint ? (
+          <Text style={styles.helperHint}>{USERNAME_RULES_HINT}</Text>
+        ) : null}
+        {statusMessage ? (
+          <View style={styles.helperRow}>
+            {usernameStatus === "checking" ? (
+              <ActivityIndicator size="small" color="rgba(200,210,230,0.9)" />
+            ) : usernameStatus === "available" ? (
+              <Ionicons name="checkmark-circle" size={14} color="rgba(200,210,230,0.9)" />
+            ) : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error" ? (
+              <Ionicons name="alert-circle" size={14} color="rgba(252, 165, 165, 0.9)" />
+            ) : null}
+            <Text style={[styles.helperText, tone]}>{statusMessage}</Text>
+          </View>
+        ) : null}
+      </View>
+    );
   };
 
   const renderBasicStep = () => (
@@ -616,11 +685,16 @@ export default function OnboardingScreen() {
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Nome completo</Text>
         <TextInput
+          ref={nameInputRef}
           value={fullName}
           onChangeText={setFullName}
           placeholder="Ex: Sofia Almeida"
           placeholderTextColor={tokens.colors.textMuted}
           autoCapitalize="words"
+          textContentType="name"
+          returnKeyType="next"
+          blurOnSubmit={false}
+          onSubmitEditing={() => usernameInputRef.current?.focus()}
           style={styles.input}
         />
       </View>
@@ -628,6 +702,7 @@ export default function OnboardingScreen() {
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Username</Text>
         <TextInput
+          ref={usernameInputRef}
           value={username}
           onChangeText={(value) => {
             const next = sanitizeUsername(value);
@@ -637,6 +712,10 @@ export default function OnboardingScreen() {
           placeholder="ex: orya.sofia"
           placeholderTextColor={tokens.colors.textMuted}
           autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="username"
+          autoComplete="username"
+          returnKeyType="done"
           style={styles.input}
         />
         {renderUsernameStatus()}
@@ -665,6 +744,11 @@ export default function OnboardingScreen() {
                 idx === 0 ? styles.interestChipFirst : null,
               ]}
             >
+              {active ? (
+                <View style={styles.interestCheck}>
+                  <Ionicons name="checkmark" size={12} color="#0b0f17" />
+                </View>
+              ) : null}
               <View style={[styles.interestIcon, active ? styles.interestIconActive : null]}>
                 <Ionicons
                   name={INTEREST_ICONS[interest.id]}
@@ -679,15 +763,20 @@ export default function OnboardingScreen() {
           );
         })}
       </View>
-      <Text style={styles.helperText}>
-        {interests.length} selecionado{interests.length === 1 ? "" : "s"} · máximo {MAX_INTERESTS}
+      <Text style={styles.helperMeta}>
+        {interests.length}/{MAX_INTERESTS} selecionados
       </Text>
     </GlassCard>
   );
 
   const renderPadelStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <Text style={styles.cardTitle}>Padel</Text>
+      <View style={styles.cardHeaderRow}>
+        <Text style={styles.cardTitle}>Padel</Text>
+        <Pressable onPress={handlePadelSkip} style={styles.skipLink} accessibilityLabel="Saltar padel">
+          <Text style={styles.skipText}>Saltar</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Género</Text>
@@ -704,9 +793,14 @@ export default function OnboardingScreen() {
                   pressed ? styles.optionChipPressed : null,
                 ]}
               >
-                <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
-                  {gender.label}
-                </Text>
+                <View style={styles.optionContent}>
+                  {active ? (
+                    <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
+                  ) : null}
+                  <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
+                    {gender.label}
+                  </Text>
+                </View>
               </Pressable>
             );
           })}
@@ -728,9 +822,14 @@ export default function OnboardingScreen() {
                   pressed ? styles.optionChipPressed : null,
                 ]}
               >
-                <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
-                  {side.label}
-                </Text>
+                <View style={styles.optionContent}>
+                  {active ? (
+                    <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
+                  ) : null}
+                  <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
+                    {side.label}
+                  </Text>
+                </View>
               </Pressable>
             );
           })}
@@ -753,7 +852,12 @@ export default function OnboardingScreen() {
                   pressed ? styles.optionChipPressed : null,
                 ]}
               >
-                <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>{level}</Text>
+                <View style={styles.optionContent}>
+                  {active ? (
+                    <Ionicons name="checkmark-circle" size={14} color="#ffffff" />
+                  ) : null}
+                  <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>{level}</Text>
+                </View>
               </Pressable>
             );
           })}
@@ -765,23 +869,46 @@ export default function OnboardingScreen() {
   const renderLocationStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
       <Text style={styles.cardTitle}>Localização</Text>
+      <Text style={styles.cardSubtitle}>Para sugerir eventos e serviços perto de ti.</Text>
 
-      {locationError ? <Text style={styles.errorText}>{locationError}</Text> : null}
+      {locationError ? (
+        <Text style={styles.errorText}>Não foi possível obter localização agora.</Text>
+      ) : null}
 
       <View style={styles.locationActions}>
-        <PrimaryButton
-          label={savingStep === "location" ? "A guardar..." : "Permitir"}
-          onPress={() => handleLocationFlow("allow")}
-          disabled={savingStep === "location"}
-          loading={savingStep === "location"}
-          accessibilityLabel="Permitir localização"
-        />
-        <SecondaryButton
-          label="Agora não"
-          onPress={() => handleLocationFlow("skip")}
-          disabled={savingStep === "location"}
-          accessibilityLabel="Agora não"
-        />
+        {locationError ? (
+          <>
+            <PrimaryButton
+              label={savingStep === "location" ? "A guardar..." : "Tentar novamente"}
+              onPress={() => handleLocationFlow("allow")}
+              disabled={savingStep === "location"}
+              loading={savingStep === "location"}
+              accessibilityLabel="Tentar novamente localização"
+            />
+            <SecondaryButton
+              label="Continuar sem localização"
+              onPress={() => handleLocationFlow("skip")}
+              disabled={savingStep === "location"}
+              accessibilityLabel="Continuar sem localização"
+            />
+          </>
+        ) : (
+          <>
+            <PrimaryButton
+              label={savingStep === "location" ? "A guardar..." : "Permitir"}
+              onPress={() => handleLocationFlow("allow")}
+              disabled={savingStep === "location"}
+              loading={savingStep === "location"}
+              accessibilityLabel="Permitir localização"
+            />
+            <SecondaryButton
+              label="Agora não"
+              onPress={() => handleLocationFlow("skip")}
+              disabled={savingStep === "location"}
+              accessibilityLabel="Agora não"
+            />
+          </>
+        )}
       </View>
     </GlassCard>
   );
@@ -853,7 +980,6 @@ export default function OnboardingScreen() {
                 disabled={!canContinuePadel || savingStep === "padel"}
                 loading={savingStep === "padel"}
               />
-              <SecondaryButton label="Saltar" onPress={handlePadelSkip} />
             </View>
           ) : null}
         </View>
@@ -943,11 +1069,30 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.55)",
     fontSize: 11,
   },
-  helperSuccess: {
-    color: "rgba(110, 231, 183, 0.95)",
+  helperHint: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 11,
+  },
+  helperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4,
+  },
+  helperStack: {
+    gap: 2,
+    marginTop: 6,
+  },
+  helperNeutral: {
+    color: "rgba(200,210,230,0.9)",
   },
   helperError: {
     color: "rgba(252, 165, 165, 0.95)",
+  },
+  helperMeta: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    marginTop: 10,
   },
   interestGrid: {
     flexDirection: "row",
@@ -965,21 +1110,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     minHeight: tokens.layout.touchTarget,
     width: "48%",
+    position: "relative",
   },
   interestChipIdle: {
     borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(255,255,255,0.04)",
   },
   interestChipActive: {
-    borderColor: "rgba(140, 200, 255, 0.6)",
-    backgroundColor: "rgba(92, 175, 255, 0.18)",
-    shadowColor: "rgba(120, 190, 255, 0.4)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    borderColor: "rgba(170, 220, 255, 0.55)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    shadowColor: "rgba(140, 200, 255, 0.25)",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
   },
   interestChipPadel: {
-    borderColor: "rgba(255,255,255,0.25)",
+    borderColor: "rgba(200, 225, 255, 0.45)",
+    width: "100%",
+    paddingVertical: 16,
+    minHeight: tokens.layout.touchTarget + 10,
   },
   interestChipPressed: {
     transform: [{ scale: 0.98 }],
@@ -1010,6 +1159,33 @@ const styles = StyleSheet.create({
   interestLabelActive: {
     color: "#ffffff",
   },
+  interestCheck: {
+    position: "absolute",
+    right: 10,
+    top: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  skipLink: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    minHeight: 30,
+    justifyContent: "center",
+  },
+  skipText: {
+    color: "rgba(200, 220, 255, 0.9)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
   optionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1019,7 +1195,7 @@ const styles = StyleSheet.create({
   optionChip: {
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderRadius: 18,
+    borderRadius: 999,
     borderWidth: 1,
     minHeight: tokens.layout.touchTarget + 4,
     alignItems: "center",
@@ -1053,6 +1229,11 @@ const styles = StyleSheet.create({
   },
   optionLabelActive: {
     color: "#ffffff",
+  },
+  optionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   levelGrid: {
     flexDirection: "row",
