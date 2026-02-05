@@ -269,15 +269,16 @@ export default function AuthEmailScreen() {
               style={({ pressed }) => [
                 styles.primaryButton,
                 pressed && !loading ? styles.primaryPressed : null,
-                loading ? styles.primaryDisabled : null,
               ]}
             >
-            {loading ? (
-              <ActivityIndicator color="#0b0f17" />
-            ) : (
-              <Text style={styles.primaryText}>{isSignUp ? "Criar conta" : "Entrar"}</Text>
-            )}
-          </Pressable>
+              <View style={[styles.primaryInner, loading ? styles.primaryDisabled : null]}>
+                {loading ? (
+                  <ActivityIndicator color="#0b0f17" />
+                ) : (
+                  <Text style={styles.primaryText}>{isSignUp ? "Criar conta" : "Entrar"}</Text>
+                )}
+              </View>
+            </Pressable>
 
             <Pressable
               onPress={() => setIsSignUp((prev) => !prev)}
@@ -406,6 +407,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   primaryButton: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    zIndex: 5,
+  },
+  primaryInner: {
     minHeight: 54,
     width: "100%",
     borderRadius: 18,
@@ -419,8 +427,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 14,
     elevation: 3,
-    position: "relative",
-    zIndex: 5,
   },
   primaryPressed: {
     opacity: 0.92,
