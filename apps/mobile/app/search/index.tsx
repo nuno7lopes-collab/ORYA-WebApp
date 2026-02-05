@@ -4,6 +4,7 @@ import {
   Platform,
   Pressable,
   SectionList,
+  ScrollView,
   Text,
   TextInput,
   UIManager,
@@ -27,6 +28,9 @@ import { safeBack } from "../../lib/navigation";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { DiscoverOfferCard } from "../../features/discover/types";
 import { SearchOrganization, SearchUser } from "../../features/search/types";
+import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -48,6 +52,17 @@ type SearchSection = {
   isError: boolean;
 };
 
+type SearchTabKey = "all" | "events" | "padel" | "services" | "people" | "orgs";
+
+const SEARCH_TABS: Array<{ key: SearchTabKey; label: string }> = [
+  { key: "all", label: "Tudo" },
+  { key: "events", label: "Eventos" },
+  { key: "padel", label: "Padel" },
+  { key: "services", label: "Serviços" },
+  { key: "people", label: "Pessoas" },
+  { key: "orgs", label: "Organizações" },
+];
+
 const buildSkeletons = (variant: SearchSectionKey, count: number): SearchSectionItem[] =>
   Array.from({ length: count }, (_, index) => ({
     type: "skeleton",
@@ -61,6 +76,7 @@ export default function SearchScreen() {
   const params = useLocalSearchParams<{ q?: string }>();
   const initialQuery = typeof params.q === "string" ? params.q : "";
   const [query, setQuery] = useState(initialQuery);
+  const [activeTab, setActiveTab] = useState<SearchTabKey>("all");
   const debounced = useDebouncedValue(query, 280);
   const handleBack = useCallback(() => {
     safeBack(router, navigation);
@@ -83,6 +99,8 @@ export default function SearchScreen() {
   const { data: ipLocation } = useIpLocation();
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
+  const insets = useSafeAreaInsets();
+  const tabBarPadding = useTabBarPadding();
   const queryLength = debounced.trim().length;
   const showSkeleton = enabled && isLoading;
   const allErrored = offersQuery.isError && usersQuery.isError && orgsQuery.isError;
@@ -105,54 +123,72 @@ export default function SearchScreen() {
 
   const sections = useMemo<SearchSection[]>(() => {
     if (!enabled) return [];
-    return [
+    const showOffers = activeTab === "all" || activeTab === "events" || activeTab === "padel" || activeTab === "services";
+    const showUsers = activeTab === "all" || activeTab === "people";
+    const showOrgs = activeTab === "all" || activeTab === "orgs";
+
+    const filteredOffers = offers.filter((offer) => {
+      if (activeTab === "events") return offer.type === "event";
+      if (activeTab === "services") return offer.type === "service";
+      if (activeTab === "padel") {
+        if (offer.type === "service") return offer.service.kind === "COURT";
+        return (offer.event.categories ?? []).includes("PADEL");
+      }
+      return true;
+    });
+
+    const built = [
       {
         key: "offers",
         title: "Ofertas",
         subtitle: "Eventos, servicos e experiencias",
-        data: showSkeleton
-          ? buildSkeletons("offers", 2)
-          : offers.map((offer) => ({ type: "offer" as const, offer })),
+        data: showOffers
+          ? showSkeleton
+            ? buildSkeletons("offers", 2)
+            : filteredOffers.map((offer) => ({ type: "offer" as const, offer }))
+          : [],
         isError: offersQuery.isError,
       },
       {
         key: "users",
         title: "Pessoas",
         subtitle: "Utilizadores e perfis",
-        data: showSkeleton
-          ? buildSkeletons("users", 2)
-          : users.map((user) => ({ type: "user" as const, user })),
+        data: showUsers
+          ? showSkeleton
+            ? buildSkeletons("users", 2)
+            : users.map((user) => ({ type: "user" as const, user }))
+          : [],
         isError: usersQuery.isError,
       },
       {
         key: "orgs",
         title: "Organizacoes",
         subtitle: "Clubes e marcas",
-        data: showSkeleton
-          ? buildSkeletons("orgs", 2)
-          : organizations.map((org) => ({ type: "org" as const, org })),
+        data: showOrgs
+          ? showSkeleton
+            ? buildSkeletons("orgs", 2)
+            : organizations.map((org) => ({ type: "org" as const, org }))
+          : [],
         isError: orgsQuery.isError,
       },
     ];
-  }, [enabled, offers, organizations, showSkeleton, offersQuery.isError, orgsQuery.isError, users, usersQuery.isError]);
+    return built.filter((section) => section.data.length > 0);
+  }, [activeTab, enabled, offers, offersQuery.isError, organizations, orgsQuery.isError, showSkeleton, users, usersQuery.isError]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: SearchSectionItem; index: number }) => {
       if (item.type === "skeleton") {
-        const height = item.variant === "offers" ? 150 : 72;
+        if (item.variant === "offers") {
+          return <EventCardSquareSkeleton />;
+        }
+        const height = item.variant === "users" ? 72 : 72;
         const spacingClass = item.variant === "offers" ? "mb-4" : "mb-3";
         return <GlassSkeleton className={spacingClass} height={height} />;
       }
 
       if (item.type === "offer") {
         return item.offer.type === "event" ? (
-          <DiscoverEventCard
-            item={item.offer.event}
-            itemType="event"
-            index={index}
-            userLat={userLat}
-            userLon={userLon}
-          />
+          <EventCardSquare event={item.offer.event} index={index} userLat={userLat} userLon={userLon} />
         ) : (
           <DiscoverEventCard
             item={item.offer.service}
@@ -245,6 +281,7 @@ export default function SearchScreen() {
   const listHeader = useMemo(
     () => (
       <View className="pt-14 pb-5">
+        <View style={{ height: insets.top }} />
         <View className="flex-row items-center justify-between">
           <Pressable
             onPress={handleBack}
@@ -285,9 +322,39 @@ export default function SearchScreen() {
             </GlassSurface>
           </View>
         ) : null}
+
+        <View style={{ marginTop: tokens.spacing.lg }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+            {SEARCH_TABS.map((tab) => {
+              const active = activeTab === tab.key;
+              return (
+                <Pressable
+                  key={tab.key}
+                  onPress={() => setActiveTab(tab.key)}
+                  style={({ pressed }) => [
+                    {
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: active ? "rgba(170, 220, 255, 0.55)" : "rgba(255,255,255,0.12)",
+                      backgroundColor: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)",
+                      minHeight: tokens.layout.touchTarget,
+                    },
+                    pressed ? { opacity: 0.9 } : null,
+                  ]}
+                >
+                  <Text style={active ? { color: "#ffffff", fontWeight: "600" } : { color: "rgba(255,255,255,0.7)" }}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
       </View>
     ),
-    [emptyMessage, handleBack, query],
+    [activeTab, emptyMessage, handleBack, insets.top, query],
   );
 
   const listFooter = useMemo(() => {
@@ -322,7 +389,7 @@ export default function SearchScreen() {
         renderSectionFooter={renderSectionFooter}
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
         keyboardShouldPersistTaps="handled"
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={6}

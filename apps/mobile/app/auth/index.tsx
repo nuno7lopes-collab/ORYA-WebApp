@@ -120,6 +120,13 @@ export default function AuthGatewayScreen() {
     }
     const reason = String(err?.message ?? err ?? "unknown");
     trackEvent(`auth_fail_${provider}`, { reason });
+    if (
+      provider === "apple" &&
+      (reason.includes("host.exp.Exponent") || reason.toLowerCase().includes("unacceptable audience"))
+    ) {
+      Alert.alert("Apple Sign In", "O login com Apple não funciona no Expo Go. Usa um development build.");
+      return;
+    }
     Alert.alert("Não foi possível entrar.", "Tenta novamente.");
   };
 

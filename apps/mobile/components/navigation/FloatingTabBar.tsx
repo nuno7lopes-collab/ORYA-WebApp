@@ -18,6 +18,8 @@ const ICONS: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: 
     profile: { active: "person-circle", inactive: "person-circle-outline" },
   };
 
+export const TAB_BAR_HEIGHT = 66;
+
 function getLabel(routeName: string, options: BottomTabBarProps["descriptors"][string]["options"]) {
   if (typeof options.tabBarLabel === "string") return options.tabBarLabel;
   if (typeof options.title === "string") return options.title;
@@ -177,7 +179,7 @@ const styles = StyleSheet.create({
     maxWidth: 520,
     borderRadius: 999,
     overflow: "hidden",
-    paddingVertical: 8,
+    paddingVertical: 10,
     backgroundColor: "rgba(10, 14, 24, 0.72)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
@@ -192,10 +194,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 5,
+    paddingVertical: 6,
     minWidth: 54,
     gap: 3,
-    minHeight: tokens.layout.touchTarget,
+    minHeight: tokens.layout.touchTarget + 6,
   },
   itemActive: {
     transform: [{ translateY: -1 }],

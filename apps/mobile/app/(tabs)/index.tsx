@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
   Pressable,
+  ScrollView,
   Text,
-  TextInput,
   UIManager,
   LayoutAnimation,
   View,
@@ -14,14 +14,16 @@ import { i18n, tokens } from "@orya/shared";
 import { useDebouncedValue, useDiscoverFeed } from "../../features/discover/hooks";
 import { useDiscoverStore } from "../../features/discover/store";
 import { useIpLocation } from "../../features/onboarding/hooks";
-import { DiscoverEventCard } from "../../features/discover/DiscoverEventCard";
 import { GlassSurface } from "../../components/glass/GlassSurface";
-import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
-import { BlurView } from "expo-blur";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { DiscoverDateFilter, DiscoverKind, DiscoverOfferCard } from "../../features/discover/types";
+import { FiltersBottomSheet } from "../../components/discover/FiltersBottomSheet";
+import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { getDistanceKm } from "../../lib/geo";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -32,70 +34,83 @@ type DiscoverListItem =
   | { kind: "offer"; offer: DiscoverOfferCard };
 
 const kindMeta: Array<{ key: DiscoverKind; label: string; subtitle: string }> = [
-  { key: "all", label: "Tudo", subtitle: "Eventos e servicos em tempo real." },
+  { key: "all", label: "Tudo", subtitle: "Eventos e serviços em tempo real." },
   { key: "padel", label: "Padel", subtitle: "Jogos, torneios e aulas perto de ti." },
-  { key: "events", label: "Eventos", subtitle: "Concertos, experiencias e lives." },
-  { key: "services", label: "Servicos", subtitle: "Reservas e servicos premium." },
+  { key: "events", label: "Eventos", subtitle: "Concertos, experiências e lives." },
+  { key: "services", label: "Serviços", subtitle: "Reservas e serviços premium." },
 ];
 
-const priceOptions = [
-  { key: "all", label: "Todas" },
-  { key: "free", label: "Gratis" },
-  { key: "paid", label: "Pagas" },
-] as const;
-
-const dateOptions: Array<{ key: DiscoverDateFilter; label: string }> = [
-  { key: "all", label: "Todas" },
-  { key: "today", label: "Hoje" },
-  { key: "weekend", label: "Fim‑de‑semana" },
-  { key: "upcoming", label: "Próximos 7 dias" },
+const categoryChips = [
+  { key: "all", label: "Tudo", kind: "all" as DiscoverKind },
+  { key: "padel", label: "Padel", kind: "padel" as DiscoverKind },
+  { key: "events", label: "Eventos", kind: "events" as DiscoverKind },
+  { key: "services", label: "Serviços", kind: "services" as DiscoverKind },
+  { key: "experiences", label: "Experiências", kind: "events" as DiscoverKind },
 ];
 
 export default function DiscoverScreen() {
   const t = i18n.pt.discover;
   const router = useRouter();
-  const query = useDiscoverStore((state) => state.query);
   const priceFilter = useDiscoverStore((state) => state.priceFilter);
   const kind = useDiscoverStore((state) => state.kind);
   const dateFilter = useDiscoverStore((state) => state.dateFilter);
   const city = useDiscoverStore((state) => state.city);
-  const setQuery = useDiscoverStore((state) => state.setQuery);
   const setPriceFilter = useDiscoverStore((state) => state.setPriceFilter);
   const setKind = useDiscoverStore((state) => state.setKind);
   const setDateFilter = useDiscoverStore((state) => state.setDateFilter);
   const setCity = useDiscoverStore((state) => state.setCity);
+  const distanceKm = useDiscoverStore((state) => state.distanceKm);
+  const setDistanceKm = useDiscoverStore((state) => state.setDistanceKm);
   const resetFilters = useDiscoverStore((state) => state.resetFilters);
-  const debouncedQuery = useDebouncedValue(query, 280);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [activeChip, setActiveChip] = useState("all");
   const debouncedCity = useDebouncedValue(city, 320);
   const { data: ipLocation } = useIpLocation();
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
+  const insets = useSafeAreaInsets();
+  const tabBarPadding = useTabBarPadding();
 
   const { data, isFetching, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useDiscoverFeed({ q: debouncedQuery, type: priceFilter, kind, date: dateFilter, city: debouncedCity });
+    useDiscoverFeed({ q: "", type: priceFilter, kind, date: dateFilter, city: debouncedCity });
 
   const items = useMemo<DiscoverOfferCard[]>(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
 
-  const featured = useMemo(
-    () => items.filter((item): item is Extract<DiscoverOfferCard, { type: "event" }> => item.type === "event" && Boolean(item.event.isHighlighted)).slice(0, 6),
-    [items],
-  );
-
-  const featuredKeys = useMemo(() => new Set(featured.map((item) => item.key)), [featured]);
-
-  const feedItems = useMemo(
-    () => items.filter((item) => !featuredKeys.has(item.key)),
-    [items, featuredKeys],
-  );
+  const feedItems = useMemo(() => {
+    return items.filter((item) => {
+      if (priceFilter === "soon" && item.type === "event") {
+        const hasTickets = (item.event.ticketTypes?.length ?? 0) > 0;
+        const hasUpcoming = item.event.ticketTypes?.some((ticket) => ticket.status === "UPCOMING") ?? false;
+        const hasPrice = typeof item.event.priceFrom === "number" || Boolean(item.event.isGratis);
+        if (hasPrice) return false;
+        if (!hasTickets && !hasUpcoming) return true;
+        return true;
+      }
+      if (priceFilter === "soon" && item.type === "service") {
+        return false;
+      }
+      if (distanceKm > 0 && item.type === "event") {
+        const distance = getDistanceKm(
+          item.event.location?.lat ?? null,
+          item.event.location?.lng ?? null,
+          userLat ?? null,
+          userLon ?? null,
+        );
+        if (distance == null) return false;
+        return distance <= distanceKm;
+      }
+      return true;
+    });
+  }, [distanceKm, items, priceFilter, userLat, userLon]);
 
   const showSkeleton = isLoading && items.length === 0;
-  const showEmpty = !isLoading && !isError && items.length === 0;
+  const showEmpty = !isLoading && !isError && feedItems.length === 0;
   const hasActiveFilters = Boolean(
-    query.trim() ||
-      city.trim() ||
+    city.trim() ||
       priceFilter !== "all" ||
       kind !== "all" ||
-      dateFilter !== "all",
+      dateFilter !== "all" ||
+      distanceKm !== 5,
   );
 
   const listData = useMemo<DiscoverListItem[]>(
@@ -123,6 +138,13 @@ export default function DiscoverScreen() {
   }, [items.length]);
 
   useEffect(() => {
+    if (kind === "all" && activeChip !== "all") setActiveChip("all");
+    if (kind === "padel" && activeChip !== "padel") setActiveChip("padel");
+    if (kind === "events" && activeChip === "services") setActiveChip("events");
+    if (kind === "services" && activeChip !== "services") setActiveChip("services");
+  }, [activeChip, kind]);
+
+  useEffect(() => {
     if (!city.trim() && ipLocation?.city) {
       setCity(ipLocation.city);
     }
@@ -141,14 +163,13 @@ export default function DiscoverScreen() {
   const renderItem = useCallback(
     ({ item, index }: { item: DiscoverListItem; index: number }) => {
       if (item.kind === "skeleton") {
-        return <GlassSkeleton className="mb-4" height={140} />;
+        return <EventCardSquareSkeleton />;
       }
 
       if (item.offer.type === "event") {
         return (
-          <DiscoverEventCard
-            item={item.offer.event}
-            itemType="event"
+          <EventCardSquare
+            event={item.offer.event}
             index={index}
             userLat={userLat}
             userLon={userLon}
@@ -157,29 +178,14 @@ export default function DiscoverScreen() {
       }
 
       return (
-        <DiscoverEventCard
-          item={item.offer.service}
-          itemType="service"
-          index={index}
-          userLat={userLat}
-          userLon={userLon}
-        />
+        <GlassSurface intensity={52} padding={16} style={{ marginBottom: 16 }}>
+          <Text className="text-white text-base font-semibold">{item.offer.service.title}</Text>
+          <Text className="text-white/60 text-sm mt-1" numberOfLines={2}>
+            {item.offer.service.description ?? "Serviço premium"}
+          </Text>
+        </GlassSurface>
       );
     },
-    [userLat, userLon],
-  );
-
-  const renderFeaturedItem = useCallback(
-    ({ item, index }: { item: Extract<DiscoverOfferCard, { type: "event" }>; index: number }) => (
-      <DiscoverEventCard
-        item={item.event}
-        itemType="event"
-        variant="featured"
-        index={index}
-        userLat={userLat}
-        userLon={userLon}
-      />
-    ),
     [userLat, userLon],
   );
 
@@ -191,7 +197,7 @@ export default function DiscoverScreen() {
   return (
     <LiquidBackground>
       <FlatList
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 36 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
         data={listData}
         keyExtractor={keyExtractor}
         keyboardShouldPersistTaps="handled"
@@ -205,192 +211,77 @@ export default function DiscoverScreen() {
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.35}
         ListHeaderComponent={
-          <View className="pt-14">
-            <View className="px-5 pb-4">
-              <Text className="text-white text-[30px] font-semibold">{t.title}</Text>
-              <Text className="mt-1 text-white/60 text-sm">{t.subtitle}</Text>
-            </View>
-
-            <View className="px-5 pb-3">
-              <GlassSurface intensity={65} padding={12}>
-                <View className="flex-row items-center gap-3">
+            <View style={{ paddingTop: insets.top + 12 }}>
+              <View className="px-5 pb-3 flex-row items-center justify-between">
+                <View>
+                  <Text className="text-white text-[30px] font-semibold">{t.title}</Text>
+                  <Text className="mt-1 text-white/60 text-sm">{t.subtitle}</Text>
+                </View>
+                <View className="flex-row items-center gap-8">
                   <Pressable
-                    onPress={() => router.push({ pathname: "/search", params: { q: query } })}
+                    onPress={() => router.push({ pathname: "/search" })}
                     style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
                   >
-                    <Ionicons name="search" size={18} color={tokens.colors.textMuted} />
+                    <Ionicons name="search" size={20} color="rgba(255,255,255,0.9)" />
                   </Pressable>
-                  <TextInput
-                    value={query}
-                    onChangeText={setQuery}
-                    placeholder={t.searchPlaceholder}
-                    placeholderTextColor={tokens.colors.textMuted}
-                    className="text-white text-base flex-1"
-                    style={{ minHeight: tokens.layout.touchTarget - 12 }}
-                    returnKeyType="search"
-                    onSubmitEditing={() => router.push({ pathname: "/search", params: { q: query } })}
-                  />
+                  <Pressable
+                    onPress={() => setFiltersOpen(true)}
+                    style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
+                  >
+                    <Ionicons name="options-outline" size={20} color="rgba(255,255,255,0.9)" />
+                  </Pressable>
                 </View>
-              </GlassSurface>
-            </View>
-
-            <View className="px-5 pb-5 flex-row gap-2">
-              {kindMeta.map((item) => {
-                const active = item.key === kind;
-                return (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => setKind(item.key)}
-                    style={{ minHeight: tokens.layout.touchTarget }}
-                    className="overflow-hidden rounded-full border border-white/10"
-                  >
-                    <BlurView
-                      tint="dark"
-                      intensity={active ? 80 : 35}
-                      style={{
-                        paddingHorizontal: tokens.spacing.lg,
-                        justifyContent: "center",
-                        minHeight: tokens.layout.touchTarget,
-                        backgroundColor: active ? tokens.colors.glassStrong : tokens.colors.surface,
-                      }}
-                    >
-                      <Text className={active ? "text-white text-sm font-semibold" : "text-white/70 text-sm"}>
-                        {item.label}
-                      </Text>
-                    </BlurView>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View className="px-5 pb-5 flex-row gap-2">
-              {priceOptions.map((item) => {
-                const active = item.key === priceFilter;
-                return (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => setPriceFilter(item.key)}
-                    style={{ minHeight: tokens.layout.touchTarget }}
-                    className="overflow-hidden rounded-full border border-white/10"
-                  >
-                    <BlurView
-                      tint="dark"
-                      intensity={active ? 80 : 35}
-                      style={{
-                        paddingHorizontal: tokens.spacing.lg,
-                        justifyContent: "center",
-                        minHeight: tokens.layout.touchTarget,
-                        backgroundColor: active ? tokens.colors.glassStrong : tokens.colors.surface,
-                      }}
-                    >
-                      <Text className={active ? "text-white text-sm font-semibold" : "text-white/70 text-sm"}>
-                        {item.key === "all" ? t.all : item.key === "free" ? t.free : t.paid}
-                      </Text>
-                    </BlurView>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View className="px-5 pb-4">
-              <GlassSurface intensity={62} padding={12}>
-                <View className="flex-row items-center gap-3">
-                  <Ionicons name="location-outline" size={16} color={tokens.colors.textMuted} />
-                  <TextInput
-                    value={city}
-                    onChangeText={setCity}
-                    placeholder="Cidade ou local"
-                    placeholderTextColor={tokens.colors.textMuted}
-                    className="text-white text-sm flex-1"
-                    style={{ minHeight: tokens.layout.touchTarget - 14 }}
-                    returnKeyType="done"
-                  />
-                  {city ? (
-                    <Pressable
-                      onPress={() => setCity("")}
-                      className="rounded-full border border-white/10 bg-white/10 px-3 py-1"
-                    >
-                      <Text className="text-white/70 text-xs">Limpar</Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      onPress={() => {
-                        if (ipLocation?.city) setCity(ipLocation.city);
-                      }}
-                      className="rounded-full border border-white/10 bg-white/10 px-3 py-1"
-                    >
-                      <Text className="text-white/70 text-xs">Perto de mim</Text>
-                    </Pressable>
-                  )}
-                </View>
-              </GlassSurface>
-            </View>
-
-            <View className="px-5 pb-5 flex-row flex-wrap gap-2">
-              {dateOptions.map((item) => {
-                const active = item.key === dateFilter;
-                return (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => setDateFilter(item.key as DiscoverDateFilter)}
-                    style={{ minHeight: tokens.layout.touchTarget - 6 }}
-                    className="overflow-hidden rounded-full border border-white/10"
-                  >
-                    <BlurView
-                      tint="dark"
-                      intensity={active ? 80 : 35}
-                      style={{
-                        paddingHorizontal: tokens.spacing.lg,
-                        justifyContent: "center",
-                        minHeight: tokens.layout.touchTarget - 6,
-                        backgroundColor: active ? tokens.colors.glassStrong : tokens.colors.surface,
-                      }}
-                    >
-                      <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
-                        {item.label}
-                      </Text>
-                    </BlurView>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {hasActiveFilters ? (
-              <View className="px-5 pb-5">
-                <Pressable
-                  onPress={() => resetFilters()}
-                  className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                  style={{ minHeight: tokens.layout.touchTarget - 8 }}
-                >
-                  <Text className="text-white/75 text-xs font-semibold">Limpar filtros</Text>
-                </Pressable>
               </View>
-            ) : null}
 
-            {featured.length > 0 ?
-              <View className="pb-6">
-                <View className="px-5">
-                  <SectionHeader title="Destaques" subtitle="Ofertas premium em tempo real." />
-                </View>
-                <FlatList
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  data={featured}
-                  keyExtractor={(item) => item.key}
-                  contentContainerStyle={{ paddingHorizontal: 20 }}
-                  removeClippedSubviews={Platform.OS === "android"}
-                  initialNumToRender={3}
-                  maxToRenderPerBatch={3}
-                  windowSize={3}
-                  renderItem={renderFeaturedItem}
-                />
+              <View className="px-5 pb-4">
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                  {categoryChips.map((chip) => {
+                    const active = activeChip === chip.key;
+                    return (
+                      <Pressable
+                        key={chip.key}
+                        onPress={() => {
+                          setActiveChip(chip.key);
+                          setKind(chip.kind);
+                        }}
+                        style={({ pressed }) => [
+                          {
+                            paddingHorizontal: 18,
+                            paddingVertical: 10,
+                            borderRadius: 999,
+                            borderWidth: 1,
+                            borderColor: active ? "rgba(170, 220, 255, 0.55)" : "rgba(255,255,255,0.12)",
+                            backgroundColor: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)",
+                            minHeight: tokens.layout.touchTarget,
+                          },
+                          pressed ? { opacity: 0.9 } : null,
+                        ]}
+                      >
+                        <Text style={active ? { color: "#ffffff", fontWeight: "600" } : { color: "rgba(255,255,255,0.7)" }}>
+                          {chip.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
               </View>
-            : null}
 
-            <View className="px-5">
-              <SectionHeader title="Para ti" subtitle={activeKindMeta.subtitle} />
+              {hasActiveFilters ? (
+                <View className="px-5 pb-4">
+                  <Pressable
+                    onPress={() => resetFilters()}
+                    className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                    style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                  >
+                    <Text className="text-white/75 text-xs font-semibold">Limpar filtros</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <View className="px-5">
+                <SectionHeader title="Para ti" subtitle={activeKindMeta.subtitle} />
+              </View>
             </View>
-          </View>
         }
         renderItem={renderItem}
         ListFooterComponent={
@@ -423,7 +314,7 @@ export default function DiscoverScreen() {
                 </GlassSurface>
               ) : null}
               {isFetchingNextPage ? (
-                <GlassSkeleton className="mt-3" height={120} />
+                <EventCardSquareSkeleton />
               ) : null}
               {!isError && hasNextPage && !isFetchingNextPage ? (
                 <Pressable
@@ -440,6 +331,19 @@ export default function DiscoverScreen() {
             </View>
           ) : null
         }
+      />
+      <FiltersBottomSheet
+        visible={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        distanceKm={distanceKm}
+        onDistanceChange={setDistanceKm}
+        city={city}
+        onCityChange={setCity}
+        onCityReset={() => setCity("")}
+        date={dateFilter as DiscoverDateFilter}
+        onDateChange={setDateFilter}
+        price={priceFilter}
+        onPriceChange={setPriceFilter}
       />
     </LiquidBackground>
   );

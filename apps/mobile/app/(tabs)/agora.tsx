@@ -4,17 +4,20 @@ import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
-import { DiscoverEventCard } from "../../features/discover/DiscoverEventCard";
 import { useAgoraFeed } from "../../features/agora/hooks";
-import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useIpLocation } from "../../features/onboarding/hooks";
+import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
 export default function AgoraScreen() {
-  const { isLoading, isError, hasLive, liveItems, soonItems, upcomingItems, personalizedItems, refetch } =
+  const { isLoading, isError, hasLive, liveItems, soonItems, personalizedItems, refetch } =
     useAgoraFeed();
   const { data: ipLocation } = useIpLocation();
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
+  const insets = useSafeAreaInsets();
+  const tabBarPadding = useTabBarPadding();
 
   const showSkeleton = isLoading && liveItems.length + soonItems.length + personalizedItems.length === 0;
   const handleRefresh = useCallback(() => {
@@ -30,14 +33,14 @@ export default function AgoraScreen() {
         keyExtractor={keyExtractor}
         onRefresh={handleRefresh}
         refreshing={isLoading}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={4}
         maxToRenderPerBatch={4}
         updateCellsBatchingPeriod={40}
         windowSize={5}
         ListHeaderComponent={
-          <View className="pt-14">
+          <View style={{ paddingTop: insets.top + 12 }}>
             <View className="pb-3">
               <Text className="text-white text-[30px] font-semibold">Agora</Text>
               <Text className="mt-1 text-white/60 text-sm">
@@ -60,19 +63,13 @@ export default function AgoraScreen() {
 
             {!showSkeleton && hasLive ? (
               <View className="pb-2">
-                <SectionHeader title="Live hubs" subtitle="Eventos a acontecer ou a começar já." />
-                {liveItems.map((item) => (
-                  <DiscoverEventCard
+                <SectionHeader title="A acontecer" subtitle="Eventos a decorrer agora." />
+                {liveItems.map((item, index) => (
+                  <EventCardSquare
                     key={`live-${item.id}-${item.slug}`}
-                    item={item}
-                    userLat={userLat}
-                    userLon={userLon}
-                  />
-                ))}
-                {soonItems.map((item) => (
-                  <DiscoverEventCard
-                    key={`soon-${item.id}-${item.slug}`}
-                    item={item}
+                    event={item}
+                    statusTag="A acontecer"
+                    index={index}
                     userLat={userLat}
                     userLon={userLon}
                   />
@@ -80,13 +77,15 @@ export default function AgoraScreen() {
               </View>
             ) : null}
 
-            {!showSkeleton && upcomingItems.length > 0 ? (
+            {!showSkeleton && soonItems.length > 0 ? (
               <View className="pb-2">
-                <SectionHeader title="A seguir" subtitle="Próximos eventos na tua cidade." />
-                {upcomingItems.slice(0, 3).map((item) => (
-                  <DiscoverEventCard
-                    key={`upcoming-${item.id}-${item.slug}`}
-                    item={item}
+                <SectionHeader title="A seguir" subtitle="Próximas 72h." />
+                {soonItems.slice(0, 6).map((item, index) => (
+                  <EventCardSquare
+                    key={`soon-${item.id}-${item.slug}`}
+                    event={item}
+                    statusTag="A seguir"
+                    index={index}
                     userLat={userLat}
                     userLon={userLon}
                   />
@@ -96,11 +95,12 @@ export default function AgoraScreen() {
 
             {!showSkeleton ? (
               <View>
-                <SectionHeader title="Para ti" subtitle="Seleção personalizada para continuar a explorar." />
-                {personalizedItems.slice(0, 6).map((item) => (
-                  <DiscoverEventCard
-                    key={`personalized-${item.id}-${item.slug}`}
-                    item={item}
+                <SectionHeader title="Na tua cidade" subtitle="Curadoria perto de ti." />
+                {personalizedItems.slice(0, 6).map((item, index) => (
+                  <EventCardSquare
+                    key={`city-${item.id}-${item.slug}`}
+                    event={item}
+                    index={index}
                     userLat={userLat}
                     userLon={userLon}
                   />
@@ -110,7 +110,7 @@ export default function AgoraScreen() {
           </View>
         }
         renderItem={() =>
-          showSkeleton ? <GlassSkeleton className="mb-4" height={140} /> : null
+          showSkeleton ? <EventCardSquareSkeleton /> : null
         }
         ListFooterComponent={
           !showSkeleton && !isError && !hasLive && personalizedItems.length === 0 ? (

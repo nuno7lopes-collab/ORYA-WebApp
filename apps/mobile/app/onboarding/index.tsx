@@ -136,7 +136,9 @@ export default function OnboardingScreen() {
     promise: Promise<boolean>;
     requestId: number;
   } | null>(null);
+  const locationRequestIdRef = useRef(0);
 
+  const USERNAME_MIN_LEN = 3;
   const USERNAME_DEBOUNCE_MS = 300;
   const USERNAME_TIMEOUT_MS = 6500;
 
@@ -245,6 +247,10 @@ export default function OnboardingScreen() {
       setUsernameStatus("idle");
       return;
     }
+    if (normalizedUsername.length < USERNAME_MIN_LEN) {
+      setUsernameStatus("idle");
+      return;
+    }
     if (!usernameValidation.valid) {
       setUsernameStatus("invalid");
       return;
@@ -256,12 +262,13 @@ export default function OnboardingScreen() {
       return;
     }
 
-    setUsernameStatus("checking");
+    setUsernameStatus("idle");
     const requestId = usernameRequestIdRef.current;
     const controller = new AbortController();
     usernameAbortRef.current = controller;
 
     usernameTimerRef.current = setTimeout(async () => {
+      setUsernameStatus("checking");
       const accessToken = session?.access_token ?? (await getActiveSession())?.access_token ?? null;
       const promise = runUsernameCheck(normalized, accessToken, controller);
       usernameInflightRef.current = { normalized, promise, requestId };
@@ -605,6 +612,8 @@ export default function OnboardingScreen() {
   }
 
   const handleLocationFlow = async (intent: "allow" | "skip") => {
+    const requestId = ++locationRequestIdRef.current;
+    const isActive = () => requestId === locationRequestIdRef.current;
     setLocationError(null);
     setSavingStep("location");
     try {
@@ -621,8 +630,10 @@ export default function OnboardingScreen() {
           LOCATION_TIMEOUT_MS,
           "permission_timeout",
         );
+        if (!isActive()) return;
         if (permission.status !== Location.PermissionStatus.GRANTED) {
           const ip = await resolveIpLocation();
+          if (!isActive()) return;
           locationPayload = {
             city: ip.city ?? null,
             region: ip.region ?? null,
@@ -633,6 +644,7 @@ export default function OnboardingScreen() {
             step: 4,
             location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
           });
+          if (!isActive()) return;
           await finalizeOnboarding(locationPayload);
           return;
         }
@@ -651,8 +663,10 @@ export default function OnboardingScreen() {
           position = null;
         }
 
+        if (!isActive()) return;
         if (!position) {
           const ip = await resolveIpLocation();
+          if (!isActive()) return;
           locationPayload = {
             city: ip.city ?? null,
             region: ip.region ?? null,
@@ -663,6 +677,7 @@ export default function OnboardingScreen() {
             step: 4,
             location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
           });
+          if (!isActive()) return;
           await finalizeOnboarding(locationPayload);
           return;
         }
@@ -679,6 +694,7 @@ export default function OnboardingScreen() {
           // ignore reverse geocode errors
         }
 
+        if (!isActive()) return;
         locationPayload = {
           city,
           region,
@@ -689,11 +705,13 @@ export default function OnboardingScreen() {
           step: 4,
           location: { city, region, source: "GPS", consent: "GRANTED" },
         });
+        if (!isActive()) return;
         await finalizeOnboarding(locationPayload);
         return;
       }
 
       const ip = await resolveIpLocation();
+      if (!isActive()) return;
       locationPayload = {
         city: ip.city ?? null,
         region: ip.region ?? null,
@@ -704,8 +722,10 @@ export default function OnboardingScreen() {
         step: 4,
         location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
       });
+      if (!isActive()) return;
       await finalizeOnboarding(locationPayload);
     } catch (err: any) {
+      if (!isActive()) return;
       const rawMessage = err?.message ?? "location_error";
       console.warn("Location flow error", rawMessage, err);
       if (typeof rawMessage === "string" && (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED"))) {
@@ -714,7 +734,7 @@ export default function OnboardingScreen() {
       }
       setLocationError("Não foi possível obter localização agora.");
     } finally {
-      setSavingStep(null);
+      if (isActive()) setSavingStep(null);
     }
   };
 
@@ -729,6 +749,10 @@ export default function OnboardingScreen() {
   const handleBack = () => {
     const prev = steps[stepIndex - 1];
     if (prev) {
+      if (step === "location") {
+        locationRequestIdRef.current += 1;
+        setSavingStep(null);
+      }
       setStep(prev);
       return;
     }
@@ -737,18 +761,16 @@ export default function OnboardingScreen() {
 
   const renderUsernameStatus = () => {
     const hasUsername = username.length > 0;
-    const showHint =
-      hasUsername &&
-      (usernameStatus === "idle" || usernameStatus === "checking" || usernameStatus === "available");
+    const showHint = hasUsername && usernameStatus === "invalid";
     const statusMessage =
       usernameStatus === "checking"
         ? "A verificar…"
         : usernameStatus === "available"
           ? "Disponível"
-          : usernameStatus === "taken"
+        : usernameStatus === "taken"
             ? "Indisponível"
             : usernameStatus === "invalid"
-              ? usernameValidation.error || USERNAME_RULES_HINT
+              ? usernameValidation.error || "Username inválido."
               : usernameStatus === "error"
                 ? "Não foi possível verificar agora."
                 : "";
@@ -760,11 +782,12 @@ export default function OnboardingScreen() {
           : styles.helperText;
 
     if (!hasUsername && !statusMessage) return null;
+    if (!statusMessage && !showHint) return null;
 
     return (
       <View style={styles.helperStack}>
         {showHint ? (
-          <Text style={styles.helperHint}>{USERNAME_RULES_HINT}</Text>
+          <Text style={styles.helperHint}>Usa 3-15 caracteres, minúsculas, números, _ ou .</Text>
         ) : null}
         {statusMessage ? (
           <View style={styles.helperRow}>
@@ -811,7 +834,6 @@ export default function OnboardingScreen() {
           onChangeText={(value) => {
             const next = sanitizeUsername(value);
             setUsername(next);
-            setUsernameStatus("idle");
           }}
           placeholder="ex: orya.sofia"
           placeholderTextColor={tokens.colors.textMuted}
@@ -856,7 +878,7 @@ export default function OnboardingScreen() {
               <View style={[styles.interestIcon, active ? styles.interestIconActive : null]}>
                 <Ionicons
                   name={INTEREST_ICONS[interest.id]}
-                  size={16}
+                  size={18}
                   color={active ? "#ffffff" : "rgba(255,255,255,0.75)"}
                 />
               </View>
@@ -893,13 +915,14 @@ export default function OnboardingScreen() {
                 onPress={() => setPadelGender(gender.id)}
                 style={({ pressed }) => [
                   styles.optionChip,
+                  styles.optionChipHalf,
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
               >
                 <View style={styles.optionContent}>
                   {active ? (
-                    <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
+                    <Ionicons name="checkmark-circle" size={16} color="#0b0f17" />
                   ) : null}
                   <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
                     {gender.label}
@@ -922,13 +945,14 @@ export default function OnboardingScreen() {
                 onPress={() => setPadelSide(side.id)}
                 style={({ pressed }) => [
                   styles.optionChip,
+                  styles.optionChipThird,
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
               >
                 <View style={styles.optionContent}>
                   {active ? (
-                    <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
+                    <Ionicons name="checkmark-circle" size={16} color="#0b0f17" />
                   ) : null}
                   <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
                     {side.label}
@@ -958,7 +982,7 @@ export default function OnboardingScreen() {
               >
                 <View style={styles.optionContent}>
                   {active ? (
-                    <Ionicons name="checkmark-circle" size={14} color="#ffffff" />
+                    <Ionicons name="checkmark-circle" size={14} color="#0b0f17" />
                   ) : null}
                   <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>{level}</Text>
                 </View>
@@ -1205,23 +1229,28 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.6)",
     fontSize: 12,
     marginTop: 10,
+    alignSelf: "center",
   },
   interestGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
-    justifyContent: "space-between",
+    justifyContent: "center",
+    alignItems: "center",
   },
   interestChip: {
-    flexDirection: "row",
+    flexDirection: "column",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 10,
+    borderRadius: 18,
     borderWidth: 1,
     minHeight: tokens.layout.touchTarget,
-    width: "48%",
+    width: "22%",
+    minWidth: 70,
+    aspectRatio: 1,
     position: "relative",
   },
   interestChipIdle: {
@@ -1237,10 +1266,12 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   interestChipPadel: {
-    borderColor: "rgba(200, 225, 255, 0.45)",
-    width: "100%",
-    paddingVertical: 16,
-    minHeight: tokens.layout.touchTarget + 10,
+    borderColor: "rgba(200, 225, 255, 0.7)",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    shadowColor: "rgba(180, 220, 255, 0.35)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
   },
   interestChipPressed: {
     transform: [{ scale: 0.98 }],
@@ -1252,9 +1283,9 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
   },
   interestIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
@@ -1264,9 +1295,11 @@ const styles = StyleSheet.create({
   },
   interestLabel: {
     color: "rgba(255,255,255,0.85)",
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "600",
     flexShrink: 1,
+    textAlign: "center",
+    width: "100%",
   },
   interestLabelActive: {
     color: "#ffffff",
@@ -1302,34 +1335,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
   optionChip: {
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderRadius: 999,
+    borderRadius: 16,
     borderWidth: 1,
     minHeight: tokens.layout.touchTarget + 4,
     alignItems: "center",
     justifyContent: "center",
-    width: "48%",
     shadowColor: "rgba(0,0,0,0.35)",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 3,
   },
+  optionChipHalf: {
+    width: "48%",
+  },
+  optionChipThird: {
+    width: "31%",
+  },
   optionChipIdle: {
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   optionChipActive: {
-    borderColor: "rgba(140, 200, 255, 0.75)",
-    backgroundColor: "rgba(92, 175, 255, 0.24)",
-    shadowColor: "rgba(120, 190, 255, 0.55)",
+    borderColor: "rgba(255,255,255,0.9)",
+    backgroundColor: "rgba(255,255,255,0.9)",
+    shadowColor: "rgba(255,255,255,0.35)",
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
   },
   optionChipPressed: {
     transform: [{ scale: 0.98 }],
@@ -1340,7 +1378,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   optionLabelActive: {
-    color: "#ffffff",
+    color: "#0b0f17",
   },
   optionContent: {
     flexDirection: "row",
@@ -1351,7 +1389,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
   levelChip: {
     width: "30%",

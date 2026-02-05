@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import {
   Animated,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -22,6 +23,9 @@ import { GlassPill } from "../../components/liquid/GlassPill";
 import { useAuth } from "../../lib/auth";
 import { useCheckoutStore } from "../../features/checkout/store";
 import { safeBack } from "../../lib/navigation";
+import { FavoriteToggle } from "../../components/events/FavoriteToggle";
+import { StickyCTA } from "../../components/events/StickyCTA";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   weekday: "short",

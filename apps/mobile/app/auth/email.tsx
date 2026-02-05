@@ -46,6 +46,9 @@ const parseAuthError = (err: any) => {
     return { kind: "signup_disabled", message: "Registo temporariamente indisponível." };
   }
   if (lower.includes("password")) {
+    if (lower.includes("least") || lower.includes("mín") || lower.includes("min")) {
+      return { kind: "invalid_password", message: "A password deve ter pelo menos 6 caracteres." };
+    }
     return { kind: "invalid_password", message: message || "Password inválida." };
   }
   if (lower.includes("email")) {
@@ -65,6 +68,7 @@ export default function AuthEmailScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [showResend, setShowResend] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
 
   const normalizedEmail = normalizeEmail(email);
@@ -125,7 +129,9 @@ export default function AuthEmailScreen() {
           return;
         }
         trackEvent("auth_success_email", { mode: "signup_pending" });
-        setInfoMessage("Confirma o email. Enviámos um link para terminares o registo.");
+        setInfoMessage("Link enviado. Confirma o email e entra com a tua password.");
+        setShowResend(true);
+        setIsSignUp(false);
         Alert.alert("Confirma o email", "Enviámos um link de confirmação para o teu email.");
         return;
       }
@@ -147,7 +153,12 @@ export default function AuthEmailScreen() {
       trackEvent("auth_fail_email", { reason: parsed.kind });
 
       if (parsed.kind === "invalid_credentials") {
-        setFormError("Email ou password incorretos.");
+        if (!isSignUp) {
+          setFormError("Ainda não tens conta. Cria uma agora.");
+          setIsSignUp(true);
+        } else {
+          setFormError("Email ou password incorretos.");
+        }
         return;
       }
 
@@ -181,6 +192,28 @@ export default function AuthEmailScreen() {
       setFormError("Não foi possível reenviar o email.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (loading || resetting) return;
+    const normalized = normalizeEmail(email);
+    if (!isValidEmail(normalized)) {
+      setFormError("Email inválido.");
+      return;
+    }
+    setResetting(true);
+    setFormError(null);
+    setInfoMessage(null);
+    try {
+      await supabase.auth.resetPasswordForEmail(normalized, {
+        redirectTo: Linking.createURL("auth/callback"),
+      });
+      setInfoMessage("Enviámos um link para recuperar a password.");
+    } catch {
+      setFormError("Não foi possível enviar o email de recuperação.");
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -331,6 +364,19 @@ export default function AuthEmailScreen() {
                     {isSignUp ? "Já tens conta? Entrar" : "Ainda não tens conta? Criar"}
                   </Text>
                 </Pressable>
+
+                {!isSignUp ? (
+                  <Pressable
+                    onPress={handlePasswordReset}
+                    disabled={loading || resetting}
+                    accessibilityRole="button"
+                    style={styles.resetLink}
+                  >
+                    <Text style={styles.resetText}>
+                      {resetting ? "A enviar link..." : "Recuperar password"}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </GlassCard>
             </View>
           </ScrollView>
@@ -513,6 +559,19 @@ const styles = StyleSheet.create({
   toggleText: {
     fontSize: 12,
     color: "rgba(148, 214, 255, 0.85)",
+    fontWeight: "600",
+  },
+  resetLink: {
+    marginTop: 2,
+    alignSelf: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  resetText: {
+    fontSize: 12,
+    color: "rgba(200, 220, 255, 0.85)",
     fontWeight: "600",
   },
   loadingScreen: {

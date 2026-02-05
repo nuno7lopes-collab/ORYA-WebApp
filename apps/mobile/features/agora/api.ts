@@ -108,10 +108,26 @@ export const fetchAgoraTimeline = async (): Promise<AgoraTimeline> => {
   const unwrapped = unwrapApiResponse<LegacyEventListPayload>(response);
   const rawItems = Array.isArray(unwrapped?.events) ? unwrapped.events : [];
   const mapped = rawItems.map((item) => toAgoraEvent(toPublicCard(item)));
+  const now = Date.now();
+  const futureOrLive = mapped.filter((event) => {
+    if (event.status === "CANCELLED" || event.status === "PAST") return false;
+    if (!event.endsAt) return true;
+    const end = new Date(event.endsAt).getTime();
+    if (!Number.isFinite(end)) return true;
+    return end >= now;
+  });
+  const within72h = futureOrLive.filter((event) => {
+    if (!event.startsAt) return false;
+    const start = new Date(event.startsAt).getTime();
+    if (!Number.isFinite(start)) return false;
+    const diffHours = (start - now) / (1000 * 60 * 60);
+    return diffHours >= 0 && diffHours <= 72;
+  });
+  const later = futureOrLive.filter((event) => !within72h.includes(event));
 
   return {
-    liveNow: mapped.filter((event) => event.agoraStatus === "LIVE"),
-    comingSoon: mapped.filter((event) => event.agoraStatus === "SOON"),
-    upcoming: mapped.filter((event) => event.agoraStatus === "UPCOMING").slice(0, 8),
+    liveNow: futureOrLive.filter((event) => event.agoraStatus === "LIVE"),
+    comingSoon: within72h.filter((event) => event.agoraStatus !== "LIVE"),
+    upcoming: later.slice(0, 8),
   };
 };
