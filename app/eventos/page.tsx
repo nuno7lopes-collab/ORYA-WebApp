@@ -93,7 +93,6 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       latitude: true,
       longitude: true,
       coverImageUrl: true,
-      isFree: true,
       ticketTypes: {
         select: { price: true },
       },
@@ -103,7 +102,7 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
   return events.map((ev) => {
     const ticketPrices = ev.ticketTypes?.map((t) => t.price ?? 0) ?? [];
     const priceFrom = ticketPrices.length > 0 ? Math.min(...ticketPrices) / 100 : null;
-    const isGratis = ev.isFree || deriveIsFreeEvent({ ticketPrices });
+    const isGratis = deriveIsFreeEvent({ ticketPrices });
 
     return {
       id: ev.id,

@@ -3607,7 +3607,7 @@ export function NewOrganizationEventPage({
                   <button
                     type="button"
                     onClick={() =>
-                      router.push(appendOrganizationIdToHref("/organizacao?tab=analyze&section=financas", organizationId))
+                      router.push(appendOrganizationIdToHref("/organizacao/analyze?section=financas", organizationId))
                     }
                     className={`${CTA_PRIMARY} px-3 py-1 text-[11px]`}
                   >
@@ -5280,7 +5280,7 @@ export function NewOrganizationEventPage({
                 message={stripeAlert}
                 actionLabel="Abrir Finanças & Payouts"
                 onAction={() =>
-                  router.push(appendOrganizationIdToHref("/organizacao?tab=analyze&section=financas", organizationId))
+                  router.push(appendOrganizationIdToHref("/organizacao/analyze?section=financas", organizationId))
                 }
               />
             )}

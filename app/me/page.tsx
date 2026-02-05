@@ -32,7 +32,7 @@ export default function MePage() {
   const router = useRouter();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const orgId = getOrganizationIdFromBrowser();
-  const orgDashboardHref = appendOrganizationIdToHref("/organizacao?tab=overview", orgId);
+  const orgDashboardHref = appendOrganizationIdToHref("/organizacao/overview", orgId);
   const [padelStatus, setPadelStatus] = useState<{ complete: boolean; missingCount: number } | null>(null);
   const {
     items: tickets,
@@ -442,7 +442,7 @@ export default function MePage() {
               return (
                 <Link
                   key={org.organizationId}
-                  href={`/organizacao?tab=overview&organizationId=${org.organizationId}`}
+                  href={`/organizacao/overview?organizationId=${org.organizationId}`}
                   className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-white/25 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{name}</p>

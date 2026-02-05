@@ -12,6 +12,7 @@ import StoreShippingSettingsPanel from "@/components/store/StoreShippingSettings
 import StoreOrdersPanel from "@/components/store/StoreOrdersPanel";
 import StoreOverviewPanel from "@/components/store/StoreOverviewPanel";
 import StoreVisibilityToggle from "@/components/store/StoreVisibilityToggle";
+import StoreSettingsPanel from "@/components/store/StoreSettingsPanel";
 import Link from "next/link";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
@@ -235,7 +236,7 @@ export default async function LojaPage({ searchParams }: PageProps) {
                 storeEnabled={isStoreFeatureEnabled()}
               />
               <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-sm text-white/70">
-                Descontos simples ficam disponiveis numa fase futura.
+                Packs e bundles criam promoções rápidas sem catálogos enormes.
               </div>
             </div>
           </section>
@@ -246,9 +247,7 @@ export default async function LojaPage({ searchParams }: PageProps) {
               <h2 className="text-xl font-semibold text-white">Preferencias</h2>
               <p className="text-sm text-white/65">Politicas e dados da loja.</p>
             </header>
-            <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-sm text-white/70">
-              Em breve: politicas, termos, email de suporte e outras definicoes da loja.
-            </div>
+            <StoreSettingsPanel endpoint="/api/organizacao/loja/settings" storeEnabled={isStoreFeatureEnabled()} />
           </section>
         )}
       </div>

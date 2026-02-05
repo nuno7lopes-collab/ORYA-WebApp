@@ -3,7 +3,10 @@ const { spawn, execSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
+const https = require("https");
 const repoRoot = path.resolve(__dirname, "..");
+const lockPath = path.join(repoRoot, ".dev-all.lock");
 
 function loadEnv() {
   if (process.env.ORYA_CRON_SECRET && process.env.NEXT_PUBLIC_BASE_URL) return;
@@ -124,6 +127,57 @@ function runCmd(command) {
     return String(err?.stdout || "").trim();
   }
 }
+
+function isPidAlive(pid) {
+  if (!Number.isFinite(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readLockPid() {
+  if (!fs.existsSync(lockPath)) return null;
+  const raw = fs.readFileSync(lockPath, "utf8").trim();
+  const pid = Number(raw);
+  return Number.isFinite(pid) ? pid : null;
+}
+
+function releaseLock() {
+  if (!fs.existsSync(lockPath)) return;
+  const pid = readLockPid();
+  if (pid === process.pid) {
+    fs.rmSync(lockPath, { force: true });
+  }
+}
+
+function claimLock() {
+  const existingPid = readLockPid();
+  if (existingPid && isPidAlive(existingPid)) {
+    const command = getCommandForPid(existingPid);
+    const isDevAll = command.includes("dev-all.js");
+    const isRepo = command.includes(repoRoot);
+    if (isDevAll && isRepo) {
+      console.log(`[dev-all] Found existing dev-all PID ${existingPid}. Stopping it.`);
+      try {
+        process.kill(existingPid, "SIGKILL");
+      } catch (err) {
+        console.log(`[dev-all] Failed to stop previous dev-all PID ${existingPid}: ${err?.message || err}`);
+      }
+    } else {
+      console.log("[dev-all] Another dev-all lock exists. Remove .dev-all.lock if it's stale.");
+      process.exit(1);
+    }
+  }
+  fs.writeFileSync(lockPath, String(process.pid));
+  process.on("exit", releaseLock);
+  process.on("SIGINT", releaseLock);
+  process.on("SIGTERM", releaseLock);
+}
+
+claimLock();
 
 function listProcesses() {
   const psOutput = runCmd("ps -ax -o pid=,command=");
@@ -348,6 +402,7 @@ let deferredStarted = false;
 function startDeferredServices() {
   if (deferredStarted) return;
   deferredStarted = true;
+  console.log("[dev-all] Server ready. Starting cron/worker/services...");
 
   children.push(run("cron", npmCmd, ["run", "cron:local"]));
 
@@ -404,6 +459,18 @@ function startDeferredServices() {
   }
 }
 
+function fetchStatus(url, headers) {
+  return new Promise((resolve) => {
+    const client = url.startsWith("https://") ? https : http;
+    const req = client.request(url, { method: "GET", headers }, (res) => {
+      res.resume();
+      resolve(Boolean(res.statusCode));
+    });
+    req.on("error", () => resolve(false));
+    req.end();
+  });
+}
+
 async function checkServerReady() {
   const baseUrl = process.env.ORYA_BASE_URL || `http://${localHost}:${nextPort}`;
   const targetUrl = process.env.ORYA_CRON_SECRET
@@ -413,8 +480,11 @@ async function checkServerReady() {
     ? { "X-ORYA-CRON-SECRET": process.env.ORYA_CRON_SECRET }
     : undefined;
   try {
-    const res = await fetch(targetUrl, { headers, redirect: "manual" });
-    return Boolean(res?.status);
+    if (typeof fetch === "function") {
+      const res = await fetch(targetUrl, { headers, redirect: "manual" });
+      return Boolean(res?.status);
+    }
+    return await fetchStatus(targetUrl, headers);
   } catch {
     return false;
   }
@@ -430,7 +500,6 @@ if (skipWait) {
     const ready = await checkServerReady();
     if (ready) {
       clearInterval(timer);
-      console.log("[dev-all] Server ready. Starting cron/worker/services...");
       startDeferredServices();
     } else if (!logged) {
       console.log("[dev-all] Waiting for server before starting cron/worker...");

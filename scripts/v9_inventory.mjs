@@ -105,7 +105,6 @@ function detectStatusCodes(content) {
 
 function detectLegacy(content) {
   const legacy = [];
-  if (/\b410\b/.test(content) || /GONE/.test(content)) legacy.push("410/GONE");
   if (/@deprecated/i.test(content)) legacy.push("@deprecated");
   if (/LEGACY_/i.test(content)) legacy.push("LEGACY_");
   return legacy;
@@ -189,13 +188,18 @@ function normalizeEndpoint(raw) {
 }
 
 function extractFrontendApiUsage() {
-  const sourceRoots = [path.join(ROOT, "app"), path.join(ROOT, "components"), path.join(ROOT, "lib"), path.join(ROOT, "domain")];
+  const sourceRoots = [path.join(ROOT, "app"), path.join(ROOT, "components")];
   const files = [];
+  const apiRoot = path.join(ROOT, "app", "api");
   for (const root of sourceRoots) {
     if (!fs.existsSync(root)) continue;
     files.push(...listFiles(root));
   }
-  const codeFiles = files.filter((file) => /\.(ts|tsx|js|jsx)$/.test(file));
+  const codeFiles = files.filter((file) => {
+    if (!/\.(ts|tsx|js|jsx)$/.test(file)) return false;
+    if (file.startsWith(apiRoot + path.sep)) return false;
+    return true;
+  });
   const usage = new Map();
   const apiRegex = /["'`](\/api\/[^"'`\s]+)["'`]/g;
 

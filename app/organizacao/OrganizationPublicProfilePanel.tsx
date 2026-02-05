@@ -476,7 +476,7 @@ export default function OrganizationPublicProfilePanel({
   const router = useRouter();
   const canEdit = membershipRole === "OWNER" || membershipRole === "ADMIN";
   const organizationId = organization?.id ?? null;
-  const profileHref = appendOrganizationIdToHref("/organizacao?tab=profile", organizationId);
+  const profileHref = appendOrganizationIdToHref("/organizacao/profile", organizationId);
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");

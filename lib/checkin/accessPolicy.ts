@@ -52,8 +52,6 @@ export function resolveCheckinMethodForEntitlement(type: EntitlementType): Check
       return CheckinMethod.QR_TICKET;
     case EntitlementType.PADEL_ENTRY:
       return CheckinMethod.QR_REGISTRATION;
-    case EntitlementType.SERVICE_BOOKING:
-      return CheckinMethod.QR_BOOKING;
     default:
       return null;
   }

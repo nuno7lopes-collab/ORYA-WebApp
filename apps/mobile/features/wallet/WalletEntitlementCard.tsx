@@ -1,7 +1,8 @@
+import { memo } from "react";
 import { Link } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { ImageBackground, Pressable, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { ImageBackground, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
@@ -42,13 +43,13 @@ const typeLabel = (value: string) => {
   return value;
 };
 
-export function WalletEntitlementCard({ item }: Props) {
+export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item }: Props) {
   const coverUrl = item.snapshot.coverUrl;
   const title = item.snapshot.title ?? "Entitlement";
   const venue = item.snapshot.venueName ?? "Local a anunciar";
   const dateLabel = formatDate(item.snapshot.startAt);
   const canShowQr = Boolean(item.actions?.canShowQr && item.qrToken);
-  const passAvailable = Boolean(item.passAvailable);
+  const passAvailable = Platform.OS === "ios" && Boolean(item.passAvailable);
 
   return (
     <Link href={{ pathname: "/wallet/[entitlementId]", params: { entitlementId: item.entitlementId } }} asChild push>
@@ -88,7 +89,9 @@ export function WalletEntitlementCard({ item }: Props) {
                     <GlassPill label={typeLabel(item.type)} />
                     <GlassPill label={statusLabel(item.status)} variant="muted" />
                   </View>
-                  <Text className="text-white/55 text-xs">Imagem em breve</Text>
+                  <Text className="text-white text-base font-semibold" numberOfLines={2}>
+                    {title}
+                  </Text>
                 </View>
               )}
             </View>
@@ -121,7 +124,7 @@ export function WalletEntitlementCard({ item }: Props) {
       </Pressable>
     </Link>
   );
-}
+});
 
 const styles = StyleSheet.create({
   coverGradient: {

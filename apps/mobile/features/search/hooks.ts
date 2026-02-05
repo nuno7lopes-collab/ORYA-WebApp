@@ -2,9 +2,11 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { searchOffers, searchOrganizations, searchUsers } from "./api";
 
+const MIN_QUERY_LENGTH = 2;
+
 export const useGlobalSearch = (query: string) => {
   const normalized = query.trim();
-  const enabled = normalized.length > 0;
+  const enabled = normalized.length >= MIN_QUERY_LENGTH;
 
   const offersQuery = useQuery({
     queryKey: ["search", "offers", normalized],
@@ -55,5 +57,15 @@ export const useGlobalSearch = (query: string) => {
     hasResults,
     isLoading,
     isError,
+    enabled,
+    minQueryLength: MIN_QUERY_LENGTH,
+    offersQuery,
+    usersQuery,
+    orgsQuery,
+    refetchAll: () => {
+      offersQuery.refetch();
+      usersQuery.refetch();
+      orgsQuery.refetch();
+    },
   };
 };

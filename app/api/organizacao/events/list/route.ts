@@ -120,7 +120,6 @@ async function _GET(req: NextRequest) {
         locationCity: true,
         status: true,
         templateType: true,
-        isFree: true,
         coverImageUrl: true,
         padelTournamentConfig: {
           select: { padelClubId: true, partnerClubIds: true, advancedSettings: true },
@@ -262,7 +261,7 @@ async function _GET(req: NextRequest) {
 
     const items = events.map((event) => {
       const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
-      const isGratis = event.isFree || deriveIsFreeEvent({ ticketPrices });
+      const isGratis = deriveIsFreeEvent({ ticketPrices });
       const partnerClubIds = (event.padelTournamentConfig?.partnerClubIds ?? []) as number[];
 
       return {

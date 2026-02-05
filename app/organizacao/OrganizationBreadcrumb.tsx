@@ -155,7 +155,7 @@ export function OrganizationBreadcrumb() {
   const presetParamRaw = searchParams?.get("preset");
   const padelParamRaw = searchParams?.get("padel");
   const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
-  const dashboardHref = appendOrganizationIdToHref("/organizacao?tab=overview", organizationId);
+  const dashboardHref = appendOrganizationIdToHref("/organizacao/overview", organizationId);
   const label = resolveLabel(
     pathname || "",
     tabParamRaw,

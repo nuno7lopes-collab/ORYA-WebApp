@@ -1,7 +1,8 @@
+import { memo } from "react";
 import { Image } from "expo-image";
 import { Text, View } from "react-native";
 import { tokens } from "@orya/shared";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { DiscoverEventCard } from "../discover/DiscoverEventCard";
@@ -29,7 +30,7 @@ const formatRelativeTime = (iso: string): string => {
   }).format(new Date(timestamp));
 };
 
-export function SocialFeedCard({ item, index = 0 }: Props) {
+export const SocialFeedCard = memo(function SocialFeedCard({ item, index = 0 }: Props) {
   const orgName = item.organization.name || "Organização";
   const timeLabel = formatRelativeTime(item.createdAt);
 
@@ -76,4 +77,4 @@ export function SocialFeedCard({ item, index = 0 }: Props) {
       <DiscoverEventCard item={item.event} itemType="event" variant="feed" index={index} />
     </View>
   );
-}
+});

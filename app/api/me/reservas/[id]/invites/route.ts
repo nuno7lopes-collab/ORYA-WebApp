@@ -10,7 +10,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { BookingInviteStatus } from "@prisma/client";
 import crypto from "crypto";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
-import { isBookingConfirmed } from "@/lib/reservas/bookingState";
+import { getBookingState, isBookingConfirmed } from "@/lib/reservas/bookingState";
 
 const MAX_INVITES = 20;
 
@@ -164,11 +164,8 @@ async function _POST(
       return fail(403, "Sem permissões.");
     }
     if (!isBookingConfirmed(booking)) {
-      const split = await prisma.bookingSplit.findUnique({
-        where: { bookingId },
-        select: { status: true },
-      });
-      if (!split || split.status !== "OPEN") {
+      const bookingState = getBookingState(booking);
+      if (!["PENDING", "PENDING_CONFIRMATION"].includes(bookingState ?? "")) {
         return fail(409, "Só podes convidar após confirmação.");
       }
     }

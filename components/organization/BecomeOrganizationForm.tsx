@@ -294,7 +294,7 @@ export default function BecomeOrganizationForm() {
     const fallbackOrgId =
       organizationId ?? createdOrganizationIdRef.current ?? getOrganizationIdFromBrowser();
     const targetHref = appendOrganizationIdToHref(
-      "/organizacao?tab=overview&section=modulos",
+      "/organizacao/overview?section=modulos",
       fallbackOrgId,
     );
     buildTimerRef.current = setTimeout(() => {

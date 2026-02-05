@@ -1,4 +1,5 @@
 # Documento central de qualidade UI/UX (ORYA WebApp) — “pronto para App Store + deploy web”
+> Escopo: UX/UI. Para regras de produto/SSOT, ver `docs/v9_ssot_registry.md` e `docs/orya_blueprint_v9_final.md`.
 
 Este texto junta e organiza **tudo o que está nos vários textos** num **único documento central**: critérios de “perfeição”, riscos reais, o que corrigir/melhorar, padrões globais a aplicar, checklist por fluxos/ecrãs e um plano de execução por prioridades (P0→P2) com gates de QA.
 
@@ -119,6 +120,8 @@ Para fechar isto a 100%, tem de existir um **relatório automático** (audit) qu
 * endpoints públicos sem UI;
 * UI a chamar endpoints legacy/deprecated;
 * strings hard-coded de `/api/...` espalhadas a causar drift.
+
+Gate recomendado: `npm run gate:api-ui-coverage` (falha se houver órfãos).
 
 ---
 
@@ -411,7 +414,9 @@ Gerar relatório (script Node/TS) que:
 
   * **API sem UI** (órfãos)
   * **UI a chamar endpoint legacy/deprecated**
-  * endpoints públicos sem uso (avaliar remoção ou UI em falta)
+* endpoints públicos sem uso (avaliar remoção ou UI em falta)
+
+Status: Feito — script em `scripts/audit_api_ui_coverage.ts` + gate `npm run gate:api-ui-coverage`.
 
 ### 9.2 Regras de manutenção
 
@@ -424,14 +429,19 @@ Gerar relatório (script Node/TS) que:
 
 ### P0 — Bloqueadores de qualidade/performance (tem de ir já)
 
-1. **Refactor do checkout Step2Pagamento** em subcomponentes e hooks (orquestrador leve).
-2. **Code-splitting do Stripe**: remover imports estáticos do Step2; criar `StripePaymentSection.tsx` com dynamic import só quando `needsStripe`.
-3. **UX explícita para requiresAuth** (FREE_CHECKOUT / GROUP_SPLIT): banner/card + CTA + skeleton em authChecking + preservar dados ao transitar.
-4. **Preservar dados do utilizador** ao mudar método de pagamento (reset só do que é payment-intent related).
+1. **Refactor do checkout Step2Pagamento** em subcomponentes e hooks (orquestrador leve).  
+   Status: Feito — `Step2Header`, `Step2AccessGate`, `Step2PaymentPanel`.
+2. **Code-splitting do Stripe**: remover imports estáticos do Step2; criar `StripePaymentSection.tsx` com dynamic import só quando `needsStripe`.  
+   Status: Feito — `dynamic(() => import("./StripePaymentSection"))`.
+3. **UX explícita para requiresAuth** (FREE_CHECKOUT / GROUP_SPLIT): banner/card + CTA + skeleton em authChecking + preservar dados ao transitar.  
+   Status: Feito — `Step2AccessGate` + `AuthGateBanner`.
+4. **Preservar dados do utilizador** ao mudar método de pagamento (reset só do que é payment-intent related).  
+   Status: Feito — reset isolado na troca de método.
 
 ### P1 — Qualidade “App Store” (consistência e perceção premium)
 
-1. **FormField standard** aplicado a todos os forms críticos.
+1. **FormField standard** aplicado a todos os forms críticos.  
+   Status: Feito — `app/components/forms/FormField.tsx` + re-export no checkout.
 2. **loading.tsx + error.tsx + skeletons reais** nos segmentos principais (explorar, evento, checkout, loja, org dashboard).
 3. **aria-live global** em toasts/alerts + foco no primeiro erro ao submeter forms.
 4. **Centralizar chamadas API** (`apiFetch` + `routes.ts`) e remover strings hard-coded.
@@ -494,4 +504,3 @@ Só podemos considerar “fechado” quando:
 Se tiveres de resumir este documento numa frase operacional para a equipa:
 
 **“Para ficar perfeito: reduzir complexidade e peso do checkout (Stripe lazy + componentização), padronizar formulários e estados (loading/erro/vazio), fechar acessibilidade, e criar gates automáticos (API↔UI audit + Playwright + Lighthouse) para nunca mais regredir.”**
-

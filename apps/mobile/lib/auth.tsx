@@ -1,6 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { supabase } from "./supabase";
 import { getActiveSession } from "./session";
+import { resetOnboardingDone } from "./onboardingState";
+import { clearOnboardingDraft } from "./onboardingDraft";
 
 type AuthState = {
   loading: boolean;
@@ -17,6 +20,11 @@ const AuthContext = createContext<AuthState>({
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any | null>(null);
+  const sessionRef = useRef<any | null>(null);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   useEffect(() => {
     let mounted = true;
@@ -30,12 +38,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     hydrate();
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, next) => {
+      if (!mounted) return;
       setSession(next);
+      if (event === "SIGNED_OUT") {
+        resetOnboardingDone().catch(() => undefined);
+        clearOnboardingDraft().catch(() => undefined);
+      }
+    });
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      getActiveSession()
+        .then((nextSession) => {
+          if (!mounted) return;
+          if (!nextSession && sessionRef.current) return;
+          setSession(nextSession);
+        })
+        .catch(() => undefined);
     });
     return () => {
       mounted = false;
       listener?.subscription?.unsubscribe();
+      subscription.remove();
     };
   }, []);
 

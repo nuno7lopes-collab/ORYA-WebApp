@@ -44,10 +44,11 @@ Objetivo: checklist executavel para release (DoD de producao).
 - E2E:
   - Fluxo P0 (intent -> webhook -> status -> entitlement -> check-in) com requestIds registados.
   - Fluxo P1 (refund/dispute -> ledger -> invalidacao) com requestIds registados.
+  - Script recomendado: `scripts/run-e2e-p1.sh` (requer `API_BASE_URL`, `ORYA_CRON_SECRET`, `E2E_USER_BEARER`, e opcional `E2E_ADMIN_BEARER`/`STRIPE_SECRET_KEY`).
 - Observabilidade:
   - `/api/internal/ops/health` OK.
   - `/api/internal/ops/slo` sem backlog antigo/dlq.
-  - Sentry sem spike de erros.
+  - CloudWatch sem spike de erros 5xx.
 - Mobile/A11y/Perf:
   - Lighthouse + axe executados (sem regressao critica).
   - Device farm ou browserstack OK.

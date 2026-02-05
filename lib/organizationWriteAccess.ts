@@ -2,9 +2,11 @@ import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 import { prisma } from "@/lib/prisma";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { OrganizationStatus } from "@prisma/client";
 
 type OrganizationWriteContext = {
   id?: number;
+  status?: OrganizationStatus | string | null;
   officialEmail?: string | null;
   officialEmailVerifiedAt?: Date | string | null;
   stripeAccountId?: string | null;
@@ -29,6 +31,16 @@ export type OfficialEmailGateResult =
       correlationId: string;
     };
 
+export type KillSwitchGateResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: "KILL_SWITCH_ACTIVE";
+      message: string;
+      requestId: string;
+      correlationId: string;
+    };
+
 export type StripeGateResult =
   | { ok: true }
   | {
@@ -37,7 +49,7 @@ export type StripeGateResult =
       message: string;
     };
 
-export type AccessResult = OfficialEmailGateResult | StripeGateResult;
+export type AccessResult = OfficialEmailGateResult | StripeGateResult | KillSwitchGateResult;
 
 const OFFICIAL_EMAIL_VERIFY_URL = "/organizacao/settings?tab=official-email";
 
@@ -157,10 +169,24 @@ export function ensureOrganizationWriteAccess(
     requireStripeForServices?: boolean;
     reasonCode?: string;
     skipEmailGate?: boolean;
+    skipKillSwitch?: boolean;
     requestId?: string;
     correlationId?: string;
   },
 ): AccessResult {
+  if (!opts?.skipKillSwitch) {
+    const status = typeof org.status === "string" ? org.status.toUpperCase() : org.status;
+    if (status === OrganizationStatus.SUSPENDED || status === "SUSPENDED") {
+      const { requestId, correlationId } = resolveGateContext(opts);
+      return {
+        ok: false,
+        error: "KILL_SWITCH_ACTIVE",
+        message: "A organização está em modo restrito.",
+        requestId,
+        correlationId,
+      };
+    }
+  }
   if (!opts?.skipEmailGate) {
     const emailGate = ensureOrganizationEmailVerified(org, {
       reasonCode: opts?.reasonCode,

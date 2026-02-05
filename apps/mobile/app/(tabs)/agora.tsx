@@ -1,4 +1,4 @@
-import { FlatList, Pressable, Text, View } from "react-native";
+import { FlatList, Platform, Pressable, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
@@ -14,13 +14,18 @@ export default function AgoraScreen() {
   const showSkeleton = isLoading && liveItems.length + soonItems.length + personalizedItems.length === 0;
 
   return (
-    <LiquidBackground variant="deep">
+    <LiquidBackground variant="solid">
       <FlatList
         data={showSkeleton ? [1, 2, 3] : []}
         keyExtractor={(_, index) => `agora-${index}`}
         onRefresh={() => refetch()}
         refreshing={isLoading}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={40}
+        windowSize={5}
         ListHeaderComponent={
           <View className="pt-14">
             <View className="pb-3">

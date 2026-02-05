@@ -885,7 +885,7 @@ export default async function EventPage({
                     </span>
                     {isInviteRestricted && (
                       <span className="rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/80">
-                        {t("inviteOnlyLabel", locale)}
+                        {t("inviteAccessLabel", locale)}
                       </span>
                     )}
                     {isGratis ? (

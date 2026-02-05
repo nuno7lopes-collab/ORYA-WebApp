@@ -120,7 +120,7 @@ export default function OrganizationInvitesClient({
             console.warn("[convites][switch]", err);
           }
           const target = appendOrganizationIdToHref(
-            "/organizacao?tab=overview",
+            "/organizacao/overview",
             invite.organizationId ?? orgIdFallback,
           );
           setTimeout(() => router.push(target), 600);

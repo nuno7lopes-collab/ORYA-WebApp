@@ -4,9 +4,15 @@ export type ProfileSummary = {
   fullName: string | null;
   username: string | null;
   avatarUrl: string | null;
+  coverUrl?: string | null;
   bio: string | null;
   city: string | null;
   padelLevel: string | null;
+  favouriteCategories?: string[];
+  visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
+  allowEmailNotifications?: boolean;
+  allowEventReminders?: boolean;
+  allowFollowRequests?: boolean;
   onboardingDone: boolean;
 };
 

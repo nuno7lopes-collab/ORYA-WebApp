@@ -140,11 +140,19 @@ export default function StorefrontCheckoutClient({
   currency,
   storeBaseHref,
   cartHref,
+  storePolicies,
 }: {
   storeId: number;
   currency: string;
   storeBaseHref: string;
   cartHref: string;
+  storePolicies?: {
+    supportEmail?: string | null;
+    supportPhone?: string | null;
+    returnPolicy?: string | null;
+    privacyPolicy?: string | null;
+    termsUrl?: string | null;
+  };
 }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [bundles, setBundles] = useState<BundleGroup[]>([]);
@@ -183,6 +191,14 @@ export default function StorefrontCheckoutClient({
   });
   const [notes, setNotes] = useState("");
   const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<number | null>(null);
+
+  const hasPolicies = Boolean(
+    storePolicies?.supportEmail ||
+      storePolicies?.supportPhone ||
+      storePolicies?.returnPolicy ||
+      storePolicies?.privacyPolicy ||
+      storePolicies?.termsUrl,
+  );
 
   const stripePromise = useMemo(() => {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -778,6 +794,39 @@ export default function StorefrontCheckoutClient({
               className="min-h-[80px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
               placeholder="Notas para a loja (opcional)"
             />
+            {hasPolicies ? (
+              <div className="rounded-xl border border-white/15 bg-black/40 px-3 py-3 text-[12px] text-white/70 space-y-2">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Políticas</p>
+                {storePolicies?.termsUrl ? (
+                  <a
+                    href={storePolicies.termsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[12px] text-white/80 underline"
+                  >
+                    Termos e condições
+                  </a>
+                ) : null}
+                {storePolicies?.returnPolicy ? (
+                  <div className="max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-white/70">
+                    {storePolicies.returnPolicy}
+                  </div>
+                ) : null}
+                {storePolicies?.privacyPolicy ? (
+                  <div className="max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-white/70">
+                    {storePolicies.privacyPolicy}
+                  </div>
+                ) : null}
+                {(storePolicies?.supportEmail || storePolicies?.supportPhone) && (
+                  <p className="text-[11px] text-white/60">
+                    Suporte: {storePolicies.supportEmail ?? ""}{storePolicies.supportEmail && storePolicies.supportPhone ? " · " : ""}{storePolicies.supportPhone ?? ""}
+                  </p>
+                )}
+                <p className="text-[11px] text-white/50">
+                  As políticas estão disponíveis no link acima.
+                </p>
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"

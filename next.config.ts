@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const IS_PROD = process.env.NODE_ENV === "production";
-const ENABLE_CSP_REPORT_ONLY = IS_PROD || process.env.CSP_REPORT_ONLY === "1";
-const CSP_REPORT_ONLY = [
+const ENABLE_CSP_REPORT_ONLY = process.env.CSP_REPORT_ONLY === "1";
+const CSP_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
@@ -59,8 +60,8 @@ const nextConfig: NextConfig = {
         value: "camera=(), microphone=(), geolocation=(), payment=()",
       },
       {
-        key: "Server",
-        value: "orya",
+        key: "Content-Security-Policy",
+        value: CSP_POLICY,
       },
       ...(IS_PROD
         ? [
@@ -74,15 +75,36 @@ const nextConfig: NextConfig = {
         ? [
             {
               key: "Content-Security-Policy-Report-Only",
-              value: CSP_REPORT_ONLY,
+              value: CSP_POLICY,
             },
           ]
         : []),
     ];
+
+    const noStoreHeaders = [
+      {
+        key: "Cache-Control",
+        value: "no-store, no-cache, must-revalidate, max-age=0",
+      },
+      {
+        key: "Pragma",
+        value: "no-cache",
+      },
+      {
+        key: "Expires",
+        value: "0",
+      },
+    ];
     return [
       {
-        source: "/(.*)",
-        headers: baseHeaders,
+        source: "/api/:path*",
+        headers: [...baseHeaders, ...noStoreHeaders],
+      },
+      {
+        // HTML / páginas (exclui assets estáticos)
+        source:
+          "/((?!_next/static|_next/image|static/|fonts/|brand/|favicon\\.ico|manifest\\.json|robots\\.txt|security\\.txt|\\.well-known/).*)",
+        headers: [...baseHeaders, ...noStoreHeaders],
       },
       {
         source: "/_next/static/:path*",
@@ -111,7 +133,28 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        source: "/brand/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
     ];
+  },
+  webpack(config) {
+    const resolvedPath = path.join(
+      process.cwd(),
+      "node_modules/@reduxjs/toolkit/dist/redux-toolkit.legacy-esm.js",
+    );
+    config.resolve = config.resolve ?? {};
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      "@reduxjs/toolkit": resolvedPath,
+    };
+    return config;
   },
 };
 

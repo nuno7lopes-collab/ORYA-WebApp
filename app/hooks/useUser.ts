@@ -50,10 +50,19 @@ const fetcher = async (url: string) => {
   return (await res.json()) as ApiMeResponse;
 };
 
+const CLAIM_GUEST_DONE = new Set<string>();
+const CLAIM_GUEST_IN_FLIGHT = new Set<string>();
+const claimGuestStorageKey = (userKey: string) => `orya:claim-guest:${userKey}`;
+
 export function useUser() {
   const { data, error, isLoading, mutate } = useSWR<ApiMeResponse>(
     "/api/auth/me",
-    fetcher
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 60_000,
+    },
   );
   const migratedRef = useRef(false);
 
@@ -89,9 +98,33 @@ export function useUser() {
       Boolean((data?.user as any)?.emailConfirmed) ||
       Boolean(data?.user?.email);
 
-    if (data?.user && emailVerified && !migratedRef.current) {
+    const userKey = data?.user?.id ?? data?.user?.email ?? null;
+    if (!data?.user || !emailVerified || !userKey) return;
+
+    if (typeof window !== "undefined") {
+      const key = claimGuestStorageKey(userKey);
+      if (sessionStorage.getItem(key) === "1") {
+        CLAIM_GUEST_DONE.add(userKey);
+        migratedRef.current = true;
+        return;
+      }
+    }
+
+    if (CLAIM_GUEST_DONE.has(userKey) || CLAIM_GUEST_IN_FLIGHT.has(userKey)) {
       migratedRef.current = true;
-      claim();
+      return;
+    }
+
+    if (!migratedRef.current) {
+      migratedRef.current = true;
+      CLAIM_GUEST_IN_FLIGHT.add(userKey);
+      claim().finally(() => {
+        CLAIM_GUEST_IN_FLIGHT.delete(userKey);
+        CLAIM_GUEST_DONE.add(userKey);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem(claimGuestStorageKey(userKey), "1");
+        }
+      });
     }
   }, [data?.user]);
 

@@ -1,6 +1,7 @@
 import { Image, Linking, Pressable, ScrollView, Text, View, Platform } from "react-native";
 import Constants from "expo-constants";
 import { supabase } from "../../lib/supabase";
+import { resetOnboardingDone } from "../../lib/onboardingState";
 import { i18n, tokens } from "@orya/shared";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
@@ -9,6 +10,7 @@ import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { useProfileAgenda, useProfileSummary } from "../../features/profile/hooks";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../lib/auth";
+import { useRouter } from "expo-router";
 
 const formatAgendaDate = (value: string): string => {
   const parsed = new Date(value);
@@ -29,14 +31,19 @@ const initialFrom = (name?: string | null, email?: string | null): string => {
 
 export default function ProfileScreen() {
   const t = i18n.pt.profile;
+  const router = useRouter();
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
-  const summary = useProfileSummary(true, accessToken);
-  const agenda = useProfileAgenda(accessToken);
+  const userId = session?.user?.id ?? null;
+  const summary = useProfileSummary(true, accessToken, userId);
+  const agenda = useProfileAgenda(accessToken, userId);
   const [pushStatus, setPushStatus] = useState<
     "loading" | "granted" | "denied" | "undetermined" | "unsupported"
   >("loading");
   const profile = summary.data;
+  const coverUrl = profile?.coverUrl ?? null;
+  const cityLabel = profile?.city ?? null;
+  const padelLabel = profile?.padelLevel ?? null;
   const agendaData = agenda.data?.items ?? [];
   const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
   const upcomingItems = agendaData
@@ -45,6 +52,7 @@ export default function ProfileScreen() {
     .slice(0, 3);
 
   const signOut = async () => {
+    await resetOnboardingDone();
     await supabase.auth.signOut();
   };
 
@@ -87,6 +95,16 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <GlassSurface intensity={58} padding={16} style={{ marginBottom: 20 }}>
+            <View
+              className="rounded-3xl overflow-hidden border border-white/10 mb-4"
+              style={{ height: 140, backgroundColor: "rgba(255,255,255,0.05)" }}
+            >
+              {coverUrl ? (
+                <Image source={{ uri: coverUrl }} resizeMode="cover" style={{ width: "100%", height: "100%" }} />
+              ) : (
+                <View className="flex-1" />
+              )}
+            </View>
             <View className="flex-row gap-4 items-center">
               <View
                 className="h-20 w-20 rounded-full border border-white/15 items-center justify-center overflow-hidden"
@@ -106,9 +124,9 @@ export default function ProfileScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text className="text-white text-xl font-semibold">{profile?.fullName ?? "Utilizador ORYA"}</Text>
-                <Text className="text-white/65 text-sm mt-1">
-                  {profile?.username ? `@${profile.username}` : "username por definir"}
-                </Text>
+                {profile?.username ? (
+                  <Text className="text-white/65 text-sm mt-1">@{profile.username}</Text>
+                ) : null}
                 {profile?.bio ? (
                   <Text className="text-white/70 text-sm mt-2" numberOfLines={2}>
                     {profile.bio}
@@ -117,14 +135,28 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <View className="flex-row gap-2 mt-4">
-              <View className="rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                <Text className="text-white/75 text-xs">{profile?.city ?? "Cidade a definir"}</Text>
+            {cityLabel || padelLabel ? (
+              <View className="flex-row gap-2 mt-4">
+                {cityLabel ? (
+                  <View className="rounded-full border border-white/10 bg-white/5 px-3 py-2">
+                    <Text className="text-white/75 text-xs">{cityLabel}</Text>
+                  </View>
+                ) : null}
+                {padelLabel ? (
+                  <View className="rounded-full border border-white/10 bg-white/5 px-3 py-2">
+                    <Text className="text-white/75 text-xs">{padelLabel}</Text>
+                  </View>
+                ) : null}
               </View>
-              <View className="rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                <Text className="text-white/75 text-xs">{profile?.padelLevel ?? "Padel: por definir"}</Text>
-              </View>
-            </View>
+            ) : null}
+
+            <Pressable
+              onPress={() => router.push("/profile/edit")}
+              className="mt-4 rounded-2xl border border-white/15 bg-white/10 px-4 py-3"
+              style={{ minHeight: tokens.layout.touchTarget }}
+            >
+              <Text className="text-white text-sm font-semibold text-center">Editar perfil</Text>
+            </Pressable>
           </GlassSurface>
         )}
 

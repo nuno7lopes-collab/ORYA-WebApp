@@ -9,6 +9,7 @@ export const ENV_MODELS = new Set([
   'Availability',
   'AvailabilityOverride',
   'Booking',
+  'BookingCharge',
   'BookingPolicyRef',
   'CalendarAvailability',
   'CalendarBlock',

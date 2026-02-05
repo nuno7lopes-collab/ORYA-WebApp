@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { FlatList, Platform, Pressable, Text, View } from "react-native";
 import { i18n, tokens } from "@orya/shared";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
@@ -42,6 +42,11 @@ export default function TicketsScreen() {
         keyExtractor={(item) => (item.kind === "skeleton" ? item.key : item.entitlement.entitlementId)}
         onRefresh={() => feed.refetch()}
         refreshing={feed.isFetching}
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={40}
+        windowSize={5}
         ListHeaderComponent={
           <View className="pt-14 pb-2">
             <Text className="text-white text-[30px] font-semibold mb-2">{t.title}</Text>

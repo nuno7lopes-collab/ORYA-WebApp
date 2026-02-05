@@ -6,7 +6,7 @@ Objetivo: definir SLOs minimos por dominio para operacao e go-live.
 - `/api/internal/ops/health` (outbox, ops, payments, DB latency).
 - `/api/internal/ops/slo` (pending backlog, oldest pending age, DLQ 24h, eventLog last1h).
 - Logs estruturados com `requestId/correlationId`.
-- Sentry (erros server/client) e Stripe dashboards.
+- CloudWatch logs/alarms (erros server) e Stripe dashboards.
 
 ## SLOs minimos (proposta)
 

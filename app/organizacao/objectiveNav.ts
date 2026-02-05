@@ -70,14 +70,14 @@ export function getObjectiveSections(
     if (manageBase) {
       return section === "eventos" ? manageBase : `${manageBase}?section=${section}`;
     }
-    return `/organizacao?tab=manage&section=${section}`;
+    return `/organizacao/manage?section=${section}`;
   };
 
   if (objective === "create") {
     sections.push({
       id: "overview",
       label: "Dashboard",
-      href: "/organizacao?tab=overview",
+      href: "/organizacao/overview",
     });
     sections.push({
       id: "primary",
@@ -305,7 +305,7 @@ export function getObjectiveSections(
   }
 
   if (objective === "promote") {
-    const baseHref = "/organizacao?tab=promote&section=marketing&marketing=";
+    const baseHref = "/organizacao/promote?section=marketing&marketing=";
     sections.push({
       id: "overview",
       label: "Visão geral",
@@ -339,7 +339,7 @@ export function getObjectiveSections(
       {
         id: "perfil",
         label: "Perfil",
-        href: "/organizacao?tab=profile",
+        href: "/organizacao/profile",
       },
     ];
     const focusId = options?.focusSectionId ?? null;
@@ -355,24 +355,24 @@ export function getObjectiveSections(
       {
         id: "overview",
         label: "Visão geral",
-        href: "/organizacao?tab=analyze&section=overview",
+        href: "/organizacao/analyze?section=overview",
       },
       {
         id: "vendas",
         label: "Vendas",
-        href: "/organizacao?tab=analyze&section=vendas",
+        href: "/organizacao/analyze?section=vendas",
       },
     );
     sections.push(
       {
         id: "financas",
         label: "Finanças",
-        href: "/organizacao?tab=analyze&section=financas",
+        href: "/organizacao/analyze?section=financas",
       },
       {
         id: "invoices",
         label: "Faturação",
-        href: "/organizacao?tab=analyze&section=invoices",
+        href: "/organizacao/analyze?section=invoices",
       },
     );
     const focusId = options?.focusSectionId ?? null;

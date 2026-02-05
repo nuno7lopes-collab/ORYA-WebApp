@@ -184,7 +184,7 @@ export async function POST(
         currency,
         intentParams: {
           automatic_payment_methods: { enabled: true },
-          description: `Créditos serviço ${service.id}`,
+          description: `Pack de sessões ${service.id}`,
         },
         metadata: {
           serviceCreditPurchase: "1",
@@ -238,7 +238,7 @@ export async function POST(
                 totalAmountCents: amountCents,
                 currency,
                 sourceLineId: sourceId,
-                label: `Créditos serviço ${service.id}`,
+                label: `Pack de sessões ${service.id}`,
               },
             ],
           },

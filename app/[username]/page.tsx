@@ -474,7 +474,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           locationFormattedAddress: true,
           locationComponents: true,
           locationOverrides: true,
-          isFree: true,
           timezone: true,
           templateType: true,
           coverImageUrl: true,
@@ -640,7 +639,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
     const orgEvents: OrganizationEvent[] = events.map((event) => {
       const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
-      const isGratis = event.isFree || deriveIsFreeEvent({ ticketPrices });
+      const isGratis = deriveIsFreeEvent({ ticketPrices });
       const locationComponents =
         event.locationComponents && typeof event.locationComponents === "object"
           ? (event.locationComponents as Record<string, unknown>)

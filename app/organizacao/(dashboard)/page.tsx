@@ -1,14 +1,10 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getActiveOrganizationForUser, getActiveOrganizationIdForUser } from "@/lib/organizationContext";
 import DashboardClient from "../DashboardClient";
 import { OrganizationTour } from "../OrganizationTour";
-import { cookies } from "next/headers";
 import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
-import { OrganizationStatus, Prisma } from "@prisma/client";
-import { resolveOrganizationIdForUi } from "@/lib/organizationId";
+import { ensureDashboardAccess } from "@/app/organizacao/_lib/dashboardAccess";
+import { createSupabaseServer } from "@/lib/supabaseServer";
 
 export const runtime = "nodejs";
 
@@ -17,7 +13,11 @@ export const runtime = "nodejs";
  * Decide o destino com base no estado do utilizador e organizações.
  * Quando há organização ativa, renderiza o dashboard (overview como tab default no client).
  */
-export default async function OrganizationRouterPage() {
+export default async function OrganizationRouterPage({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined> | Promise<Record<string, string | string[] | undefined>>;
+}) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -27,65 +27,44 @@ export default async function OrganizationRouterPage() {
     return <AuthGate />;
   }
 
-  // 1) Contar memberships
-  const membershipCount = await prisma.organizationMember.count({ where: { userId: user.id } });
+  const { activeOrganizationId, isSuspended } = await ensureDashboardAccess();
+  const resolvedSearchParams = await Promise.resolve(searchParams);
 
-  // Sem organizações → onboarding
-  if (membershipCount === 0) {
-    const profile = await prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { username: true },
-    });
-    const viewerEmail = user.email?.toLowerCase() ?? null;
-    const viewerUsername = profile?.username ?? null;
-    const pendingInvite = await prisma.organizationMemberInvite.findFirst({
-      where: {
-        cancelledAt: null,
-        acceptedAt: null,
-        declinedAt: null,
-        expiresAt: { gt: new Date() },
-        OR: [
-          { targetUserId: user.id },
-          ...(viewerEmail
-            ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
-            : []),
-          ...(viewerUsername
-            ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
-            : []),
-        ],
-      },
-    });
-    if (pendingInvite) {
-      redirect("/convites/organizacoes");
+  const tabParam = typeof resolvedSearchParams?.tab === "string" ? resolvedSearchParams?.tab : null;
+  const targetBase =
+    tabParam === "manage"
+      ? "/organizacao/manage"
+      : tabParam === "analyze"
+        ? "/organizacao/analyze"
+        : tabParam === "promote"
+          ? "/organizacao/promote"
+          : tabParam === "profile"
+            ? "/organizacao/profile"
+            : "/organizacao/overview";
+
+  const params = new URLSearchParams();
+  if (resolvedSearchParams) {
+    for (const [key, value] of Object.entries(resolvedSearchParams)) {
+      if (key === "tab") continue;
+      if (typeof value === "string") {
+        params.set(key, value);
+      } else if (Array.isArray(value)) {
+        value.forEach((entry) => params.append(key, entry));
+      }
     }
-    redirect("/organizacao/become");
+  }
+  if (!params.get("organizationId")) {
+    params.set("organizationId", String(activeOrganizationId));
   }
 
-  // 2) Existe organização ativa?
-  const cookieStore = await cookies();
-  const cookieOrgId = cookieStore.get("orya_organization")?.value;
-  const profileActiveOrgId = await getActiveOrganizationIdForUser(user.id);
-  const uiOrg = resolveOrganizationIdForUi({
-    profileOrganizationId: profileActiveOrgId,
-    cookieOrganizationId: cookieOrgId,
-  });
-  const { organization } = await getActiveOrganizationForUser(user.id, {
-    organizationId: uiOrg.organizationId ?? undefined,
-    allowFallback: false,
-    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
-  });
-  const activeOrganizationId = organization?.id ?? null;
-  const isSuspended = organization?.status === OrganizationStatus.SUSPENDED;
-
-  // Tem orgs mas nenhuma ativa → hub
-  if (!activeOrganizationId) {
-    redirect("/organizacao/organizations");
+  const query = params.toString();
+  if (tabParam || query) {
+    redirect(`${targetBase}${query ? `?${query}` : ""}`);
   }
 
-  // Tem org ativa → dashboard
   return (
     <AuthModalProvider>
-      <DashboardClient hasOrganization />
+      <DashboardClient hasOrganization defaultObjective="create" defaultSection="overview" />
       {!isSuspended ? <OrganizationTour organizationId={activeOrganizationId} /> : null}
     </AuthModalProvider>
   );

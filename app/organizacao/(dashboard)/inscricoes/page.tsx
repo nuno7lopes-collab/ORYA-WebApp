@@ -214,7 +214,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
         {moduleDisabled && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
             <span>O módulo de Formulários está desativado para esta organização.</span>
-            <Link href="/organizacao?tab=overview&section=modulos" className={`${CTA_SECONDARY} text-[12px]`}>
+            <Link href="/organizacao/overview?section=modulos" className={`${CTA_SECONDARY} text-[12px]`}>
               Gerir apps
             </Link>
           </div>

@@ -8,7 +8,7 @@ Fonte: AWS Secrets Manager (live)
 ### app
 - modo: `flat`
 - existe (24): ALERTS_SNS_TOPIC_ARN, APP_BASE_URL, CLOUDWATCH_LOG_GROUP, CLOUDWATCH_LOG_RETENTION_DAYS, CLOUDWATCH_METRICS_NAMESPACE, DATABASE_URL, DIRECT_URL, ICS_SECRET_KEY, INTERNAL_SECRET_HEADER, LOG_FORMAT, LOG_LEVEL, MAPKIT_JS_KEY_ID, MAPKIT_JS_ORIGIN, MAPKIT_JS_PRIVATE_KEY_BASE64, MAP_PROVIDER, NEXTAUTH_SECRET, NEXTAUTH_URL, NEXT_PUBLIC_BASE_URL, ORYA_CRON_SECRET, PWA_MANIFEST_URL, QR_SECRET_KEY, S3_SECRETS_BUCKET, XRAY_DAEMON_ADDRESS, XRAY_ENABLED
-- falta (1): SENTRY_DSN
+- falta (0): -
 
 ### apple
 - modo: `flat`
@@ -33,6 +33,12 @@ Fonte: AWS Secrets Manager (live)
 ### admin/infra extras
 - existe (6): ADMIN_ACTION_IP_ALLOWLIST, ADMIN_BREAK_GLASS_TOKEN, ADMIN_MFA_REQUIRED, ADMIN_TOTP_ENCRYPTION_KEY, ADMIN_USER_IDS, INFRA_READ_ONLY
 - falta (0): -
+
+## Notas de consistência
+- Este ficheiro é um snapshot gerado; requisitos normativos ficam em `docs/envs_required.md`.
+- Apple Maps: o runtime usa `APPLE_MAPS_*`; `MAPKIT_JS_*` é fallback legacy.
+- Stripe: quando `*_LIVE/*_TEST` não existem, o runtime usa os fallbacks `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+- `NEXTAUTH_*` e `MAP_PROVIDER` existem no snapshot mas não são referenciados no runtime atual.
 
 ## LOCAL (.env.local)
 Fonte: `/Users/nuno/orya/ORYA-WebApp/.env.local`

@@ -23,7 +23,7 @@ export default async function ModuleGuardLayout({
   children,
   requiredModules,
   mode = "any",
-  redirectTo = "/organizacao?tab=overview&section=modulos",
+  redirectTo = "/organizacao/overview?section=modulos",
 }: ModuleGuardLayoutProps) {
   const supabase = await createSupabaseServer();
   const {

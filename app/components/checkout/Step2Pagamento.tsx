@@ -1,26 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { type CheckoutBreakdown, useCheckout } from "./contextoCheckout";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { getTicketCopy } from "./checkoutCopy";
-import AuthWall from "./AuthWall";
-import AuthGateBanner from "./AuthGateBanner";
+import Step2Header from "./Step2Header";
+import Step2PaymentPanel from "./Step2PaymentPanel";
+import Step2AccessGate from "./Step2AccessGate";
 import AuthRequiredCard from "./AuthRequiredCard";
-import FreeCheckoutConfirm from "./FreeCheckoutConfirm";
-import GuestDetailsForm from "./GuestDetailsForm";
-import PromoCodeInput from "./PromoCodeInput";
-import PurchaseModeSelector from "./PurchaseModeSelector";
 import { buildClientFingerprint, buildDeterministicIdemKey } from "./checkoutUtils";
 import { validateGuestDetails } from "./checkoutValidation";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 type TicketCopy = ReturnType<typeof getTicketCopy>;
-
-const DynamicStripePaymentSection = dynamic(() => import("./StripePaymentSection"), {
-  ssr: false,
-});
 
 type CheckoutItem = {
   ticketId: number;
@@ -1283,28 +1275,13 @@ export default function Step2Pagamento() {
 
   return (
     <div className="flex flex-col gap-6 text-white">
-      <header className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
-            Passo 2 de 3
-          </p>
-          <h2 className="text-2xl font-semibold leading-tight">
-            {isGratisScenario ? freeHeaderLabel : "Pagamento"}
-          </h2>
-          <p className="text-[11px] text-white/60 max-w-xs">
-            {isGratisScenario
-              ? freeDescription
-              : "Pagamento seguro processado pela Stripe."}
-          </p>
-          {scenario && scenarioCopy[scenario] && (
-            <p className="text-[11px] text-white/75 max-w-sm">{scenarioCopy[scenario]}</p>
-          )}
-        </div>
-      </header>
-
-      <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
-        <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] animate-pulse" />
-      </div>
+      <Step2Header
+        isGratisScenario={isGratisScenario}
+        freeHeaderLabel={freeHeaderLabel}
+        freeDescription={freeDescription}
+        scenario={scenario}
+        scenarioCopy={scenarioCopy}
+      />
 
       {authChecking && (
         <AuthRequiredCard
@@ -1315,192 +1292,97 @@ export default function Step2Pagamento() {
       )}
 
       {!authChecking && showPaymentUI ? (
-        needsStripe ? (
-          <>
-            {appliedPromoLabel === "Promo automática" && appliedDiscount > 0 && (
-              <div className="rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
-                Desconto aplicado automaticamente 🎉
-              </div>
-            )}
-            {!isGratisScenario && (
-              <PromoCodeInput
-                promoInput={promoInput}
-                onChange={setPromoInput}
-                onApply={() => {
-                  setPromoWarning(null);
-                  setError(null);
-                  if (!promoInput.trim()) {
-                    setPromoWarning("Escreve um código antes de aplicar.");
-                    return;
-                  }
-                  try {
-                    atualizarDados({
-                      additional: {
-                        ...(safeDados?.additional ?? {}),
-                        purchaseId: null,
-                        paymentIntentId: undefined,
-                        freeCheckout: undefined,
-                        appliedPromoLabel: undefined,
-                        intentFingerprint: undefined,
-                        idempotencyKey: undefined,
-                      },
-                    });
-                  } catch {}
-                  setCachedIntent(null);
-                  setClientSecret(null);
-                  setServerAmount(null);
-                  setBreakdown(null);
-                  lastIntentKeyRef.current = null;
-                  inFlightIntentRef.current = null;
-                  setPromoCode(promoInput.trim());
-                  setGuestSubmitVersion((v) => v + 1);
-                }}
-                onRemove={handleRemovePromo}
-                warning={promoWarning}
-                appliedDiscount={appliedDiscount}
-                appliedPromoLabel={appliedPromoLabel}
-              />
-            )}
-            {!isGratisScenario && (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
-                <div className="flex items-center justify-between text-[11px] text-white/70">
-                  <span className="uppercase tracking-[0.16em]">Método de pagamento</span>
-                  <span
-                    className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
-                    title="MB WAY não tem taxa adicional. Cartão inclui taxa de plataforma."
-                  >
-                    Info
-                  </span>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPaymentMethod("mbway")}
-                    className={`flex flex-col items-start gap-1 rounded-2xl border px-4 py-3 text-left transition ${
-                      paymentMethod === "mbway"
-                        ? "border-emerald-300/60 bg-emerald-400/10 text-white shadow-[0_18px_40px_rgba(16,185,129,0.18)]"
-                        : "border-white/15 bg-white/5 text-white/75 hover:border-white/30"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">MB WAY</span>
-                      <span className="rounded-full border border-amber-300/40 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">
-                        Recomendado · 0€ taxas
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-white/60">Pagamento rápido no telemóvel.</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPaymentMethod("card")}
-                    className={`flex flex-col items-start gap-1 rounded-2xl border px-4 py-3 text-left transition ${
-                      paymentMethod === "card"
-                        ? "border-white/40 bg-white/10 text-white shadow-[0_18px_40px_rgba(255,255,255,0.14)]"
-                        : "border-white/15 bg-white/5 text-white/75 hover:border-white/30"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">Cartão</span>
-                      <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
-                        +{cardFeePercentLabel}
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-white/60">Inclui taxa de plataforma.</span>
-                  </button>
-                </div>
-                <p className="text-[11px] text-white/55">
-                  MB WAY não tem taxa adicional. Cartão inclui taxa de plataforma.
-                </p>
-              </div>
-            )}
-            <DynamicStripePaymentSection
-              loading={loading}
-              error={error}
-              clientSecret={clientSecret}
-              total={total}
-              discount={appliedDiscount}
-              breakdown={breakdown ?? null}
-              onLoadError={handlePaymentElementError}
-              onRetry={() => window.location.reload()}
-            />
-          </>
-        ) : (
-          <FreeCheckoutConfirm
-            loading={loading}
-            error={error}
-            headerLabel={freeHeaderLabel}
-            description={freeDescription}
-            loadingLabel={freePrepLabel}
-            confirmLabel={freeConfirmLabel}
-            onConfirm={!loading && !error ? () => irParaPasso(3) : undefined}
-            onRetry={() => window.location.reload()}
-          />
-        )
+        <Step2PaymentPanel
+          needsStripe={needsStripe}
+          isGratisScenario={isGratisScenario}
+          appliedPromoLabel={appliedPromoLabel}
+          appliedDiscount={appliedDiscount}
+          promoInput={promoInput}
+          promoWarning={promoWarning}
+          paymentMethod={paymentMethod}
+          cardFeePercentLabel={cardFeePercentLabel}
+          loading={loading}
+          error={error}
+          clientSecret={clientSecret}
+          total={total}
+          breakdown={breakdown ?? null}
+          freeHeaderLabel={freeHeaderLabel}
+          freeDescription={freeDescription}
+          freePrepLabel={freePrepLabel}
+          freeConfirmLabel={freeConfirmLabel}
+          onPromoInputChange={setPromoInput}
+          onApplyPromo={() => {
+            setPromoWarning(null);
+            setError(null);
+            if (!promoInput.trim()) {
+              setPromoWarning("Escreve um código antes de aplicar.");
+              return;
+            }
+            try {
+              atualizarDados({
+                additional: {
+                  ...(safeDados?.additional ?? {}),
+                  purchaseId: null,
+                  paymentIntentId: undefined,
+                  freeCheckout: undefined,
+                  appliedPromoLabel: undefined,
+                  intentFingerprint: undefined,
+                  idempotencyKey: undefined,
+                },
+              });
+            } catch {}
+            setCachedIntent(null);
+            setClientSecret(null);
+            setServerAmount(null);
+            setBreakdown(null);
+            lastIntentKeyRef.current = null;
+            inFlightIntentRef.current = null;
+            setPromoCode(promoInput.trim());
+            setGuestSubmitVersion((v) => v + 1);
+          }}
+          onRemovePromo={handleRemovePromo}
+          onSelectPaymentMethod={handleSelectPaymentMethod}
+          onPaymentElementError={handlePaymentElementError}
+          onFreeConfirm={() => irParaPasso(3)}
+        />
       ) : null}
 
       {/* 🔐/🎟️ Se não está logado e ainda não avançou como convidado */}
       {!authChecking && !userId && !showPaymentUI && (
-        <div className="space-y-3">
-          {authInfo && (
-            <div className="rounded-xl border border-amber-400/30 bg-amber-500/15 px-3 py-2 text-[11px] text-amber-50">
-              {authInfo}
-            </div>
-          )}
-          {error && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/15 px-3 py-2 text-[11px] text-red-50">
-              {error}
-            </div>
-          )}
-          {shouldShowAuthGate && (
-            <AuthGateBanner title={authGateTitle} description={authGateDescription} />
-          )}
-          {!requiresAuth && (
-            <PurchaseModeSelector
-              mode={purchaseMode}
-              onSelect={(mode) => {
-                setPurchaseMode(mode);
-                if (mode === "auth") {
-                  setClientSecret(null);
-                  setServerAmount(null);
-                }
-              }}
-            />
-          )}
-
-          {requiresAuth ? (
-            <AuthRequiredCard title={authRequiredTitle} description={authRequiredDescription}>
-              <AuthWall
-                variant="plain"
-                showHeader={false}
-                onAuthenticated={handleAuthenticated}
-                ticketPluralWithArticle={ticketPluralWithArticle}
-              />
-            </AuthRequiredCard>
-          ) : purchaseMode === "guest" ? (
-            <GuestDetailsForm
-              guestName={guestName}
-              guestEmail={guestEmail}
-              guestEmailConfirm={guestEmailConfirm}
-              guestPhone={guestPhone}
-              guestErrors={guestErrors}
-              submitAttempt={guestAttemptVersion}
-              onChangeName={setGuestName}
-              onChangeEmail={setGuestEmail}
-              onChangeEmailConfirm={setGuestEmailConfirm}
-              onChangePhone={setGuestPhone}
-              onContinue={handleGuestContinue}
-              ticketNameLabel={ticketNameLabel}
-              ticketEmailLabel={ticketEmailLabel}
-              ticketPluralWithArticle={ticketPluralWithArticle}
-              ticketAllPlural={ticketAllPlural}
-            />
-          ) : (
-            <AuthWall
-              onAuthenticated={handleAuthenticated}
-              ticketPluralWithArticle={ticketPluralWithArticle}
-            />
-          )}
-        </div>
+        <Step2AccessGate
+          authInfo={authInfo}
+          error={error}
+          shouldShowAuthGate={shouldShowAuthGate}
+          authGateTitle={authGateTitle}
+          authGateDescription={authGateDescription}
+          requiresAuth={requiresAuth}
+          purchaseMode={purchaseMode}
+          onSelectMode={(mode) => {
+            setPurchaseMode(mode);
+            if (mode === "auth") {
+              setClientSecret(null);
+              setServerAmount(null);
+            }
+          }}
+          onAuthenticated={handleAuthenticated}
+          onGuestContinue={handleGuestContinue}
+          guestName={guestName}
+          guestEmail={guestEmail}
+          guestEmailConfirm={guestEmailConfirm}
+          guestPhone={guestPhone}
+          guestErrors={guestErrors}
+          submitAttempt={guestAttemptVersion}
+          onChangeName={setGuestName}
+          onChangeEmail={setGuestEmail}
+          onChangeEmailConfirm={setGuestEmailConfirm}
+          onChangePhone={setGuestPhone}
+          ticketNameLabel={ticketNameLabel}
+          ticketEmailLabel={ticketEmailLabel}
+          ticketPluralWithArticle={ticketPluralWithArticle}
+          ticketAllPlural={ticketAllPlural}
+          authRequiredTitle={authRequiredTitle}
+          authRequiredDescription={authRequiredDescription}
+        />
       )}
     </div>
   );

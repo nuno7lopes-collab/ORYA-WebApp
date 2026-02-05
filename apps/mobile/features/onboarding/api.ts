@@ -35,10 +35,12 @@ export const saveBasicProfile = async (payload: {
 export const checkUsernameAvailability = async (
   username: string,
   accessToken?: string | null,
+  signal?: AbortSignal,
 ): Promise<boolean> => {
   const response = await api.requestWithAccessToken<unknown>("/api/profiles/check-username", accessToken, {
     method: "POST",
     body: JSON.stringify({ username }),
+    signal,
   });
   const payload = unwrapApiResponse<{ available?: boolean }>(response);
   return Boolean(payload?.available);
@@ -46,6 +48,7 @@ export const checkUsernameAvailability = async (
 
 export const savePadelOnboarding = async (payload: {
   gender?: string | null;
+  preferredSide?: string | null;
   level?: string | null;
   accessToken?: string | null;
 }): Promise<void> => {
@@ -53,6 +56,7 @@ export const savePadelOnboarding = async (payload: {
     method: "POST",
     body: JSON.stringify({
       gender: payload.gender ?? null,
+      preferredSide: payload.preferredSide ?? null,
       level: payload.level ?? null,
     }),
   });

@@ -136,11 +136,11 @@ export async function POST(req: NextRequest) {
 
     const baseUrl = getAppBaseUrl();
     const refreshPath = appendOrganizationIdToHref(
-      "/organizacao?tab=analyze&section=financas&onboarding=refresh",
+      "/organizacao/analyze?section=financas&onboarding=refresh",
       organization.id,
     );
     const returnPath = appendOrganizationIdToHref(
-      "/organizacao?tab=analyze&section=financas&onboarding=done",
+      "/organizacao/analyze?section=financas&onboarding=done",
       organization.id,
     );
     const link = await createAccountLink({

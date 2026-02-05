@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
@@ -15,16 +16,6 @@ import { cn } from "@/lib/utils";
 import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
 import { AuthModalProvider } from "@/app/components/autenticação/AuthModalContext";
-import PromoCodesPage from "./promo/PromoCodesClient";
-import MarketingContentKit from "./promo/MarketingContentKit";
-import { SalesAreaChart } from "@/app/components/charts/SalesAreaChart";
-import InvoicesClient from "./pagamentos/invoices/invoices-client";
-import PayoutsPanel from "./pagamentos/PayoutsPanel";
-import RefundsPanel from "./pagamentos/RefundsPanel";
-import ReconciliationPanel from "./pagamentos/ReconciliationPanel";
-import FinanceAlertsPanel from "./pagamentos/FinanceAlertsPanel";
-import PadelHubSection from "./(dashboard)/padel/PadelHubSection";
-import ReservasDashboardPage from "./(dashboard)/reservas/page";
 import {
   CTA_DANGER,
   CTA_NEUTRAL,
@@ -32,8 +23,6 @@ import {
   CTA_SECONDARY,
   CTA_SUCCESS,
 } from "@/app/organizacao/dashboardUi";
-import OrganizationPublicProfilePanel from "./OrganizationPublicProfilePanel";
-import InscricoesPage from "./(dashboard)/inscricoes/page";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
@@ -44,6 +33,11 @@ import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack }
 import { ModuleIcon } from "./moduleIcons";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const swrOptions = {
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  dedupingInterval: 60_000,
+};
 
 const SkeletonBlock = ({ className = "" }: { className?: string }) => (
   <div className={cn("animate-pulse rounded-3xl border border-white/10 orya-skeleton-surface", className)} />
@@ -52,6 +46,26 @@ const SkeletonBlock = ({ className = "" }: { className?: string }) => (
 const SkeletonLine = ({ className = "" }: { className?: string }) => (
   <div className={cn("animate-pulse rounded-full border border-white/10 orya-skeleton-surface-strong", className)} />
 );
+
+const LoadingPanel = () => <SkeletonBlock className="h-40" />;
+
+const PromoCodesPage = dynamic(() => import("./promo/PromoCodesClient"), { loading: LoadingPanel });
+const MarketingContentKit = dynamic(() => import("./promo/MarketingContentKit"), { loading: LoadingPanel });
+const SalesAreaChart = dynamic(
+  () => import("@/app/components/charts/SalesAreaChart").then((mod) => mod.SalesAreaChart),
+  { loading: () => <SkeletonBlock className="h-48" /> },
+);
+const InvoicesClient = dynamic(() => import("./pagamentos/invoices/invoices-client"), { loading: LoadingPanel });
+const PayoutsPanel = dynamic(() => import("./pagamentos/PayoutsPanel"), { loading: LoadingPanel });
+const RefundsPanel = dynamic(() => import("./pagamentos/RefundsPanel"), { loading: LoadingPanel });
+const ReconciliationPanel = dynamic(() => import("./pagamentos/ReconciliationPanel"), { loading: LoadingPanel });
+const FinanceAlertsPanel = dynamic(() => import("./pagamentos/FinanceAlertsPanel"), { loading: LoadingPanel });
+const PadelHubSection = dynamic(() => import("./(dashboard)/padel/PadelHubSection"), { loading: LoadingPanel });
+const ReservasDashboardPage = dynamic(() => import("./(dashboard)/reservas/page"), { loading: LoadingPanel });
+const InscricoesPage = dynamic(() => import("./(dashboard)/inscricoes/page"), { loading: LoadingPanel });
+const OrganizationPublicProfilePanel = dynamic(() => import("./OrganizationPublicProfilePanel"), {
+  loading: LoadingPanel,
+});
 
 type OverviewResponse = {
   ok: boolean;
@@ -95,6 +109,19 @@ type EventItem = {
 };
 
 type EventsResponse = { ok: boolean; items: EventItem[] };
+type EventsSummaryResponse = {
+  ok: boolean;
+  counts: { total: number; upcoming: number; ongoing: number; finished: number };
+  nextEvent?: {
+    id: number;
+    slug: string;
+    title: string;
+    startsAt: string | null;
+    endsAt?: string | null;
+    status: string;
+    templateType?: string | null;
+  } | null;
+};
 
 type ServiceItem = {
   id: number;
@@ -123,6 +150,13 @@ type BookingItem = {
 
 type ServicesResponse = { ok: boolean; items: ServiceItem[] };
 type BookingsResponse = { ok: boolean; items: BookingItem[] };
+type ReservasSummaryResponse =
+  | {
+      ok: true;
+      services: { total: number; active: number; availabilityCount: number };
+      bookings: { upcoming: number; confirmed: number; pending: number; revenueCents: number };
+    }
+  | { ok: false; error?: string };
 
 type PayoutSummaryResponse =
   | {
@@ -546,7 +580,7 @@ function OrganizacaoPageInner({
         scopeId?: string | null;
       }>;
     }
-  >(orgMeUrl, fetcher);
+  >(orgMeUrl, fetcher, swrOptions);
 
   const organization = organizationData?.organization ?? null;
   const isSuspended = organization?.status === "SUSPENDED";
@@ -910,13 +944,52 @@ function OrganizacaoPageInner({
     }
   }, [organization, profile, businessName, city, entityType, payoutIban]);
 
-  const shouldLoadOverview = organization?.status === "ACTIVE" && canViewFinance;
+  const activeSection = useMemo(() => {
+    const manageSections = [
+      "eventos",
+      "reservas",
+      ...(showPadelHub ? [...PADEL_MANAGE_SECTIONS] : []),
+      ...(hasInscricoesModule ? ["inscricoes"] : []),
+    ];
+    const analyzeSections = canViewFinance
+      ? ["overview", "vendas", "financas", "invoices"]
+      : ["financas", "invoices"];
+    const baseSections: Record<ObjectiveTab, string[]> = {
+      create: ["overview"],
+      manage: manageSections,
+      promote: ["marketing"],
+      analyze: analyzeSections,
+      profile: ["perfil"],
+    };
+    const allowed = baseSections[activeObjective] ?? ["overview"];
+    const candidate =
+      normalizedSection ??
+      (activeObjective === "analyze"
+        ? "financas"
+        : activeObjective === "promote"
+          ? "marketing"
+          : activeObjective === "profile"
+            ? "perfil"
+            : "overview");
+    return allowed.includes(candidate) ? candidate : allowed[0];
+  }, [
+    activeObjective,
+    normalizedSection,
+    showPadelHub,
+    hasInscricoesModule,
+    canViewFinance,
+  ]);
+
+  const shouldLoadOverview =
+    organization?.status === "ACTIVE" &&
+    canViewFinance &&
+    (activeObjective === "create" || (activeObjective === "analyze" && normalizedSection === "overview"));
   const { data: overview } = useSWR<OverviewResponse>(
     shouldLoadOverview
       ? `/api/organizacao/estatisticas/overview?range=30d${eventsScopeAmp}`
       : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
 
   const shouldLoadOverviewSeries =
@@ -931,10 +1004,19 @@ function OrganizacaoPageInner({
       ? `/api/organizacao/estatisticas/time-series?range=30d${eventsScopeAmp}`
       : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
 
-  const shouldLoadEvents = organization?.status === "ACTIVE";
+  const shouldLoadEvents =
+    organization?.status === "ACTIVE" &&
+    (activeObjective === "manage" || activeObjective === "analyze" || activeObjective === "promote");
+  const shouldLoadEventSummary =
+    organization?.status === "ACTIVE" && activeObjective === "create";
+  const { data: eventsSummary } = useSWR<EventsSummaryResponse>(
+    shouldLoadEventSummary ? `/api/organizacao/events/summary${eventsScopeSuffix}` : null,
+    fetcher,
+    swrOptions
+  );
   const {
     data: events,
     error: eventsError,
@@ -942,25 +1024,33 @@ function OrganizacaoPageInner({
   } = useSWR<EventsResponse>(
     shouldLoadEvents ? `/api/organizacao/events/list${eventsScopeSuffix}` : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
-  const shouldLoadReservas = organization?.status === "ACTIVE" && (isReservasOrg || hasReservasModule);
-  const { data: servicesData } = useSWR<ServicesResponse>(
-    shouldLoadReservas ? "/api/organizacao/servicos" : null,
+  const shouldLoadReservasLists =
+    organization?.status === "ACTIVE" && activeObjective === "manage" && activeSection === "reservas";
+  const shouldLoadReservasSummary =
+    organization?.status === "ACTIVE" && activeObjective === "create" && isReservasOrg;
+  const { data: reservasSummary } = useSWR<ReservasSummaryResponse>(
+    shouldLoadReservasSummary ? "/api/organizacao/reservas/summary" : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
+  );
+  const { data: servicesData } = useSWR<ServicesResponse>(
+    shouldLoadReservasLists ? "/api/organizacao/servicos" : null,
+    fetcher,
+    swrOptions
   );
   const { data: bookingsData } = useSWR<BookingsResponse>(
-    shouldLoadReservas ? "/api/organizacao/reservas" : null,
+    shouldLoadReservasLists ? "/api/organizacao/reservas" : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
   const { data: membersData } = useSWR<MembersResponse>(
-    organization?.status === "ACTIVE" && organization?.id
+    organization?.status === "ACTIVE" && organization?.id && activeObjective === "create"
       ? `/api/organizacao/organizations/members?organizationId=${organization.id}`
       : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
 
   const shouldLoadSales =
@@ -977,16 +1067,21 @@ function OrganizacaoPageInner({
   }, [events, salesEventId, shouldLoadSales]);
 
   const { data: payoutSummary } = useSWR<PayoutSummaryResponse>(
-    organization?.status === "ACTIVE" && canViewFinance ? "/api/organizacao/payouts/summary" : null,
+    organization?.status === "ACTIVE" && canViewFinance && activeObjective === "analyze" && activeSection === "financas"
+      ? "/api/organizacao/payouts/summary"
+      : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
   const { data: financeOverview } = useSWR<FinanceOverviewResponse>(
-    organization?.status === "ACTIVE" && canViewFinance && activeObjective === "analyze"
+    organization?.status === "ACTIVE" &&
+      canViewFinance &&
+      activeObjective === "analyze" &&
+      activeSection === "financas"
       ? `/api/organizacao/finance/overview${eventsScopeSuffix}`
       : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
 
   const oneYearAgoIso = useMemo(() => {
@@ -1011,13 +1106,13 @@ function OrganizacaoPageInner({
   const { data: salesSeries } = useSWR<TimeSeriesResponse>(
     salesSeriesKey,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
 
   const { data: buyers } = useSWR<BuyersResponse>(
     shouldLoadSales && salesEventId ? `/api/organizacao/estatisticas/buyers?eventId=${salesEventId}` : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
 
   const archiveEvent = useCallback(
@@ -1068,15 +1163,15 @@ function OrganizacaoPageInner({
       ? `/api/organizacao/marketing/overview${eventsScopeSuffix}`
       : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
 
   const { data: promoData } = useSWR<PromoListResponse>(
-    organization?.status === "ACTIVE" && canUseMarketing
+    organization?.status === "ACTIVE" && canUseMarketing && activeObjective === "promote"
       ? "/api/organizacao/promo"
       : null,
     fetcher,
-    { revalidateOnFocus: false }
+    swrOptions
   );
   const eventDialogLabel = eventDialog?.ev.templateType === "PADEL" ? "torneio" : "evento";
   const currentQuery = searchParams?.toString() || "";
@@ -1169,6 +1264,9 @@ function OrganizacaoPageInner({
     return normalizedItems.filter((ev) => ev.templateType !== "PADEL");
   }, [events, eventsScope]);
   const eventSummary = useMemo(() => {
+    if (!eventsList.length && eventsSummary?.counts) {
+      return eventsSummary.counts;
+    }
     const now = new Date();
     let upcoming = 0;
     let ongoing = 0;
@@ -1188,18 +1286,24 @@ function OrganizacaoPageInner({
       else if (isUpcoming) upcoming += 1;
     });
     return { upcoming, ongoing, finished, total: eventsList.length };
-  }, [eventsList]);
+  }, [eventsList, eventsSummary?.counts]);
   const servicesList = useMemo(() => servicesData?.items ?? [], [servicesData]);
   const bookingsList = useMemo(() => bookingsData?.items ?? [], [bookingsData]);
   const servicesStats = useMemo(() => {
+    if (reservasSummary && reservasSummary.ok) {
+      return reservasSummary.services;
+    }
     const active = servicesList.filter((service) => service.isActive).length;
     const availabilityCount = servicesList.reduce(
       (sum, service) => sum + (service._count?.availabilities ?? 0),
       0,
     );
     return { total: servicesList.length, active, availabilityCount };
-  }, [servicesList]);
+  }, [reservasSummary, servicesList]);
   const bookingsStats = useMemo(() => {
+    if (reservasSummary && reservasSummary.ok) {
+      return { ...reservasSummary.bookings, cancelled: 0 };
+    }
     const now = new Date();
     const weekAhead = new Date(now);
     weekAhead.setDate(weekAhead.getDate() + 7);
@@ -1221,7 +1325,7 @@ function OrganizacaoPageInner({
       }
     });
     return { upcoming, confirmed, pending, cancelled, revenueCents };
-  }, [bookingsList]);
+  }, [reservasSummary, bookingsList]);
   const eventsListLoading =
     shouldLoadEvents &&
     activeObjective === "manage" &&
@@ -1639,7 +1743,7 @@ function OrganizacaoPageInner({
   const isPlatformStripe = paymentsMode === "PLATFORM";
   const stripeReady = isPlatformStripe || paymentsStatus === "READY";
   const stripeIncomplete = !isPlatformStripe && paymentsStatus === "PENDING";
-  const nextEvent = eventsList[0] ?? null;
+  const nextEvent = eventsList[0] ?? eventsSummary?.nextEvent ?? null;
   const publicProfileUrl = organization?.username ? `/${organization.username}` : null;
   const officialEmailNormalized = normalizeOfficialEmail(organization?.officialEmail ?? null);
   const officialEmailVerified = Boolean(officialEmailNormalized && organization?.officialEmailVerifiedAt);
@@ -1655,7 +1759,8 @@ function OrganizacaoPageInner({
   }, [organization?.brandingCoverUrl]);
   const membersCount = membersData?.ok ? membersData.items?.length ?? 0 : 0;
   const hasInvitedStaff = membersCount > 1;
-  const primaryCreatedDone = isReservasOrg ? servicesStats.total > 0 : eventsList.length > 0;
+  const eventsTotal = eventsSummary?.counts?.total ?? eventsList.length;
+  const primaryCreatedDone = isReservasOrg ? servicesStats.total > 0 : eventsTotal > 0;
   const primaryModuleKey =
     primaryOperation === "RESERVAS" ? "RESERVAS" : primaryOperation === "TORNEIOS" ? "TORNEIOS" : "EVENTOS";
   const primaryLabel =
@@ -1693,7 +1798,7 @@ function OrganizacaoPageInner({
       label: "Stripe ligado",
       description: "Liga pagamentos para receber receitas.",
       done: stripeReady,
-      href: "/organizacao?tab=analyze&section=financas",
+      href: "/organizacao/analyze?section=financas",
       iconKey: "FINANCEIRO",
       required: true,
     },
@@ -1730,7 +1835,7 @@ function OrganizacaoPageInner({
       label: "Página pública definida",
       description: "Prepara a presença pública da organização.",
       done: Boolean(publicProfileUrl),
-      href: "/organizacao?tab=profile",
+      href: "/organizacao/profile",
       iconKey: "PERFIL_PUBLICO",
     },
   ];
@@ -1810,7 +1915,7 @@ function OrganizacaoPageInner({
     });
   }, [checklistCollapseStorageKey]);
   const checklistVisible = activeObjective === "create" && (!checklistDismissed || !canDismissChecklist);
-  const modulesSetupHref = "/organizacao?tab=overview&section=modulos";
+  const modulesSetupHref = "/organizacao/overview?section=modulos";
   const isEventosActive = operationSelection.includes("EVENTOS");
   const isReservasActive = operationSelection.includes("RESERVAS");
   const isTorneiosActive = operationSelection.includes("TORNEIOS");
@@ -1882,7 +1987,7 @@ function OrganizacaoPageInner({
         summary: "Receitas, indicadores e payouts num só lugar.",
         bullets: ["Visão geral + vendas", "Reembolsos + CSV", "Payouts Stripe"],
         status: canViewFinance ? "core" : "locked",
-        href: canViewFinance ? "/organizacao?tab=analyze&section=financas" : undefined,
+        href: canViewFinance ? "/organizacao/analyze?section=financas" : undefined,
         eyebrow: "Financeiro",
       },
       {
@@ -1902,7 +2007,7 @@ function OrganizacaoPageInner({
         summary: "Página e detalhes visíveis ao público.",
         bullets: ["Nome + bio", "Fotos e links", "Localização"],
         status: canEditOrgProfile ? "core" : "locked",
-        href: canEditOrgProfile ? "/organizacao?tab=profile" : undefined,
+        href: canEditOrgProfile ? "/organizacao/profile" : undefined,
         eyebrow: "Crescimento",
       },
       {
@@ -1959,7 +2064,7 @@ function OrganizacaoPageInner({
         bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
         status: canPromote ? "core" : "locked",
         href: canPromote
-          ? "/organizacao?tab=promote&section=marketing&marketing=overview"
+          ? "/organizacao/promote?section=marketing&marketing=overview"
           : undefined,
         eyebrow: "Crescimento",
       },
@@ -2059,42 +2164,6 @@ function OrganizacaoPageInner({
     });
     return Array.from(groups.entries()).map(([label, modules]) => ({ label, modules }));
   }, [inactiveDashboardModules]);
-  const activeSection = useMemo(() => {
-    const manageSections = [
-      "eventos",
-      "reservas",
-      ...(showPadelHub ? [...PADEL_MANAGE_SECTIONS] : []),
-      ...(hasInscricoesModule ? ["inscricoes"] : []),
-    ];
-    const analyzeSections = canViewFinance
-      ? ["overview", "vendas", "financas", "invoices"]
-      : ["financas", "invoices"];
-    const baseSections: Record<ObjectiveTab, string[]> = {
-      create: ["overview"],
-      manage: manageSections,
-      promote: ["marketing"],
-      analyze: analyzeSections,
-      profile: ["perfil"],
-    };
-    const allowed = baseSections[activeObjective] ?? ["overview"];
-    const candidate =
-      normalizedSection ??
-      (activeObjective === "analyze"
-        ? "financas"
-        : activeObjective === "promote"
-          ? "marketing"
-          : activeObjective === "profile"
-            ? "perfil"
-            : "overview");
-    return allowed.includes(candidate) ? candidate : allowed[0];
-  }, [
-    activeObjective,
-    normalizedSection,
-    showPadelHub,
-    hasInscricoesModule,
-    canViewFinance,
-  ]);
-
   useEffect(() => {
     const params = new URLSearchParams(currentQuery);
     const setParam = (key: string, value: string, defaultVal: string) => {
@@ -2540,7 +2609,7 @@ function OrganizacaoPageInner({
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
                     <div className="flex items-center justify-between">
                       <span>{primaryOperation === "TORNEIOS" ? "Torneios ativos" : "Eventos ativos"}</span>
-                      <span className="font-semibold text-white">{overview?.activeEventsCount ?? eventsList.length}</span>
+                      <span className="font-semibold text-white">{overview?.activeEventsCount ?? eventsTotal}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Próximos</span>
@@ -3553,7 +3622,7 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Recibos e documentos</h3>
               <p className="text-[12px] text-white/65">Invoices e dados fiscais.</p>
               <Link
-                href="/organizacao?tab=analyze&section=invoices"
+                href="/organizacao/analyze?section=invoices"
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Abrir faturação
@@ -3564,7 +3633,7 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Detalhe de receitas</h3>
               <p className="text-[12px] text-white/65">Detalhe de reservas e releases.</p>
               <Link
-                href="/organizacao?tab=analyze&section=financas"
+                href="/organizacao/analyze?section=financas"
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Ver detalhe
@@ -3813,7 +3882,7 @@ function OrganizacaoPageInner({
                           <td className="py-2 pr-3 text-right text-[11px]">
                             <div className="flex items-center justify-end gap-2">
                               <Link
-                                href={`/organizacao?tab=analyze&section=vendas&eventId=${ev.id}`}
+                                href={`/organizacao/analyze?section=vendas&eventId=${ev.id}`}
                                 className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                               >
                                 Ver vendas
@@ -4252,7 +4321,7 @@ function OrganizacaoPageInner({
 
       {activeObjective === "analyze" && activeSection === "invoices" && (
         <section className={cn("space-y-4", fadeClass)} id="invoices">
-          <InvoicesClient basePath="/organizacao?tab=analyze&section=invoices" fullWidth organizationId={organization?.id ?? null} />
+          <InvoicesClient basePath="/organizacao/analyze?section=invoices" fullWidth organizationId={organization?.id ?? null} />
         </section>
       )}
 
@@ -4419,7 +4488,7 @@ function OrganizacaoPageInner({
                         </div>
                         <div className="flex flex-wrap justify-end gap-2 text-[11px]">
                           <Link
-                            href="/organizacao?tab=promote&section=marketing&marketing=promos"
+                            href="/organizacao/promote?section=marketing&marketing=promos"
                             className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                           >
                             {ev.tag.suggestion}

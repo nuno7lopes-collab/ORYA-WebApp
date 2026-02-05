@@ -5,11 +5,14 @@ Versao Data Alteracoes-chave
 v1.0 03/02/2026 Primeira versao unificada. Inclui: decisoes finais fechadas, plano operacional revisto
 (alinhado com Padel), e anexo com Plano Padel original.
 Regra de precedencia (para evitar contradicoes):
-1) Secao 2 (Decisoes finais fechadas) e a fonte de verdade para os pontos que foram decididos agora.
-2) Capitulo Padel (anexo) e SSOT para tudo o que e Padel (modelo, UX, fases, DoD), exceto onde a Secao 2
-diz explicitamente que houve atualizacao.
-3) O resto do plano operacional (Secoes 4 e 5) governa produto/ops fora de Padel e as regras transversais
-(Agora, Rede, Checkout, Transferencia, runbooks).
+0) `docs/v9_ssot_registry.md` e o SSOT global do sistema.
+1) `docs/orya_blueprint_v9_final.md` e o blueprint global (v9).
+2) Secao 2 (Decisoes finais fechadas) e a fonte de verdade para pontos decididos aqui, desde que
+   nao conflite com o SSOT/blueprint acima.
+3) Capitulo Padel (anexo) e SSOT para tudo o que e Padel (modelo, UX, fases, DoD), exceto onde a Secao 2
+   diz explicitamente que houve atualizacao.
+4) O resto do plano operacional (Secoes 4 e 5) governa produto/ops fora de Padel e as regras transversais
+   (Agora, Rede, Checkout, Transferencia, runbooks).
 Plano Unificado ORYA - Parte A (revisto) - v1.0 - 03/02/2026 Pagina 2 de 17
 2. Decisoes finais (fechadas)
 Estas decisoes fecham pontos pendentes e removem ambiguidade. Sempre que um PDF original
@@ -53,10 +56,8 @@ Feminino (pode alterar nas
 definicoes).
 Validacao frontend + fallback backend para impedir perfis
 sem genero apos onboarding (Padel).
-Mistos Mantem-se como esta no Plano
-Padel (decisao pendente la).
-Default recomendado: mistos estrito (1 homem + 1
-mulher) ate decisao contraria.
+Mistos Default estrito (1 homem + 1 mulher).
+Pode existir opcao “misto livre” com aviso explicito; default mantem-se estrito.
 Capacidade
 adaptativa
 Ativar calculo de capacidade
@@ -399,8 +400,8 @@ Mantemos aqui para nao se perderem, mas sem bloquear o que ja esta fechado.
 • Fechar docs(ssot): close gaps B-E (contratos, estados canonicos e eventlog/outbox).
 • Adicionar docs(ops): operability checklist e incident mini-playbook.
 • Fechar estrategia de realtime (polling vs websockets) com fallback, por tipo de evento.
-• Decisao pendente do Plano Padel: regra 'mistos' (estrito vs opcional misto livre).
-• Decisao pendente do Plano Padel: troca de parceiro apos ambos pagos (fluxo final).
+• Regra 'mistos': default estrito; opcao “misto livre” com aviso explicito.
+• Troca de parceiro apos ambos pagos: exigir confirmacao de ambos; reembolso so quando novo parceiro pagar.
 • Afinar formula e UX do warning de capacidade adaptativa (sem bloquear).
 Plano Unificado ORYA - Parte A (revisto) - v1.0 - 03/02/2026 Pagina 16 de 17
 7. Capitulo Padel (SSOT) - documento original anexado
@@ -420,70 +421,56 @@ Plano Unificado ORYA - Parte A (revisto) - v1.0 - 03/02/2026 Pagina 17 de 17
 ● Onboarding obrigatório: perfil tem de escolher Masculino ou Feminino, com
 possibilidade de alterar nas definições. (O modelo já tem gender e campos Padel
 no Profile.)
-chore: sync developer changes -…
 ● Matchmaking filtra SEMPRE por categoria = (tipo + nível); “lado”
 (direita/esquerda) é preferência suave (não bloqueia). (Campos já existem:
 padel_level, preferred_side.)
-chore: sync developer changes -…
 0.2 Nível do jogador
 ● Nunca bloqueia inscrição. Apenas informativo + pode mostrar avisos (sem
-impedir). (Decisão tua.)
+impedir).
 0.3 Matchmaking / lista de espera
 ● Unidade de contagem é a dupla (confirmada). Duplas de matchmaking formam-se
 assim que há 2 compatíveis, e passam a contar como “dupla” para fila/lotação.
-(Decisão tua.)
 0.4 Pagamentos (split payment)
 ● Capitão paga e reserva; parceiro tem até 48h antes para pagar.
 ● Se parceiro não pagar até 48h: ambos notificados; capitão tem 1h para regularizar;
 senão entra em fluxo: matchmaking até 24h antes; a 24h fecha e o que ficar
-incompatível/ímpar é cancelado + reembolsado via Stripe (sem taxas). (Decisão
-tua.)
+incompatível/ímpar é cancelado + reembolsado via Stripe (menos processing fees).
 0.5 Limites / lotação
 ● “Pending” não conta para lotação; se não houver vaga quando confirmarem, ficam
-em lista de espera. (Decisão tua.)
-● Ponto a fechar: limite recomendado por categoria deve ser “adaptativo” (não fixo)
-porque depende do nº de inscrições por categoria. (Decisão tua — pendente.)
+em lista de espera.
+● Limite recomendado por categoria é “adaptativo” (não fixo) e gera warnings,
+sem bloquear publicação.
 1) Fundamentos técnicos (para Codex não inventar
 nada)
 1.1 Stack e padrões já existentes
 ● App usa Next.js (App Router / NextResponse) e endpoints em app/api/...
-chore: align v9 envelope + test…
 ● Auth/identidade via Supabase server client (createSupabaseServer,
 ensureAuthenticated).
-chore: align v9 envelope + test…
 ● DB via Prisma (prisma).
-chore: align v9 envelope + test…
 ● Padrão novo: respostas API com envelope (jsonWrap, withApiEnvelope).
-chore: align v9 envelope + test…
 1.2 Inventário real de rotas Padel já no repo (para reaproveitar)
 Há endpoints Padel específicos já listados (players, calendar, matches, auto-schedule,
 live/sse, onboarding, etc.).
-chore: update project - [Repo n…
-E já existe base /api/padel/calendar (GET/POST/DELETE) no inventário.
-docs/v9_inventory_api
+E já existe base /api/padel/calendar (GET/POST/DELETE) no inventário (ver docs/v9_inventory_api.md).
 2) UX alvo (estrutura final obrigatória)
 2.1 Layout “Padel Hub” com tabs fixas
 ● Header fixo: título “Padel”, seletor de torneio (quando aplicável), estado
 (DRAFT/PUBLISHED/LIVE/FINISHED), e botão “Criar torneio” sempre visível.
-Ferramenta Padel – Análise Pro…
 ● Tabs fixas (sem sub-subnav):
 1. Criar torneio
 2. Torneios
 3. Calendário
 4. Gestão
 5. Jogadores
-Ferramenta Padel – Análise Pro…
 2.2 Princípios UX (para evitar os problemas atuais)
 ● Matchmaking é sempre por categoria (tipo+nivel), nunca “global do torneio”.
-(Decisão tua.)
 ● Avisos (nível, conflitos de agenda) nunca bloqueiam, só informam, com override
-admin/organizador. (Decisão tua.)
+admin/organizador.
 3) Modelo de dados (backend) — o que tem de existir
 “perfeito”
 3.1 Estados de inscrição
 Usar e estender o estado já previsto para inscrições Padel: PENDING, CONFIRMED,
 CANCELLED, WAITLISTED, REFUNDED.
-chore: sync developer changes -…
 Regras SSOT:
 ● PENDING: capitão pagou, parceiro ainda não → não conta para lotação.
 ● CONFIRMED: ambos pagos → conta para lotação.
@@ -493,7 +480,6 @@ confirmar).
 3.2 Entidades mínimas (tudo auditável)
 ● Tournament (com format, config, inscriptionDeadlineAt) + Event
 associado.
-Merge branch 'developer' - [Rep…
 ● Category = (tipo + nível) (e regras de género: masc/fem/mistos se aplicável).
 ● Registration/Pair (capitão+parceiro) + Payment intents + Webhooks Stripe.
 ● Waitlist (fila por categoria) e MatchmakingQueue (fila por categoria).
@@ -505,21 +491,15 @@ navegação fica estável.
 Tarefas (backend)
 ● Garantir que todos os endpoints Padel usam withApiEnvelope/jsonWrap
 (padrão repo).
-chore: align v9 envelope + test…
 ● Garantir autenticação/papeis em endpoints sensíveis (padrão
 ensureAuthenticated + permissões).
-Merge branch 'developer' - [Rep…
 Tarefas (UX)
 ● Criar “shell” do Padel Hub com tabs fixas e roteamento consistente (sem
 sub-subnav).
-Ferramenta Padel – Análise Pro…
 Critérios de aceitação
 ● Todas as rotas API Padel respondem com envelope padrão.
-chore: align v9 envelope + test…
 ● Sem sessão → 401 consistente; sem permissões → 403 consistente.
-Merge branch 'developer' - [Rep…
 ● Tabs Padel aparecem sempre e não existe sub-subnav.
-Ferramenta Padel – Análise Pro…
 FASE 1 — Navegação final + rotas (UX e IA “definitivo”)
 Objetivo: acabar com a confusão atual e deixar Padel com “uma casa” única.
 UX
@@ -538,26 +518,22 @@ no Hub (ou re-roteadas com parâmetros).
 Integrações
 ● Permissões por role: OWNER/ADMIN/STAFF e módulos (padrão
 ensureMemberModuleAccess).
-Merge branch 'developer' - [Rep…
 Critérios de aceitação
 ● Existe 1 URL “canónica” por vista (sem duplicados).
 ● Navegação consistente: back/forward do browser não perde tab/estado.
 ● Permissions: STAFF sem EDIT não consegue editar torneio/config.
-Merge branch 'developer' - [Rep…
 FASE 2 — Criar torneio (Wizard) + DRAFT → PUBLISHED
 Objetivo: criação perfeita, sem estados impossíveis.
 UX (wizard)
 1. Base: nome, datas, local/clube (com override “sem clube” se permitido), timezone
 2. Formato único por torneio (default) + opção discreta para override por categoria (não
-default) (decisão tua)
+default). Default mantém-se formato único.
 3. Categorias: (tipo + nível), preço, deadlines, regras de inscrições
 4. Courts/agenda: duração jogo, intervalo, janelas, regras de atraso
 5. Publicação: validações finais + pré-visualização
 Backend
 ● Endpoints de create/update tournament/config (padrão “PATCH tournament”).
-Merge branch 'developer' - [Rep…
 ● Persistir format, config, inscriptionDeadlineAt.
-Merge branch 'developer' - [Rep…
 Critérios de aceitação
 ● DRAFT pode ser guardado incompleto.
 ● PUBLISHED exige validações mínimas (categorias, preços, deadlines, courts/slots
@@ -580,12 +556,11 @@ Backend
 ● Máquina de estados em Registration:
 ○ PENDING não conta; CONFIRMED conta; sem vaga quando confirmar →
 WAITLISTED.
-chore: sync developer changes -…
 ● Implementar cron/worker (ou job) para:
 ○ T-48h: verificar parceiros não pagos → abrir janela 1h regularização; senão
 transição para matchmaking/fluxo.
 ○ T-24h: fechar matchmaking → cancelar/reembolsar incompatíveis.
-● Reembolsos Stripe (sem wallet interna) e sem taxas (regra tua).
+● Reembolsos via Stripe (sem wallet monetária; loyalty/pontos ok) e menos processing fees.
 ● Lista de espera por categoria: entra quando tenta confirmar sem vaga.
 Integrações
 ● Stripe Checkout + webhooks para atualizar estados (idempotente).
@@ -628,21 +603,16 @@ UX
 ○ inputs: duração jogo, intervalo, janelas de início/fim, courts disponíveis
 ○ preview de slots + alertas (ex.: “capacidade recomendada excedida”)
 ○ botão “Aplicar”
-● Avisos de conflito de agenda do jogador (não bloqueia; admin pode permitir)
-(decisão tua).
+● Avisos de conflito de agenda do jogador (não bloqueia; admin pode permitir).
 Backend
 ● Usar endpoints já previstos para calendário/auto-schedule (há rotas Padel e
 auto-schedule no inventário).
-chore: update project - [Repo n…
 ● Motor de agenda deve respeitar hierarquia de “bloqueios” (para evitar conflitos):
 HardBlock > MatchSlot > Booking > SoftBlock.
-docs/v9_inventory_features
-Decisão pendente (a fechar)
-● “Limite recomendado adaptativo” por categoria:
-○ proposta Codex: calcular capacidade = (courts * janela_tempo_total) /
-(duração_jogo + intervalo) e sugerir máximos por categoria com base no nº
-de rondas do formato.
-○ não é hard-limit; é “recommended + warning”.
+Decisão fechada
+● Limite recomendado adaptativo por categoria: sugerir máximos por categoria com
+base em (courts * janela_tempo_total) / (duração_jogo + intervalo) e nº de rondas
+do formato. Não é hard-limit; é “recommended + warning”.
 Critérios de aceitação
 ● Auto-schedule nunca cria 2 matches no mesmo court/slot.
 ● Alterar duração/intervalo recalcula capacidade e mostra warning.
@@ -660,10 +630,8 @@ UX
 Backend
 ● Atualizações em tempo real via endpoint live (inventário inclui
 /api/padel/live/... e SSE).
-chore: update project - [Repo n…
 ● Endpoint de atraso de match existe no inventário.
-chore: update project - [Repo n…
-● Regras de “desistência vs derrota” como resultado final (decisão tua).
+● Regras de “desistência vs derrota”: desistência conta como derrota (walkover) no resultado final.
 Critérios de aceitação
 ● Inserir score atualiza bracket/tabela imediatamente.
 ● Atraso move horários seguintes conforme regra do torneio (ou marca conflito).
@@ -681,7 +649,6 @@ Backend
 ● Persistência de regras no tournament.config.
 ● Permissões: só roles autorizadas podem editar (padrão
 ensureMemberModuleAccess).
-Merge branch 'developer' - [Rep…
 Critérios de aceitação
 ● Tudo o que altera estado operacional (calendário/duplas/scores) exige role
 apropriada.
@@ -696,7 +663,6 @@ UX
 Backend
 ● Garantir que Profile.gender é obrigatório no onboarding (validação frontend +
 fallback backend).
-chore: sync developer changes -…
 ● Guardar histórico de inscrições/matches por jogador.
 Critérios de aceitação
 ● Não existe perfil sem género (M/F) após onboarding.
@@ -704,17 +670,15 @@ Critérios de aceitação
 5) Integrações (checklist obrigatório)
 Stripe (pagamentos e reembolsos)
 ● Checkout capitão + link parceiro + webhooks idempotentes.
-● Reembolsos sempre via Stripe (sem wallet interna). (Decisão tua.)
+● Reembolsos sempre via Stripe (sem wallet monetária; loyalty/pontos ok).
 Notificações
 ● Templates para: convite parceiro, lembrete 48h, janela 1h, fecho 24h, confirmação,
 waitlist, vaga libertada, reembolso.
 Supabase Auth + permissões organização
 ● Sempre ensureAuthenticated + validação de membership/role antes de ações
 sensíveis.
-Merge branch 'developer' - [Rep…
 Maps/Address (se usado no clube)
 ● Blueprint prevê Apple MapKit/Address service no stack.
-docs/v9_inventory_features
 6) Definition of Done (para “implementação perfeita”)
 ● Zero estados impossíveis (ex.: dupla confirmada sem pagamentos, jogador em 2
 duplas, waitlist furada).
@@ -725,15 +689,21 @@ ficam registadas.
 confirmadas, reembolsos, tempo médio de matchmaking).
 ● Testes: unit (máquina de estados), integração (webhooks), e2e (fluxo de inscrição
 até live).
-7) ÚNICAS decisões ainda pendentes (para fechares
-quando quiseres)
-1. Regra “mistos”: manter estrito (1 homem + 1 mulher) vs permitir “misto livre” como
-opção (não default).
-2. Limite recomendado adaptativo (ponto 11): fórmula final e como mostrar warnings
-(sem bloquear).
-3. Troca de parceiro após ambos pagos: confirmar fluxo final (minha recomendação:
-exigir confirmação de ambos + reembolso só quando novo parceiro pagar, como tu
-sugeriste).
+7) Decisões fechadas (confirmadas)
+1. Nível do jogador: apenas informativo (não bloqueia inscrição) e pode gerar avisos.
+2. Unidade de contagem da lotação/matchmaking: dupla confirmada.
+3. Pending não conta para lotação; confirmação sem vaga → waitlist.
+4. Matchmaking sempre por categoria (tipo+nivel), nunca global.
+5. Avisos de nível/conflitos nunca bloqueiam (só informam, com override admin).
+6. Reembolsos sempre via Stripe; sem wallet monetária (apenas loyalty/pontos).
+7. Misto default estrito (1 homem + 1 mulher). Pode existir opção “misto livre” com aviso claro.
+8. Limite recomendado adaptativo por categoria, com warnings (sem bloquear).
+9. Troca de parceiro após ambos pagos: exigir confirmação de ambos; reembolso só quando novo parceiro pagar.
+
+8) Decisões fechadas adicionais
+1. Formato único por torneio é o default. Existe override por categoria, mas assume sempre o formato único se não houver override explícito.
+2. Desistência conta como derrota (walkover) no resultado final.
+
 Se queres, eu já preparo a lista de tickets (Jira-style) por fase com estimativa de
 dependências técnicas (migrations, endpoints, UI components) exatamente no formato que
 o Codex “engole” melhor.

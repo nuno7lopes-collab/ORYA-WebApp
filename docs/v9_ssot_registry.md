@@ -4,6 +4,15 @@ Catalogo canonico do que e verdade no sistema. Quando um item passa a DONE aqui,
 
 ---
 
+## Precedencia documental (global)
+1) `docs/v9_ssot_registry.md` (este documento) — SSOT canonico.
+2) `docs/orya_blueprint_v9_final.md` — blueprint global v9.
+3) Planos operacionais por dominio (ex.: `docs/plano_operacional.md`, `docs/plano_reservas_servicos.md`, `docs/padel_uiux_master_plan.md`).
+4) Runbooks e checklists (execucao/operacao).
+5) Relatorios gerados (inventory/paridade/mapping).
+
+Se houver conflito, **vence o nivel mais alto** da lista.
+
 ## Bloco 0 — Contratos de Erro + Envelope + Fail-Closed
 **SSOTs canonicos**
 - Envelope de erro/resposta global conforme C-G5 (errorCode/message/retryable/correlationId).

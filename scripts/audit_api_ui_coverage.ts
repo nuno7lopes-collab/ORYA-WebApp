@@ -336,6 +336,14 @@ function main() {
 
   fs.writeFileSync(ORPHANS_PATH, reportLines.join("\n"), "utf8");
 
+  const failOnOrphans = process.env.FAIL_ON_ORPHANS === "1";
+  if (failOnOrphans && (orphanApi.length > 0 || missingApi.length > 0)) {
+    console.error("API <-> UI coverage audit: FAIL");
+    console.error(`- Orphan API routes: ${orphanApi.length}`);
+    console.error(`- UI endpoints missing API: ${missingApi.length}`);
+    process.exit(1);
+  }
+
   console.log("API <-> UI coverage audit: OK");
 }
 

@@ -14,20 +14,13 @@
 - Funcao: `OrganizationChatPage`
 - Origem orgId: `getActiveOrganizationForUser` (server); passar `organization.id` para o client.
 
-## TODO (handshake)
+## Status (handshake)
 
-- Match: `app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx:610`
-- Match: `app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts:484`
-- Remover fallback `/api/organizacao/me` quando orgId prop existe.
+DONE — orgId é passado por prop e usado diretamente, sem fallback a `/api/organizacao/me`.
 
-## Plano do commit (1 commit, sem refactor)
-
-Commit: `chat: pass orgId`
-
-- `ChatInternoClient/ChatInternoV2Client`: aceitar `organizationId` prop; inicializar state com esse valor; evitar fetch a `/api/organizacao/me` quando a prop existe.
-- `ChatPreviewClient/useChatPreviewData`: aceitar `organizationId` prop; usar diretamente em `loadOrganizationId`.
-- `chat/page.tsx`: passar `organization.id` para `ChatPreviewClient` (e/ou `ChatInternoClient`).
-- Sem tocar em RBAC/policy.
+Evidência:
+- `app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx` → `loadOrganizationId` usa `organizationId`/`fallbackOrganizationId`.
+- `app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts` → mesma lógica.
 
 ## Smoke test (chat)
 

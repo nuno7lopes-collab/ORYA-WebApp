@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { resolveServiceAssignmentMode, type ReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import AvailabilityEditor from "@/app/organizacao/(dashboard)/reservas/_components/AvailabilityEditor";
+import BookingChargesPanel from "@/app/organizacao/(dashboard)/reservas/_components/BookingChargesPanel";
+import ChatThread from "@/components/chat/ChatThread";
 import {
   CTA_PRIMARY,
   CTA_SECONDARY,
@@ -66,6 +68,31 @@ const formatTimeLabel = (date: Date, timezone: string) =>
 
 const formatCurrency = (amountCents: number, currency: string) =>
   `${(amountCents / 100).toFixed(2)} ${currency}`;
+
+const formatCentsInput = (cents: number) => (cents / 100).toFixed(2);
+
+const parseAmountToCents = (value: string) => {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * 100);
+};
+
+const parsePercentToBps = (value: string) => {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * 100);
+};
+
+const distributeEvenly = (total: number, count: number) => {
+  if (count <= 0) return [];
+  const base = Math.floor(total / count);
+  const remainder = total - base * count;
+  return Array.from({ length: count }, (_, idx) => base + (idx < remainder ? 1 : 0));
+};
 
 const formatBookingStatus = (status: string) => {
   switch (status) {
@@ -335,6 +362,33 @@ type ParticipantItem = {
   inviteId: number | null;
 };
 
+type SplitParticipantForm = {
+  inviteId: number;
+  label: string;
+  contact: string | null;
+  status: string;
+  include: boolean;
+  amount: string;
+  percent: string;
+  paidAt?: string | null;
+};
+
+type SplitState = {
+  bookingId: number;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  status: "NONE" | "OPEN" | "COMPLETED" | "CANCELLED";
+  pricingMode: "FIXED" | "DYNAMIC";
+  dynamicMode: "AMOUNT" | "PERCENT";
+  fixedShare: string;
+  deadlineAt: string;
+  participants: SplitParticipantForm[];
+  totalCents: number;
+  paidCents: number;
+  currency: string;
+};
+
 type CalendarView = "day" | "week";
 type CalendarTab = "agenda" | "availability";
 
@@ -424,11 +478,16 @@ export default function ReservasDashboardPage() {
   const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null);
   const [drawerBooking, setDrawerBooking] = useState<BookingItem | null>(null);
   const participantsKey = drawerBooking ? `/api/organizacao/reservas/${drawerBooking.id}/participants` : null;
-  const { data: participantsData } = useSWR<{
+  const splitKey =
+    drawerBooking && organizationId && Number.isFinite(organizationId)
+      ? `/api/organizacao/reservas/${drawerBooking.id}/split?organizationId=${organizationId}`
+      : null;
+  const { data: participantsData, mutate: mutateParticipants } = useSWR<{
     ok: boolean;
     invites: InviteItem[];
     participants: ParticipantItem[];
   }>(participantsKey, fetcher);
+  const { data: splitData, mutate: mutateSplit } = useSWR<any>(splitKey, fetcher);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
@@ -469,6 +528,15 @@ export default function ReservasDashboardPage() {
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const lastMinuteHeightRef = useRef(minuteHeight);
   const scrollInitRef = useRef(false);
+  const splitInitRef = useRef<number | null>(null);
+  const splitDirtyRef = useRef(false);
+  const [splitState, setSplitState] = useState<SplitState | null>(null);
+  const [splitEditorOpen, setSplitEditorOpen] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteContact, setInviteContact] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteSaving, setInviteSaving] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   const { data: servicesData, isLoading: servicesLoading, mutate: mutateServices } = useSWR<{
     ok: boolean;
@@ -517,13 +585,114 @@ export default function ReservasDashboardPage() {
       setRescheduleDate("");
       setRescheduleTime("");
       setRescheduleError(null);
+      setSplitState(null);
+      setSplitEditorOpen(false);
+      splitInitRef.current = null;
+      splitDirtyRef.current = false;
+      setInviteName("");
+      setInviteContact("");
+      setInviteMessage("");
+      setInviteError(null);
       return;
     }
     const start = new Date(drawerBooking.startsAt);
     setRescheduleDate(formatInputDate(start, timezone));
     setRescheduleTime(formatInputTime(start, timezone));
     setRescheduleError(null);
+    setInviteName("");
+    setInviteContact("");
+    setInviteMessage("");
+    setInviteError(null);
   }, [drawerBooking, timezone]);
+
+  useEffect(() => {
+    if (!drawerBooking) return;
+    const bookingId = drawerBooking.id;
+    if (splitInitRef.current === bookingId && splitDirtyRef.current) return;
+
+    const split = splitData?.data?.split ?? null;
+    const baseTotal = split?.baseTotalCents ?? drawerBooking.price ?? 0;
+    const paidCents = split?.paidCents ?? 0;
+    const inviteItems = participantsData?.invites ?? [];
+    const splitParticipants = Array.isArray(split?.participants) ? split.participants : [];
+
+    const baseParticipants: SplitParticipantForm[] = inviteItems.length
+      ? inviteItems.map((invite) => {
+          const label = invite.targetName || invite.targetContact || "Convidado";
+          const splitParticipant = splitParticipants.find((item: any) => item.inviteId === invite.id);
+          const baseShare = splitParticipant?.baseShareCents ?? 0;
+          const percentValue =
+            baseTotal > 0 ? ((baseShare / baseTotal) * 100).toFixed(2).replace(/\.00$/, "") : "";
+          return {
+            inviteId: invite.id,
+            label,
+            contact: invite.targetContact ?? null,
+            status: invite.status,
+            include: split ? Boolean(splitParticipant) : invite.status !== "DECLINED",
+            amount: baseShare > 0 ? formatCentsInput(baseShare) : "",
+            percent: baseShare > 0 ? percentValue : "",
+            paidAt: splitParticipant?.paidAt ?? null,
+          };
+        })
+      : splitParticipants
+          .filter((participant: any) => participant.inviteId != null)
+          .map((participant: any) => ({
+            inviteId: participant.inviteId as number,
+            label: participant.name || participant.contact || "Convidado",
+            contact: participant.contact ?? null,
+            status: participant.status ?? "PENDING",
+            include: true,
+            amount: participant.baseShareCents ? formatCentsInput(participant.baseShareCents) : "",
+            percent:
+              baseTotal > 0 && participant.baseShareCents
+                ? ((participant.baseShareCents / baseTotal) * 100).toFixed(2).replace(/\.00$/, "")
+                : "",
+            paidAt: participant.paidAt ?? null,
+          }));
+
+    const fixedShare =
+      split?.pricingMode === "FIXED" && typeof split?.shareCents === "number"
+        ? formatCentsInput(split.shareCents)
+        : "";
+
+    const included = baseParticipants.filter((p) => p.include);
+    if (!split && included.length > 0 && baseTotal > 0) {
+      const distributed = distributeEvenly(baseTotal, included.length);
+      included.forEach((participant, idx) => {
+        participant.amount = formatCentsInput(distributed[idx] ?? 0);
+        participant.percent =
+          baseTotal > 0
+            ? ((distributed[idx] ?? 0) / baseTotal * 100).toFixed(2).replace(/\.00$/, "")
+            : "";
+      });
+    }
+
+    const autoFixedShare =
+      split && split.pricingMode === "FIXED"
+        ? fixedShare
+        : included.length > 0 && baseTotal % included.length === 0
+          ? formatCentsInput(baseTotal / included.length)
+          : "";
+
+    setSplitState({
+      bookingId,
+      loading: Boolean(splitKey && !splitData),
+      saving: false,
+      error: null,
+      status: split?.status ?? "NONE",
+      pricingMode: split?.pricingMode === "DYNAMIC" ? "DYNAMIC" : "FIXED",
+      dynamicMode: "AMOUNT",
+      fixedShare: autoFixedShare,
+      deadlineAt: split?.deadlineAt ? split.deadlineAt.slice(0, 16) : "",
+      participants: baseParticipants,
+      totalCents: baseTotal,
+      paidCents,
+      currency: split?.currency ?? drawerBooking.currency ?? "EUR",
+    });
+    setSplitEditorOpen(Boolean(split));
+    splitInitRef.current = bookingId;
+    splitDirtyRef.current = false;
+  }, [drawerBooking, participantsData?.invites, splitData, splitKey]);
 
   const stripePromise = useMemo(() => {
     try {
@@ -996,6 +1165,54 @@ export default function ReservasDashboardPage() {
     );
   }, [drawerBooking, participantsData?.participants]);
 
+  const splitSummary = useMemo(() => {
+    if (!splitState) return null;
+    const included = splitState.participants.filter((p) => p.include);
+    const totalCents = splitState.totalCents;
+    if (included.length === 0) {
+      return { valid: false, message: "Seleciona pelo menos um convidado.", diffLabel: "" };
+    }
+    if (splitState.pricingMode === "FIXED") {
+      const fixedCents = parseAmountToCents(splitState.fixedShare);
+      if (!fixedCents || fixedCents <= 0) {
+        return { valid: false, message: "Indica o preço por pessoa.", diffLabel: "" };
+      }
+      const sum = fixedCents * included.length;
+      const diff = totalCents - sum;
+      return {
+        valid: diff === 0,
+        message: diff === 0 ? null : "O total não coincide com o valor da reserva.",
+        diffLabel: diff === 0 ? "Total certo" : `Diferença: ${formatCurrency(diff, splitState.currency)}`,
+      };
+    }
+    if (splitState.dynamicMode === "PERCENT") {
+      const bpsValues = included.map((p) => parsePercentToBps(p.percent));
+      if (bpsValues.some((value) => value == null)) {
+        return { valid: false, message: "Indica todas as percentagens.", diffLabel: "" };
+      }
+      const sum = (bpsValues as number[]).reduce((acc, value) => acc + value, 0);
+      const diff = 10_000 - sum;
+      return {
+        valid: diff === 0,
+        message: diff === 0 ? null : "A soma das percentagens tem de ser 100%.",
+        diffLabel: diff === 0 ? "100% ok" : `Falta ${Math.abs(diff) / 100}%`,
+      };
+    }
+    const amounts = included.map((p) => parseAmountToCents(p.amount));
+    if (amounts.some((value) => value == null)) {
+      return { valid: false, message: "Indica os valores de todos os convidados.", diffLabel: "" };
+    }
+    const sum = (amounts as number[]).reduce((acc, value) => acc + value, 0);
+    const diff = totalCents - sum;
+    return {
+      valid: diff === 0,
+      message: diff === 0 ? null : "O total não coincide com o valor da reserva.",
+      diffLabel: diff === 0 ? "Total certo" : `Diferença: ${formatCurrency(diff, splitState.currency)}`,
+    };
+  }, [splitState]);
+  const splitLocked =
+    drawerBookingClosed || (splitState ? splitState.paidCents > 0 || splitState.status === "COMPLETED" : false);
+
   const handleShiftRange = (direction: -1 | 1) => {
     const delta = calendarView === "week" ? 7 : 1;
     const baseParts = getDateParts(focusDate, timezone);
@@ -1094,6 +1311,161 @@ export default function ReservasDashboardPage() {
       setRescheduleError(err instanceof Error ? err.message : "Erro ao reagendar reserva.");
     } finally {
       setRescheduleBusy(false);
+    }
+  };
+
+  const handleInviteCreate = async () => {
+    if (!drawerBooking || inviteSaving) return;
+    const contact = inviteContact.trim();
+    if (!contact) {
+      setInviteError("Indica o contacto do convidado.");
+      return;
+    }
+    setInviteSaving(true);
+    setInviteError(null);
+    try {
+      const url =
+        organizationId && Number.isFinite(organizationId)
+          ? `/api/organizacao/reservas/${drawerBooking.id}/invites?organizationId=${organizationId}`
+          : `/api/organizacao/reservas/${drawerBooking.id}/invites`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: inviteName.trim(),
+          contact,
+          message: inviteMessage.trim(),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || json?.error || "Erro ao enviar convite.");
+      }
+      setInviteName("");
+      setInviteContact("");
+      setInviteMessage("");
+      mutateParticipants();
+      if (splitKey) {
+        mutateSplit();
+      }
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Erro ao enviar convite.");
+    } finally {
+      setInviteSaving(false);
+    }
+  };
+
+  const updateSplitParticipant = (inviteId: number, patch: Partial<SplitParticipantForm>) => {
+    splitDirtyRef.current = true;
+    setSplitState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        participants: prev.participants.map((participant) =>
+          participant.inviteId === inviteId ? { ...participant, ...patch } : participant,
+        ),
+      };
+    });
+  };
+
+  const applyEqualSplit = () => {
+    splitDirtyRef.current = true;
+    setSplitState((prev) => {
+      if (!prev) return prev;
+      const included = prev.participants.filter((p) => p.include);
+      if (included.length === 0 || prev.totalCents <= 0) return prev;
+      if (prev.pricingMode === "FIXED") {
+        if (prev.totalCents % included.length !== 0) {
+          return { ...prev, fixedShare: "" };
+        }
+        return { ...prev, fixedShare: formatCentsInput(prev.totalCents / included.length) };
+      }
+      if (prev.dynamicMode === "AMOUNT") {
+        const distributed = distributeEvenly(prev.totalCents, included.length);
+        const updated = prev.participants.map((participant) => {
+          const idx = included.findIndex((p) => p.inviteId === participant.inviteId);
+          if (idx < 0) return participant;
+          return { ...participant, amount: formatCentsInput(distributed[idx] ?? 0) };
+        });
+        return { ...prev, participants: updated };
+      }
+      const distributed = distributeEvenly(10_000, included.length);
+      const updated = prev.participants.map((participant) => {
+        const idx = included.findIndex((p) => p.inviteId === participant.inviteId);
+        if (idx < 0) return participant;
+        const value = (distributed[idx] ?? 0) / 100;
+        return { ...participant, percent: value.toFixed(2).replace(/\.00$/, "") };
+      });
+      return { ...prev, participants: updated };
+    });
+  };
+
+  const saveSplit = async () => {
+    if (!splitState || splitState.saving || splitState.loading) return;
+    if (!organizationId || Number.isNaN(organizationId)) {
+      setSplitState((prev) => (prev ? { ...prev, error: "Seleciona uma organização primeiro." } : prev));
+      return;
+    }
+    if (splitLocked) return;
+    if (!splitSummary?.valid) {
+      setSplitState((prev) => (prev ? { ...prev, error: "Revê os valores do split." } : prev));
+      return;
+    }
+    const included = splitState.participants.filter((p) => p.include);
+    if (included.length === 0) {
+      setSplitState((prev) => (prev ? { ...prev, error: "Seleciona pelo menos um convidado." } : prev));
+      return;
+    }
+
+    const fixedCents = splitState.pricingMode === "FIXED" ? parseAmountToCents(splitState.fixedShare) : null;
+    if (splitState.pricingMode === "FIXED" && (!fixedCents || fixedCents <= 0)) {
+      setSplitState((prev) => (prev ? { ...prev, error: "Indica o preço por pessoa." } : prev));
+      return;
+    }
+
+    const participantsPayload = included.map((participant) => {
+      const base = {
+        inviteId: participant.inviteId,
+        name: participant.label,
+        contact: participant.contact,
+      };
+      if (splitState.pricingMode === "FIXED") {
+        return { ...base, shareCents: fixedCents };
+      }
+      if (splitState.dynamicMode === "PERCENT") {
+        const percentBps = parsePercentToBps(participant.percent);
+        return { ...base, sharePercentBps: percentBps };
+      }
+      const shareCents = parseAmountToCents(participant.amount);
+      return { ...base, shareCents };
+    });
+
+    splitDirtyRef.current = false;
+    setSplitState((prev) => (prev ? { ...prev, saving: true, error: null } : prev));
+    try {
+      const res = await fetch(
+        `/api/organizacao/reservas/${splitState.bookingId}/split?organizationId=${organizationId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pricingMode: splitState.pricingMode,
+            dynamicMode: splitState.pricingMode === "DYNAMIC" ? splitState.dynamicMode : undefined,
+            deadlineAt: splitState.deadlineAt ? new Date(splitState.deadlineAt).toISOString() : null,
+            participants: participantsPayload,
+          }),
+        },
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || json?.error || "Erro ao configurar pagamento dividido.");
+      }
+      setSplitState((prev) => (prev ? { ...prev, saving: false, error: null } : prev));
+      setSplitEditorOpen(true);
+      mutateSplit();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro ao configurar pagamento dividido.";
+      setSplitState((prev) => (prev ? { ...prev, saving: false, error: message } : prev));
     }
   };
 
@@ -2240,6 +2612,53 @@ export default function ReservasDashboardPage() {
                     {participantSummary.confirmed}/{inviteSummary.total || participantSummary.total} confirmados
                   </p>
                 </div>
+                <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Adicionar convidado</p>
+                  <div className="grid grid-cols-2 gap-2 text-[12px]">
+                    <label className="flex flex-col gap-1 text-white/60">
+                      Nome
+                      <input
+                        type="text"
+                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                        value={inviteName}
+                        onChange={(event) => setInviteName(event.target.value)}
+                        placeholder="Opcional"
+                        disabled={inviteSaving}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-white/60">
+                      Contacto
+                      <input
+                        type="text"
+                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                        value={inviteContact}
+                        onChange={(event) => setInviteContact(event.target.value)}
+                        placeholder="Email ou telemóvel"
+                        disabled={inviteSaving}
+                      />
+                    </label>
+                  </div>
+                  <label className="flex flex-col gap-1 text-[12px] text-white/60">
+                    Mensagem (opcional)
+                    <textarea
+                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                      rows={2}
+                      value={inviteMessage}
+                      onChange={(event) => setInviteMessage(event.target.value)}
+                      placeholder="Texto curto"
+                      disabled={inviteSaving}
+                    />
+                  </label>
+                  {inviteError && <p className="text-[11px] text-red-200">{inviteError}</p>}
+                  <button
+                    type="button"
+                    className="w-full rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-100 hover:bg-emerald-400/15 disabled:opacity-60"
+                    onClick={handleInviteCreate}
+                    disabled={inviteSaving || !inviteContact.trim()}
+                  >
+                    {inviteSaving ? "A enviar..." : "Enviar convite"}
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {(participantsData?.participants ?? []).length === 0 && (participantsData?.invites ?? []).length === 0 ? (
                     <p className="text-[12px] text-white/50">Sem convites.</p>
@@ -2290,6 +2709,268 @@ export default function ReservasDashboardPage() {
                 </div>
               </div>
             )}
+
+            {splitState && (
+              <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Pagamento dividido</p>
+                    <p className="text-[12px] text-white/60">Divide o valor pelos convidados.</p>
+                  </div>
+                  {splitState.status !== "NONE" && (
+                    <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[11px] text-white/70">
+                      {splitState.status === "OPEN"
+                        ? "Ativo"
+                        : splitState.status === "COMPLETED"
+                          ? "Concluído"
+                          : "Cancelado"}
+                    </span>
+                  )}
+                </div>
+
+                {splitState.loading ? (
+                  <div className="h-16 rounded-xl border border-white/10 orya-skeleton-surface animate-pulse" />
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-[12px] text-white/70">
+                      <span>Total da reserva</span>
+                      <span className="text-white">{formatCurrency(splitState.totalCents, splitState.currency)}</span>
+                    </div>
+                    {splitState.status !== "NONE" && (
+                      <div className="flex items-center justify-between text-[12px] text-white/70">
+                        <span>Pago</span>
+                        <span className="text-white">{formatCurrency(splitState.paidCents, splitState.currency)}</span>
+                      </div>
+                    )}
+
+                    {!splitEditorOpen && splitState.status === "NONE" && (
+                      <button
+                        type="button"
+                        className="w-full rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-100 hover:bg-emerald-400/15"
+                        onClick={() => {
+                          splitDirtyRef.current = false;
+                          setSplitEditorOpen(true);
+                        }}
+                        disabled={splitLocked || splitState.participants.length === 0}
+                      >
+                        Configurar split
+                      </button>
+                    )}
+                    {splitLocked && (
+                      <p className="text-[11px] text-white/50">
+                        Split bloqueado. A reserva está encerrada ou já recebeu pagamentos.
+                      </p>
+                    )}
+                    {!splitLocked && splitState.participants.length === 0 && (
+                      <p className="text-[11px] text-white/50">
+                        Sem convites. O split precisa de convidados associados à reserva.
+                      </p>
+                    )}
+
+                    {splitEditorOpen && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2 text-[12px]">
+                          <label className="flex flex-col gap-1 text-white/60">
+                            Modo
+                            <select
+                              className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                              value={splitState.pricingMode}
+                              onChange={(event) => {
+                                splitDirtyRef.current = true;
+                                setSplitState((prev) =>
+                                  prev ? { ...prev, pricingMode: event.target.value as SplitState["pricingMode"] } : prev,
+                                );
+                              }}
+                              disabled={splitState.saving || splitLocked}
+                            >
+                              <option value="FIXED">Preço igual</option>
+                              <option value="DYNAMIC">Dinâmico</option>
+                            </select>
+                          </label>
+                          {splitState.pricingMode === "DYNAMIC" && (
+                            <label className="flex flex-col gap-1 text-white/60">
+                              Dinâmico por
+                              <select
+                                className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                                value={splitState.dynamicMode}
+                                onChange={(event) => {
+                                  splitDirtyRef.current = true;
+                                  setSplitState((prev) =>
+                                    prev ? { ...prev, dynamicMode: event.target.value as SplitState["dynamicMode"] } : prev,
+                                  );
+                                }}
+                                disabled={splitState.saving || splitLocked}
+                              >
+                                <option value="AMOUNT">Valor</option>
+                                <option value="PERCENT">Percentagem</option>
+                              </select>
+                            </label>
+                          )}
+                        </div>
+
+                        {splitState.pricingMode === "FIXED" && (
+                          <label className="flex flex-col gap-1 text-[12px] text-white/60">
+                            Preço por pessoa
+                            <input
+                              type="text"
+                              className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                              placeholder="0.00"
+                              value={splitState.fixedShare}
+                              onChange={(event) => {
+                                splitDirtyRef.current = true;
+                                setSplitState((prev) => (prev ? { ...prev, fixedShare: event.target.value } : prev));
+                              }}
+                              disabled={splitState.saving || splitLocked}
+                            />
+                          </label>
+                        )}
+
+                        <div className="flex items-center justify-between text-[11px] text-white/55">
+                          <span>Convidados incluídos</span>
+                          <button
+                            type="button"
+                            className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-white/70 hover:border-white/40"
+                            onClick={applyEqualSplit}
+                            disabled={splitState.saving || splitLocked}
+                          >
+                            Repartir automaticamente
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {splitState.participants.length === 0 && (
+                            <p className="text-[12px] text-white/50">Sem convites disponíveis.</p>
+                          )}
+                          {splitState.participants.map((participant) => {
+                            const isLocked = splitState.saving || splitLocked;
+                            const showAmount =
+                              splitState.pricingMode === "DYNAMIC" && splitState.dynamicMode === "AMOUNT";
+                            const showPercent =
+                              splitState.pricingMode === "DYNAMIC" && splitState.dynamicMode === "PERCENT";
+                            return (
+                              <div
+                                key={`split-${participant.inviteId}`}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                              >
+                                <div>
+                                  <p className="text-sm text-white">{participant.label}</p>
+                                  {participant.contact && (
+                                    <p className="text-[11px] text-white/55">{participant.contact}</p>
+                                  )}
+                                  {participant.paidAt && (
+                                    <p className="text-[11px] text-emerald-200/80">Pago</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <label className="flex items-center gap-2 text-[11px] text-white/60">
+                                    <input
+                                      type="checkbox"
+                                      checked={participant.include}
+                                      onChange={(event) =>
+                                        updateSplitParticipant(participant.inviteId, { include: event.target.checked })
+                                      }
+                                      disabled={isLocked}
+                                    />
+                                    Incluir
+                                  </label>
+                                  {splitState.pricingMode === "FIXED" && (
+                                    <span className="text-[11px] text-white/70">
+                                      {splitState.fixedShare ? `${splitState.fixedShare} ${splitState.currency}` : "--"}
+                                    </span>
+                                  )}
+                                  {showAmount && (
+                                    <input
+                                      type="text"
+                                      className="w-24 rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px] text-white"
+                                      placeholder="0.00"
+                                      value={participant.amount}
+                                      onChange={(event) =>
+                                        updateSplitParticipant(participant.inviteId, { amount: event.target.value })
+                                      }
+                                      disabled={isLocked || !participant.include}
+                                    />
+                                  )}
+                                  {showPercent && (
+                                    <input
+                                      type="text"
+                                      className="w-20 rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px] text-white"
+                                      placeholder="0%"
+                                      value={participant.percent}
+                                      onChange={(event) =>
+                                        updateSplitParticipant(participant.inviteId, { percent: event.target.value })
+                                      }
+                                      disabled={isLocked || !participant.include}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <label className="flex flex-col gap-1 text-[12px] text-white/60">
+                          Prazo limite (opcional)
+                          <input
+                            type="datetime-local"
+                            className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                                    value={splitState.deadlineAt}
+                                    onChange={(event) => {
+                                      splitDirtyRef.current = true;
+                                      setSplitState((prev) => (prev ? { ...prev, deadlineAt: event.target.value } : prev));
+                                    }}
+                                    disabled={splitState.saving || splitLocked}
+                                  />
+                                </label>
+
+                        {splitSummary?.diffLabel && (
+                          <p className="text-[11px] text-white/55">{splitSummary.diffLabel}</p>
+                        )}
+                        {splitSummary?.message && (
+                          <p className="text-[11px] text-red-200">{splitSummary.message}</p>
+                        )}
+                        {splitState.error && (
+                          <p className="text-[11px] text-red-200">{splitState.error}</p>
+                        )}
+
+                        <button
+                          type="button"
+                          className="w-full rounded-full border border-emerald-300/40 bg-emerald-400/10 px-4 py-2 text-[12px] text-emerald-100 hover:bg-emerald-400/15 disabled:opacity-60"
+                          onClick={saveSplit}
+                          disabled={
+                            splitState.saving ||
+                            splitLocked ||
+                            !splitSummary?.valid
+                          }
+                        >
+                          {splitState.saving
+                            ? "A guardar..."
+                            : splitState.status === "NONE"
+                              ? "Ativar split"
+                              : "Atualizar split"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <BookingChargesPanel
+              bookingId={drawerBooking.id}
+              organizationId={organizationId ?? null}
+              defaultCurrency={drawerBooking.currency ?? "EUR"}
+              disabled={drawerBookingClosed}
+            />
+
+            <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Chat</p>
+                  <p className="text-[12px] text-white/60">Conversa direta com o cliente.</p>
+                </div>
+              </div>
+              <ChatThread entityType="BOOKING" entityId={drawerBooking.id} canPostAnnouncements />
+            </div>
 
             {!drawerBookingClosed && (
               <div className="mt-6 space-y-3">

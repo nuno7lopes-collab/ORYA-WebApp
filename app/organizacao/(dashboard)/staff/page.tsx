@@ -557,7 +557,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const handleRequireLogin = () => {
     openModal({
       mode: "login",
-      redirectTo: embedded ? "/organizacao?tab=manage&section=staff" : "/organizacao/staff",
+      redirectTo: embedded ? "/organizacao/manage?section=staff" : "/organizacao/staff",
       showGoogle: true,
     });
   };

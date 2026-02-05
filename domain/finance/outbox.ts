@@ -867,7 +867,7 @@ async function notifyOrganizationOwners(input: { organizationId: number; eventId
             title: "Nova reserva gratuita",
             body: `Recebeste uma reserva para ${input.eventTitle}.`,
             ctaUrl: appendOrganizationIdToHref(
-              `/organizacao?tab=analyze&section=vendas&eventId=${input.eventId}`,
+              `/organizacao/analyze?section=vendas&eventId=${input.eventId}`,
               input.organizationId,
             ),
             ctaLabel: "Ver vendas",

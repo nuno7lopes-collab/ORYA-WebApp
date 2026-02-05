@@ -94,7 +94,7 @@ export async function handleOwnerTransferOutboxEvent(params: {
     const organizationName =
       transfer.organization?.publicName || transfer.organization?.username || "Organização ORYA";
     const baseUrl = getAppBaseUrl();
-    const staffHref = appendOrganizationIdToHref("/organizacao?tab=manage&section=staff", payload.organizationId);
+    const staffHref = appendOrganizationIdToHref("/organizacao/manage?section=staff", payload.organizationId);
     await sendEmail({
       to: fromEmail,
       subject: `✅ Transferência concluída – ${organizationName}`,

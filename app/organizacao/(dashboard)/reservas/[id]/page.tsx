@@ -1382,8 +1382,8 @@ export default function ServicoDetalhePage() {
       {packsEnabled && (
         <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
           <div>
-            <h2 className="text-base font-semibold text-white">Packs de créditos</h2>
-            <p className={DASHBOARD_MUTED}>Opcional, sempre do mesmo serviço.</p>
+            <h2 className="text-base font-semibold text-white">Packs de sessões</h2>
+            <p className={DASHBOARD_MUTED}>Opcional, sempre do mesmo serviço (sem carteira monetária).</p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">

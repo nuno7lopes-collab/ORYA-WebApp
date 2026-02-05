@@ -1,4 +1,5 @@
 # ORYA iOS Plan (B2C-only)
+> Escopo: iOS B2C. Regras de produto/SSOT em `docs/v9_ssot_registry.md` e `docs/orya_blueprint_v9_final.md`.
 
 ## 1) Product scope (locked)
 - Mobile is **ONLY USER (B2C)**.
@@ -21,7 +22,7 @@
 5. Universal checkout:
    - Native-first flow, resume supported (10 min).
 6. Wallet:
-   - Bilhetes + inscrições + reservas, QR and history.
+   - Bilhetes + inscrições + reservas, QR and history (sem wallet monetária; apenas passes/entitlements).
    - Apple Wallet Pass (bilhetes no MVP; extensível).
 7. Social:
    - Follow users/orgs + activity feed.
@@ -72,7 +73,7 @@
 ## 7) Data/performance/analytics
 - Partial offline cache (recent discover, wallet, detail snapshots).
 - TanStack Query with resilient retry/stale policies.
-- Analytics adapter required (provider pending); track screen/tap/funnel/purchase/resume/social/padel.
+- Analytics adapter implementado (stub em `apps/mobile/lib/analytics.ts`); provider real pendente.
 
 ## 7.1) Performance baselines
 - Thumbnails “small” no feed + lazy loading.
@@ -100,6 +101,6 @@
 - ✅ (4) Offer detail complete: event/service detail with prefetch, shared image transitions, ticket selection + pre-checkout summary.
 - ✅ (5) Universal checkout complete: native Stripe PaymentSheet (Apple Pay + card + MBWay) with 10‑min resume + status checks.
 - ✅ (6) Wallet complete: list + detail + QR + history, Apple Wallet Pass endpoint + Add to Wallet CTA.
-- ✅ Push registration + permissions UI (profile) wired; backend triggers remain server-driven.
+- ✅ Push registration + permissions UI (profile) wired; backend triggers via `domain/notifications/consumer` + `lib/push/apns` (precisa chaves APNS em prod).
 - Agora tab implemented with real timeline/personalized feed.
 - Network tab implemented with real suggestions + follow/unfollow actions.

@@ -115,10 +115,10 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
           console.warn("[org switch] não foi possível escrever cookie no browser", err);
         }
         // usa router para evitar cache, depois fallback para reload completo
-        router.replace(`/organizacao?tab=overview&organizationId=${organizationId}`);
+        router.replace(`/organizacao/overview?organizationId=${organizationId}`);
         setTimeout(() => {
           if (window?.location?.href.includes(`organizationId=${organizationId}`) === false) {
-            window.location.href = `/organizacao?tab=overview&organizationId=${organizationId}`;
+            window.location.href = `/organizacao/overview?organizationId=${organizationId}`;
           }
         }, 50);
       } else {
@@ -196,7 +196,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
           ]);
           await handleSwitch(newId, true);
         } else {
-          router.push(appendOrganizationIdToHref("/organizacao?tab=overview", currentActive));
+          router.push(appendOrganizationIdToHref("/organizacao/overview", currentActive));
         }
       }
     } catch (err) {
@@ -216,7 +216,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     const statusLabel = (item.organization.status || "—").toUpperCase();
     const handleCardClick = () => {
       if (isActive) {
-        router.push(`/organizacao?tab=overview&organizationId=${item.organizationId}`);
+        router.push(`/organizacao/overview?organizationId=${item.organizationId}`);
         return;
       }
       handleSwitch(item.organizationId, true);

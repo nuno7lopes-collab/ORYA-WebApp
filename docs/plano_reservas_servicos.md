@@ -66,8 +66,8 @@ Nota: o plano abaixo é desenhado para encaixar neste “rails” e só estender
    1. `Payment` (já existe) como SSOT financeiro do booking
    2. `BookingCharge` (novo) para separar “depósito”, “extra”, “split part”, etc.
 7. Chat:
-   1. `ChatConversation` (já existe)
-   2. Link ao booking (novo) para contexto: `sourceType/sourceId` ou join table
+   1. `ChatThread` (já existe)
+   2. Link ao booking via `entityType/entityId` (já implementado para BOOKING)
 8. Atrasos:
    1. `ScheduleDelay` (novo) para guardar o “delay atual” por profissional/recurso/court/org.
 
@@ -171,6 +171,7 @@ Endpoints que precisam aceitar a seleção (para duração/slots certos):
    1. bloco “Escolhe a duração” (base + add-ons)
    2. mostra “Tempo total” e “Total”
 2. Evitar “género” como modificador; usar “comprimento/complexidade”.
+   Nota: isto aplica-se a **serviços**. Padel mantém género M/F conforme `docs/plano_operacional.md`.
 
 ---
 
@@ -206,7 +207,7 @@ Recomendação prática: começar Booking-first e apenas “bridgar” para Even
 
 Mesmo que o UI saia faseado, modelar já:
 
-1. `BookingCharge`:
+1. `BookingCharge` (implementado):
    1. `kind`: BASE | DEPOSIT | EXTRA | SPLIT_PART
    2. `payerKind`: ORGANIZER | INVITEE
    3. `amountCents`, `status`
@@ -218,8 +219,10 @@ Mesmo que o UI saia faseado, modelar já:
    1. organizador paga tudo (simples)
 2. Split:
    1. organizador define `pricePerGuestCents` ou “por tipo”
-   2. convites carregam link de pagamento individual
-   3. booking fica “confirmado operacionalmente” mas com estado de cobrança “parcial”
+   2. default: preço por pessoa **fixo e igual** para todos
+   3. override opcional por convidado (valor fixo ou %), com aviso “preço misto”
+   4. convites carregam link de pagamento individual
+   5. booking fica “confirmado operacionalmente” mas com estado de cobrança “parcial”
 
 ---
 
@@ -227,12 +230,10 @@ Mesmo que o UI saia faseado, modelar já:
 
 ### 7.1 Link ao booking
 
-Opção recomendada (simples):
+Implementado com `ChatThread`:
 
-1. adicionar em `ChatConversation`:
-   1. `sourceType` (enum, usar `SourceType.BOOKING`)
-   2. `sourceId` (string; bookingId)
-   3. índice `(organizationId, sourceType, sourceId)`
+1. `entityType` (enum) + `entityId` (bookingId)
+2. índice único `(entityType, entityId)` já existe no schema
 
 ### 7.2 Ações do lado da organização (MVP)
 

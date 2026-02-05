@@ -35,7 +35,7 @@ export default async function OrganizationEventosPage() {
     prisma,
   );
   if (!hasAnyActiveModule(activeModules, ["EVENTOS"])) {
-    redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id));
+    redirect(appendOrganizationIdToHref("/organizacao/overview?section=modulos", organization.id));
   }
 
   return <DashboardClient hasOrganization defaultObjective="manage" defaultSection="eventos" />;

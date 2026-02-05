@@ -1773,7 +1773,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
             Bilhetes (não removemos, só terminamos venda)
           </h2>
-          <Link href={`/organizacao?tab=analyze&section=vendas&eventId=${event.id}`} className="text-[11px] text-[#6BFFFF]">
+          <Link href={`/organizacao/analyze?section=vendas&eventId=${event.id}`} className="text-[11px] text-[#6BFFFF]">
             Ver vendas →
           </Link>
         </div>

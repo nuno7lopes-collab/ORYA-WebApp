@@ -12,6 +12,7 @@ const {
   bookingInviteUpdate,
   bookingParticipantUpsert,
   bookingParticipantDeleteMany,
+  bookingSplitParticipantUpdateMany,
   profileFindUnique,
   prismaMockShape,
 } = vi.hoisted(() => {
@@ -26,6 +27,7 @@ const {
   const bookingInviteUpdate = vi.fn();
   const bookingParticipantUpsert = vi.fn();
   const bookingParticipantDeleteMany = vi.fn();
+  const bookingSplitParticipantUpdateMany = vi.fn();
   const profileFindUnique = vi.fn();
   const prismaMockShape = {
     booking: {
@@ -42,6 +44,9 @@ const {
       upsert: bookingParticipantUpsert,
       deleteMany: bookingParticipantDeleteMany,
     },
+    bookingSplitParticipant: {
+      updateMany: bookingSplitParticipantUpdateMany,
+    },
     $transaction: vi.fn(async (fn: any) =>
       fn({
         bookingInvite: {
@@ -50,6 +55,9 @@ const {
         bookingParticipant: {
           upsert: bookingParticipantUpsert,
           deleteMany: bookingParticipantDeleteMany,
+        },
+        bookingSplitParticipant: {
+          updateMany: bookingSplitParticipantUpdateMany,
         },
       }),
     ),
@@ -70,6 +78,7 @@ const {
     bookingInviteUpdate,
     bookingParticipantUpsert,
     bookingParticipantDeleteMany,
+    bookingSplitParticipantUpdateMany,
     profileFindUnique,
     prismaMockShape,
   };
@@ -132,6 +141,7 @@ describe("booking invites route", () => {
     bookingInviteUpdate.mockReset();
     bookingParticipantUpsert.mockReset();
     bookingParticipantDeleteMany.mockReset();
+    bookingSplitParticipantUpdateMany.mockReset();
     prismaMockShape.$transaction.mockClear();
     profileFindUnique.mockReset();
   });

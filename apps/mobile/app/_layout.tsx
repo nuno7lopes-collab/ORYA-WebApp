@@ -8,11 +8,20 @@ import { queryClient } from "../lib/queryClient";
 import { StatusBar } from "expo-status-bar";
 import { PushGate } from "../components/notifications/PushGate";
 import { StripeProvider } from "@stripe/stripe-react-native";
-import { LogBox } from "react-native";
+import { LogBox, View, ActivityIndicator } from "react-native";
 import { getMobileEnv } from "../lib/env";
+import { useFonts } from "expo-font";
+import { Ionicons } from "../components/icons/Ionicons";
+import { useEffect } from "react";
+import * as WebBrowser from "expo-web-browser";
+
+WebBrowser.maybeCompleteAuthSession();
 
 LogBox.ignoreLogs([
   "SafeAreaView has been deprecated",
+  "SafeAreaView is deprecated",
+  "Please use 'react-native-safe-area-context' instead",
+  "WebCrypto API is not supported",
   "expo-notifications: Android Push notifications",
   "`expo-notifications` functionality is not fully supported in Expo Go",
 ]);
@@ -21,6 +30,24 @@ export default function RootLayout() {
   const env = getMobileEnv();
   const stripeKey = env.stripePublishableKey ?? "";
   const merchantIdentifier = env.appleMerchantId ?? undefined;
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+  });
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    Ionicons.loadFont().catch((error) => {
+      console.warn("Ionicons.loadFont failed", error);
+    });
+  }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b101a" }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -51,15 +78,23 @@ export default function RootLayout() {
                     gestureEnabled: true,
                   }}
                 />
-                <Stack.Screen
-                  name="checkout/index"
-                  options={{
-                    animation: "slide_from_right",
-                    animationDuration: 380,
-                    gestureEnabled: true,
-                  }}
-                />
-              </Stack>
+              <Stack.Screen
+                name="checkout/index"
+                options={{
+                  animation: "slide_from_right",
+                  animationDuration: 380,
+                  gestureEnabled: true,
+                }}
+              />
+              <Stack.Screen
+                name="profile/edit"
+                options={{
+                  animation: "slide_from_right",
+                  animationDuration: 320,
+                  gestureEnabled: true,
+                }}
+              />
+            </Stack>
             </AuthProvider>
           </StripeProvider>
         </QueryClientProvider>

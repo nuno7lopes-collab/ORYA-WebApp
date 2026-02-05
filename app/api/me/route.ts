@@ -4,6 +4,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { prisma } from "@/lib/prisma";
 
 // Tipagem simples devolvida ao frontend
 interface SupabaseUser {
@@ -67,7 +68,7 @@ const isAuthMissing =
       email: user.email ?? undefined,
     };
 
-    // Fetch profile from app_v3.profiles
+    // Fetch profile from Supabase (public or view)
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("*")
@@ -83,10 +84,50 @@ const isAuthMissing =
       });
     }
 
+    // Fetch profile from Prisma (source of truth for onboarding fields)
+    type PrismaProfile = Awaited<ReturnType<typeof prisma.profile.findUnique>>;
+    let prismaProfile: PrismaProfile = null;
+    let notificationPrefs: Awaited<ReturnType<typeof prisma.notificationPreference.findUnique>> | null = null;
+    try {
+      prismaProfile = await prisma.profile.findUnique({ where: { id: user.id } });
+      notificationPrefs = await prisma.notificationPreference.findUnique({ where: { userId: user.id } });
+    } catch (prismaError) {
+      console.warn("[GET /api/me] Erro ao carregar profile (prisma):", {
+        prismaError,
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+        orgId: ctx.orgId,
+      });
+    }
+
+    const mergedProfile = prismaProfile
+      ? {
+          ...(profile ?? {}),
+          id: prismaProfile.id,
+          full_name: prismaProfile.fullName ?? profile?.full_name ?? null,
+          username: prismaProfile.username ?? profile?.username ?? null,
+          avatar_url: prismaProfile.avatarUrl ?? profile?.avatar_url ?? null,
+          cover_url: prismaProfile.coverUrl ?? (profile as any)?.cover_url ?? null,
+          bio: prismaProfile.bio ?? profile?.bio ?? null,
+          city: prismaProfile.city ?? profile?.city ?? null,
+          padel_level: prismaProfile.padelLevel ?? profile?.padel_level ?? null,
+          favourite_categories: prismaProfile.favouriteCategories ?? (profile as any)?.favourite_categories ?? [],
+          visibility: prismaProfile.visibility ?? (profile as any)?.visibility ?? null,
+          allow_email_notifications:
+            notificationPrefs?.allowEmailNotifications ?? (profile as any)?.allow_email_notifications ?? null,
+          allow_event_reminders:
+            notificationPrefs?.allowEventReminders ?? (profile as any)?.allow_event_reminders ?? null,
+          allow_follow_requests:
+            notificationPrefs?.allowFollowRequests ?? (profile as any)?.allow_follow_requests ?? null,
+          onboarding_done: prismaProfile.onboardingDone ?? profile?.onboarding_done ?? null,
+          onboardingDone: prismaProfile.onboardingDone ?? (profile as any)?.onboardingDone ?? null,
+        }
+      : profile ?? null;
+
     return jsonWrap({
       success: true,
       user: safeUser,
-      profile: profile ?? null,
+      profile: mergedProfile,
     });
   } catch (err) {
     const ctx = getRequestContext(req);

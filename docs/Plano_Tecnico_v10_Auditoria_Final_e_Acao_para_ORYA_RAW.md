@@ -1,3 +1,6 @@
+> Nota: este documento é um **snapshot de auditoria**. O estado corrente das decisões e implementações
+> está em `docs/v9_ssot_registry.md` (SSOT) e `docs/v10_execution_checklist.md` (execução).
+
 Plano Técnico v10: Auditoria Final e Ação para
 ORYA
 Atualização (2026-01-31):
@@ -80,8 +83,7 @@ Isso é fundamental para depuração e replay de erros
 (P1) Runbook de Erros & Replays: Formalizar um runbook que documente como rastrear um
 erro via requestId  e realizar replay/rollback se necessário
 . 
-Status: Parcial – Alguns runbooks existem no repositório (ex.: DLQ, request-id trace), mas
-consolidar instruções de operação em caso de falhas. 
+Status: Feito – Runbooks consolidados (request-id trace, DLQ, ops endpoints) em docs/runbooks. 
 Instruções: Documentar no wiki/runbooks: “Dado um erro 4xx/5xx, pegar requestId  dos
 logs/response, localizar no log central e, se necessário, usar endpoints de replay (e.g. /api/
 internal/reprocess/* ) para reprocessar a operação”
@@ -182,11 +184,8 @@ conferir fees pendentes.
 Ficheiros: app/api/stripe/webhook/route.ts , app/api/organizacao/payouts/
 webhook/route.ts  (para Stripe Connect payouts), domain/finance/
 reconciliation*.ts , app/api/internal/reconcile/route.ts . 
-Status: Parcial – O webhook de pagamentos existe e processa eventos (charge.succeeded, etc.),
-mas precisamos confirmar se trata todos os tipos (refund, dispute). O blueprint D15 exige rollups
-diários de métricas
-, e as rotas de reconciliação internas devem garantir que fees finais sejam
-aplicadas. 
+Status: Feito – Webhook + reconciliação cobrem refunds/disputes; sweep diário ativo para fees
+finais e rollups. 
 Instruções: Completar a lógica de webhook para cobrir refunds e disputes: ao receber um evento
 de reembolso, marcar Payment.status como REFUNDED e gerar evento FINANCE_OUTBOX para
 sync
@@ -237,10 +236,8 @@ se applicable). Adicionar testes unitários/vitest para sequências de refund/di
 (P1) Compras Gratuitas (Free Checkout): Assegurar suporte a eventos/serviços gratuitos sem
 pagamento (gera Entitlement sem Stripe). 
 Ficheiros: domain/finance/checkout.ts , domain/finance/paymentIntent.ts . 
-Status: Possivelmente Incompleto – Verificar se ensurePaymentIntent  lida com 
-amountCents=0  adequadamente (pode pular criação de PaymentIntent Stripe). Blueprint
-estabelece que Event.isFree não deve ser usado para lógica, devendo derivar de pricing
-. 
+Status: Feito – Free checkout tratado no fluxo financeiro; entitlements emitidos sem Stripe
+(não depende de Event.isFree). 
 Instruções: Implementar no fluxo de checkout: se montante total = 0, criar o Payment e
 imediatamente marcar como PAID (ou status especial) e acionar o fulfillment para emitir
 Entitlements, sem chamar Stripe. Ajustar UI para que eventos gratuitos tenham botão
@@ -263,8 +260,10 @@ modelo e possivelmente funções utilitárias). O blueprint v9 definiu mudanças
 pendentes:  atualmente,  não  identificamos  no  código  uma  lógica  robusta  de  locking de  outbox.
 Provavelmente, o consumo ainda está simplista (pode haver risco de dois workers pegarem o mesmo
 evento). A propriedade dedupeKey  foi introduzida em vários eventos (por ex., PaymentEvent já usa
-dedupeKey = checkoutKey ) – então parcialmente adotado. No entanto, Status: TODO no registro
- indica que o Bloco 2 não foi concluído. 
+dedupeKey = checkoutKey ) – então adotado. Status: Feito – locking com SKIP LOCKED + dedupeKey
+em outbox/worker (ver `domain/outbox/publisher.ts` e `app/api/internal/worker/operations/route.ts`).
+
+Nota (2026-02-05): Bloco 2 fechado no checklist v10. Ver `docs/v10_execution_checklist.md`.
 • 
 28
 • 
@@ -305,8 +304,7 @@ para setar deliveredAt  e limpar o token
 (P0) PublishedAt só em Sucesso: Garantir que outbox.publishedAt  ou equivalente só seja
 preenchido após processamento bem-sucedido. 
 Ficheiros: domain/outbox/publisher.ts  ou onde o evento é marcado como publicado. 
-Status: Provável melhoria pendente – Devemos confirmar se hoje o código marca publishedAt
-antes de realmente enviar (o que seria errado). 
+Status: Feito – publishedAt só é marcado após sucesso no worker (publisher não marca). 
 Instruções: Alterar a ordem: primeiro processar a ação (ex.: enviar email, atualizar read-model),
 depois marcar  o  registro  como  publicado  (setar  publishedAt ).  Em  caso  de  erro  no
 processamento, não setar publishedAt  (assim ele permanece para retry ou DLQ). 
@@ -314,8 +312,8 @@ processamento, não setar publishedAt  (assim ele permanece para retry ou DLQ).
 que consumidores ignorem eventos duplicados. 
 Ficheiros: Modelos de eventos em domain/finance/outbox.ts , domain/notifications/
 outbox.ts , etc., e consumidor em domain/ops/** . 
-Status: Parcial – Alguns eventos financeiros usam dedupeKey (e.g. checkout events), mas
-padronização pode faltar para outros domínios. 
+Status: Feito – dedupeKey obrigatório com helper canônico + índice único; consumidores
+idempotentes. 
 Instruções: Definir regra: por default, dedupeKey = <eventType>:<sourceId>  ou similar
 para  evitar  dupla  inserção.  No  consumidor,  antes  de  processar,  verificar  se  já  existe
 processamento daquele dedupeKey (pode usar uma chave única ou store de keys processados).
@@ -324,8 +322,7 @@ Opcionalmente, usar tabela de controle ou index único no DB para garantir unici
 reprocessamento. 
 Ficheiros: app/api/internal/outbox/dlq/route.ts , app/api/internal/outbox/
 replay/route.ts , docs/runbooks/outbox-dlq.md . 
-Status: Provavelmente Incompleto – As rotas existem mas devemos verificar se gravam motivo do
-erro e se o replay re-insere eventos corretamente. 
+Status: Feito – DLQ + replay com reason fields e runbook operacional. 
 Instruções: Para  cada  falha  não  recuperável  em  consumidor,  mover  o  evento  para  DLQ:
 preencher campos  failedAt  e  errorReason  no registro outbox (ou mover para tabela
 separada).  Implementar  /api/internal/outbox/dlq  (GET)  para  listar  DLQs  e  /api/
@@ -492,8 +489,7 @@ verificar”,  usar  organization.officialEmail  normalizado.  (Já  que  não  
 separado, assumimos que no DB está armazenado normalizado, o que é o ideal
 ). 
 (P1) Feedback de UI: Melhorar a experiência do usuário em relação ao email oficial. 
-Status: Por fazer – Embora funcionalmente completo, podemos aprimorar mensagens na
-interface. 
+Status: Feito – UI com avisos persistentes + CTA de verificação e textos amigáveis. 
 Instruções: No dashboard da organização, exibir um aviso persistente enquanto o email não
 estiver  verificado,  explicando  que  certas  ações  estão  bloqueadas
 .  Fornecer  um  botão
@@ -504,7 +500,7 @@ estiver  verificado,  explicando  que  certas  ações  estão  bloqueadas
 plataforma ORYA. 
 Ficheiros: app/admin/config/platform-email/page.tsx , /api/admin/config/
 platform-email . 
-Status: Implementado – Existe a rota e um esboço de UI. Falta validação final. 
+Status: Feito – UI + validação finalizadas (normalização + estados de erro). 
 Instruções: Permitir que um admin da plataforma defina ou altere o email remetente padrão
 (ex.: noreply@orya.pt ). Utilizar a função setPlatformOfficialEmail  (que
 provavelmente salva em PlatformSetting ). Após salvar, talvez reiniciar certos processos (ou
@@ -622,10 +618,7 @@ capacidade e adicionar no blueprint registro quando implementado.
 Auditoria  e  Request  IDs  no  Admin: Revisar  todas  as  rotas  admin  para  usar
 getRequestContext  e retornar envelope com requestId. 
 Ficheiros: app/api/admin/**  (todas rotas). 
-Status: Parcial – Pelo código da rota platform-email admin, já vemos uso de 
-getRequestContext  e respondOk/respondError
-. Precisamos aplicar padrão
-similar às demais (ex.: purge users, update payments mode, etc.). 
+Status: Feito – Rotas admin padronizadas com getRequestContext + respondOk/respondError. 
 Instruções: 
 Padronizar:
  
@@ -690,7 +683,9 @@ garantir que somente owners ou admins possam alterar membros
 - Entretanto, o registro v9 indica Status: TODO para Bloco 5
 , sugerindo que faltam alguns ajustes
 finais: por exemplo, remover verificações manuais remanescentes (buscar ownerId  diretamente em
-vez de usar helper) e unificar o uso de context. 
+vez de usar helper) e unificar o uso de context.
+
+Nota (2026-02-05): Bloco 5 fechado no checklist v10. Ver `docs/v10_execution_checklist.md`.
 Plano de Ação:
 -  (P0) Helper  Único  de  RBAC: Assegurar  que  todas  as  checagens  de  permissões  usem  funções
 centralizadas (em vez de duplicação).
@@ -842,8 +837,7 @@ Testar scenario onde policyVersionApplied está ausente (deveria não acontecer 
 sistema deve recusar entrada com erro claro. 
 (P1) UI e Legacy Flags: Polir a interface de criação/edição de eventos para refletir novas opções
 de Policy. 
-Status: Parcial – A UI possivelmente ainda mostra campos legacy (ex.: checkbox “Somente por
-convite”). Internamente já cria a policy certa, mas podemos melhorar textos. 
+Status: Feito – UI já usa EventAccessPolicy (sem campos legacy inviteOnly). 
 Instruções: Na página de editar evento, substituir inviteOnly /”Público com bilhete” etc. por
 uma seleção do mode  (Público, Não listado, Somente convite). Explicar que se convite, requer
 tokens. Ocultar ou informar que o antigo campo "evento gratuito" é automático se não houver
@@ -853,10 +847,8 @@ para exibição informativa.
 momentos certos. 
 Ficheiros: app/api/organizacao/events/update/route.ts  (se um evento muda
 configurações de acesso após já ter entitlements emitidos). 
-Status: Por fazer – Precisamos garantir que, se as regras ficam mais restritas, ou bloqueamos
-(fail) ou criamos uma nova versão e atribuimos aos novos entitlements. Pelo blueprint, se a
-mudança for mais restritiva, deveria ser travada (policy lock)
-. 
+Status: Feito – updateEvent aplica policy lock (ACCESS_POLICY_LOCKED) quando fica mais
+restritiva. 
 Instruções: 
 Ver
  
@@ -988,8 +980,8 @@ booking está armazenada e sendo usada. Escrever testes unitários simulando can
 fora do prazo para ver se o reembolso calculado bate com as regras. 
 (P0) Backfill de Snapshots em Prod: Executar o script de backfill de snapshots antes do deploy
 final, e tratar registros que porventura não consigam snapshot. 
-Status: Pendente – Em dev/QA provavelmente já rodaram (indicou PR1+PR2 done), mas precisa
-rodar em base de produção (se houver dados antigos) antes do release ou no migration. 
+Status: Feito – Backfill executado (report 2026-02-01); confirmar novamente em prod se houver
+dados antigos. 
 Instruções: 
 Preparar
  
@@ -1009,8 +1001,7 @@ comunicação aos users. Documentar no runbook de release.
 (P1) Preservação de Timezone: Confirmar que o campo de timezone do snapshot está sendo
 retornado nas APIs de consulta. 
 Ficheiros: app/api/me/reservas/route.ts  (lista de reservas do usuário). 
-Status: Verificar – A SSOT exige que o timezone original da reserva esteja disponível
-. 
+Status: Feito – Booking.snapshotTimezone presente e retornado no snapshot. 
 Instruções: 
 Se  a  rota  não  estiver  retornando,  incluir  no  select  a  propriedade
 confirmationSnapshotCreatedAt  e  possivelmente  o  próprio  timezone  dentro  do  JSON
@@ -1215,17 +1206,12 @@ ticket serve para lookup do entitlement no check-in.
 Ticket.id ou secret) para encontrar o Ticket e marcar seu Entitlement como usado (maybe via linking to
 Ticket.usedAt). Precisamos confirmar se implementaram o consumo: dado que entitlements agora
 existem, possivelmente sim.
-- Sobre Loja (produtos físicos/digitais): As rotas de loja ( /api/me/store/...  e /api/organizacao/
-loja/... ) existem e grande parte está marcada como orfã (não há UI chamando, possivelmente
-porque  ainda  não  priorizaram  a  loja  completa).  Pode  ser  deliberado  focar  primeiro  em  eventos/
-reservas. Então, o estado atual da loja pode estar incompleto (ex.: talvez é possível criar produtos no
-dashboard, mas o fluxo de comprar produto como usuário final não está exposto na UI pública). Isso é
-algo a considerar: ou finalizamos ou deixamos fora do release inicial.
-- Check-in unified: Provavelmente o app admin usa a mesma tela de check-in (por QR) tanto para
-eventos (tickets) quanto para reservas (aulas) – e possivelmente para padel. Com entitlements em
-todos,  isso  simplifica:  o  scanner  apenas  verifica  o  tipo  (EVENT_TICKET  vs  PADEL_ENTRY  vs
-SERVICE_BOOKING) e valida conforme regras. Precisamos garantir que o endpoint de check-in trate
-todos tipos.
+- Sobre Loja (produtos físicos/digitais): UI de gestão + storefront público + checkout existem e estão
+ativos. Fluxo completo (catálogo → carrinho → checkout → encomenda) já está exposto, com bundles,
+portes e promo codes. As definições de suporte/políticas ficam no painel da loja.
+- Check-in unified (decisão atual): o scanner usa entitlements apenas para **eventos/tickets** e
+**padel**. Entitlements de SERVICE_BOOKING não entram no fluxo de check-in (sem QR). O endpoint
+de check-in deve aceitar só EVENT_TICKET e PADEL_ENTRY.
 - O blueprint v9 não entrou em detalhes de funcionalidades extra (ex.: transferir bilhete, marketplace de
 revenda – isso ficou possivelmente fora de v1). Observamos presence de  /api/eventos/[slug]/
 resales  e stuff de carteira de créditos nos orfãos, indicando futuros recursos não ativados. 
@@ -1287,10 +1273,10 @@ menos garantir que app de check-in só gera QR de tickets (talvez reservas não 
 check-in de aula é lista). De qualquer forma, conferir e padronizar. 
 (P2) Extras  (Marketplace  de  Revenda,  Carteira): Havia  indícios  de  funcionalidades  como
 revenda de bilhetes e créditos de fidelidade (carteira). Estão fora do escopo imediato. 
-Status: Não implementado – Rotas /api/me/loyalty/carteira , /api/eventos/[slug]/
-resales  existem mas sem uso. 
-Instruções: Manter essas features desligadas e não acessíveis na UI. Talvez remover
-temporariamente endpoints ou proteger com flag, para evitar chamadas ocas em produção. 
+Status: Feito – Rotas + UI existem para carteira (entitlements/loyalty) e revenda; sem wallet
+monetária (apenas pontos/benefícios). 
+Instruções: Carteira/entitlements ativa (bilhetes/inscrições/reservas). Créditos monetários ficam fora
+de escopo; manter a comunicação explícita de “sem wallet monetária”.
 Utilizadores, Sessão e Notificações (Bloco 10)
 Resumo & SSOT: Este bloco abrange aspectos de conta do usuário, privacidade e notificações. O
 blueprint estabelece  consentimentos explícitos como princípio
@@ -1438,18 +1424,13 @@ ausente do que errado.
 Plano de Ação:
 - (P2) Busca Global Simples: Se não houver, adicionar uma funcionalidade de busca textual básica para
 encontrar clubes ou eventos pelo nome.
-- Status: Não implementado – O blueprint F2-A mencionou possivelmente um serviço de indexação se
-necessário
-, mas para já podemos usar queries simples.
--  Instruções: Criar endpoint  /api/search  que aceita uma query e retorna talvez 10 resultados
+ Status: Feito – Endpoint unificado criado em `app/api/search/route.ts` (orgs + events + users). 
+-  Instruções: Usar `/api/search?q=` para barra global quando necessário; resultado já devolve grupos.
 combinados (ex.: clubes e eventos cujo nome ~ ilike '%query%'). Isso ajuda na barra de busca do topo
 (Unified Search) se formos implementar. Se for muito em cima da hora, pelo menos garantir que o
 usuário possa buscar clubes pelo nome em uma página (p. ex., se temos diretório de clubes). 
 (P2) Analytics Organizacional: Documentar ou esconder menus inativos. 
-Status: Parcial – A página organizacional de “Estatísticas” possivelmente era para mostrar
-gráficos de vendas/receita (alguns calculados no overview já mencionado). Se não estiver
-apresentável, poderíamos ocultar a aba "Estatísticas" no dashboard do cliente até
-aprimorarmos. 
+Status: Feito – Dashboard org já consome rollups/overview e expõe métricas base. 
 Instruções: Caso decidam mostrar algo, talvez exibir apenas o que implementamos no overview
 (total vendas 30d, etc.) e deixar futuros gráficos disabled. Transparentemente comunicar “Em
 breve, analytics detalhada”. 
@@ -1517,13 +1498,12 @@ param ou outros secrets. Dica: procurar por process.env  dentro de rotas interna
 usos. 
 (P0) Segredo não exposto na UI: Revisar se nenhuma chamada front-end tenta usar esse
 segredo. 
-Status: Provável OK – Não encontramos tal padrão, mas conferir componentes ou actions. 
+Status: Feito – Varredura sem uso de secrets no client. 
 Instruções: Se encontrasse, remover imediatamente. Qualquer funcionalidade precisando dado
 interno deve ser remanejada: ou criar endpoint público seguro ou usar action do Next (server
 action) para invocar internamente. 
 (P1) Acesso Cron Externo: Documentar como chamar endpoints cron/internos em produção. 
-Status: Parcial – No doc de env, instruções de como armazenar secrets no AWS
-. 
+Status: Feito – Instruções consolidadas em envs_required.md + runbook ops-endpoints. 
 Instruções: Escrever runbook "Ops Endpoints" com lista de endpoints internos (e.g.  /api/
 cron/payouts/release  –  libera  payouts;
  /api/internal/reconcile  –  reconcilia
@@ -1574,27 +1554,20 @@ Análise do Código (develop):
 - Já existem alguns runbooks no repositório ( docs/runbooks/* ), cobrindo tópicos como DLQ, replay,
 traçar  requestId,  etc.  Isso  é  um  bom  começo,  mas  precisamos  garantir  que  estão  atualizados  e
 completos para v10.
-- Observabilidade: O sistema provavelmente utiliza logs padrão (console.log/console.error). Não vimos
-integração explícita com serviços de log (como Datadog, Sentry ou New Relic). Para produção, é
-fundamental configurar pelo menos captura de erros (Sentry) e possivelmente métricas básicas (p. ex.,
-endpoint /health  para uptime).
+- Observabilidade: Logs estruturados via logger central + CloudWatch. Sem Sentry (AWS-only).
 - DLQ e replay: Já tratado em bloco 2, mas do ponto de vista operabilidade, deve haver instruções claras
 de como reprocessar eventos ou lidar com filas mortas – esses runbooks estão parcialmente escritos.
 -  SLOs:  Não  foram  formalizados  no  código  (normal,  é  mais  um  processo).  Precisamos  defini-los
 manualmente antes do deploy: por exemplo, "99% dos checkouts completam em <5s"; "Nenhum e-mail
 crítico falha sem retry bem-sucedido", etc., e planejar monitoramento para isso. 
 Plano de Ação:
-- (P0) Configuração de Logs e Erros: Integrar uma ferramenta de monitoramento de erros (Sentry ou
-similar).
-- Ficheiros: next.config.js  (para incluir DSN do Sentry), ou diretamente inicialização no _app  do
-Next.
-- Status: Não implementado – Não há menção a Sentry no repo.
-- Instruções: Adicionar Sentry SDK para Next.js. Configurar para capturar erros front-end e back-end.
-Incluir o requestId  nos contextos de erro para correlacionar com logs server. Garantir que secrets
-não vazem nos logs (por exemplo, filtrar ORYA_CRON_SECRET  de qualquer log). 
+- (P0) Configuração de Logs e Erros: AWS‑first (CloudWatch Logs + logger central). Sem Sentry.
+- Ficheiros: `lib/observability/logger.ts`, runbooks em `docs/runbooks/metrics-alerts.md`.
+- Status: Feito – logs estruturados + requestId/correlationId e envio via CloudWatch (infra/ecs).
+- Instruções: manter `logError/logWarn` com requestId, garantir filtros de secrets e retenção de logs.
 (P1) Runbooks por Domínio: Completar e revisar os runbooks existentes, cobrindo cenários
 chave. 
-Status: Parcial – Alguns existem (DLQ, trace). 
+Status: Feito – Runbooks por domínio disponíveis (pagamentos, DLQ, ops, check-in). 
 Instruções: Elaborar runbooks para: 
 Pagamentos: O que fazer se um pagamento fica pendente ou um webhook falha (ex.:
 usar /api/internal/reprocess/payment-intent ). 
@@ -1614,14 +1587,10 @@ Infra: Como restaurar de backup do DB (Supabase -> S3), etc.
 Go-live checklist: Itemizar atividades de pré-deploy (ver bloco 14).
 Escrever de forma objetiva e armazenar em docs/runbooks/*.md . 
 (P1) Métricas e Alertas: Instrumentar métricas básicas e configurar alertas. 
-Status: Não implementado – Requer ferramentas externas (talvez fase 2). 
-Instruções: Se usando AWS, considerar CloudWatch metrics para: utilização de CPU/memória,
-contagem  de  erros  5xx.  Configurar  um  endpoint  /api/internal/health  que  verifica
-componentes (db conectividade, supabase, fila) e retorna status. Em AWS App Runner/ECS, ajustar
-monitor para pingar esse endpoint. Definir alertas (email/Slack) se serviço cair ou se taxa de erro
-subir acima de limiar. 
+Status: Feito – runbook de métricas/alertas + endpoints infra/admin + CloudWatch/SNS definidos. 
+Instruções: Usar métricas nativas (ALB/ECS) e alarmes CloudWatch conforme `docs/runbooks/metrics-alerts.md`.
 (P2) SLO/SLI Definição: Documentar internamente quais são nossos objetivos de serviço. 
-Status: Por fazer – Atividade gerencial/técnica off-code. 
+Status: Feito – Documento base criado em docs/observability/slo_sli.md. 
 Instruções: Exemplo de SLOs: Uptime 99.9%, Erro de pagamento <0.1% por semana, Tempo médio
 de geração de bilhete <2s. Uma vez definidos, estabelecer SLIs que os mensuram (talvez manual
 inicialmente: ex. monitorar logs semanalmente). Isso serve para drive de melhorias contínuas. 
@@ -1675,7 +1644,7 @@ cron).
 Após isso, fazer deploy de teste e verificar que nada quebra por falta de env. 
 (P0) Configuração do Deploy AWS: Implementar pipeline de deploy para branch develop
 (staging) e main (production). 
-Status: Por fazer – Definir arquitetura AWS para front e API, mantendo um único alvo de deploy.
+Status: Implementado base – templates infra (ECS/CloudWatch/SNS) disponíveis; falta aplicar no AWS account. 
 funções longas (cron)? Precisamos clarificar. Mas dado mention de App Runner, supõe app
 monolítico em Node. 
 Instruções: Preparar container Docker da app (Next.js pode rodar serverless ou container). App
@@ -1699,8 +1668,7 @@ Instruções: Testar “Adicionar ao calendário (ICS)” no celular: após rese
 –  confere  se  evento  entra  no  calendário  do  device.  Caso  haja  problema,  ajustar  header
 Content-Disposition  do ICS route para forçar download com nome útil. 
 (P2) PWA e App Store: Preparar terreno para um possível app. 
-Status: Parcial – Verificar se há manifesto PWA ( /public/manifest.json  e icons). Se não,
-adicionar para permitir “Adicionar à tela inicial”. 
+Status: Feito – Manifest PWA presente em /public/manifest.json. 
 • 
 • 
 • 

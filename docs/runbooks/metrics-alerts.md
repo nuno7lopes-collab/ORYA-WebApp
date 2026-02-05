@@ -2,22 +2,18 @@
 
 Objetivo: definir alertas basicos para operacao sem gaps.
 
-## Fontes
-- Logs estruturados (requestId/correlationId).
+## Fontes (AWS-only, baixo custo)
+- Logs estruturados (requestId/correlationId) via CloudWatch Logs.
+- Métricas nativas do ALB/ECS (sem custom metrics).
 - `/api/internal/ops/health` e `/api/internal/ops/slo`.
-- Sentry (erros server/client).
 
-## Alertas minimos (sugestao)
-- Outbox backlog:
-  - `outbox.pendingCount` acima do normal por > 5 min.
-  - `outbox.deadLetteredLast24h > 0`.
-- Operacoes:
-  - `operations.failedCount` crescente.
-  - `operations.deadLetterCount` > 0.
-- Pagamentos:
-  - `payments.errorEventsLast24h` > 0.
-- DB latency:
-  - `db.latencyMs` acima do limite acordado.
+## Alertas mínimos (AWS-only, sem custo extra)
+- **ALB 5xx**:
+  - `HTTPCode_Target_5XX_Count` > 0 por 5 min.
+- **ECS task restarts**:
+  - `ServiceRunningTasksCount` < desejado por 5 min.
+- **CPU/Mem**:
+  - `CPUUtilization` ou `MemoryUtilization` > 80% por 10 min.
 
 ## SLO basico (proposta)
 - Disponibilidade API core: 99.5%/30d (checkout, webhook, worker).
@@ -26,15 +22,10 @@ Objetivo: definir alertas basicos para operacao sem gaps.
  - Definicao completa: `docs/observability/slo_sli.md`.
 
 ## CloudWatch (exemplo)
-- Criar metric filter em logs:
-  - pattern: `"outbox"` + `"deadLetteredLast24h"`
-  - threshold: > 0
-- Alarmes por email/Slack.
-
-## Sentry (exemplo)
-- Eventos: `refund.ledger_append_failed`, `worker.publish_outbox_batch_failed`.
-- Configurar alert rule por tag `requestId` ou `correlationId`.
-
+- Criar alarmes com métricas nativas (ALB/ECS) acima.
+- Não usar custom metrics para evitar custos adicionais.
 ## Notas
 - Sem alertas -> blind spots.
 - Ajustar thresholds por ambiente (staging vs prod).
+ - Retenção de logs: 7–14 dias para minimizar custo.
+ - `LOG_LEVEL=warn` em produção reduz volume.

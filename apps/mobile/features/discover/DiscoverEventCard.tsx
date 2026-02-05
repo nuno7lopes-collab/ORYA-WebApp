@@ -3,7 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
 import { useEffect, useMemo, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { PublicEventCard, tokens } from "@orya/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -501,9 +501,6 @@ export function DiscoverEventCard({ item, itemType, variant = "feed", index = 0 
                           color="rgba(255,255,255,0.9)"
                         />
                       </View>
-                      <Text className="text-white/60 text-xs">
-                        {isService ? "Servico sem capa" : "Imagem do evento em breve"}
-                      </Text>
                     </View>
                   </View>
                 )}

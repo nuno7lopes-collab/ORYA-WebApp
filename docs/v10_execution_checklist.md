@@ -9,9 +9,8 @@ Legenda estado: DONE | PARTIAL | TODO | N/A
 ## Auditoria (primeiro sweep)
 - `app/api/**/route.ts` usa `withApiEnvelope` ou `respondOk/respondError` (script de varredura sem faltas).
 - `app/api/internal/**` + `app/api/cron/**` usam `requireInternalSecret` (script de varredura sem faltas).
-- Verificações locais (2026-01-31): `npm run db:gates:offline` + `npx vitest run tests/finance tests/fiscal tests/outbox tests/ops tests/notifications tests/analytics` **FAIL** (3 testes).
-  - Falhas: mock Stripe (`getStripeClient`) afeta `stripeGateway/refundService/reconciliationSweep`.
-  - Evidência: output local 2026-01-31 (ver console).
+- Verificações locais (2026-02-05): `npm run lint`, `npm run typecheck`, `npm run test:coverage`, `npm run db:gates:offline` **PASS**.
+  - Nota: testes adicionais `npx vitest run tests/contracts tests/access tests/ops` também passaram.
 - Ops endpoints (2026-01-31): chamadas internas com `X-ORYA-CRON-SECRET` retornaram 403 (secret/env mismatch).
 
 ---

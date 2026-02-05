@@ -1,0 +1,108 @@
+# Docs audit (2026-02-05)
+
+## Summary
+- Total docs: 58
+- Total lines scanned: 19866
+- Lines with status keywords: 100
+
+## Matches (file:line)
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:15`: Resumo & SSOT: Todo endpoint crítico deve retornar um envelope unificado de resposta/erro incluindo
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:168`: (P0) Idempotência e Determinismo: Garantir que todo Payment tenha chave idempotente
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:269`: dedupeKey = checkoutKey ) – então parcialmente adotado. No entanto, Status: TODO no registro
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:313`: Status: Provável melhoria pendente – Devemos confirmar se hoje o código marca publishedAt
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:500`: Status: Por fazer – Embora funcionalmente completo, podemos aprimorar mensagens na
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:695`: - Entretanto, o registro v9 indica Status: TODO para Bloco 5
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:768`: . Invariantes: todo evento criado já deve ter uma EventAccessPolicy (não pode existir evento sem
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:863`: Status: Por fazer – Precisamos garantir que, se as regras ficam mais restritas, ou bloqueamos
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:998`: Status: Pendente – Em dev/QA provavelmente já rodaram (indicou PR1+PR2 done), mas precisa
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1062`: com inscrições de duplas (Padel). O principal ponto no blueprint v9 foi amarrar  todo Torneio a um
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1070`: Análise do Código (develop): Esse bloco estava marcado TODO, mas várias fundações foram lançadas
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1095`: , mas isso é possivelmente não implementado ainda devido a tempo. Ou seja, criar torneio padel
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1164`: manual). Como mínimo, se não implementado, sinalizar para o usuário que após inscrições ele
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1297`: Status: Não implementado – Rotas /api/me/loyalty/carteira , /api/eventos/[slug]/
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1443`: esse bloco é todo marcado TODO, podemos concluir que nada crítico aqui impede o deploy – é mais
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1448`: - Status: Não implementado – O blueprint F2-A mencionou possivelmente um serviço de indexação se
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1598`: - Status: Não implementado – Não há menção a Sentry no repo.
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1606`: Pagamentos: O que fazer se um pagamento fica pendente ou um webhook falha (ex.:
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1624`: Status: Não implementado – Requer ferramentas externas (talvez fase 2).
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1631`: Status: Por fazer – Atividade gerencial/técnica off-code.
+- `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1685`: Status: Por fazer – Definir arquitetura AWS para front e API, mantendo um único alvo de deploy.
+- `docs/UX (ORYA WebApp).md:415`:   * endpoints públicos sem uso (avaliar remoção ou UI em falta)
+- `docs/mobile_ios_plan.md:70`: - PENDING → MATCHMAKING → CONFIRMED/EXPIRED.
+- `docs/mobile_ios_plan.md:76`: - Analytics adapter required (provider pending); track screen/tap/funnel/purchase/resume/social/padel.
+- `docs/observability/slo_sli.md:7`: - `/api/internal/ops/slo` (pending backlog, oldest pending age, DLQ 24h, eventLog last1h).
+- `docs/orya_blueprint_v9_final.md:20`: - Multi‑tenancy explícita: todo o acesso/consulta é org‑scoped (fail‑closed).
+- `docs/orya_blueprint_v9_final.md:51`: - PricingSnapshot/fees: removidas “estimates”; `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
+- `docs/orya_blueprint_v9_final.md:168`: - irreversible actions are blocked
+- `docs/orya_blueprint_v9_final.md:381`: Todo torneio de Padel tem eventId obrigatório.
+- `docs/orya_blueprint_v9_final.md:452`:   - `processorFeesStatus: PENDING | FINAL`
+- `docs/orya_blueprint_v9_final.md:502`:     - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
+- `docs/orya_blueprint_v9_final.md:873`: 	•	existe estado pendente até T-24h do início do torneio
+- `docs/orya_blueprint_v9_final.md:901`: 	•	quando o utilizador cria conta com esse email, vê o pagamento pendente e consegue concluir
+- `docs/orya_blueprint_v9_final.md:905`: 	•	T-36h (pendente)
+- `docs/orya_blueprint_v9_final.md:1305`: 	•	Processor fees: `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` (nullable até reconciliação Stripe).
+- `docs/orya_blueprint_v9_final.md:2236`: `PENDING | ACTIVE | REVOKED | EXPIRED | SUSPENDED`
+- `docs/orya_blueprint_v9_final.md:2237`: - `PENDING`: criado mas ainda não “válido” (ex.: pagamento em processamento, hold de reserva).
+- `docs/orya_blueprint_v9_final.md:2559`: 	•	pendente até T-24h
+- `docs/orya_blueprint_v9_final.md:2569`: 		•	pagamento fica “pendente” associado ao email
+- `docs/orya_blueprint_v9_final.md:2597`: 	•	cada inscrição pendente mostra countdown até cutoff
+- `docs/orya_blueprint_v9_final.md:2598`: 	•	estado canónico (PENDING/MATCHMAKING/etc.)
+- `docs/orya_blueprint_v9_final.md:2666`: 	•	o método fica pendente (PROCESSING)
+- `docs/orya_blueprint_v9_final.md:3280`:   - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
+- `docs/orya_blueprint_v9_final.md:3528`: 	•	pagamento pendente associado ao email (aparece ao criar conta com o mesmo email)
+- `docs/orya_blueprint_v9_final.md:3535`: 	•	comportamento até T-24h (PENDING):
+- `docs/orya_blueprint_v9_final.md:3537`: 	•	“pagar pelo parceiro” (capitão cobre a parte em falta)
+- `docs/orya_blueprint_v9_final.md:4163`: **Regra D1 (v9):** todo torneio Padel tem **eventId obrigatorio** (Eventos e owner da base).
+- `docs/padel_uiux_master_plan.md:85`: - [x] Context drawer com “estado operacional de hoje” (split pendente, waitlist, conflitos, live alerts).
+- `docs/padel_uiux_master_plan.md:87`: - [x] Uniformizar microcopy de estados (pending/matchmaking/confirmed/expired) em todas as superfícies.
+- `docs/plano_operacional.md:36`: pendente pagamento.
+- `docs/plano_operacional.md:42`: pode pagar a parte pendente a
+- `docs/plano_operacional.md:78`: Dominio Padel usa os estados canonicos do Plano Padel: PENDING, CONFIRMED, WAITLISTED,
+- `docs/plano_operacional.md:84`: PENDING Capitao pagou; parceiro ainda nao (ou
+- `docs/plano_operacional.md:85`: aceitacao pendente). Nao conta para
+- `docs/plano_operacional.md:108`: • T-48h: verificar duplas em PENDING (parceiro nao pagou). Notificar ambos e abrir janela de 1h
+- `docs/plano_operacional.md:149`: • Se Split: capitao paga e reserva (cria PENDING). O parceiro tem de aceitar o convite e, apos
+- `docs/plano_operacional.md:150`: aceitar, fica pendente pagamento.
+- `docs/plano_operacional.md:151`: • Capitao pode: (a) trocar parceiro (apenas antes do parceiro pagar), (b) pagar a divida pendente do
+- `docs/plano_operacional.md:254`: • Troca parceiro (antes do parceiro pagar) + pagar divida pendente (apos aceitacao).
+- `docs/plano_operacional.md:360`: • Area da dupla: estado PENDING/CONFIRMED/WAITLISTED e acoes (swap, cancelar, entrar/sair
+- `docs/plano_operacional.md:377`: • Fluxo de transferencia com dupla confirmacao + estado pendente.
+- `docs/plano_operacional.md:439`: ● “Pending” não conta para lotação; se não houver vaga quando confirmarem, ficam
+- `docs/plano_operacional.md:472`: Usar e estender o estado já previsto para inscrições Padel: PENDING, CONFIRMED,
+- `docs/plano_operacional.md:475`: ● PENDING: capitão pagou, parceiro ainda não → não conta para lotação.
+- `docs/plano_operacional.md:549`: ○ checkout do capitão → cria PENDING
+- `docs/plano_operacional.md:552`: ○ estado: PENDING/CONFIRMED/WAITLISTED
+- `docs/plano_operacional.md:557`: ○ PENDING não conta; CONFIRMED conta; sem vaga quando confirmar →
+- `docs/plano_operacional.md:570`: ● Pagamento do capitão cria PENDING e não bloqueia inscrições de outras
+- `docs/plano_operacional.md:593`: ou mantém PENDING conforme pagamentos
+- `docs/plano_operacional.md:695`: 3. Pending não conta para lotação; confirmação sem vaga → waitlist.
+- `docs/runbooks/dsar.md:24`: - `POST /api/admin/users/purge-pending`
+- `docs/runbooks/incident-playbook.md:137`: Acoes seguras sem SafetyCase/KillSwitch (ainda nao implementado no A):
+- `docs/runbooks/notifications.md:26`: 2) Verificar outbox status (PENDING/FAILED).
+- `docs/runbooks/operability-checklist.md:59`:   - qualquer item acima em falta
+- `docs/v10_execution_checklist.md:5`: Legenda estado: DONE | PARTIAL | TODO | N/A
+- `docs/v10_execution_checklist.md:95`:   - Estado real: DONE — payment_event free termina em OK após UPSERT_LEDGER_FROM_PI_FREE; sem estado pendente.
+- `docs/v9_close_checklist.md:862`: - [N/A] L20: - Multi‑tenancy explícita: todo o acesso/consulta é org‑scoped (fail‑closed).
+- `docs/v9_close_checklist.md:888`: - [N/A] L51: - PricingSnapshot/fees: removidas “estimates”; `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
+- `docs/v9_close_checklist.md:974`: - [N/A] L168: - irreversible actions are blocked
+- `docs/v9_close_checklist.md:1137`: - [N/A] L381: Todo torneio de Padel tem eventId obrigatório.
+- `docs/v9_close_checklist.md:1192`: - [N/A] L452:   - `processorFeesStatus: PENDING | FINAL`
+- `docs/v9_close_checklist.md:1240`: - [N/A] L502:     - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
+- `docs/v9_close_checklist.md:1532`: - [N/A] L873: 	•	existe estado pendente até T-24h do início do torneio
+- `docs/v9_close_checklist.md:1557`: - [N/A] L901: 	•	quando o utilizador cria conta com esse email, vê o pagamento pendente e consegue concluir
+- `docs/v9_close_checklist.md:1560`: - [N/A] L905: 	•	T-36h (pendente)
+- `docs/v9_close_checklist.md:1853`: - [N/A] L1305: 	•	Processor fees: `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` (nullable até reconciliação Stripe).
+- `docs/v9_close_checklist.md:2556`: - [N/A] L2236: `PENDING | ACTIVE | REVOKED | EXPIRED | SUSPENDED`
+- `docs/v9_close_checklist.md:2557`: - [N/A] L2237: - `PENDING`: criado mas ainda não “válido” (ex.: pagamento em processamento, hold de reserva).
+- `docs/v9_close_checklist.md:2816`: - [N/A] L2559: 	•	pendente até T-24h
+- `docs/v9_close_checklist.md:2825`: - [N/A] L2569: 		•	pagamento fica “pendente” associado ao email
+- `docs/v9_close_checklist.md:2848`: - [N/A] L2597: 	•	cada inscrição pendente mostra countdown até cutoff
+- `docs/v9_close_checklist.md:2849`: - [N/A] L2598: 	•	estado canónico (PENDING/MATCHMAKING/etc.)
+- `docs/v9_close_checklist.md:2903`: - [N/A] L2666: 	•	o método fica pendente (PROCESSING)
+- `docs/v9_close_checklist.md:3360`: - [N/A] L3280:   - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
+- `docs/v9_close_checklist.md:3559`: - [N/A] L3528: 	•	pagamento pendente associado ao email (aparece ao criar conta com o mesmo email)
+- `docs/v9_close_checklist.md:3564`: - [N/A] L3535: 	•	comportamento até T-24h (PENDING):
+- `docs/v9_close_checklist.md:3566`: - [N/A] L3537: 	•	“pagar pelo parceiro” (capitão cobre a parte em falta)
+- `docs/v9_close_checklist.md:4097`: - [N/A] L4163: **Regra D1 (v9):** todo torneio Padel tem **eventId obrigatorio** (Eventos e owner da base).
+- `docs/v9_inventory_api.md:55`: | /api/admin/users/purge-pending | app/api/admin/users/purge-pending/route.ts | POST | admin | admin | query | 200, 500 | default/default/default | default | withApiEnvelope | - |
+- `docs/v9_parity_report.md:14`: - /api/admin/users/purge-pending (admin)

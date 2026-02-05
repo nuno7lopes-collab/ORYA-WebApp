@@ -18,7 +18,10 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Precisamos de acesso à galeria para atualizar a tua foto de perfil.",
+        "NSCameraUsageDescription": "Precisamos de acesso à câmara para atualizar a tua foto de perfil.",
+        "NSLocationWhenInUseUsageDescription": "Usamos a tua localização para sugerir eventos perto de ti."
       }
     },
     "android": {
@@ -27,7 +30,8 @@
         "backgroundColor": "#0b101a"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.orya.app.prod"
+      "package": "com.orya.app.prod",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -167,7 +167,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (booking.userId !== user.id) {
       return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
-    if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(booking.status)) {
+    const bookingState = getBookingState(booking);
+    if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(bookingState ?? "")) {
       return fail(ctx, 409, "BOOKING_INACTIVE", "Reserva inativa.");
     }
     if (!booking.price || booking.price <= 0) {

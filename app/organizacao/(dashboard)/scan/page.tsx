@@ -15,7 +15,7 @@ export default function OrganizationScanPage({ embedded }: OrganizationScanPageP
   return (
     <div className={wrapperClass}>
       <CheckinScanner
-        backHref="/organizacao?tab=manage"
+        backHref="/organizacao/manage"
         backLabel="Ver gestão"
         title="Modo Receção · Organização"
         subtitle="Check-in em 2 passos com confirmação explícita."

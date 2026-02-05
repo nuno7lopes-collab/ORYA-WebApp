@@ -11,7 +11,7 @@ export default function NovaEventoPage() {
   const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
   const orgId = getOrganizationIdFromBrowser();
   const becomeHref = appendOrganizationIdToHref("/organizacao/become", orgId);
-  const dashboardHref = appendOrganizationIdToHref("/organizacao?tab=create", orgId);
+  const dashboardHref = appendOrganizationIdToHref("/organizacao/overview", orgId);
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10 text-white">

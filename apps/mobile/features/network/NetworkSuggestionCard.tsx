@@ -1,17 +1,23 @@
+import { memo } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { SocialSuggestion } from "./types";
 
 type Props = {
   item: SocialSuggestion;
   pending?: boolean;
-  onFollow: () => void;
-  onUnfollow: () => void;
+  onFollow: (targetUserId: string) => void;
+  onUnfollow: (targetUserId: string) => void;
 };
 
-export function NetworkSuggestionCard({ item, pending, onFollow, onUnfollow }: Props) {
+export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
+  item,
+  pending,
+  onFollow,
+  onUnfollow,
+}: Props) {
   const fullName = item.fullName || item.username || "Utilizador";
   const subtitle = item.city
     ? `${item.city}${item.mutualsCount ? ` · ${item.mutualsCount} em comum` : ""}`
@@ -19,7 +25,10 @@ export function NetworkSuggestionCard({ item, pending, onFollow, onUnfollow }: P
       ? `${item.mutualsCount} em comum`
       : "Comunidade ORYA";
 
+  const isRequested = Boolean(item.isRequested);
   const isFollowing = Boolean(item.isFollowing);
+  const isActive = isFollowing || isRequested;
+  const label = pending ? "A atualizar..." : isRequested ? "Pedido enviado" : isFollowing ? "A seguir" : "Seguir";
 
   return (
     <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.md }}>
@@ -53,20 +62,20 @@ export function NetworkSuggestionCard({ item, pending, onFollow, onUnfollow }: P
         </View>
 
         <Pressable
-          onPress={isFollowing ? onUnfollow : onFollow}
+          onPress={() => (isActive ? onUnfollow(item.id) : onFollow(item.id))}
           disabled={pending}
           className={
-            isFollowing
+            isActive
               ? "rounded-xl border border-white/15 bg-white/5 px-4 py-2"
               : "rounded-xl border border-emerald-300/45 bg-emerald-400/20 px-4 py-2"
           }
           style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
         >
-          <Text className={isFollowing ? "text-white text-xs font-semibold" : "text-emerald-200 text-xs font-semibold"}>
-            {pending ? "A atualizar..." : isFollowing ? "A seguir" : "Seguir"}
+          <Text className={isActive ? "text-white text-xs font-semibold" : "text-emerald-200 text-xs font-semibold"}>
+            {label}
           </Text>
         </Pressable>
       </View>
     </GlassCard>
   );
-}
+});

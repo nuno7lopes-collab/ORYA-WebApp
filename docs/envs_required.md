@@ -16,6 +16,11 @@ Keep secrets out of git. Use single-line base64 for Apple keys.
 - APP_BASE_URL / NEXT_PUBLIC_BASE_URL (recommended, used by checkout flows)
 - ORYA_CRON_SECRET (required for /api/internal + /api/cron)
 
+Legacy/compat (present in some envs but not required by current runtime):
+- NEXTAUTH_SECRET
+- NEXTAUTH_URL
+- MAP_PROVIDER
+
 ## Supabase
 Required:
 - SUPABASE_URL
@@ -33,7 +38,7 @@ Optional:
 - SUPABASE_COOKIE_DOMAIN / NEXT_PUBLIC_SUPABASE_COOKIE_DOMAIN
 
 ## Stripe
-Required:
+Required (prod):
 - STRIPE_SECRET_KEY_LIVE
 - STRIPE_SECRET_KEY_TEST
 - STRIPE_WEBHOOK_SECRET_LIVE
@@ -50,6 +55,9 @@ Optional:
 - STRIPE_PAYOUTS_WEBHOOK_SECRET_TEST
 - STRIPE_FEE_* (only if overriding fee defaults)
 
+Nota: o runtime usa os _LIVE/_TEST quando presentes; em dev/staging pode funcionar apenas com os
+fallbacks (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`).
+
 ## Apple Sign-In
 Required:
 - APPLE_SIGNIN_SERVICE_ID
@@ -65,14 +73,20 @@ Required:
 - APNS_PRIVATE_KEY_BASE64
 - APNS_TOPIC
 
-## Apple Maps
-Required:
+## Apple Maps (MapKit JS)
+Required (canonical):
 - APPLE_MAPS_TEAM_ID
 - APPLE_MAPS_KEY_ID
 - APPLE_MAPS_PRIVATE_KEY_BASE64
 
 Optional:
+- APPLE_MAPS_ORIGIN
 - APPLE_MAPS_TOKEN_TTL_SECONDS (defaults to 900 seconds)
+
+Legacy fallback (accepted, but prefer APPLE_MAPS_*):
+- MAPKIT_JS_KEY_ID
+- MAPKIT_JS_PRIVATE_KEY_BASE64
+- MAPKIT_JS_ORIGIN
 
 ## Apple .p8 -> base64 (single line)
 1) Download the .p8 (e.g. AuthKey_ABC123.p8).

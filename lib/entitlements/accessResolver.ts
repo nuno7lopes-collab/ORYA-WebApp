@@ -32,13 +32,15 @@ function insideWindow(window?: { start: Date | null; end: Date | null }) {
 }
 
 export function resolveActions(input: ResolverInput): EntitlementActions {
-  const { status, isOwner, isOrganization, isAdmin, checkinWindow, outsideWindow, emailVerified, isGuestOwner } = input;
+  const { type, status, isOwner, isOrganization, isAdmin, checkinWindow, outsideWindow, emailVerified, isGuestOwner } = input;
   const effectiveStatus = getEntitlementEffectiveStatus({ status });
   const consumed = isConsumed({ status });
   const baseBlocked = effectiveStatus === "REVOKED" || effectiveStatus === "SUSPENDED";
+  const qrEligible = type === EntitlementType.EVENT_TICKET || type === EntitlementType.PADEL_ENTRY;
 
   const canViewDetails = isOwner || isAdmin || isOrganization;
   const canShowQr =
+    qrEligible &&
     isOwner &&
     effectiveStatus === "ACTIVE" &&
     !baseBlocked &&

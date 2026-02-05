@@ -24,8 +24,8 @@ Goal: minimize AWS cost without sacrificing robustness.
 ## Secrets Manager
 - One secret per key for least privilege.
 
-## Sentry
-- Keep sample rates conservative in prod (configure via env).
+## Observability
+- AWS‑only: CloudWatch Logs + native ALB/ECS metrics (evita custos de custom metrics).
 
 ## Supabase
 - Monitor DB usage; keep connection pooling configured.

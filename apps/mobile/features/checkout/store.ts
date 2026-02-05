@@ -17,6 +17,7 @@ type CheckoutState = {
     breakdown?: CheckoutBreakdown | null;
     freeCheckout?: boolean;
   }) => void;
+  resetIntent: () => void;
   isExpired: () => boolean;
 };
 
@@ -59,6 +60,23 @@ export const useCheckoutStore = create<CheckoutState>()(
             purchaseId: purchaseId ?? draft.purchaseId ?? null,
             breakdown: breakdown ?? draft.breakdown ?? null,
             freeCheckout: typeof freeCheckout === "boolean" ? freeCheckout : draft.freeCheckout ?? false,
+            createdAt: dates.createdAt,
+            expiresAt: dates.expiresAt,
+          },
+        });
+      },
+      resetIntent: () => {
+        const draft = get().draft;
+        if (!draft) return;
+        const dates = buildDates();
+        set({
+          draft: {
+            ...draft,
+            clientSecret: null,
+            paymentIntentId: null,
+            purchaseId: null,
+            breakdown: null,
+            freeCheckout: false,
             createdAt: dates.createdAt,
             expiresAt: dates.expiresAt,
           },

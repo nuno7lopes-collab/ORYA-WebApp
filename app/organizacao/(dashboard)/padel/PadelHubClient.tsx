@@ -212,6 +212,7 @@ type PadelConfigResponse = {
 
 type PadelEventSummary = {
   id: number;
+  slug?: string | null;
   title: string;
   startsAt?: string | Date | null;
   endsAt?: string | Date | null;
@@ -4961,6 +4962,41 @@ export default function PadelHubClient({
                 </div>
               )}
               {!eventId && <p className="text-[12px] text-white/55">Falta eventId no URL.</p>}
+            </div>
+            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
+              <p className="text-sm font-semibold text-white">Exportar calendário</p>
+              <p className="text-[12px] text-white/65">Partilha a agenda com equipas e clube.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={
+                    eventId
+                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=pdf`
+                      : "#"
+                  }
+                  aria-disabled={!eventId}
+                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
+                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
+                  }`}
+                >
+                  PDF
+                </a>
+                <a
+                  href={
+                    eventId
+                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=html`
+                      : "#"
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-disabled={!eventId}
+                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
+                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
+                  }`}
+                >
+                  HTML
+                </a>
+              </div>
+              {!eventId && <p className="text-[12px] text-white/55">Seleciona um torneio para exportar.</p>}
             </div>
             <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
               <p className="text-sm font-semibold text-white">Novo bloqueio</p>

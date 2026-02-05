@@ -94,6 +94,11 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const { data: notificationsData } = useSWR(
     isAuthenticated ? "/api/notifications?status=unread&limit=1" : null,
     fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 60_000,
+    },
   );
   const unreadCount = notificationsData?.unreadCount ?? 0;
 
@@ -643,7 +648,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                   return;
                 }
                 const orgId = getOrganizationIdFromBrowser();
-                const target = appendOrganizationIdToHref("/organizacao?tab=overview", orgId);
+                const target = appendOrganizationIdToHref("/organizacao/overview", orgId);
                 router.push(target);
               }}
               className={`${navButtonBase} hidden md:inline-flex border-white/18 bg-white/5 text-white/85 shadow-[0_0_18px_rgba(0,0,0,0.25)] hover:border-white/30 hover:bg-white/10`}

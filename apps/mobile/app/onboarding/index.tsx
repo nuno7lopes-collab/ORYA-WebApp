@@ -1,534 +1,1012 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
-  Animated,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import * as Location from "expo-location";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { tokens } from "@orya/shared";
-import { LiquidBackground } from "../../components/liquid/LiquidBackground";
-import { GlassSurface } from "../../components/glass/GlassSurface";
-import { GlassCard } from "../../components/liquid/GlassCard";
-import { GlassPill } from "../../components/liquid/GlassPill";
+import { AuthBackground } from "../../components/liquid/AuthBackground";
+import { GlassCard } from "../../components/auth/GlassCard";
+import { PrimaryButton } from "../../components/onboarding/PrimaryButton";
+import { SecondaryButton } from "../../components/onboarding/SecondaryButton";
+import { StepProgress } from "../../components/onboarding/StepProgress";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { resetOnboardingDone, setOnboardingDone } from "../../lib/onboardingState";
+import {
+  clearOnboardingDraft,
+  getOnboardingDraft,
+  setOnboardingDraft,
+  type OnboardingDraft,
+} from "../../lib/onboardingDraft";
 import { getActiveSession } from "../../lib/session";
+import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "../../lib/username";
 import {
   INTEREST_OPTIONS,
-  PADEL_GENDERS,
-  PADEL_LEVELS,
   InterestId,
   OnboardingStep,
+  PADEL_GENDERS,
+  PADEL_LEVELS,
+  PADEL_SIDES,
+  PadelGender,
+  PadelLevel,
+  PadelPreferredSide,
 } from "../../features/onboarding/types";
 import {
   checkUsernameAvailability,
+  fetchIpLocation,
   saveBasicProfile,
   saveLocationConsent,
   saveLocationCoarse,
   savePadelOnboarding,
 } from "../../features/onboarding/api";
-import { useIpLocation } from "../../features/onboarding/hooks";
+import type { ProfileSummary } from "../../features/profile/types";
 
-const steps: OnboardingStep[] = ["basic", "interests", "padel", "location", "finish"];
+const INTEREST_ICONS: Record<InterestId, string> = {
+  padel: "tennisball",
+  concertos: "musical-notes",
+  festas: "sparkles",
+  viagens: "airplane",
+  bem_estar: "leaf",
+  gastronomia: "restaurant",
+  aulas: "book",
+  workshops: "construct",
+};
 
-const sanitizeUsername = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "")
-    .replace(/[^a-z0-9._-]/g, "");
+const MAX_INTERESTS = 6;
 
-const PrimaryButton = ({
-  label,
-  onPress,
-  disabled,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) => (
-  <Pressable
-    onPress={onPress}
-    disabled={disabled}
-    style={({ pressed }) => [
-      {
-        minHeight: tokens.layout.touchTarget,
-        borderRadius: 16,
-        backgroundColor: "rgba(52, 211, 153, 0.9)",
-        opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
-        alignItems: "center",
-        justifyContent: "center",
-      },
-    ]}
-  >
-    <Text className="text-black font-semibold">{label}</Text>
-  </Pressable>
-);
-
-const GhostButton = ({
-  label,
-  onPress,
-}: {
-  label: string;
-  onPress: () => void;
-}) => (
-  <Pressable
-    onPress={onPress}
-    style={({ pressed }) => [
-      {
-        minHeight: tokens.layout.touchTarget,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.18)",
-        backgroundColor: pressed ? "rgba(255,255,255,0.06)" : "transparent",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-    ]}
-  >
-    <Text className="text-white/80 font-semibold">{label}</Text>
-  </Pressable>
-);
+const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
+  if (!draft) return "basic";
+  const interests = draft.interests ?? [];
+  const hasPadel = interests.includes("padel");
+  switch (draft.step) {
+    case 1:
+      return "interests";
+    case 2:
+      return hasPadel ? "padel" : "location";
+    case 3:
+    case 4:
+      return "location";
+    default:
+      return "basic";
+  }
+};
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { session, loading: authLoading } = useAuth();
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState<OnboardingStep>("basic");
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<
-    "idle" | "checking" | "available" | "taken" | "invalid"
+    "idle" | "invalid" | "checking" | "available" | "taken" | "error"
   >("idle");
   const [interests, setInterests] = useState<InterestId[]>([]);
-  const [padelGender, setPadelGender] = useState<string | null>(null);
-  const [padelLevel, setPadelLevel] = useState<string | null>(null);
-  const [locationConsent, setLocationConsent] = useState<"GRANTED" | "DENIED" | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
+  const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
+  const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
+  const [locationHint, setLocationHint] = useState<{ city?: string | null; region?: string | null } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [loadingDraft, setLoadingDraft] = useState(true);
+  const [savingStep, setSavingStep] = useState<OnboardingStep | null>(null);
 
-  const { data: ipLocation } = useIpLocation();
-  const stepIndex = steps.indexOf(step);
+  const draftRef = useRef<OnboardingDraft | null>(null);
+  const usernameCacheRef = useRef<Map<string, boolean>>(new Map());
+  const usernameAbortRef = useRef<AbortController | null>(null);
+  const usernameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fade = useRef(new Animated.Value(0)).current;
-  const translate = useRef(new Animated.Value(18)).current;
+  const padelSelected = interests.includes("padel");
+  const steps = useMemo<OnboardingStep[]>(
+    () => (padelSelected ? ["basic", "interests", "padel", "location"] : ["basic", "interests", "location"]),
+    [padelSelected],
+  );
+  const stepIndex = Math.max(0, steps.indexOf(step));
+
+  const usernameValidation = useMemo(() => validateUsername(username), [username]);
+  const normalizedUsername = usernameValidation.valid
+    ? usernameValidation.normalized
+    : sanitizeUsername(username);
+
+  const saveBasicMutation = useMutation({ mutationFn: saveBasicProfile, retry: 1 });
+  const savePadelMutation = useMutation({ mutationFn: savePadelOnboarding, retry: 1 });
+  const saveConsentMutation = useMutation({ mutationFn: saveLocationConsent, retry: 1 });
+  const saveCoarseMutation = useMutation({ mutationFn: saveLocationCoarse, retry: 1 });
 
   useEffect(() => {
-    if (!authLoading && !session) {
-      router.replace("/(auth)/sign-in");
+    if (padelSelected) return;
+    if (step === "padel") setStep("location");
+    setPadelGender(null);
+    setPadelSide(null);
+    setPadelLevel(null);
+  }, [padelSelected, step]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!session?.user?.id) {
+      setLoadingDraft(false);
+      return () => {
+        mounted = false;
+      };
     }
-  }, [authLoading, session, router]);
+    getOnboardingDraft(session.user.id)
+      .then((draft) => {
+        if (!mounted) return;
+        draftRef.current = draft;
+        if (draft) {
+          setFullName(draft.fullName ?? "");
+          setUsername(draft.username ?? "");
+          setInterests((draft.interests ?? []) as InterestId[]);
+          setPadelGender((draft.padel?.gender as PadelGender | null) ?? null);
+          setPadelSide((draft.padel?.preferredSide as PadelPreferredSide | null) ?? null);
+          setPadelLevel((draft.padel?.level as PadelLevel | null) ?? null);
+          setLocationHint(draft.location ? { city: draft.location.city, region: draft.location.region } : null);
+          setStep(resolveStartStep(draft));
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoadingDraft(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [session?.user?.id]);
 
   useEffect(() => {
-    fade.setValue(0);
-    translate.setValue(18);
-    Animated.parallel([
-      Animated.timing(fade, {
-        toValue: 1,
-        duration: 280,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translate, {
-        toValue: 0,
-        duration: 280,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [step, fade, translate]);
-
-  const canContinueBasic = useMemo(() => {
-    const hasName = fullName.trim().length >= 2;
-    const hasUsername = username.trim().length >= 3;
-    return hasName && hasUsername && usernameStatus !== "taken" && usernameStatus !== "invalid";
-  }, [fullName, username, usernameStatus]);
-
-  const canContinueInterests = interests.length > 0;
-  const canContinuePadel = Boolean(padelGender);
-
-  const handleCheckUsername = async () => {
-    const normalized = sanitizeUsername(username);
-    if (normalized.length < 3) {
+    if (!username) {
+      setUsernameStatus("idle");
+      return;
+    }
+    if (!usernameValidation.valid) {
       setUsernameStatus("invalid");
       return;
     }
-    try {
-      setUsernameStatus("checking");
-      const token = session?.access_token ?? (await getActiveSession())?.access_token ?? null;
-      const available = await checkUsernameAvailability(normalized, token);
-      setUsernameStatus(available ? "available" : "taken");
-    } catch (err: any) {
+
+    const normalized = usernameValidation.normalized;
+    if (usernameCacheRef.current.has(normalized)) {
+      setUsernameStatus(usernameCacheRef.current.get(normalized) ? "available" : "taken");
+      return;
+    }
+
+    setUsernameStatus("checking");
+    if (usernameAbortRef.current) usernameAbortRef.current.abort();
+    const controller = new AbortController();
+    usernameAbortRef.current = controller;
+    if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
+    usernameTimerRef.current = setTimeout(async () => {
+      try {
+        const accessToken = session?.access_token ?? (await getActiveSession())?.access_token ?? null;
+        const available = await checkUsernameAvailability(normalized, accessToken, controller.signal);
+        usernameCacheRef.current.set(normalized, available);
+        setUsernameStatus(available ? "available" : "taken");
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        setUsernameStatus("error");
+      }
+    }, 300);
+
+    return () => {
+      if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
+      controller.abort();
+    };
+  }, [username, usernameValidation, session?.access_token]);
+
+  useEffect(() => {
+    if (step !== "location" || locationHint) return;
+    resolveIpLocation().catch(() => undefined);
+  }, [step, locationHint]);
+
+  const canContinueBasic =
+    fullName.trim().length >= 2 && usernameValidation.valid && usernameStatus === "available";
+  const canContinueInterests = interests.length > 0;
+  const canContinuePadel = Boolean(padelGender && padelSide);
+
+  const persistDraft = async (patch: Partial<OnboardingDraft>) => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    const base: OnboardingDraft = draftRef.current ?? { userId, step: 0 };
+    const next: OnboardingDraft = {
+      ...base,
+      ...patch,
+      userId,
+      step: patch.step ?? base.step,
+      updatedAt: new Date().toISOString(),
+    };
+    draftRef.current = next;
+    await setOnboardingDraft(next);
+  };
+
+  const resolveAccessToken = async () =>
+    session?.access_token ?? (await getActiveSession())?.access_token ?? null;
+
+  const handleAuthError = async () => {
+    await resetOnboardingDone();
+    await clearOnboardingDraft();
+    await supabase.auth.signOut();
+    router.replace("/auth");
+  };
+
+  const ensureUsernameAvailable = async () => {
+    if (!usernameValidation.valid) {
       setUsernameStatus("invalid");
-      Alert.alert("Erro", err?.message ?? "Não foi possível validar o username.");
+      Alert.alert("Username inválido", usernameValidation.error || USERNAME_RULES_HINT);
+      return false;
+    }
+    if (usernameStatus === "available") return true;
+    if (usernameStatus === "checking") return false;
+    setUsernameStatus("checking");
+    try {
+      const accessToken = await resolveAccessToken();
+      const available = await checkUsernameAvailability(usernameValidation.normalized, accessToken);
+      usernameCacheRef.current.set(usernameValidation.normalized, available);
+      setUsernameStatus(available ? "available" : "taken");
+      if (!available) {
+        Alert.alert("Username indisponível", "Este username já está a ser utilizado.");
+      }
+      return available;
+    } catch (err: any) {
+      setUsernameStatus("error");
+      Alert.alert("Erro", "Não foi possível verificar agora.");
+      return false;
+    }
+  };
+
+  const updateProfileCache = (payload: {
+    fullName: string;
+    username: string;
+    interests: InterestId[];
+    city?: string | null;
+    padelLevel?: string | null;
+  }) => {
+    const summaryKey = ["profile", "summary", session?.user?.id ?? "anon"];
+    queryClient.setQueryData<ProfileSummary | undefined>(summaryKey, (prev) => ({
+      id: prev?.id ?? session?.user?.id ?? "",
+      email: prev?.email ?? session?.user?.email ?? null,
+      fullName: payload.fullName,
+      username: payload.username,
+      avatarUrl: prev?.avatarUrl ?? null,
+      bio: prev?.bio ?? null,
+      city: payload.city ?? prev?.city ?? null,
+      padelLevel: payload.padelLevel ?? prev?.padelLevel ?? null,
+      favouriteCategories: payload.interests,
+      onboardingDone: true,
+    }));
+    queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
+  };
+
+  const finalizeOnboarding = async (location?: { city?: string | null; region?: string | null }) => {
+    try {
+      const accessToken = await resolveAccessToken();
+      await saveBasicMutation.mutateAsync({
+        fullName: fullName.trim(),
+        username: normalizedUsername,
+        favouriteCategories: interests,
+        accessToken,
+      });
+      updateProfileCache({
+        fullName: fullName.trim(),
+        username: normalizedUsername,
+        interests,
+        city: location?.city ?? null,
+        padelLevel: padelLevel ?? null,
+      });
+      await setOnboardingDone(true);
+      await clearOnboardingDraft();
+      router.replace("/(tabs)");
+    } catch (err: any) {
+      const message = err?.message ?? "Não foi possível concluir o onboarding.";
+      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+        await handleAuthError();
+        return;
+      }
+      Alert.alert("Erro", message);
+    }
+  };
+
+  const handleBasicContinue = async () => {
+    if (!canContinueBasic) return;
+    if (!(await ensureUsernameAvailable())) return;
+    setSavingStep("basic");
+    try {
+      await persistDraft({
+        step: 0,
+        fullName: fullName.trim(),
+        username: normalizedUsername,
+        interests,
+      });
+      const accessToken = await resolveAccessToken();
+      await saveBasicMutation.mutateAsync({
+        fullName: fullName.trim(),
+        username: normalizedUsername,
+        favouriteCategories: interests,
+        accessToken,
+      });
+      await persistDraft({
+        step: 1,
+        fullName: fullName.trim(),
+        username: normalizedUsername,
+        interests,
+      });
+      setStep("interests");
+    } catch (err: any) {
+      const message = err?.message ?? "Não foi possível guardar o perfil.";
+      if (
+        typeof message === "string" &&
+        (message.includes("USERNAME_TAKEN") || message.includes("username") || message.includes("já está"))
+      ) {
+        setUsernameStatus("taken");
+        Alert.alert("Username indisponível", "Este username já está a ser utilizado.");
+        return;
+      }
+      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+        await handleAuthError();
+        return;
+      }
+      Alert.alert("Erro", message);
+    } finally {
+      setSavingStep(null);
+    }
+  };
+
+  const handleInterestsContinue = async () => {
+    if (!canContinueInterests) return;
+    setSavingStep("interests");
+    try {
+      const accessToken = await resolveAccessToken();
+      await saveBasicMutation.mutateAsync({
+        fullName: fullName.trim(),
+        username: normalizedUsername,
+        favouriteCategories: interests,
+        accessToken,
+      });
+      await persistDraft({ step: 2, interests });
+      setStep(padelSelected ? "padel" : "location");
+    } catch (err: any) {
+      const message = err?.message ?? "Não foi possível guardar os interesses.";
+      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+        await handleAuthError();
+        return;
+      }
+      Alert.alert("Erro", message);
+    } finally {
+      setSavingStep(null);
+    }
+  };
+
+  const handlePadelContinue = async () => {
+    if (!canContinuePadel) {
+      Alert.alert("Faltam dados", "Seleciona o género e o lado preferido.");
+      return;
+    }
+    setSavingStep("padel");
+    try {
+      const accessToken = await resolveAccessToken();
+      await savePadelMutation.mutateAsync({
+        gender: padelGender,
+        preferredSide: padelSide,
+        level: padelLevel,
+        accessToken,
+      });
+      await persistDraft({
+        step: 3,
+        padel: {
+          gender: padelGender,
+          preferredSide: padelSide,
+          level: padelLevel,
+          skipped: false,
+        },
+      });
+      setStep("location");
+    } catch (err: any) {
+      const message = err?.message ?? "Não foi possível guardar o perfil de padel.";
+      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+        await handleAuthError();
+        return;
+      }
+      Alert.alert("Erro", message);
+    } finally {
+      setSavingStep(null);
+    }
+  };
+
+  const handlePadelSkip = async () => {
+    setPadelGender(null);
+    setPadelSide(null);
+    setPadelLevel(null);
+    await persistDraft({
+      step: 3,
+      padel: {
+        gender: null,
+        preferredSide: null,
+        level: null,
+        skipped: true,
+      },
+    });
+    setStep("location");
+  };
+
+  async function resolveIpLocation() {
+    const accessToken = await resolveAccessToken();
+    try {
+      const ipLocation = await fetchIpLocation(accessToken);
+      const next = { city: ipLocation?.city ?? null, region: ipLocation?.region ?? null };
+      setLocationHint(next);
+      return next;
+    } catch {
+      return { city: null, region: null };
+    }
+  }
+
+  const handleLocationFlow = async (intent: "allow" | "skip") => {
+    setLocationError(null);
+    setSavingStep("location");
+    try {
+      const accessToken = await resolveAccessToken();
+      if (!accessToken) throw new Error("Sessão expirada.");
+
+      if (intent === "allow") {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== Location.PermissionStatus.GRANTED) {
+          const ip = await resolveIpLocation();
+          await saveConsentMutation.mutateAsync({ consent: "DENIED", accessToken });
+          await saveCoarseMutation.mutateAsync({ city: ip.city, region: ip.region, source: "IP", accessToken });
+          await persistDraft({
+            step: 4,
+            location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
+          });
+          await finalizeOnboarding(ip);
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        let city: string | null = null;
+        let region: string | null = null;
+        try {
+          const [address] = await Location.reverseGeocodeAsync({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+          city = (address?.city ?? address?.subregion ?? null) as string | null;
+          region = (address?.region ?? null) as string | null;
+        } catch {
+          // ignore reverse geocode errors
+        }
+
+        await saveConsentMutation.mutateAsync({
+          consent: "GRANTED",
+          preferredGranularity: "COARSE",
+          accessToken,
+        });
+        await saveCoarseMutation.mutateAsync({ city, region, source: "GPS", accessToken });
+        await persistDraft({
+          step: 4,
+          location: { city, region, source: "GPS", consent: "GRANTED" },
+        });
+        await finalizeOnboarding({ city, region });
+        return;
+      }
+
+      const ip = await resolveIpLocation();
+      await saveConsentMutation.mutateAsync({ consent: "DENIED", accessToken });
+      await saveCoarseMutation.mutateAsync({ city: ip.city, region: ip.region, source: "IP", accessToken });
+      await persistDraft({
+        step: 4,
+        location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
+      });
+      await finalizeOnboarding(ip);
+    } catch (err: any) {
+      const message = err?.message ?? "Não foi possível guardar a localização.";
+      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+        await handleAuthError();
+        return;
+      }
+      setLocationError(message);
+    } finally {
+      setSavingStep(null);
     }
   };
 
   const toggleInterest = (interest: InterestId) => {
     setInterests((prev) => {
       if (prev.includes(interest)) return prev.filter((item) => item !== interest);
-      if (prev.length >= 6) return prev;
+      if (prev.length >= MAX_INTERESTS) return prev;
       return [...prev, interest];
     });
   };
 
-  const handleFinish = async () => {
-    try {
-      const activeSession = session ?? (await getActiveSession());
-      if (!activeSession?.access_token) {
-        await supabase.auth.signOut();
-        Alert.alert("Sessão expirada", "Inicia sessão novamente para concluir.");
-        router.replace("/(auth)/sign-in");
-        return;
-      }
-
-      const accessToken = activeSession.access_token;
-      setSaving(true);
-      const normalizedUsername = sanitizeUsername(username);
-      await saveBasicProfile({
-        fullName: fullName.trim(),
-        username: normalizedUsername,
-        favouriteCategories: interests,
-        accessToken,
-      });
-
-      if (padelGender || padelLevel) {
-        await savePadelOnboarding({ gender: padelGender, level: padelLevel, accessToken });
-      }
-
-      if (locationConsent === "GRANTED") {
-        await saveLocationConsent({
-          consent: "GRANTED",
-          preferredGranularity: "COARSE",
-          accessToken,
-        });
-        await saveLocationCoarse({
-          city: ipLocation?.city ?? null,
-          region: ipLocation?.region ?? null,
-          source: "IP",
-          accessToken,
-        });
-      } else if (locationConsent === "DENIED") {
-        await saveLocationConsent({ consent: "DENIED", accessToken });
-      }
-
-      router.replace("/(tabs)");
-    } catch (err: any) {
-      const message = err?.message ?? "Não foi possível concluir o onboarding.";
-      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
-        await supabase.auth.signOut();
-        Alert.alert("Sessão expirada", "Entra novamente para continuar.");
-        router.replace("/(auth)/sign-in");
-        return;
-      }
-      Alert.alert("Erro", message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const renderStep = () => {
-    switch (step) {
-      case "basic":
-        return (
-          <GlassSurface intensity={50}>
-            <Text className="text-white text-lg font-semibold mb-2">Quem és?</Text>
-            <Text className="text-white/60 text-sm mb-6">
-              Cria um perfil público bonito. Podes editar tudo depois.
-            </Text>
-            <Text className="text-white/60 text-xs uppercase tracking-[0.2em] mb-2">Nome completo</Text>
-            <TextInput
-              className="bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-white mb-4"
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Ex: Sofia Almeida"
-              placeholderTextColor={tokens.colors.textMuted}
-              style={{ minHeight: tokens.layout.touchTarget }}
-            />
-            <Text className="text-white/60 text-xs uppercase tracking-[0.2em] mb-2">Username</Text>
-            <TextInput
-              className="bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-white mb-2"
-              value={username}
-              onChangeText={(value) => {
-                setUsername(sanitizeUsername(value));
-                setUsernameStatus("idle");
-              }}
-              autoCapitalize="none"
-              placeholder="ex: orya.sofia"
-              placeholderTextColor={tokens.colors.textMuted}
-              style={{ minHeight: tokens.layout.touchTarget }}
-            />
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-xs text-white/50">
-                {usernameStatus === "available"
-                  ? "Username disponível"
-                  : usernameStatus === "taken"
-                    ? "Já está ocupado"
-                    : usernameStatus === "invalid"
-                      ? "Precisa de 3+ caracteres"
-                      : ""}
-              </Text>
-              <Pressable onPress={handleCheckUsername}>
-                <Text className="text-xs text-emerald-200">Verificar</Text>
-              </Pressable>
-            </View>
-          </GlassSurface>
-        );
-      case "interests":
-        return (
-          <GlassSurface intensity={52}>
-            <Text className="text-white text-lg font-semibold mb-2">Interesses</Text>
-            <Text className="text-white/60 text-sm mb-6">
-              Escolhe até 6 áreas para personalizar o feed.
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {INTEREST_OPTIONS.map((interest) => {
-                const active = interests.includes(interest.id);
-                return (
-                  <Pressable key={interest.id} onPress={() => toggleInterest(interest.id)}>
-                    <GlassPill
-                      label={interest.label}
-                      variant={active ? "accent" : "muted"}
-                      className={active ? "border-emerald-200/50" : undefined}
-                    />
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text className="text-xs text-white/50 mt-4">{interests.length}/6 selecionados</Text>
-          </GlassSurface>
-        );
-      case "padel":
-        return (
-          <GlassSurface intensity={52}>
-            <Text className="text-white text-lg font-semibold mb-2">Padel</Text>
-            <Text className="text-white/60 text-sm mb-6">
-              Precisamos do género para garantir compatibilidade. O nível é opcional.
-            </Text>
-            <Text className="text-white/60 text-xs uppercase tracking-[0.2em] mb-3">Género</Text>
-            <View className="flex-row gap-2 mb-6">
-              {PADEL_GENDERS.map((gender) => {
-                const active = padelGender === gender.id;
-                return (
-                  <Pressable
-                    key={gender.id}
-                    onPress={() => setPadelGender(gender.id)}
-                    style={({ pressed }) => [
-                      {
-                        flex: 1,
-                        paddingVertical: 14,
-                        borderRadius: 16,
-                        borderWidth: 1,
-                        borderColor: active ? "rgba(52,211,153,0.6)" : "rgba(255,255,255,0.12)",
-                        backgroundColor: pressed || active ? "rgba(52,211,153,0.12)" : "rgba(255,255,255,0.04)",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      },
-                    ]}
-                  >
-                    <Text className="text-white font-semibold">{gender.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text className="text-white/60 text-xs uppercase tracking-[0.2em] mb-3">Nível (opcional)</Text>
-            <View className="gap-2">
-              {PADEL_LEVELS.map((level) => {
-                const active = padelLevel === level;
-                return (
-                  <Pressable
-                    key={level}
-                    onPress={() => setPadelLevel(active ? null : level)}
-                    style={({ pressed }) => [
-                      {
-                        paddingVertical: 14,
-                        paddingHorizontal: 16,
-                        borderRadius: 16,
-                        borderWidth: 1,
-                        borderColor: active ? "rgba(52,211,153,0.6)" : "rgba(255,255,255,0.12)",
-                        backgroundColor: pressed || active ? "rgba(52,211,153,0.12)" : "rgba(255,255,255,0.04)",
-                      },
-                    ]}
-                  >
-                    <Text className="text-white font-semibold">{level}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text className="text-xs text-white/50 mt-4">Podes escolher o nível mais tarde.</Text>
-          </GlassSurface>
-        );
-      case "location":
-        return (
-          <GlassSurface intensity={52}>
-            <Text className="text-white text-lg font-semibold mb-2">Localização (opcional)</Text>
-            <Text className="text-white/60 text-sm mb-6">
-              Usamos localização aproximada para sugerir eventos perto de ti.
-            </Text>
-            <GlassCard intensity={40} padding={12}>
-              <Text className="text-white/80 text-sm">Sugestão</Text>
-              <Text className="text-white text-base font-semibold">
-                {ipLocation?.city || "Cidade"} {ipLocation?.region ? `· ${ipLocation.region}` : ""}
-              </Text>
-              <Text className="text-xs text-white/50 mt-1">Baseado em IP (podes alterar depois).</Text>
-            </GlassCard>
-            <View className="mt-4 flex-row gap-2">
-              <Pressable
-                onPress={() => setLocationConsent("GRANTED")}
-                style={({ pressed }) => [
-                  {
-                    flex: 1,
-                    minHeight: tokens.layout.touchTarget,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: locationConsent === "GRANTED" ? "rgba(52,211,153,0.6)" : "rgba(255,255,255,0.15)",
-                    backgroundColor:
-                      locationConsent === "GRANTED"
-                        ? "rgba(52,211,153,0.12)"
-                        : pressed
-                          ? "rgba(255,255,255,0.06)"
-                          : "rgba(255,255,255,0.02)",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  },
-                ]}
-              >
-                <Text className="text-white font-semibold">Permitir</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setLocationConsent("DENIED")}
-                style={({ pressed }) => [
-                  {
-                    flex: 1,
-                    minHeight: tokens.layout.touchTarget,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: locationConsent === "DENIED" ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.15)",
-                    backgroundColor:
-                      locationConsent === "DENIED"
-                        ? "rgba(255,255,255,0.08)"
-                        : pressed
-                          ? "rgba(255,255,255,0.06)"
-                          : "rgba(255,255,255,0.02)",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  },
-                ]}
-              >
-                <Text className="text-white/80 font-semibold">Agora não</Text>
-              </Pressable>
-            </View>
-          </GlassSurface>
-        );
-      case "finish":
-        return (
-          <GlassSurface intensity={52}>
-            <Text className="text-white text-lg font-semibold mb-2">Está quase</Text>
-            <Text className="text-white/60 text-sm mb-6">
-              Revê os teus dados principais antes de começar.
-            </Text>
-            <View className="gap-3">
-              <GlassCard intensity={35} padding={12}>
-                <Text className="text-xs text-white/50">Nome</Text>
-                <Text className="text-white font-semibold">{fullName || "—"}</Text>
-              </GlassCard>
-              <GlassCard intensity={35} padding={12}>
-                <Text className="text-xs text-white/50">Username</Text>
-                <Text className="text-white font-semibold">{sanitizeUsername(username) || "—"}</Text>
-              </GlassCard>
-              <GlassCard intensity={35} padding={12}>
-                <Text className="text-xs text-white/50">Interesses</Text>
-                <Text className="text-white font-semibold">
-                  {interests.length ? interests.join(" · ") : "—"}
-                </Text>
-              </GlassCard>
-              <GlassCard intensity={35} padding={12}>
-                <Text className="text-xs text-white/50">Padel</Text>
-                <Text className="text-white font-semibold">
-                  {padelGender === "MALE" ? "Masculino" : padelGender === "FEMALE" ? "Feminino" : "—"}
-                  {padelLevel ? ` · ${padelLevel}` : " · Sem nível"}
-                </Text>
-              </GlassCard>
-              <GlassCard intensity={35} padding={12}>
-                <Text className="text-xs text-white/50">Localização</Text>
-                <Text className="text-white font-semibold">
-                  {locationConsent === "GRANTED"
-                    ? `${ipLocation?.city || "Cidade"}${ipLocation?.region ? ` · ${ipLocation.region}` : ""}`
-                    : "Sem localização"}
-                </Text>
-              </GlassCard>
-            </View>
-          </GlassSurface>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const handleNext = () => {
-    if (step === "basic" && !canContinueBasic) return;
-    if (step === "interests" && !canContinueInterests) return;
-    if (step === "padel" && !canContinuePadel) return;
-    const next = steps[stepIndex + 1];
-    if (next) setStep(next);
-  };
-
   const handleBack = () => {
     const prev = steps[stepIndex - 1];
-    if (prev) setStep(prev);
+    if (prev) {
+      setStep(prev);
+      return;
+    }
+    router.replace("/auth");
   };
 
+  const renderUsernameStatus = () => {
+    if (!username) return null;
+    let message = "";
+    if (usernameStatus === "checking") message = "A verificar…";
+    else if (usernameStatus === "available") message = "Disponível ✓";
+    else if (usernameStatus === "taken") message = "Indisponível";
+    else if (usernameStatus === "invalid") message = usernameValidation.error || USERNAME_RULES_HINT;
+    else if (usernameStatus === "error") message = "Não foi possível verificar agora.";
+    const tone =
+      usernameStatus === "available"
+        ? styles.helperSuccess
+        : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error"
+          ? styles.helperError
+          : styles.helperText;
+    return message ? <Text style={[styles.helperText, tone]}>{message}</Text> : null;
+  };
+
+  const renderBasicStep = () => (
+    <GlassCard style={styles.card} contentStyle={styles.cardContent}>
+      <Text style={styles.cardTitle}>Quem és?</Text>
+
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Nome completo</Text>
+        <TextInput
+          value={fullName}
+          onChangeText={setFullName}
+          placeholder="Ex: Sofia Almeida"
+          placeholderTextColor={tokens.colors.textMuted}
+          autoCapitalize="words"
+          style={styles.input}
+        />
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Username</Text>
+        <TextInput
+          value={username}
+          onChangeText={(value) => {
+            setUsername(sanitizeUsername(value));
+            setUsernameStatus("idle");
+          }}
+          placeholder="ex: orya.sofia"
+          placeholderTextColor={tokens.colors.textMuted}
+          autoCapitalize="none"
+          style={styles.input}
+        />
+        {renderUsernameStatus()}
+      </View>
+    </GlassCard>
+  );
+
+  const renderInterestsStep = () => (
+    <GlassCard style={styles.card} contentStyle={styles.cardContent}>
+      <Text style={styles.cardTitle}>Interesses</Text>
+      <Text style={styles.cardSubtitle}>Escolhe pelo menos 1.</Text>
+
+      <View style={styles.interestGrid}>
+        {INTEREST_OPTIONS.map((interest, idx) => {
+          const active = interests.includes(interest.id);
+          const isPadel = interest.id === "padel";
+          return (
+            <Pressable
+              key={interest.id}
+              onPress={() => toggleInterest(interest.id)}
+              style={({ pressed }) => [
+                styles.interestChip,
+                active ? styles.interestChipActive : styles.interestChipIdle,
+                isPadel ? styles.interestChipPadel : null,
+                pressed ? styles.interestChipPressed : null,
+                idx === 0 ? styles.interestChipFirst : null,
+              ]}
+            >
+              <View style={[styles.interestIcon, active ? styles.interestIconActive : null]}>
+                <Ionicons
+                  name={INTEREST_ICONS[interest.id]}
+                  size={16}
+                  color={active ? "#ffffff" : "rgba(255,255,255,0.75)"}
+                />
+              </View>
+              <Text style={[styles.interestLabel, active ? styles.interestLabelActive : null]}>
+                {interest.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={styles.helperText}>
+        {interests.length} selecionado{interests.length === 1 ? "" : "s"} · máximo {MAX_INTERESTS}
+      </Text>
+    </GlassCard>
+  );
+
+  const renderPadelStep = () => (
+    <GlassCard style={styles.card} contentStyle={styles.cardContent}>
+      <Text style={styles.cardTitle}>Padel</Text>
+
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Género</Text>
+        <View style={styles.optionRow}>
+          {PADEL_GENDERS.map((gender) => {
+            const active = padelGender === gender.id;
+            return (
+              <Pressable
+                key={gender.id}
+                onPress={() => setPadelGender(gender.id)}
+                style={({ pressed }) => [
+                  styles.optionChip,
+                  active ? styles.optionChipActive : styles.optionChipIdle,
+                  pressed ? styles.optionChipPressed : null,
+                ]}
+              >
+                <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
+                  {gender.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Lado preferido</Text>
+        <View style={styles.optionRow}>
+          {PADEL_SIDES.map((side) => {
+            const active = padelSide === side.id;
+            return (
+              <Pressable
+                key={side.id}
+                onPress={() => setPadelSide(side.id)}
+                style={({ pressed }) => [
+                  styles.optionChip,
+                  active ? styles.optionChipActive : styles.optionChipIdle,
+                  pressed ? styles.optionChipPressed : null,
+                ]}
+              >
+                <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
+                  {side.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Nível (opcional)</Text>
+        <View style={styles.optionRow}>
+          {PADEL_LEVELS.map((level) => {
+            const active = padelLevel === level;
+            return (
+              <Pressable
+                key={level}
+                onPress={() => setPadelLevel(active ? null : level)}
+                style={({ pressed }) => [
+                  styles.optionChip,
+                  active ? styles.optionChipActive : styles.optionChipIdle,
+                  pressed ? styles.optionChipPressed : null,
+                ]}
+              >
+                <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>{level}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    </GlassCard>
+  );
+
+  const renderLocationStep = () => (
+    <GlassCard style={styles.card} contentStyle={styles.cardContent}>
+      <Text style={styles.cardTitle}>Localização</Text>
+      <Text style={styles.cardSubtitle}>Permite para receberes eventos perto de ti.</Text>
+
+      {locationError ? <Text style={styles.errorText}>{locationError}</Text> : null}
+
+      <View style={styles.locationActions}>
+        <PrimaryButton
+          label={savingStep === "location" ? "A guardar..." : "Permitir"}
+          onPress={() => handleLocationFlow("allow")}
+          disabled={savingStep === "location"}
+          loading={savingStep === "location"}
+          accessibilityLabel="Permitir localização"
+        />
+        <SecondaryButton
+          label="Agora não"
+          onPress={() => handleLocationFlow("skip")}
+          disabled={savingStep === "location"}
+          accessibilityLabel="Agora não"
+        />
+      </View>
+    </GlassCard>
+  );
+
+  if (authLoading || loadingDraft) {
+    return (
+      <AuthBackground>
+        <View style={styles.loadingScreen}>
+          <ActivityIndicator color="rgba(255,255,255,0.7)" />
+        </View>
+      </AuthBackground>
+    );
+  }
+
+  if (!session) {
+    return <Redirect href="/auth" />;
+  }
+
   return (
-    <LiquidBackground variant="deep">
-      <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
-        <View className="gap-6">
-          <View className="gap-2">
-            <Text className="text-white/60 text-xs uppercase tracking-[0.3em]">Onboarding</Text>
-            <Text className="text-white text-3xl font-semibold">Bem-vindo à ORYA</Text>
-            <Text className="text-white/60 text-sm">
-              Personalizamos o teu feed e preparámos o checkout para ti.
-            </Text>
-          </View>
+    <AuthBackground>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.topBar}>
+          <Pressable onPress={handleBack} style={styles.backButton} accessibilityLabel="Voltar">
+            <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+            <Text style={styles.backLabel}>Voltar</Text>
+          </Pressable>
+        </View>
 
-          <View className="flex-row flex-wrap gap-2">
-            {steps.map((item, idx) => (
-              <GlassPill
-                key={item}
-                label={`${idx + 1}`}
-                variant={idx === stepIndex ? "accent" : "muted"}
-              />
-            ))}
-          </View>
+        <View style={styles.header}>
+          <Text style={styles.title}>Bem-vindo à ORYA</Text>
+        </View>
 
-          <Animated.View style={{ opacity: fade, transform: [{ translateY: translate }] }}>
-            {renderStep()}
-          </Animated.View>
+        <StepProgress total={steps.length} current={stepIndex} />
 
-          <View className="gap-3">
-            {stepIndex > 0 ? <GhostButton label="Voltar" onPress={handleBack} /> : null}
-            {step === "finish" ? (
+        {step === "basic"
+          ? renderBasicStep()
+          : step === "interests"
+            ? renderInterestsStep()
+            : step === "padel"
+              ? renderPadelStep()
+              : renderLocationStep()}
+
+        <View style={styles.actions}>
+          {step === "basic" ? (
+            <PrimaryButton
+              label={savingStep === "basic" ? "A guardar..." : "Continuar"}
+              onPress={handleBasicContinue}
+              disabled={!canContinueBasic || savingStep === "basic"}
+              loading={savingStep === "basic"}
+            />
+          ) : null}
+          {step === "interests" ? (
+            <PrimaryButton
+              label={savingStep === "interests" ? "A guardar..." : "Continuar"}
+              onPress={handleInterestsContinue}
+              disabled={!canContinueInterests || savingStep === "interests"}
+              loading={savingStep === "interests"}
+            />
+          ) : null}
+          {step === "padel" ? (
+            <View style={styles.padelActions}>
               <PrimaryButton
-                label={saving ? "A concluir..." : "Concluir"}
-                onPress={handleFinish}
-                disabled={saving}
+                label={savingStep === "padel" ? "A guardar..." : "Continuar"}
+                onPress={handlePadelContinue}
+                disabled={!canContinuePadel || savingStep === "padel"}
+                loading={savingStep === "padel"}
               />
-            ) : (
-              <PrimaryButton
-                label="Continuar"
-                onPress={handleNext}
-                disabled={
-                  (step === "basic" && !canContinueBasic) ||
-                  (step === "interests" && !canContinueInterests) ||
-                  (step === "padel" && !canContinuePadel)
-                }
-              />
-            )}
-            {step !== "finish" && step !== "basic" && step !== "padel" ? (
-              <GhostButton label="Saltar" onPress={handleNext} />
-            ) : null}
-          </View>
+              <SecondaryButton label="Saltar" onPress={handlePadelSkip} />
+            </View>
+          ) : null}
         </View>
       </ScrollView>
-    </LiquidBackground>
+    </AuthBackground>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flexGrow: 1,
+    padding: 24,
+    paddingBottom: 40,
+    gap: 18,
+    alignItems: "center",
+  },
+  topBar: {
+    width: "100%",
+    maxWidth: 440,
+    flexDirection: "row",
+    justifyContent: "flex-start",
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: tokens.layout.touchTarget,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  backLabel: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  header: {
+    gap: 8,
+    alignItems: "center",
+    maxWidth: 440,
+    width: "100%",
+  },
+  title: {
+    color: "#ffffff",
+    fontSize: 28,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  card: {
+    width: "100%",
+    maxWidth: 440,
+  },
+  cardContent: {
+    gap: 16,
+    padding: 22,
+  },
+  cardTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  cardSubtitle: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  field: {
+    gap: 8,
+    width: "100%",
+  },
+  fieldLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 11,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+  },
+  input: {
+    minHeight: tokens.layout.touchTarget,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 14,
+    color: "#ffffff",
+    fontSize: 15,
+  },
+  helperText: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 11,
+  },
+  helperSuccess: {
+    color: "rgba(110, 231, 183, 0.95)",
+  },
+  helperError: {
+    color: "rgba(252, 165, 165, 0.95)",
+  },
+  interestGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  interestChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    minHeight: tokens.layout.touchTarget,
+    width: "48%",
+  },
+  interestChipIdle: {
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  interestChipActive: {
+    borderColor: "rgba(140, 200, 255, 0.6)",
+    backgroundColor: "rgba(92, 175, 255, 0.18)",
+    shadowColor: "rgba(120, 190, 255, 0.4)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+  },
+  interestChipPadel: {
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  interestChipPressed: {
+    transform: [{ scale: 0.98 }],
+  },
+  interestChipFirst: {
+    shadowColor: "rgba(255,255,255,0.2)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+  },
+  interestIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  interestIconActive: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  interestLabel: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  interestLabelActive: {
+    color: "#ffffff",
+  },
+  optionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  optionChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    minHeight: tokens.layout.touchTarget,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  optionChipIdle: {
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  optionChipActive: {
+    borderColor: "rgba(140, 200, 255, 0.6)",
+    backgroundColor: "rgba(92, 175, 255, 0.18)",
+    shadowColor: "rgba(120, 190, 255, 0.4)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+  },
+  optionChipPressed: {
+    transform: [{ scale: 0.98 }],
+  },
+  optionLabel: {
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  optionLabelActive: {
+    color: "#ffffff",
+  },
+  locationActions: {
+    gap: 12,
+  },
+  errorText: {
+    color: "rgba(255,180,180,0.9)",
+    fontSize: 12,
+  },
+  actions: {
+    gap: 12,
+    width: "100%",
+    maxWidth: 440,
+  },
+  padelActions: {
+    gap: 10,
+  },
+  loadingScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

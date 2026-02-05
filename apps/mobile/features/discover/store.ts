@@ -12,6 +12,7 @@ type DiscoverState = {
   setKind: (next: DiscoverKind) => void;
   setDateFilter: (next: DiscoverDateFilter) => void;
   setCity: (next: string) => void;
+  resetFilters: () => void;
 };
 
 export const useDiscoverStore = create<DiscoverState>((set) => ({
@@ -25,4 +26,12 @@ export const useDiscoverStore = create<DiscoverState>((set) => ({
   setKind: (next) => set({ kind: next }),
   setDateFilter: (next) => set({ dateFilter: next }),
   setCity: (next) => set({ city: next }),
+  resetFilters: () =>
+    set({
+      query: "",
+      priceFilter: "all",
+      kind: "all",
+      dateFilter: "all",
+      city: "",
+    }),
 }));

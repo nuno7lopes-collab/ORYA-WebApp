@@ -9,17 +9,19 @@ import {
   View,
 } from "react-native";
 import { Image } from "expo-image";
+import { useNavigation } from "@react-navigation/native";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useEventDetail } from "../../features/events/hooks";
 import { tokens } from "@orya/shared";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { ApiError } from "../../lib/api";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { useAuth } from "../../lib/auth";
 import { useCheckoutStore } from "../../features/checkout/store";
+import { safeBack } from "../../lib/navigation";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt) return "Data por anunciar";
@@ -79,7 +81,7 @@ const resolveTicketStatusLabel = (status?: string | null, remaining?: number | n
 };
 
 export default function EventDetail() {
-  const { slug, source, eventTitle } = useLocalSearchParams<{
+  const params = useLocalSearchParams<{
     slug?: string | string[];
     source?: string;
     eventTitle?: string;
@@ -94,52 +96,67 @@ export default function EventDetail() {
     imageTag?: string;
   }>();
   const router = useRouter();
-  const slugValue = useMemo(() => (Array.isArray(slug) ? slug[0] : slug) ?? null, [slug]);
+  const navigation = useNavigation();
+  const slugValue = useMemo(
+    () => (Array.isArray(params.slug) ? params.slug[0] : params.slug) ?? null,
+    [params.slug],
+  );
   const eventTitleValue = useMemo(
-    () => (Array.isArray(eventTitle) ? eventTitle[0] : eventTitle) ?? null,
-    [eventTitle],
+    () => (Array.isArray(params.eventTitle) ? params.eventTitle[0] : params.eventTitle) ?? null,
+    [params.eventTitle],
   );
   const previewCoverValue = useMemo(() => {
-    if (Array.isArray(coverImageUrl)) return coverImageUrl[0];
-    return coverImageUrl ?? null;
-  }, [coverImageUrl]);
+    const value = params.coverImageUrl;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.coverImageUrl]);
   const previewDescription = useMemo(() => {
-    if (Array.isArray(shortDescription)) return shortDescription[0];
-    return shortDescription ?? null;
-  }, [shortDescription]);
+    const value = params.shortDescription;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.shortDescription]);
   const previewStartsAt = useMemo(() => {
-    if (Array.isArray(startsAt)) return startsAt[0];
-    return startsAt ?? null;
-  }, [startsAt]);
+    const value = params.startsAt;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.startsAt]);
   const previewEndsAt = useMemo(() => {
-    if (Array.isArray(endsAt)) return endsAt[0];
-    return endsAt ?? null;
-  }, [endsAt]);
+    const value = params.endsAt;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.endsAt]);
   const previewLocation = useMemo(() => {
-    if (Array.isArray(locationLabel)) return locationLabel[0];
-    return locationLabel ?? null;
-  }, [locationLabel]);
+    const value = params.locationLabel;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.locationLabel]);
   const previewPrice = useMemo(() => {
-    if (Array.isArray(priceLabel)) return priceLabel[0];
-    return priceLabel ?? null;
-  }, [priceLabel]);
+    const value = params.priceLabel;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.priceLabel]);
   const previewCategory = useMemo(() => {
-    if (Array.isArray(categoryLabel)) return categoryLabel[0];
-    return categoryLabel ?? null;
-  }, [categoryLabel]);
+    const value = params.categoryLabel;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.categoryLabel]);
   const previewHost = useMemo(() => {
-    if (Array.isArray(hostName)) return hostName[0];
-    return hostName ?? null;
-  }, [hostName]);
+    const value = params.hostName;
+    if (Array.isArray(value)) return value[0];
+    return value ?? null;
+  }, [params.hostName]);
   const previewImageTag = useMemo(() => {
-    const raw = Array.isArray(imageTag) ? imageTag[0] : imageTag;
+    const raw = Array.isArray(params.imageTag) ? params.imageTag[0] : params.imageTag;
     const normalized = typeof raw === "string" ? raw.trim() : "";
     return normalized ? normalized : null;
-  }, [imageTag]);
+  }, [params.imageTag]);
   const { data, isLoading, isError, error, refetch } = useEventDetail(slugValue ?? "");
   const { session } = useAuth();
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
-  const transitionSource = source === "discover" ? "discover" : "direct";
+  const transitionSource = params.source === "discover" ? "discover" : "direct";
+  const handleBack = () => {
+    safeBack(router, navigation);
+  };
 
   const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
   const translate = useRef(new Animated.Value(transitionSource === "discover" ? 20 : 10)).current;
@@ -253,7 +270,7 @@ export default function EventDetail() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
-      <LiquidBackground variant="deep">
+      <LiquidBackground variant="solid">
         <Animated.View
           pointerEvents="box-none"
           style={{
@@ -285,7 +302,7 @@ export default function EventDetail() {
         >
           <View className="px-5 pt-12 pb-4">
             <Pressable
-              onPress={() => router.back()}
+              onPress={handleBack}
               className="flex-row items-center gap-2"
               style={{ minHeight: tokens.layout.touchTarget }}
             >
@@ -443,7 +460,12 @@ export default function EventDetail() {
                           <GlassPill label={category} />
                           {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
                         </View>
-                        <Text className="text-white/60 text-xs">Imagem do evento em breve</Text>
+                        <View className="gap-2">
+                          <Text className="text-white text-2xl font-semibold">{data.title}</Text>
+                          {data.shortDescription ? (
+                            <Text className="text-white/75 text-sm">{data.shortDescription}</Text>
+                          ) : null}
+                        </View>
                       </View>
                     )}
                   </View>

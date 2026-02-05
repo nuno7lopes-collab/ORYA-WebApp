@@ -12,6 +12,31 @@ type MobileEnv = {
 const getExtra = () =>
   Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
 
+const resolveHostFromExpo = () => {
+  const hostUri =
+    Constants?.expoConfig?.hostUri ??
+    (Constants as any)?.manifest?.hostUri ??
+    (Constants as any)?.manifest?.debuggerHost ??
+    (Constants as any)?.manifest?.hostUri ??
+    (Constants as any)?.expoConfig?.hostUri;
+  if (!hostUri || typeof hostUri !== "string") return null;
+  const [host] = hostUri.split(":");
+  return host ?? null;
+};
+
+const normalizeApiBaseUrl = (raw: string) => {
+  if (!raw) return raw;
+  const lower = raw.toLowerCase();
+  const isLocal =
+    lower.includes("localhost") ||
+    lower.includes("127.0.0.1") ||
+    lower.includes("0.0.0.0");
+  if (!isLocal) return raw.replace(/\/+$/, "");
+  const host = resolveHostFromExpo();
+  if (!host) return raw.replace(/\/+$/, "");
+  return `http://${host}:3000`;
+};
+
 export const getMobileEnv = (): MobileEnv => {
   const extra = getExtra();
 
@@ -50,7 +75,7 @@ export const getMobileEnv = (): MobileEnv => {
 
   return {
     appEnv,
-    apiBaseUrl,
+    apiBaseUrl: normalizeApiBaseUrl(apiBaseUrl),
     supabaseUrl,
     supabaseAnonKey,
     stripePublishableKey,

@@ -205,27 +205,392 @@ const EVENT_SCHEMA_SAFE_SELECT = {
   payoutMode: true,
 } satisfies Prisma.EventSelect;
 
+type DmmfModel = (typeof Prisma.dmmf.datamodel.models)[number];
+type DmmfField = DmmfModel["fields"][number];
+
+const DEFAULT_DB_SCHEMA = "app_v3";
+const MODEL_META_CACHE = new Map<string, { tableName: string; fields: Map<string, DmmfField> }>();
+const MODEL_COLUMNS_CACHE = new Map<string, Promise<Set<string> | null>>();
+const EVENT_BASELINE_COLUMNS = new Set([
+  "id",
+  "slug",
+  "title",
+  "description",
+  "type",
+  "template_type",
+  "organization_id",
+  "starts_at",
+  "ends_at",
+  "location_name",
+  "location_city",
+  "address",
+  "lat",
+  "lng",
+  "is_free",
+  "status",
+  "timezone",
+  "cover_image_url",
+  "created_at",
+  "updated_at",
+  "owner_user_id",
+  "deleted_at",
+  "is_deleted",
+  "resale_mode",
+  "fee_mode_override",
+  "platform_fee_bps_override",
+  "platform_fee_fixed_cents_override",
+  "fee_mode",
+  "payout_mode",
+  "invite_only",
+  "live_stream_url",
+  "public_access_mode",
+  "participant_access_mode",
+  "public_ticket_type_ids",
+  "participant_ticket_type_ids",
+  "live_hub_visibility",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function getModelMeta(modelName: string) {
+  const cached = MODEL_META_CACHE.get(modelName);
+  if (cached) return cached;
+  const model = Prisma.dmmf.datamodel.models.find((entry) => entry.name === modelName);
+  if (!model) return null;
+  const fields = new Map<string, DmmfField>();
+  for (const field of model.fields) {
+    fields.set(field.name, field);
+  }
+  const meta = { tableName: model.dbName ?? model.name, fields };
+  MODEL_META_CACHE.set(modelName, meta);
+  return meta;
+}
+
+async function getModelColumns(client: PrismaClient, modelName: string) {
+  const cached = MODEL_COLUMNS_CACHE.get(modelName);
+  if (cached) return cached;
+
+  const meta = getModelMeta(modelName);
+  if (!meta) {
+    const fallback = Promise.resolve(null);
+    MODEL_COLUMNS_CACHE.set(modelName, fallback);
+    return fallback;
+  }
+
+  const promise = client
+    .$queryRaw<{ column_name: string }[]>`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = ${DEFAULT_DB_SCHEMA}
+        AND table_name = ${meta.tableName}
+    `
+    .then((rows) => new Set(rows.map((row) => row.column_name)))
+    .catch(() => null);
+
+  MODEL_COLUMNS_CACHE.set(modelName, promise);
+  return promise;
+}
+
+async function resolveModelColumns(client: PrismaClient, modelName: string) {
+  const columns = await getModelColumns(client, modelName);
+  if (columns && columns.size > 0) return columns;
+  if (modelName === "Event") return EVENT_BASELINE_COLUMNS;
+  return columns;
+}
+
+function buildRelationFkCandidates(fieldName: string) {
+  const candidates = [`${fieldName}Id`, `${fieldName}Ids`];
+  if (fieldName.endsWith("Ref")) {
+    const base = fieldName.slice(0, -3);
+    if (base) candidates.push(`${base}Id`);
+  }
+  if (fieldName.endsWith("Refs")) {
+    const base = fieldName.slice(0, -4);
+    if (base) candidates.push(`${base}Ids`);
+  }
+  return candidates;
+}
+
+async function canIncludeRelation(
+  client: PrismaClient,
+  modelName: string,
+  meta: { tableName: string; fields: Map<string, DmmfField> },
+  columns: Set<string>,
+  relationField: DmmfField,
+) {
+  const localCandidates = buildRelationFkCandidates(relationField.name);
+  for (const candidate of localCandidates) {
+    const fkField = meta.fields.get(candidate);
+    if (fkField && fkField.kind !== "object") {
+      const fkColumn = fkField.dbName ?? fkField.name;
+      return columns.has(fkColumn);
+    }
+  }
+
+  const relatedMeta = getModelMeta(relationField.type);
+  if (!relatedMeta) return true;
+  const relatedColumns = await resolveModelColumns(client, relationField.type);
+  if (!relatedColumns) return true;
+  const parentIdCandidate = `${modelName.charAt(0).toLowerCase()}${modelName.slice(1)}Id`;
+  const relatedFkField = relatedMeta.fields.get(parentIdCandidate);
+  if (relatedFkField && relatedFkField.kind !== "object") {
+    const fkColumn = relatedFkField.dbName ?? relatedFkField.name;
+    return relatedColumns.has(fkColumn);
+  }
+  return true;
+}
+
+async function filterWhereForModel(
+  client: PrismaClient,
+  modelName: string,
+  where: Record<string, unknown>,
+) {
+  const meta = getModelMeta(modelName);
+  if (!meta) return where;
+  const columns = await resolveModelColumns(client, modelName);
+  if (!columns) return where;
+
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(where)) {
+    if (key === "AND" || key === "OR" || key === "NOT") {
+      if (Array.isArray(value)) {
+        next[key] = await Promise.all(
+          value.map((entry) => (isRecord(entry) ? filterWhereForModel(client, modelName, entry) : entry)),
+        );
+      } else if (isRecord(value)) {
+        next[key] = await filterWhereForModel(client, modelName, value);
+      } else {
+        next[key] = value;
+      }
+      continue;
+    }
+
+    const field = meta.fields.get(key);
+    if (!field) {
+      next[key] = value;
+      continue;
+    }
+
+    if (field.kind === "object") {
+      if (isRecord(value)) {
+        const relationMeta = getModelMeta(field.type);
+        if (relationMeta) {
+          const relationArgs: Record<string, unknown> = { ...value };
+          for (const relKey of ["some", "none", "every", "is", "isNot"]) {
+            const relValue = relationArgs[relKey];
+            if (isRecord(relValue)) {
+              relationArgs[relKey] = await filterWhereForModel(client, field.type, relValue);
+            }
+          }
+          next[key] = relationArgs;
+        } else {
+          next[key] = value;
+        }
+      } else {
+        next[key] = value;
+      }
+      continue;
+    }
+
+    const columnName = field.dbName ?? field.name;
+    if (columns.has(columnName)) {
+      next[key] = value;
+    }
+  }
+
+  return next;
+}
+
+async function filterOrderByForModel(
+  client: PrismaClient,
+  modelName: string,
+  orderBy: unknown,
+): Promise<unknown> {
+  const meta = getModelMeta(modelName);
+  if (!meta) return orderBy;
+  const columns = await resolveModelColumns(client, modelName);
+  if (!columns) return orderBy;
+
+  if (Array.isArray(orderBy)) {
+    const filtered = await Promise.all(orderBy.map((entry) => filterOrderByForModel(client, modelName, entry)));
+    return filtered.filter((entry) => entry !== null);
+  }
+
+  if (!isRecord(orderBy)) return orderBy;
+
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(orderBy)) {
+    const field = meta.fields.get(key);
+    if (!field) {
+      next[key] = value;
+      continue;
+    }
+
+    if (field.kind === "object") {
+      if (isRecord(value)) {
+        next[key] = await filterOrderByForModel(client, field.type, value);
+      } else {
+        next[key] = value;
+      }
+      continue;
+    }
+
+    const columnName = field.dbName ?? field.name;
+    if (columns.has(columnName)) {
+      next[key] = value;
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+async function filterSelectionForModel(
+  client: PrismaClient,
+  modelName: string,
+  selection: Record<string, unknown>,
+  mode: "select" | "include",
+) {
+  const meta = getModelMeta(modelName);
+  if (!meta) return selection;
+  const columns = await resolveModelColumns(client, modelName);
+  if (!columns) return selection;
+
+  const next: Record<string, unknown> = {};
+  const entries = Object.entries(selection);
+
+  for (const [key, value] of entries) {
+    if (key === "_count") {
+      next[key] = value;
+      continue;
+    }
+
+    const field = meta.fields.get(key);
+    if (!field) continue;
+
+    if (field.kind === "object") {
+      if (!(await canIncludeRelation(client, modelName, meta, columns, field))) {
+        continue;
+      }
+      if (value === true) {
+        next[key] = true;
+        continue;
+      }
+      if (isRecord(value)) {
+        const relationArgs: Record<string, unknown> = { ...value };
+        if ("select" in relationArgs && isRecord(relationArgs.select)) {
+          relationArgs.select = await filterSelectionForModel(
+            client,
+            field.type,
+            relationArgs.select,
+            "select",
+          );
+        }
+        if ("include" in relationArgs && isRecord(relationArgs.include)) {
+          relationArgs.include = await filterSelectionForModel(
+            client,
+            field.type,
+            relationArgs.include,
+            "include",
+          );
+        }
+        if ("where" in relationArgs && isRecord(relationArgs.where)) {
+          relationArgs.where = await filterWhereForModel(client, field.type, relationArgs.where);
+        }
+        if ("orderBy" in relationArgs) {
+          relationArgs.orderBy = await filterOrderByForModel(client, field.type, relationArgs.orderBy);
+          if (relationArgs.orderBy === null) {
+            delete relationArgs.orderBy;
+          }
+        }
+        next[key] = relationArgs;
+      } else {
+        next[key] = value;
+      }
+      continue;
+    }
+
+    if (mode === "include") {
+      continue;
+    }
+
+    const columnName = field.dbName ?? field.name;
+    if (columns.has(columnName)) {
+      next[key] = value;
+    }
+  }
+
+  if (mode === "select") {
+    const hasScalarSelection = Object.keys(next).some((key) => {
+      const field = meta.fields.get(key);
+      return field && field.kind !== "object";
+    });
+    if (!hasScalarSelection) {
+      const idField = meta.fields.get("id");
+      const idColumn = idField?.dbName ?? "id";
+      if (columns.has(idColumn)) {
+        next.id = true;
+      }
+    }
+  }
+
+  return next;
+}
+
 function isMissingColumnError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
 }
 
-function canApplyEventReadFallback(args: Record<string, unknown>) {
-  return !("select" in args && args.select !== undefined);
+function canApplyEventReadFallback(_args: Record<string, unknown>) {
+  return true;
 }
 
-function withEventSafeReadSelect(args: Record<string, unknown>) {
+async function withEventSafeReadSelect(args: Record<string, unknown>, client: PrismaClient) {
   const nextArgs: Record<string, unknown> = { ...args };
   const include = nextArgs.include;
-  if (include && typeof include === "object" && !Array.isArray(include)) {
-    const select: Record<string, unknown> = { ...EVENT_SCHEMA_SAFE_SELECT };
-    for (const [key, value] of Object.entries(include as Record<string, unknown>)) {
-      select[key] = value;
+
+  if (isRecord(nextArgs.select)) {
+    nextArgs.select = await filterSelectionForModel(client, "Event", nextArgs.select, "select");
+    if (isRecord(nextArgs.where)) {
+      nextArgs.where = await filterWhereForModel(client, "Event", nextArgs.where);
     }
-    delete nextArgs.include;
-    nextArgs.select = select;
+    if ("orderBy" in nextArgs) {
+      nextArgs.orderBy = await filterOrderByForModel(client, "Event", nextArgs.orderBy);
+      if (nextArgs.orderBy === null) {
+        delete nextArgs.orderBy;
+      }
+    }
     return nextArgs;
   }
-  nextArgs.select = { ...EVENT_SCHEMA_SAFE_SELECT };
+
+  if (isRecord(include)) {
+    const safeBase = await filterSelectionForModel(client, "Event", EVENT_SCHEMA_SAFE_SELECT, "select");
+    const safeInclude = await filterSelectionForModel(client, "Event", include, "include");
+    delete nextArgs.include;
+    nextArgs.select = { ...safeBase, ...safeInclude };
+    if (isRecord(nextArgs.where)) {
+      nextArgs.where = await filterWhereForModel(client, "Event", nextArgs.where);
+    }
+    if ("orderBy" in nextArgs) {
+      nextArgs.orderBy = await filterOrderByForModel(client, "Event", nextArgs.orderBy);
+      if (nextArgs.orderBy === null) {
+        delete nextArgs.orderBy;
+      }
+    }
+    return nextArgs;
+  }
+
+  nextArgs.select = await filterSelectionForModel(client, "Event", EVENT_SCHEMA_SAFE_SELECT, "select");
+  if (isRecord(nextArgs.where)) {
+    nextArgs.where = await filterWhereForModel(client, "Event", nextArgs.where);
+  }
+  if ("orderBy" in nextArgs) {
+    nextArgs.orderBy = await filterOrderByForModel(client, "Event", nextArgs.orderBy);
+    if (nextArgs.orderBy === null) {
+      delete nextArgs.orderBy;
+    }
+  }
   return nextArgs;
 }
 
@@ -254,7 +619,7 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
               if (model !== "Event" || !isMissingColumnError(error) || !canApplyEventReadFallback(operationArgs)) {
                 throw error;
               }
-              const fallbackArgs = withEventSafeReadSelect(operationArgs);
+              const fallbackArgs = await withEventSafeReadSelect(operationArgs, client);
               return run(fallbackArgs);
             }
           };

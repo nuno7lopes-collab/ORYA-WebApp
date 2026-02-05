@@ -12,6 +12,7 @@ import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { SourceType, PaymentStatus, ProcessorFeesStatus } from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { getBookingState } from "@/lib/reservas/bookingState";
 
 const ORYA_CARD_FEE_BPS = 100;
 
@@ -104,7 +105,8 @@ async function _POST(
     }
 
     const booking = invite.booking;
-    if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(booking.status)) {
+    const bookingState = getBookingState(booking);
+    if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(bookingState ?? "")) {
       return fail(ctx, 409, "BOOKING_INACTIVE", "Reserva inativa.");
     }
     const split = booking.splitPayment;

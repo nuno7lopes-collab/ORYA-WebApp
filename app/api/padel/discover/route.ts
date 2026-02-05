@@ -155,7 +155,6 @@ async function _GET(req: NextRequest) {
         locationName: true,
         locationCity: true,
         status: true,
-        isFree: true,
         ticketTypes: { select: { price: true, status: true } },
         organization: { select: { publicName: true, username: true } },
         padelTournamentConfig: {
@@ -182,7 +181,7 @@ async function _GET(req: NextRequest) {
         .map((t) => (typeof t.price === "number" ? t.price : null))
         .filter((p): p is number => p !== null);
 
-      const isGratis = event.isFree || deriveIsFreeEvent({ ticketPrices });
+      const isGratis = deriveIsFreeEvent({ ticketPrices });
       const priceFromCents =
         isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
       const priceFrom = priceFromCents !== null ? priceFromCents / 100 : null;

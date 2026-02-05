@@ -11,6 +11,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   computeCancellationRefundFromSnapshot,
   getSnapshotCancellationWindowMinutes,
+  getSnapshotCancellationPenaltyBps,
   getSnapshotAllowCancellation,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
@@ -38,6 +39,13 @@ export async function POST(
         refundRequired: boolean;
         paymentIntentId: string | null;
         refundAmountCents: number | null;
+        splitRefunds: Array<{
+          participantId: number;
+          paymentIntentId: string;
+          baseShareCents: number;
+          platformFeeCents: number;
+        }>;
+        cancellationPenaltyBps: number;
         snapshotTimezone: string;
       };
 
@@ -56,6 +64,22 @@ export async function POST(
       { errorCode, message, retryable, ...(details ? { details } : {}) },
       { status },
     );
+
+  const computeSplitRefundAmount = (params: {
+    amountCents: number | null;
+    baseShareCents: number;
+    platformFeeCents: number;
+    stripeFeeCents: number;
+    penaltyBps: number;
+  }) => {
+    if (!Number.isFinite(params.amountCents)) return null;
+    const penaltyCents = Math.max(
+      0,
+      Math.round((Math.max(0, params.baseShareCents) * Math.max(0, params.penaltyBps)) / 10_000),
+    );
+    const feesRetained = Math.max(0, params.platformFeeCents + params.stripeFeeCents);
+    return Math.max(0, Math.round((params.amountCents ?? 0) - feesRetained - penaltyCents));
+  };
 
   if (!bookingId) {
     return fail(400, "BOOKING_ID_INVALID", "ID inválido.");
@@ -83,6 +107,21 @@ export async function POST(
           availabilityId: true,
           snapshotTimezone: true,
           confirmationSnapshot: true,
+          splitPayment: {
+            select: {
+              id: true,
+              status: true,
+              participants: {
+                select: {
+                  id: true,
+                  status: true,
+                  paymentIntentId: true,
+                  baseShareCents: true,
+                  platformFeeCents: true,
+                },
+              },
+            },
+          },
         },
       });
 
@@ -101,6 +140,8 @@ export async function POST(
           refundRequired: false,
           paymentIntentId: booking.paymentIntentId,
           refundAmountCents: null,
+          splitRefunds: [],
+          cancellationPenaltyBps: 0,
           snapshotTimezone: booking.snapshotTimezone,
         };
       }
@@ -152,7 +193,33 @@ export async function POST(
         data: { status: "CANCELLED_BY_CLIENT" },
       });
 
+      const split = booking.splitPayment ?? null;
+      const splitRefunds = split
+        ? split.participants
+            .filter(
+              (participant) => participant.status === "PAID" && Boolean(participant.paymentIntentId),
+            )
+            .map((participant) => ({
+              participantId: participant.id,
+              paymentIntentId: participant.paymentIntentId as string,
+              baseShareCents: participant.baseShareCents ?? 0,
+              platformFeeCents: participant.platformFeeCents ?? 0,
+            }))
+        : [];
+
+      if (split) {
+        await tx.bookingSplit.update({
+          where: { id: split.id },
+          data: { status: "CANCELLED" },
+        });
+        await tx.bookingSplitParticipant.updateMany({
+          where: { splitId: split.id, status: "PENDING" },
+          data: { status: "CANCELLED" },
+        });
+      }
+
       const refundRequired =
+        splitRefunds.length === 0 &&
         !!booking.paymentIntentId &&
         (isPending || (booking.status === "CONFIRMED" && allowCancellation && decision.allowed));
       const txAny = tx as any;
@@ -170,6 +237,7 @@ export async function POST(
           })
         : null;
       const refundAmountCents = refundComputation?.refundCents ?? null;
+      const cancellationPenaltyBps = snapshot ? getSnapshotCancellationPenaltyBps(snapshot) : 0;
 
       await recordOrganizationAudit(tx, {
         organizationId: booking.organizationId,
@@ -184,6 +252,7 @@ export async function POST(
           deadline: decision.deadline?.toISOString() ?? null,
           refundRequired,
           refundAmountCents,
+          splitRefundsCount: splitRefunds.length,
           snapshotVersion: snapshot?.version ?? null,
           snapshotTimezone: booking.snapshotTimezone,
         },
@@ -197,6 +266,8 @@ export async function POST(
         refundRequired,
         paymentIntentId: booking.paymentIntentId,
         refundAmountCents,
+        splitRefunds,
+        cancellationPenaltyBps,
         snapshotTimezone: booking.snapshotTimezone,
       };
     });
@@ -219,6 +290,61 @@ export async function POST(
           "Reserva cancelada, mas o reembolso falhou.",
           true,
         );
+      }
+    }
+
+    if (result.splitRefunds.length > 0) {
+      const paymentIntentIds = result.splitRefunds.map((item) => item.paymentIntentId);
+      const transactions = await prisma.transaction.findMany({
+        where: { stripePaymentIntentId: { in: paymentIntentIds } },
+        select: { stripePaymentIntentId: true, amountCents: true, stripeFeeCents: true },
+      });
+      const txMap = new Map(
+        transactions.map((tx) => [tx.stripePaymentIntentId ?? "", tx]),
+      );
+      const refundedParticipantIds: number[] = [];
+
+      for (const refund of result.splitRefunds) {
+        const txRow = txMap.get(refund.paymentIntentId) ?? null;
+        if (!txRow) {
+          console.warn("[reservas/cancel] split transaction missing", {
+            bookingId,
+            paymentIntentId: refund.paymentIntentId,
+          });
+        }
+        const refundAmountCents = computeSplitRefundAmount({
+          amountCents: txRow?.amountCents ?? null,
+          baseShareCents: refund.baseShareCents,
+          platformFeeCents: refund.platformFeeCents ?? 0,
+          stripeFeeCents: txRow?.stripeFeeCents ?? 0,
+          penaltyBps: result.cancellationPenaltyBps ?? 0,
+        });
+
+        try {
+          await refundBookingPayment({
+            bookingId: result.booking.id,
+            paymentIntentId: refund.paymentIntentId,
+            reason: "CLIENT_CANCEL",
+            amountCents: refundAmountCents,
+            idempotencyKey: `refund:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
+          });
+          refundedParticipantIds.push(refund.participantId);
+        } catch (refundErr) {
+          console.error("[reservas/cancel] split refund failed", refundErr);
+          return fail(
+            502,
+            "BOOKING_REFUND_FAILED",
+            "Reserva cancelada, mas o reembolso falhou.",
+            true,
+          );
+        }
+      }
+
+      if (refundedParticipantIds.length > 0) {
+        await prisma.bookingSplitParticipant.updateMany({
+          where: { id: { in: refundedParticipantIds } },
+          data: { status: "CANCELLED" },
+        });
       }
     }
 

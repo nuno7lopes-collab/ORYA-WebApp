@@ -1,12 +1,18 @@
 import { useMemo } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { FlatList, Platform, Pressable, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
-import { useNetworkActions, useNetworkSuggestions } from "../../features/network/hooks";
+import {
+  useFollowRequestActions,
+  useFollowRequests,
+  useNetworkActions,
+  useNetworkSuggestions,
+} from "../../features/network/hooks";
 import { NetworkSuggestionCard } from "../../features/network/NetworkSuggestionCard";
+import { FollowRequestCard } from "../../features/network/FollowRequestCard";
 import { SocialSuggestion } from "../../features/network/types";
 import { useSocialFeed } from "../../features/social/hooks";
 import { SocialFeedCard } from "../../features/social/SocialFeedCard";
@@ -18,6 +24,8 @@ type NetworkListItem =
 export default function NetworkScreen() {
   const suggestions = useNetworkSuggestions();
   const actions = useNetworkActions();
+  const followRequests = useFollowRequests();
+  const followRequestActions = useFollowRequestActions();
   const socialFeed = useSocialFeed(8);
 
   const feedItems = useMemo(
@@ -26,6 +34,10 @@ export default function NetworkScreen() {
   );
   const feedSkeleton = socialFeed.isLoading && feedItems.length === 0;
   const feedEmpty = !socialFeed.isLoading && !socialFeed.isError && feedItems.length === 0;
+
+  const requestItems = followRequests.data ?? [];
+  const requestSkeleton = followRequests.isLoading && requestItems.length === 0;
+  const requestEmpty = !followRequests.isLoading && !followRequests.isError && requestItems.length === 0;
 
   const data = suggestions.data ?? [];
   const showSkeleton = suggestions.isLoading && data.length === 0;
@@ -42,17 +54,63 @@ export default function NetworkScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
         data={listData}
         keyExtractor={(item) => (item.kind === "skeleton" ? item.key : item.suggestion.id)}
-        refreshing={suggestions.isFetching || socialFeed.isFetching}
+        refreshing={suggestions.isFetching || socialFeed.isFetching || followRequests.isFetching}
         onRefresh={() => {
           suggestions.refetch();
           socialFeed.refetch();
+          followRequests.refetch();
         }}
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={40}
+        windowSize={6}
         ListHeaderComponent={
           <View className="pt-14 pb-2">
             <Text className="text-white text-[30px] font-semibold">Rede</Text>
             <Text className="mt-1 text-white/60 text-sm">
               Segue pessoas e clubes para personalizar o teu feed.
             </Text>
+
+            <View className="pt-6">
+              <SectionHeader
+                title="Pedidos de follow"
+                subtitle="Convites pendentes."
+              />
+            </View>
+
+            {followRequests.isError ? (
+              <GlassCard intensity={52} className="mb-4 mt-3">
+                <Text className="text-red-300 text-sm mb-3">Não foi possível carregar os pedidos.</Text>
+                <Pressable
+                  className="rounded-xl bg-white/10 px-4 py-3"
+                  onPress={() => followRequests.refetch()}
+                  style={{ minHeight: tokens.layout.touchTarget }}
+                >
+                  <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+                </Pressable>
+              </GlassCard>
+            ) : null}
+
+            {requestSkeleton
+              ? Array.from({ length: 2 }, (_, index) => (
+                  <GlassSkeleton key={`requests-skeleton-${index}`} className="mb-3" height={110} />
+                ))
+              : requestItems.map((request) => (
+                  <FollowRequestCard
+                    key={`request-${request.id}`}
+                    item={request}
+                    pending={followRequestActions.pendingRequestId === request.id}
+                    onAccept={followRequestActions.accept}
+                    onDecline={followRequestActions.decline}
+                  />
+                ))}
+
+            {requestEmpty ? (
+              <GlassCard intensity={48} className="mb-4">
+                <Text className="text-white/70 text-sm">Sem pedidos pendentes.</Text>
+              </GlassCard>
+            ) : null}
 
             <View className="pt-6">
               <SectionHeader
@@ -131,8 +189,8 @@ export default function NetworkScreen() {
             <NetworkSuggestionCard
               item={item.suggestion}
               pending={actions.pendingUserId === item.suggestion.id}
-              onFollow={() => actions.follow(item.suggestion.id)}
-              onUnfollow={() => actions.unfollow(item.suggestion.id)}
+              onFollow={actions.follow}
+              onUnfollow={actions.unfollow}
             />
           )
         }

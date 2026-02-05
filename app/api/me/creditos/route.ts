@@ -43,7 +43,7 @@ async function _GET(_req: NextRequest) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     console.error("GET /api/me/creditos error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar créditos." }, { status: 500 });
+    return jsonWrap({ ok: false, error: "Erro ao carregar pontos." }, { status: 500 });
   }
 }
 export const GET = withApiEnvelope(_GET);

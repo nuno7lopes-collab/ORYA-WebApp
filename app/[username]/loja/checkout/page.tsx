@@ -36,12 +36,34 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
   const store = organization
     ? await prisma.store.findFirst({
         where: { ownerOrganizationId: organization.id },
-        select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+        select: {
+          id: true,
+          status: true,
+          showOnProfile: true,
+          catalogLocked: true,
+          currency: true,
+          supportEmail: true,
+          supportPhone: true,
+          returnPolicy: true,
+          privacyPolicy: true,
+          termsUrl: true,
+        },
       })
     : profile
       ? await prisma.store.findFirst({
           where: { ownerUserId: profile.id },
-          select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+          select: {
+            id: true,
+            status: true,
+            showOnProfile: true,
+            catalogLocked: true,
+            currency: true,
+            supportEmail: true,
+            supportPhone: true,
+            returnPolicy: true,
+            privacyPolicy: true,
+            termsUrl: true,
+          },
         })
       : null;
 
@@ -75,6 +97,13 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
             currency={store.currency}
             storeBaseHref={baseHref}
             cartHref={baseHref + "/carrinho"}
+            storePolicies={{
+              supportEmail: store.supportEmail ?? null,
+              supportPhone: store.supportPhone ?? null,
+              returnPolicy: store.returnPolicy ?? null,
+              privacyPolicy: store.privacyPolicy ?? null,
+              termsUrl: store.termsUrl ?? null,
+            }}
           />
         </div>
       </div>

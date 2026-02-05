@@ -27,6 +27,9 @@ export type WalletDetail = {
   type: string;
   status: string;
   snapshot: WalletEntitlement["snapshot"];
+  actions?: {
+    canShowQr?: boolean;
+  };
   passAvailable?: boolean;
   passUrl?: string | null;
   qrToken?: string | null;
@@ -36,6 +39,24 @@ export type WalletDetail = {
     organizationName: string | null;
     organizationUsername: string | null;
   } | null;
+  payment?: {
+    totalPaidCents: number;
+    platformFeeCents: number;
+    cardPlatformFeeCents: number;
+    stripeFeeCents: number;
+    feesTotalCents: number;
+    netCents: number;
+    currency: string;
+    status: string | null;
+    feeMode: string | null;
+    paymentMethod: string | null;
+  } | null;
+  refund?: {
+    baseAmountCents: number;
+    feesExcludedCents: number;
+    refundedAt: string | null;
+    reason: string | null;
+  } | null;
   pairing?: {
     id: number;
     paymentMode: string;
@@ -43,4 +64,14 @@ export type WalletDetail = {
     lifecycleStatus: string;
     slots: Array<{ slotRole: string; slotStatus: string; paymentStatus: string }>;
   } | null;
+  pairingActions?: {
+    canAccept: boolean;
+    canDecline: boolean;
+    canPay: boolean;
+    userSlotRole: string | null;
+  } | null;
+  audit?: {
+    updatedAt?: string | null;
+    createdAt?: string | null;
+  };
 };

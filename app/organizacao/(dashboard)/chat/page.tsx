@@ -56,7 +56,7 @@ export default async function OrganizationChatPage() {
             Ativa o módulo nas apps da organização para começares a usar o chat interno.
           </p>
           <Link
-            href={appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id)}
+            href={appendOrganizationIdToHref("/organizacao/overview?section=modulos", organization.id)}
             className={`${CTA_SECONDARY} mt-4 text-[12px]`}
           >
             Gerir apps

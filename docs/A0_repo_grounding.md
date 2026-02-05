@@ -1,4 +1,5 @@
 # A0 - Repo grounding + inventario (Bloco A)
+> Nota: snapshot de diagnóstico do repo (data/commit específicos). Para SSOT atual, ver `docs/v9_ssot_registry.md`.
 
 ## Estado repo (A0)
 - Branch: developer

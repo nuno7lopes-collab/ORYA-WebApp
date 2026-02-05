@@ -109,6 +109,7 @@ export default function OrganizationDashboardShell({
   const [emailResending, setEmailResending] = useState(false);
   const showEmailGate = emailGateActive && !emailGateDismissed && !isSettingsRoute;
   const syncInFlightRef = useRef(false);
+  const lastSyncAttemptRef = useRef<{ id: number; at: number } | null>(null);
 
   useEffect(() => {
     if (!emailGateToast) return;
@@ -117,7 +118,7 @@ export default function OrganizationDashboardShell({
   }, [emailGateToast]);
 
   useEffect(() => {
-    if (!emailGateActive || isSettingsRoute) return;
+    if (!emailGateActive || isSettingsRoute || emailGateDismissed) return;
     let isMounted = true;
     let interval: ReturnType<typeof setInterval> | null = null;
     const orgMeUrl = activeOrg?.id ? `/api/organizacao/me?organizationId=${activeOrg.id}` : null;
@@ -146,22 +147,28 @@ export default function OrganizationDashboardShell({
     };
 
     checkEmailVerification();
-    interval = setInterval(checkEmailVerification, 3000);
+    interval = setInterval(checkEmailVerification, 12000);
 
     return () => {
       isMounted = false;
       if (interval) clearInterval(interval);
     };
-  }, [emailGateActive, isSettingsRoute, router]);
+  }, [activeOrg?.id, emailGateActive, emailGateDismissed, isSettingsRoute, router]);
 
   useEffect(() => {
     const requestedOrgId = parseOrganizationId(searchParams?.get("organizationId"));
     if (!requestedOrgId) return;
     if (activeOrg?.id === requestedOrgId) return;
     if (syncInFlightRef.current) return;
+    if (!activeOrg?.id) return;
+    const now = Date.now();
+    if (lastSyncAttemptRef.current?.id === requestedOrgId && now - lastSyncAttemptRef.current.at < 10_000) {
+      return;
+    }
 
     let cancelled = false;
     syncInFlightRef.current = true;
+    lastSyncAttemptRef.current = { id: requestedOrgId, at: now };
 
     const syncOrgContext = async () => {
       try {

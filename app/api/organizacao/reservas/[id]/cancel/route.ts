@@ -49,6 +49,10 @@ async function _POST(
         refundRequired: boolean;
         paymentIntentId: string | null;
         refundAmountCents: number | null;
+        splitRefunds: Array<{
+          participantId: number;
+          paymentIntentId: string;
+        }>;
         snapshotTimezone: string;
         crmPayload: { organizationId: number; userId: string; bookingId: number } | null;
       };
@@ -127,6 +131,19 @@ async function _POST(
           snapshotTimezone: true,
           confirmationSnapshot: true,
           professional: { select: { userId: true } },
+          splitPayment: {
+            select: {
+              id: true,
+              status: true,
+              participants: {
+                select: {
+                  id: true,
+                  status: true,
+                  paymentIntentId: true,
+                },
+              },
+            },
+          },
         },
       });
 
@@ -146,6 +163,7 @@ async function _POST(
           refundRequired: false,
           paymentIntentId: booking.paymentIntentId ?? null,
           refundAmountCents: null,
+          splitRefunds: [],
           snapshotTimezone: booking.snapshotTimezone,
           crmPayload: null,
         };
@@ -188,7 +206,31 @@ async function _POST(
         actorUserId: profile.id,
         data: { status: "CANCELLED_BY_ORG" },
       });
+      const split = booking.splitPayment ?? null;
+      const splitRefunds = split
+        ? split.participants
+            .filter(
+              (participant) => participant.status === "PAID" && Boolean(participant.paymentIntentId),
+            )
+            .map((participant) => ({
+              participantId: participant.id,
+              paymentIntentId: participant.paymentIntentId as string,
+            }))
+        : [];
+
+      if (split) {
+        await tx.bookingSplit.update({
+          where: { id: split.id },
+          data: { status: "CANCELLED" },
+        });
+        await tx.bookingSplitParticipant.updateMany({
+          where: { splitId: split.id, status: "PENDING" },
+          data: { status: "CANCELLED" },
+        });
+      }
+
       const refundRequired =
+        splitRefunds.length === 0 &&
         !!booking.paymentIntentId &&
         (isPending || booking.status === "CONFIRMED");
       const refundComputation = snapshot
@@ -210,6 +252,7 @@ async function _POST(
           refundRequired,
           deadline: null,
           refundAmountCents,
+          splitRefundsCount: splitRefunds.length,
           snapshotVersion: snapshot?.version ?? null,
           snapshotTimezone: booking.snapshotTimezone,
         },
@@ -223,6 +266,7 @@ async function _POST(
         refundRequired,
         paymentIntentId: booking.paymentIntentId ?? null,
         refundAmountCents,
+        splitRefunds,
         snapshotTimezone: booking.snapshotTimezone,
         crmPayload: {
           organizationId: organization.id,
@@ -250,6 +294,37 @@ async function _POST(
           "Reserva cancelada, mas o reembolso falhou.",
           true,
         );
+      }
+    }
+
+    if (result.splitRefunds.length > 0) {
+      const refundedParticipantIds: number[] = [];
+      for (const refund of result.splitRefunds) {
+        try {
+          await refundBookingPayment({
+            bookingId: result.booking.id,
+            paymentIntentId: refund.paymentIntentId,
+            reason: "ORG_CANCEL",
+            amountCents: null,
+            idempotencyKey: `refund:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
+          });
+          refundedParticipantIds.push(refund.participantId);
+        } catch (refundErr) {
+          console.error("[organizacao/cancel] split refund failed", refundErr);
+          return fail(
+            502,
+            "BOOKING_REFUND_FAILED",
+            "Reserva cancelada, mas o reembolso falhou.",
+            true,
+          );
+        }
+      }
+
+      if (refundedParticipantIds.length > 0) {
+        await prisma.bookingSplitParticipant.updateMany({
+          where: { id: { in: refundedParticipantIds } },
+          data: { status: "CANCELLED" },
+        });
       }
     }
 

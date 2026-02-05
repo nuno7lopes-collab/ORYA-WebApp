@@ -974,7 +974,7 @@ V1.5 (quando Tickets estiver sólido — ainda **online**)
 
 V2 (só se fizer sentido e sem custo extra)
 	•	App Clips para “entrada rápida” em eventos:
-		–	check-in / wallet add / compra rápida (Apple Pay)
+		–	check-in / Apple Wallet add / compra rápida (Apple Pay)
 		–	ativação por QR/NFC no recinto
 	•	MapKit / Apple Maps:
 		–	alinha com D11: Apple é o provider primário no Address Service; OSM (Photon/Nominatim) é o fallback.
@@ -4062,7 +4062,7 @@ Any new feature MUST be evaluated against this threat model.
 ANEXO A — Padel (Plano de Excelência)
 Status Padel (2026-02-02): DONE (F1). F2/F3 mantidos como backlog explicito.
 
-**Nota de integração:** este anexo detalha o vertical Padel. Tudo o que for pagamento, identidade, entitlements, refunds, RBAC, endereços e notificações **obedece** às decisões e SSOTs do blueprint principal (v9). Se houver conflito, vence o blueprint.
+**Nota de integração:** este anexo detalha o vertical Padel. Tudo o que for pagamento, identidade, entitlements, refunds, RBAC, endereços e notificações **obedece** às decisões e SSOTs do blueprint principal (v9). Se houver conflito, vence o `docs/v9_ssot_registry.md`; na ausência de regra no registry, vence o blueprint.
 
 # ORYA — Padel (TO-BE) — Plano de Excelência
 

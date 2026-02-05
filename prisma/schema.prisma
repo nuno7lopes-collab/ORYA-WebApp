@@ -56,6 +56,7 @@ model Profile {
   organizationInvitesSent                                             OrganizationMemberInvite[] @relation("OrganizationMemberInviteInviter")
   organizationInvitesReceived                                         OrganizationMemberInvite[] @relation("OrganizationMemberInviteTarget")
   bookingInvitesSent                                                  BookingInvite[]          @relation("BookingInviteInvitedBy")
+  bookingChargesCreated                                               BookingCharge[]          @relation("BookingChargeCreatedBy")
   bookingParticipants                                                 BookingParticipant[]     @relation("BookingParticipantUser")
   bookingSplitsCreated                                                BookingSplit[]           @relation("BookingSplitCreatedBy")
   bookingSplitParticipants                                            BookingSplitParticipant[] @relation("BookingSplitParticipantUser")
@@ -264,6 +265,7 @@ model Organization {
   services                Service[]
   bookings                Booking[]
   bookingInvites          BookingInvite[]
+  bookingCharges          BookingCharge[]
   bookingSplits           BookingSplit[]
   scheduleDelays          ScheduleDelay[]
   chatThreads             ChatThread[]
@@ -3952,6 +3954,7 @@ model Booking {
   bookingPackage  BookingPackage?
   addons          BookingAddon[]
   invites         BookingInvite[]
+  charges         BookingCharge[]
   participants    BookingParticipant[]
   splitPayment    BookingSplit?
   review          ServiceReview?
@@ -4034,6 +4037,36 @@ model BookingInvite {
   @@index([organizationId])
   @@index([status])
   @@map("booking_invites")
+  @@schema("app_v3")
+}
+
+model BookingCharge {
+  env                     String                         @default("prod")
+  id              Int      @id @default(autoincrement())
+  bookingId       Int      @map("booking_id")
+  organizationId  Int      @map("organization_id")
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  token           String   @unique @map("token") @db.Text
+  kind            BookingChargeKind @default(EXTRA)
+  payerKind       BookingChargePayerKind @default(ORGANIZER) @map("payer_kind")
+  status          BookingChargeStatus @default(OPEN)
+  label           String?
+  amountCents     Int      @map("amount_cents")
+  currency        String   @default("EUR")
+  paymentIntentId String?  @map("payment_intent_id")
+  paymentId       String?  @map("payment_id")
+  paidAt          DateTime? @map("paid_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       Profile? @relation("BookingChargeCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([paymentIntentId])
+  @@map("booking_charges")
   @@schema("app_v3")
 }
 
@@ -5713,6 +5746,30 @@ enum BookingSplitStatus {
 enum BookingSplitPricingMode {
   FIXED
   DYNAMIC
+
+  @@schema("app_v3")
+}
+
+enum BookingChargeStatus {
+  OPEN
+  PAID
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum BookingChargeKind {
+  BASE
+  DEPOSIT
+  EXTRA
+  SPLIT_PART
+
+  @@schema("app_v3")
+}
+
+enum BookingChargePayerKind {
+  ORGANIZER
+  INVITEE
 
   @@schema("app_v3")
 }

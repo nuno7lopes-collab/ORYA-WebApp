@@ -29,6 +29,7 @@ import { fulfillResaleIntent } from "@/lib/operations/fulfillResale";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 import { fulfillPadelSecondCharge } from "@/lib/operations/fulfillPadelSecondCharge";
 import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
+import { fulfillBookingChargeIntent } from "@/lib/operations/fulfillBookingCharge";
 import { fulfillServiceCreditPurchaseIntent } from "@/lib/operations/fulfillServiceCredits";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { createNotification } from "@/lib/notifications";
@@ -828,13 +829,15 @@ async function processOperation(op: OperationRecord) {
 
 async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
   const handledStore = await fulfillStoreOrderIntent(intent as Stripe.PaymentIntent);
-  const handledService = await fulfillServiceBookingIntent(intent as Stripe.PaymentIntent);
+  const handledCharge = await fulfillBookingChargeIntent(intent as Stripe.PaymentIntent);
+  const handledService = handledCharge ? false : await fulfillServiceBookingIntent(intent as Stripe.PaymentIntent);
   const handledCredits = await fulfillServiceCreditPurchaseIntent(intent as Stripe.PaymentIntent);
   const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
   const handledPadelRegistration = await fulfillPadelRegistrationIntent(intent as Stripe.PaymentIntent, null);
   const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
   const handledPaid =
     handledStore ||
+    handledCharge ||
     handledService ||
     handledCredits ||
     handledResale ||
@@ -845,6 +848,7 @@ async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEve
 
   return (
     handledStore ||
+    handledCharge ||
     handledService ||
     handledCredits ||
     handledResale ||

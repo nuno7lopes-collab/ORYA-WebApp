@@ -18,7 +18,7 @@ import { DiscoverEventCard } from "../../features/discover/DiscoverEventCard";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { BlurView } from "expo-blur";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { DiscoverDateFilter, DiscoverKind, DiscoverOfferCard } from "../../features/discover/types";
@@ -51,6 +51,7 @@ export default function DiscoverScreen() {
   const setKind = useDiscoverStore((state) => state.setKind);
   const setDateFilter = useDiscoverStore((state) => state.setDateFilter);
   const setCity = useDiscoverStore((state) => state.setCity);
+  const resetFilters = useDiscoverStore((state) => state.resetFilters);
   const debouncedQuery = useDebouncedValue(query, 280);
   const debouncedCity = useDebouncedValue(city, 320);
   const { data: ipLocation } = useIpLocation();
@@ -74,6 +75,13 @@ export default function DiscoverScreen() {
 
   const showSkeleton = isLoading && items.length === 0;
   const showEmpty = !isLoading && !isError && items.length === 0;
+  const hasActiveFilters = Boolean(
+    query.trim() ||
+      city.trim() ||
+      priceFilter !== "all" ||
+      kind !== "all" ||
+      dateFilter !== "all",
+  );
 
   const listData = useMemo<DiscoverListItem[]>(
     () =>
@@ -112,6 +120,11 @@ export default function DiscoverScreen() {
         keyboardShouldPersistTaps="handled"
         refreshing={isFetching && !isFetchingNextPage}
         onRefresh={() => refetch()}
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={40}
+        windowSize={7}
         onEndReached={() => {
           if (hasNextPage && !isFetchingNextPage) {
             fetchNextPage();
@@ -278,6 +291,18 @@ export default function DiscoverScreen() {
               })}
             </View>
 
+            {hasActiveFilters ? (
+              <View className="px-5 pb-5">
+                <Pressable
+                  onPress={() => resetFilters()}
+                  className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                  style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                >
+                  <Text className="text-white/75 text-xs font-semibold">Limpar filtros</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
             {featured.length > 0 ?
               <View className="pb-6">
                 <View className="px-5">
@@ -289,6 +314,10 @@ export default function DiscoverScreen() {
                   data={featured}
                   keyExtractor={(item) => item.key}
                   contentContainerStyle={{ paddingHorizontal: 20 }}
+                  removeClippedSubviews={Platform.OS === "android"}
+                  initialNumToRender={3}
+                  maxToRenderPerBatch={3}
+                  windowSize={3}
                   renderItem={({ item, index }) => (
                     <DiscoverEventCard item={item.event} itemType="event" variant="featured" index={index} />
                   )}
@@ -330,6 +359,15 @@ export default function DiscoverScreen() {
               {showEmpty ? (
                 <GlassSurface intensity={50}>
                   <Text className="text-white/70 text-sm">{t.empty}</Text>
+                  {hasActiveFilters ? (
+                    <Pressable
+                      onPress={() => resetFilters()}
+                      className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                      style={{ minHeight: tokens.layout.touchTarget }}
+                    >
+                      <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
+                    </Pressable>
+                  ) : null}
                 </GlassSurface>
               ) : null}
               {isFetchingNextPage ? (

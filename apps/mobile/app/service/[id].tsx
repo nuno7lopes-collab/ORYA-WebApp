@@ -2,7 +2,8 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { ApiError } from "../../lib/api";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -11,6 +12,7 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useServiceDetail } from "../../features/services/hooks";
 import { LinearGradient } from "expo-linear-gradient";
+import { safeBack } from "../../lib/navigation";
 
 const formatPrice = (amountCents: number, currency: string): string => {
   if (amountCents <= 0) return "Gratis";
@@ -64,6 +66,7 @@ export default function ServiceDetailScreen() {
     imageTag?: string;
   }>();
   const router = useRouter();
+  const navigation = useNavigation();
   const idValue = useMemo(() => (Array.isArray(id) ? id[0] : id) ?? "", [id]);
   const previewTitle = useMemo(
     () => (Array.isArray(serviceTitle) ? serviceTitle[0] : serviceTitle) ?? "Servico",
@@ -105,6 +108,9 @@ export default function ServiceDetailScreen() {
 
   const { data, isLoading, isError, error, refetch } = useServiceDetail(idValue);
   const transitionSource = source === "discover" ? "discover" : "direct";
+  const handleBack = () => {
+    safeBack(router, navigation);
+  };
 
   const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
   const translate = useRef(new Animated.Value(transitionSource === "discover" ? 20 : 10)).current;
@@ -135,10 +141,10 @@ export default function ServiceDetailScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
-      <LiquidBackground variant="deep">
+      <LiquidBackground variant="solid">
         <View className="px-5 pt-12 pb-4">
           <Pressable
-            onPress={() => router.back()}
+            onPress={handleBack}
             className="flex-row items-center gap-2"
             style={{ minHeight: tokens.layout.touchTarget }}
           >

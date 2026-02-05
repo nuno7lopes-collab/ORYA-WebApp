@@ -129,8 +129,8 @@ export default function OrganizationTopBar({
   const orgAvatar = activeOrg?.avatarUrl ?? null;
   const userLabel = user?.name || user?.email || "Utilizador";
   const dashboardHref = activeOrg?.id
-    ? `/organizacao?tab=overview&organizationId=${activeOrg.id}`
-    : "/organizacao?tab=overview";
+    ? `/organizacao/overview?organizationId=${activeOrg.id}`
+    : "/organizacao/overview";
 
   const moduleState = useMemo(() => {
     const primary = resolvePrimaryModule(
@@ -380,7 +380,7 @@ export default function OrganizationTopBar({
       items.push({
         key: "stripe",
         label: "Stripe recomendado",
-        href: "/organizacao?tab=analyze&section=financas",
+        href: "/organizacao/analyze?section=financas",
         tone: "warning",
       });
     }
@@ -467,7 +467,7 @@ export default function OrganizationTopBar({
         /* ignore */
       }
       if (orgMenuRef.current) orgMenuRef.current.removeAttribute("open");
-      router.replace(`/organizacao?tab=overview&organizationId=${orgId}`);
+      router.replace(`/organizacao/overview?organizationId=${orgId}`);
       router.refresh();
     } catch (err) {
       console.error("[topbar][org switch] erro", err);

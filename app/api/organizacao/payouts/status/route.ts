@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
         select: { userId: true },
       });
       const uniq = Array.from(new Set(owners.map((o) => o.userId)));
-      const financeHref = appendOrganizationIdToHref("/organizacao?tab=analyze&section=financas", organization.id);
+      const financeHref = appendOrganizationIdToHref("/organizacao/analyze?section=financas", organization.id);
       await Promise.all(
         uniq.map(async (uid) => {
           if (!(await shouldNotify(uid, NotificationType.STRIPE_STATUS))) return;

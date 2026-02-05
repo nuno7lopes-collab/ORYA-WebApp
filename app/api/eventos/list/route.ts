@@ -120,7 +120,6 @@ async function _GET(req: NextRequest) {
         longitude: true,
         coverImageUrl: true,
         templateType: true,
-        isFree: true,
         ticketTypes: {
           select: {
             price: true,
@@ -150,7 +149,7 @@ async function _GET(req: NextRequest) {
         e.ticketTypes && e.ticketTypes.length > 0
           ? Math.min(...e.ticketTypes.map((t) => t.price ?? 0)) / 100
           : null;
-      const isGratis = e.isFree || deriveIsFreeEvent({ ticketPrices: e.ticketTypes?.map((t) => t.price ?? 0) ?? [] });
+      const isGratis = deriveIsFreeEvent({ ticketPrices: e.ticketTypes?.map((t) => t.price ?? 0) ?? [] });
 
       const onSaleCount = e.ticketTypes?.filter((t) => t.status === "ON_SALE").length ?? 0;
       const soldOutCount = e.ticketTypes?.filter((t) => t.status === "SOLD_OUT").length ?? 0;

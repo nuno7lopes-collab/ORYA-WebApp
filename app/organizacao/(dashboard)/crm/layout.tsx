@@ -28,7 +28,7 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
   });
 
   if (!organization || !membership) {
-    redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization?.id ?? null));
+    redirect(appendOrganizationIdToHref("/organizacao/overview?section=modulos", organization?.id ?? null));
   }
 
   const crmAccess = await ensureCrmModuleAccess(
@@ -43,7 +43,7 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
     },
   );
   if (!crmAccess.ok) {
-    redirect(appendOrganizationIdToHref("/organizacao?tab=overview&section=modulos", organization.id));
+    redirect(appendOrganizationIdToHref("/organizacao/overview?section=modulos", organization.id));
   }
 
   return (

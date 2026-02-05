@@ -44,7 +44,6 @@ const toEventQueryString = (params: DiscoverParams): string => {
   if (params.q) query.set("q", params.q);
   if (params.city) query.set("city", params.city);
   if (params.kind === "padel") query.set("categories", "PADEL");
-  if (params.kind === "events") query.set("categories", "GERAL");
   if (params.type === "free") query.set("priceMax", "0");
   if (params.type === "paid") query.set("priceMin", "0.01");
   if (params.date && params.date !== "all") query.set("date", params.date);
@@ -176,10 +175,23 @@ export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<Di
   }
 
   const perSourceLimit = Math.max(6, Math.ceil(limit / 2));
-  const [events, services] = await Promise.all([
+  const [eventsResult, servicesResult] = await Promise.allSettled([
     fetchEvents({ ...params, kind, cursor: cursor.event, limit: perSourceLimit }),
     fetchServices({ ...params, kind, cursor: cursor.service, limit: perSourceLimit }),
   ]);
+
+  if (eventsResult.status === "rejected" && servicesResult.status === "rejected") {
+    throw eventsResult.reason ?? servicesResult.reason ?? new ApiError(500, "Erro ao carregar ofertas.");
+  }
+
+  const events =
+    eventsResult.status === "fulfilled"
+      ? eventsResult.value
+      : { items: [] as DiscoverOfferCard[], nextCursor: null, hasMore: false };
+  const services =
+    servicesResult.status === "fulfilled"
+      ? servicesResult.value
+      : { items: [] as DiscoverOfferCard[], nextCursor: null, hasMore: false };
 
   const merged = [...events.items, ...services.items]
     .sort((a, b) => getOfferSortDate(a) - getOfferSortDate(b))

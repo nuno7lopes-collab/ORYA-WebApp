@@ -60,7 +60,7 @@ export default function OrganizationProfileHeader({
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
   const iconBaseClass =
     "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/8 text-white/85 transition hover:border-white/40 hover:bg-white/12";
-  const editProfileHref = appendOrganizationIdToHref("/organizacao?tab=profile", organizationId);
+  const editProfileHref = appendOrganizationIdToHref("/organizacao/profile", organizationId);
 
   useEffect(() => {
     setAvatar(avatarUrl);
