@@ -86,6 +86,23 @@ const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
   }
 };
 
+const NETWORK_TIMEOUT_MS = 10_000;
+const LOCATION_TIMEOUT_MS = 8_000;
+
+const withTimeout = async <T>(promise: Promise<T>, ms: number, label = "timeout") => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(label)), ms);
+      promise
+        .then((value) => resolve(value))
+        .catch((err) => reject(err));
+    });
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
+
 export default function OnboardingScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -109,13 +126,53 @@ export default function OnboardingScreen() {
   const [savingStep, setSavingStep] = useState<OnboardingStep | null>(null);
 
   const draftRef = useRef<OnboardingDraft | null>(null);
+  const didInitDraftRef = useRef(false);
   const usernameCacheRef = useRef<Map<string, boolean>>(new Map());
   const usernameAbortRef = useRef<AbortController | null>(null);
   const usernameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const usernameInflightRef = useRef<{ normalized: string; promise: Promise<boolean> } | null>(null);
+  const usernameRequestIdRef = useRef(0);
+  const usernameInflightRef = useRef<{
+    normalized: string;
+    promise: Promise<boolean>;
+    requestId: number;
+  } | null>(null);
 
   const USERNAME_DEBOUNCE_MS = 300;
   const USERNAME_TIMEOUT_MS = 6500;
+
+  const cancelUsernameCheck = (invalidate = true) => {
+    if (invalidate) usernameRequestIdRef.current += 1;
+    if (usernameTimerRef.current) {
+      clearTimeout(usernameTimerRef.current);
+      usernameTimerRef.current = null;
+    }
+    if (usernameAbortRef.current) {
+      usernameAbortRef.current.abort();
+      usernameAbortRef.current = null;
+    }
+    usernameInflightRef.current = null;
+  };
+
+  const runUsernameCheck = async (
+    normalized: string,
+    accessToken: string | null,
+    controller: AbortController,
+  ) => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await new Promise<boolean>((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          reject(new Error("username_timeout"));
+        }, USERNAME_TIMEOUT_MS);
+        checkUsernameAvailability(normalized, accessToken, controller.signal)
+          .then(resolve)
+          .catch(reject);
+      });
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
 
   const padelSelected = interests.includes("padel");
   const steps = useMemo<OnboardingStep[]>(
@@ -174,6 +231,16 @@ export default function OnboardingScreen() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    if (loadingDraft || didInitDraftRef.current) return;
+    if (!session?.user?.id) return;
+    didInitDraftRef.current = true;
+    if (!draftRef.current) {
+      persistDraft({ step: 0 }).catch(() => undefined);
+    }
+  }, [loadingDraft, session?.user?.id]);
+
+  useEffect(() => {
+    cancelUsernameCheck();
     if (!username) {
       setUsernameStatus("idle");
       return;
@@ -190,36 +257,21 @@ export default function OnboardingScreen() {
     }
 
     setUsernameStatus("checking");
-    if (usernameAbortRef.current) usernameAbortRef.current.abort();
+    const requestId = usernameRequestIdRef.current;
     const controller = new AbortController();
     usernameAbortRef.current = controller;
-    if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
-
-    let didTimeout = false;
-    const timeoutId = setTimeout(() => {
-      didTimeout = true;
-      controller.abort();
-    }, USERNAME_TIMEOUT_MS);
 
     usernameTimerRef.current = setTimeout(async () => {
-      const runCheck = async () => {
-        const accessToken = session?.access_token ?? (await getActiveSession())?.access_token ?? null;
-        const available = await checkUsernameAvailability(normalized, accessToken, controller.signal);
-        return available;
-      };
-      const promise = runCheck();
-      usernameInflightRef.current = { normalized, promise };
+      const accessToken = session?.access_token ?? (await getActiveSession())?.access_token ?? null;
+      const promise = runUsernameCheck(normalized, accessToken, controller);
+      usernameInflightRef.current = { normalized, promise, requestId };
       try {
         const available = await promise;
-        if (controller.signal.aborted) return;
-        clearTimeout(timeoutId);
+        if (requestId !== usernameRequestIdRef.current || controller.signal.aborted) return;
         usernameCacheRef.current.set(normalized, available);
         setUsernameStatus(available ? "available" : "taken");
       } catch {
-        if (controller.signal.aborted) {
-          if (didTimeout) setUsernameStatus("error");
-          return;
-        }
+        if (requestId !== usernameRequestIdRef.current) return;
         setUsernameStatus("error");
       } finally {
         if (usernameInflightRef.current?.normalized === normalized) {
@@ -229,9 +281,7 @@ export default function OnboardingScreen() {
     }, USERNAME_DEBOUNCE_MS);
 
     return () => {
-      if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
-      clearTimeout(timeoutId);
-      controller.abort();
+      cancelUsernameCheck();
     };
   }, [username, usernameValidation, session?.access_token]);
 
@@ -284,27 +334,19 @@ export default function OnboardingScreen() {
       return false;
     }
     if (usernameStatus === "available") return true;
-    if (usernameInflightRef.current?.normalized === usernameValidation.normalized) {
-      try {
-        const available = await usernameInflightRef.current.promise;
-        setUsernameStatus(available ? "available" : "taken");
-        if (!available) {
-          Alert.alert("Username indisponível", "Este username já está a ser utilizado.");
-        }
-        return available;
-      } catch {
-        setUsernameStatus("error");
-        Alert.alert("Erro", "Não foi possível verificar agora.");
-        return false;
-      }
-    }
+    cancelUsernameCheck();
+    const requestId = usernameRequestIdRef.current;
     setUsernameStatus("checking");
     try {
       const accessToken = await resolveAccessToken();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), USERNAME_TIMEOUT_MS);
-      const available = await checkUsernameAvailability(usernameValidation.normalized, accessToken, controller.signal);
-      clearTimeout(timeoutId);
+      usernameAbortRef.current = controller;
+      const promise = runUsernameCheck(usernameValidation.normalized, accessToken, controller);
+      usernameInflightRef.current = { normalized: usernameValidation.normalized, promise, requestId };
+      const available = await promise;
+      if (requestId !== usernameRequestIdRef.current || controller.signal.aborted) {
+        return false;
+      }
       usernameCacheRef.current.set(usernameValidation.normalized, available);
       setUsernameStatus(available ? "available" : "taken");
       if (!available) {
@@ -312,14 +354,18 @@ export default function OnboardingScreen() {
       }
       return available;
     } catch (err: any) {
-      if (String(err?.name ?? "").toLowerCase().includes("abort")) {
-        setUsernameStatus("error");
-        Alert.alert("Erro", "Verificação demorou demasiado. Tenta novamente.");
-        return false;
-      }
+      if (requestId !== usernameRequestIdRef.current) return false;
       setUsernameStatus("error");
-      Alert.alert("Erro", "Não foi possível verificar agora.");
+      const message =
+        String(err?.message ?? "").includes("timeout") || String(err?.message ?? "").includes("abort")
+          ? "Verificação demorou demasiado. Tenta novamente."
+          : "Não foi possível verificar agora.";
+      Alert.alert("Erro", message);
       return false;
+    } finally {
+      if (usernameInflightRef.current?.requestId === requestId) {
+        usernameInflightRef.current = null;
+      }
     }
   };
 
@@ -359,34 +405,58 @@ export default function OnboardingScreen() {
         return;
       }
       const accessToken = await resolveAccessToken();
-      await saveBasicMutation.mutateAsync({
-        fullName: fullName.trim(),
-        username: normalizedUsername,
-        favouriteCategories: interests,
-        accessToken,
-      });
-      if (padelSelected && padelGender && padelSide) {
-        await savePadelMutation.mutateAsync({
-          gender: padelGender,
-          preferredSide: padelSide,
-          level: padelLevel,
+      await withTimeout(
+        saveBasicMutation.mutateAsync({
+          fullName: fullName.trim(),
+          username: normalizedUsername,
+          favouriteCategories: interests,
           accessToken,
-        });
+        }),
+        NETWORK_TIMEOUT_MS,
+        "save_basic_timeout",
+      );
+      if (padelSelected && padelGender && padelSide) {
+        await withTimeout(
+          savePadelMutation.mutateAsync({
+            gender: padelGender,
+            preferredSide: padelSide,
+            level: padelLevel,
+            accessToken,
+          }),
+          NETWORK_TIMEOUT_MS,
+          "save_padel_timeout",
+        );
       }
       if (location?.consent) {
-        await saveConsentMutation.mutateAsync({
-          consent: location.consent,
-          preferredGranularity: location.consent === "GRANTED" ? "COARSE" : undefined,
-          accessToken,
-        });
+        try {
+          await withTimeout(
+            saveConsentMutation.mutateAsync({
+              consent: location.consent,
+              preferredGranularity: location.consent === "GRANTED" ? "COARSE" : undefined,
+              accessToken,
+            }),
+            NETWORK_TIMEOUT_MS,
+            "save_consent_timeout",
+          );
+        } catch (err) {
+          console.warn("Location consent save failed", err);
+        }
       }
       if (location && (location.city || location.region)) {
-        await saveCoarseMutation.mutateAsync({
-          city: location.city,
-          region: location.region,
-          source: location.source ?? "IP",
-          accessToken,
-        });
+        try {
+          await withTimeout(
+            saveCoarseMutation.mutateAsync({
+              city: location.city,
+              region: location.region,
+              source: location.source ?? "IP",
+              accessToken,
+            }),
+            NETWORK_TIMEOUT_MS,
+            "save_coarse_timeout",
+          );
+        } catch (err) {
+          console.warn("Location coarse save failed", err);
+        }
       }
       updateProfileCache({
         fullName: fullName.trim(),
@@ -399,7 +469,11 @@ export default function OnboardingScreen() {
       await clearOnboardingDraft();
       router.replace("/(tabs)");
     } catch (err: any) {
-      const message = err?.message ?? "Não foi possível concluir o onboarding.";
+      const raw = err?.message ?? "Não foi possível concluir o onboarding.";
+      const message =
+        typeof raw === "string" && raw.startsWith("API")
+          ? "Não foi possível concluir o onboarding. Tenta novamente."
+          : raw;
       if (
         typeof message === "string" &&
         (message.includes("USERNAME_TAKEN") || message.toLowerCase().includes("username") || message.includes("utilizado"))
@@ -521,7 +595,7 @@ export default function OnboardingScreen() {
   async function resolveIpLocation() {
     const accessToken = await resolveAccessToken();
     try {
-      const ipLocation = await fetchIpLocation(accessToken);
+      const ipLocation = await withTimeout(fetchIpLocation(accessToken), LOCATION_TIMEOUT_MS, "ip_timeout");
       const next = { city: ipLocation?.city ?? null, region: ipLocation?.region ?? null };
       setLocationHint(next);
       return next;
@@ -542,7 +616,11 @@ export default function OnboardingScreen() {
       } = { city: null, region: null, consent: "DENIED", source: "IP" };
 
       if (intent === "allow") {
-        const permission = await Location.requestForegroundPermissionsAsync();
+        const permission = await withTimeout(
+          Location.requestForegroundPermissionsAsync(),
+          LOCATION_TIMEOUT_MS,
+          "permission_timeout",
+        );
         if (permission.status !== Location.PermissionStatus.GRANTED) {
           const ip = await resolveIpLocation();
           locationPayload = {
@@ -559,18 +637,44 @@ export default function OnboardingScreen() {
           return;
         }
 
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        let position: Location.LocationObject | null = null;
+        try {
+          position = await withTimeout(
+            Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              timeout: LOCATION_TIMEOUT_MS,
+            }),
+            LOCATION_TIMEOUT_MS + 1000,
+            "position_timeout",
+          );
+        } catch {
+          position = null;
+        }
+
+        if (!position) {
+          const ip = await resolveIpLocation();
+          locationPayload = {
+            city: ip.city ?? null,
+            region: ip.region ?? null,
+            consent: "DENIED",
+            source: "IP",
+          };
+          await persistDraft({
+            step: 4,
+            location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
+          });
+          await finalizeOnboarding(locationPayload);
+          return;
+        }
         let city: string | null = null;
         let region: string | null = null;
         try {
-          const [address] = await Location.reverseGeocodeAsync({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-          city = (address?.city ?? address?.subregion ?? null) as string | null;
-          region = (address?.region ?? null) as string | null;
+        const [address] = await Location.reverseGeocodeAsync({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+        city = (address?.city ?? address?.subregion ?? null) as string | null;
+        region = (address?.region ?? null) as string | null;
         } catch {
           // ignore reverse geocode errors
         }
@@ -929,61 +1033,69 @@ export default function OnboardingScreen() {
 
   return (
     <AuthBackground>
-      <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.topBar}>
-          <Pressable onPress={handleBack} style={styles.backButton} accessibilityLabel="Voltar">
-            <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-            <Text style={styles.backLabel}>Voltar</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.header}>
-          <Text style={styles.title}>Bem-vindo à ORYA</Text>
-        </View>
-
-        <StepProgress total={steps.length} current={stepIndex} />
-
-        {step === "basic"
-          ? renderBasicStep()
-          : step === "interests"
-            ? renderInterestsStep()
-            : step === "padel"
-              ? renderPadelStep()
-              : renderLocationStep()}
-
-        <View style={styles.actions}>
-          {step === "basic" ? (
-            <PrimaryButton
-              label={savingStep === "basic" ? "A guardar..." : "Continuar"}
-              onPress={handleBasicContinue}
-              disabled={!canContinueBasic || savingStep === "basic"}
-              loading={savingStep === "basic"}
-            />
-          ) : null}
-          {step === "interests" ? (
-            <PrimaryButton
-              label={savingStep === "interests" ? "A guardar..." : "Continuar"}
-              onPress={handleInterestsContinue}
-              disabled={!canContinueInterests || savingStep === "interests"}
-              loading={savingStep === "interests"}
-            />
-          ) : null}
-          {step === "padel" ? (
-            <View style={styles.padelActions}>
-              <PrimaryButton
-                label={savingStep === "padel" ? "A guardar..." : "Continuar"}
-                onPress={handlePadelContinue}
-                disabled={!canContinuePadel || savingStep === "padel"}
-                loading={savingStep === "padel"}
-              />
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView
+            contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.topBar}>
+              <Pressable onPress={handleBack} style={styles.backButton} accessibilityLabel="Voltar">
+                <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+                <Text style={styles.backLabel}>Voltar</Text>
+              </Pressable>
             </View>
-          ) : null}
-        </View>
-      </ScrollView>
+
+            <View style={styles.header}>
+              <Text style={styles.title}>Bem-vindo à ORYA</Text>
+            </View>
+
+            <StepProgress total={steps.length} current={stepIndex} />
+
+            {step === "basic"
+              ? renderBasicStep()
+              : step === "interests"
+                ? renderInterestsStep()
+                : step === "padel"
+                  ? renderPadelStep()
+                  : renderLocationStep()}
+
+            <View style={styles.actions}>
+              {step === "basic" ? (
+                <PrimaryButton
+                  label={savingStep === "basic" ? "A guardar..." : "Continuar"}
+                  onPress={handleBasicContinue}
+                  disabled={!canContinueBasic || savingStep === "basic"}
+                  loading={savingStep === "basic"}
+                />
+              ) : null}
+              {step === "interests" ? (
+                <PrimaryButton
+                  label={savingStep === "interests" ? "A guardar..." : "Continuar"}
+                  onPress={handleInterestsContinue}
+                  disabled={!canContinueInterests || savingStep === "interests"}
+                  loading={savingStep === "interests"}
+                />
+              ) : null}
+              {step === "padel" ? (
+                <View style={styles.padelActions}>
+                  <PrimaryButton
+                    label={savingStep === "padel" ? "A guardar..." : "Continuar"}
+                    onPress={handlePadelContinue}
+                    disabled={!canContinuePadel || savingStep === "padel"}
+                    loading={savingStep === "padel"}
+                  />
+                </View>
+              ) : null}
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </AuthBackground>
   );
 }
