@@ -9,6 +9,8 @@ import { BlurView } from "expo-blur";
 import { useWalletFeed } from "../../features/wallet/hooks";
 import { WalletEntitlementCard } from "../../features/wallet/WalletEntitlementCard";
 import { WalletEntitlement } from "../../features/wallet/types";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
 type WalletListItem =
   | { kind: "skeleton"; key: string }
@@ -18,6 +20,8 @@ export default function TicketsScreen() {
   const t = i18n.pt.tickets;
   const [mode, setMode] = useState<"upcoming" | "history">("upcoming");
   const feed = useWalletFeed(mode);
+  const insets = useSafeAreaInsets();
+  const tabBarPadding = useTabBarPadding();
   const items = useMemo(
     () => feed.data?.pages.flatMap((page) => page.items) ?? [],
     [feed.data?.pages],
@@ -60,7 +64,7 @@ export default function TicketsScreen() {
   return (
     <LiquidBackground>
       <FlatList
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
         data={listData}
         keyExtractor={keyExtractor}
         onRefresh={handleRefresh}
@@ -71,7 +75,7 @@ export default function TicketsScreen() {
         updateCellsBatchingPeriod={40}
         windowSize={5}
         ListHeaderComponent={
-          <View className="pt-14 pb-2">
+          <View style={{ paddingTop: insets.top + 12, paddingBottom: 8 }}>
             <Text className="text-white text-[30px] font-semibold mb-2">{t.title}</Text>
             <Text className="text-white/60 text-sm mb-5">A tua carteira: bilhetes, inscrições e reservas.</Text>
 

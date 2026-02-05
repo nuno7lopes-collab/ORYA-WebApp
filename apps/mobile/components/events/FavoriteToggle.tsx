@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "../icons/Ionicons";
 import { useFavoritesStore } from "../../features/favorites/store";
@@ -10,6 +10,7 @@ type FavoriteToggleProps = {
   label?: string;
   onToggle?: (next: boolean) => void;
   disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
 };
 
 export function FavoriteToggle({
@@ -19,6 +20,7 @@ export function FavoriteToggle({
   label = "Favoritar",
   onToggle,
   disabled,
+  style,
 }: FavoriteToggleProps) {
   const isFavorite = useFavoritesStore((state) => state.isFavorite(eventId));
   const toggle = useFavoritesStore((state) => state.toggleFavorite);
@@ -43,6 +45,7 @@ export function FavoriteToggle({
         accessibilityLabel={label}
         style={({ pressed }) => [
           styles.button,
+          style,
           isFavorite ? styles.buttonActive : null,
           pressed && !disabled ? styles.pressed : null,
           disabled ? styles.disabled : null,
@@ -68,6 +71,7 @@ export function FavoriteToggle({
       accessibilityLabel={label}
       style={({ pressed }) => [
         styles.iconButton,
+        style,
         pressed && !disabled ? styles.pressed : null,
         disabled ? styles.disabled : null,
       ]}

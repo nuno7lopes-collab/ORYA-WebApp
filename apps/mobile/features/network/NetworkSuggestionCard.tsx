@@ -74,11 +74,11 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
           className={
             isActive
               ? "rounded-xl border border-white/15 bg-white/5 px-4 py-2"
-              : "rounded-xl border border-emerald-300/45 bg-emerald-400/20 px-4 py-2"
+              : "rounded-xl border border-sky-300/45 bg-sky-400/20 px-4 py-2"
           }
           style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
         >
-          <Text className={isActive ? "text-white text-xs font-semibold" : "text-emerald-200 text-xs font-semibold"}>
+          <Text className={isActive ? "text-white text-xs font-semibold" : "text-sky-200 text-xs font-semibold"}>
             {label}
           </Text>
         </Pressable>

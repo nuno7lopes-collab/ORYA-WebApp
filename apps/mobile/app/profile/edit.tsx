@@ -152,7 +152,42 @@ export default function ProfileEditScreen() {
   const normalizedUsername = usernameValidation.valid
     ? usernameValidation.normalized
     : sanitizeUsername(username);
-  const canSave = fullName.trim().length >= 2 && usernameValidation.valid && !saving;
+  const isDirty = useMemo(() => {
+    if (!profile) return false;
+    if (fullName.trim() !== (profile.fullName ?? "").trim()) return true;
+    if (normalizedUsername !== (profile.username ?? "")) return true;
+    if (bio.trim() !== (profile.bio ?? "").trim()) return true;
+    if (city.trim() !== (profile.city ?? "").trim()) return true;
+    if ((profile.padelLevel ?? null) !== padelLevel) return true;
+    if (visibility !== (profile.visibility ?? "PUBLIC")) return true;
+    if (allowEmailNotifications !== (profile.allowEmailNotifications ?? true)) return true;
+    if (allowEventReminders !== (profile.allowEventReminders ?? true)) return true;
+    if (allowFollowRequests !== (profile.allowFollowRequests ?? true)) return true;
+    if (avatarRemoved || coverRemoved || avatarLocalUri || coverLocalUri) return true;
+    const profileInterests = (profile.favouriteCategories ?? []).slice(0, 6) as InterestId[];
+    const currentKey = interests.slice().sort().join("|");
+    const profileKey = profileInterests.slice().sort().join("|");
+    if (currentKey !== profileKey) return true;
+    return false;
+  }, [
+    allowEmailNotifications,
+    allowEventReminders,
+    allowFollowRequests,
+    avatarLocalUri,
+    avatarRemoved,
+    bio,
+    city,
+    coverLocalUri,
+    coverRemoved,
+    fullName,
+    interests,
+    normalizedUsername,
+    padelLevel,
+    profile,
+    visibility,
+  ]);
+
+  const canSave = fullName.trim().length >= 2 && usernameValidation.valid && isDirty && !saving;
 
   const handleUsernameCheck = async () => {
     if (!accessToken) return false;
@@ -291,10 +326,10 @@ export default function ProfileEditScreen() {
             <Pressable
               onPress={handleSave}
               disabled={!canSave}
-              className="rounded-full bg-emerald-400/90 px-5 py-2"
+              className="rounded-full bg-sky-200/90 px-5 py-2"
               style={{ minHeight: tokens.layout.touchTarget, opacity: canSave ? 1 : 0.6 }}
             >
-              <Text className="text-black text-sm font-semibold">{saving ? "A guardar…" : "Guardar"}</Text>
+              <Text className="text-slate-900 text-sm font-semibold">{saving ? "A guardar…" : "Guardar"}</Text>
             </Pressable>
           </View>
 
@@ -444,7 +479,7 @@ export default function ProfileEditScreen() {
             <View className="flex-row items-center justify-between">
               <Text className="text-white/60 text-xs uppercase tracking-[0.2em]">Username</Text>
               <Pressable onPress={handleUsernameCheck}>
-                <Text className="text-emerald-200 text-xs font-semibold">Verificar</Text>
+                <Text className="text-sky-200 text-xs font-semibold">Verificar</Text>
               </Pressable>
             </View>
             <TextInput
@@ -521,7 +556,7 @@ export default function ProfileEditScreen() {
                     <GlassPill
                       label={interest.label}
                       variant={active ? "accent" : "muted"}
-                      className={active ? "border-emerald-200/50" : undefined}
+                      className={active ? "border-sky-200/50" : undefined}
                     />
                   </Pressable>
                 );

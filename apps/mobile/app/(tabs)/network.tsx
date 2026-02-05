@@ -18,6 +18,8 @@ import { useSocialFeed } from "../../features/social/hooks";
 import { SocialFeedCard } from "../../features/social/SocialFeedCard";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { SocialFeedItem } from "../../features/social/types";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
 const SECTION_SPACING = 24;
 
@@ -54,6 +56,8 @@ export default function NetworkScreen() {
   const { data: ipLocation } = useIpLocation();
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
+  const insets = useSafeAreaInsets();
+  const tabBarPadding = useTabBarPadding();
 
   const feedItems = useMemo(
     () => socialFeed.data?.pages.flatMap((page) => page.items) ?? [],
@@ -260,14 +264,14 @@ export default function NetworkScreen() {
         renderSectionHeader={renderSectionHeader}
         renderSectionFooter={renderSectionFooter}
         ListHeaderComponent={
-          <View className="pt-14 pb-2">
+          <View style={{ paddingTop: insets.top + 12, paddingBottom: 8 }}>
             <Text className="text-white text-[30px] font-semibold">Rede</Text>
             <Text className="mt-1 text-white/60 text-sm">
               Segue pessoas e clubes para personalizar o teu feed.
             </Text>
           </View>
         }
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
         refreshing={suggestions.isFetching || socialFeed.isFetching || followRequests.isFetching}
         onRefresh={handleRefresh}
         removeClippedSubviews={Platform.OS === "android"}

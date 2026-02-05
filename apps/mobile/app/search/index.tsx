@@ -30,7 +30,6 @@ import { DiscoverOfferCard } from "../../features/discover/types";
 import { SearchOrganization, SearchUser } from "../../features/search/types";
 import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -100,7 +99,7 @@ export default function SearchScreen() {
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
   const insets = useSafeAreaInsets();
-  const tabBarPadding = useTabBarPadding();
+  const bottomPadding = insets.bottom + 24;
   const queryLength = debounced.trim().length;
   const showSkeleton = enabled && isLoading;
   const allErrored = offersQuery.isError && usersQuery.isError && orgsQuery.isError;
@@ -389,7 +388,7 @@ export default function SearchScreen() {
         renderSectionFooter={renderSectionFooter}
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: bottomPadding }}
         keyboardShouldPersistTaps="handled"
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={6}

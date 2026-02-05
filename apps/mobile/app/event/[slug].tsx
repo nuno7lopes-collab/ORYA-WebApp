@@ -26,6 +26,7 @@ import { safeBack } from "../../lib/navigation";
 import { FavoriteToggle } from "../../components/events/FavoriteToggle";
 import { StickyCTA } from "../../components/events/StickyCTA";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getMobileEnv } from "../../lib/env";
 
 const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   weekday: "short",
@@ -157,6 +158,8 @@ export default function EventDetail() {
   const { data, isLoading, isError, error, refetch } = useEventDetail(slugValue ?? "");
   const { session } = useAuth();
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
+  const insets = useSafeAreaInsets();
+  const env = getMobileEnv();
   const transitionSource = params.source === "discover" ? "discover" : "direct";
   const handleBack = () => {
     safeBack(router, navigation);
@@ -188,19 +191,25 @@ export default function EventDetail() {
     return [...list].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }, [data?.ticketTypes]);
 
-  useEffect(() => {
-    if (ticketTypes.length === 0) return;
-    if (selectedTicketId !== null) return;
-    const firstAvailable = ticketTypes.find((ticket) => {
+  const purchasableTickets = useMemo(() => {
+    return ticketTypes.filter((ticket) => {
       const remaining =
         ticket.totalQuantity != null ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0) : null;
       const status = ticket.status ?? null;
-      if (status === "CLOSED" || status === "SOLD_OUT") return false;
+      if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING") return false;
       if (remaining === 0) return false;
       return true;
     });
-    setSelectedTicketId(firstAvailable?.id ?? ticketTypes[0].id);
-  }, [selectedTicketId, ticketTypes]);
+  }, [ticketTypes]);
+
+  const hasPurchasableTickets = purchasableTickets.length > 0;
+
+  useEffect(() => {
+    if (ticketTypes.length === 0) return;
+    if (selectedTicketId !== null) return;
+    const firstAvailable = purchasableTickets[0] ?? ticketTypes[0];
+    setSelectedTicketId(firstAvailable?.id ?? null);
+  }, [purchasableTickets, selectedTicketId, ticketTypes]);
 
   const selectedTicket = useMemo(
     () => ticketTypes.find((ticket) => ticket.id === selectedTicketId) ?? null,
@@ -218,23 +227,25 @@ export default function EventDetail() {
     [selectedTicket?.status, ticketRemaining],
   );
 
+  const isFreeTicket = selectedTicket?.price === 0;
   const maxQuantity = useMemo(() => {
+    if (isFreeTicket) return 1;
     if (ticketRemaining == null) return 10;
     return Math.max(1, Math.min(ticketRemaining, 10));
-  }, [ticketRemaining]);
+  }, [isFreeTicket, ticketRemaining]);
 
   useEffect(() => {
     if (ticketQuantity > maxQuantity) setTicketQuantity(maxQuantity);
   }, [maxQuantity, ticketQuantity]);
 
+  useEffect(() => {
+    if (isFreeTicket && ticketQuantity !== 1) setTicketQuantity(1);
+  }, [isFreeTicket, ticketQuantity]);
+
   const totalCents = selectedTicket ? selectedTicket.price * ticketQuantity : 0;
-  const canCheckout =
-    Boolean(selectedTicket) &&
-    ticketStatusLabel === "Disponível" &&
-    !isLoading &&
-    !isError &&
-    Boolean(session);
-  const ctaLabel = selectedTicket && selectedTicket.price === 0 ? "Confirmar inscrição" : "Continuar para pagamento";
+  const canInitiateCheckout =
+    Boolean(selectedTicket) && hasPurchasableTickets && ticketStatusLabel === "Disponível" && !isLoading && !isError;
+  const ctaLabel = isFreeTicket ? "Inscrever-me" : "Comprar";
 
   const cover = data?.coverImageUrl ?? null;
   const category = data?.categories?.[0] ?? "EVENTO";
@@ -255,6 +266,23 @@ export default function EventDetail() {
     : previewPrice ?? price;
   const displayHost = data?.hostName ?? previewHost ?? data?.hostUsername ?? "ORYA";
   const displayImageTag = previewImageTag ?? (data?.slug ? `event-${data.slug}` : null);
+  const showStickyCTA = Boolean(data) && !isLoading && !isError;
+  const showFavoriteCTA = showStickyCTA && !hasPurchasableTickets;
+  const scrollBottomPadding = showStickyCTA ? insets.bottom + 180 : 36;
+  const shareUrl =
+    data?.slug && env.apiBaseUrl ? `${env.apiBaseUrl.replace(/\/$/, "")}/eventos/${data.slug}` : null;
+
+  const handleShare = async () => {
+    if (!data) return;
+    try {
+      const message = shareUrl
+        ? `${data.title}\n${shareUrl}`
+        : `${data.title} · ORYA`;
+      await Share.share({ message, url: shareUrl ?? undefined });
+    } catch {
+      // ignore share errors
+    }
+  };
   const heroTranslate = scrollY.interpolate({
     inputRange: [0, 220],
     outputRange: [0, -24],
@@ -297,7 +325,7 @@ export default function EventDetail() {
         </Animated.View>
 
         <Animated.ScrollView
-          contentContainerStyle={{ paddingBottom: 36 }}
+          contentContainerStyle={{ paddingBottom: scrollBottomPadding }}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
             { useNativeDriver: true },
@@ -338,7 +366,6 @@ export default function EventDetail() {
                       />
                       <View className="flex-row items-center justify-between px-4 pt-4">
                         <GlassPill label={displayCategory} />
-                        <GlassPill label="A carregar" variant="muted" />
                       </View>
                       <View className="px-4 pb-4 gap-2">
                         <Text className="text-white text-2xl font-semibold">{displayTitle}</Text>
@@ -357,11 +384,9 @@ export default function EventDetail() {
                         paddingVertical: tokens.spacing.lg,
                       }}
                     >
-                      <View className="flex-row items-center gap-2 self-start">
-                        <GlassPill label={displayCategory} />
-                        <GlassPill label="A carregar" variant="muted" />
-                      </View>
-                      <Text className="text-white/60 text-xs">A preparar detalhes</Text>
+                        <View className="flex-row items-center gap-2 self-start">
+                          <GlassPill label={displayCategory} />
+                        </View>
                     </View>
                   )}
                 </View>
@@ -574,7 +599,7 @@ export default function EventDetail() {
                   )}
                 </View>
 
-                {selectedTicket ? (
+                {selectedTicket && hasPurchasableTickets ? (
                   <GlassCard intensity={60} highlight>
                     <View className="gap-4">
                       <Text className="text-white text-sm font-semibold">Resumo da compra</Text>
@@ -591,21 +616,26 @@ export default function EventDetail() {
                         <View className="flex-row items-center gap-3">
                           <Pressable
                             onPress={() => setTicketQuantity((prev) => Math.max(1, prev - 1))}
+                            disabled={maxQuantity <= 1}
                             className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                            style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                            style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
                           >
                             <Ionicons name="remove" size={16} color="rgba(255,255,255,0.75)" />
                           </Pressable>
                           <Text className="text-white text-base font-semibold">{ticketQuantity}</Text>
                           <Pressable
                             onPress={() => setTicketQuantity((prev) => Math.min(maxQuantity, prev + 1))}
+                            disabled={maxQuantity <= 1}
                             className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                            style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                            style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
                           >
                             <Ionicons name="add" size={16} color="rgba(255,255,255,0.85)" />
                           </Pressable>
                         </View>
                       </View>
+                      {isFreeTicket ? (
+                        <Text className="text-white/55 text-xs">Limite por pessoa: 1</Text>
+                      ) : null}
                       <View className="flex-row items-center justify-between">
                         <Text className="text-white/60 text-sm">Total</Text>
                         <Text className="text-white text-lg font-semibold">
@@ -621,35 +651,69 @@ export default function EventDetail() {
                   </GlassCard>
                 ) : null}
 
-                <Pressable
-                  disabled={!canCheckout}
-                  onPress={() => {
-                    if (!selectedTicket) return;
-                    setCheckoutDraft({
-                      slug: data.slug,
-                      eventId: data.id,
-                      eventTitle: data.title,
-                      ticketTypeId: selectedTicket.id,
-                      ticketName: selectedTicket.name,
-                      quantity: ticketQuantity,
-                      unitPriceCents: selectedTicket.price,
-                      totalCents,
-                      currency: selectedTicket.currency ?? "EUR",
-                      paymentMethod: "card",
-                    });
-                    router.push("/checkout");
-                  }}
-                  className={canCheckout ? "rounded-2xl bg-white/15 px-4 py-4" : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"}
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                >
-                  <Text className={canCheckout ? "text-center text-white text-sm font-semibold" : "text-center text-white/50 text-sm font-semibold"}>
-                    {ctaLabel}
-                  </Text>
-                </Pressable>
               </View>
             </Animated.View>
           )}
         </Animated.ScrollView>
+        {showStickyCTA ? (
+          <StickyCTA>
+            {showFavoriteCTA ? (
+              <View className="flex-row gap-3">
+                <FavoriteToggle eventId={data!.id} variant="button" label="Favoritar" style={{ flex: 1 }} />
+                <Pressable
+                  onPress={handleShare}
+                  className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
+                  style={{ minHeight: tokens.layout.touchTarget }}
+                >
+                  <Ionicons name="share-outline" size={18} color="rgba(255,255,255,0.9)" />
+                  <Text className="text-white text-sm font-semibold">Partilhar</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                disabled={!canInitiateCheckout}
+                onPress={() => {
+                  if (!selectedTicket || !canInitiateCheckout) return;
+                  if (!session?.user?.id) {
+                    router.push("/auth");
+                    return;
+                  }
+                  setCheckoutDraft({
+                    slug: data!.slug,
+                    eventId: data!.id,
+                    eventTitle: data!.title,
+                    ticketTypeId: selectedTicket.id,
+                    ticketName: selectedTicket.name,
+                    quantity: ticketQuantity,
+                    unitPriceCents: selectedTicket.price,
+                    totalCents,
+                    currency: selectedTicket.currency ?? "EUR",
+                    paymentMethod: "card",
+                  });
+                  router.push("/checkout");
+                }}
+                className={
+                  canInitiateCheckout
+                    ? "rounded-2xl bg-white/90 px-4 py-4"
+                    : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
+                }
+                style={{ minHeight: tokens.layout.touchTarget, alignItems: "center", justifyContent: "center" }}
+              >
+                <Text
+                  className={`text-center text-sm font-semibold ${canInitiateCheckout ? "" : "text-white/50"}`}
+                  style={canInitiateCheckout ? { color: "#0b101a" } : undefined}
+                >
+                  {ctaLabel}
+                </Text>
+              </Pressable>
+            )}
+            {!session?.user?.id && !showFavoriteCTA ? (
+              <Text className="text-white/55 text-xs text-center">
+                Inicia sessão para continuar.
+              </Text>
+            ) : null}
+          </StickyCTA>
+        ) : null}
       </LiquidBackground>
     </>
   );

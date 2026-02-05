@@ -28,7 +28,7 @@ import { getMobileEnv } from "../../lib/env";
 
 WebBrowser.maybeCompleteAuthSession();
 
-const ORYA_LOGO = require("../../assets/orya-logo.png");
+const ORYA_LOGO = require("../../assets/orya_logo.png");
 
 const parseAuthUrl = (url: string) => {
   const parsed = Linking.parse(url);

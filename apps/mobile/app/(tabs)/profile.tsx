@@ -12,6 +12,9 @@ import { useProfileAgenda, useProfileSummary } from "../../features/profile/hook
 import { useEffect, useState } from "react";
 import { useAuth } from "../../lib/auth";
 import { useRouter } from "expo-router";
+import { getMobileEnv } from "../../lib/env";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
 const AGENDA_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   weekday: "short",
@@ -40,6 +43,10 @@ export default function ProfileScreen() {
   const userId = session?.user?.id ?? null;
   const summary = useProfileSummary(true, accessToken, userId);
   const agenda = useProfileAgenda(accessToken, userId);
+  const insets = useSafeAreaInsets();
+  const tabBarPadding = useTabBarPadding();
+  const env = getMobileEnv();
+  const hideDebugStatus = env.appEnv === "prod";
   const [pushStatus, setPushStatus] = useState<
     "loading" | "granted" | "denied" | "undetermined" | "unsupported"
   >("loading");
@@ -85,9 +92,27 @@ export default function ProfileScreen() {
     };
   }, []);
 
+  const showUnsupported = pushStatus === "unsupported" && !hideDebugStatus;
+  const uiPushStatus = pushStatus === "unsupported" && hideDebugStatus ? "undetermined" : pushStatus;
+  const pushStatusLabel =
+    uiPushStatus === "loading"
+      ? "A verificar…"
+      : uiPushStatus === "granted"
+        ? "Ativas"
+        : uiPushStatus === "denied"
+          ? "Bloqueadas"
+          : showUnsupported
+            ? "Indisponível"
+            : "Por ativar";
+  const pushActionLabel = showUnsupported
+    ? "Indisponível"
+    : uiPushStatus === "granted"
+      ? "Abrir definições"
+      : "Ativar";
+
   return (
     <LiquidBackground>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 36 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 24, paddingBottom: tabBarPadding }}>
         <Text className="text-white text-[30px] font-semibold mb-2">{t.title}</Text>
         <Text className="text-white/60 text-sm mb-5">Conta, atividade e preferências pessoais.</Text>
 
@@ -233,47 +258,31 @@ export default function ProfileScreen() {
             <View className="flex-row items-center justify-between">
               <View>
                 <Text className="text-white/70 text-sm">Estado</Text>
-                <Text className="text-white text-base font-semibold mt-1">
-                {pushStatus === "loading"
-                  ? "A verificar…"
-                  : pushStatus === "granted"
-                    ? "Ativas"
-                    : pushStatus === "denied"
-                      ? "Bloqueadas"
-                      : pushStatus === "unsupported"
-                        ? "Indisponível no Expo Go"
-                        : "Por ativar"}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => {
-                if (pushStatus === "unsupported") {
-                  return;
-                }
-                if (pushStatus === "granted") {
-                  Linking.openSettings();
-                  return;
-                }
-                import("expo-notifications").then((Notifications) => {
-                  Notifications.requestPermissionsAsync().then((status) => {
-                    if (status.granted) setPushStatus("granted");
-                    else if (status.status === "denied") setPushStatus("denied");
-                    else setPushStatus("undetermined");
+                <Text className="text-white text-base font-semibold mt-1">{pushStatusLabel}</Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  if (showUnsupported) {
+                    return;
+                  }
+                  if (uiPushStatus === "granted") {
+                    Linking.openSettings();
+                    return;
+                  }
+                  import("expo-notifications").then((Notifications) => {
+                    Notifications.requestPermissionsAsync().then((status) => {
+                      if (status.granted) setPushStatus("granted");
+                      else if (status.status === "denied") setPushStatus("denied");
+                      else setPushStatus("undetermined");
+                    });
                   });
-                });
-              }}
-              className="rounded-full border border-white/10 bg-white/10 px-4 py-2"
-              style={{ minHeight: tokens.layout.touchTarget }}
-            >
-              <Text className="text-white text-sm font-semibold">
-                {pushStatus === "unsupported"
-                  ? "Requer build"
-                  : pushStatus === "granted"
-                    ? "Abrir definições"
-                    : "Ativar"}
-              </Text>
-            </Pressable>
-          </View>
+                }}
+                className="rounded-full border border-white/10 bg-white/10 px-4 py-2"
+                style={{ minHeight: tokens.layout.touchTarget }}
+              >
+                <Text className="text-white text-sm font-semibold">{pushActionLabel}</Text>
+              </Pressable>
+            </View>
             <Text className="text-white/55 text-xs mt-3">
               Enviamos lembretes de eventos, cancelamentos e updates importantes (incl. padel T-48/T-24).
             </Text>

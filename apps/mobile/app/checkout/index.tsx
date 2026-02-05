@@ -44,6 +44,7 @@ export default function CheckoutScreen() {
 
   const draft = useCheckoutStore((state) => state.draft);
   const setPaymentMethod = useCheckoutStore((state) => state.setPaymentMethod);
+  const setDraft = useCheckoutStore((state) => state.setDraft);
   const setIntent = useCheckoutStore((state) => state.setIntent);
   const resetIntent = useCheckoutStore((state) => state.resetIntent);
   const clearDraft = useCheckoutStore((state) => state.clearDraft);
@@ -87,6 +88,18 @@ export default function CheckoutScreen() {
   const handleBack = () => {
     safeBack(router, navigation);
   };
+
+  useEffect(() => {
+    if (!draft) return;
+    if (!isFreeCheckout) return;
+    if (draft.quantity === 1) return;
+    const { createdAt: _createdAt, expiresAt: _expiresAt, ...payload } = draft;
+    setDraft({
+      ...payload,
+      quantity: 1,
+      totalCents: draft.unitPriceCents,
+    });
+  }, [draft, isFreeCheckout, setDraft]);
 
   const statusPill = useMemo(() => {
     if (!draft) return null;
@@ -379,7 +392,7 @@ export default function CheckoutScreen() {
                     <Text className="text-white/60 text-sm">Total</Text>
                     <Text className="text-white text-xl font-semibold">{totalLabel}</Text>
                   </View>
-                  {lineItems.length > 0 ? (
+                  {!isFreeCheckout && lineItems.length > 0 ? (
                     <View className="gap-1 pt-2">
                       {lineItems.map((line) => (
                         <View key={`${line.ticketTypeId}-${line.name}`} className="flex-row justify-between">
@@ -390,6 +403,9 @@ export default function CheckoutScreen() {
                         </View>
                       ))}
                     </View>
+                  ) : null}
+                  {isFreeCheckout ? (
+                    <Text className="text-white/55 text-xs">Limite por pessoa: 1</Text>
                   ) : null}
                 </View>
               </GlassCard>
@@ -445,7 +461,7 @@ export default function CheckoutScreen() {
                       <Text
                         className={
                           statusMeta.tone === "success"
-                            ? "text-emerald-200 text-sm font-semibold"
+                            ? "text-sky-200 text-sm font-semibold"
                             : statusMeta.tone === "danger"
                               ? "text-rose-200 text-sm font-semibold"
                               : statusMeta.tone === "warning"

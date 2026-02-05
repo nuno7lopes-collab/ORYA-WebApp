@@ -72,7 +72,12 @@ export const EventCardSquare = memo(function EventCardSquare({
   const fade = useRef(new Animated.Value(0)).current;
   const translate = useRef(new Animated.Value(10)).current;
 
-  const category = (event.categories?.[0] ?? "EVENTO").toUpperCase();
+  const rawCategory = event.categories?.[0];
+  const category = (
+    rawCategory && rawCategory !== "OTHER" && rawCategory !== "GERAL"
+      ? rawCategory
+      : "EVENTO"
+  ).toUpperCase();
   const cover = event.coverImageUrl ?? null;
   const location = event.location?.city ?? event.location?.name ?? "Local a anunciar";
   const date = formatDate(event.startsAt, event.endsAt);
