@@ -15,6 +15,11 @@ type Props = {
   userLon?: number | null;
 };
 
+const FEED_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  day: "2-digit",
+  month: "short",
+});
+
 const formatRelativeTime = (iso: string): string => {
   const timestamp = new Date(iso).getTime();
   if (!Number.isFinite(timestamp)) return "agora";
@@ -26,10 +31,7 @@ const formatRelativeTime = (iso: string): string => {
   if (diffHours < 24) return `há ${diffHours} h`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `há ${diffDays} d`;
-  return new Intl.DateTimeFormat("pt-PT", {
-    day: "2-digit",
-    month: "short",
-  }).format(new Date(timestamp));
+  return FEED_DATE_FORMATTER.format(new Date(timestamp));
 };
 
 export const SocialFeedCard = memo(function SocialFeedCard({

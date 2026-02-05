@@ -60,7 +60,7 @@ export default function TabsLayout() {
 
   if (loading || gateStatus === "loading") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b101a" }}>
         <ActivityIndicator />
       </View>
     );
@@ -72,7 +72,7 @@ export default function TabsLayout() {
 
   if (gateStatus === "offline") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#0b101a" }}>
         <View style={{ maxWidth: 320 }}>
           <Text style={{ color: "white", fontSize: 16, textAlign: "center", fontWeight: "600" }}>
             Precisas de internet para concluir o onboarding.
@@ -110,6 +110,7 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarShowLabel: false,
         tabBarHideOnKeyboard: true,
+        sceneContainerStyle: { backgroundColor: "#0b101a" },
         tabBarStyle: {
           position: "absolute",
           backgroundColor: "transparent",

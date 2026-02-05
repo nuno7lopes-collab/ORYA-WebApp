@@ -27,16 +27,30 @@ import { useAuth } from "../../lib/auth";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
+const WALLET_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const WALLET_SHORT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const WALLET_RELATIVE_FALLBACK_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  day: "2-digit",
+  month: "short",
+});
+
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "Data por anunciar";
   try {
-    return new Date(value).toLocaleString("pt-PT", {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return WALLET_DATE_TIME_FORMATTER.format(new Date(value));
   } catch {
     return "Data por anunciar";
   }
@@ -45,12 +59,7 @@ const formatDate = (value: string | null | undefined) => {
 const formatShortDate = (value: string | null | undefined) => {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString("pt-PT", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return WALLET_SHORT_DATE_FORMATTER.format(new Date(value));
   } catch {
     return "—";
   }
@@ -68,7 +77,7 @@ const formatRelativeTime = (value: string | null | undefined) => {
   if (diffHours < 24) return `há ${diffHours} h`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `há ${diffDays} d`;
-  return new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "short" }).format(new Date(timestamp));
+  return WALLET_RELATIVE_FALLBACK_FORMATTER.format(new Date(timestamp));
 };
 
 const formatMoney = (cents: number | null | undefined, currency?: string | null) => {

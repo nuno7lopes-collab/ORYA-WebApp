@@ -13,16 +13,18 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../lib/auth";
 import { useRouter } from "expo-router";
 
+const AGENDA_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 const formatAgendaDate = (value: string): string => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Data a confirmar";
-  return new Intl.DateTimeFormat("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
+  return AGENDA_DATE_FORMATTER.format(parsed);
 };
 
 const initialFrom = (name?: string | null, email?: string | null): string => {

@@ -1,6 +1,5 @@
 import { PropsWithChildren } from "react";
 import { StyleSheet, View, ViewStyle } from "react-native";
-import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 const CARD_RADIUS = 22;
 
@@ -21,13 +20,11 @@ export function GlassCard({ children, style, contentStyle, intensity = 70 }: Gla
         ]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
+        style={styles.gradient}
         pointerEvents="none"
       />
-      <BlurView intensity={intensity} tint="dark" style={styles.blur}>
-        <View style={styles.overlay} pointerEvents="none" />
-        <View style={[styles.content, contentStyle]}>{children}</View>
-      </BlurView>
+      <View style={styles.overlay} pointerEvents="none" />
+      <View style={[styles.content, contentStyle]}>{children}</View>
     </View>
   );
 }
@@ -45,16 +42,16 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 6,
   },
-  blur: {
-    borderRadius: CARD_RADIUS,
-    overflow: "hidden",
+  gradient: {
+    ...StyleSheet.absoluteFillObject,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(8, 12, 20, 0.58)",
+    backgroundColor: "rgba(8, 12, 20, 0.55)",
   },
   content: {
     padding: 20,
     gap: 12,
+    position: "relative",
   },
 });

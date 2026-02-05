@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { FlatList, Platform, Pressable, Text, View } from "react-native";
+import { Platform, Pressable, SectionList, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
@@ -13,14 +13,37 @@ import {
 } from "../../features/network/hooks";
 import { NetworkSuggestionCard } from "../../features/network/NetworkSuggestionCard";
 import { FollowRequestCard } from "../../features/network/FollowRequestCard";
-import { SocialSuggestion } from "../../features/network/types";
+import { FollowRequest, SocialSuggestion } from "../../features/network/types";
 import { useSocialFeed } from "../../features/social/hooks";
 import { SocialFeedCard } from "../../features/social/SocialFeedCard";
 import { useIpLocation } from "../../features/onboarding/hooks";
+import { SocialFeedItem } from "../../features/social/types";
 
-type NetworkListItem =
-  | { kind: "skeleton"; key: string }
-  | { kind: "suggestion"; suggestion: SocialSuggestion };
+const SECTION_SPACING = 24;
+
+type NetworkSectionKey = "requests" | "feed" | "suggestions";
+
+type NetworkSectionItem =
+  | { type: "skeleton"; key: string; variant: NetworkSectionKey }
+  | { type: "request"; request: FollowRequest }
+  | { type: "feed"; feed: SocialFeedItem }
+  | { type: "suggestion"; suggestion: SocialSuggestion };
+
+type NetworkSection = {
+  key: NetworkSectionKey;
+  title: string;
+  subtitle: string;
+  data: NetworkSectionItem[];
+  isError: boolean;
+  isEmpty: boolean;
+};
+
+const buildSkeletons = (variant: NetworkSectionKey, count: number): NetworkSectionItem[] =>
+  Array.from({ length: count }, (_, index) => ({
+    type: "skeleton",
+    key: `${variant}-skeleton-${index}`,
+    variant,
+  }));
 
 export default function NetworkScreen() {
   const suggestions = useNetworkSuggestions();
@@ -45,15 +68,55 @@ export default function NetworkScreen() {
 
   const data = suggestions.data ?? [];
   const showSkeleton = suggestions.isLoading && data.length === 0;
-  const listData: NetworkListItem[] = useMemo(
-    () =>
-      showSkeleton
-        ? Array.from({ length: 4 }, (_, index) => ({
-            kind: "skeleton",
-            key: `network-skeleton-${index}`,
-          }))
-        : data.map((suggestion) => ({ kind: "suggestion", suggestion })),
-    [data, showSkeleton],
+  const suggestionsEmpty = !suggestions.isLoading && !suggestions.isError && data.length === 0;
+
+  const sections = useMemo<NetworkSection[]>(
+    () => [
+      {
+        key: "requests",
+        title: "Pedidos de follow",
+        subtitle: "Convites pendentes.",
+        data: requestSkeleton
+          ? buildSkeletons("requests", 2)
+          : requestItems.map((request) => ({ type: "request" as const, request })),
+        isError: followRequests.isError,
+        isEmpty: requestEmpty,
+      },
+      {
+        key: "feed",
+        title: "O teu feed",
+        subtitle: "Atualizações das organizações que segues.",
+        data: feedSkeleton
+          ? buildSkeletons("feed", 2)
+          : feedItems.map((feed) => ({ type: "feed" as const, feed })),
+        isError: socialFeed.isError,
+        isEmpty: feedEmpty,
+      },
+      {
+        key: "suggestions",
+        title: "Sugestões para ti",
+        subtitle: "Perfis com afinidade no teu contexto atual.",
+        data: showSkeleton
+          ? buildSkeletons("suggestions", 4)
+          : data.map((suggestion) => ({ type: "suggestion" as const, suggestion })),
+        isError: suggestions.isError,
+        isEmpty: suggestionsEmpty,
+      },
+    ],
+    [
+      data,
+      feedEmpty,
+      feedItems,
+      feedSkeleton,
+      followRequests.isError,
+      requestEmpty,
+      requestItems,
+      requestSkeleton,
+      showSkeleton,
+      socialFeed.isError,
+      suggestions.isError,
+      suggestionsEmpty,
+    ],
   );
 
   const handleRefresh = useCallback(() => {
@@ -63,165 +126,156 @@ export default function NetworkScreen() {
   }, [followRequests, socialFeed, suggestions]);
 
   const renderItem = useCallback(
-    ({ item }: { item: NetworkListItem }) =>
-      item.kind === "skeleton" ? (
-        <GlassSkeleton className="mb-3" height={86} />
-      ) : (
-        <NetworkSuggestionCard
-          item={item.suggestion}
-          pending={actions.pendingUserId === item.suggestion.id}
-          onFollow={actions.follow}
-          onUnfollow={actions.unfollow}
-        />
-      ),
-    [actions.follow, actions.pendingUserId, actions.unfollow],
+    ({ item, index }: { item: NetworkSectionItem; index: number }) => {
+      if (item.type === "skeleton") {
+        const height =
+          item.variant === "feed" ? 240 : item.variant === "requests" ? 110 : 86;
+        const spacingClass = item.variant === "feed" ? "mb-4" : "mb-3";
+        return <GlassSkeleton className={spacingClass} height={height} />;
+      }
+
+      if (item.type === "suggestion") {
+        return (
+          <NetworkSuggestionCard
+            item={item.suggestion}
+            pending={actions.pendingUserId === item.suggestion.id}
+            onFollow={actions.follow}
+            onUnfollow={actions.unfollow}
+          />
+        );
+      }
+
+      if (item.type === "request") {
+        return (
+          <FollowRequestCard
+            item={item.request}
+            pending={followRequestActions.pendingRequestId === item.request.id}
+            onAccept={followRequestActions.accept}
+            onDecline={followRequestActions.decline}
+          />
+        );
+      }
+
+      if (item.type === "feed") {
+        return (
+          <SocialFeedCard
+            item={item.feed}
+            index={index}
+            userLat={userLat}
+            userLon={userLon}
+          />
+        );
+      }
+
+      return null;
+    },
+    [actions.follow, actions.pendingUserId, actions.unfollow, followRequestActions.accept, followRequestActions.decline, followRequestActions.pendingRequestId, userLat, userLon],
   );
 
-  const keyExtractor = useCallback(
-    (item: NetworkListItem) => (item.kind === "skeleton" ? item.key : item.suggestion.id),
+  const keyExtractor = useCallback((item: NetworkSectionItem) => {
+    if (item.type === "skeleton") return item.key;
+    if (item.type === "suggestion") return item.suggestion.id;
+    if (item.type === "request") return `request-${item.request.id}`;
+    return `feed-${item.feed.id}`;
+  }, []);
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: NetworkSection }) => (
+      <View style={{ paddingTop: section.key === "requests" ? 12 : SECTION_SPACING }}>
+        <SectionHeader title={section.title} subtitle={section.subtitle} />
+      </View>
+    ),
     [],
+  );
+
+  const renderSectionFooter = useCallback(
+    ({ section }: { section: NetworkSection }) => {
+      if (section.isError) {
+        const onRetry =
+          section.key === "requests"
+            ? followRequests.refetch
+            : section.key === "feed"
+              ? socialFeed.refetch
+              : suggestions.refetch;
+        const message =
+          section.key === "requests"
+            ? "Não foi possível carregar os pedidos."
+            : section.key === "feed"
+              ? "Não foi possível carregar o feed."
+              : "Não foi possível carregar sugestões.";
+        return (
+          <GlassCard intensity={52} className="mb-4">
+            <Text className="text-red-300 text-sm mb-3">{message}</Text>
+            <Pressable
+              className="rounded-xl bg-white/10 px-4 py-3"
+              onPress={() => onRetry()}
+              style={{ minHeight: tokens.layout.touchTarget }}
+            >
+              <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+            </Pressable>
+          </GlassCard>
+        );
+      }
+
+      if (section.isEmpty) {
+        const message =
+          section.key === "requests"
+            ? "Sem pedidos pendentes."
+            : section.key === "feed"
+              ? "Ainda sem novidades. Segue clubes e amigos para veres atualizações."
+              : "Ainda sem sugestões. Volta mais tarde para ver novas pessoas e clubes.";
+        return (
+          <GlassCard intensity={48} className="mb-4">
+            <Text className="text-white/70 text-sm">{message}</Text>
+          </GlassCard>
+        );
+      }
+
+      if (section.key === "feed" && socialFeed.hasNextPage) {
+        return (
+          <Pressable
+            onPress={() => socialFeed.fetchNextPage()}
+            disabled={socialFeed.isFetchingNextPage}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 mb-6"
+            style={{ minHeight: tokens.layout.touchTarget }}
+          >
+            <Text className="text-white text-sm font-semibold text-center">
+              {socialFeed.isFetchingNextPage ? "A carregar..." : "Carregar mais"}
+            </Text>
+          </Pressable>
+        );
+      }
+
+      return null;
+    },
+    [followRequests.refetch, socialFeed, suggestions.refetch],
   );
 
   return (
     <LiquidBackground>
-      <FlatList
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
-        data={listData}
+      <SectionList
+        sections={sections}
         keyExtractor={keyExtractor}
-        refreshing={suggestions.isFetching || socialFeed.isFetching || followRequests.isFetching}
-        onRefresh={handleRefresh}
-        removeClippedSubviews={Platform.OS === "android"}
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        updateCellsBatchingPeriod={40}
-        windowSize={6}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        renderSectionFooter={renderSectionFooter}
         ListHeaderComponent={
           <View className="pt-14 pb-2">
             <Text className="text-white text-[30px] font-semibold">Rede</Text>
             <Text className="mt-1 text-white/60 text-sm">
               Segue pessoas e clubes para personalizar o teu feed.
             </Text>
-
-            <View className="pt-6">
-              <SectionHeader
-                title="Pedidos de follow"
-                subtitle="Convites pendentes."
-              />
-            </View>
-
-            {followRequests.isError ? (
-              <GlassCard intensity={52} className="mb-4 mt-3">
-                <Text className="text-red-300 text-sm mb-3">Não foi possível carregar os pedidos.</Text>
-                <Pressable
-                  className="rounded-xl bg-white/10 px-4 py-3"
-                  onPress={() => followRequests.refetch()}
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                >
-                  <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-                </Pressable>
-              </GlassCard>
-            ) : null}
-
-            {requestSkeleton
-              ? Array.from({ length: 2 }, (_, index) => (
-                  <GlassSkeleton key={`requests-skeleton-${index}`} className="mb-3" height={110} />
-                ))
-              : requestItems.map((request) => (
-                  <FollowRequestCard
-                    key={`request-${request.id}`}
-                    item={request}
-                    pending={followRequestActions.pendingRequestId === request.id}
-                    onAccept={followRequestActions.accept}
-                    onDecline={followRequestActions.decline}
-                  />
-                ))}
-
-            {requestEmpty ? (
-              <GlassCard intensity={48} className="mb-4">
-                <Text className="text-white/70 text-sm">Sem pedidos pendentes.</Text>
-              </GlassCard>
-            ) : null}
-
-            <View className="pt-6">
-              <SectionHeader
-                title="O teu feed"
-                subtitle="Atualizações das organizações que segues."
-              />
-            </View>
-
-            {socialFeed.isError ? (
-              <GlassCard intensity={52} className="mb-4">
-                <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o feed.</Text>
-                <Pressable
-                  className="rounded-xl bg-white/10 px-4 py-3"
-                  onPress={() => socialFeed.refetch()}
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                >
-                  <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-                </Pressable>
-              </GlassCard>
-            ) : null}
-
-            {feedSkeleton
-              ? Array.from({ length: 2 }, (_, index) => (
-                  <GlassSkeleton key={`feed-skeleton-${index}`} className="mb-4" height={240} />
-                ))
-              : feedItems.map((item, index) => (
-                  <SocialFeedCard key={item.id} item={item} index={index} userLat={userLat} userLon={userLon} />
-                ))}
-
-            {feedEmpty ? (
-              <GlassCard intensity={48} className="mb-4">
-                <Text className="text-white/70 text-sm">
-                  Ainda sem novidades. Segue clubes e amigos para veres atualizações.
-                </Text>
-              </GlassCard>
-            ) : null}
-
-            {socialFeed.hasNextPage ? (
-              <Pressable
-                onPress={() => socialFeed.fetchNextPage()}
-                disabled={socialFeed.isFetchingNextPage}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 mb-6"
-                style={{ minHeight: tokens.layout.touchTarget }}
-              >
-                <Text className="text-white text-sm font-semibold text-center">
-                  {socialFeed.isFetchingNextPage ? "A carregar..." : "Carregar mais"}
-                </Text>
-              </Pressable>
-            ) : null}
-
-            <View className="pt-2">
-              <SectionHeader
-                title="Sugestões para ti"
-                subtitle="Perfis com afinidade no teu contexto atual."
-              />
-            </View>
-
-            {suggestions.isError ? (
-              <GlassCard intensity={52} className="mb-3 mt-3">
-                <Text className="text-red-300 text-sm mb-3">Não foi possível carregar sugestões.</Text>
-                <Pressable
-                  className="rounded-xl bg-white/10 px-4 py-3"
-                  onPress={() => suggestions.refetch()}
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                >
-                  <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-                </Pressable>
-              </GlassCard>
-            ) : null}
           </View>
         }
-        renderItem={renderItem}
-        ListFooterComponent={
-          !showSkeleton && !suggestions.isError && data.length === 0 ? (
-            <GlassCard intensity={48}>
-              <Text className="text-white/70 text-sm">
-                Ainda sem sugestões. Volta mais tarde para ver novas pessoas e clubes.
-              </Text>
-            </GlassCard>
-          ) : null
-        }
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
+        refreshing={suggestions.isFetching || socialFeed.isFetching || followRequests.isFetching}
+        onRefresh={handleRefresh}
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={40}
+        windowSize={6}
+        stickySectionHeadersEnabled={false}
       />
     </LiquidBackground>
   );

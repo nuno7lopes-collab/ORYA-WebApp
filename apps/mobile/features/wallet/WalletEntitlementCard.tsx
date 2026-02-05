@@ -12,15 +12,17 @@ type Props = {
   item: WalletEntitlement;
 };
 
+const ENTITLEMENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "Data por anunciar";
   try {
-    return new Date(value).toLocaleString("pt-PT", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return ENTITLEMENT_DATE_FORMATTER.format(new Date(value));
   } catch {
     return "Data por anunciar";
   }

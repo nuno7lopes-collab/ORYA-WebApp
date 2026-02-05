@@ -50,7 +50,7 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0b101a" }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StripeProvider
@@ -61,7 +61,12 @@ export default function RootLayout() {
             <AuthProvider>
               <StatusBar style="light" />
               <PushGate />
-              <Stack screenOptions={{ headerShown: false }}>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: "#0b101a" },
+                }}
+              >
                 <Stack.Screen
                   name="event/[slug]"
                   options={{

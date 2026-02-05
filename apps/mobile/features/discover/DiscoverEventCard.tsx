@@ -49,29 +49,29 @@ const formatServicePrice = (item: DiscoverServiceCard): string => {
   return `${amount.toFixed(0)} ${currency}`;
 };
 
+const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+});
+
+const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 const formatDateRange = (startsAt?: string, endsAt?: string): string => {
   if (!startsAt) return "Data por anunciar";
   try {
     const start = new Date(startsAt);
     const end = endsAt ? new Date(endsAt) : null;
 
-    const date = new Intl.DateTimeFormat("pt-PT", {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-    }).format(start);
-
-    const startTime = new Intl.DateTimeFormat("pt-PT", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(start);
+    const date = EVENT_DATE_FORMATTER.format(start);
+    const startTime = EVENT_TIME_FORMATTER.format(start);
 
     if (!end || Number.isNaN(end.getTime())) return `${date} · ${startTime}`;
 
-    const endTime = new Intl.DateTimeFormat("pt-PT", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(end);
+    const endTime = EVENT_TIME_FORMATTER.format(end);
 
     return `${date} · ${startTime}-${endTime}`;
   } catch {

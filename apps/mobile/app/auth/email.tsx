@@ -413,12 +413,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: "rgba(12, 18, 28, 0.18)",
+    borderColor: "rgba(255,255,255,0.9)",
     shadowColor: "rgba(0,0,0,0.32)",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 14,
     elevation: 3,
+    position: "relative",
+    zIndex: 5,
   },
   primaryPressed: {
     opacity: 0.92,
@@ -426,6 +428,7 @@ const styles = StyleSheet.create({
   },
   primaryDisabled: {
     opacity: 0.7,
+    backgroundColor: "rgba(255,255,255,0.85)",
   },
   primaryText: {
     fontSize: 16,

@@ -93,7 +93,6 @@ export default function OnboardingScreen() {
   const [usernameStatus, setUsernameStatus] = useState<
     "idle" | "invalid" | "checking" | "available" | "taken" | "error"
   >("idle");
-  const [confirmedUsername, setConfirmedUsername] = useState<string | null>(null);
   const [interests, setInterests] = useState<InterestId[]>([]);
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
   const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
@@ -158,10 +157,6 @@ export default function OnboardingScreen() {
           setPadelLevel((draft.padel?.level as PadelLevel | null) ?? null);
           setLocationHint(draft.location ? { city: draft.location.city, region: draft.location.region } : null);
           setStep(resolveStartStep(draft));
-          if (draft.step >= 1 && draft.username) {
-            setConfirmedUsername(draft.username);
-            usernameCacheRef.current.set(draft.username, true);
-          }
         }
       })
       .finally(() => {
@@ -183,12 +178,6 @@ export default function OnboardingScreen() {
     }
 
     const normalized = usernameValidation.normalized;
-    if (confirmedUsername && normalized === confirmedUsername) {
-      if (usernameStatus !== "available") setUsernameStatus("available");
-      usernameCacheRef.current.set(normalized, true);
-      return;
-    }
-
     if (usernameCacheRef.current.has(normalized)) {
       setUsernameStatus(usernameCacheRef.current.get(normalized) ? "available" : "taken");
       return;
@@ -288,11 +277,6 @@ export default function OnboardingScreen() {
       Alert.alert("Username inválido", usernameValidation.error || USERNAME_RULES_HINT);
       return false;
     }
-    if (confirmedUsername && usernameValidation.normalized === confirmedUsername) {
-      setUsernameStatus("available");
-      usernameCacheRef.current.set(usernameValidation.normalized, true);
-      return true;
-    }
     if (usernameStatus === "available") return true;
     if (usernameInflightRef.current?.normalized === usernameValidation.normalized) {
       try {
@@ -358,6 +342,11 @@ export default function OnboardingScreen() {
 
   const finalizeOnboarding = async (location?: { city?: string | null; region?: string | null }) => {
     try {
+      const usernameOk = await ensureUsernameAvailable();
+      if (!usernameOk) {
+        Alert.alert("Username indisponível", "Escolhe outro username para concluir.");
+        return;
+      }
       const accessToken = await resolveAccessToken();
       await saveBasicMutation.mutateAsync({
         fullName: fullName.trim(),
@@ -365,6 +354,14 @@ export default function OnboardingScreen() {
         favouriteCategories: interests,
         accessToken,
       });
+      if (padelSelected && padelGender && padelSide) {
+        await savePadelMutation.mutateAsync({
+          gender: padelGender,
+          preferredSide: padelSide,
+          level: padelLevel,
+          accessToken,
+        });
+      }
       updateProfileCache({
         fullName: fullName.trim(),
         username: normalizedUsername,
@@ -377,6 +374,15 @@ export default function OnboardingScreen() {
       router.replace("/(tabs)");
     } catch (err: any) {
       const message = err?.message ?? "Não foi possível concluir o onboarding.";
+      if (
+        typeof message === "string" &&
+        (message.includes("USERNAME_TAKEN") || message.toLowerCase().includes("username") || message.includes("utilizado"))
+      ) {
+        setUsernameStatus("taken");
+        Alert.alert("Username indisponível", "Escolhe outro username para concluir.");
+        setStep("basic");
+        return;
+      }
       if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
         await handleAuthError();
         return;
@@ -396,15 +402,6 @@ export default function OnboardingScreen() {
         username: normalizedUsername,
         interests,
       });
-      const accessToken = await resolveAccessToken();
-      await saveBasicMutation.mutateAsync({
-        fullName: fullName.trim(),
-        username: normalizedUsername,
-        favouriteCategories: interests,
-        accessToken,
-      });
-      setConfirmedUsername(normalizedUsername);
-      usernameCacheRef.current.set(normalizedUsername, true);
       await persistDraft({
         step: 1,
         fullName: fullName.trim(),
@@ -436,13 +433,6 @@ export default function OnboardingScreen() {
     if (!canContinueInterests) return;
     setSavingStep("interests");
     try {
-      const accessToken = await resolveAccessToken();
-      await saveBasicMutation.mutateAsync({
-        fullName: fullName.trim(),
-        username: normalizedUsername,
-        favouriteCategories: interests,
-        accessToken,
-      });
       await persistDraft({ step: 2, interests });
       setStep(padelSelected ? "padel" : "location");
     } catch (err: any) {
@@ -464,13 +454,6 @@ export default function OnboardingScreen() {
     }
     setSavingStep("padel");
     try {
-      const accessToken = await resolveAccessToken();
-      await savePadelMutation.mutateAsync({
-        gender: padelGender,
-        preferredSide: padelSide,
-        level: padelLevel,
-        accessToken,
-      });
       await persistDraft({
         step: 3,
         padel: {
@@ -650,9 +633,6 @@ export default function OnboardingScreen() {
             const next = sanitizeUsername(value);
             setUsername(next);
             setUsernameStatus("idle");
-            if (confirmedUsername && next !== confirmedUsername) {
-              setConfirmedUsername(null);
-            }
           }}
           placeholder="ex: orya.sofia"
           placeholderTextColor={tokens.colors.textMuted}

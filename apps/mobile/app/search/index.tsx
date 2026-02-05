@@ -1,5 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { LayoutAnimation, Platform, Pressable, ScrollView, Text, TextInput, UIManager, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  SectionList,
+  Text,
+  TextInput,
+  UIManager,
+  View,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
@@ -16,10 +25,35 @@ import { useNetworkActions, useOrganizationFollowActions } from "../../features/
 import { useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { useIpLocation } from "../../features/onboarding/hooks";
+import { DiscoverOfferCard } from "../../features/discover/types";
+import { SearchOrganization, SearchUser } from "../../features/search/types";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+type SearchSectionKey = "offers" | "users" | "orgs";
+
+type SearchSectionItem =
+  | { type: "skeleton"; key: string; variant: SearchSectionKey }
+  | { type: "offer"; offer: DiscoverOfferCard }
+  | { type: "user"; user: SearchUser }
+  | { type: "org"; org: SearchOrganization };
+
+type SearchSection = {
+  key: SearchSectionKey;
+  title: string;
+  subtitle: string;
+  data: SearchSectionItem[];
+  isError: boolean;
+};
+
+const buildSkeletons = (variant: SearchSectionKey, count: number): SearchSectionItem[] =>
+  Array.from({ length: count }, (_, index) => ({
+    type: "skeleton",
+    key: `${variant}-skeleton-${index}`,
+    variant,
+  }));
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -28,9 +62,9 @@ export default function SearchScreen() {
   const initialQuery = typeof params.q === "string" ? params.q : "";
   const [query, setQuery] = useState(initialQuery);
   const debounced = useDebouncedValue(query, 280);
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     safeBack(router, navigation);
-  };
+  }, [navigation, router]);
 
   const {
     offers,
@@ -38,7 +72,6 @@ export default function SearchScreen() {
     organizations,
     hasResults,
     isLoading,
-    isError,
     enabled,
     minQueryLength,
     offersQuery,
@@ -70,10 +103,149 @@ export default function SearchScreen() {
     return null;
   }, [debounced, enabled, hasResults, isLoading, minQueryLength, queryLength, allErrored]);
 
-  return (
-    <LiquidBackground>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
-        <View className="pt-14 pb-5 flex-row items-center justify-between">
+  const sections = useMemo<SearchSection[]>(() => {
+    if (!enabled) return [];
+    return [
+      {
+        key: "offers",
+        title: "Ofertas",
+        subtitle: "Eventos, servicos e experiencias",
+        data: showSkeleton
+          ? buildSkeletons("offers", 2)
+          : offers.map((offer) => ({ type: "offer" as const, offer })),
+        isError: offersQuery.isError,
+      },
+      {
+        key: "users",
+        title: "Pessoas",
+        subtitle: "Utilizadores e perfis",
+        data: showSkeleton
+          ? buildSkeletons("users", 2)
+          : users.map((user) => ({ type: "user" as const, user })),
+        isError: usersQuery.isError,
+      },
+      {
+        key: "orgs",
+        title: "Organizacoes",
+        subtitle: "Clubes e marcas",
+        data: showSkeleton
+          ? buildSkeletons("orgs", 2)
+          : organizations.map((org) => ({ type: "org" as const, org })),
+        isError: orgsQuery.isError,
+      },
+    ];
+  }, [enabled, offers, organizations, showSkeleton, offersQuery.isError, orgsQuery.isError, users, usersQuery.isError]);
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: SearchSectionItem; index: number }) => {
+      if (item.type === "skeleton") {
+        const height = item.variant === "offers" ? 150 : 72;
+        const spacingClass = item.variant === "offers" ? "mb-4" : "mb-3";
+        return <GlassSkeleton className={spacingClass} height={height} />;
+      }
+
+      if (item.type === "offer") {
+        return item.offer.type === "event" ? (
+          <DiscoverEventCard
+            item={item.offer.event}
+            itemType="event"
+            index={index}
+            userLat={userLat}
+            userLon={userLon}
+          />
+        ) : (
+          <DiscoverEventCard
+            item={item.offer.service}
+            itemType="service"
+            index={index}
+            userLat={userLat}
+            userLon={userLon}
+          />
+        );
+      }
+
+      if (item.type === "user") {
+        return (
+          <SearchUserRow
+            item={item.user}
+            pending={userActions.pendingUserId === item.user.id}
+            onFollow={userActions.follow}
+            onUnfollow={userActions.unfollow}
+          />
+        );
+      }
+
+      if (item.type === "org") {
+        return (
+          <SearchOrganizationRow
+            item={item.org}
+            pending={organizationActions.pendingOrgId === item.org.id}
+            onFollow={organizationActions.follow}
+            onUnfollow={organizationActions.unfollow}
+          />
+        );
+      }
+
+      return null;
+    },
+    [organizationActions.follow, organizationActions.pendingOrgId, organizationActions.unfollow, userActions.follow, userActions.pendingUserId, userActions.unfollow, userLat, userLon],
+  );
+
+  const keyExtractor = useCallback((item: SearchSectionItem) => {
+    if (item.type === "skeleton") return item.key;
+    if (item.type === "offer") return item.offer.key;
+    if (item.type === "user") return `user-${item.user.id}`;
+    return `org-${item.org.id}`;
+  }, []);
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: SearchSection }) => (
+      <View style={{ paddingTop: section.key === "offers" ? 12 : 24 }}>
+        <SectionHeader title={section.title} subtitle={section.subtitle} />
+      </View>
+    ),
+    [],
+  );
+
+  const renderSectionFooter = useCallback(
+    ({ section }: { section: SearchSection }) => {
+      if (showSkeleton || !enabled || !section.isError) return null;
+
+      const onRetry =
+        section.key === "offers"
+          ? offersQuery.refetch
+          : section.key === "users"
+            ? usersQuery.refetch
+            : orgsQuery.refetch;
+      const message =
+        section.key === "offers"
+          ? "Nao foi possivel carregar as ofertas."
+          : section.key === "users"
+            ? "Nao foi possivel carregar utilizadores."
+            : "Nao foi possivel carregar organizacoes.";
+
+      return (
+        <View className="pb-2">
+          <GlassSurface intensity={45}>
+            <Text className="text-red-300 text-sm mb-3">{message}</Text>
+            <Pressable
+              onPress={() => onRetry()}
+              className="rounded-xl bg-white/10 px-4 py-3"
+              style={{ minHeight: tokens.layout.touchTarget }}
+            >
+              <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+            </Pressable>
+          </GlassSurface>
+        </View>
+      );
+    },
+    [enabled, offersQuery.refetch, orgsQuery.refetch, showSkeleton, usersQuery.refetch],
+  );
+
+  const listHeader = useMemo(
+    () => (
+      <View className="pt-14 pb-5">
+        <View className="flex-row items-center justify-between">
           <Pressable
             onPress={handleBack}
             className="rounded-full border border-white/10 px-3 py-2"
@@ -85,181 +257,80 @@ export default function SearchScreen() {
           <View style={{ width: tokens.layout.touchTarget }} />
         </View>
 
-        <GlassSurface intensity={68} padding={12} style={{ marginBottom: tokens.spacing.lg }}>
-          <View className="flex-row items-center gap-3">
-            <Ionicons name="search" size={18} color={tokens.colors.textMuted} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Eventos, clubes, amigos..."
-              placeholderTextColor={tokens.colors.textMuted}
-              className="text-white text-base flex-1"
-              returnKeyType="search"
-            />
-            {query.length > 0 ? (
-              <Pressable onPress={() => setQuery("")} className="rounded-full bg-white/10 px-2 py-1">
-                <Ionicons name="close" size={14} color={tokens.colors.textMuted} />
-              </Pressable>
-            ) : null}
-          </View>
-        </GlassSurface>
+        <View style={{ marginTop: tokens.spacing.lg }}>
+          <GlassSurface intensity={68} padding={12}>
+            <View className="flex-row items-center gap-3">
+              <Ionicons name="search" size={18} color={tokens.colors.textMuted} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Eventos, clubes, amigos..."
+                placeholderTextColor={tokens.colors.textMuted}
+                className="text-white text-base flex-1"
+                returnKeyType="search"
+              />
+              {query.length > 0 ? (
+                <Pressable onPress={() => setQuery("")} className="rounded-full bg-white/10 px-2 py-1">
+                  <Ionicons name="close" size={14} color={tokens.colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
+          </GlassSurface>
+        </View>
 
         {emptyMessage ? (
-          <GlassSurface intensity={50}>
-            <Text className="text-white/70 text-sm">{emptyMessage}</Text>
-          </GlassSurface>
-        ) : null}
-
-        {showSkeleton ? (
-          <View className="pt-6">
-            <SectionHeader title="Ofertas" subtitle="A carregar resultados" />
-            <View className="mt-3">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <GlassSkeleton key={`search-offer-${index}`} className="mb-4" height={150} />
-              ))}
-            </View>
-            <SectionHeader title="Pessoas" subtitle="A carregar utilizadores" />
-            <View className="mt-3">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <GlassSkeleton key={`search-user-${index}`} className="mb-3" height={72} />
-              ))}
-            </View>
-            <SectionHeader title="Organizações" subtitle="A carregar clubes" />
-            <View className="mt-3">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <GlassSkeleton key={`search-org-${index}`} className="mb-3" height={72} />
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        {!showSkeleton && enabled ? (
-          <View className="pt-6">
-            <SectionHeader title="Ofertas" subtitle="Eventos, servicos e experiencias" />
-            <View className="mt-3">
-              {offersQuery.isError ? (
-                <GlassSurface intensity={45}>
-                  <Text className="text-red-300 text-sm mb-3">
-                    Nao foi possivel carregar as ofertas.
-                  </Text>
-                  <Pressable
-                    onPress={() => offersQuery.refetch()}
-                    className="rounded-xl bg-white/10 px-4 py-3"
-                    style={{ minHeight: tokens.layout.touchTarget }}
-                  >
-                    <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-                  </Pressable>
-                </GlassSurface>
-              ) : offers.length > 0 ? (
-                offers.map((item, index) =>
-                  item.type === "event" ? (
-                    <DiscoverEventCard
-                      key={item.key}
-                      item={item.event}
-                      itemType="event"
-                      index={index}
-                      userLat={userLat}
-                      userLon={userLon}
-                    />
-                  ) : (
-                    <DiscoverEventCard
-                      key={item.key}
-                      item={item.service}
-                      itemType="service"
-                      index={index}
-                      userLat={userLat}
-                      userLon={userLon}
-                    />
-                  ),
-                )
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {!showSkeleton && enabled ? (
-          <View className="pt-6">
-            <SectionHeader title="Pessoas" subtitle="Utilizadores e perfis" />
-            <View className="mt-3">
-              {usersQuery.isError ? (
-                <GlassSurface intensity={45}>
-                  <Text className="text-red-300 text-sm mb-3">
-                    Nao foi possivel carregar utilizadores.
-                  </Text>
-                  <Pressable
-                    onPress={() => usersQuery.refetch()}
-                    className="rounded-xl bg-white/10 px-4 py-3"
-                    style={{ minHeight: tokens.layout.touchTarget }}
-                  >
-                    <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-                  </Pressable>
-                </GlassSurface>
-              ) : users.length > 0 ? (
-                users.map((item) => (
-                  <SearchUserRow
-                    key={`user-${item.id}`}
-                    item={item}
-                    pending={userActions.pendingUserId === item.id}
-                    onFollow={userActions.follow}
-                    onUnfollow={userActions.unfollow}
-                  />
-                ))
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {!showSkeleton && enabled ? (
-          <View className="pt-6">
-            <SectionHeader title="Organizacoes" subtitle="Clubes e marcas" />
-            <View className="mt-3">
-              {orgsQuery.isError ? (
-                <GlassSurface intensity={45}>
-                  <Text className="text-red-300 text-sm mb-3">
-                    Nao foi possivel carregar organizacoes.
-                  </Text>
-                  <Pressable
-                    onPress={() => orgsQuery.refetch()}
-                    className="rounded-xl bg-white/10 px-4 py-3"
-                    style={{ minHeight: tokens.layout.touchTarget }}
-                  >
-                    <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-                  </Pressable>
-                </GlassSurface>
-              ) : organizations.length > 0 ? (
-                organizations.map((item) => (
-                  <SearchOrganizationRow
-                    key={`org-${item.id}`}
-                    item={item}
-                    pending={organizationActions.pendingOrgId === item.id}
-                    onFollow={organizationActions.follow}
-                    onUnfollow={organizationActions.unfollow}
-                  />
-                ))
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {enabled && allErrored ? (
-          <View className="pt-6">
-            <GlassSurface intensity={45}>
-              <Text className="text-red-300 text-sm mb-3">Nao foi possivel carregar os resultados.</Text>
-              <Pressable
-                onPress={() => {
-                  offersQuery.refetch();
-                  usersQuery.refetch();
-                  orgsQuery.refetch();
-                }}
-                className="rounded-xl bg-white/10 px-4 py-3"
-                style={{ minHeight: tokens.layout.touchTarget }}
-              >
-                <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-              </Pressable>
+          <View className="pt-5">
+            <GlassSurface intensity={50}>
+              <Text className="text-white/70 text-sm">{emptyMessage}</Text>
             </GlassSurface>
           </View>
         ) : null}
-      </ScrollView>
+      </View>
+    ),
+    [emptyMessage, handleBack, query],
+  );
+
+  const listFooter = useMemo(() => {
+    if (!enabled || showSkeleton || !allErrored) return null;
+    return (
+      <View className="pt-6">
+        <GlassSurface intensity={45}>
+          <Text className="text-red-300 text-sm mb-3">Nao foi possivel carregar os resultados.</Text>
+          <Pressable
+            onPress={() => {
+              offersQuery.refetch();
+              usersQuery.refetch();
+              orgsQuery.refetch();
+            }}
+            className="rounded-xl bg-white/10 px-4 py-3"
+            style={{ minHeight: tokens.layout.touchTarget }}
+          >
+            <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+          </Pressable>
+        </GlassSurface>
+      </View>
+    );
+  }, [allErrored, enabled, offersQuery, orgsQuery, showSkeleton, usersQuery]);
+
+  return (
+    <LiquidBackground>
+      <SectionList
+        sections={sections}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        renderSectionFooter={renderSectionFooter}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }}
+        keyboardShouldPersistTaps="handled"
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={40}
+        windowSize={7}
+        stickySectionHeadersEnabled={false}
+      />
     </LiquidBackground>
   );
 }
