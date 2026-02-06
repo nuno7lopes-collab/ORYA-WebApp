@@ -36,10 +36,6 @@ async function main() {
       id: true,
       slug: true,
       templateType: true,
-      inviteOnly: true,
-      publicAccessMode: true,
-      publicTicketTypeIds: true,
-      ticketTypes: { select: { id: true } },
     },
     orderBy: { id: "asc" },
     ...(limit && Number.isFinite(limit) ? { take: Math.max(1, Math.floor(limit)) } : {}),
@@ -51,35 +47,21 @@ async function main() {
   let skipped = 0;
   const modeCounts: Record<string, number> = {};
   const sourceCounts: Record<string, number> = {};
-  let restrictedTicketWarnings = 0;
   let defaultModeWarnings = 0;
 
   for (const event of events) {
-    const ticketTypeIds = event.ticketTypes.map((t) => t.id);
-    const publicTicketTypeIds = Array.isArray(event.publicTicketTypeIds) ? event.publicTicketTypeIds : [];
-    const hasRestrictedTickets =
-      event.publicAccessMode === "TICKET"
-        ? ticketTypeIds.length > 0 && (publicTicketTypeIds.length === 0 || publicTicketTypeIds.length < ticketTypeIds.length)
-        : false;
-
     const resolution = resolveEventAccessPolicyInput({
-      legacy: {
-        inviteOnly: event.inviteOnly ?? undefined,
-        publicAccessMode: event.publicAccessMode ?? null,
-        publicTicketTypeIds,
-      },
+      accessPolicy: null,
       templateType: event.templateType ?? null,
-      hasRestrictedTickets,
     });
 
     modeCounts[resolution.mode] = (modeCounts[resolution.mode] ?? 0) + 1;
     sourceCounts[resolution.source] = (sourceCounts[resolution.source] ?? 0) + 1;
-    if (hasRestrictedTickets) restrictedTicketWarnings += 1;
     if (resolution.source === "default") defaultModeWarnings += 1;
 
     if (dryRun) {
       console.log(
-        `[backfill_access_policy] DRY RUN event ${event.id} (${event.slug}): mode=${resolution.mode} source=${resolution.source} restricted=${hasRestrictedTickets}`,
+        `[backfill_access_policy] DRY RUN event ${event.id} (${event.slug}): mode=${resolution.mode} source=${resolution.source}`,
       );
       skipped += 1;
       continue;
@@ -102,11 +84,6 @@ async function main() {
   console.log(`- bySource=${JSON.stringify(sourceCounts)}`);
   if (defaultModeWarnings > 0) {
     console.warn(`[backfill_access_policy] WARN default mode applied to ${defaultModeWarnings} events.`);
-  }
-  if (restrictedTicketWarnings > 0) {
-    console.warn(
-      `[backfill_access_policy] WARN ${restrictedTicketWarnings} events had restricted tickets (legacy).`,
-    );
   }
 }
 

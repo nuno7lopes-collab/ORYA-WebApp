@@ -14,26 +14,16 @@ type ExplicitAccessPolicyInput = Partial<EventAccessPolicyInput> & {
   checkinMethods?: CheckinMethod[] | string[] | null;
 };
 
-type LegacyAccessPayload = {
-  inviteOnly?: boolean;
-  publicAccessMode?: string | null;
-  publicTicketTypeIds?: number[] | null;
-  ticketTypes?: Array<{ publicAccess?: boolean | null } | null> | null;
-};
-
 type ResolvePolicyParams = {
   accessPolicy?: ExplicitAccessPolicyInput | null;
-  legacy?: LegacyAccessPayload | null;
   templateType?: string | null;
   defaultMode?: EventAccessMode;
-  hasRestrictedTickets?: boolean;
 };
 
 type PolicyResolution = {
   policyInput: EventAccessPolicyInput;
   mode: EventAccessMode;
-  source: "explicit" | "legacy" | "default";
-  hasLegacyRestrictions: boolean;
+  source: "explicit" | "default";
 };
 
 const ACCESS_MODE_VALUES = new Set(Object.values(EventAccessMode));
@@ -91,42 +81,6 @@ function normalizeCheckinMethods(
   return fallback;
 }
 
-function inferLegacyMode(params: {
-  legacy?: LegacyAccessPayload | null;
-  defaultMode: EventAccessMode;
-  hasRestrictedTickets: boolean;
-}) {
-  const { legacy, defaultMode, hasRestrictedTickets } = params;
-  const inviteOnlyFlag = legacy?.inviteOnly === true;
-  const legacyAccessRaw =
-    typeof legacy?.publicAccessMode === "string"
-      ? legacy.publicAccessMode.trim().toUpperCase()
-      : null;
-  if (inviteOnlyFlag || legacyAccessRaw === "INVITE") {
-    return { mode: EventAccessMode.INVITE_ONLY, hasLegacyRestrictions: true };
-  }
-  if (hasRestrictedTickets) {
-    return { mode: EventAccessMode.INVITE_ONLY, hasLegacyRestrictions: true };
-  }
-  if (legacyAccessRaw === "OPEN" || legacyAccessRaw === "TICKET") {
-    return { mode: EventAccessMode.PUBLIC, hasLegacyRestrictions: false };
-  }
-  return { mode: defaultMode, hasLegacyRestrictions: false };
-}
-
-function detectRestrictedTickets(
-  legacy?: LegacyAccessPayload | null,
-  fallbackFlag?: boolean,
-) {
-  if (typeof fallbackFlag === "boolean") return fallbackFlag;
-  const ticketFlags = Array.isArray(legacy?.ticketTypes) ? legacy?.ticketTypes : [];
-  if (ticketFlags && ticketFlags.length > 0) {
-    const hasExplicitRestriction = ticketFlags.some((ticket) => ticket?.publicAccess === false);
-    if (hasExplicitRestriction) return true;
-  }
-  return false;
-}
-
 export function resolveEventAccessPolicyInput(params: ResolvePolicyParams): PolicyResolution {
   const defaultMode = params.defaultMode ?? EventAccessMode.UNLISTED;
   const fallbackCheckin = resolveDefaultCheckinMethods(params.templateType);
@@ -172,21 +126,17 @@ export function resolveEventAccessPolicyInput(params: ResolvePolicyParams): Poli
       },
       mode,
       source: "explicit",
-      hasLegacyRestrictions: false,
     };
   }
 
-  const hasRestrictedTickets = detectRestrictedTickets(params.legacy, params.hasRestrictedTickets);
-  const legacyMode = inferLegacyMode({ legacy: params.legacy, defaultMode, hasRestrictedTickets });
-  const inviteTokenAllowed = legacyMode.mode === EventAccessMode.INVITE_ONLY;
-
   return {
     policyInput: {
-      mode: legacyMode.mode,
+      mode: defaultMode,
       guestCheckoutAllowed: false,
-      inviteTokenAllowed,
+      inviteTokenAllowed: defaultMode === EventAccessMode.INVITE_ONLY,
       inviteIdentityMatch: InviteIdentityMatch.BOTH,
-      inviteTokenTtlSeconds: inviteTokenAllowed ? DEFAULT_INVITE_TOKEN_TTL_SECONDS : null,
+      inviteTokenTtlSeconds:
+        defaultMode === EventAccessMode.INVITE_ONLY ? DEFAULT_INVITE_TOKEN_TTL_SECONDS : null,
       requiresEntitlementForEntry: false,
       checkinMethods: fallbackCheckin,
       scannerRequired: null,
@@ -195,9 +145,8 @@ export function resolveEventAccessPolicyInput(params: ResolvePolicyParams): Poli
       maxEntries: null,
       undoWindowMinutes: null,
     },
-    mode: legacyMode.mode,
-    source: legacyMode.mode === defaultMode ? "default" : "legacy",
-    hasLegacyRestrictions: legacyMode.hasLegacyRestrictions,
+    mode: defaultMode,
+    source: "default",
   };
 }
 

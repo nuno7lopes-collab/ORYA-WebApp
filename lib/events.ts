@@ -110,7 +110,6 @@ export function mapEventToCardDTO(
   }
 
   const isGratis =
-    Boolean(event.isFree) ||
     deriveIsFreeEvent({
       pricingMode: event.pricingMode ?? undefined,
       ticketPrices,

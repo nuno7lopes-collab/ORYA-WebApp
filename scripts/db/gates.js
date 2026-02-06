@@ -43,7 +43,8 @@ function runCapture(cmd, args) {
     if (await run("node", ["./scripts/db/prisma-retry.js", "generate", "--schema=prisma/schema.prisma"])) process.exit(1);
   }
 
-  const legacyAccessPattern = "inviteOnly|publicAccessMode|participantAccessMode|publicTicketTypeIds|Event\\.isFree";
+  const legacyAccessPattern =
+    "inviteOnly|publicAccessMode|participantAccessMode|publicTicketTypeIds|participantTicketTypeIds|Event\\.isFree";
   const rgCode = await run("rg", ["-n", legacyAccessPattern, "app", "-S"]);
   if (rgCode === 0) {
     console.error("[db:gates] Legacy access fields detected in app/. Remove or move to deprecated read-models.");

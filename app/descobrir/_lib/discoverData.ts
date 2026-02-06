@@ -32,7 +32,6 @@ const EVENT_SELECT = {
   locationCity: true,
   latitude: true,
   longitude: true,
-  isFree: true,
   pricingMode: true,
   coverImageUrl: true,
 } satisfies Prisma.EventSelect;
@@ -91,7 +90,6 @@ function mapDiscoverEvent(event: RawEvent, priceMap: Map<number, TicketPriceRang
   const hasPriceRange = minPrice !== null;
 
   const isGratis =
-    Boolean(event.isFree) ||
     deriveIsFreeEvent({
       pricingMode: event.pricingMode ?? undefined,
       ticketPrices: hasPriceRange ? [minPrice, maxPrice ?? minPrice] : [],

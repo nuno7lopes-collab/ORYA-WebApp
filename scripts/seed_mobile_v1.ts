@@ -17,6 +17,7 @@ import fs from "fs";
 import path from "path";
 import {
   EventStatus,
+  EventPricingMode,
   EventTemplateType,
   OrganizationMemberRole,
   OrganizationModule,
@@ -461,6 +462,10 @@ async function main() {
               },
             ]
           : [];
+      const ticketPrices = ticketTypes.map((t) => t.price);
+      const hasZero = ticketPrices.some((price) => price === 0);
+      const hasPaid = ticketPrices.some((price) => price > 0);
+      const pricingMode = hasZero && !hasPaid ? EventPricingMode.FREE_ONLY : EventPricingMode.STANDARD;
 
       await prisma.event.create({
         data: {
@@ -478,7 +483,7 @@ async function main() {
           locationCity: template.city,
           locationFormattedAddress: template.location,
           coverImageUrl: template.cover,
-          isFree,
+          pricingMode,
           ticketTypes: ticketTypes.length ? { create: ticketTypes } : undefined,
         },
       });
@@ -510,7 +515,7 @@ async function main() {
           locationCity: pick(CITIES, i),
           locationFormattedAddress: `${org.username} Arena`,
           coverImageUrl: pick(COVERS, i),
-          isFree: false,
+          pricingMode: EventPricingMode.STANDARD,
           ticketTypes: {
             create: [
               {

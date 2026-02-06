@@ -36,6 +36,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import {
   checkoutMetadataSchema,
@@ -983,7 +984,7 @@ async function _POST(req: NextRequest) {
         type: string;
         template_type: string | null;
         is_deleted: boolean;
-        is_free: boolean;
+        pricing_mode: string | null;
         ends_at: Date | null;
         cover_image_url: string | null;
         location_name: string | null;
@@ -1011,7 +1012,7 @@ async function _POST(req: NextRequest) {
         e.type,
         e.template_type,
         e.is_deleted,
-        e.is_free,
+        e.pricing_mode,
         e.ends_at,
         e.cover_image_url,
         e.location_name,
@@ -1081,9 +1082,6 @@ async function _POST(req: NextRequest) {
     if (event.ends_at && event.ends_at < new Date()) {
       return intentError("EVENT_ENDED", "Vendas encerradas: evento já terminou.", { httpStatus: 400 });
     }
-
-    const hasExistingFreeEntry =
-      Boolean(event.is_free) && userId ? await hasExistingFreeEntryForUser({ eventId: event.id, userId }) : false;
 
     const accessPolicy = await getLatestPolicyForEvent(event.id);
     const inviteRestricted = accessPolicy?.mode === "INVITE_ONLY";
@@ -1220,6 +1218,14 @@ async function _POST(req: NextRequest) {
     if (ticketTypes.length !== ticketTypeIds.length) {
       return intentError("TICKET_NOT_FOUND", "Um dos bilhetes não foi encontrado ou não pertence a este evento.", { httpStatus: 400 });
     }
+
+    const ticketPrices = ticketTypes.map((t) => Number(t.price ?? 0)).filter((n) => Number.isFinite(n));
+    const isFreeOnlyEvent = deriveIsFreeEvent({
+      pricingMode: typeof event.pricing_mode === "string" ? event.pricing_mode : undefined,
+      ticketPrices,
+    });
+    const hasExistingFreeEntry =
+      isFreeOnlyEvent && userId ? await hasExistingFreeEntryForUser({ eventId: event.id, userId }) : false;
 
     const requiresInviteToken = inviteRestricted;
 
@@ -2420,7 +2426,7 @@ async function _POST(req: NextRequest) {
         });
       }
 
-      if (event.is_free && hasExistingFreeEntry) {
+      if (isFreeOnlyEvent && hasExistingFreeEntry) {
         return intentError("FREE_ALREADY_CLAIMED", "Já tens uma inscrição gratuita neste evento.", {
           httpStatus: 409,
           status: "FAILED",

@@ -517,9 +517,7 @@ export async function POST(req: NextRequest) {
     const accessPolicyResolution = resolveEventAccessPolicyInput({
       accessPolicy:
         (body as { accessPolicy?: Record<string, unknown> | null })?.accessPolicy ?? null,
-      legacy: body,
       templateType,
-      hasRestrictedTickets: ticketTypesData.some((t) => t.publicAccess === false),
     });
     const accessPolicyInput = accessPolicyResolution.policyInput;
 

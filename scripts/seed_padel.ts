@@ -14,6 +14,7 @@ import fs from "fs";
 import path from "path";
 import {
   EventTemplateType,
+  EventPricingMode,
   FeeMode,
   OrganizationModule,
   OrganizationStatus,
@@ -626,7 +627,7 @@ async function main() {
       endsAt: eventEnd,
       locationName: MAIN_CLUB_NAME,
       locationCity: organizationCity,
-      isFree: true,
+      pricingMode: EventPricingMode.FREE_ONLY,
       status: "PUBLISHED",
       resaleMode: ResaleMode.ALWAYS,
       feeMode: FeeMode.INCLUDED,

@@ -230,6 +230,7 @@ async function main() {
     const endsAt = new Date(startsAt.getTime() + seed.durationHours * hourMs);
     const slug = `${slugPrefix}seed-${slugify(seed.title)}`;
 
+    const pricingMode = seed.isFree ? "FREE_ONLY" : "STANDARD";
     const event = await prisma.event.upsert({
       where: { slug },
       update: {
@@ -243,7 +244,7 @@ async function main() {
         locationName: seed.locationName,
         locationCity: seed.locationCity,
         address: seed.address,
-        isFree: seed.isFree,
+        pricingMode,
         status: "PUBLISHED",
         timezone: "Europe/Lisbon",
         coverImageUrl: seed.coverImageUrl,
@@ -261,7 +262,7 @@ async function main() {
         locationName: seed.locationName,
         locationCity: seed.locationCity,
         address: seed.address,
-        isFree: seed.isFree,
+        pricingMode,
         status: "PUBLISHED",
         timezone: "Europe/Lisbon",
         coverImageUrl: seed.coverImageUrl,

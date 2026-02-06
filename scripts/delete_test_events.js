@@ -120,9 +120,7 @@ async function main() {
       e.slug,
       e.title,
       e.created_at,
-      e.owner_user_id,
-      e.invite_only,
-      e.public_access_mode
+      e.owner_user_id
     FROM app_v3.events e
     WHERE
       (lower(e.slug) LIKE ANY($1::text[]))
