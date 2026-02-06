@@ -138,8 +138,6 @@ export const ORG_CONTEXT_API = {
 // Mutacoes devem exigir orgId explicito (sem fallback).
 export const ORG_ACTIVE_WRITE_OPTIONS = ORG_CONTEXT_API;
 
-// @deprecated Prefer ORG_CONTEXT_UI or ORG_CONTEXT_API (split to avoid misuse).
-export const ORG_ACTIVE_ACCESS_OPTIONS = ORG_CONTEXT_UI;
 
 export const getActiveOrganizationForUser = cache(
   async (userId: string, opts: Options = {}): Promise<OrganizationContextResult> => {

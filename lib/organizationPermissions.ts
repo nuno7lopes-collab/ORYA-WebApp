@@ -35,11 +35,6 @@ export function isOrgAdminOrAbove(role: OrganizationMemberRole | null | undefine
   return role ? ROLE_WEIGHT[role] >= ROLE_WEIGHT[OrganizationMemberRole.ADMIN] : false;
 }
 
-// @deprecated Prefer role pack aware access (resolveMemberModuleAccess/ensureMemberModuleAccess).
-export function canManageBilling(role: OrganizationMemberRole | null | undefined) {
-  return role === OrganizationMemberRole.OWNER;
-}
-
 export function canManageMembers(
   actorRole: OrganizationMemberRole | null | undefined,
   targetCurrentRole: OrganizationMemberRole | null | undefined,

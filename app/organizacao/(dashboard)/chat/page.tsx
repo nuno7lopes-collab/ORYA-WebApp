@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabaseServer";
-import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, ORG_CONTEXT_UI } from "@/lib/organizationContext";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ export default async function OrganizationChatPage() {
     return <AuthGate />;
   }
 
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, ORG_ACTIVE_ACCESS_OPTIONS);
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, ORG_CONTEXT_UI);
   const allowedRoles = new Set<OrganizationMemberRole>([
     OrganizationMemberRole.OWNER,
     OrganizationMemberRole.CO_OWNER,

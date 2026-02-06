@@ -4,7 +4,6 @@ import { BACKGROUND_CATALOG } from "@/lib/theme/catalog";
 import { REAL_COVER_LIBRARY } from "@/lib/coverLibrary";
 import { listEventCoverFallbacks } from "@/lib/eventCover";
 
-const LEGACY_THEME_STORAGE_KEY = "orya_theme_studio_v1";
 export const THEME_STORAGE_KEY = "orya_theme_user_v1";
 export const THEME_GUEST_STORAGE_KEY = `${THEME_STORAGE_KEY}:guest`;
 const LIGHT_MODE_DISABLED = true;
@@ -176,11 +175,6 @@ export const loadThemeDraft = (userId?: string | null): ThemeDraft | null => {
   if (userId) {
     const guestStored = readThemeDraft(window.localStorage.getItem(THEME_GUEST_STORAGE_KEY));
     if (guestStored) return guestStored;
-  }
-  const legacy = readThemeDraft(window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY));
-  if (legacy) {
-    window.localStorage.setItem(storageKey, JSON.stringify(legacy));
-    return legacy;
   }
   return null;
 };

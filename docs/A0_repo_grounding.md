@@ -19,8 +19,8 @@
   - lib/organizationId.ts (resolveOrganizationIdFromRequest com allowFallback)
 - API que resolve org via cookie (nao so redirect):
   - app/api/organizacao/me/route.ts (forcedOrgId via cookie + allowFallback quando nao ha query)
-  - app/api/me/location/coarse/route.ts (orgContext via ORG_ACTIVE_ACCESS_OPTIONS para EventLog)
-  - app/api/me/location/consent/route.ts (orgContext via ORG_ACTIVE_ACCESS_OPTIONS para EventLog)
+  - app/api/me/location/coarse/route.ts (orgContext via ORG_CONTEXT_API para EventLog)
+  - app/api/me/location/consent/route.ts (orgContext via ORG_CONTEXT_API para EventLog)
 - Server Components com allowFallback true (renderizam conteudo com org resolvida por cookie):
   - app/organizacao/(dashboard)/page.tsx
   - app/organizacao/(dashboard)/loja/page.tsx

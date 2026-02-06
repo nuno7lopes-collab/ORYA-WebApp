@@ -2,13 +2,13 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getActiveOrganizationForUser, ORG_ACTIVE_ACCESS_OPTIONS } from "@/lib/organizationContext";
+import { getActiveOrganizationForUser, ORG_CONTEXT_API } from "@/lib/organizationContext";
 
 async function _GET() {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
-    const orgContext = await getActiveOrganizationForUser(user.id, ORG_ACTIVE_ACCESS_OPTIONS);
+    const orgContext = await getActiveOrganizationForUser(user.id, ORG_CONTEXT_API);
     if (!orgContext.organization || !orgContext.membership) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
