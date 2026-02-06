@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { mapEventToCardDTO, type EventCardDTO } from "@/lib/events";
+import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import type { EventCardDTO } from "@/lib/events";
 
 type DiscoverEvent = EventCardDTO & {
   locationName: string | null;
@@ -32,22 +33,44 @@ const EVENT_SELECT = {
   latitude: true,
   longitude: true,
   isFree: true,
+  pricingMode: true,
   coverImageUrl: true,
-  ticketTypes: {
-    select: {
-      price: true,
-      sortOrder: true,
-    },
-    orderBy: { sortOrder: "asc" },
-  },
 } satisfies Prisma.EventSelect;
 
 type RawEvent = Prisma.EventGetPayload<{ select: typeof EVENT_SELECT }>;
+type TicketPriceRange = { min: number | null; max: number | null };
 
 const LIVE_LIMIT = 8;
 const FALLBACK_LIMIT = 6;
 const WEEK_LIMIT = 10;
 const NEARBY_RADIUS_KM = 35;
+const DEV_CACHE_TTL_MS = 120_000;
+
+type DiscoverCacheEntry = {
+  ts: number;
+  data: DiscoverData;
+};
+
+const DEV_CACHE: Map<string, DiscoverCacheEntry> =
+  (globalThis as any).__ORYA_DISCOVER_DEV_CACHE__ ??
+  ((globalThis as any).__ORYA_DISCOVER_DEV_CACHE__ = new Map<string, DiscoverCacheEntry>());
+
+function buildCacheKey(options?: {
+  range?: "today" | "week" | "near";
+  lat?: number;
+  lng?: number;
+  priceMin?: number;
+  priceMax?: number;
+  tab?: DiscoverTab;
+}) {
+  const tab = options?.tab ?? "eventos";
+  const range = options?.range ?? "week";
+  const priceMin = typeof options?.priceMin === "number" ? options.priceMin : "";
+  const priceMax = typeof options?.priceMax === "number" ? options.priceMax : "";
+  const lat = typeof options?.lat === "number" ? options.lat.toFixed(3) : "";
+  const lng = typeof options?.lng === "number" ? options.lng.toFixed(3) : "";
+  return `${tab}|${range}|${priceMin}|${priceMax}|${lat}|${lng}`;
+}
 
 function endOfDay(date: Date) {
   const end = new Date(date);
@@ -61,9 +84,31 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function mapDiscoverEvent(event: RawEvent): DiscoverEvent | null {
-  const base = mapEventToCardDTO(event);
-  if (!base) return null;
+function mapDiscoverEvent(event: RawEvent, priceMap: Map<number, TicketPriceRange>): DiscoverEvent | null {
+  const priceRange = priceMap.get(event.id);
+  const minPrice = priceRange?.min ?? null;
+  const maxPrice = priceRange?.max ?? null;
+  const hasPriceRange = minPrice !== null;
+
+  const isGratis =
+    Boolean(event.isFree) ||
+    deriveIsFreeEvent({
+      pricingMode: event.pricingMode ?? undefined,
+      ticketPrices: hasPriceRange ? [minPrice, maxPrice ?? minPrice] : [],
+    });
+
+  const base: EventCardDTO = {
+    id: event.id,
+    slug: event.slug,
+    title: event.title,
+    startsAt: event.startsAt ?? null,
+    endsAt: event.endsAt ?? null,
+    locationCity: event.locationCity ?? null,
+    isGratis,
+    priceFrom: minPrice !== null ? minPrice / 100 : null,
+    coverImageUrl: event.coverImageUrl ?? null,
+  };
+
   return {
     ...base,
     locationName: event.locationName ?? null,
@@ -165,6 +210,15 @@ export async function getDiscoverData(options?: {
   priceMax?: number;
   tab?: DiscoverTab;
 }): Promise<DiscoverData> {
+  const isDev = process.env.NODE_ENV !== "production";
+  if (isDev) {
+    const key = buildCacheKey(options);
+    const cached = DEV_CACHE.get(key);
+    if (cached && Date.now() - cached.ts < DEV_CACHE_TTL_MS) {
+      return cached.data;
+    }
+  }
+
   const now = new Date();
   const todayEnd = endOfDay(now);
   const weekEnd = endOfDay(addDays(now, 7));
@@ -193,12 +247,15 @@ export async function getDiscoverData(options?: {
     }),
   ]);
 
+  const allEventIds = Array.from(new Set([...liveRaw, ...upcomingRaw].map((event) => event.id)));
+  const priceMap = await buildTicketPriceMap(allEventIds);
+
   const liveEvents = filterValidEvents(
-    liveRaw.map(mapDiscoverEvent).filter((event): event is DiscoverEvent => Boolean(event)),
+    liveRaw.map((event) => mapDiscoverEvent(event, priceMap)).filter((event): event is DiscoverEvent => Boolean(event)),
   );
 
   const upcomingEvents = filterValidEvents(
-    upcomingRaw.map(mapDiscoverEvent).filter((event): event is DiscoverEvent => Boolean(event)),
+    upcomingRaw.map((event) => mapDiscoverEvent(event, priceMap)).filter((event): event is DiscoverEvent => Boolean(event)),
   );
 
   const nearbyFiltered =
@@ -218,11 +275,38 @@ export async function getDiscoverData(options?: {
   const upcomingToday = filteredUpcoming.filter((event) => event.startsAt && event.startsAt <= todayEnd);
   const fallbackSource = upcomingToday.length > 0 ? upcomingToday : filteredUpcoming;
 
-  return {
+  const data = {
     liveEvents: filteredLive.slice(0, LIVE_LIMIT),
     fallbackEvents: fallbackSource.slice(0, FALLBACK_LIMIT),
     weekEvents: filteredUpcoming.slice(0, WEEK_LIMIT),
   };
+
+  if (isDev) {
+    const key = buildCacheKey(options);
+    DEV_CACHE.set(key, { ts: Date.now(), data });
+  }
+
+  return data;
+}
+
+async function buildTicketPriceMap(eventIds: number[]) {
+  const priceMap = new Map<number, TicketPriceRange>();
+  if (eventIds.length === 0) return priceMap;
+
+  const rows = await prisma.ticketType.groupBy({
+    by: ["eventId"],
+    where: { eventId: { in: eventIds } },
+    _min: { price: true },
+    _max: { price: true },
+  });
+
+  for (const row of rows) {
+    priceMap.set(row.eventId, {
+      min: row._min.price ?? null,
+      max: row._max.price ?? null,
+    });
+  }
+  return priceMap;
 }
 function buildDiscoverWhere(tab?: DiscoverTab): Prisma.EventWhereInput {
   const organizationFilter: Prisma.OrganizationWhereInput = { status: "ACTIVE" };

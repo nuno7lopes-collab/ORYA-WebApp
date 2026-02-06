@@ -3,6 +3,38 @@ import { supabase } from "./supabase";
 import { getActiveSession } from "./session";
 import { getMobileEnv } from "./env";
 
+const REQUEST_TIMEOUT_MS = 12_000;
+const SLOW_REQUEST_MS = 1500;
+const OFFLINE_COOLDOWN_MS = 8000;
+const isDev = typeof __DEV__ !== "undefined" && __DEV__;
+let offlineUntil = 0;
+
+const formatError = (err: unknown) => {
+  if (err instanceof Error) return err.message;
+  return String(err ?? "");
+};
+
+const isTimeoutErrorMessage = (message: string) => {
+  const lower = message.toLowerCase();
+  return lower.includes("api timeout") || lower.includes("aborterror") || lower.includes("aborted");
+};
+
+const isNetworkErrorMessage = (message: string) => {
+  const lower = message.toLowerCase();
+  return (
+    isTimeoutErrorMessage(message) ||
+    lower.includes("network request failed") ||
+    lower.includes("failed to fetch")
+  );
+};
+
+const shouldFailFast = () => Date.now() < offlineUntil;
+
+const recordOffline = () => {
+  const nextUntil = Date.now() + OFFLINE_COOLDOWN_MS;
+  offlineUntil = Math.max(offlineUntil, nextUntil);
+};
+
 const baseApi = createApiClient({
   baseUrl: getMobileEnv().apiBaseUrl,
   getAccessToken: async () => {
@@ -36,11 +68,53 @@ const stripAuthorizationHeader = (headers?: RequestInit["headers"]) => {
   return next;
 };
 
+const withTimeout = async <T>(fn: (signal?: AbortSignal) => Promise<T>, signal?: AbortSignal) => {
+  if (signal) return fn(signal);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fn(controller.signal);
+  } catch (err) {
+    const message = formatError(err);
+    if (isTimeoutErrorMessage(message)) {
+      throw new Error("API timeout");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 export const api = {
   request: async <T>(path: string, init?: RequestInit): Promise<T> => {
+    if (shouldFailFast()) {
+      throw new Error("API offline");
+    }
+    const method = (init?.method ?? "GET").toUpperCase();
+    const startedAt = Date.now();
+    if (isDev) {
+      console.info(`[api] ${method} ${path} start`);
+    }
     try {
-      return await baseApi.request<T>(path, init);
+      const result = await withTimeout(
+        (signal) => baseApi.request<T>(path, { ...init, signal: init?.signal ?? signal }),
+        init?.signal,
+      );
+      if (isDev) {
+        const duration = Date.now() - startedAt;
+        const slowTag = duration >= SLOW_REQUEST_MS ? " (slow)" : "";
+        console.info(`[api] ${method} ${path} ${duration}ms${slowTag}`);
+      }
+      return result;
     } catch (err) {
+      const errorMessage = formatError(err);
+      if (isNetworkErrorMessage(errorMessage)) {
+        recordOffline();
+      }
+      if (isDev) {
+        const duration = Date.now() - startedAt;
+        console.warn(`[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`);
+      }
       if (!isUnauthorizedError(err)) throw err;
       let refreshed = false;
       try {
@@ -53,8 +127,25 @@ export const api = {
         ? { ...init, headers: stripAuthorizationHeader(init.headers) }
         : undefined;
       try {
-        return await baseApi.request<T>(path, retryInit);
+        const result = await withTimeout(
+          (signal) => baseApi.request<T>(path, { ...retryInit, signal: retryInit?.signal ?? signal }),
+          retryInit?.signal,
+        );
+        if (isDev) {
+          const duration = Date.now() - startedAt;
+          const slowTag = duration >= SLOW_REQUEST_MS ? " (slow)" : "";
+          console.info(`[api] ${method} ${path} retry OK ${duration}ms${slowTag}`);
+        }
+        return result;
       } catch (retryErr) {
+        const retryMessage = formatError(retryErr);
+        if (isNetworkErrorMessage(retryMessage)) {
+          recordOffline();
+        }
+        if (isDev) {
+          const duration = Date.now() - startedAt;
+          console.warn(`[api] ${method} ${path} retry failed in ${duration}ms: ${retryMessage}`);
+        }
         if (isUnauthorizedError(retryErr)) {
           try {
             if (!refreshed) {

@@ -16,12 +16,17 @@ HEALTH_CHECK_PATH=${HEALTH_CHECK_PATH:-/api/internal/ops/health}
 PAUSE=false
 RESUME=false
 HARD_PAUSE=false
+FORCE_PUBLIC_SUBNETS=${FORCE_PUBLIC_SUBNETS:-false}
+CREATE_DNS_RECORDS=${CREATE_DNS_RECORDS:-false}
+HOSTED_ZONE_ID=${HOSTED_ZONE_ID:-}
+APP_DOMAIN=${APP_DOMAIN:-}
+ADMIN_DOMAIN=${ADMIN_DOMAIN:-}
 
 WEB_DESIRED_COUNT=${WEB_DESIRED_COUNT:-1}
 WORKER_DESIRED_COUNT=${WORKER_DESIRED_COUNT:-1}
 
 function usage() {
-  echo "Usage: deploy-cf.sh [--with-alb true|false] [--with-acm true|false] [--pause|--resume|--hard-pause]" >&2
+  echo "Usage: deploy-cf.sh [--with-alb true|false] [--with-acm true|false] [--pause|--resume|--hard-pause] [--force-public] [--hosted-zone-id Z] [--app-domain app.example.com] [--admin-domain admin.example.com] [--create-dns true|false]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -36,6 +41,8 @@ while [[ $# -gt 0 ]]; do
       RESUME=true; shift;;
     --hard-pause)
       HARD_PAUSE=true; shift;;
+    --force-public)
+      FORCE_PUBLIC_SUBNETS=true; shift;;
     --stack-name)
       STACK_NAME="$2"; shift 2;;
     --vpc-id)
@@ -50,6 +57,14 @@ while [[ $# -gt 0 ]]; do
       ASSIGN_PUBLIC_IP="$2"; shift 2;;
     --alb-cert-arn)
       ALB_CERT_ARN="$2"; shift 2;;
+    --hosted-zone-id)
+      HOSTED_ZONE_ID="$2"; shift 2;;
+    --app-domain)
+      APP_DOMAIN="$2"; shift 2;;
+    --admin-domain)
+      ADMIN_DOMAIN="$2"; shift 2;;
+    --create-dns)
+      CREATE_DNS_RECORDS="$2"; shift 2;;
     *)
       usage; exit 1;;
   esac
@@ -124,18 +139,24 @@ function has_nat() {
 
 VPC_ID=$(pick_vpc)
 
-if [[ -z "${PUBLIC_SUBNETS:-}" || -z "${PRIVATE_SUBNETS:-}" || -z "${SERVICE_SUBNETS:-}" ]]; then
-  if has_nat "$VPC_ID"; then
-    PRIVATE_SUBNETS=${PRIVATE_SUBNETS:-$(distinct_subnets false "$VPC_ID")}
-  fi
-  if [[ -z "${PRIVATE_SUBNETS:-}" ]]; then
-    PUBLIC_SUBNETS=${PUBLIC_SUBNETS:-$(distinct_subnets true "$VPC_ID")}
-    SERVICE_SUBNETS=${SERVICE_SUBNETS:-$PUBLIC_SUBNETS}
-    ASSIGN_PUBLIC_IP=${ASSIGN_PUBLIC_IP:-ENABLED}
-  else
-    PUBLIC_SUBNETS=${PUBLIC_SUBNETS:-$(distinct_subnets true "$VPC_ID")}
-    SERVICE_SUBNETS=${SERVICE_SUBNETS:-$PRIVATE_SUBNETS}
-    ASSIGN_PUBLIC_IP=${ASSIGN_PUBLIC_IP:-DISABLED}
+if [[ "$FORCE_PUBLIC_SUBNETS" == "true" ]]; then
+  PUBLIC_SUBNETS=${PUBLIC_SUBNETS:-$(distinct_subnets true "$VPC_ID")}
+  SERVICE_SUBNETS=${SERVICE_SUBNETS:-$PUBLIC_SUBNETS}
+  ASSIGN_PUBLIC_IP=${ASSIGN_PUBLIC_IP:-ENABLED}
+else
+  if [[ -z "${PUBLIC_SUBNETS:-}" || -z "${PRIVATE_SUBNETS:-}" || -z "${SERVICE_SUBNETS:-}" ]]; then
+    if has_nat "$VPC_ID"; then
+      PRIVATE_SUBNETS=${PRIVATE_SUBNETS:-$(distinct_subnets false "$VPC_ID")}
+    fi
+    if [[ -z "${PRIVATE_SUBNETS:-}" ]]; then
+      PUBLIC_SUBNETS=${PUBLIC_SUBNETS:-$(distinct_subnets true "$VPC_ID")}
+      SERVICE_SUBNETS=${SERVICE_SUBNETS:-$PUBLIC_SUBNETS}
+      ASSIGN_PUBLIC_IP=${ASSIGN_PUBLIC_IP:-ENABLED}
+    else
+      PUBLIC_SUBNETS=${PUBLIC_SUBNETS:-$(distinct_subnets true "$VPC_ID")}
+      SERVICE_SUBNETS=${SERVICE_SUBNETS:-$PRIVATE_SUBNETS}
+      ASSIGN_PUBLIC_IP=${ASSIGN_PUBLIC_IP:-DISABLED}
+    fi
   fi
 fi
 
@@ -195,6 +216,10 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
     EnableWorker="$ENABLE_WORKER" \
     EnableOutboxSchedule="$ENABLE_OUTBOX_SCHEDULE" \
     AlbCertificateArn="${ALB_CERT_ARN:-}" \
+    HostedZoneId="${HOSTED_ZONE_ID:-}" \
+    AppDomain="${APP_DOMAIN:-}" \
+    AdminDomain="${ADMIN_DOMAIN:-}" \
+    CreateDnsRecords="${CREATE_DNS_RECORDS:-false}" \
     SecretsPrefix="orya/prod" \
     BudgetNotificationEmail="${BUDGET_NOTIFICATION_EMAIL:-}" \
     LogIngestThresholdBytes="${LOG_INGEST_THRESHOLD_BYTES:-50000000}"

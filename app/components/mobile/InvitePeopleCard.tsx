@@ -36,7 +36,7 @@ export default function InvitePeopleCard({
   return (
     <div className={cn("orya-mobile-surface-soft p-4", className)}>
       <p className="orya-mobile-kicker">Rede ORYA</p>
-      <h3 className="mt-2 text-[15px] font-semibold text-white">{title}</h3>
+      <h2 className="mt-2 text-[15px] font-semibold text-white">{title}</h2>
       <p className="mt-2 text-[12px] text-white/70">{description}</p>
       <button
         type="button"

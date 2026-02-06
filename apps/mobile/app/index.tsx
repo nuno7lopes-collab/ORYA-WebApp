@@ -2,11 +2,13 @@ import { Redirect } from "expo-router";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProfileSummary } from "../features/profile/hooks";
 import { getOnboardingDone, resetOnboardingDone } from "../lib/onboardingState";
 import { isAuthError, resolveOnboardingGate } from "../lib/onboardingGate";
 import { getOnboardingDraft } from "../lib/onboardingDraft";
+import { perfLog, perfMark, perfMeasure } from "../lib/perf";
+import { CachedProfile, getProfileCache, setProfileCache } from "../lib/profileCache";
 
 export default function Index() {
   const { loading, session } = useAuth();
@@ -17,11 +19,15 @@ export default function Index() {
   );
   const [localOnboardingDone, setLocalOnboardingDone] = useState<boolean | null>(null);
   const [hasDraft, setHasDraft] = useState<boolean | null>(null);
+  const [cachedProfile, setCachedProfileState] = useState<CachedProfile | null>(null);
+  const profileStartRef = useRef<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
+    perfMark("onboarding_local");
     getOnboardingDone().then((value) => {
       if (mounted) setLocalOnboardingDone(value);
+      perfMeasure("onboarding_local_done", "onboarding_local");
     });
     return () => {
       mounted = false;
@@ -30,19 +36,48 @@ export default function Index() {
 
   useEffect(() => {
     let mounted = true;
+    perfMark("onboarding_draft");
     if (!session?.user?.id) {
       setHasDraft(null);
+      setCachedProfileState(null);
       return () => {
         mounted = false;
       };
     }
     getOnboardingDraft(session.user.id).then((draft) => {
       if (mounted) setHasDraft(Boolean(draft));
+      perfMeasure("onboarding_draft_done", "onboarding_draft");
+    });
+    getProfileCache(session.user.id).then((cached) => {
+      if (mounted) setCachedProfileState(cached);
     });
     return () => {
       mounted = false;
     };
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (profileQuery.isLoading && !profileStartRef.current) {
+      profileStartRef.current = Date.now();
+      perfLog("profile_fetch_start");
+    }
+    if (!profileQuery.isLoading && profileStartRef.current) {
+      const duration = Date.now() - profileStartRef.current;
+      perfLog("profile_fetch_done", { ms: duration, ok: !profileQuery.isError });
+      profileStartRef.current = null;
+    }
+  }, [profileQuery.isLoading, profileQuery.isError]);
+
+  useEffect(() => {
+    if (!profileQuery.data || !session?.user?.id) return;
+    setProfileCache({
+      userId: session.user.id,
+      fullName: profileQuery.data.fullName ?? null,
+      username: profileQuery.data.username ?? null,
+      onboardingDone: profileQuery.data.onboardingDone ?? null,
+      updatedAt: new Date().toISOString(),
+    }).catch(() => undefined);
+  }, [profileQuery.data, session?.user?.id]);
 
   useEffect(() => {
     if (!profileQuery.isError) return;
@@ -57,11 +92,16 @@ export default function Index() {
     localOnboardingDone,
     profileQuery,
     hasDraft,
+    cachedProfile,
   });
+
+  useEffect(() => {
+    perfLog("gate_status", { status: gateStatus });
+  }, [gateStatus]);
 
   if (loading || gateStatus === "loading") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b101a" }}>
         <ActivityIndicator />
       </View>
     );

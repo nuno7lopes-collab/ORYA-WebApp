@@ -71,6 +71,7 @@ export default function AuthGatewayScreen() {
   const mountedRef = useRef(true);
   const emailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const env = getMobileEnv();
+  const showDevHints = __DEV__ || env.appEnv !== "prod";
   const baseUrl = env.apiBaseUrl.replace(/\/+$/, "");
   const termsUrl = `${baseUrl}/termos`;
   const privacyUrl = `${baseUrl}/privacidade`;
@@ -124,7 +125,11 @@ export default function AuthGatewayScreen() {
       provider === "apple" &&
       (reason.includes("host.exp.Exponent") || reason.toLowerCase().includes("unacceptable audience"))
     ) {
-      Alert.alert("Apple Sign In", "O login com Apple não funciona no Expo Go. Usa um development build.");
+      if (showDevHints) {
+        Alert.alert("Apple Sign In", "O login com Apple não funciona no Expo Go. Usa um development build.");
+      } else {
+        Alert.alert("Não foi possível entrar.", "Tenta novamente.");
+      }
       return;
     }
     Alert.alert("Não foi possível entrar.", "Tenta novamente.");

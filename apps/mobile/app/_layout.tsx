@@ -12,8 +12,9 @@ import { LogBox, View, ActivityIndicator } from "react-native";
 import { getMobileEnv } from "../lib/env";
 import { useFonts } from "expo-font";
 import { Ionicons } from "../components/icons/Ionicons";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
+import { perfMark, perfMeasure, perfLog } from "../lib/perf";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -27,12 +28,14 @@ LogBox.ignoreLogs([
 ]);
 
 export default function RootLayout() {
+  perfMark("app_boot");
   const env = getMobileEnv();
   const stripeKey = env.stripePublishableKey ?? "";
   const merchantIdentifier = env.appleMerchantId ?? undefined;
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontsError] = useFonts({
     ...Ionicons.font,
   });
+  const [fontTimeout, setFontTimeout] = useState(false);
 
   useEffect(() => {
     if (!__DEV__) return;
@@ -41,7 +44,26 @@ export default function RootLayout() {
     });
   }, []);
 
-  if (!fontsLoaded) {
+  useEffect(() => {
+    const timer = setTimeout(() => setFontTimeout(true), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      perfMeasure("fonts_loaded", "app_boot");
+    } else if (fontsError) {
+      perfLog("fonts_error", { error: String(fontsError) });
+    } else if (fontTimeout) {
+      perfLog("fonts_timeout");
+    }
+  }, [fontsError, fontsLoaded, fontTimeout]);
+
+  useEffect(() => {
+    perfLog("api_base_url", { apiBaseUrl: env.apiBaseUrl, appEnv: env.appEnv });
+  }, [env.apiBaseUrl, env.appEnv]);
+
+  if (!fontsLoaded && !fontsError && !fontTimeout) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b101a" }}>
         <ActivityIndicator />
@@ -83,23 +105,15 @@ export default function RootLayout() {
                     gestureEnabled: true,
                   }}
                 />
-              <Stack.Screen
-                name="checkout/index"
-                options={{
-                  animation: "slide_from_right",
-                  animationDuration: 380,
-                  gestureEnabled: true,
-                }}
-              />
-              <Stack.Screen
-                name="profile/edit"
-                options={{
-                  animation: "slide_from_right",
-                  animationDuration: 320,
-                  gestureEnabled: true,
-                }}
-              />
-            </Stack>
+                <Stack.Screen
+                  name="checkout/index"
+                  options={{
+                    animation: "slide_from_right",
+                    animationDuration: 380,
+                    gestureEnabled: true,
+                  }}
+                />
+              </Stack>
             </AuthProvider>
           </StripeProvider>
         </QueryClientProvider>

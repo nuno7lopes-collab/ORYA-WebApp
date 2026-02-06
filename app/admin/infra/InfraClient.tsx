@@ -160,7 +160,7 @@ export default function InfraClient({
           correlationId: json.correlationId,
           payload: json.ok ? json.data : { errorCode: json.errorCode, message: json.message },
         });
-        if (name === "deploy" || name === "start" || name === "resume" || name === "soft_pause") {
+        if (name === "deploy" || name === "start" || name === "resume" || name === "soft_pause" || name.startsWith("mode_")) {
           await loadStatus();
         }
       } catch (err: any) {
@@ -787,6 +787,29 @@ export default function InfraClient({
           >
             Run Migrations
           </button>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-white/50">Modos rápidos</p>
+          <p className="mt-2 text-xs text-white/60">
+            Força subnets públicas (sem NAT) e configura o mínimo para teste público.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <button
+              className="rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs text-white/90 hover:bg-white/15 disabled:opacity-60"
+              onClick={() => callAction("mode_public_min", "/api/admin/infra/mode", { mode: "public-min" })}
+              disabled={disableActionButtons}
+            >
+              Público mínimo (barato)
+            </button>
+            <button
+              className="rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-xs text-white/90 hover:bg-white/15 disabled:opacity-60"
+              onClick={() => callAction("mode_public_on", "/api/admin/infra/mode", { mode: "public-on" })}
+              disabled={disableActionButtons}
+            >
+              Público sempre ativo
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">

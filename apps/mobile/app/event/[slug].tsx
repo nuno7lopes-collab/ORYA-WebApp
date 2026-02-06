@@ -8,6 +8,9 @@ import {
   StyleSheet,
   Text,
   View,
+  Linking,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
@@ -22,11 +25,14 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { useAuth } from "../../lib/auth";
 import { useCheckoutStore } from "../../features/checkout/store";
+import { createCheckoutIntent } from "../../features/checkout/api";
 import { safeBack } from "../../lib/navigation";
 import { FavoriteToggle } from "../../components/events/FavoriteToggle";
 import { StickyCTA } from "../../components/events/StickyCTA";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMobileEnv } from "../../lib/env";
+import { getUserFacingError } from "../../lib/errors";
+import { useEventChatThread } from "../../features/chat/hooks";
 
 const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   weekday: "short",
@@ -157,7 +163,9 @@ export default function EventDetail() {
   }, [params.imageTag]);
   const { data, isLoading, isError, error, refetch } = useEventDetail(slugValue ?? "");
   const { session } = useAuth();
+  const accessToken = session?.access_token ?? null;
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
+  const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
   const insets = useSafeAreaInsets();
   const env = getMobileEnv();
   const transitionSource = params.source === "discover" ? "discover" : "direct";
@@ -170,6 +178,7 @@ export default function EventDetail() {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [ticketQuantity, setTicketQuantity] = useState(1);
+  const [initiatingCheckout, setInitiatingCheckout] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -268,9 +277,40 @@ export default function EventDetail() {
   const displayImageTag = previewImageTag ?? (data?.slug ? `event-${data.slug}` : null);
   const showStickyCTA = Boolean(data) && !isLoading && !isError;
   const showFavoriteCTA = showStickyCTA && !hasPurchasableTickets;
-  const scrollBottomPadding = showStickyCTA ? insets.bottom + 180 : 36;
+  const scrollBottomPadding = showStickyCTA
+    ? showFavoriteCTA
+      ? insets.bottom + 150
+      : insets.bottom + 180
+    : 36;
   const shareUrl =
     data?.slug && env.apiBaseUrl ? `${env.apiBaseUrl.replace(/\/$/, "")}/eventos/${data.slug}` : null;
+  const mapUrl = useMemo(() => {
+    if (!data) return null;
+    const lat = data.location?.lat ?? null;
+    const lng = data.location?.lng ?? null;
+    if (lat != null && lng != null) {
+      return `http://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(data.title ?? "Evento")}`;
+    }
+    if (location) {
+      return `http://maps.apple.com/?q=${encodeURIComponent(location)}`;
+    }
+    return null;
+  }, [data, location]);
+
+  const chatQuery = useEventChatThread(
+    data?.id ?? null,
+    Boolean(session?.user?.id && data?.id),
+    accessToken,
+  );
+
+  const chatStatusLabel = useMemo(() => {
+    const status = chatQuery.data?.thread.status;
+    if (status === "OPEN") return "Chat aberto";
+    if (status === "ANNOUNCEMENTS") return "Anúncios";
+    if (status === "READ_ONLY") return "Só leitura";
+    if (status === "CLOSED") return "Fechado";
+    return "Chat indisponível";
+  }, [chatQuery.data?.thread.status]);
 
   const handleShare = async () => {
     if (!data) return;
@@ -281,6 +321,14 @@ export default function EventDetail() {
       await Share.share({ message, url: shareUrl ?? undefined });
     } catch {
       // ignore share errors
+    }
+  };
+  const handleOpenMap = async () => {
+    if (!mapUrl) return;
+    try {
+      await Linking.openURL(mapUrl);
+    } catch {
+      // ignore
     }
   };
   const heroTranslate = scrollY.interpolate({
@@ -517,6 +565,18 @@ export default function EventDetail() {
                       <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.6)" />
                       <Text className="text-white/65 text-sm">{location}</Text>
                     </View>
+                    {mapUrl ? (
+                      <Pressable
+                        onPress={handleOpenMap}
+                        className="self-start rounded-full border border-white/15 bg-white/5 px-3 py-2"
+                        style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                      >
+                        <View className="flex-row items-center gap-2">
+                          <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
+                          <Text className="text-white/80 text-xs font-semibold">Abrir no mapa</Text>
+                        </View>
+                      </Pressable>
+                    ) : null}
                     <View className="flex-row items-center gap-2">
                       <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.6)" />
                       <Text className="text-white/70 text-sm">Organizador: {data.hostName ?? "ORYA"}</Text>
@@ -536,6 +596,57 @@ export default function EventDetail() {
                     </View>
                   </GlassCard>
                 ) : null}
+
+                <GlassCard intensity={58}>
+                  <View className="gap-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-white text-sm font-semibold">Chat do evento</Text>
+                      <Text className="text-white/60 text-xs">{chatStatusLabel}</Text>
+                    </View>
+                    {!session?.user?.id ? (
+                      <View className="gap-2">
+                        <Text className="text-white/65 text-sm">
+                          Inicia sessão para veres o chat dos participantes.
+                        </Text>
+                        <Pressable
+                          onPress={() => router.push("/auth")}
+                          className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                        >
+                          <Text className="text-white text-xs font-semibold">Entrar</Text>
+                        </Pressable>
+                      </View>
+                    ) : chatQuery.isLoading ? (
+                      <Text className="text-white/60 text-sm">A carregar chat...</Text>
+                    ) : chatQuery.isError || !chatQuery.data ? (
+                      <Text className="text-white/60 text-sm">
+                        Chat disponível apenas para participantes do evento.
+                      </Text>
+                    ) : (
+                      <Pressable
+                        onPress={() =>
+                          router.push({
+                            pathname: "/messages/[threadId]",
+                            params: {
+                              threadId: chatQuery.data.thread.id,
+                              eventId: String(data?.id ?? ""),
+                              title: data?.title ?? "",
+                              coverImageUrl: data?.coverImageUrl ?? "",
+                              startsAt: data?.startsAt ?? "",
+                              endsAt: data?.endsAt ?? "",
+                            },
+                          })
+                        }
+                        className="rounded-2xl bg-white/90 px-4 py-3"
+                        style={{ minHeight: tokens.layout.touchTarget }}
+                      >
+                        <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                          Abrir chat
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </GlassCard>
 
                 <View className="gap-3">
                   <Text className="text-white text-sm font-semibold">Bilhetes</Text>
@@ -671,11 +782,64 @@ export default function EventDetail() {
               </View>
             ) : (
               <Pressable
-                disabled={!canInitiateCheckout}
-                onPress={() => {
-                  if (!selectedTicket || !canInitiateCheckout) return;
+                disabled={!canInitiateCheckout || initiatingCheckout}
+                onPress={async () => {
+                  if (!selectedTicket || !canInitiateCheckout || initiatingCheckout) return;
                   if (!session?.user?.id) {
                     router.push("/auth");
+                    return;
+                  }
+                  if (selectedTicket.price <= 0) {
+                    setInitiatingCheckout(true);
+                    try {
+                      const response = await createCheckoutIntent({
+                        slug: data!.slug,
+                        ticketTypeId: selectedTicket.id,
+                        quantity: ticketQuantity,
+                        paymentMethod: "card",
+                        paymentScenario: "FREE_CHECKOUT",
+                      });
+                      const isFree =
+                        response.freeCheckout ||
+                        response.isGratisCheckout ||
+                        (response.amount ?? 0) <= 0;
+                      if (isFree) {
+                        router.push({
+                          pathname: "/checkout/success",
+                          params: {
+                            purchaseId: response.purchaseId ?? "",
+                            paymentIntentId: response.paymentIntentId ?? "",
+                            eventTitle: data?.title ?? displayTitle,
+                            slug: data?.slug ?? slugValue ?? "",
+                          },
+                        });
+                        return;
+                      }
+                      setCheckoutDraft({
+                        slug: data!.slug,
+                        eventId: data!.id,
+                        eventTitle: data!.title,
+                        ticketTypeId: selectedTicket.id,
+                        ticketName: selectedTicket.name,
+                        quantity: ticketQuantity,
+                        unitPriceCents: selectedTicket.price,
+                        totalCents: response.breakdown?.totalCents ?? totalCents,
+                        currency: response.currency ?? selectedTicket.currency ?? "EUR",
+                        paymentMethod: "card",
+                      });
+                      setCheckoutIntent({
+                        clientSecret: response.clientSecret ?? null,
+                        paymentIntentId: response.paymentIntentId ?? null,
+                        purchaseId: response.purchaseId ?? null,
+                        breakdown: response.breakdown ?? null,
+                        freeCheckout: response.freeCheckout ?? response.isGratisCheckout ?? false,
+                      });
+                      router.push("/checkout");
+                    } catch (err) {
+                      Alert.alert("Erro", getUserFacingError(err, "Não foi possível concluir a inscrição."));
+                    } finally {
+                      setInitiatingCheckout(false);
+                    }
                     return;
                   }
                   setCheckoutDraft({
@@ -699,12 +863,21 @@ export default function EventDetail() {
                 }
                 style={{ minHeight: tokens.layout.touchTarget, alignItems: "center", justifyContent: "center" }}
               >
-                <Text
-                  className={`text-center text-sm font-semibold ${canInitiateCheckout ? "" : "text-white/50"}`}
-                  style={canInitiateCheckout ? { color: "#0b101a" } : undefined}
-                >
-                  {ctaLabel}
-                </Text>
+                {initiatingCheckout ? (
+                  <View className="flex-row items-center gap-2">
+                    <ActivityIndicator color="#0b101a" />
+                    <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                      A confirmar...
+                    </Text>
+                  </View>
+                ) : (
+                  <Text
+                    className={`text-center text-sm font-semibold ${canInitiateCheckout ? "" : "text-white/50"}`}
+                    style={canInitiateCheckout ? { color: "#0b101a" } : undefined}
+                  >
+                    {ctaLabel}
+                  </Text>
+                )}
               </Pressable>
             )}
             {!session?.user?.id && !showFavoriteCTA ? (

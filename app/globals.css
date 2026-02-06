@@ -2,7 +2,7 @@
 
 /* ================== CORES BASE ================== */
 :root {
-  --background: #05060a;
+  --background: #0b1020;
   --foreground: #ffffff;
 
   --orya-pink: #ff00c8;
@@ -58,9 +58,17 @@
   --divider: rgba(255, 255, 255, 0.08);
 
   --theme-bg-color: var(--background);
-  --theme-bg-image: none;
-  --theme-bg-overlay: none;
-  --theme-bg-overlay-opacity: 0;
+  --theme-bg-image: radial-gradient(circle at 18% 18%, rgba(110, 140, 255, 0.28), transparent 55%),
+    radial-gradient(circle at 78% 22%, rgba(255, 122, 205, 0.2), transparent 55%),
+    radial-gradient(circle at 35% 85%, rgba(72, 255, 229, 0.12), transparent 60%),
+    linear-gradient(160deg, #0a0f1e 0%, #0f1428 48%, #0b1020 100%);
+  --theme-bg-overlay: linear-gradient(
+    180deg,
+    rgba(10, 12, 24, 0.15) 0%,
+    rgba(6, 8, 18, 0.6) 58%,
+    rgba(4, 6, 14, 0.92) 100%
+  );
+  --theme-bg-overlay-opacity: 0.92;
   --theme-text: var(--foreground);
   --theme-muted: rgba(255, 255, 255, 0.78);
   --theme-accent: var(--orya-cyan);
@@ -603,7 +611,7 @@ html[data-theme-mode="light"] body:is([data-orya-bg="orya-bg-user"], [data-orya-
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #05060a;
+    --background: #0b1020;
     --foreground: #ffffff;
   }
 }

@@ -3,6 +3,7 @@ import { PublicEventCard } from "@orya/shared";
 export type DiscoverPriceFilter = "all" | "free" | "paid" | "soon";
 export type DiscoverDateFilter = "all" | "today" | "weekend" | "upcoming";
 export type DiscoverKind = "all" | "padel" | "events" | "services";
+export type DiscoverWorld = "padel" | "events" | "services";
 
 export type DiscoverServiceCard = {
   id: number;

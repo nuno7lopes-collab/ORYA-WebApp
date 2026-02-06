@@ -8,6 +8,8 @@ import { getOnboardingDone } from "../../lib/onboardingState";
 import { isAuthError, resolveOnboardingGate } from "../../lib/onboardingGate";
 import { supabase } from "../../lib/supabase";
 import { getOnboardingDraft } from "../../lib/onboardingDraft";
+import { useFavoritesSync } from "../../features/favorites/hooks";
+import { CachedProfile, getProfileCache, setProfileCache } from "../../lib/profileCache";
 
 export default function TabsLayout() {
   const { loading, session } = useAuth();
@@ -18,6 +20,7 @@ export default function TabsLayout() {
   );
   const [localOnboardingDone, setLocalOnboardingDone] = useState<boolean | null>(null);
   const [hasDraft, setHasDraft] = useState<boolean | null>(null);
+  const [cachedProfile, setCachedProfileState] = useState<CachedProfile | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -33,12 +36,16 @@ export default function TabsLayout() {
     let mounted = true;
     if (!session?.user?.id) {
       setHasDraft(null);
+      setCachedProfileState(null);
       return () => {
         mounted = false;
       };
     }
     getOnboardingDraft(session.user.id).then((draft) => {
       if (mounted) setHasDraft(Boolean(draft));
+    });
+    getProfileCache(session.user.id).then((cached) => {
+      if (mounted) setCachedProfileState(cached);
     });
     return () => {
       mounted = false;
@@ -51,12 +58,26 @@ export default function TabsLayout() {
     supabase.auth.signOut().catch(() => undefined);
   }, [profileQuery.isError, profileQuery.error]);
 
+  useEffect(() => {
+    if (!profileQuery.data || !session?.user?.id) return;
+    setProfileCache({
+      userId: session.user.id,
+      fullName: profileQuery.data.fullName ?? null,
+      username: profileQuery.data.username ?? null,
+      onboardingDone: profileQuery.data.onboardingDone ?? null,
+      updatedAt: new Date().toISOString(),
+    }).catch(() => undefined);
+  }, [profileQuery.data, session?.user?.id]);
+
   const gateStatus = resolveOnboardingGate({
     session,
     localOnboardingDone,
     profileQuery,
     hasDraft,
+    cachedProfile,
   });
+
+  useFavoritesSync(Boolean(session?.user?.id) && gateStatus === "ready");
 
   if (loading || gateStatus === "loading") {
     return (
@@ -111,6 +132,8 @@ export default function TabsLayout() {
         tabBarShowLabel: false,
         tabBarHideOnKeyboard: true,
         sceneContainerStyle: { backgroundColor: "#0b101a" },
+        lazy: true,
+        lazyPreloadDistance: 0,
         tabBarStyle: {
           position: "absolute",
           backgroundColor: "transparent",

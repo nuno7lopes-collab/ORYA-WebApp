@@ -58,6 +58,7 @@ import { queuePairingRefund } from "@/domain/notifications/splitPayments";
 import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
 import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
+import { releaseCronLock, tryAcquireCronLock } from "@/lib/cron/lock";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -68,6 +69,8 @@ const BATCH_MIN_SIZE = Number(process.env.OPERATIONS_BATCH_MIN_SIZE || "10");
 const BATCH_MID_SIZE = Number(process.env.OPERATIONS_BATCH_MID_SIZE || "25");
 const BATCH_MAX_SIZE = Number(process.env.OPERATIONS_BATCH_MAX_SIZE || "50");
 const BATCH_TIME_LIMIT_MS = Number(process.env.OPERATIONS_BATCH_TIME_LIMIT_MS || "350");
+const OPERATIONS_LOCK_TTL_MS = Number(process.env.OPERATIONS_LOCK_TTL_MS || "90000");
+const OPERATIONS_LOCK_BACKOFF_MS = Number(process.env.OPERATIONS_LOCK_BACKOFF_MS || "2000");
 const STALE_OPERATION_LOCK_MS = 15 * 60 * 1000;
 const QUICK_RETRY_DELAYS_MS = (process.env.OPERATIONS_QUICK_RETRY_MS || "5000,15000,60000")
   .split(",")
@@ -107,6 +110,7 @@ type OperationsBatchStats = {
   batchSize: number;
   durationMs: number;
   releasedCount: number;
+  lockSkipped?: boolean;
 };
 
 function chooseBatchSize(backlogCount: number) {
@@ -543,6 +547,22 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
 }
 
 export async function runOperationsBatch() {
+  const lockState = await tryAcquireCronLock("operations", OPERATIONS_LOCK_TTL_MS);
+  if (lockState.enabled && !lockState.acquired) {
+    return {
+      results: [],
+      stats: {
+        backlogCount: 0,
+        oldestAgeMs: null,
+        batchSize: 0,
+        durationMs: 0,
+        releasedCount: 0,
+        lockSkipped: true,
+      },
+      backoffMs: OPERATIONS_LOCK_BACKOFF_MS,
+    };
+  }
+
   const now = new Date();
   const backlog = await getOperationsBacklog(now);
   const batchSize = chooseBatchSize(backlog.backlogCount);
@@ -552,105 +572,111 @@ export async function runOperationsBatch() {
   const batchStart = Date.now();
   const releasedIds: number[] = [];
 
-  for (const op of pending as OperationRecord[]) {
-    if (Date.now() - batchStart >= BATCH_TIME_LIMIT_MS) {
-      releasedIds.push(op.id);
-      continue;
-    }
-    const attemptNow = new Date();
-    const attempts = op.attempts + 1;
-    await prisma.operation.update({
-      where: { id: op.id },
-      data: { attempts: { increment: 1 }, lockedAt: attemptNow },
-    });
-    try {
-      await processOperation(op);
-      await prisma.operation.update({
-        where: { id: op.id },
-        data: {
-          status: "SUCCEEDED",
-          lastError: null,
-          reasonCode: null,
-          errorClass: null,
-          errorStack: null,
-          firstSeenAt: null,
-          lastSeenAt: null,
-          lockedAt: null,
-          nextRetryAt: null,
-        },
-      });
-      results.push({ id: op.id, status: "SUCCEEDED" });
-    } catch (err) {
-      const { message, errorClass, reasonCode, stackSummary } = summarizeError(err);
-      const isDead = attempts >= MAX_ATTEMPTS;
-      const firstSeenAt = op.firstSeenAt ?? attemptNow;
-      await prisma.operation.update({
-        where: { id: op.id },
-        data: {
-          status: isDead ? "DEAD_LETTER" : "FAILED",
-          lastError: message,
-          reasonCode,
-          errorClass,
-          errorStack: stackSummary,
-          firstSeenAt,
-          lastSeenAt: attemptNow,
-          lockedAt: null,
-          nextRetryAt: isDead ? null : computeNextRetry(attempts),
-        },
-      });
-      if (isDead) {
-        logWarn("operations.dead_lettered", {
-          operationId: op.id,
-          operationType: op.operationType,
-          attempts,
-          reasonCode,
-          errorClass,
-        });
+  try {
+    for (const op of pending as OperationRecord[]) {
+      if (Date.now() - batchStart >= BATCH_TIME_LIMIT_MS) {
+        releasedIds.push(op.id);
+        continue;
       }
-      results.push({ id: op.id, status: isDead ? "DEAD_LETTER" : "FAILED", error: message });
+      const attemptNow = new Date();
+      const attempts = op.attempts + 1;
+      await prisma.operation.update({
+        where: { id: op.id },
+        data: { attempts: { increment: 1 }, lockedAt: attemptNow },
+      });
+      try {
+        await processOperation(op);
+        await prisma.operation.update({
+          where: { id: op.id },
+          data: {
+            status: "SUCCEEDED",
+            lastError: null,
+            reasonCode: null,
+            errorClass: null,
+            errorStack: null,
+            firstSeenAt: null,
+            lastSeenAt: null,
+            lockedAt: null,
+            nextRetryAt: null,
+          },
+        });
+        results.push({ id: op.id, status: "SUCCEEDED" });
+      } catch (err) {
+        const { message, errorClass, reasonCode, stackSummary } = summarizeError(err);
+        const isDead = attempts >= MAX_ATTEMPTS;
+        const firstSeenAt = op.firstSeenAt ?? attemptNow;
+        await prisma.operation.update({
+          where: { id: op.id },
+          data: {
+            status: isDead ? "DEAD_LETTER" : "FAILED",
+            lastError: message,
+            reasonCode,
+            errorClass,
+            errorStack: stackSummary,
+            firstSeenAt,
+            lastSeenAt: attemptNow,
+            lockedAt: null,
+            nextRetryAt: isDead ? null : computeNextRetry(attempts),
+          },
+        });
+        if (isDead) {
+          logWarn("operations.dead_lettered", {
+            operationId: op.id,
+            operationType: op.operationType,
+            attempts,
+            reasonCode,
+            errorClass,
+          });
+        }
+        results.push({ id: op.id, status: isDead ? "DEAD_LETTER" : "FAILED", error: message });
+      }
+    }
+
+    if (releasedIds.length) {
+      await prisma.operation.updateMany({
+        where: { id: { in: releasedIds } },
+        data: { status: "PENDING", lockedAt: null },
+      });
+    }
+
+    await processNotificationOutboxBatch();
+    try {
+      await publishOutboxBatch();
+    } catch (err) {
+      logError("worker.publish_outbox_batch_failed", err);
+    }
+    try {
+      await consumeOpsFeedBatch();
+    } catch (err) {
+      logError("worker.consume_ops_feed_failed", err);
+    }
+    try {
+      await sweepPendingProcessorFees();
+    } catch (err) {
+      logError("worker.sweep_processor_fees_failed", err);
+    }
+
+    const stats: OperationsBatchStats = {
+      backlogCount: backlog.backlogCount,
+      oldestAgeMs: backlog.oldestAgeMs,
+      batchSize,
+      durationMs: Date.now() - batchStart,
+      releasedCount: releasedIds.length,
+    };
+    if (stats.backlogCount > 0) {
+      logInfo("operations.backlog", stats);
+    }
+
+    return {
+      results,
+      stats,
+      backoffMs: computeBackoffMs(backlog.backlogCount, backlog.oldestAgeMs),
+    };
+  } finally {
+    if (lockState.enabled && lockState.lock) {
+      await releaseCronLock(lockState.lock);
     }
   }
-
-  if (releasedIds.length) {
-    await prisma.operation.updateMany({
-      where: { id: { in: releasedIds } },
-      data: { status: "PENDING", lockedAt: null },
-    });
-  }
-
-  await processNotificationOutboxBatch();
-  try {
-    await publishOutboxBatch();
-  } catch (err) {
-    logError("worker.publish_outbox_batch_failed", err);
-  }
-  try {
-    await consumeOpsFeedBatch();
-  } catch (err) {
-    logError("worker.consume_ops_feed_failed", err);
-  }
-  try {
-    await sweepPendingProcessorFees();
-  } catch (err) {
-    logError("worker.sweep_processor_fees_failed", err);
-  }
-
-  const stats: OperationsBatchStats = {
-    backlogCount: backlog.backlogCount,
-    oldestAgeMs: backlog.oldestAgeMs,
-    batchSize,
-    durationMs: Date.now() - batchStart,
-    releasedCount: releasedIds.length,
-  };
-  if (stats.backlogCount > 0) {
-    logInfo("operations.backlog", stats);
-  }
-
-  return {
-    results,
-    stats,
-    backoffMs: computeBackoffMs(backlog.backlogCount, backlog.oldestAgeMs),
-  };
 }
 
 async function processOperation(op: OperationRecord) {

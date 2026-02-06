@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { safeAsyncStorage } from "../../lib/storage";
 import { CheckoutBreakdown, CheckoutDraft, CheckoutMethod } from "./types";
 
 const RESUME_WINDOW_MS = 10 * 60 * 1000;
@@ -52,6 +52,8 @@ export const useCheckoutStore = create<CheckoutState>()(
         const draft = get().draft;
         if (!draft) return;
         const dates = buildDates();
+        const nextTotal = breakdown?.totalCents ?? draft.totalCents;
+        const nextCurrency = breakdown?.currency ?? draft.currency;
         set({
           draft: {
             ...draft,
@@ -60,6 +62,8 @@ export const useCheckoutStore = create<CheckoutState>()(
             purchaseId: purchaseId ?? draft.purchaseId ?? null,
             breakdown: breakdown ?? draft.breakdown ?? null,
             freeCheckout: typeof freeCheckout === "boolean" ? freeCheckout : draft.freeCheckout ?? false,
+            totalCents: nextTotal,
+            currency: nextCurrency,
             createdAt: dates.createdAt,
             expiresAt: dates.expiresAt,
           },
@@ -92,11 +96,7 @@ export const useCheckoutStore = create<CheckoutState>()(
     }),
     {
       name: "orya_checkout",
-      storage: {
-        getItem: (key) => AsyncStorage.getItem(key),
-        setItem: (key, value) => AsyncStorage.setItem(key, value),
-        removeItem: (key) => AsyncStorage.removeItem(key),
-      },
+      storage: createJSONStorage(() => safeAsyncStorage),
       version: 1,
     },
   ),

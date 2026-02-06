@@ -1,13 +1,15 @@
 import { Link, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { memo, useEffect, useMemo, useRef } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Animated, Pressable, StyleSheet, Text, View, InteractionManager } from "react-native";
 import { BlurView } from "expo-blur";
 import { PublicEventCard, tokens } from "@orya/shared";
 import { FavoriteToggle } from "./FavoriteToggle";
 import { formatDistanceKm } from "../../lib/geo";
 import { GlassSkeleton } from "../glass/GlassSkeleton";
+import { getDominantTint, getFallbackTint } from "../../lib/imageTint";
+import MaskedView from "@react-native-masked-view/masked-view";
 
 type EventCardSquareProps = {
   event: PublicEventCard;
@@ -59,6 +61,26 @@ const resolvePriceState = (event: PublicEventCard): PriceState => {
   return { label: "Preço em breve", isSoon: true };
 };
 
+const withAlpha = (color: string, alpha: number) => {
+  const rgbaMatch = color.match(/rgba?\(([^)]+)\)/i);
+  if (rgbaMatch) {
+    const parts = rgbaMatch[1].split(",").map((part) => part.trim());
+    if (parts.length >= 3) {
+      const [r, g, b] = parts;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+  const hslaMatch = color.match(/hsla?\(([^)]+)\)/i);
+  if (hslaMatch) {
+    const parts = hslaMatch[1].split(",").map((part) => part.trim());
+    if (parts.length >= 3) {
+      const [h, s, l] = parts;
+      return `hsla(${h}, ${s}, ${l}, ${alpha})`;
+    }
+  }
+  return `rgba(12, 16, 24, ${alpha})`;
+};
+
 export const EventCardSquare = memo(function EventCardSquare({
   event,
   index = 0,
@@ -79,17 +101,24 @@ export const EventCardSquare = memo(function EventCardSquare({
       : "EVENTO"
   ).toUpperCase();
   const cover = event.coverImageUrl ?? null;
+  const tintSeed = useMemo(
+    () => cover ?? event.slug ?? event.title ?? "orya",
+    [cover, event.slug, event.title],
+  );
+  const fallbackTint = useMemo(() => getFallbackTint(tintSeed), [tintSeed]);
+  const [tint, setTint] = useState(fallbackTint);
   const location = event.location?.city ?? event.location?.name ?? "Local a anunciar";
   const date = formatDate(event.startsAt, event.endsAt);
   const priceState = resolvePriceState(event);
   const secondaryTag = statusTag ?? priceState.label;
-  const showHeart = showFavorite ?? priceState.isSoon;
+  const showHeart = showFavorite ?? true;
   const distanceLabel = formatDistanceKm(
     event.location?.lat ?? null,
     event.location?.lng ?? null,
     userLat ?? null,
     userLon ?? null,
   );
+  const overlayHeight = "32%";
 
   const linkHref = useMemo(
     () => ({
@@ -129,6 +158,32 @@ export const EventCardSquare = memo(function EventCardSquare({
     ]).start();
   }, [fade, index, translate]);
 
+  useEffect(() => {
+    let active = true;
+    setTint(fallbackTint);
+    if (!cover) return () => {
+      active = false;
+    };
+    const task = InteractionManager.runAfterInteractions(() => {
+      const startedAt = Date.now();
+      getDominantTint(cover, tintSeed)
+        .then((resolved) => {
+          if (active) setTint(resolved);
+          if (__DEV__) {
+            const duration = Date.now() - startedAt;
+            if (duration > 120) {
+              console.info(`[perf] dominantTint ${duration}ms ${event.slug ?? ""}`);
+            }
+          }
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      active = false;
+      task?.cancel?.();
+    };
+  }, [cover, fallbackTint, tintSeed]);
+
   return (
     <Link href={linkHref} asChild push>
       <Pressable
@@ -160,12 +215,28 @@ export const EventCardSquare = memo(function EventCardSquare({
               ) : (
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(255,255,255,0.06)" }]} />
               )}
-              <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+              <MaskedView
+                style={[styles.bottomMask, { height: overlayHeight }]}
+                maskElement={
+                  <LinearGradient
+                    colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                }
+              >
+                <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+              </MaskedView>
               <LinearGradient
-                colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.7)"]}
+                colors={[
+                  withAlpha(tint, 0.0),
+                  withAlpha(tint, 0.5),
+                  withAlpha(tint, 0.9),
+                ]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
-                style={StyleSheet.absoluteFill}
+                style={[styles.bottomGradient, { height: overlayHeight }]}
               />
               <View style={styles.tagsRow}>
                 <View style={styles.tag}>
@@ -177,21 +248,26 @@ export const EventCardSquare = memo(function EventCardSquare({
               </View>
               {showHeart ? (
                 <View style={styles.heart}>
-                  <FavoriteToggle eventId={event.id} />
+                  <FavoriteToggle eventId={event.id} style={styles.heartButton} />
                 </View>
               ) : null}
-            </View>
-            <View style={styles.info}>
-              <Text style={styles.title} numberOfLines={2}>
-                {event.title}
-              </Text>
-              <Text style={styles.meta} numberOfLines={1}>
-                {date}
-              </Text>
-              <Text style={styles.metaMuted} numberOfLines={1}>
-                {location}
-                {distanceLabel ? ` · ${distanceLabel}` : ""}
-              </Text>
+              <View style={[styles.overlay, { height: overlayHeight }]}>
+                <Text style={styles.overlayTitle} numberOfLines={2}>
+                  {event.title}
+                </Text>
+                <View style={styles.overlayRow}>
+                  <Text style={styles.overlayMeta} numberOfLines={1}>
+                    {date}
+                  </Text>
+                  <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                    · {priceState.label}
+                  </Text>
+                </View>
+                <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                  {location}
+                  {distanceLabel ? ` · ${distanceLabel}` : ""}
+                </Text>
+              </View>
             </View>
           </View>
         </Animated.View>
@@ -221,6 +297,62 @@ const styles = StyleSheet.create({
     width: "100%",
     aspectRatio: 1,
     justifyContent: "flex-end",
+    overflow: "hidden",
+  },
+  bottomMask: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderBottomLeftRadius: tokens.radius.xl,
+    borderBottomRightRadius: tokens.radius.xl,
+    overflow: "hidden",
+  },
+  bottomGradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderBottomLeftRadius: tokens.radius.xl,
+    borderBottomRightRadius: tokens.radius.xl,
+  },
+  overlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    justifyContent: "flex-end",
+    gap: 4,
+  },
+  overlayTitle: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+    textShadowColor: "rgba(0,0,0,0.55)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
+  overlayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  overlayMeta: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  overlayMetaMuted: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 11,
+    textShadowColor: "rgba(0,0,0,0.4)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   tagsRow: {
     position: "absolute",
@@ -235,13 +367,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+    borderColor: "rgba(255,255,255,0.18)",
   },
   tagSoon: {
-    backgroundColor: "rgba(15, 23, 42, 0.85)",
-    borderColor: "rgba(210, 230, 255, 0.35)",
+    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    borderColor: "rgba(210, 230, 255, 0.4)",
   },
   tagText: {
     color: "#ffffff",
@@ -254,22 +386,13 @@ const styles = StyleSheet.create({
     top: 10,
     right: 10,
   },
-  info: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 4,
-  },
-  title: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  meta: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 12,
-  },
-  metaMuted: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 11,
+  heartButton: {
+    backgroundColor: "rgba(10, 14, 24, 0.72)",
+    borderColor: "rgba(255,255,255,0.24)",
+    shadowColor: "rgba(0,0,0,0.5)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
 });

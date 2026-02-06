@@ -68,32 +68,72 @@ const isAuthMissing =
       email: user.email ?? undefined,
     };
 
-    // Fetch profile from Supabase (public or view)
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+    const prismaProfilePromise = prisma.profile.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        fullName: true,
+        username: true,
+        avatarUrl: true,
+        coverUrl: true,
+        bio: true,
+        city: true,
+        padelLevel: true,
+        favouriteCategories: true,
+        visibility: true,
+        onboardingDone: true,
+      },
+    });
 
-    if (profileError) {
-      console.warn("[GET /api/me] Erro ao carregar profile:", {
-        profileError,
-        requestId: ctx.requestId,
-        correlationId: ctx.correlationId,
-        orgId: ctx.orgId,
-      });
+    const notificationPrefsPromise = prisma.notificationPreference.findUnique({
+      where: { userId: user.id },
+      select: {
+        allowEmailNotifications: true,
+        allowEventReminders: true,
+        allowFollowRequests: true,
+      },
+    });
+
+    const [prismaProfileResult, notificationPrefsResult] = await Promise.allSettled([
+      prismaProfilePromise,
+      notificationPrefsPromise,
+    ]);
+
+    const prismaProfile =
+      prismaProfileResult.status === "fulfilled" ? prismaProfileResult.value : null;
+    const prismaError =
+      prismaProfileResult.status === "rejected" ? prismaProfileResult.reason : null;
+
+    const notificationPrefs =
+      notificationPrefsResult.status === "fulfilled" ? notificationPrefsResult.value : null;
+    const notificationError =
+      notificationPrefsResult.status === "rejected" ? notificationPrefsResult.reason : null;
+
+    let supabaseProfile: Record<string, unknown> | null = null;
+    if (!prismaProfile) {
+      const supabaseProfileResult = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, username, avatar_url, cover_url, bio, city, padel_level, favourite_categories, visibility, allow_email_notifications, allow_event_reminders, allow_follow_requests, onboarding_done, onboardingDone",
+        )
+        .eq("id", user.id)
+        .single();
+
+      supabaseProfile = supabaseProfileResult.data ?? null;
+      if (supabaseProfileResult.error) {
+        console.warn("[GET /api/me] Erro ao carregar profile (supabase):", {
+          supabaseError: supabaseProfileResult.error,
+          requestId: ctx.requestId,
+          correlationId: ctx.correlationId,
+          orgId: ctx.orgId,
+        });
+      }
     }
 
-    // Fetch profile from Prisma (source of truth for onboarding fields)
-    type PrismaProfile = Awaited<ReturnType<typeof prisma.profile.findUnique>>;
-    let prismaProfile: PrismaProfile = null;
-    let notificationPrefs: Awaited<ReturnType<typeof prisma.notificationPreference.findUnique>> | null = null;
-    try {
-      prismaProfile = await prisma.profile.findUnique({ where: { id: user.id } });
-      notificationPrefs = await prisma.notificationPreference.findUnique({ where: { userId: user.id } });
-    } catch (prismaError) {
+    if (prismaError || notificationError) {
       console.warn("[GET /api/me] Erro ao carregar profile (prisma):", {
         prismaError,
+        notificationError,
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
         orgId: ctx.orgId,
@@ -102,27 +142,27 @@ const isAuthMissing =
 
     const mergedProfile = prismaProfile
       ? {
-          ...(profile ?? {}),
+          ...(supabaseProfile ?? {}),
           id: prismaProfile.id,
-          full_name: prismaProfile.fullName ?? profile?.full_name ?? null,
-          username: prismaProfile.username ?? profile?.username ?? null,
-          avatar_url: prismaProfile.avatarUrl ?? profile?.avatar_url ?? null,
-          cover_url: prismaProfile.coverUrl ?? (profile as any)?.cover_url ?? null,
-          bio: prismaProfile.bio ?? profile?.bio ?? null,
-          city: prismaProfile.city ?? profile?.city ?? null,
-          padel_level: prismaProfile.padelLevel ?? profile?.padel_level ?? null,
-          favourite_categories: prismaProfile.favouriteCategories ?? (profile as any)?.favourite_categories ?? [],
-          visibility: prismaProfile.visibility ?? (profile as any)?.visibility ?? null,
+          full_name: prismaProfile.fullName ?? (supabaseProfile as any)?.full_name ?? null,
+          username: prismaProfile.username ?? (supabaseProfile as any)?.username ?? null,
+          avatar_url: prismaProfile.avatarUrl ?? (supabaseProfile as any)?.avatar_url ?? null,
+          cover_url: prismaProfile.coverUrl ?? (supabaseProfile as any)?.cover_url ?? null,
+          bio: prismaProfile.bio ?? (supabaseProfile as any)?.bio ?? null,
+          city: prismaProfile.city ?? (supabaseProfile as any)?.city ?? null,
+          padel_level: prismaProfile.padelLevel ?? (supabaseProfile as any)?.padel_level ?? null,
+          favourite_categories: prismaProfile.favouriteCategories ?? (supabaseProfile as any)?.favourite_categories ?? [],
+          visibility: prismaProfile.visibility ?? (supabaseProfile as any)?.visibility ?? null,
           allow_email_notifications:
-            notificationPrefs?.allowEmailNotifications ?? (profile as any)?.allow_email_notifications ?? null,
+            notificationPrefs?.allowEmailNotifications ?? (supabaseProfile as any)?.allow_email_notifications ?? null,
           allow_event_reminders:
-            notificationPrefs?.allowEventReminders ?? (profile as any)?.allow_event_reminders ?? null,
+            notificationPrefs?.allowEventReminders ?? (supabaseProfile as any)?.allow_event_reminders ?? null,
           allow_follow_requests:
-            notificationPrefs?.allowFollowRequests ?? (profile as any)?.allow_follow_requests ?? null,
-          onboarding_done: prismaProfile.onboardingDone ?? profile?.onboarding_done ?? null,
-          onboardingDone: prismaProfile.onboardingDone ?? (profile as any)?.onboardingDone ?? null,
+            notificationPrefs?.allowFollowRequests ?? (supabaseProfile as any)?.allow_follow_requests ?? null,
+          onboarding_done: prismaProfile.onboardingDone ?? (supabaseProfile as any)?.onboarding_done ?? null,
+          onboardingDone: prismaProfile.onboardingDone ?? (supabaseProfile as any)?.onboardingDone ?? null,
         }
-      : profile ?? null;
+      : supabaseProfile ?? null;
 
     return jsonWrap({
       success: true,

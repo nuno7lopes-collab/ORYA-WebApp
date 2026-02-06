@@ -1,8 +1,10 @@
 import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import MaskedView from "@react-native-masked-view/masked-view";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { PublicEventCard, tokens } from "@orya/shared";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,6 +13,7 @@ import { GlassPill } from "../../components/liquid/GlassPill";
 import { DiscoverServiceCard } from "./types";
 import { fetchEventDetail } from "../events/api";
 import { fetchServiceDetail } from "../services/api";
+import { getDominantTint, getFallbackTint } from "../../lib/imageTint";
 
 type Props = {
   item: PublicEventCard | DiscoverServiceCard;
@@ -230,6 +233,26 @@ const resolveTicketSummary = (ticketTypes?: PublicEventCard["ticketTypes"]) => {
   };
 };
 
+const withAlpha = (color: string, alpha: number) => {
+  const rgbaMatch = color.match(/rgba?\(([^)]+)\)/i);
+  if (rgbaMatch) {
+    const parts = rgbaMatch[1].split(",").map((part) => part.trim());
+    if (parts.length >= 3) {
+      const [r, g, b] = parts;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+  const hslaMatch = color.match(/hsla?\(([^)]+)\)/i);
+  if (hslaMatch) {
+    const parts = hslaMatch[1].split(",").map((part) => part.trim());
+    if (parts.length >= 3) {
+      const [h, s, l] = parts;
+      return `hsla(${h}, ${s}, ${l}, ${alpha})`;
+    }
+  }
+  return `rgba(12, 16, 24, ${alpha})`;
+};
+
 const resolveAttendanceSummary = (ticketTypes?: PublicEventCard["ticketTypes"]) => {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const totals = ticketTypes
@@ -267,7 +290,6 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   }, [event, service]);
 
   const title = service ? service.title : event?.title ?? "Oferta";
-  const description = service ? service.description : event?.shortDescription;
   const location = service
     ? service.organization.city || service.organization.publicName || service.organization.businessName || "Local a anunciar"
     : event?.location?.city ?? event?.location?.name ?? "Local a anunciar";
@@ -289,6 +311,12 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   const instructorLabel = service?.instructor?.fullName || service?.instructor?.username || null;
   const serviceCover = service?.organization?.brandingAvatarUrl || service?.instructor?.avatarUrl || null;
   const coverImage = isService ? serviceCover : event?.coverImageUrl ?? null;
+  const tintSeed = useMemo(
+    () => coverImage ?? event?.slug ?? service?.id ?? title ?? "orya",
+    [coverImage, event?.slug, service?.id, title],
+  );
+  const fallbackTint = useMemo(() => getFallbackTint(tintSeed), [tintSeed]);
+  const [tint, setTint] = useState(fallbackTint);
   const transitionTag = isService
     ? service?.id
       ? `service-${service.id}`
@@ -302,6 +330,8 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   const revealTranslate = useRef(new Animated.Value(14)).current;
   const queryClient = useQueryClient();
   const router = useRouter();
+  const cardHeight = isFeatured ? 190 : 168;
+  const overlayHeight = Math.round(cardHeight * (isFeatured ? 0.3 : 0.25));
 
   const cardPrice = useMemo(
     () =>
@@ -338,10 +368,6 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   const attendanceLabel = useMemo(
     () => (!isService ? resolveAttendanceSummary(event?.ticketTypes) : null),
     [event?.ticketTypes, isService],
-  );
-  const showTicketRow = useMemo(
-    () => (!isService && Boolean(ticketSummary || attendanceLabel || availabilityLabel)),
-    [availabilityLabel, attendanceLabel, isService, ticketSummary],
   );
 
   const eventPreviewParams = useMemo(
@@ -416,6 +442,24 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
     ]).start();
   }, [index, isFeatured, revealOpacity, revealTranslate]);
 
+  useEffect(() => {
+    let active = true;
+    setTint(fallbackTint);
+    if (!coverImage) {
+      return () => {
+        active = false;
+      };
+    }
+    getDominantTint(coverImage, tintSeed)
+      .then((resolved) => {
+        if (active) setTint(resolved);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [coverImage, fallbackTint, tintSeed]);
+
   const onPressIn = useCallback(() => {
     Animated.spring(scale, {
       toValue: 0.98,
@@ -469,7 +513,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             <View className="gap-3">
               <View className="overflow-hidden rounded-2xl border border-white/10">
                 {coverImage ? (
-                  <View style={{ height: isFeatured ? 190 : 168, justifyContent: "space-between" }}>
+                  <View style={[styles.mediaContainer, { height: cardHeight }]}>
                     <Image
                       source={{ uri: coverImage }}
                       style={StyleSheet.absoluteFill}
@@ -479,14 +523,32 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                       cachePolicy="memory-disk"
                       priority={isFeatured ? "high" : "normal"}
                     />
+                    <MaskedView
+                      style={[styles.bottomMask, { height: overlayHeight }]}
+                      maskElement={
+                        <LinearGradient
+                          colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 0, y: 1 }}
+                          style={StyleSheet.absoluteFill}
+                        />
+                      }
+                    >
+                      <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+                    </MaskedView>
                     <LinearGradient
-                      colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.65)"]}
+                      colors={[
+                        withAlpha(tint, 0.05),
+                        withAlpha(tint, 0.45),
+                        withAlpha(tint, 0.85),
+                      ]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 0, y: 1 }}
-                      style={StyleSheet.absoluteFill}
+                      style={[styles.bottomGradient, { height: overlayHeight }]}
+                      pointerEvents="none"
                     />
                     <View className="flex-row items-center justify-between px-3 pt-3">
-                      <View className="flex-row items-center gap-2">
+                      <View className="flex-row flex-wrap items-center gap-2">
                         <GlassPill label={category} />
                         {!isService && liveNow ? <GlassPill label="AO VIVO" variant="accent" /> : null}
                         {!isService && isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
@@ -495,26 +557,54 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                           <GlassPill label={distanceLabel} variant="muted" />
                         ) : null}
                       </View>
-                      <View className="flex-row items-center gap-2">
-                        <GlassPill label={statusLabel} variant="muted" />
-                        <GlassPill
-                          label={cardPrice}
-                          variant={cardPrice === "Gratis" ? "accent" : "muted"}
-                        />
-                      </View>
                     </View>
-                    <View className="px-3 pb-3">
-                      {isFeatured ? (
-                        <Text className="text-white text-base font-semibold" numberOfLines={2}>
-                          {title}
+                    <View style={[styles.overlay, { height: overlayHeight }]}>
+                      <Text style={styles.overlayTitle} numberOfLines={2}>
+                        {title}
+                      </Text>
+                      <View style={styles.overlayRow}>
+                        <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.75)" />
+                        <Text style={styles.overlayMeta} numberOfLines={1}>
+                          {date}
                         </Text>
-                      ) : null}
+                      </View>
+                      <View style={styles.overlayRow}>
+                        <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.7)" />
+                        <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                          {location}
+                          {distanceLabel ? ` · ${distanceLabel}` : ""}
+                        </Text>
+                      </View>
+                      <View style={styles.overlayFooter}>
+                        <View style={styles.overlayPills}>
+                          {statusLabel !== "Ativo" ? (
+                            <GlassPill label={statusLabel} variant="muted" />
+                          ) : null}
+                          <GlassPill
+                            label={cardPrice}
+                            variant={cardPrice === "Gratis" ? "accent" : "muted"}
+                          />
+                          {!isService && availabilityLabel ? (
+                            <GlassPill label={availabilityLabel} variant="muted" />
+                          ) : null}
+                          {!isService && attendanceLabel ? (
+                            <GlassPill label={attendanceLabel} variant="muted" />
+                          ) : null}
+                          {!isService && ticketSummary?.priceLabel ? (
+                            <GlassPill label={ticketSummary.priceLabel} variant="muted" />
+                          ) : null}
+                        </View>
+                        <View style={styles.overlayArrow}>
+                          <Text style={styles.overlayArrowText}>Ver detalhe</Text>
+                          <Ionicons name="arrow-forward" size={12} color="rgba(255,255,255,0.6)" />
+                        </View>
+                      </View>
                     </View>
                   </View>
                 ) : (
                   <View
                     style={{
-                      height: isFeatured ? 190 : 168,
+                      height: cardHeight,
                       backgroundColor: "rgba(255,255,255,0.08)",
                       justifyContent: "space-between",
                       paddingHorizontal: tokens.spacing.md,
@@ -543,74 +633,81 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                   </View>
                 )}
               </View>
-
-              <View className="gap-2">
-                <Text className="text-lg font-semibold text-white" numberOfLines={2}>
-                  {title}
-                </Text>
-                {description ? (
-                  <Text className="text-sm text-white/70" numberOfLines={isFeatured ? 3 : 2}>
-                    {description}
-                  </Text>
-                ) : null}
-
-                <View className="flex-row items-center gap-2">
-                  <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.6)" />
-                  <Text className="text-xs text-white/60">{date}</Text>
-                </View>
-
-                <View className="flex-row items-center gap-2">
-                  <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.55)" />
-                  <Text className="text-xs text-white/55">{location}</Text>
-                  {distanceLabel ? (
-                    <Text className="text-[11px] text-white/45">· {distanceLabel}</Text>
-                  ) : null}
-                </View>
-
-                <View className="flex-row items-center gap-2">
-                  <Ionicons name="person-outline" size={14} color="rgba(255,255,255,0.55)" />
-                  <Text className="text-xs text-white/55" numberOfLines={1}>
-                    {host}
-                  </Text>
-                </View>
-
-                {durationLabel ? (
-                  <View className="flex-row items-center gap-2">
-                    <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.55)" />
-                    <Text className="text-xs text-white/55">{durationLabel}</Text>
-                    {instructorLabel ? <Text className="text-xs text-white/45">· {instructorLabel}</Text> : null}
-                  </View>
-                ) : null}
-
-                {showTicketRow ? (
-                  <View className="flex-row items-center justify-between pt-1">
-                    <View className="flex-row items-center gap-2">
-                      <Ionicons name="ticket-outline" size={14} color="rgba(255,255,255,0.6)" />
-                      <Text className="text-xs text-white/65" numberOfLines={1}>
-                        {ticketSummary?.label ?? "Bilhetes"}
-                      </Text>
-                      {ticketSummary?.priceLabel ? (
-                        <Text className="text-[11px] text-white/45">· {ticketSummary.priceLabel}</Text>
-                      ) : null}
-                    </View>
-                    <View className="flex-row items-center gap-2">
-                      {attendanceLabel ? <GlassPill label={attendanceLabel} variant="muted" /> : null}
-                      {availabilityLabel ? <GlassPill label={availabilityLabel} variant="muted" /> : null}
-                    </View>
-                  </View>
-                ) : null}
-
-                <View className="flex-row items-center justify-between pt-1">
-                  <Text className="text-[11px] uppercase tracking-[0.15em] text-white/45">
-                    Ver detalhe
-                  </Text>
-                  <Ionicons name="arrow-forward" size={14} color="rgba(255,255,255,0.45)" />
-                </View>
-              </View>
             </View>
           </GlassCard>
         </Animated.View>
       </Pressable>
     </Link>
   );
+});
+
+const styles = StyleSheet.create({
+  mediaContainer: {
+    justifyContent: "flex-start",
+  },
+  bottomMask: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  bottomGradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  overlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    justifyContent: "flex-end",
+    gap: 4,
+  },
+  overlayTitle: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  overlayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  overlayMeta: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+  },
+  overlayMetaMuted: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 11,
+    flexShrink: 1,
+  },
+  overlayFooter: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  overlayPills: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    flex: 1,
+  },
+  overlayArrow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginLeft: 8,
+  },
+  overlayArrowText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+  },
 });

@@ -14,13 +14,16 @@ export const useDebouncedValue = <T>(value: T, delayMs: number): T => {
   return debounced;
 };
 
-export const useDiscoverFeed = (params: {
-  q: string;
-  type: DiscoverPriceFilter;
-  kind: DiscoverKind;
-  date: DiscoverDateFilter;
-  city: string;
-}) => {
+export const useDiscoverFeed = (
+  params: {
+    q: string;
+    type: DiscoverPriceFilter;
+    kind: DiscoverKind;
+    date: DiscoverDateFilter;
+    city: string;
+  },
+  enabled = true,
+) => {
   const queryKey = useMemo(
     () => ["discover", params.q.trim(), params.type, params.kind, params.date, params.city.trim().toLowerCase()],
     [params.q, params.type, params.kind, params.date, params.city],
@@ -39,9 +42,10 @@ export const useDiscoverFeed = (params: {
         cursor: pageParam,
       }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextCursor : null),
-    staleTime: 45_000,
-    gcTime: 5 * 60_000,
+    staleTime: 1000 * 60 * 2,
+    gcTime: 10 * 60_000,
     retry: 1,
+    enabled,
     refetchOnWindowFocus: false,
   });
 };

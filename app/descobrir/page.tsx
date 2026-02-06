@@ -155,8 +155,8 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                   {primaryEvents.map((event, index) => {
                     const cover = getEventCoverUrl(event.coverImageUrl, {
                       seed: event.slug ?? event.id,
-                      width: 720,
-                      quality: 65,
+                      width: 512,
+                      quality: 62,
                       format: "webp",
                       square: true,
                     });
@@ -173,7 +173,7 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                         tagTone={isReservations ? undefined : tag.tone}
                         meta={[{ label: formatPriceLabel(event) }]}
                         className={hideOnMobile ? "hidden sm:block" : undefined}
-                        imagePriority={index < 2}
+                        imagePriority={index < 5}
                       />
                     );
                   })}
@@ -203,11 +203,11 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                 </div>
               ) : (
                 <div className="flex flex-col items-start gap-3">
-                  {secondaryEvents.map((event) => {
+                  {secondaryEvents.map((event, index) => {
                     const cover = getEventCoverUrl(event.coverImageUrl, {
                       seed: event.slug ?? event.id,
-                      width: 520,
-                      quality: 65,
+                      width: 192,
+                      quality: 58,
                       format: "webp",
                       square: true,
                     });
@@ -221,6 +221,7 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                         dateLabel={formatEventDayLabel(event)}
                         meta={[{ label: formatPriceLabel(event) }]}
                         className="w-full"
+                        imagePriority={index === 0}
                       />
                     );
                   })}

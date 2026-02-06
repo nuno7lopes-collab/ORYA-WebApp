@@ -43,6 +43,7 @@ export const ENV_MODELS = new Set([
   'EntitlementQrToken',
   'Event',
   'EventAccessPolicy',
+  'EventFavorite',
   'EventInvite',
   'EventLog',
   'GlobalUsername',

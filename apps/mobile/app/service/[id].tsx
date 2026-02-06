@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../components/icons/Ionicons";
@@ -137,6 +137,20 @@ export default function ServiceDetailScreen() {
     data?.instructor?.avatarUrl ??
     null;
   const displayImageTag = previewImageTag ?? (data?.id ? `service-${data.id}` : null);
+  const mapUrl = useMemo(() => {
+    const label = data?.defaultLocationText || data?.organization?.city || null;
+    if (!label) return null;
+    return `http://maps.apple.com/?q=${encodeURIComponent(label)}`;
+  }, [data?.defaultLocationText, data?.organization?.city]);
+
+  const handleOpenMap = async () => {
+    if (!mapUrl) return;
+    try {
+      await Linking.openURL(mapUrl);
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <>
@@ -324,6 +338,16 @@ export default function ServiceDetailScreen() {
                     <Ionicons name="pin-outline" size={15} color="rgba(255,255,255,0.45)" />
                     <Text className="text-white/60 text-sm">{data.defaultLocationText}</Text>
                   </View>
+                ) : null}
+                {mapUrl ? (
+                  <Pressable
+                    onPress={handleOpenMap}
+                    className="self-start flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2"
+                    style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                  >
+                    <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
+                    <Text className="text-white/80 text-xs font-semibold">Abrir no mapa</Text>
+                  </Pressable>
                 ) : null}
 
                 {data.instructor ? (

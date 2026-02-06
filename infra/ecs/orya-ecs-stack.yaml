@@ -41,6 +41,24 @@ Parameters:
     Type: String
     Default: ""
     Description: ACM certificate ARN for app/admin domains
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: Route53 hosted zone id for app/admin records (optional)
+  AppDomain:
+    Type: String
+    Default: ""
+    Description: app domain (e.g. app.orya.pt)
+  AdminDomain:
+    Type: String
+    Default: ""
+    Description: admin domain (e.g. admin.orya.pt)
+  CreateDnsRecords:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
   WebImage:
     Type: String
     Description: ECR image URI for web (e.g. 495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-web:latest)
@@ -91,6 +109,12 @@ Conditions:
   UseOutboxSchedule: !And [!Equals [!Ref EnableWorker, "true"], !Equals [!Ref EnableOutboxSchedule, "true"]]
   HasBudgetEmail: !Not [!Equals [!Ref BudgetNotificationEmail, ""]]
   CreateEcr: !Equals [!Ref CreateEcrRepos, "true"]
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
+  HasAppDomain: !Not [!Equals [!Ref AppDomain, ""]]
+  HasAdminDomain: !Not [!Equals [!Ref AdminDomain, ""]]
+  CreateDns: !And [!Equals [!Ref CreateDnsRecords, "true"], !Condition HasHostedZone, !Condition HasALB]
+  CreateAppDns: !And [!Condition CreateDns, !Condition HasAppDomain]
+  CreateAdminDns: !And [!Condition CreateDns, !Condition HasAdminDomain]
 
 Resources:
   EcrRepoWeb:
@@ -361,6 +385,28 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref TargetGroup
+
+  AppDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateAppDns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref AppDomain
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+
+  AdminDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateAdminDns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref AdminDomain
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
 
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role

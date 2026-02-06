@@ -47,6 +47,7 @@ type EventListCardProps = {
   tagTone?: TagTone;
   meta?: EventMeta[];
   className?: string;
+  imagePriority?: boolean;
 };
 
 export function StatusTag({ label, tone = "default", className }: StatusTagProps) {
@@ -111,7 +112,7 @@ export function EventSquareCard({
             src={imageUrl}
             alt={title}
             fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
+            sizes="(max-width: 640px) calc((100vw - 2rem - 0.75rem) / 2), (max-width: 768px) calc((100vw - 4rem) / 3), (max-width: 1024px) calc((100vw - 6rem) / 3), (max-width: 1408px) calc((100vw - 7rem) / 4), 256px"
             className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
             placeholder="blur"
             blurDataURL={defaultBlurDataURL}
@@ -154,6 +155,7 @@ export function EventListCard({
   tagTone,
   meta,
   className,
+  imagePriority,
 }: EventListCardProps) {
   return (
     <Link
@@ -172,10 +174,12 @@ export function EventListCard({
             src={imageUrl}
             alt={title}
             fill
-            sizes="96px"
+            sizes="(max-width: 768px) 88px, 96px"
             className="object-cover transition-transform duration-700 group-hover:scale-[1.06]"
             placeholder="blur"
             blurDataURL={defaultBlurDataURL}
+            priority={imagePriority}
+            fetchPriority={imagePriority ? "high" : "auto"}
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/30 to-black/80" />
         </div>

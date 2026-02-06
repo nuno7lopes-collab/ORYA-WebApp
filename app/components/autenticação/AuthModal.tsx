@@ -913,27 +913,14 @@ function AuthModalContent({
                   try {
                     const redirect =
                       typeof window !== "undefined"
-                        ? (() => {
-                            const currentPath = `${window.location.pathname}${window.location.search}`;
-                            const safeRedirect = sanitizeRedirectPath(
-                              redirectTo ?? currentPath,
-                              "/"
-                            );
-                            return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
-                              safeRedirect
-                            )}`;
-                          })()
+                        ? `${window.location.origin}/auth/callback`
                         : undefined;
                     if (typeof window !== "undefined") {
                       try {
                         const currentPath = `${window.location.pathname}${window.location.search}`;
-                        const safeRedirect = sanitizeRedirectPath(
-                          redirectTo ?? currentPath,
-                          "/"
-                        );
                         window.localStorage.setItem(
                           "orya_post_auth_redirect",
-                          safeRedirect,
+                          redirectTo ?? currentPath,
                         );
                       } catch {}
                     }
@@ -976,27 +963,14 @@ function AuthModalContent({
                   try {
                     const redirect =
                       typeof window !== "undefined"
-                        ? (() => {
-                            const currentPath = `${window.location.pathname}${window.location.search}`;
-                            const safeRedirect = sanitizeRedirectPath(
-                              redirectTo ?? currentPath,
-                              "/"
-                            );
-                            return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
-                              safeRedirect
-                            )}`;
-                          })()
+                        ? `${window.location.origin}/auth/callback`
                         : undefined;
                     if (typeof window !== "undefined") {
                       try {
                         const currentPath = `${window.location.pathname}${window.location.search}`;
-                        const safeRedirect = sanitizeRedirectPath(
-                          redirectTo ?? currentPath,
-                          "/"
-                        );
                         window.localStorage.setItem(
                           "orya_post_auth_redirect",
-                          safeRedirect,
+                          redirectTo ?? currentPath,
                         );
                       } catch {}
                     }

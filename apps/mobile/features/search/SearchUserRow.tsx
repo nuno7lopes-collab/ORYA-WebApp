@@ -5,6 +5,7 @@ import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { SearchUser } from "./types";
+import { useRouter } from "expo-router";
 
 type Props = {
   item: SearchUser;
@@ -19,6 +20,7 @@ export const SearchUserRow = memo(function SearchUserRow({
   onFollow,
   onUnfollow,
 }: Props) {
+  const router = useRouter();
   const displayName = item.fullName || item.username || "Utilizador";
   const handle = item.username ? `@${item.username}` : "";
   const isRequested = Boolean(item.isRequested);
@@ -29,35 +31,42 @@ export const SearchUserRow = memo(function SearchUserRow({
   return (
     <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.sm }}>
       <View className="flex-row items-center gap-3">
-        <View
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 14,
-            overflow: "hidden",
-            backgroundColor: "rgba(255,255,255,0.08)",
-            justifyContent: "center",
-            alignItems: "center",
+        <Pressable
+          onPress={() => {
+            if (item.username) router.push(`/@${item.username}`);
           }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
-          {item.avatarUrl ? (
-            <Image
-              source={{ uri: item.avatarUrl }}
-              style={{ width: 44, height: 44 }}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={120}
-            />
-          ) : (
-            <Ionicons name="person" size={20} color="rgba(255,255,255,0.7)" />
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text className="text-white text-sm font-semibold" numberOfLines={1}>
-            {displayName}
-          </Text>
-          {handle ? <Text className="text-white/60 text-xs">{handle}</Text> : null}
-        </View>
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              overflow: "hidden",
+              backgroundColor: "rgba(255,255,255,0.08)",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            {item.avatarUrl ? (
+              <Image
+                source={{ uri: item.avatarUrl }}
+                style={{ width: 44, height: 44 }}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={120}
+              />
+            ) : (
+              <Ionicons name="person" size={20} color="rgba(255,255,255,0.7)" />
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+              {displayName}
+            </Text>
+            {handle ? <Text className="text-white/60 text-xs">{handle}</Text> : null}
+          </View>
+        </Pressable>
         {onFollow && onUnfollow ? (
           <Pressable
             onPress={() => (isActive ? onUnfollow(item.id) : onFollow(item.id))}

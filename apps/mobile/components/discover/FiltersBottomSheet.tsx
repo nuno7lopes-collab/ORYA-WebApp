@@ -70,11 +70,13 @@ export function FiltersBottomSheet({
   }, [opacity, translateY, visible]);
 
   const renderOption = (
+    key: string,
     label: string,
     active: boolean,
     onPress: () => void,
   ) => (
     <Pressable
+      key={key}
       onPress={onPress}
       style={({ pressed }) => [
         styles.option,
@@ -108,6 +110,7 @@ export function FiltersBottomSheet({
           <View style={styles.row}>
             {DISTANCE_OPTIONS.map((value) =>
               renderOption(
+                `distance-${value}`,
                 `${value}km`,
                 distanceKm === value,
                 () => onDistanceChange(value),
@@ -140,7 +143,7 @@ export function FiltersBottomSheet({
           <Text style={styles.label}>Data</Text>
           <View style={styles.row}>
             {DATE_OPTIONS.map((option) =>
-              renderOption(option.label, date === option.key, () => onDateChange(option.key)),
+              renderOption(`date-${option.key}`, option.label, date === option.key, () => onDateChange(option.key)),
             )}
           </View>
         </View>
@@ -149,7 +152,7 @@ export function FiltersBottomSheet({
           <Text style={styles.label}>Preço</Text>
           <View style={styles.row}>
             {PRICE_OPTIONS.map((option) =>
-              renderOption(option.label, price === option.key, () => onPriceChange(option.key)),
+              renderOption(`price-${option.key}`, option.label, price === option.key, () => onPriceChange(option.key)),
             )}
           </View>
         </View>

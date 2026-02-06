@@ -92,13 +92,13 @@ model Profile {
   adminMfa                                                       AdminMfa?
   users                                                            users                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   notificationOutbox                                               NotificationOutbox[]
+  eventFavorites                                                   EventFavorite[]
   servicesInstructing                                              Service[]               @relation("ServiceInstructor")
   reservationProfessionals                                         ReservationProfessional[]
   membershipSubscriptions                                          MembershipSubscription[]
   trainerProfiles                                                  TrainerProfile[]
   chatMembers                                                      ChatMember[]
   chatMessages                                                     ChatMessage[]           @relation("ChatMessageUser")
-  chatDeletedMessages                                              ChatMessage[]           @relation("ChatMessageDeletedBy")
   chatReadStates                                                   ChatReadState[]
   chatModerationLogs                                               ChatModerationLog[]
   chatConversationsCreated                                        ChatConversation[]      @relation("ChatConversationCreator")
@@ -112,7 +112,6 @@ model Profile {
   chatUserPresence                                                ChatUserPresence?        @relation("ChatUserPresenceUser")
   internalChatChannelsCreated                                      InternalChatChannel[]   @relation("InternalChatChannelCreator")
   internalChatMessagesAuthored                                     InternalChatMessage[]   @relation("InternalChatMessageAuthor")
-  internalChatMessagesDeleted                                      InternalChatMessage[]   @relation("InternalChatMessageDeletedBy")
   locationConsent                                                  LocationConsent         @default(PENDING) @map("location_consent")
   locationGranularity                                              LocationGranularity     @default(COARSE) @map("location_granularity")
   locationSource                                                   UserLocationSource?      @map("location_source")
@@ -467,10 +466,6 @@ model StoreProduct {
   stockPolicy          StoreStockPolicy    @default(NONE) @map("stock_policy")
   stockQty             Int?                @map("stock_qty")
   requiresShipping     Boolean             @default(true) @map("requires_shipping")
-  weightGrams          Int?                @map("weight_grams")
-  lengthMm             Int?                @map("length_mm")
-  widthMm              Int?                @map("width_mm")
-  heightMm             Int?                @map("height_mm")
   tags                 String[]            @default([]) @map("tags")
   createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1193,10 +1188,8 @@ model ChatMessage {
   body         String
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt    DateTime?        @map("deleted_at") @db.Timestamptz(6)
-  deletedBy    String?          @map("deleted_by") @db.Uuid
   thread       ChatThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
   user         Profile?         @relation("ChatMessageUser", fields: [userId], references: [id], onDelete: SetNull)
-  deletedByUser Profile?        @relation("ChatMessageDeletedBy", fields: [deletedBy], references: [id], onDelete: SetNull)
 
   @@index([threadId, createdAt(sort: Desc)], map: "chat_messages_thread_created_idx")
   @@index([userId], map: "chat_messages_user_idx")
@@ -1266,12 +1259,10 @@ model InternalChatMessage {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   editedAt         DateTime? @map("edited_at") @db.Timestamptz(6)
   deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(6)
-  deletedByUserId  String?   @map("deleted_by_user_id") @db.Uuid
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channel      InternalChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   author       Profile?       @relation("InternalChatMessageAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
-  deletedBy    Profile?       @relation("InternalChatMessageDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, channelId, createdAt], map: "internal_chat_messages_org_channel_time_idx")
   @@index([channelId], map: "internal_chat_messages_channel_idx")
@@ -1693,9 +1684,6 @@ model Event {
   deletedAt                         DateTime?               @map("deleted_at") @db.Timestamp(6)
   isDeleted                         Boolean                 @default(false) @map("is_deleted")
   resaleMode                        ResaleMode              @default(ALWAYS) @map("resale_mode")
-  fee_mode_override                 FeeMode?
-  platform_fee_bps_override         Int?
-  platform_fee_fixed_cents_override Int?
   feeMode                           FeeMode                 @default(INCLUDED) @map("fee_mode")
   payoutMode                        PayoutMode              @default(ORGANIZATION) @map("payout_mode")
   organization                         Organization?              @relation(fields: [organizationId], references: [id])
@@ -1725,12 +1713,30 @@ model Event {
   saleSummaries                     SaleSummary[]
   saleLines                         SaleLine[]
   refundPolicyVersions              RefundPolicyVersion[]
+  favorites                         EventFavorite[]
 
   @@index([type, status])
   @@index([ownerUserId])
   @@index([organizationId])
   @@index([addressId], map: "events_address_idx")
   @@map("events")
+  @@schema("app_v3")
+}
+
+model EventFavorite {
+  env        String   @default("prod")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  eventId    Int      @map("event_id")
+  notify     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  user       Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+  @@map("event_favorites")
   @@schema("app_v3")
 }
 

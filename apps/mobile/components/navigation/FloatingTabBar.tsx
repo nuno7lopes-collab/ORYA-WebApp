@@ -3,164 +3,359 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, PanResponder, Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { tokens } from "@orya/shared";
 
-type TabLayout = { x: number; width: number };
+const LEFT_TABS: Array<{
+  key: string;
+  active: keyof typeof Ionicons.glyphMap;
+  inactive: keyof typeof Ionicons.glyphMap;
+}> = [
+  { key: "agora", active: "flash", inactive: "flash-outline" },
+  { key: "tickets", active: "ticket", inactive: "ticket-outline" },
+  { key: "network", active: "people", inactive: "people-outline" },
+  { key: "profile", active: "person-circle", inactive: "person-circle-outline" },
+];
 
-const ICONS: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> =
-  {
-    agora: { active: "flash", inactive: "flash-outline" },
-    index: { active: "compass", inactive: "compass-outline" },
-    tickets: { active: "ticket", inactive: "ticket-outline" },
-    network: { active: "people", inactive: "people-outline" },
-    profile: { active: "person-circle", inactive: "person-circle-outline" },
-  };
+const RIGHT_TAB = { key: "index", icon: "search" as keyof typeof Ionicons.glyphMap };
 
-export const TAB_BAR_HEIGHT = 66;
+export const TAB_BAR_HEIGHT = 70;
 
-function getLabel(routeName: string, options: BottomTabBarProps["descriptors"][string]["options"]) {
-  if (typeof options.tabBarLabel === "string") return options.tabBarLabel;
-  if (typeof options.title === "string") return options.title;
-  return routeName;
-}
+const PILL_GAP = 12;
+const WRAPPER_PADDING = 16;
+const TRACK_PADDING = 8;
+const BUBBLE_INSET = 2;
 
-export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const [layouts, setLayouts] = useState<Record<string, TabLayout>>({});
+  const { width: windowWidth } = useWindowDimensions();
+  const safeBottom = Math.max(insets.bottom, 10) + 10;
+
   const bubbleX = useRef(new Animated.Value(0)).current;
   const bubbleOpacity = useRef(new Animated.Value(0)).current;
-  const [bubbleWidth, setBubbleWidth] = useState(0);
+  const bubbleScale = useRef(new Animated.Value(1)).current;
+  const bubbleXValue = useRef(0);
+  const draggingRef = useRef(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const dragIndexRef = useRef<number | null>(null);
 
-  const safeBottom = Math.max(insets.bottom, 10) + 6;
-  const barPadding = 10;
-  const bubbleInset = 4;
+  const rowWidth = Math.max(Math.min(windowWidth - WRAPPER_PADDING * 2, 560), 0);
+  const leftPillWidth = Math.max(rowWidth - TAB_BAR_HEIGHT - PILL_GAP, 0);
+  const [trackWidth, setTrackWidth] = useState(0);
+  const slotWidth = trackWidth ? trackWidth / LEFT_TABS.length : 0;
+  const bubbleWidth = Math.max(slotWidth - BUBBLE_INSET * 2, 0);
+  const rightPillWidth = Math.max(TAB_BAR_HEIGHT, slotWidth ? slotWidth + TRACK_PADDING * 2 : TAB_BAR_HEIGHT);
 
-  const handleLayout = useCallback((key: string, layout: TabLayout) => {
-    setLayouts((prev) => {
-      if (prev[key]?.x === layout.x && prev[key]?.width === layout.width) return prev;
-      return { ...prev, [key]: layout };
-    });
-  }, []);
+  const slotCentersRef = useRef<number[]>([]);
+  const [, forceSlotUpdate] = useState(0);
+
+  const currentRouteName = state.routes[state.index]?.name;
+  const activeLeftIndex = LEFT_TABS.findIndex((tab) => tab.key === currentRouteName);
+  const rightActive = currentRouteName === RIGHT_TAB.key;
 
   useEffect(() => {
-    const focusedKey = state.routes[state.index]?.key;
-    const layout = focusedKey ? layouts[focusedKey] : undefined;
-    if (!layout) return;
-    const targetX = layout.x + bubbleInset;
-    const targetW = Math.max(layout.width - bubbleInset * 2, 0);
-    setBubbleWidth(targetW);
-    Animated.parallel([
-      Animated.spring(bubbleX, {
-        toValue: targetX,
-        useNativeDriver: true,
-        damping: 22,
-        stiffness: 210,
-        mass: 0.7,
-        overshootClamping: false,
-        restDisplacementThreshold: 0.6,
-        restSpeedThreshold: 0.6,
-      }),
-      Animated.timing(bubbleOpacity, {
-        toValue: 1,
-        duration: 260,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [layouts, state.index, state.routes]);
+    const id = bubbleX.addListener(({ value }) => {
+      bubbleXValue.current = value;
+    });
+    return () => bubbleX.removeListener(id);
+  }, [bubbleX]);
 
-  const routes = useMemo(() => state.routes, [state.routes]);
+  const setBubbleToIndex = useCallback(
+    (index: number, animated = true) => {
+      if (!slotWidth || !bubbleWidth) return;
+      const center = slotCentersRef.current[index];
+      const targetX =
+        typeof center === "number" ? center - bubbleWidth / 2 : slotWidth * index + BUBBLE_INSET;
+      if (animated) {
+        Animated.spring(bubbleX, {
+          toValue: targetX,
+          useNativeDriver: true,
+          damping: 20,
+          stiffness: 240,
+          mass: 0.7,
+          overshootClamping: false,
+          restDisplacementThreshold: 0.5,
+          restSpeedThreshold: 0.5,
+        }).start();
+      } else {
+        bubbleX.setValue(targetX);
+      }
+    },
+    [bubbleX, slotWidth],
+  );
+
+  useEffect(() => {
+    if (!slotWidth) return;
+    if (activeLeftIndex >= 0) {
+      setBubbleToIndex(activeLeftIndex, false);
+      Animated.timing(bubbleOpacity, {
+        toValue: 0.28,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(bubbleOpacity, {
+        toValue: 0,
+        duration: 160,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [activeLeftIndex, bubbleOpacity, setBubbleToIndex, slotWidth]);
+
+  const animatePress = useCallback(
+    (pressed: boolean) => {
+      Animated.parallel([
+        Animated.spring(bubbleScale, {
+          toValue: pressed ? 1.06 : 1,
+          useNativeDriver: true,
+          damping: 18,
+          stiffness: 260,
+          mass: 0.6,
+          overshootClamping: false,
+          restDisplacementThreshold: 0.4,
+          restSpeedThreshold: 0.4,
+        }),
+        Animated.timing(bubbleOpacity, {
+          toValue: pressed ? 0.85 : 0.28,
+          duration: 140,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    },
+    [bubbleOpacity, bubbleScale],
+  );
+
+  const updateDragIndex = useCallback(
+    (index: number) => {
+      if (dragIndexRef.current !== index) {
+        dragIndexRef.current = index;
+        setDragIndex(index);
+      }
+    },
+    [],
+  );
+
+  const updateBubbleFromLocation = useCallback(
+    (locationX: number) => {
+      if (!slotWidth || !bubbleWidth) return;
+      const minX = BUBBLE_INSET;
+      const maxX = trackWidth - BUBBLE_INSET - bubbleWidth;
+      const nextX = clamp(locationX - bubbleWidth / 2, minX, maxX);
+      bubbleX.setValue(nextX);
+
+      const center = nextX + bubbleWidth / 2;
+      const centers = slotCentersRef.current;
+      let nextIndex = 0;
+      if (centers.length === LEFT_TABS.length && centers.every((value) => typeof value === "number")) {
+        let minDistance = Number.POSITIVE_INFINITY;
+        centers.forEach((value, index) => {
+          const distance = Math.abs(center - value);
+          if (distance < minDistance) {
+            minDistance = distance;
+            nextIndex = index;
+          }
+        });
+      } else {
+        const rawIndex = Math.round(center / slotWidth - 0.5);
+        nextIndex = clamp(rawIndex, 0, LEFT_TABS.length - 1);
+      }
+      updateDragIndex(nextIndex);
+    },
+    [bubbleWidth, bubbleX, slotWidth, trackWidth, updateDragIndex],
+  );
+
+  const panResponder = useMemo(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        trackWidth > 0 && Math.abs(gesture.dx) > 6 && Math.abs(gesture.dy) < 10,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        trackWidth > 0 && Math.abs(gesture.dx) > 6 && Math.abs(gesture.dy) < 10,
+      onPanResponderGrant: (event) => {
+        if (!slotWidth) return;
+        draggingRef.current = true;
+        animatePress(true);
+        const locationX = event.nativeEvent.locationX;
+        updateBubbleFromLocation(locationX);
+      },
+      onPanResponderMove: (event) => {
+        const locationX = event.nativeEvent.locationX;
+        updateBubbleFromLocation(locationX);
+      },
+      onPanResponderRelease: () => {
+        const targetIndex = dragIndexRef.current ?? activeLeftIndex;
+        draggingRef.current = false;
+        animatePress(false);
+        dragIndexRef.current = null;
+        setDragIndex(null);
+        if (targetIndex != null && targetIndex >= 0) {
+          const routeKey = LEFT_TABS[targetIndex]?.key;
+          if (routeKey && routeKey !== currentRouteName) {
+            navigation.navigate(routeKey);
+          } else if (routeKey) {
+            setBubbleToIndex(targetIndex);
+          }
+        }
+      },
+      onPanResponderTerminate: () => {
+        draggingRef.current = false;
+        animatePress(false);
+        dragIndexRef.current = null;
+        setDragIndex(null);
+      },
+    })
+  , [
+    activeLeftIndex,
+    animatePress,
+    currentRouteName,
+    navigation,
+    setBubbleToIndex,
+    slotWidth,
+    trackWidth,
+    updateBubbleFromLocation,
+  ]);
+
+  const visualLeftIndex = dragIndex ?? (activeLeftIndex >= 0 ? activeLeftIndex : null);
 
   return (
-    <View pointerEvents="box-none" style={[styles.wrapper, { bottom: safeBottom }]}>
-      <View style={styles.shadow} />
-      <View style={styles.container}>
-        <BlurView tint="dark" intensity={80} style={StyleSheet.absoluteFill} />
-        <LinearGradient
-          colors={["rgba(111, 255, 255, 0.06)", "rgba(118, 86, 255, 0.14)", "rgba(11, 16, 26, 0.55)"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.topSheen} pointerEvents="none" />
-        <View style={styles.border} pointerEvents="none" />
-        <View style={[styles.row, { paddingHorizontal: barPadding }]}>
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.bubble,
-              {
-                opacity: bubbleOpacity,
-                transform: [{ translateX: bubbleX }],
-                width: bubbleWidth,
-              },
-            ]}
-          >
-            <LinearGradient
-              colors={["rgba(255, 255, 255, 0.26)", "rgba(255, 255, 255, 0.12)", "rgba(255,255,255,0.04)"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={styles.bubbleGloss} />
-            <View style={styles.bubbleEdge} />
-          </Animated.View>
-          {routes.map((route, index) => {
-            const options = descriptors[route.key]?.options ?? {};
-            const isFocused = state.index === index;
-            const label = getLabel(route.name, options);
-            const icon = ICONS[route.name] ?? ICONS.index;
-            const iconName = isFocused ? icon.active : icon.inactive;
-            const resolvedIcon =
-              (Ionicons as any)?.glyphMap?.[iconName] ? iconName : "help-circle";
+      <View pointerEvents="box-none" style={[styles.wrapper, { bottom: safeBottom }]}>
+      <View style={[styles.row, { width: rowWidth }]}>
+        <View style={[styles.leftPill, { width: leftPillWidth }]}>
+          <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+          <LinearGradient
+            colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.pillBorder} pointerEvents="none" />
 
-            const onPress = () => {
-              const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
-
-            const onLongPress = () => {
-              navigation.emit({ type: "tabLongPress", target: route.key });
-            };
-
-            return (
-              <Pressable
-                key={route.key}
-                accessibilityRole="button"
-                accessibilityState={isFocused ? { selected: true } : {}}
-                accessibilityLabel={options.tabBarAccessibilityLabel}
-                testID={options.tabBarTestID}
-                onPress={onPress}
-                onLongPress={onLongPress}
-                onLayout={(event) => handleLayout(route.key, event.nativeEvent.layout)}
-                hitSlop={12}
-                style={({ pressed }) => [
-                  styles.item,
-                  isFocused && styles.itemActive,
-                  pressed && styles.itemPressed,
-                ]}
-              >
-                <Ionicons
-                  name={resolvedIcon}
-                  size={22}
-                  color={isFocused ? tokens.colors.text : "rgba(235, 244, 255, 0.82)"}
-                />
-                <Text
-                  numberOfLines={1}
+          <View style={styles.track}>
+            <View
+              style={styles.trackInner}
+              onLayout={(event) => {
+                const width = event.nativeEvent.layout.width;
+                setTrackWidth((prev) => (prev === width ? prev : width));
+              }}
+              {...panResponder.panHandlers}
+            >
+              {slotWidth > 0 && (
+                <Animated.View
+                  pointerEvents="none"
                   style={[
-                    styles.label,
-                    { color: isFocused ? tokens.colors.text : "rgba(235, 244, 255, 0.82)" },
+                    styles.bubbleTrack,
+                    {
+                      opacity: bubbleOpacity,
+                      width: bubbleWidth,
+                      transform: [{ translateX: bubbleX }],
+                    },
                   ]}
                 >
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  <Animated.View style={[styles.bubble, { transform: [{ scale: bubbleScale }] }]}>
+                    <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
+                    <LinearGradient
+                      colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  </Animated.View>
+                </Animated.View>
+              )}
+
+              <View style={styles.slotsRow}>
+                {LEFT_TABS.map((tab, index) => {
+                  const isActive = visualLeftIndex === index && !rightActive;
+                  const iconName = isActive ? tab.active : tab.inactive;
+                  return (
+                    <Pressable
+                      key={tab.key}
+                      accessibilityRole="button"
+                      accessibilityState={isActive ? { selected: true } : {}}
+                      hitSlop={10}
+                      style={({ pressed }) => [styles.tabSlot, pressed && styles.tabPressed]}
+                      onLayout={(event) => {
+                        const layout = event.nativeEvent.layout;
+                        const center = layout.x + layout.width / 2;
+                        if (slotCentersRef.current[index] !== center) {
+                          slotCentersRef.current[index] = center;
+                          forceSlotUpdate((value) => value + 1);
+                        }
+                      }}
+                      onPress={() => {
+                        if (tab.key !== currentRouteName) {
+                          navigation.navigate(tab.key);
+                        }
+                        if (slotWidth) setBubbleToIndex(index);
+                      }}
+                      onPressIn={() => {
+                        if (draggingRef.current) return;
+                        animatePress(true);
+                      }}
+                      onPressOut={() => {
+                        if (draggingRef.current) return;
+                        animatePress(false);
+                      }}
+                    >
+                      <View style={styles.iconBox}>
+                        <Ionicons
+                          name={iconName}
+                          size={26}
+                          color={isActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
+                        />
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
         </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={rightActive ? { selected: true } : {}}
+          style={({ pressed }) => [
+            styles.rightPill,
+            { width: rightPillWidth },
+            pressed && styles.tabPressed,
+          ]}
+          hitSlop={10}
+          onPress={() => {
+            navigation.navigate(RIGHT_TAB.key, { search: "1" });
+          }}
+        >
+          <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+          <LinearGradient
+            colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.pillBorder} pointerEvents="none" />
+          <View style={styles.rightTrack}>
+            {rightActive && (
+              <View pointerEvents="none" style={styles.rightBubble}>
+                <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
+                <LinearGradient
+                  colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+            )}
+            <View style={styles.iconBox}>
+              <Ionicons
+                name={RIGHT_TAB.icon}
+                size={28}
+                color={rightActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
+              />
+            </View>
+          </View>
+        </Pressable>
       </View>
     </View>
   );
@@ -172,101 +367,95 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
-    paddingHorizontal: 16,
-  },
-  container: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: 999,
-    overflow: "hidden",
-    paddingVertical: 10,
-    backgroundColor: "rgba(10, 14, 24, 0.72)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: WRAPPER_PADDING,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: PILL_GAP,
+  },
+  leftPill: {
+    height: TAB_BAR_HEIGHT,
+    borderRadius: TAB_BAR_HEIGHT / 2,
+    overflow: "hidden",
+    backgroundColor: "rgba(14,18,28,0.45)",
+  },
+  track: {
+    flex: 1,
+    paddingHorizontal: TRACK_PADDING,
+    paddingVertical: TRACK_PADDING,
+  },
+  trackInner: {
+    flex: 1,
     position: "relative",
   },
-  item: {
-    flex: 1,
+  rightPill: {
+    height: TAB_BAR_HEIGHT,
+    borderRadius: TAB_BAR_HEIGHT / 2,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 6,
-    minWidth: 54,
-    gap: 3,
-    minHeight: tokens.layout.touchTarget + 6,
+    backgroundColor: "rgba(14,18,28,0.45)",
   },
-  itemActive: {
-    transform: [{ translateY: -1 }],
-  },
-  itemPressed: {
-    opacity: 0.8,
-  },
-  label: {
-    fontSize: 10,
-    fontWeight: "600",
-    letterSpacing: 0.2,
-  },
-  bubble: {
-    position: "absolute",
-    top: 3,
-    bottom: 3,
-    left: 0,
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.14)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    shadowColor: "rgba(111, 255, 255, 0.5)",
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-  },
-  bubbleGloss: {
-    position: "absolute",
-    top: 2,
-    left: 8,
-    right: 8,
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  bubbleEdge: {
-    position: "absolute",
-    left: 6,
-    right: 6,
-    bottom: 4,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(6, 12, 20, 0.35)",
-  },
-  topSheen: {
-    position: "absolute",
-    top: 0,
-    left: 8,
-    right: 8,
-    height: 12,
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-  },
-  border: {
+  pillBorder: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderColor: "rgba(255,255,255,0.08)",
   },
-  shadow: {
+  bubbleTrack: {
     position: "absolute",
-    top: -8,
-    bottom: -8,
-    left: -4,
-    right: -4,
+    top: BUBBLE_INSET,
+    bottom: BUBBLE_INSET,
+    left: 0,
+  },
+  bubble: {
+    flex: 1,
     borderRadius: 999,
-    shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 12 },
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  slotsRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  tabSlot: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconBox: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  rightTrack: {
+    flex: 1,
+    width: "100%",
+    paddingHorizontal: TRACK_PADDING,
+    paddingVertical: TRACK_PADDING,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rightBubble: {
+    position: "absolute",
+    top: BUBBLE_INSET,
+    bottom: BUBBLE_INSET,
+    left: BUBBLE_INSET,
+    right: BUBBLE_INSET,
+    borderRadius: 999,
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
   },
 });

@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { getActiveSession } from "./session";
 import { resetOnboardingDone } from "./onboardingState";
 import { clearOnboardingDraft } from "./onboardingDraft";
+import { perfMark, perfMeasure } from "./perf";
 
 type AuthState = {
   loading: boolean;
@@ -29,11 +30,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let mounted = true;
     const hydrate = async () => {
+      perfMark("auth_get_session");
       const nextSession = await getActiveSession();
 
       if (mounted) {
         setSession(nextSession);
         setLoading(false);
+        perfMeasure("auth_session_ready", "auth_get_session");
       }
     };
 

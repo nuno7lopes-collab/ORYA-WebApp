@@ -1,5 +1,5 @@
-import { useCallback } from "react";
-import { FlatList, Platform, Pressable, Text, View } from "react-native";
+import { useCallback, useState } from "react";
+import { FlatList, Platform, Pressable, Text, View, InteractionManager } from "react-native";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
@@ -7,17 +7,20 @@ import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { useAgoraFeed } from "../../features/agora/hooks";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { TopAppHeader } from "../../components/navigation/TopAppHeader";
+import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function AgoraScreen() {
+  const [dataReady, setDataReady] = useState(false);
   const { isLoading, isError, hasLive, liveItems, soonItems, personalizedItems, refetch } =
-    useAgoraFeed();
-  const { data: ipLocation } = useIpLocation();
+    useAgoraFeed(dataReady);
+  const { data: ipLocation } = useIpLocation(dataReady);
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
-  const insets = useSafeAreaInsets();
   const tabBarPadding = useTabBarPadding();
+  const topPadding = useTopHeaderPadding(16);
 
   const showSkeleton = isLoading && liveItems.length + soonItems.length + personalizedItems.length === 0;
   const handleRefresh = useCallback(() => {
@@ -26,28 +29,36 @@ export default function AgoraScreen() {
 
   const keyExtractor = useCallback((_: number, index: number) => `agora-${index}`, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (active) setDataReady(true);
+      });
+      return () => {
+        active = false;
+        task.cancel();
+        setDataReady(false);
+      };
+    }, []),
+  );
+
   return (
     <LiquidBackground variant="solid">
+      <TopAppHeader />
       <FlatList
         data={showSkeleton ? [1, 2, 3] : []}
         keyExtractor={keyExtractor}
         onRefresh={handleRefresh}
         refreshing={isLoading}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding, paddingTop: topPadding }}
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={4}
         maxToRenderPerBatch={4}
         updateCellsBatchingPeriod={40}
         windowSize={5}
         ListHeaderComponent={
-          <View style={{ paddingTop: insets.top + 12 }}>
-            <View className="pb-3">
-              <Text className="text-white text-[30px] font-semibold">Agora</Text>
-              <Text className="mt-1 text-white/60 text-sm">
-                O que está a acontecer neste momento e o que vem já a seguir.
-              </Text>
-            </View>
-
+          <View>
             {isError ? (
               <GlassCard className="mb-5" intensity={52}>
                 <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o Agora.</Text>
@@ -79,7 +90,7 @@ export default function AgoraScreen() {
 
             {!showSkeleton && soonItems.length > 0 ? (
               <View className="pb-2">
-                <SectionHeader title="A seguir" subtitle="Próximas 72h." />
+                <SectionHeader title="A seguir" subtitle="Próximas 24-72h." />
                 {soonItems.slice(0, 6).map((item, index) => (
                   <EventCardSquare
                     key={`soon-${item.id}-${item.slug}`}

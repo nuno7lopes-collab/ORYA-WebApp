@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev --webpack",
+    "dev:fast": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev --turbo",
     "dev:all": "node scripts/dev-all.js",
     "mobile:dev": "npm --prefix apps/mobile run start -- -c --go",
     "mobile:dev:tunnel": "npm --prefix apps/mobile run start -- -c --tunnel",

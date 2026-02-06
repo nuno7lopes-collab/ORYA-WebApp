@@ -1,5 +1,5 @@
 import { api, unwrapApiResponse } from "../../lib/api";
-import { AgendaItem, ProfileAgendaStats, ProfileSummary } from "./types";
+import { AgendaItem, ProfileAgendaStats, ProfileSummary, PublicProfileEvents, PublicProfilePayload } from "./types";
 
 type MePayload = {
   user?: {
@@ -168,4 +168,26 @@ export const fetchProfileAgenda = async (
     items,
     stats: toAgendaStats(items),
   };
+};
+
+export const fetchPublicProfile = async (
+  username: string,
+  accessToken?: string | null,
+): Promise<PublicProfilePayload> => {
+  const response = await api.requestWithAccessToken<unknown>(
+    `/api/public/profile?username=${encodeURIComponent(username)}`,
+    accessToken,
+  );
+  return unwrapApiResponse<PublicProfilePayload>(response);
+};
+
+export const fetchPublicProfileEvents = async (
+  username: string,
+  accessToken?: string | null,
+): Promise<PublicProfileEvents> => {
+  const response = await api.requestWithAccessToken<unknown>(
+    `/api/public/profile/events?username=${encodeURIComponent(username)}`,
+    accessToken,
+  );
+  return unwrapApiResponse<PublicProfileEvents>(response);
 };

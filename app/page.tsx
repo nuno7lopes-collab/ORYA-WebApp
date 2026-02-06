@@ -1,5 +1,11 @@
 import { redirect } from "next/navigation";
+import DescobrirPage from "./descobrir/page";
 
-export default function RootRedirectPage() {
-  redirect("/descobrir");
+type RootRedirectProps = Parameters<typeof DescobrirPage>[0];
+
+export default async function RootRedirectPage(props: RootRedirectProps) {
+  if (process.env.NODE_ENV === "production") {
+    redirect("/descobrir");
+  }
+  return <DescobrirPage {...props} />;
 }

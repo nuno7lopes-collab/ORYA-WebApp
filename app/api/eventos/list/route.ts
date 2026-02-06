@@ -4,8 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 
 const DEFAULT_PAGE_SIZE = 12;
+const CACHE_TTL_MS = 30 * 1000;
 
 async function _GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -56,8 +58,24 @@ async function _GET(req: NextRequest) {
 
   let items: EventListItem[] = [];
   let nextCursor: number | null = null;
+  let shouldCache = false;
 
   try {
+    const cacheKey = buildCacheKey([
+      "eventos",
+      category ?? "",
+      typeFilter ?? "",
+      search ?? "",
+      cursor ?? "",
+      take,
+    ]);
+    const cached = getCache<{ events: EventListItem[]; pagination: { nextCursor: number | null; hasMore: boolean } }>(
+      cacheKey,
+    );
+    if (cached) {
+      return jsonWrap(cached, { status: 200 });
+    }
+
     const filters: Prisma.EventWhereInput[] = [
       { status: { in: ["PUBLISHED", "DATE_CHANGED"] } },
       { isDeleted: false },
@@ -203,18 +221,33 @@ async function _GET(req: NextRequest) {
     }
 
     items = mapped;
+    shouldCache = true;
   } catch (error) {
     console.error("[api/eventos/list] Erro ao carregar eventos, fallback para lista vazia:", error);
     items = [];
     nextCursor = null;
   }
 
-  return jsonWrap({
+  const payload = {
     events: items,
     pagination: {
       nextCursor,
       hasMore: nextCursor !== null,
     },
-  });
+  };
+
+  if (shouldCache) {
+    const cacheKey = buildCacheKey([
+      "eventos",
+      category ?? "",
+      typeFilter ?? "",
+      search ?? "",
+      cursor ?? "",
+      take,
+    ]);
+    setCache(cacheKey, payload, CACHE_TTL_MS);
+  }
+
+  return jsonWrap(payload);
 }
 export const GET = withApiEnvelope(_GET);

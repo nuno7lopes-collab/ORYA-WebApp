@@ -5,6 +5,7 @@ import { tokens } from "@orya/shared";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { SocialSuggestion } from "./types";
+import { useRouter } from "expo-router";
 
 type Props = {
   item: SocialSuggestion;
@@ -19,6 +20,7 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
   onFollow,
   onUnfollow,
 }: Props) {
+  const router = useRouter();
   const fullName = item.fullName || item.username || "Utilizador";
   const subtitle = item.city
     ? `${item.city}${item.mutualsCount ? ` · ${item.mutualsCount} em comum` : ""}`
@@ -34,39 +36,46 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
   return (
     <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.md }}>
       <View className="flex-row items-center gap-3">
-        <View
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 16,
-            overflow: "hidden",
-            backgroundColor: "rgba(255,255,255,0.08)",
-            justifyContent: "center",
-            alignItems: "center",
+        <Pressable
+          onPress={() => {
+            if (item.username) router.push(`/@${item.username}`);
           }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
-          {item.avatarUrl ? (
-            <Image
-              source={{ uri: item.avatarUrl }}
-              style={{ width: 52, height: 52 }}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={120}
-            />
-          ) : (
-            <Ionicons name="person" size={22} color="rgba(255,255,255,0.7)" />
-          )}
-        </View>
+          <View
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 16,
+              overflow: "hidden",
+              backgroundColor: "rgba(255,255,255,0.08)",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            {item.avatarUrl ? (
+              <Image
+                source={{ uri: item.avatarUrl }}
+                style={{ width: 52, height: 52 }}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={120}
+              />
+            ) : (
+              <Ionicons name="person" size={22} color="rgba(255,255,255,0.7)" />
+            )}
+          </View>
 
-        <View style={{ flex: 1 }}>
-          <Text className="text-white text-base font-semibold" numberOfLines={1}>
-            {fullName}
-          </Text>
-          {item.username ? <Text className="text-white/60 text-xs">@{item.username}</Text> : null}
-          <Text className="text-white/55 text-xs mt-1" numberOfLines={1}>
-            {subtitle}
-          </Text>
-        </View>
+          <View style={{ flex: 1 }}>
+            <Text className="text-white text-base font-semibold" numberOfLines={1}>
+              {fullName}
+            </Text>
+            {item.username ? <Text className="text-white/60 text-xs">@{item.username}</Text> : null}
+            <Text className="text-white/55 text-xs mt-1" numberOfLines={1}>
+              {subtitle}
+            </Text>
+          </View>
+        </Pressable>
 
         <Pressable
           onPress={() => (isActive ? onUnfollow(item.id) : onFollow(item.id))}

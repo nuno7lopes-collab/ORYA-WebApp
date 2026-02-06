@@ -18,18 +18,22 @@ const followRequestsKey = ["network", "follow-requests"];
 const searchUsersKey = ["search", "users"];
 const searchOrgsKey = ["search", "orgs"];
 
-export const useNetworkSuggestions = () =>
+export const useNetworkSuggestions = (enabled = true) =>
   useQuery({
     queryKey: suggestionsKey,
     queryFn: () => fetchSocialSuggestions(18),
     staleTime: 1000 * 60,
+    enabled,
+    refetchOnWindowFocus: false,
   });
 
-export const useFollowRequests = () =>
+export const useFollowRequests = (enabled = true) =>
   useQuery({
     queryKey: followRequestsKey,
     queryFn: fetchFollowRequests,
     staleTime: 1000 * 30,
+    enabled,
+    refetchOnWindowFocus: false,
   });
 
 const updateUserCaches = (

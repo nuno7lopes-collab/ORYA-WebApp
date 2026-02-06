@@ -3,17 +3,20 @@ import path from "path";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 const ENABLE_CSP_REPORT_ONLY = process.env.CSP_REPORT_ONLY === "1";
+const SCRIPT_SRC = ["'self'", "'unsafe-inline'", "https:"];
+if (!IS_PROD) SCRIPT_SRC.push("'unsafe-eval'");
+
 const CSP_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "upgrade-insecure-requests",
+  ...(IS_PROD ? ["upgrade-insecure-requests"] : []),
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https:",
   "style-src 'self' 'unsafe-inline' https:",
-  "script-src 'self' 'unsafe-inline' https:",
+  `script-src ${SCRIPT_SRC.join(" ")}`,
   "connect-src 'self' https: wss:",
 ].join("; ");
 

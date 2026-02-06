@@ -3,6 +3,7 @@ const { spawn, execSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const http = require("http");
 const https = require("https");
 const repoRoot = path.resolve(__dirname, "..");
@@ -90,6 +91,43 @@ ensureNodeModules();
 function parseBool(value, fallback) {
   if (value === undefined) return fallback;
   return !["0", "false", "no"].includes(String(value).toLowerCase());
+}
+
+function parseList(value) {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isPrivateIpv4(address) {
+  if (!address) return false;
+  if (address.startsWith("10.")) return true;
+  if (address.startsWith("192.168.")) return true;
+  const match = address.match(/^172\.(\d+)\./);
+  if (!match) return false;
+  const octet = Number(match[1]);
+  return octet >= 16 && octet <= 31;
+}
+
+function detectLanAddress() {
+  const nets = os.networkInterfaces();
+  const candidates = [];
+  for (const iface of Object.values(nets)) {
+    if (!iface) continue;
+    for (const addr of iface) {
+      if (!addr || addr.family !== "IPv4" || addr.internal) continue;
+      candidates.push(addr.address);
+    }
+  }
+  if (candidates.length === 0) return null;
+  const privateCandidate = candidates.find((ip) => isPrivateIpv4(ip));
+  return privateCandidate || candidates[0] || null;
+}
+
+function isWildcardHost(host) {
+  return host === "0.0.0.0" || host === "::" || host === "0:0:0:0:0:0:0:0";
 }
 
 function run(label, cmd, args, extraEnv) {
@@ -347,11 +385,14 @@ function resetDevState() {
   [3000, 3001, 3002, 3003].forEach((port) => {
     killPortProcesses(port, ["next dev", "next-server", "node_modules/.bin/next"], false);
   });
-  // Clean Next cache to avoid stale locks.
-  const nextDir = path.join(repoRoot, ".next");
-  if (fs.existsSync(nextDir)) {
-    fs.rmSync(nextDir, { recursive: true, force: true });
-    console.log("[dev-all] Removed .next cache.");
+  // Clean Next cache only when explicitly requested (faster default boot).
+  const shouldCleanNext = parseBool(process.env.DEV_ALL_CLEAN_NEXT, false);
+  if (shouldCleanNext) {
+    const nextDir = path.join(repoRoot, ".next");
+    if (fs.existsSync(nextDir)) {
+      fs.rmSync(nextDir, { recursive: true, force: true });
+      console.log("[dev-all] Removed .next cache.");
+    }
   }
 }
 
@@ -362,8 +403,16 @@ cleanupPort(3001, ["next dev", "node_modules/.bin/next"]);
 cleanupPort(4001, ["chat-ws-server.js"]);
 cleanupNextDevLockIfIdle();
 
-const localHost = process.env.HOSTNAME || "127.0.0.1";
-process.env.HOSTNAME = localHost;
+const hostBind = process.env.HOSTNAME || "0.0.0.0";
+process.env.HOSTNAME = hostBind;
+const publicHost =
+  process.env.DEV_ALL_PUBLIC_HOST ||
+  process.env.PUBLIC_HOST ||
+  (isWildcardHost(hostBind) ? detectLanAddress() : hostBind) ||
+  "127.0.0.1";
+if (hostBind !== publicHost) {
+  console.log(`[dev-all] Host bind: ${hostBind}. Public host: ${publicHost}.`);
+}
 
 const baseNextPort = Number(process.env.NEXT_PORT || process.env.PORT || 3000);
 const nextPort = findAvailablePort(baseNextPort, 5);
@@ -373,10 +422,13 @@ if (nextPort !== baseNextPort) {
 process.env.NEXT_PORT = String(nextPort);
 process.env.PORT = String(nextPort);
 if (!process.env.ORYA_BASE_URL) {
-  process.env.ORYA_BASE_URL = `http://${localHost}:${nextPort}`;
+  process.env.ORYA_BASE_URL = `http://${publicHost}:${nextPort}`;
 }
 if (!process.env.WORKER_BASE_URL) {
   process.env.WORKER_BASE_URL = process.env.ORYA_BASE_URL;
+}
+if (!process.env.NEXT_PUBLIC_BASE_URL) {
+  process.env.NEXT_PUBLIC_BASE_URL = process.env.ORYA_BASE_URL;
 }
 
 const baseChatWsPort = Number(process.env.CHAT_WS_PORT || 4001);
@@ -387,14 +439,24 @@ if (chatWsPort !== baseChatWsPort) {
 
 process.env.CHAT_WS_PORT = String(chatWsPort);
 if (!process.env.CHAT_WS_HOST) {
-  process.env.CHAT_WS_HOST = localHost;
+  process.env.CHAT_WS_HOST = hostBind;
 }
 if (!process.env.NEXT_PUBLIC_CHAT_WS_URL) {
-  process.env.NEXT_PUBLIC_CHAT_WS_URL = `ws://${localHost}:${chatWsPort}`;
+  process.env.NEXT_PUBLIC_CHAT_WS_URL = `ws://${publicHost}:${chatWsPort}`;
 }
 
+const nextScript = process.env.DEV_ALL_NEXT_SCRIPT || "dev:fast";
+const nextArgs = [
+  "run",
+  nextScript,
+  "--",
+  ...(process.env.DEV_ALL_NEXT_ARGS ? parseList(process.env.DEV_ALL_NEXT_ARGS) : []),
+  "--hostname",
+  hostBind,
+];
+
 const children = [
-  run("dev", npmCmd, ["run", "dev", "--", "--hostname", localHost]),
+  run("dev", npmCmd, nextArgs),
 ];
 
 let deferredStarted = false;
@@ -404,14 +466,31 @@ function startDeferredServices() {
   deferredStarted = true;
   console.log("[dev-all] Server ready. Starting cron/worker/services...");
 
-  children.push(run("cron", npmCmd, ["run", "cron:local"]));
-
   const startWorker = parseBool(process.env.START_WORKER, true);
+  const startChatWs = parseBool(process.env.START_CHAT_WS, true);
+  const startRedis = parseBool(process.env.START_REDIS, true);
+  const startStripe = parseBool(process.env.START_STRIPE, true);
+  const startCron = parseBool(process.env.START_CRON, true);
+
+  if (startCron) {
+    const cronSkip = new Set(parseList(process.env.CRON_SKIP));
+    const skipOperations = parseBool(process.env.DEV_ALL_SKIP_OPERATIONS_CRON, startWorker);
+    if (skipOperations && !parseBool(process.env.CRON_FORCE_OPERATIONS, false)) {
+      cronSkip.add("operations");
+    }
+    const cronEnv = {
+      ...(cronSkip.size > 0 ? { CRON_SKIP: Array.from(cronSkip).join(",") } : {}),
+      ...(process.env.DEV_ALL_CRON_MAX_CONCURRENCY
+        ? { CRON_MAX_CONCURRENCY: process.env.DEV_ALL_CRON_MAX_CONCURRENCY }
+        : {}),
+    };
+    children.push(run("cron", npmCmd, ["run", "cron:local"], cronEnv));
+  }
+
   if (startWorker) {
     children.push(run("worker", npmCmd, ["run", "worker"]));
   }
 
-  const startChatWs = parseBool(process.env.START_CHAT_WS, true);
   if (startChatWs) {
     const chatWsEnv = {
       CHAT_POLLING_ONLY: "0",
@@ -420,13 +499,11 @@ function startDeferredServices() {
     children.push(run("chat-ws", npmCmd, ["run", "chat:ws"], chatWsEnv));
   }
 
-  const startRedis = parseBool(process.env.START_REDIS, true);
   if (startRedis) {
     const redisPort = process.env.REDIS_PORT || "6379";
     children.push(run("redis", redisCmd, ["--port", redisPort]));
   }
 
-  const startStripe = parseBool(process.env.START_STRIPE, true);
   if (startStripe) {
     const baseUrlRaw =
       process.env.STRIPE_BASE_URL ||
@@ -472,10 +549,13 @@ function fetchStatus(url, headers) {
 }
 
 async function checkServerReady() {
-  const baseUrl = process.env.ORYA_BASE_URL || `http://${localHost}:${nextPort}`;
-  const targetUrl = process.env.ORYA_CRON_SECRET
-    ? `${baseUrl.replace(/\/+$/, "")}/api/internal/ops/health`
-    : baseUrl;
+  const baseUrl = process.env.ORYA_BASE_URL || `http://${publicHost}:${nextPort}`;
+  const healthPath =
+    process.env.DEV_ALL_HEALTH_PATH ||
+    (process.env.ORYA_CRON_SECRET ? "/api/internal/ping" : "/");
+  const targetUrl = healthPath.startsWith("http")
+    ? healthPath
+    : `${baseUrl.replace(/\/+$/, "")}${healthPath}`;
   const headers = process.env.ORYA_CRON_SECRET
     ? { "X-ORYA-CRON-SECRET": process.env.ORYA_CRON_SECRET }
     : undefined;

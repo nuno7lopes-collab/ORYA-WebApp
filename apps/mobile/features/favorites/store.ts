@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { safeAsyncStorage } from "../../lib/storage";
 
 type FavoriteEntry = {
   eventId: number;
@@ -13,6 +13,7 @@ type FavoritesState = {
   isFavorite: (eventId: number) => boolean;
   toggleFavorite: (eventId: number, notify?: boolean) => boolean;
   setFavorite: (eventId: number, next: boolean, notify?: boolean) => void;
+  setAll: (items: FavoriteEntry[]) => void;
   getAll: () => FavoriteEntry[];
 };
 
@@ -48,15 +49,20 @@ export const useFavoritesStore = create<FavoritesState>()(
         items[eventId] = buildEntry(eventId, notify);
         set({ items });
       },
+      setAll: (entries) => {
+        const next: Record<number, FavoriteEntry> = {};
+        entries.forEach((entry) => {
+          if (typeof entry?.eventId === "number") {
+            next[entry.eventId] = entry;
+          }
+        });
+        set({ items: next });
+      },
       getAll: () => Object.values(get().items),
     }),
     {
       name: "orya_favorites",
-      storage: {
-        getItem: (key) => AsyncStorage.getItem(key),
-        setItem: (key, value) => AsyncStorage.setItem(key, value),
-        removeItem: (key) => AsyncStorage.removeItem(key),
-      },
+      storage: createJSONStorage(() => safeAsyncStorage),
       version: 1,
     },
   ),

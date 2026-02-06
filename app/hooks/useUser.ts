@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 type Role = "user" | "organization" | "admin" | string;
@@ -38,7 +38,42 @@ type ApiMeResponse = {
   needsEmailConfirmation?: boolean;
 };
 
+type UserListenerState = {
+  authAttached: boolean;
+  profileAttached: boolean;
+};
+
+const globalListenerState: UserListenerState =
+  (globalThis as any).__ORYA_USER_LISTENERS__ ??
+  ((globalThis as any).__ORYA_USER_LISTENERS__ = {
+    authAttached: false,
+    profileAttached: false,
+  });
+
+const ensureAuthListener = () => {
+  if (typeof window === "undefined" || globalListenerState.authAttached) return;
+  globalListenerState.authAttached = true;
+  const {
+    data: { subscription },
+  } = supabaseBrowser.auth.onAuthStateChange(() => {
+    globalMutate("/api/auth/me");
+  });
+  (globalThis as any).__ORYA_USER_LISTENERS__.authUnsub = () => subscription.unsubscribe();
+};
+
+const ensureProfileListener = () => {
+  if (typeof window === "undefined" || globalListenerState.profileAttached) return;
+  globalListenerState.profileAttached = true;
+  const handler = () => globalMutate("/api/auth/me");
+  window.addEventListener("orya:profile-updated", handler);
+  (globalThis as any).__ORYA_USER_LISTENERS__.profileHandler = handler;
+};
+
 const fetcher = async (url: string) => {
+  const sessionRes = await supabaseBrowser.auth.getSession();
+  if (!sessionRes.data.session) {
+    return { user: null, profile: null };
+  }
   const res = await fetch(url, { credentials: "include", cache: "no-store" });
   if (res.status === 401) {
     // Sem sessão válida → devolve user/profile null sem erro
@@ -68,21 +103,9 @@ export function useUser() {
 
   // Forçar refresh quando o estado de auth muda (sign in/out) para evitar estado preso
   useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabaseBrowser.auth.onAuthStateChange(() => {
-      mutate();
-    });
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [mutate]);
-
-  useEffect(() => {
-    const handler = () => mutate();
-    window.addEventListener("orya:profile-updated", handler);
-    return () => window.removeEventListener("orya:profile-updated", handler);
-  }, [mutate]);
+    ensureAuthListener();
+    ensureProfileListener();
+  }, []);
 
   // Claim guest purchases após email verificado (best-effort)
   useEffect(() => {

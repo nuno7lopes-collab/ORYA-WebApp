@@ -14,6 +14,7 @@ import { useAuth } from "../../lib/auth";
 import { getMobileEnv } from "../../lib/env";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
+import { getUserFacingError } from "../../lib/errors";
 
 const formatMoney = (cents: number, currency?: string | null): string => {
   if (!Number.isFinite(cents)) return "—";
@@ -81,9 +82,9 @@ export default function CheckoutScreen() {
   const selectedMethod = draft?.paymentMethod ?? (allowApplePay ? "apple_pay" : "card");
   const resolvedMethod = !allowApplePay && selectedMethod === "apple_pay" ? "card" : selectedMethod;
 
-  const lineItems = draft?.breakdown?.lines ?? [];
   const totalLabel = formatMoney(draft?.totalCents ?? 0, draft?.currency);
   const isFreeCheckout = Boolean(draft && draft.totalCents <= 0);
+  const showPaymentMethods = Boolean(draft) && !isFreeCheckout;
   const canPay = Boolean(draft && session?.user?.id && (stripeKey || isFreeCheckout));
   const handleBack = () => {
     safeBack(router, navigation);
@@ -136,7 +137,7 @@ export default function CheckoutScreen() {
         applyCheckoutStatus(status);
         return status;
       } catch (err: any) {
-        setError(err?.message ?? "Não foi possível verificar o pagamento.");
+        setError(getUserFacingError(err, "Não foi possível verificar o pagamento."));
         return null;
       } finally {
         setCheckingStatus(false);
@@ -235,7 +236,7 @@ export default function CheckoutScreen() {
       });
 
       if (init.error) {
-        setError(init.error.message ?? "Erro ao iniciar pagamento.");
+        setError(getUserFacingError(init.error, "Erro ao iniciar pagamento."));
         setProcessing(false);
         return;
       }
@@ -243,7 +244,7 @@ export default function CheckoutScreen() {
       const presented = await presentPaymentSheet();
       if (presented.error) {
         if (presented.error.code !== "Canceled") {
-          setError(presented.error.message ?? "Pagamento cancelado.");
+          setError(getUserFacingError(presented.error, "Pagamento cancelado."));
         }
         setProcessing(false);
         return;
@@ -254,7 +255,7 @@ export default function CheckoutScreen() {
         paymentIntentId,
       });
     } catch (err: any) {
-      setError(err?.message ?? "Não foi possível concluir o pagamento.");
+      setError(getUserFacingError(err, "Não foi possível concluir o pagamento."));
     } finally {
       setProcessing(false);
     }
@@ -297,7 +298,10 @@ export default function CheckoutScreen() {
       return {
         tone: "danger" as const,
         title: "Pagamento falhou",
-        message: checkoutStatus.errorMessage ?? "Não foi possível concluir o pagamento.",
+        message: getUserFacingError(
+          checkoutStatus.errorMessage,
+          "Não foi possível concluir o pagamento.",
+        ),
         actionLabel: "Tentar novamente",
         action: () => {
           resetIntent();
@@ -392,54 +396,44 @@ export default function CheckoutScreen() {
                     <Text className="text-white/60 text-sm">Total</Text>
                     <Text className="text-white text-xl font-semibold">{totalLabel}</Text>
                   </View>
-                  {!isFreeCheckout && lineItems.length > 0 ? (
-                    <View className="gap-1 pt-2">
-                      {lineItems.map((line) => (
-                        <View key={`${line.ticketTypeId}-${line.name}`} className="flex-row justify-between">
-                          <Text className="text-white/55 text-xs">
-                            {line.name} · {line.quantity}x
-                          </Text>
-                          <Text className="text-white/60 text-xs">{formatMoney(line.lineTotalCents, line.currency)}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
                   {isFreeCheckout ? (
                     <Text className="text-white/55 text-xs">Limite por pessoa: 1</Text>
                   ) : null}
                 </View>
               </GlassCard>
 
-              <GlassCard intensity={52}>
-                <View className="gap-3">
-                  <Text className="text-white text-sm font-semibold">Método de pagamento</Text>
-                  <View className="flex-row flex-wrap gap-2">
-                    {([
-                      { key: "apple_pay", label: "Apple Pay", enabled: allowApplePay },
-                      { key: "card", label: "Cartão", enabled: true },
-                      { key: "mbway", label: "MBWay", enabled: true },
-                    ] as const).map((option) => {
-                      if (!option.enabled) return null;
-                      const active = selectedMethod === option.key;
-                      return (
-                        <Pressable
-                          key={option.key}
-                          onPress={() => setPaymentMethod(option.key)}
-                          className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
-                          style={{ minHeight: tokens.layout.touchTarget }}
-                        >
-                          <Text className={active ? "text-white text-sm font-semibold" : "text-white/70 text-sm"}>
-                            {option.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
+              {showPaymentMethods ? (
+                <GlassCard intensity={52}>
+                  <View className="gap-3">
+                    <Text className="text-white text-sm font-semibold">Método de pagamento</Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {([
+                        { key: "apple_pay", label: "Apple Pay", enabled: allowApplePay },
+                        { key: "card", label: "Cartão", enabled: true },
+                        { key: "mbway", label: "MBWay", enabled: true },
+                      ] as const).map((option) => {
+                        if (!option.enabled) return null;
+                        const active = selectedMethod === option.key;
+                        return (
+                          <Pressable
+                            key={option.key}
+                            onPress={() => setPaymentMethod(option.key)}
+                            className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
+                            style={{ minHeight: tokens.layout.touchTarget }}
+                          >
+                            <Text className={active ? "text-white text-sm font-semibold" : "text-white/70 text-sm"}>
+                              {option.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Text className="text-white/55 text-xs">
+                      {resolveMethodLabel(resolvedMethod)} em checkout nativo, sem sair da app.
+                    </Text>
                   </View>
-                  <Text className="text-white/55 text-xs">
-                    {resolveMethodLabel(resolvedMethod)} em checkout nativo, sem sair da app.
-                  </Text>
-                </View>
-              </GlassCard>
+                </GlassCard>
+              ) : null}
 
               {!session?.user?.id ? (
                 <GlassCard intensity={48}>

@@ -7,9 +7,11 @@ import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 
 const DEFAULT_PAGE_SIZE = 12;
 const LOOKAHEAD_DAYS = 21;
+const CACHE_TTL_MS = 30 * 1000;
 
 function clampTake(value: number | null): number {
   if (!value || Number.isNaN(value)) return DEFAULT_PAGE_SIZE;
@@ -79,6 +81,24 @@ async function _GET(req: NextRequest) {
     const priceMax = Number.isFinite(priceMaxRaw) ? priceMaxRaw : null;
     const priceMinCents = Math.round(priceMin * 100);
     const priceMaxCents = priceMax !== null ? Math.round(priceMax * 100) : null;
+
+    const cacheKey = buildCacheKey([
+      "servicos",
+      q,
+      cityParam ?? "",
+      cursorParam ?? "",
+      take,
+      priceMinParam ?? "",
+      priceMaxParam ?? "",
+      dateParam ?? "",
+      dayParam ?? "",
+      kindParam ?? "",
+      tagParam ?? "",
+    ]);
+    const cached = getCache<Record<string, unknown>>(cacheKey);
+    if (cached) {
+      return jsonWrap(cached, { status: 200 });
+    }
 
     const range = buildAvailabilityRange(dateParam, dayParam);
     const now = new Date();
@@ -330,14 +350,18 @@ async function _GET(req: NextRequest) {
 
     const items = range ? mapped.filter((item) => item.nextAvailability) : mapped;
 
-    return jsonWrap({
+    const payload = {
       ok: true,
       items,
       pagination: {
         nextCursor: hasMore ? trimmed[trimmed.length - 1]?.id ?? null : null,
         hasMore,
       },
-    });
+    };
+
+    setCache(cacheKey, payload, CACHE_TTL_MS);
+
+    return jsonWrap(payload);
   } catch (err) {
     console.error("GET /api/servicos/list error:", err);
     const debug =

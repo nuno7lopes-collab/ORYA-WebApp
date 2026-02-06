@@ -48,6 +48,34 @@ if (isDev && baseUrlRaw.includes("orya.pt")) {
 }
 const baseUrl = baseUrlRaw.replace(/\/+$/, "");
 const verbose = process.env.CRON_VERBOSE === "1" || process.env.CRON_VERBOSE === "true";
+const maxConcurrencyRaw = Number(process.env.CRON_MAX_CONCURRENCY || "0");
+const maxConcurrency =
+  Number.isFinite(maxConcurrencyRaw) && maxConcurrencyRaw > 0 ? maxConcurrencyRaw : Number.POSITIVE_INFINITY;
+
+let activeCount = 0;
+const queue = [];
+
+function acquireSlot() {
+  if (!Number.isFinite(maxConcurrency) || maxConcurrency === Number.POSITIVE_INFINITY) {
+    activeCount += 1;
+    return Promise.resolve();
+  }
+  if (activeCount < maxConcurrency) {
+    activeCount += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => queue.push(resolve)).then(() => {
+    activeCount += 1;
+  });
+}
+
+function releaseSlot() {
+  activeCount = Math.max(0, activeCount - 1);
+  if (queue.length > 0 && activeCount < maxConcurrency) {
+    const next = queue.shift();
+    if (next) next();
+  }
+}
 
 function parseList(value) {
   if (!value) return [];
@@ -232,6 +260,7 @@ function makeRunner(job) {
   const run = async () => {
     if (stopped || running) return;
     running = true;
+    await acquireSlot();
     const url = `${baseUrl}${job.path}`;
     let json = null;
     try {
@@ -251,6 +280,7 @@ function makeRunner(job) {
       const message = err && typeof err === "object" ? err.message : String(err);
       logJob(job, `error: ${message}`, { backoffMs });
     } finally {
+      releaseSlot();
       running = false;
       if (!stopped) {
         let delay = job.intervalMs;

@@ -5,6 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrganizationFollowingSet } from "@/domain/social/follows";
 import { listPublicDiscoverIndex } from "@/domain/search/publicDiscover";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 import {
   PublicEventCard,
   PublicEventCardWithPrice,
@@ -12,6 +13,7 @@ import {
 } from "@/domain/events/publicEventCard";
 
 const DEFAULT_PAGE_SIZE = 12;
+const CACHE_TTL_MS = 30 * 1000;
 
 type ExploreItem = PublicEventCard;
 
@@ -105,6 +107,25 @@ async function _GET(req: NextRequest) {
   // Filtros são aplicados no builder canónico.
 
   try {
+    const cacheKey = buildCacheKey([
+      "explorar",
+      searchParam,
+      normalizedCity ?? "",
+      categoryFilters.join(","),
+      dateParam ?? "",
+      dayParam ?? "",
+      typeParam ?? "",
+      priceMinParam ?? "",
+      priceMaxParam ?? "",
+      cursorId ?? "",
+      take,
+      viewerId ?? "anon",
+    ]);
+    const cached = getCache<ExploreResponse>(cacheKey);
+    if (cached) {
+      return jsonWrap(cached, { status: 200 });
+    }
+
     const { items: indexItems, nextCursor } = await listPublicDiscoverIndex({
       q: searchParam,
       city: applyCityFilter ? normalizedCity : null,
@@ -197,13 +218,17 @@ async function _GET(req: NextRequest) {
 
     const items: ExploreItem[] = filtered.map(({ _priceFromCents, ...rest }) => rest);
 
-    return jsonWrap({
+    const payload: ExploreResponse = {
       items,
       pagination: {
         nextCursor,
         hasMore: nextCursor !== null,
       },
-    });
+    };
+
+    setCache(cacheKey, payload, CACHE_TTL_MS);
+
+    return jsonWrap(payload);
   } catch (error) {
     console.error("[api/explorar/list] erro:", error);
     // Em caso de erro, devolve lista vazia mas não rebenta o frontend

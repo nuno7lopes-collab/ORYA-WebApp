@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import FormField from "./FormField";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
@@ -123,19 +122,12 @@ export default function AuthWall({
     try {
       const redirectTo =
         typeof window !== "undefined"
-          ? (() => {
-              const currentPath = `${window.location.pathname}${window.location.search}`;
-              const safeRedirect = sanitizeRedirectPath(currentPath, "/");
-              return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
-                safeRedirect,
-              )}`;
-            })()
+          ? `${window.location.origin}/auth/callback`
           : undefined;
       if (typeof window !== "undefined") {
         try {
           const currentPath = `${window.location.pathname}${window.location.search}`;
-          const safeRedirect = sanitizeRedirectPath(currentPath, "/");
-          localStorage.setItem("orya_post_auth_redirect", safeRedirect);
+          localStorage.setItem("orya_post_auth_redirect", currentPath);
         } catch {}
       }
       const { error } = await supabaseBrowser.auth.signInWithOAuth({
@@ -159,19 +151,12 @@ export default function AuthWall({
     try {
       const redirectTo =
         typeof window !== "undefined"
-          ? (() => {
-              const currentPath = `${window.location.pathname}${window.location.search}`;
-              const safeRedirect = sanitizeRedirectPath(currentPath, "/");
-              return `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
-                safeRedirect,
-              )}`;
-            })()
+          ? `${window.location.origin}/auth/callback`
           : undefined;
       if (typeof window !== "undefined") {
         try {
           const currentPath = `${window.location.pathname}${window.location.search}`;
-          const safeRedirect = sanitizeRedirectPath(currentPath, "/");
-          localStorage.setItem("orya_post_auth_redirect", safeRedirect);
+          localStorage.setItem("orya_post_auth_redirect", currentPath);
         } catch {}
       }
       const { error } = await supabaseBrowser.auth.signInWithOAuth({

@@ -1,4 +1,5 @@
 import { api, unwrapApiResponse } from "../../lib/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { InterestId } from "./types";
 
 export type IpLocationResponse = {
@@ -11,9 +12,36 @@ export type IpLocationResponse = {
   granularity?: string | null;
 };
 
+const IP_CACHE_KEY = "orya_ip_location_cache_v1";
+const IP_CACHE_TTL_MS = 30 * 60 * 1000;
+
+const readIpCache = async (): Promise<{ data: IpLocationResponse; updatedAt: number } | null> => {
+  const raw = await AsyncStorage.getItem(IP_CACHE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { data: IpLocationResponse; updatedAt: number };
+    if (!parsed?.data || !parsed?.updatedAt) return null;
+    return parsed;
+  } catch {
+    await AsyncStorage.removeItem(IP_CACHE_KEY);
+    return null;
+  }
+};
+
+const writeIpCache = async (data: IpLocationResponse) => {
+  const payload = { data, updatedAt: Date.now() };
+  await AsyncStorage.setItem(IP_CACHE_KEY, JSON.stringify(payload));
+};
+
 export const fetchIpLocation = async (accessToken?: string | null): Promise<IpLocationResponse> => {
+  const cached = await readIpCache();
+  if (cached && Date.now() - cached.updatedAt <= IP_CACHE_TTL_MS) {
+    return cached.data;
+  }
   const response = await api.requestWithAccessToken<unknown>("/api/location/ip", accessToken);
-  return unwrapApiResponse<IpLocationResponse>(response);
+  const data = unwrapApiResponse<IpLocationResponse>(response);
+  writeIpCache(data).catch(() => undefined);
+  return data;
 };
 
 export const saveBasicProfile = async (payload: {

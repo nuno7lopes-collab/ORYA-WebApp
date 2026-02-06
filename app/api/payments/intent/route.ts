@@ -990,7 +990,6 @@ async function _POST(req: NextRequest) {
         starts_at: Date;
         timezone: string;
         fee_mode: string | null;
-        fee_mode_override: string | null;
         organization_id: number | null;
         org_type: string | null;
         org_stripe_account_id: string | null;
@@ -1001,8 +1000,6 @@ async function _POST(req: NextRequest) {
         org_fee_mode: string | null;
         org_platform_fee_bps: number | null;
         org_platform_fee_fixed_cents: number | null;
-        platform_fee_bps_override: number | null;
-        platform_fee_fixed_cents_override: number | null;
         payout_mode: string | null;
       }[]
     >`
@@ -1021,7 +1018,6 @@ async function _POST(req: NextRequest) {
         e.starts_at,
         e.timezone,
         e.fee_mode,
-        e.fee_mode_override,
         e.organization_id,
         o.org_type AS org_type,
         o.stripe_account_id AS org_stripe_account_id,
@@ -1032,8 +1028,6 @@ async function _POST(req: NextRequest) {
         o.fee_mode AS org_fee_mode,
         o.platform_fee_bps AS org_platform_fee_bps,
         o.platform_fee_fixed_cents AS org_platform_fee_fixed_cents,
-        e.platform_fee_bps_override,
-        e.platform_fee_fixed_cents_override,
         e.payout_mode
       FROM app_v3.events e
       LEFT JOIN app_v3.organizations o ON o.id = e.organization_id
@@ -1582,12 +1576,9 @@ async function _POST(req: NextRequest) {
     const isPlatformOrg = (event.org_type || "").toString().toUpperCase() === "PLATFORM";
 
     const pricing = computePricing(preDiscountAmountCents, discountCents, {
-      eventFeeModeOverride: "INCLUDED" as FeeMode,
       eventFeeMode: (event.fee_mode as FeeMode | null) ?? undefined,
       organizationFeeMode: (event.org_fee_mode as FeeMode | null) ?? undefined,
       platformDefaultFeeMode: "INCLUDED" as FeeMode,
-      eventPlatformFeeBpsOverride: event.platform_fee_bps_override,
-      eventPlatformFeeFixedCentsOverride: event.platform_fee_fixed_cents_override,
       organizationPlatformFeeBps: event.org_platform_fee_bps,
       organizationPlatformFeeFixedCents: event.org_platform_fee_fixed_cents,
       platformDefaultFeeBps: defaultFeeBps,

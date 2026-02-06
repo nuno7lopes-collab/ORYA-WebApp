@@ -28,7 +28,7 @@ const getVariantStyles = (variant: AuthButtonVariant) => {
       return {
         container: styles.googleContainer,
         text: styles.googleText,
-        indicator: "#1A73E8",
+        indicator: "#0b0f17",
       } as const;
     default:
       return {
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   googleText: {
-    color: "#1A73E8",
+    color: "#0b0f17",
   },
   emailContainer: {
     backgroundColor: "rgba(255,255,255,0.06)",

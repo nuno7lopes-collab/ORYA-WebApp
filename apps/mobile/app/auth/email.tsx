@@ -24,6 +24,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { trackEvent } from "../../lib/analytics";
 import { setLastAuthMethod } from "../../lib/authMethod";
+import { api, unwrapApiResponse } from "../../lib/api";
 
 const isValidEmail = (value: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
@@ -57,6 +58,15 @@ const parseAuthError = (err: any) => {
   return { kind: "unknown", message: "Não foi possível entrar. Tenta novamente." };
 };
 
+const checkEmailExists = async (email: string): Promise<boolean> => {
+  const response = await api.request<unknown>("/api/auth/check-email", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+  const payload = unwrapApiResponse<{ exists?: boolean }>(response);
+  return Boolean(payload?.exists);
+};
+
 export default function AuthEmailScreen() {
   const router = useRouter();
   const { loading: authLoading, session } = useAuth();
@@ -69,6 +79,8 @@ export default function AuthEmailScreen() {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [showResend, setShowResend] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [emailExists, setEmailExists] = useState<boolean | null>(null);
+  const [checkedEmail, setCheckedEmail] = useState("");
   const passwordInputRef = useRef<TextInput>(null);
 
   const normalizedEmail = normalizeEmail(email);
@@ -80,6 +92,18 @@ export default function AuthEmailScreen() {
   useEffect(() => {
     setLastAuthMethod("email").catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const normalized = normalizeEmail(email);
+    if (!normalized) {
+      setEmailExists(null);
+      setCheckedEmail("");
+      return;
+    }
+    if (checkedEmail && checkedEmail !== normalized) {
+      setEmailExists(null);
+    }
+  }, [checkedEmail, email]);
 
   const triggerHaptic = async () => {
     try {
@@ -108,6 +132,31 @@ export default function AuthEmailScreen() {
         trackEvent("auth_fail_email", { reason: "empty_password" });
         return;
       }
+
+      let resolvedExists = emailExists;
+      if (resolvedExists == null || checkedEmail !== normalizedEmail) {
+        try {
+          resolvedExists = await checkEmailExists(normalizedEmail);
+          setEmailExists(resolvedExists);
+          setCheckedEmail(normalizedEmail);
+        } catch {
+          resolvedExists = checkedEmail === normalizedEmail ? emailExists : null;
+        }
+      }
+
+      if (!isSignUp && resolvedExists === false) {
+        setIsSignUp(true);
+        setFormError("Ainda não tens conta. Cria uma agora.");
+        trackEvent("auth_fail_email", { reason: "no_account" });
+        return;
+      }
+      if (isSignUp && resolvedExists === true) {
+        setIsSignUp(false);
+        setFormError("Já existe uma conta com este email. Entra com a tua password.");
+        trackEvent("auth_fail_email", { reason: "user_exists" });
+        return;
+      }
+
       trackEvent("auth_start_email", { mode: isSignUp ? "signup" : "password" });
 
       if (isSignUp) {
@@ -154,8 +203,23 @@ export default function AuthEmailScreen() {
 
       if (parsed.kind === "invalid_credentials") {
         if (!isSignUp) {
-          setFormError("Ainda não tens conta. Cria uma agora.");
-          setIsSignUp(true);
+          const normalized = normalizeEmail(email);
+          let exists = emailExists;
+          if (checkedEmail !== normalized || exists == null) {
+            try {
+              exists = await checkEmailExists(normalized);
+              setEmailExists(exists);
+              setCheckedEmail(normalized);
+            } catch {
+              exists = checkedEmail === normalized ? emailExists : null;
+            }
+          }
+          if (exists === false) {
+            setFormError("Ainda não tens conta. Cria uma agora.");
+            setIsSignUp(true);
+          } else {
+            setFormError("Email ou password incorretos.");
+          }
         } else {
           setFormError("Email ou password incorretos.");
         }
@@ -349,7 +413,9 @@ export default function AuthEmailScreen() {
                     {loading ? (
                       <ActivityIndicator color="#0b0f17" />
                     ) : (
-                      <Text style={styles.primaryText}>{isSignUp ? "Criar conta" : "Entrar"}</Text>
+                      <Text style={[styles.primaryText, isSubmitDisabled ? styles.primaryTextDisabled : null]}>
+                        {isSignUp ? "Criar conta" : "Entrar"}
+                      </Text>
                     )}
                   </View>
                 </Pressable>
@@ -536,8 +602,8 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.995 }],
   },
   primaryDisabled: {
-    opacity: 0.4,
-    backgroundColor: "#ffffff",
+    backgroundColor: "rgba(255,255,255,0.75)",
+    borderColor: "rgba(255,255,255,0.6)",
     shadowOpacity: 0,
     shadowRadius: 0,
     elevation: 0,
@@ -547,6 +613,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0b0f17",
     textAlign: "center",
+  },
+  primaryTextDisabled: {
+    color: "rgba(11, 15, 23, 0.45)",
   },
   toggleLink: {
     marginTop: 6,

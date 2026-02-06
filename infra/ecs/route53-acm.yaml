@@ -10,10 +10,18 @@ Parameters:
     Default: orya.pt
   AppDomain:
     Type: String
-    Default: app.orya.pt
+    Default: ""
   AdminDomain:
     Type: String
     Default: admin.orya.pt
+
+Conditions:
+  HasAppDomain: !Not [!Equals [!Ref AppDomain, ""]]
+  HasAdminDomain: !Not [!Equals [!Ref AdminDomain, ""]]
+  AppDomainIsRoot: !Equals [!Ref AppDomain, !Ref RootDomain]
+  AdminDomainIsRoot: !Equals [!Ref AdminDomain, !Ref RootDomain]
+  UseAppDomain: !And [!Condition HasAppDomain, !Not [!Condition AppDomainIsRoot]]
+  UseAdminDomain: !And [!Condition HasAdminDomain, !Not [!Condition AdminDomainIsRoot]]
 
 Resources:
   Certificate:
@@ -21,16 +29,22 @@ Resources:
     Properties:
       DomainName: !Ref RootDomain
       SubjectAlternativeNames:
-        - !Ref AppDomain
-        - !Ref AdminDomain
+        - !If [UseAppDomain, !Ref AppDomain, !Ref "AWS::NoValue"]
+        - !If [UseAdminDomain, !Ref AdminDomain, !Ref "AWS::NoValue"]
       ValidationMethod: DNS
       DomainValidationOptions:
         - DomainName: !Ref RootDomain
           HostedZoneId: !Ref HostedZoneId
-        - DomainName: !Ref AppDomain
-          HostedZoneId: !Ref HostedZoneId
-        - DomainName: !Ref AdminDomain
-          HostedZoneId: !Ref HostedZoneId
+        - !If
+          - UseAppDomain
+          - DomainName: !Ref AppDomain
+            HostedZoneId: !Ref HostedZoneId
+          - !Ref "AWS::NoValue"
+        - !If
+          - UseAdminDomain
+          - DomainName: !Ref AdminDomain
+            HostedZoneId: !Ref HostedZoneId
+          - !Ref "AWS::NoValue"
 
 Outputs:
   CertificateArn:

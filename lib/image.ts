@@ -17,6 +17,15 @@ export function optimizeImageUrl(
       parsed.searchParams.set("format", format);
       return parsed.toString();
     }
+    if (parsed.hostname.includes("unsplash.com")) {
+      parsed.searchParams.set("w", String(width));
+      if (height) parsed.searchParams.set("h", String(height));
+      if (resize === "cover") parsed.searchParams.set("fit", "crop");
+      parsed.searchParams.set("q", String(quality));
+      parsed.searchParams.set("auto", "format");
+      if (format !== "auto") parsed.searchParams.set("fm", format);
+      return parsed.toString();
+    }
     return url;
   } catch (err) {
     return url;

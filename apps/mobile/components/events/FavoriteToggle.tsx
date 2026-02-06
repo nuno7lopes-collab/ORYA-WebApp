@@ -2,6 +2,7 @@ import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from "react-n
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "../icons/Ionicons";
 import { useFavoritesStore } from "../../features/favorites/store";
+import { toggleFavoriteRemote } from "../../features/favorites/api";
 
 type FavoriteToggleProps = {
   eventId: number;
@@ -24,6 +25,7 @@ export function FavoriteToggle({
 }: FavoriteToggleProps) {
   const isFavorite = useFavoritesStore((state) => state.isFavorite(eventId));
   const toggle = useFavoritesStore((state) => state.toggleFavorite);
+  const setFavorite = useFavoritesStore((state) => state.setFavorite);
 
   const handlePress = async () => {
     if (disabled) return;
@@ -34,6 +36,16 @@ export function FavoriteToggle({
     }
     const next = toggle(eventId, true);
     onToggle?.(next);
+    try {
+      const result = await toggleFavoriteRemote(eventId, true);
+      if (result?.isFavorite) {
+        setFavorite(eventId, true, result.favorite?.notify ?? true);
+      } else {
+        setFavorite(eventId, false, true);
+      }
+    } catch {
+      setFavorite(eventId, !next, true);
+    }
   };
 
   if (variant === "button") {

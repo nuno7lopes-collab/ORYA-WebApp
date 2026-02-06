@@ -116,18 +116,24 @@ export const fetchAgoraTimeline = async (): Promise<AgoraTimeline> => {
     if (!Number.isFinite(end)) return true;
     return end >= now;
   });
-  const within72h = futureOrLive.filter((event) => {
+  const within24to72 = futureOrLive.filter((event) => {
     if (!event.startsAt) return false;
     const start = new Date(event.startsAt).getTime();
     if (!Number.isFinite(start)) return false;
     const diffHours = (start - now) / (1000 * 60 * 60);
-    return diffHours >= 0 && diffHours <= 72;
+    return diffHours >= 24 && diffHours <= 72;
   });
-  const later = futureOrLive.filter((event) => !within72h.includes(event));
+  const later = futureOrLive.filter((event) => {
+    if (!event.startsAt) return true;
+    const start = new Date(event.startsAt).getTime();
+    if (!Number.isFinite(start)) return true;
+    const diffHours = (start - now) / (1000 * 60 * 60);
+    return diffHours > 72;
+  });
 
   return {
     liveNow: futureOrLive.filter((event) => event.agoraStatus === "LIVE"),
-    comingSoon: within72h.filter((event) => event.agoraStatus !== "LIVE"),
+    comingSoon: within24to72.filter((event) => event.agoraStatus !== "LIVE"),
     upcoming: later.slice(0, 8),
   };
 };

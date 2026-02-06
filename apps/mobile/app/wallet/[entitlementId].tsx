@@ -7,6 +7,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  Share,
   ScrollView,
   Text,
   View,
@@ -24,6 +25,7 @@ import { ApiError } from "../../lib/api";
 import { getMobileEnv } from "../../lib/env";
 import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
+import { getUserFacingError } from "../../lib/errors";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
@@ -157,9 +159,20 @@ export default function WalletDetailScreen() {
   const baseUrl = getMobileEnv().apiBaseUrl.replace(/\/$/, "");
   const qrUrl = data?.qrToken ? `${baseUrl}/api/qr/${encodeURIComponent(data.qrToken)}?theme=dark` : null;
   const passUrl = data?.passUrl ?? null;
+  const shareUrl = data?.event?.slug ? `${baseUrl}/eventos/${data.event.slug}` : null;
   const updatedLabel = formatRelativeTime(data?.audit?.updatedAt);
   const handleBack = () => {
     safeBack(router, navigation, "/(tabs)/tickets");
+  };
+  const handleShare = async () => {
+    if (!data) return;
+    try {
+      const title = data.snapshot.title ?? "Bilhete ORYA";
+      const message = shareUrl ? `${title}\n${shareUrl}` : `${title} · ORYA`;
+      await Share.share({ message, url: shareUrl ?? undefined });
+    } catch {
+      // ignore share errors
+    }
   };
 
   const handleOpenWallet = async () => {
@@ -197,7 +210,7 @@ export default function WalletDetailScreen() {
         UTI: "com.apple.pkpass",
       });
     } catch (err: any) {
-      Alert.alert("Wallet", err?.message ?? "Não foi possível adicionar à Wallet.");
+      Alert.alert("Wallet", getUserFacingError(err, "Não foi possível adicionar à Wallet."));
     } finally {
       setDownloadingPass(false);
     }
@@ -320,6 +333,17 @@ export default function WalletDetailScreen() {
                   <Text className="text-white text-sm font-semibold text-center">Abrir evento</Text>
                 </Pressable>
               ) : null}
+
+              <Pressable
+                onPress={handleShare}
+                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 mb-4"
+                style={{ minHeight: tokens.layout.touchTarget }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <Ionicons name="share-outline" size={16} color="rgba(255,255,255,0.9)" />
+                  <Text className="text-white text-sm font-semibold">Partilhar</Text>
+                </View>
+              </Pressable>
 
               <GlassCard intensity={46}>
                 <Text className="text-white/70 text-sm mb-2">Apple Wallet</Text>

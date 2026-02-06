@@ -1,327 +1,695 @@
-import { Linking, Pressable, ScrollView, Text, View, Platform } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  InteractionManager,
+} from "react-native";
 import { Image } from "expo-image";
-import Constants from "expo-constants";
-import { supabase } from "../../lib/supabase";
-import { resetOnboardingDone } from "../../lib/onboardingState";
-import { i18n, tokens } from "@orya/shared";
+import * as ImagePicker from "expo-image-picker";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { tokens } from "@orya/shared";
+import { LiquidBackground } from "../../components/liquid/LiquidBackground";
+import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
-import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
-import { useProfileAgenda, useProfileSummary } from "../../features/profile/hooks";
-import { useEffect, useState } from "react";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { useAuth } from "../../lib/auth";
-import { useRouter } from "expo-router";
-import { getMobileEnv } from "../../lib/env";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useProfileAgenda, useProfileSummary, usePublicProfile } from "../../features/profile/hooks";
+import { updateProfile } from "../../features/profile/api";
+import { uploadImage } from "../../lib/upload";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { TopAppHeader } from "../../components/navigation/TopAppHeader";
+import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
+import { sanitizeUsername, validateUsername } from "../../lib/username";
+import { checkUsernameAvailability } from "../../features/onboarding/api";
+import { INTEREST_OPTIONS, InterestId } from "../../features/onboarding/types";
+import { api, unwrapApiResponse } from "../../lib/api";
+import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
-const AGENDA_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
-  weekday: "short",
-  day: "2-digit",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-const formatAgendaDate = (value: string): string => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Data a confirmar";
-  return AGENDA_DATE_FORMATTER.format(parsed);
+const fetchFollowers = async (userId: string, accessToken?: string | null) => {
+  const response = await api.requestWithAccessToken<unknown>(
+    `/api/social/followers?userId=${encodeURIComponent(userId)}&limit=30`,
+    accessToken,
+  );
+  const payload = unwrapApiResponse<{ items?: any[] }>(response);
+  return Array.isArray(payload?.items) ? payload.items : [];
 };
 
-const initialFrom = (name?: string | null, email?: string | null): string => {
-  const source = name?.trim() || email?.trim() || "?";
-  return source.charAt(0).toUpperCase();
+const fetchFollowing = async (userId: string, accessToken?: string | null) => {
+  const response = await api.requestWithAccessToken<unknown>(
+    `/api/social/following?userId=${encodeURIComponent(userId)}&limit=30&includeOrganizations=true`,
+    accessToken,
+  );
+  const payload = unwrapApiResponse<{ items?: any[] }>(response);
+  return Array.isArray(payload?.items) ? payload.items : [];
 };
 
 export default function ProfileScreen() {
-  const t = i18n.pt.profile;
   const router = useRouter();
+  const [dataReady, setDataReady] = useState(false);
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
-  const summary = useProfileSummary(true, accessToken, userId);
-  const agenda = useProfileAgenda(accessToken, userId);
-  const insets = useSafeAreaInsets();
+  const summary = useProfileSummary(dataReady, accessToken, userId);
+  const agenda = useProfileAgenda(accessToken, userId, dataReady);
+  const profile = summary.data ?? null;
+  const publicProfile = usePublicProfile(profile?.username ?? null, accessToken, dataReady);
   const tabBarPadding = useTabBarPadding();
-  const env = getMobileEnv();
-  const hideDebugStatus = env.appEnv === "prod";
-  const [pushStatus, setPushStatus] = useState<
-    "loading" | "granted" | "denied" | "undetermined" | "unsupported"
-  >("loading");
-  const profile = summary.data;
-  const coverUrl = profile?.coverUrl ?? null;
-  const cityLabel = profile?.city ?? null;
-  const padelLabel = profile?.padelLevel ?? null;
-  const agendaData = agenda.data?.items ?? [];
-  const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
-  const upcomingItems = agendaData
-    .filter((item) => new Date(item.startAt).getTime() >= Date.now())
-    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
-    .slice(0, 3);
+  const topPadding = useTopHeaderPadding(16);
+  const queryClient = useQueryClient();
 
-  const signOut = async () => {
-    await resetOnboardingDone();
-    await supabase.auth.signOut();
-  };
+  const [editMode, setEditMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
+  const [city, setCity] = useState("");
+  const [interests, setInterests] = useState<InterestId[]>([]);
+  const [avatarLocalUri, setAvatarLocalUri] = useState<string | null>(null);
+  const [coverLocalUri, setCoverLocalUri] = useState<string | null>(null);
+  const [avatarRemoved, setAvatarRemoved] = useState(false);
+  const [coverRemoved, setCoverRemoved] = useState(false);
+  const [showPadel, setShowPadel] = useState(false);
+  const [followersOpen, setFollowersOpen] = useState(false);
+  const [followingOpen, setFollowingOpen] = useState(false);
+  const followersList = useQuery({
+    queryKey: ["profile", "followers", userId ?? "anon"],
+    queryFn: () => fetchFollowers(userId ?? "", accessToken),
+    enabled: Boolean(followersOpen && userId),
+  });
+  const followingList = useQuery({
+    queryKey: ["profile", "following", userId ?? "anon"],
+    queryFn: () => fetchFollowing(userId ?? "", accessToken),
+    enabled: Boolean(followingOpen && userId),
+  });
 
   useEffect(() => {
-    let mounted = true;
-    const resolveStatus = async () => {
-      if (Platform.OS !== "ios" || !Constants.isDevice || Constants.appOwnership === "expo") {
-        if (mounted) setPushStatus("unsupported");
-        return;
+    if (!profile) return;
+    setFullName(profile.fullName ?? "");
+    setUsername(profile.username ?? "");
+    setBio(profile.bio ?? "");
+    setCity(profile.city ?? "");
+    setInterests((profile.favouriteCategories ?? []) as InterestId[]);
+    setAvatarLocalUri(null);
+    setCoverLocalUri(null);
+    setAvatarRemoved(false);
+    setCoverRemoved(false);
+  }, [profile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (active) setDataReady(true);
+      });
+      return () => {
+        active = false;
+        task.cancel();
+        setDataReady(false);
+      };
+    }, []),
+  );
+
+  const avatarPreview = avatarRemoved ? null : avatarLocalUri ?? profile?.avatarUrl ?? null;
+  const coverPreview = coverRemoved ? null : coverLocalUri ?? profile?.coverUrl ?? null;
+  const coverFallbackColor = "#4B5462";
+  const coverHasImage = Boolean(coverPreview);
+
+  const usernameValidation = useMemo(() => validateUsername(username), [username]);
+  const normalizedUsername = usernameValidation.valid ? usernameValidation.normalized : sanitizeUsername(username);
+
+  const isDirty = useMemo(() => {
+    if (!profile) return false;
+    if (fullName.trim() !== (profile.fullName ?? "").trim()) return true;
+    if (normalizedUsername !== (profile.username ?? "")) return true;
+    if (bio.trim() !== (profile.bio ?? "").trim()) return true;
+    if (city.trim() !== (profile.city ?? "").trim()) return true;
+    const profileInterests = (profile.favouriteCategories ?? []) as InterestId[];
+    if (interests.slice().sort().join("|") !== profileInterests.slice().sort().join("|")) return true;
+    if (avatarRemoved || coverRemoved || avatarLocalUri || coverLocalUri) return true;
+    return false;
+  }, [avatarLocalUri, avatarRemoved, bio, city, coverLocalUri, coverRemoved, fullName, interests, normalizedUsername, profile]);
+
+  const canSave = Boolean(
+    fullName.trim().length >= 2 && usernameValidation.valid && isDirty && !saving,
+  );
+
+  const requestImagePermission = async () => {
+    const existing = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (existing.status === ImagePicker.PermissionStatus.GRANTED) return true;
+
+    const requested = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (requested.status === ImagePicker.PermissionStatus.GRANTED) return true;
+    Alert.alert("Permissão necessária", "Autoriza o acesso à galeria para atualizar fotos.");
+    return false;
+  };
+
+  const pickImage = async (kind: "avatar" | "cover") => {
+    if (!editMode) return;
+    const ok = await requestImagePermission();
+    if (!ok) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: kind === "avatar" ? [1, 1] : [16, 9],
+      quality: 0.9,
+    });
+    if (result.canceled) return;
+    const uri = result.assets?.[0]?.uri;
+    if (!uri) return;
+    if (kind === "avatar") {
+      setAvatarLocalUri(uri);
+      setAvatarRemoved(false);
+    } else {
+      setCoverLocalUri(uri);
+      setCoverRemoved(false);
+    }
+  };
+
+  const toggleInterest = (interest: InterestId) => {
+    if (!editMode) return;
+    setInterests((prev) => {
+      if (prev.includes(interest)) return prev.filter((item) => item !== interest);
+      if (prev.length >= 6) return prev;
+      return [...prev, interest];
+    });
+  };
+
+  const handleToggleEdit = () => {
+    if (!editMode) {
+      setEditMode(true);
+      return;
+    }
+    if (!isDirty) {
+      setEditMode(false);
+      return;
+    }
+    Alert.alert("Descartar alterações?", "Queres sair sem guardar?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Descartar",
+        style: "destructive",
+        onPress: () => {
+          setEditMode(false);
+          if (profile) {
+            setFullName(profile.fullName ?? "");
+            setUsername(profile.username ?? "");
+            setBio(profile.bio ?? "");
+            setCity(profile.city ?? "");
+            setInterests((profile.favouriteCategories ?? []) as InterestId[]);
+            setAvatarLocalUri(null);
+            setCoverLocalUri(null);
+            setAvatarRemoved(false);
+            setCoverRemoved(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleSave = async () => {
+    if (!profile || !canSave) return;
+    setSaving(true);
+    try {
+      if (profile.username !== normalizedUsername) {
+        const available = await checkUsernameAvailability(normalizedUsername, accessToken ?? null);
+        if (!available) {
+          Alert.alert("Username indisponível", "Escolhe outro username.");
+          setSaving(false);
+          return;
+        }
+      }
+      let avatarUrl = avatarRemoved ? null : profile.avatarUrl ?? null;
+      let coverUrl = coverRemoved ? null : profile.coverUrl ?? null;
+
+      if (avatarLocalUri && accessToken) {
+        avatarUrl = await uploadImage({ uri: avatarLocalUri, scope: "avatar", accessToken });
+      }
+      if (coverLocalUri && accessToken) {
+        coverUrl = await uploadImage({ uri: coverLocalUri, scope: "profile-cover", accessToken });
       }
 
-      try {
-        const Notifications = await import("expo-notifications");
-        const status = await Notifications.getPermissionsAsync();
-        if (!mounted) return;
-        if (status.granted) setPushStatus("granted");
-        else if (status.status === "denied") setPushStatus("denied");
-        else setPushStatus("undetermined");
-      } catch {
-        if (mounted) setPushStatus("undetermined");
-      }
-    };
+      await updateProfile({
+        accessToken,
+        fullName: fullName.trim(),
+        username: normalizedUsername,
+        bio: bio.trim() || null,
+        city: city.trim() || null,
+        avatarUrl,
+        coverUrl,
+        favouriteCategories: interests,
+        visibility: profile.visibility ?? "PUBLIC",
+        allowEmailNotifications: profile.allowEmailNotifications ?? true,
+        allowEventReminders: profile.allowEventReminders ?? true,
+        allowFollowRequests: profile.allowFollowRequests ?? true,
+      });
 
-    resolveStatus();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+      queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["profile", "public"] });
+      setEditMode(false);
+    } catch (err: any) {
+      Alert.alert("Erro", "Não foi possível guardar o perfil.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  const showUnsupported = pushStatus === "unsupported" && !hideDebugStatus;
-  const uiPushStatus = pushStatus === "unsupported" && hideDebugStatus ? "undetermined" : pushStatus;
-  const pushStatusLabel =
-    uiPushStatus === "loading"
-      ? "A verificar…"
-      : uiPushStatus === "granted"
-        ? "Ativas"
-        : uiPushStatus === "denied"
-          ? "Bloqueadas"
-          : showUnsupported
-            ? "Indisponível"
-            : "Por ativar";
-  const pushActionLabel = showUnsupported
-    ? "Indisponível"
-    : uiPushStatus === "granted"
-      ? "Abrir definições"
-      : "Ativar";
+  const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
+  const totalEvents = agendaStats.upcoming + agendaStats.past;
+  const counts = publicProfile.data?.counts ?? { followers: 0, following: 0, events: totalEvents };
+  const upcomingItems = useMemo(() => {
+    const items = agenda.data?.items ?? [];
+    const now = Date.now();
+    return items
+      .filter((item) => new Date(item.startAt).getTime() >= now)
+      .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+      .slice(0, 3);
+  }, [agenda.data?.items]);
 
   return (
     <LiquidBackground>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 24, paddingBottom: tabBarPadding }}>
-        <Text className="text-white text-[30px] font-semibold mb-2">{t.title}</Text>
-        <Text className="text-white/60 text-sm mb-5">Conta, atividade e preferências pessoais.</Text>
-
+      <TopAppHeader />
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: topPadding, paddingBottom: tabBarPadding }}
+        showsVerticalScrollIndicator={false}
+      >
         {summary.isLoading ? (
           <View className="gap-3 mb-6">
+            <GlassSkeleton height={160} />
             <GlassSkeleton height={120} />
-            <GlassSkeleton height={90} />
           </View>
         ) : (
-          <GlassSurface intensity={58} padding={16} style={{ marginBottom: 20 }}>
-            <View
-              className="rounded-3xl overflow-hidden border border-white/10 mb-4"
-              style={{ height: 140, backgroundColor: "rgba(255,255,255,0.05)" }}
-            >
-              {coverUrl ? (
-                <Image
-                  source={{ uri: coverUrl }}
-                  contentFit="cover"
-                  style={{ width: "100%", height: "100%" }}
-                  cachePolicy="memory-disk"
-                  transition={160}
-                />
-              ) : (
-                <View className="flex-1" />
-              )}
-            </View>
-            <View className="flex-row gap-4 items-center">
-              <View
-                className="h-20 w-20 rounded-full border border-white/15 items-center justify-center overflow-hidden"
-                style={{ backgroundColor: "rgba(255,255,255,0.08)" }}
+          <View className="gap-5">
+            <View style={{ position: "relative" }}>
+              <Pressable
+                onPress={() => pickImage("cover")}
+                disabled={!editMode}
+                style={{
+                  height: 180,
+                  borderRadius: 26,
+                  overflow: "hidden",
+                  borderWidth: coverHasImage ? 1 : 0,
+                  borderColor: coverHasImage ? "rgba(255,255,255,0.12)" : "transparent",
+                  backgroundColor: coverHasImage ? "rgba(255,255,255,0.06)" : coverFallbackColor,
+                }}
               >
-                {profile?.avatarUrl ? (
+                {coverPreview ? (
                   <Image
-                    source={{ uri: profile.avatarUrl }}
+                    source={{ uri: coverPreview }}
                     contentFit="cover"
-                    style={{ width: 80, height: 80 }}
-                    cachePolicy="memory-disk"
+                    style={{ width: "100%", height: "100%" }}
                     transition={160}
                   />
-                ) : (
-                  <Text className="text-white text-2xl font-semibold">
-                    {initialFrom(profile?.fullName, profile?.email)}
-                  </Text>
-                )}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text className="text-white text-xl font-semibold">{profile?.fullName ?? "Utilizador ORYA"}</Text>
-                {profile?.username ? (
-                  <Text className="text-white/65 text-sm mt-1">@{profile.username}</Text>
                 ) : null}
-                {profile?.bio ? (
-                  <Text className="text-white/70 text-sm mt-2" numberOfLines={2}>
-                    {profile.bio}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
+              </Pressable>
 
-            {cityLabel || padelLabel ? (
-              <View className="flex-row gap-2 mt-4">
-                {cityLabel ? (
-                  <View className="rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                    <Text className="text-white/75 text-xs">{cityLabel}</Text>
-                  </View>
-                ) : null}
-                {padelLabel ? (
-                  <View className="rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                    <Text className="text-white/75 text-xs">{padelLabel}</Text>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-
-            <Pressable
-              onPress={() => router.push("/profile/edit")}
-              className="mt-4 rounded-2xl border border-white/15 bg-white/10 px-4 py-3"
-              style={{ minHeight: tokens.layout.touchTarget }}
-            >
-              <Text className="text-white text-sm font-semibold text-center">Editar perfil</Text>
-            </Pressable>
-          </GlassSurface>
-        )}
-
-        <SectionHeader title="Resumo" subtitle="Atividade recente na tua conta." />
-        {agenda.isLoading ? (
-          <View className="gap-3 mb-6">
-            <GlassSkeleton height={92} />
-          </View>
-        ) : (
-          <GlassSurface intensity={52} padding={16} style={{ marginBottom: 20 }}>
-            <View className="flex-row justify-between">
-              <View>
-                <Text className="text-white/60 text-[11px] uppercase">Próximos</Text>
-                <Text className="text-white text-2xl font-semibold mt-1">{agendaStats.upcoming}</Text>
-              </View>
-              <View>
-                <Text className="text-white/60 text-[11px] uppercase">Histórico</Text>
-                <Text className="text-white text-2xl font-semibold mt-1">{agendaStats.past}</Text>
-              </View>
-              <View>
-                <Text className="text-white/60 text-[11px] uppercase">Mês</Text>
-                <Text className="text-white text-2xl font-semibold mt-1">{agendaStats.thisMonth}</Text>
-              </View>
-            </View>
-          </GlassSurface>
-        )}
-
-        <SectionHeader title="Próximos momentos" subtitle="Os teus próximos eventos e inscrições." />
-        <View className="gap-3 mb-6">
-          {agenda.isLoading ? (
-            <>
-              <GlassSkeleton height={74} />
-              <GlassSkeleton height={74} />
-            </>
-          ) : upcomingItems.length > 0 ? (
-            upcomingItems.map((item) => (
-              <GlassSurface key={item.id} intensity={48} padding={14}>
-                <Text className="text-white font-semibold text-sm" numberOfLines={1}>
-                  {item.title}
-                </Text>
-                <Text className="text-white/65 text-xs mt-1">{formatAgendaDate(item.startAt)}</Text>
-                {item.label ? (
-                  <Text className="text-white/55 text-xs mt-2 uppercase">{item.label}</Text>
-                ) : null}
-              </GlassSurface>
-            ))
-          ) : (
-            <GlassSurface intensity={45} padding={14}>
-              <Text className="text-white/65 text-sm">Ainda sem próximos momentos na agenda.</Text>
-            </GlassSurface>
-          )}
-        </View>
-
-        <SectionHeader title="Conta" />
-        <GlassSurface intensity={50} padding={16}>
-          <Text className="text-white/75 text-sm">Email</Text>
-          <Text className="text-white text-base font-semibold mt-1">{profile?.email ?? "-"}</Text>
-        </GlassSurface>
-
-        <View className="mt-6">
-          <SectionHeader title="Notificações" subtitle="Lembra-te de ativares para não perderes eventos." />
-          <GlassSurface intensity={52} padding={16}>
-            <View className="flex-row items-center justify-between">
-              <View>
-                <Text className="text-white/70 text-sm">Estado</Text>
-                <Text className="text-white text-base font-semibold mt-1">{pushStatusLabel}</Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  if (showUnsupported) {
-                    return;
-                  }
-                  if (uiPushStatus === "granted") {
-                    Linking.openSettings();
-                    return;
-                  }
-                  import("expo-notifications").then((Notifications) => {
-                    Notifications.requestPermissionsAsync().then((status) => {
-                      if (status.granted) setPushStatus("granted");
-                      else if (status.status === "denied") setPushStatus("denied");
-                      else setPushStatus("undetermined");
-                    });
-                  });
+              <View
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: -40,
+                  alignItems: "center",
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-4 py-2"
-                style={{ minHeight: tokens.layout.touchTarget }}
               >
-                <Text className="text-white text-sm font-semibold">{pushActionLabel}</Text>
+                {coverHasImage ? (
+                  <View
+                    style={{
+                      position: "absolute",
+                      width: 86,
+                      height: 86,
+                      borderRadius: 43,
+                      borderWidth: 2,
+                      borderColor: "rgba(255,255,255,0.22)",
+                    }}
+                  />
+                ) : null}
+                <Pressable
+                  onPress={() => pickImage("avatar")}
+                  disabled={!editMode}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: 40,
+                    borderWidth: 2,
+                    borderColor: "rgba(255,255,255,0.9)",
+                    backgroundColor: coverFallbackColor,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    overflow: "hidden",
+                  }}
+                >
+                  {avatarPreview ? (
+                    <Image source={{ uri: avatarPreview }} style={{ width: 80, height: 80 }} contentFit="cover" />
+                  ) : (
+                    <Ionicons name="person" size={28} color="rgba(255,255,255,0.8)" />
+                  )}
+                </Pressable>
+              </View>
+
+              <View style={{ position: "absolute", right: 12, top: 12, flexDirection: "row", gap: 10 }}>
+                <Pressable
+                  onPress={() => router.push("/settings")}
+                  className="rounded-full border border-white/15 bg-white/10 p-2"
+                >
+                  <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
+                </Pressable>
+                <Pressable
+                  onPress={editMode ? handleSave : handleToggleEdit}
+                  disabled={editMode && !canSave}
+                  className={editMode ? "rounded-full bg-white/90 px-3 py-2" : "rounded-full border border-white/15 bg-white/10 px-3 py-2"}
+                  style={editMode && !canSave ? { opacity: 0.5 } : undefined}
+                >
+                  <Text className={editMode ? "text-black text-xs font-semibold" : "text-white text-xs font-semibold"}>
+                    {editMode ? (saving ? "A guardar..." : "Guardar") : "Editar"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={{ paddingTop: 48, gap: 6, alignItems: "center" }}>
+              {editMode ? (
+                <TextInput
+                  value={fullName}
+                  onChangeText={setFullName}
+                  placeholder="Nome completo"
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  style={{
+                    color: "#ffffff",
+                    fontSize: 20,
+                    fontWeight: "700",
+                    textAlign: "center",
+                    borderBottomWidth: 1,
+                    borderBottomColor: "rgba(255,255,255,0.12)",
+                    paddingBottom: 4,
+                    minWidth: 220,
+                  }}
+                />
+              ) : (
+                <Text className="text-white text-2xl font-semibold" numberOfLines={1}>
+                  {profile?.fullName ?? "Utilizador ORYA"}
+                </Text>
+              )}
+
+              {editMode ? (
+                <TextInput
+                  value={username}
+                  onChangeText={(value) => setUsername(sanitizeUsername(value))}
+                  placeholder="username"
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    color: "rgba(255,255,255,0.7)",
+                    fontSize: 13,
+                    textAlign: "center",
+                    paddingBottom: 2,
+                  }}
+                />
+              ) : profile?.username ? (
+                <Text className="text-white/60 text-sm">@{profile.username}</Text>
+              ) : null}
+
+              {editMode ? (
+                <TextInput
+                  value={bio}
+                  onChangeText={setBio}
+                  placeholder="Escreve uma bio curta"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                  multiline
+                  style={{
+                    color: "rgba(255,255,255,0.8)",
+                    fontSize: 13,
+                    textAlign: "center",
+                    marginTop: 6,
+                  }}
+                />
+              ) : profile?.bio ? (
+                <Text className="text-white/70 text-sm text-center" numberOfLines={3}>
+                  {profile.bio}
+                </Text>
+              ) : null}
+            </View>
+
+            <View className="flex-row justify-center gap-8">
+              <Pressable onPress={() => setFollowersOpen(true)} className="items-center">
+                <Text className="text-white text-base font-semibold">{counts.followers}</Text>
+                <Text className="text-white/60 text-xs">Seguidores</Text>
+              </Pressable>
+              <Pressable onPress={() => setFollowingOpen(true)} className="items-center">
+                <Text className="text-white text-base font-semibold">{counts.following}</Text>
+                <Text className="text-white/60 text-xs">A seguir</Text>
+              </Pressable>
+              <View className="items-center">
+                <Text className="text-white text-base font-semibold">{counts.events ?? totalEvents}</Text>
+                <Text className="text-white/60 text-xs">Eventos</Text>
+              </View>
+            </View>
+
+            <View className="flex-row justify-center gap-8">
+              <Pressable
+                onPress={() => setShowPadel((prev) => !prev)}
+                className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+              >
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="tennisball" size={14} color="rgba(255,255,255,0.85)" />
+                  <Text className="text-white text-xs font-semibold">
+                    {showPadel ? "Perfil base" : "Perfil Padel"}
+                  </Text>
+                </View>
               </Pressable>
             </View>
-            <Text className="text-white/55 text-xs mt-3">
-              Enviamos lembretes de eventos, cancelamentos e updates importantes (incl. padel T-48/T-24).
-            </Text>
-          </GlassSurface>
-        </View>
 
-        <View className="mt-6">
-          <SectionHeader title="Segurança" />
-          <GlassSurface intensity={48} padding={16}>
-            <Text className="text-white/70 text-sm">
-              Sessões e segurança avançada continuam no web admin e no roadmap mobile.
-            </Text>
-          </GlassSurface>
-        </View>
+            {showPadel ? (
+              <GlassCard intensity={54}>
+                <Text className="text-white text-sm font-semibold mb-2">Perfil Padel</Text>
+                {profile?.padelLevel ? (
+                  <Text className="text-white/70 text-sm">Nível: {profile.padelLevel}</Text>
+                ) : (
+                  <Text className="text-white/60 text-sm">Completa o teu perfil Padel para apareceres nos rankings.</Text>
+                )}
+                {!profile?.padelLevel ? (
+                  <Pressable
+                    onPress={() => setShowPadel(true)}
+                    className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                  >
+                    <Text className="text-white text-sm font-semibold text-center">Completar perfil Padel</Text>
+                  </Pressable>
+                ) : null}
+              </GlassCard>
+            ) : (
+              <GlassCard intensity={52}>
+                <View className="gap-3">
+                  {editMode ? (
+                    <View style={{ gap: 10 }}>
+                      <Text className="text-white/70 text-xs">Cidade</Text>
+                      <TextInput
+                        value={city}
+                        onChangeText={setCity}
+                        placeholder="Cidade"
+                        placeholderTextColor="rgba(255,255,255,0.4)"
+                        style={{
+                          minHeight: 44,
+                          borderRadius: 14,
+                          borderWidth: 1,
+                          borderColor: "rgba(255,255,255,0.15)",
+                          backgroundColor: "rgba(255,255,255,0.08)",
+                          paddingHorizontal: 14,
+                          color: "#ffffff",
+                        }}
+                      />
+                    </View>
+                  ) : profile?.city ? (
+                    <Text className="text-white/70 text-sm">{profile.city}</Text>
+                  ) : null}
 
-        {summary.isError || agenda.isError ? (
-          <GlassSurface intensity={45} padding={14} style={{ marginTop: 16 }}>
-            <Text className="text-red-300 text-sm mb-3">Falha ao atualizar dados do perfil.</Text>
-            <Pressable
-              className="rounded-xl bg-white/10 px-4 py-3"
-              onPress={() => {
-                summary.refetch();
-                agenda.refetch();
-              }}
-              style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
-            >
-              <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-            </Pressable>
-          </GlassSurface>
-        ) : null}
+                  {editMode ? (
+                    <View className="flex-row flex-wrap gap-3">
+                      {INTEREST_OPTIONS.map((interest) => {
+                        const active = interests.includes(interest.id);
+                        return (
+                          <Pressable
+                            key={interest.id}
+                            onPress={() => toggleInterest(interest.id)}
+                            className={
+                              active
+                                ? "rounded-full border border-white/25 bg-white/15 px-3 py-2"
+                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                            }
+                          >
+                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                              {interest.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <View className="flex-row flex-wrap gap-2">
+                      {INTEREST_OPTIONS.filter((interest) => interests.includes(interest.id)).length === 0 ? (
+                        <Text className="text-white/55 text-xs">Sem interesses definidos.</Text>
+                      ) : (
+                        INTEREST_OPTIONS.filter((interest) => interests.includes(interest.id)).map((interest) => (
+                          <View
+                            key={interest.id}
+                            className="rounded-full border border-white/15 bg-white/8 px-3 py-2"
+                          >
+                            <Text className="text-white/80 text-xs font-semibold">{interest.label}</Text>
+                          </View>
+                        ))
+                      )}
+                    </View>
+                  )}
+                </View>
+              </GlassCard>
+            )}
 
-        <Pressable
-          className="mt-6 rounded-2xl bg-white/10 px-4 py-3 items-center border border-white/15"
-          onPress={signOut}
-          style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
-        >
-          <Text className="text-white font-semibold">Sair</Text>
-        </Pressable>
+            <SectionHeader title="Calendário" subtitle="Próximos eventos e torneios." />
+            {agenda.isLoading ? (
+              <View className="gap-3">
+                <GlassSkeleton height={90} />
+              </View>
+            ) : (
+              <View className="gap-3">
+                <GlassSurface intensity={48}>
+                  <Text className="text-white/70 text-sm">
+                    Próximos eventos: {agendaStats.upcoming} · Este mês: {agendaStats.thisMonth}
+                  </Text>
+                </GlassSurface>
+                {upcomingItems.length > 0 ? (
+                  <GlassCard intensity={52}>
+                    <View className="gap-2">
+                      <Text className="text-white text-sm font-semibold">Próximos</Text>
+                      {upcomingItems.map((item) => (
+                        <View key={item.id} className="flex-row justify-between">
+                          <Text className="text-white/70 text-xs" numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                          <Text className="text-white/50 text-xs">{new Date(item.startAt).toLocaleDateString("pt-PT")}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </GlassCard>
+                ) : null}
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
+
+      <Modal visible={followersOpen} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>
+          <GlassCard intensity={60}>
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-white text-sm font-semibold">Seguidores</Text>
+              <Pressable onPress={() => setFollowersOpen(false)}>
+                <Ionicons name="close" size={18} color="rgba(255,255,255,0.8)" />
+              </Pressable>
+            </View>
+            {followersList.isLoading ? (
+              <ActivityIndicator color="rgba(255,255,255,0.8)" />
+            ) : (
+              <ScrollView style={{ maxHeight: 320 }}>
+                {(followersList.data ?? []).map((item) => (
+                  <Pressable
+                    key={item.userId}
+                    onPress={() => {
+                      if (item.username) router.push(`/@${item.username}`);
+                    }}
+                    className="flex-row items-center gap-3 py-2"
+                  >
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 12,
+                        backgroundColor: "rgba(255,255,255,0.08)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {item.avatarUrl ? (
+                        <Image source={{ uri: item.avatarUrl }} style={{ width: 36, height: 36 }} />
+                      ) : (
+                        <Ionicons name="person" size={18} color="rgba(255,255,255,0.8)" />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text className="text-white text-sm font-semibold">{item.fullName ?? "Utilizador"}</Text>
+                      {item.username ? <Text className="text-white/60 text-xs">@{item.username}</Text> : null}
+                    </View>
+                  </Pressable>
+                ))}
+                {followersList.data?.length === 0 ? (
+                  <Text className="text-white/60 text-xs">Sem seguidores ainda.</Text>
+                ) : null}
+              </ScrollView>
+            )}
+          </GlassCard>
+        </View>
+      </Modal>
+
+      <Modal visible={followingOpen} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>
+          <GlassCard intensity={60}>
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-white text-sm font-semibold">A seguir</Text>
+              <Pressable onPress={() => setFollowingOpen(false)}>
+                <Ionicons name="close" size={18} color="rgba(255,255,255,0.8)" />
+              </Pressable>
+            </View>
+            {followingList.isLoading ? (
+              <ActivityIndicator color="rgba(255,255,255,0.8)" />
+            ) : (
+              <ScrollView style={{ maxHeight: 320 }}>
+                {(followingList.data ?? []).map((item) => (
+                  <Pressable
+                    key={item.userId}
+                    onPress={() => {
+                      if (item.username) router.push(`/@${item.username}`);
+                    }}
+                    className="flex-row items-center gap-3 py-2"
+                  >
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 12,
+                        backgroundColor: "rgba(255,255,255,0.08)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {item.avatarUrl ? (
+                        <Image source={{ uri: item.avatarUrl }} style={{ width: 36, height: 36 }} />
+                      ) : (
+                        <Ionicons name={item.kind === "organization" ? "business" : "person"} size={18} color="rgba(255,255,255,0.8)" />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text className="text-white text-sm font-semibold">{item.fullName ?? "Perfil"}</Text>
+                      {item.username ? <Text className="text-white/60 text-xs">@{item.username}</Text> : null}
+                    </View>
+                  </Pressable>
+                ))}
+                {followingList.data?.length === 0 ? (
+                  <Text className="text-white/60 text-xs">Ainda não segues ninguém.</Text>
+                ) : null}
+              </ScrollView>
+            )}
+          </GlassCard>
+        </View>
+      </Modal>
     </LiquidBackground>
   );
 }

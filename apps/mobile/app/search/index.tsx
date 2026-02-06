@@ -23,13 +23,14 @@ import { useGlobalSearch } from "../../features/search/hooks";
 import { SearchUserRow } from "../../features/search/SearchUserRow";
 import { SearchOrganizationRow } from "../../features/search/SearchOrganizationRow";
 import { useNetworkActions, useOrganizationFollowActions } from "../../features/network/hooks";
-import { useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { DiscoverOfferCard } from "../../features/discover/types";
 import { SearchOrganization, SearchUser } from "../../features/search/types";
 import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -72,6 +73,7 @@ const buildSkeletons = (variant: SearchSectionKey, count: number): SearchSection
 export default function SearchScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{ q?: string }>();
   const initialQuery = typeof params.q === "string" ? params.q : "";
   const [query, setQuery] = useState(initialQuery);
@@ -95,11 +97,12 @@ export default function SearchScreen() {
   } = useGlobalSearch(debounced);
   const userActions = useNetworkActions();
   const organizationActions = useOrganizationFollowActions();
-  const { data: ipLocation } = useIpLocation();
+  const { data: ipLocation } = useIpLocation(isFocused);
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
   const insets = useSafeAreaInsets();
-  const bottomPadding = insets.bottom + 24;
+  const tabBarPadding = useTabBarPadding();
+  const bottomPadding = Math.max(tabBarPadding, insets.bottom + 24);
   const queryLength = debounced.trim().length;
   const showSkeleton = enabled && isLoading;
   const allErrored = offersQuery.isError && usersQuery.isError && orgsQuery.isError;

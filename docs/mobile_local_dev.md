@@ -2,7 +2,12 @@
 
 ## 1) Start backend (local)
 ```bash
-HOSTNAME=0.0.0.0 npm run dev:all
+npm run dev:all
+```
+`dev:all` now binds to `0.0.0.0` and auto-detects your LAN IP for public URLs.  
+If it picks the wrong IP, override:
+```bash
+DEV_ALL_PUBLIC_HOST=192.168.1.98 npm run dev:all
 ```
 
 ## 2) Start mobile (Expo Go)

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { FlatList, Platform, Pressable, Text, View } from "react-native";
+import { FlatList, Platform, Pressable, Text, View, InteractionManager } from "react-native";
 import { i18n, tokens } from "@orya/shared";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
@@ -9,8 +9,10 @@ import { BlurView } from "expo-blur";
 import { useWalletFeed } from "../../features/wallet/hooks";
 import { WalletEntitlementCard } from "../../features/wallet/WalletEntitlementCard";
 import { WalletEntitlement } from "../../features/wallet/types";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { TopAppHeader } from "../../components/navigation/TopAppHeader";
+import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
+import { useFocusEffect } from "@react-navigation/native";
 
 type WalletListItem =
   | { kind: "skeleton"; key: string }
@@ -19,9 +21,10 @@ type WalletListItem =
 export default function TicketsScreen() {
   const t = i18n.pt.tickets;
   const [mode, setMode] = useState<"upcoming" | "history">("upcoming");
-  const feed = useWalletFeed(mode);
-  const insets = useSafeAreaInsets();
+  const [dataReady, setDataReady] = useState(false);
+  const feed = useWalletFeed(mode, dataReady);
   const tabBarPadding = useTabBarPadding();
+  const topPadding = useTopHeaderPadding(12);
   const items = useMemo(
     () => feed.data?.pages.flatMap((page) => page.items) ?? [],
     [feed.data?.pages],
@@ -56,6 +59,20 @@ export default function TicketsScreen() {
     [],
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (active) setDataReady(true);
+      });
+      return () => {
+        active = false;
+        task.cancel();
+        setDataReady(false);
+      };
+    }, []),
+  );
+
   const keyExtractor = useCallback(
     (item: WalletListItem) => (item.kind === "skeleton" ? item.key : item.entitlement.entitlementId),
     [],
@@ -63,8 +80,9 @@ export default function TicketsScreen() {
 
   return (
     <LiquidBackground>
+      <TopAppHeader />
       <FlatList
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding, paddingTop: topPadding }}
         data={listData}
         keyExtractor={keyExtractor}
         onRefresh={handleRefresh}
@@ -75,10 +93,7 @@ export default function TicketsScreen() {
         updateCellsBatchingPeriod={40}
         windowSize={5}
         ListHeaderComponent={
-          <View style={{ paddingTop: insets.top + 12, paddingBottom: 8 }}>
-            <Text className="text-white text-[30px] font-semibold mb-2">{t.title}</Text>
-            <Text className="text-white/60 text-sm mb-5">A tua carteira: bilhetes, inscrições e reservas.</Text>
-
+          <View style={{ paddingBottom: 8 }}>
             <View className="flex-row gap-2 pb-4">
               {[
                 { key: "upcoming", label: "Ativos" },

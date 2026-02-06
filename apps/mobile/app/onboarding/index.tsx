@@ -35,6 +35,7 @@ import {
 } from "../../lib/onboardingDraft";
 import { getActiveSession } from "../../lib/session";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "../../lib/username";
+import { getUserFacingError } from "../../lib/errors";
 import {
   INTEREST_OPTIONS,
   InterestId,
@@ -200,6 +201,12 @@ export default function OnboardingScreen() {
     setPadelSide(null);
     setPadelLevel(null);
   }, [padelSelected, step]);
+
+  useEffect(() => {
+    if (step !== "basic") {
+      cancelUsernameCheck();
+    }
+  }, [step]);
 
   useEffect(() => {
     let mounted = true;
@@ -476,21 +483,19 @@ export default function OnboardingScreen() {
       await clearOnboardingDraft();
       router.replace("/(tabs)");
     } catch (err: any) {
-      const raw = err?.message ?? "Não foi possível concluir o onboarding.";
-      const message =
-        typeof raw === "string" && raw.startsWith("API")
-          ? "Não foi possível concluir o onboarding. Tenta novamente."
-          : raw;
+      const raw = String(err?.message ?? "");
+      const message = "Não foi possível concluir o onboarding. Tenta novamente.";
       if (
-        typeof message === "string" &&
-        (message.includes("USERNAME_TAKEN") || message.toLowerCase().includes("username") || message.includes("utilizado"))
+        raw.includes("USERNAME_TAKEN") ||
+        raw.toLowerCase().includes("username") ||
+        raw.toLowerCase().includes("utilizado")
       ) {
         setUsernameStatus("taken");
         Alert.alert("Username indisponível", "Escolhe outro username para concluir.");
         setStep("basic");
         return;
       }
-      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+      if (raw.includes("API 401") || raw.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
       }
@@ -517,20 +522,21 @@ export default function OnboardingScreen() {
       });
       setStep("interests");
     } catch (err: any) {
-      const message = err?.message ?? "Não foi possível guardar o perfil.";
+      const rawMessage = String(err?.message ?? "");
       if (
-        typeof message === "string" &&
-        (message.includes("USERNAME_TAKEN") || message.includes("username") || message.includes("já está"))
+        rawMessage.includes("USERNAME_TAKEN") ||
+        rawMessage.toLowerCase().includes("username") ||
+        rawMessage.includes("já está")
       ) {
         setUsernameStatus("taken");
         Alert.alert("Username indisponível", "Este username já está a ser utilizado.");
         return;
       }
-      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+      if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
       }
-      Alert.alert("Erro", message);
+      Alert.alert("Erro", getUserFacingError(err, "Não foi possível guardar o perfil."));
     } finally {
       setSavingStep(null);
     }
@@ -543,12 +549,12 @@ export default function OnboardingScreen() {
       await persistDraft({ step: 2, interests });
       setStep(padelSelected ? "padel" : "location");
     } catch (err: any) {
-      const message = err?.message ?? "Não foi possível guardar os interesses.";
-      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+      const rawMessage = String(err?.message ?? "");
+      if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
       }
-      Alert.alert("Erro", message);
+      Alert.alert("Erro", getUserFacingError(err, "Não foi possível guardar os interesses."));
     } finally {
       setSavingStep(null);
     }
@@ -572,12 +578,12 @@ export default function OnboardingScreen() {
       });
       setStep("location");
     } catch (err: any) {
-      const message = err?.message ?? "Não foi possível guardar o perfil de padel.";
-      if (typeof message === "string" && (message.includes("API 401") || message.includes("UNAUTHENTICATED"))) {
+      const rawMessage = String(err?.message ?? "");
+      if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
       }
-      Alert.alert("Erro", message);
+      Alert.alert("Erro", getUserFacingError(err, "Não foi possível guardar o perfil de padel."));
     } finally {
       setSavingStep(null);
     }
@@ -775,11 +781,13 @@ export default function OnboardingScreen() {
                 ? "Não foi possível verificar agora."
                 : "";
     const tone =
-      usernameStatus === "available" || usernameStatus === "checking"
-        ? styles.helperNeutral
-        : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error"
-          ? styles.helperError
-          : styles.helperText;
+      usernameStatus === "available"
+        ? styles.helperSuccess
+        : usernameStatus === "checking"
+          ? styles.helperNeutral
+          : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error"
+            ? styles.helperError
+            : styles.helperText;
 
     if (!hasUsername && !statusMessage) return null;
     if (!statusMessage && !showHint) return null;
@@ -794,7 +802,7 @@ export default function OnboardingScreen() {
             {usernameStatus === "checking" ? (
               <ActivityIndicator size="small" color="rgba(200,210,230,0.9)" />
             ) : usernameStatus === "available" ? (
-              <Ionicons name="checkmark-circle" size={14} color="rgba(200,210,230,0.9)" />
+              <Ionicons name="checkmark-circle" size={14} color="rgba(110, 231, 183, 0.9)" />
             ) : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error" ? (
               <Ionicons name="alert-circle" size={14} color="rgba(252, 165, 165, 0.9)" />
             ) : null}
@@ -1222,6 +1230,9 @@ const styles = StyleSheet.create({
   helperNeutral: {
     color: "rgba(200,210,230,0.9)",
   },
+  helperSuccess: {
+    color: "rgba(110, 231, 183, 0.9)",
+  },
   helperError: {
     color: "rgba(252, 165, 165, 0.95)",
   },
@@ -1248,18 +1259,18 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     minHeight: tokens.layout.touchTarget,
-    width: "22%",
+    width: "23%",
     minWidth: 70,
     aspectRatio: 1,
     position: "relative",
   },
   interestChipIdle: {
     borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   interestChipActive: {
     borderColor: "rgba(170, 220, 255, 0.55)",
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.18)",
     shadowColor: "rgba(140, 200, 255, 0.25)",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,

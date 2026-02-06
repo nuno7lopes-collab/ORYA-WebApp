@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from "react";
-import { Platform, Pressable, SectionList, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { Platform, Pressable, SectionList, Text, View, InteractionManager } from "react-native";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
@@ -18,8 +18,10 @@ import { useSocialFeed } from "../../features/social/hooks";
 import { SocialFeedCard } from "../../features/social/SocialFeedCard";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { SocialFeedItem } from "../../features/social/types";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { TopAppHeader } from "../../components/navigation/TopAppHeader";
+import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
+import { useFocusEffect } from "@react-navigation/native";
 
 const SECTION_SPACING = 24;
 
@@ -48,16 +50,17 @@ const buildSkeletons = (variant: NetworkSectionKey, count: number): NetworkSecti
   }));
 
 export default function NetworkScreen() {
-  const suggestions = useNetworkSuggestions();
+  const [dataReady, setDataReady] = useState(false);
+  const suggestions = useNetworkSuggestions(dataReady);
   const actions = useNetworkActions();
-  const followRequests = useFollowRequests();
+  const followRequests = useFollowRequests(dataReady);
   const followRequestActions = useFollowRequestActions();
-  const socialFeed = useSocialFeed(8);
-  const { data: ipLocation } = useIpLocation();
+  const socialFeed = useSocialFeed(8, dataReady);
+  const { data: ipLocation } = useIpLocation(dataReady);
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
-  const insets = useSafeAreaInsets();
   const tabBarPadding = useTabBarPadding();
+  const topPadding = useTopHeaderPadding(12);
 
   const feedItems = useMemo(
     () => socialFeed.data?.pages.flatMap((page) => page.items) ?? [],
@@ -128,6 +131,20 @@ export default function NetworkScreen() {
     socialFeed.refetch();
     followRequests.refetch();
   }, [followRequests, socialFeed, suggestions]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (active) setDataReady(true);
+      });
+      return () => {
+        active = false;
+        task.cancel();
+        setDataReady(false);
+      };
+    }, []),
+  );
 
   const renderItem = useCallback(
     ({ item, index }: { item: NetworkSectionItem; index: number }) => {
@@ -257,21 +274,14 @@ export default function NetworkScreen() {
 
   return (
     <LiquidBackground>
+      <TopAppHeader />
       <SectionList
         sections={sections}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
         renderSectionFooter={renderSectionFooter}
-        ListHeaderComponent={
-          <View style={{ paddingTop: insets.top + 12, paddingBottom: 8 }}>
-            <Text className="text-white text-[30px] font-semibold">Rede</Text>
-            <Text className="mt-1 text-white/60 text-sm">
-              Segue pessoas e clubes para personalizar o teu feed.
-            </Text>
-          </View>
-        }
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding, paddingTop: topPadding }}
         refreshing={suggestions.isFetching || socialFeed.isFetching || followRequests.isFetching}
         onRefresh={handleRefresh}
         removeClippedSubviews={Platform.OS === "android"}
