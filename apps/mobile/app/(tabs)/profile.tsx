@@ -602,7 +602,7 @@ export default function ProfileScreen() {
                   <Pressable
                     key={item.userId}
                     onPress={() => {
-                      if (item.username) router.push(`/@${item.username}`);
+                      if (item.username) router.push(`/${item.username}`);
                     }}
                     className="flex-row items-center gap-3 py-2"
                   >
@@ -655,7 +655,7 @@ export default function ProfileScreen() {
                   <Pressable
                     key={item.userId}
                     onPress={() => {
-                      if (item.username) router.push(`/@${item.username}`);
+                      if (item.username) router.push(`/${item.username}`);
                     }}
                     className="flex-row items-center gap-3 py-2"
                   >

@@ -2,12 +2,11 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { canManageMembers } from "@/lib/organizationPermissions";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { OrganizationMemberRole, OrganizationModule, OrganizationPermissionLevel } from "@prisma/client";
+import { OrganizationModule, OrganizationPermissionLevel } from "@prisma/client";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -173,8 +172,6 @@ export async function PATCH(req: NextRequest) {
     if (!emailGate.ok) {
       return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
-    const callerRole = callerMembership.role as OrganizationMemberRole | null;
-
     const targetMembership = await prisma.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId, userId: targetUserId } },
     });
@@ -182,8 +179,15 @@ export async function PATCH(req: NextRequest) {
       return fail(404, "NOT_MEMBER");
     }
 
-    const manageAllowed = canManageMembers(callerRole, targetMembership.role, targetMembership.role);
-    if (!manageAllowed) {
+    const access = await ensureMemberModuleAccess({
+      organizationId,
+      userId: user.id,
+      role: callerMembership.role,
+      rolePack: callerMembership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!access.ok) {
       return fail(403, "FORBIDDEN");
     }
 

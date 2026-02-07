@@ -1,6 +1,6 @@
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ensureGroupMemberCheckinAccess } from "@/lib/organizationMemberAccess";
+import { ensureGroupMemberCheckinAccess, ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
 export async function getOrganizationRole(userId: string, organizationId: number) {
@@ -10,6 +10,13 @@ export async function getOrganizationRole(userId: string, organizationId: number
 }
 
 export async function canManageMembersDb(userId: string, organizationId: number) {
+  const access = await ensureGroupMemberModuleAccess({
+    organizationId,
+    userId,
+    moduleKey: OrganizationModule.STAFF,
+    required: "EDIT",
+  });
+  if (access.ok) return true;
   const role = await getOrganizationRole(userId, organizationId);
   return role === OrganizationMemberRole.OWNER || role === OrganizationMemberRole.CO_OWNER || role === OrganizationMemberRole.ADMIN;
 }

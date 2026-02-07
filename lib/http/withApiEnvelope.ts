@@ -1,6 +1,6 @@
 import { buildResponseHeaders, getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { setRequestAuthHeader } from "@/lib/http/authContext";
-import { respondError, respondLegacy } from "@/lib/http/envelope";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
 
 const JSON_CONTENT_TYPE = "application/json";
@@ -215,7 +215,16 @@ async function normalizeJsonResponse(ctx: RequestContext, res: Response) {
       headers,
     });
   }
-  return respondLegacy(ctx, payload, { status: res.status, headers: res.headers });
+  return respondError(
+    ctx,
+    {
+      errorCode: "LEGACY_ENVELOPE",
+      message: "Response payload is not a v9 envelope.",
+      retryable: false,
+      details: { status: res.status },
+    },
+    { status: 500, headers: res.headers },
+  );
 }
 
 function shouldPassthrough(res: Response) {
@@ -251,7 +260,26 @@ export function withApiEnvelope<Req extends Request, Args extends any[]>(
         }
         return normalizePlainResponse(ctx, result);
       }
-      return respondLegacy(ctx, result);
+      if (isObject(result) && "ok" in result) {
+        if (!isV9Envelope(result)) {
+          return respondError(
+            ctx,
+            {
+              errorCode: "LEGACY_ENVELOPE",
+              message: "Response payload is not a v9 envelope.",
+              retryable: false,
+            },
+            { status: 500 },
+          );
+        }
+        let normalized = ensureCanonicalEnvelope(ctx, result as Record<string, unknown>);
+        if (normalized.ok === false) {
+          normalized = enforceCanonicalErrorCode(400, normalized);
+        }
+        const headers = buildResponseHeaders(ctx);
+        return new Response(JSON.stringify(normalized), { status: 200, headers });
+      }
+      return respondOk(ctx, result as unknown);
     } catch (err) {
       logError(
         "api",

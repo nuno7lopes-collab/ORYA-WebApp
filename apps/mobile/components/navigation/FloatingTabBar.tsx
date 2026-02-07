@@ -19,11 +19,14 @@ const LEFT_TABS: Array<{
 
 const RIGHT_TAB = { key: "index", icon: "search" as keyof typeof Ionicons.glyphMap };
 
-export const TAB_BAR_HEIGHT = 70;
+export const TAB_BAR_HEIGHT = 60;
+const RIGHT_PILL_SIZE = 56;
 
-const PILL_GAP = 12;
+const PILL_GAP = 10;
 const WRAPPER_PADDING = 16;
-const TRACK_PADDING = 8;
+const TRACK_PADDING_X = 12;
+const TRACK_PADDING_Y = 8;
+const MAX_LEFT_PILL_WIDTH = 260;
 const BUBBLE_INSET = 2;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -41,12 +44,16 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const dragIndexRef = useRef<number | null>(null);
 
-  const rowWidth = Math.max(Math.min(windowWidth - WRAPPER_PADDING * 2, 560), 0);
-  const leftPillWidth = Math.max(rowWidth - TAB_BAR_HEIGHT - PILL_GAP, 0);
+  const maxRowWidth = Math.max(Math.min(windowWidth - WRAPPER_PADDING * 2, 560), 0);
+  const rightPillWidth = RIGHT_PILL_SIZE;
+  const leftPillWidth = Math.max(
+    Math.min(maxRowWidth - rightPillWidth - PILL_GAP, MAX_LEFT_PILL_WIDTH),
+    0,
+  );
+  const rowWidth = leftPillWidth + rightPillWidth + PILL_GAP;
   const [trackWidth, setTrackWidth] = useState(0);
   const slotWidth = trackWidth ? trackWidth / LEFT_TABS.length : 0;
   const bubbleWidth = Math.max(slotWidth - BUBBLE_INSET * 2, 0);
-  const rightPillWidth = Math.max(TAB_BAR_HEIGHT, slotWidth ? slotWidth + TRACK_PADDING * 2 : TAB_BAR_HEIGHT);
 
   const slotCentersRef = useRef<number[]>([]);
   const [, forceSlotUpdate] = useState(0);
@@ -223,14 +230,16 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
       <View pointerEvents="box-none" style={[styles.wrapper, { bottom: safeBottom }]}>
       <View style={[styles.row, { width: rowWidth }]}>
         <View style={[styles.leftPill, { width: leftPillWidth }]}>
-          <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
-          <LinearGradient
-            colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.pillBorder} pointerEvents="none" />
+          <View pointerEvents="none" style={[styles.pillFillWrap, styles.rightPillFillWrap]}>
+            <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+            <LinearGradient
+              colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
+          <View style={[styles.pillBorder, styles.rightPillBorder]} pointerEvents="none" />
 
           <View style={styles.track}>
             <View
@@ -254,13 +263,15 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                   ]}
                 >
                   <Animated.View style={[styles.bubble, { transform: [{ scale: bubbleScale }] }]}>
-                    <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
-                    <LinearGradient
-                      colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFill}
-                    />
+                    <View pointerEvents="none" style={styles.bubbleFillWrap}>
+                      <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
+                      <LinearGradient
+                        colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                    </View>
                   </Animated.View>
                 </Animated.View>
               )}
@@ -302,7 +313,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                       <View style={styles.iconBox}>
                         <Ionicons
                           name={iconName}
-                          size={26}
+                          size={24}
                           color={isActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
                         />
                       </View>
@@ -317,40 +328,40 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
         <Pressable
           accessibilityRole="button"
           accessibilityState={rightActive ? { selected: true } : {}}
-          style={({ pressed }) => [
-            styles.rightPill,
-            { width: rightPillWidth },
-            pressed && styles.tabPressed,
-          ]}
+          style={({ pressed }) => [styles.rightPill, pressed && styles.tabPressed]}
           hitSlop={10}
           onPress={() => {
             navigation.navigate(RIGHT_TAB.key, { search: "1" });
           }}
         >
-          <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
-          <LinearGradient
-            colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
+          <View pointerEvents="none" style={styles.pillFillWrap}>
+            <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+            <LinearGradient
+              colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
           <View style={styles.pillBorder} pointerEvents="none" />
           <View style={styles.rightTrack}>
             {rightActive && (
               <View pointerEvents="none" style={styles.rightBubble}>
-                <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
-                <LinearGradient
-                  colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
+                <View pointerEvents="none" style={styles.bubbleFillWrap}>
+                  <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
+                  <LinearGradient
+                    colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </View>
               </View>
             )}
             <View style={styles.iconBox}>
               <Ionicons
                 name={RIGHT_TAB.icon}
-                size={28}
+                size={24}
                 color={rightActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
               />
             </View>
@@ -382,26 +393,42 @@ const styles = StyleSheet.create({
   },
   track: {
     flex: 1,
-    paddingHorizontal: TRACK_PADDING,
-    paddingVertical: TRACK_PADDING,
+    paddingHorizontal: TRACK_PADDING_X,
+    paddingVertical: TRACK_PADDING_Y,
   },
   trackInner: {
     flex: 1,
     position: "relative",
   },
   rightPill: {
-    height: TAB_BAR_HEIGHT,
-    borderRadius: TAB_BAR_HEIGHT / 2,
+    height: RIGHT_PILL_SIZE,
+    width: RIGHT_PILL_SIZE,
+    minWidth: RIGHT_PILL_SIZE,
+    maxWidth: RIGHT_PILL_SIZE,
+    aspectRatio: 1,
+    borderRadius: RIGHT_PILL_SIZE / 2,
     overflow: "hidden",
+    flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(14,18,28,0.45)",
   },
   pillBorder: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
+    borderRadius: TAB_BAR_HEIGHT / 2,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
+  },
+  pillFillWrap: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: TAB_BAR_HEIGHT / 2,
+    overflow: "hidden",
+  },
+  rightPillFillWrap: {
+    borderRadius: RIGHT_PILL_SIZE / 2,
+  },
+  rightPillBorder: {
+    borderRadius: RIGHT_PILL_SIZE / 2,
   },
   bubbleTrack: {
     position: "absolute",
@@ -417,6 +444,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.25)",
   },
+  bubbleFillWrap: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
   slotsRow: {
     flex: 1,
     flexDirection: "row",
@@ -429,8 +461,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   iconBox: {
-    width: 30,
-    height: 30,
+    width: 28,
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -441,8 +473,11 @@ const styles = StyleSheet.create({
   rightTrack: {
     flex: 1,
     width: "100%",
-    paddingHorizontal: TRACK_PADDING,
-    paddingVertical: TRACK_PADDING,
+    height: "100%",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: RIGHT_PILL_SIZE / 2,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
   },

@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { canManageMembers, isOrgOwner } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { setSoleOwner } from "@/lib/organizationRoles";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
@@ -175,6 +176,17 @@ export async function PATCH(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
+    const staffAccess = await ensureMemberModuleAccess({
+      organizationId,
+      userId: user.id,
+      role: callerMembership.role,
+      rolePack: callerMembership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!staffAccess.ok) {
+      return fail(403, "FORBIDDEN");
+    }
 
     const targetMembership = await prisma.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId, userId: targetUserId } },
@@ -376,6 +388,17 @@ export async function DELETE(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
+    const staffAccess = await ensureMemberModuleAccess({
+      organizationId,
+      userId: user.id,
+      role: callerMembership.role,
+      rolePack: callerMembership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!staffAccess.ok) {
+      return fail(403, "FORBIDDEN");
+    }
 
     const targetMembership = await prisma.organizationMember.findUnique({
       where: { organizationId_userId: { organizationId, userId: targetUserId } },

@@ -95,7 +95,6 @@ model Profile {
   eventFavorites                                                   EventFavorite[]
   servicesInstructing                                              Service[]               @relation("ServiceInstructor")
   reservationProfessionals                                         ReservationProfessional[]
-  membershipSubscriptions                                          MembershipSubscription[]
   trainerProfiles                                                  TrainerProfile[]
   chatMembers                                                      ChatMember[]
   chatMessages                                                     ChatMessage[]           @relation("ChatMessageUser")
@@ -179,8 +178,6 @@ model Organization {
   platformFeeFixedCents   Int                             @default(0) @map("platform_fee_fixed_cents")
   stripeChargesEnabled    Boolean                         @default(false) @map("stripe_charges_enabled")
   stripePayoutsEnabled    Boolean                         @default(false) @map("stripe_payouts_enabled")
-  stripeCustomerId        String?                         @map("stripe_customer_id")
-  stripeSubscriptionId    String?                         @map("stripe_subscription_id")
   entityType              String?                         @map("entity_type")
   businessName            String?                         @map("business_name")
   city                    String?                         @map("city")
@@ -198,7 +195,6 @@ model Organization {
   organizationKind        OrganizationKind                @default(PESSOA_SINGULAR) @map("organization_kind")
   primaryModule           OrganizationModule              @default(EVENTOS) @map("primary_module")
   reservationAssignmentMode ReservationAssignmentMode     @default(PROFESSIONAL) @map("reservation_assignment_mode")
-  liveHubPremiumEnabled   Boolean                         @default(false) @map("live_hub_premium_enabled")
   padelDefaultShortName   String?                         @map("padel_default_short_name")
   padelDefaultCity        String?                         @map("padel_default_city")
   padelDefaultAddress     String?                         @map("padel_default_address")
@@ -280,7 +276,6 @@ model Organization {
   crmCustomerNotes        CrmCustomerNote[]
   crmInteractions         CrmInteraction[]
   crmSegments             CrmSegment[]
-  crmSegmentMemberships   CrmSegmentMembership[]
   crmCampaigns            CrmCampaign[]
   crmCampaignDeliveries   CrmCampaignDelivery[]
   userConsents            UserConsent[]
@@ -289,13 +284,9 @@ model Organization {
   group                   OrganizationGroup               @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   memberOverrides          OrganizationGroupMemberOrganizationOverride[]
   loyaltyLedger           LoyaltyLedger[]
-  membershipPlans         MembershipPlan[]
-  membershipSubscriptions MembershipSubscription[]
   store                   Store?
   organization_follows_organization_follows_organization_idToorganizations organization_follows[] @relation("organization_follows_organization_idToorganizations")
 
-  @@index([stripeCustomerId], map: "organizations_stripe_customer_idx")
-  @@index([stripeSubscriptionId], map: "organizations_stripe_subscription_idx")
   @@map("organizations")
   @@schema("app_v3")
 }
@@ -3660,7 +3651,6 @@ model Service {
   coverImageUrl   String?       @map("cover_image_url")
   locationMode    ServiceLocationMode @default(FIXED) @map("location_mode")
   defaultLocationText String?   @map("default_location_text")
-  requiredMembershipPlanIds Int[] @default([]) @map("required_membership_plan_ids")
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -4192,69 +4182,6 @@ model ServiceReview {
   @@schema("app_v3")
 }
 
-model MembershipPlan {
-  env                     String                         @default("prod")
-  id              Int                      @id @default(autoincrement())
-  organizationId     Int                      @map("organization_id")
-  name            String
-  description     String?
-  priceCents      Int                      @map("price_cents")
-  currency        String                   @default("EUR")
-  billingInterval MembershipBillingInterval @default(MONTHLY) @map("billing_interval")
-  trialDays       Int?                     @map("trial_days")
-  stripePriceId   String?                  @map("stripe_price_id")
-  isActive        Boolean                  @default(true) @map("is_active")
-  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organization       Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  perks           MembershipPerk[]
-  subscriptions   MembershipSubscription[]
-
-  @@index([organizationId])
-  @@index([isActive])
-  @@map("membership_plans")
-  @@schema("app_v3")
-}
-
-model MembershipPerk {
-  env                     String                         @default("prod")
-  id        Int             @id @default(autoincrement())
-  planId    Int             @map("plan_id")
-  label     String
-  sortOrder Int             @default(0) @map("sort_order")
-  plan      MembershipPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
-
-  @@index([planId])
-  @@map("membership_perks")
-  @@schema("app_v3")
-}
-
-model MembershipSubscription {
-  env                     String                         @default("prod")
-  id                    Int              @id @default(autoincrement())
-  organizationId           Int              @map("organization_id")
-  planId                Int              @map("plan_id")
-  userId                String           @map("user_id") @db.Uuid
-  status                MembershipStatus @default(ACTIVE)
-  currentPeriodEndAt    DateTime?        @map("current_period_end_at") @db.Timestamptz(6)
-  cancelAtPeriodEnd     Boolean          @default(false) @map("cancel_at_period_end")
-  stripeSubscriptionId  String?          @map("stripe_subscription_id")
-  stripeCustomerId      String?          @map("stripe_customer_id")
-  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organization             Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  plan                  MembershipPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
-  user                  Profile          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([organizationId])
-  @@index([planId])
-  @@index([userId])
-  @@index([status])
-  @@unique([organizationId, planId, userId], map: "membership_subscription_unique")
-  @@map("membership_subscriptions")
-  @@schema("app_v3")
-}
-
 model BookingPolicyRef {
   env                     String                         @default("prod")
   id        Int                @id @default(autoincrement())
@@ -4353,7 +4280,6 @@ model CrmCustomer {
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
   notes        CrmCustomerNote[]
-  segmentMemberships CrmSegmentMembership[]
 
   @@unique([organizationId, userId], map: "crm_customers_org_user_unique")
   @@index([organizationId, lastActivityAt], map: "crm_customers_org_last_activity_idx")
@@ -4422,29 +4348,10 @@ model CrmSegment {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator      Profile?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
-  memberships  CrmSegmentMembership[]
   campaigns    CrmCampaign[]
 
   @@index([organizationId, status], map: "crm_segments_org_status_idx")
   @@map("crm_segments")
-  @@schema("app_v3")
-}
-
-model CrmSegmentMembership {
-  env                     String                         @default("prod")
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId Int      @map("organization_id")
-  segmentId      String   @map("segment_id") @db.Uuid
-  customerId     String   @map("customer_id") @db.Uuid
-  computedAt     DateTime @map("computed_at") @db.Timestamptz(6)
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  segment      CrmSegment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
-  customer     CrmCustomer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@unique([segmentId, customerId], map: "crm_segment_memberships_segment_customer_unique")
-  @@index([organizationId, segmentId], map: "crm_segment_memberships_org_segment_idx")
-  @@map("crm_segment_memberships")
   @@schema("app_v3")
 }
 
@@ -5835,24 +5742,6 @@ enum ServiceKind {
   GENERAL
   COURT
   CLASS
-
-  @@schema("app_v3")
-}
-
-enum MembershipBillingInterval {
-  MONTHLY
-  YEARLY
-
-  @@schema("app_v3")
-}
-
-enum MembershipStatus {
-  ACTIVE
-  TRIALING
-  PAST_DUE
-  PAUSED
-  CANCELLED
-  EXPIRED
 
   @@schema("app_v3")
 }

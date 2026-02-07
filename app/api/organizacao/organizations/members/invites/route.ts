@@ -319,8 +319,22 @@ export async function POST(req: NextRequest) {
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
-    const manageAllowed = canManageMembers(membership?.role ?? null, null, roleRaw as OrganizationMemberRole);
-    if (!membership || !manageAllowed) {
+    if (!membership) {
+      return fail(403, "FORBIDDEN");
+    }
+    const staffAccess = await ensureMemberModuleAccess({
+      organizationId,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!staffAccess.ok) {
+      return fail(403, "FORBIDDEN");
+    }
+    const manageAllowed = canManageMembers(membership.role ?? null, null, roleRaw as OrganizationMemberRole);
+    if (!manageAllowed) {
       return fail(403, "FORBIDDEN");
     }
     if (roleRaw === "OWNER" && !hasOrgOwnerAccess(membership.role)) {

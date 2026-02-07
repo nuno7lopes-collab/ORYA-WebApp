@@ -19,6 +19,14 @@
 - Removed override usage in pricing and payments intent flow.
 - Migration: `prisma/migrations/20260206173000_drop_event_fee_overrides/migration.sql`.
 
+## Phase B Changes Applied — Membership/CRM Cleanup
+
+- Dropped org legacy billing fields: `organizations.stripe_customer_id`, `organizations.stripe_subscription_id`, `organizations.live_hub_premium_enabled`.
+- Dropped `services.required_membership_plan_ids`.
+- Dropped unused tables: `membership_plans`, `membership_perks`, `membership_subscriptions`, `crm_segment_memberships`.
+- Dropped enums: `MembershipBillingInterval`, `MembershipStatus`.
+- Migration: `prisma/migrations/20260207120000_drop_membership_legacy/migration.sql`.
+
 ## Key Findings (high-confidence)
 
 ### 1) Schema drift / legacy columns
