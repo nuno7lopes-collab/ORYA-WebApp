@@ -1,4 +1,3 @@
-import * as WebBrowser from "expo-web-browser";
 import { getMobileEnv } from "./env";
 
 export type ResolvedNotificationLink =
@@ -93,6 +92,7 @@ export const openNotificationLink = async (router: RouterLike, input?: string | 
   }
   if (resolved.kind === "web") {
     try {
+      const WebBrowser = await import("expo-web-browser");
       await WebBrowser.openBrowserAsync(resolved.url);
     } catch {
       // ignore errors opening webview

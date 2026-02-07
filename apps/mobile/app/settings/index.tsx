@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Alert,
+  Linking as RNLinking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,7 +16,7 @@ import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { useRouter } from "expo-router";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { SettingsSection } from "../../components/settings/SettingsSection";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
@@ -23,7 +24,7 @@ import { SettingsButton } from "../../components/settings/SettingsButton";
 import { SettingsModal } from "../../components/settings/SettingsModal";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchConsents, fetchNotificationPrefs, updateConsent, updateEmail, updateSettings } from "../../features/settings/api";
 import { ConsentItem, NotificationPrefs, Visibility } from "../../features/settings/types";
@@ -34,6 +35,7 @@ import { getMobileEnv } from "../../lib/env";
 import { INTEREST_OPTIONS, InterestId } from "../../features/onboarding/types";
 import { Image } from "expo-image";
 import { api } from "../../lib/api";
+import { getPushPermissionStatus, registerForPushToken, requestPushPermission } from "../../lib/push";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -84,6 +86,8 @@ export default function SettingsScreen() {
     allowSystemAnnouncements: true,
   });
   const [savingNotifications, setSavingNotifications] = useState(false);
+  const [pushStatus, setPushStatus] = useState<\"granted\" | \"denied\" | \"undetermined\" | \"unavailable\">(\"undetermined\");
+  const [pushBusy, setPushBusy] = useState(false);
 
   const [consents, setConsents] = useState<ConsentItem[]>([]);
   const [consentError, setConsentError] = useState<string | null>(null);
@@ -117,6 +121,46 @@ export default function SettingsScreen() {
     if (!consentsQuery.data) return;
     setConsents(consentsQuery.data);
   }, [consentsQuery.data]);
+
+  const refreshPushStatus = useCallback(() => {
+    getPushPermissionStatus()
+      .then((result) => setPushStatus(result.status))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    refreshPushStatus();
+  }, [refreshPushStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshPushStatus();
+    }, [refreshPushStatus]),
+  );
+
+  const handlePushPermission = async () => {
+    if (pushBusy) return;
+    if (pushStatus === \"denied\") {
+      RNLinking.openSettings().catch(() => undefined);
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const result = await requestPushPermission();
+      setPushStatus(result.status);
+      if (result.granted && accessToken) {
+        const token = await registerForPushToken();
+        if (token) {
+          await api.requestWithAccessToken(\"/api/me/push-tokens\", accessToken, {
+            method: \"POST\",
+            body: JSON.stringify({ token, platform: \"ios\" }),
+          });
+        }
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const emailDirty = useMemo(() => {
     const current = email.trim().toLowerCase();
@@ -455,6 +499,29 @@ export default function SettingsScreen() {
               />
             </View>
           )}
+          <View style={styles.pushRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pushTitle}>Notificações push</Text>
+              <Text style={styles.helperText}>Alertas em tempo real no teu iPhone.</Text>
+            </View>
+            {pushStatus === "granted" ? (
+              <View style={styles.pushBadge}>
+                <Text style={styles.pushBadgeText}>Ativas</Text>
+              </View>
+            ) : pushStatus === "unavailable" ? (
+              <View style={styles.pushBadgeMuted}>
+                <Text style={styles.pushBadgeTextMuted}>Indisponível</Text>
+              </View>
+            ) : (
+              <SettingsButton
+                label={pushStatus === "denied" ? "Abrir definições" : "Ativar push"}
+                onPress={handlePushPermission}
+                loading={pushBusy}
+                variant="secondary"
+                style={{ alignSelf: "flex-start" }}
+              />
+            )}
+          </View>
           <SettingsButton
             label="Guardar notificações"
             onPress={handleSaveNotifications}
@@ -704,6 +771,45 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: tokens.spacing.sm,
+  },
+  pushRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: tokens.spacing.md,
+    marginBottom: tokens.spacing.sm,
+  },
+  pushTitle: {
+    color: "rgba(255,255,255,0.92)",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  pushBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "rgba(76, 217, 100, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(76, 217, 100, 0.5)",
+  },
+  pushBadgeText: {
+    color: "rgba(210,255,220,0.95)",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  pushBadgeMuted: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  pushBadgeTextMuted: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 12,
+    fontWeight: "700",
   },
   orgAvatar: {
     width: 32,

@@ -207,3 +207,5 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 - Finanças: gateway Stripe passa a destination charges (`application_fee_amount` + `transfer_data.destination`).
 - Payouts: controlo directo desativado (cron/admin).
 - Read‑models: `stripeFeeCents` só é preenchido quando fee real está disponível (sem estimativas).
+- Padel: split D12 corrigido (48h vs T‑24) e `requiresEntitlementForEntry` forçado para eventos Padel.
+- Padel: alias `padel-hub` removido do UI e purge total dedicado (`scripts/purge_padel_total.js`).

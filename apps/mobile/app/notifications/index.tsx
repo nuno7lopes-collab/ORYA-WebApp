@@ -17,6 +17,7 @@ import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { openNotificationLink } from "../../lib/notifications";
 import { getPushPermissionStatus, registerForPushToken, requestPushPermission } from "../../lib/push";
 import { api } from "../../lib/api";
+import { useFocusEffect } from "@react-navigation/native";
 
 const statusOptions: Array<{ key: NotificationsStatus; label: string }> = [
   { key: "all", label: "Todas" },
@@ -145,9 +146,10 @@ export default function NotificationsScreen() {
   );
 
   const handleMarkAllRead = useCallback(async () => {
+    if (!session?.user?.id) return;
     await markAllNotificationsRead();
     queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-  }, [queryClient]);
+  }, [queryClient, session?.user?.id]);
 
   const formatDate = useCallback((value?: string | null) => {
     if (!value) return "";
@@ -238,6 +240,12 @@ export default function NotificationsScreen() {
     refreshPermissionStatus();
   }, [refreshPermissionStatus]);
 
+  useFocusEffect(
+    useCallback(() => {
+      refreshPermissionStatus();
+    }, [refreshPermissionStatus]),
+  );
+
   const renderHeader = useMemo(() => (
     <View style={{ paddingBottom: 16 }}>
       <Text style={styles.screenTitle}>Notificações</Text>
@@ -280,6 +288,10 @@ export default function NotificationsScreen() {
           <View style={styles.pushStatus}>
             <Text style={styles.pushStatusText}>Push ativas</Text>
           </View>
+        ) : pushStatus === "unavailable" ? (
+          <View style={styles.pushStatusMuted}>
+            <Text style={styles.pushStatusTextMuted}>Indisponível</Text>
+          </View>
         ) : pushStatus === "denied" ? (
           <Pressable
             onPress={handleOpenSettings}
@@ -316,7 +328,9 @@ export default function NotificationsScreen() {
         data={listData}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        onRefresh={() => feed.refetch()}
+        onRefresh={() => {
+          if (session?.user?.id) feed.refetch();
+        }}
         refreshing={feed.isFetching}
         removeClippedSubviews={Platform.OS === "android"}
         initialNumToRender={6}
@@ -326,6 +340,7 @@ export default function NotificationsScreen() {
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={emptyState}
         onEndReached={() => {
+          if (!session?.user?.id) return;
           if (feed.hasNextPage && !feed.isFetchingNextPage) {
             feed.fetchNextPage();
           }
@@ -408,6 +423,19 @@ const styles = {
   } as const,
   pushStatusText: {
     color: "rgba(210,255,220,0.95)",
+    fontSize: 12,
+    fontWeight: "700",
+  } as const,
+  pushStatusMuted: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  } as const,
+  pushStatusTextMuted: {
+    color: "rgba(255,255,255,0.65)",
     fontSize: 12,
     fontWeight: "700",
   } as const,

@@ -14,6 +14,9 @@ const normalizeStatus = (status?: string | null): PushPermissionStatus => {
   if (status === "granted" || status === "denied" || status === "undetermined") {
     return status;
   }
+  if (status === "provisional" || status === "ephemeral") {
+    return "granted";
+  }
   return "unavailable";
 };
 

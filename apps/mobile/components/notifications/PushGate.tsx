@@ -20,6 +20,16 @@ export function PushGate() {
   const unreadQuery = useNotificationsUnread(Boolean(session?.user?.id));
 
   useEffect(() => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      }),
+    });
+  }, []);
+
+  useEffect(() => {
     if (session?.access_token && session.access_token !== lastAccessTokenRef.current) {
       lastAccessTokenRef.current = session.access_token;
       authFailedRef.current = false;
