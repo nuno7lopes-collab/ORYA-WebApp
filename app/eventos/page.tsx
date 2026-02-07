@@ -23,7 +23,6 @@ type EventCard = {
   endsAt: Date | null;
   locationName: string | null;
   locationCity: string | null;
-  address: string | null;
   locationFormattedAddress: string | null;
   locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationComponents: Record<string, unknown> | null;
@@ -67,7 +66,6 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
         { locationName: { contains: q, mode: "insensitive" } },
         { locationCity: { contains: q, mode: "insensitive" } },
         { locationFormattedAddress: { contains: q, mode: "insensitive" } },
-        { address: { contains: q, mode: "insensitive" } },
       ],
     });
   }
@@ -85,7 +83,6 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       endsAt: true,
       locationName: true,
       locationCity: true,
-      address: true,
       locationFormattedAddress: true,
       locationSource: true,
       locationComponents: true,
@@ -113,7 +110,6 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       endsAt: ev.endsAt ?? null,
       locationName: ev.locationName ?? null,
       locationCity: ev.locationCity ?? null,
-      address: ev.address ?? null,
       locationFormattedAddress: ev.locationFormattedAddress ?? null,
       locationSource: ev.locationSource ?? null,
       locationComponents:
@@ -204,7 +200,7 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
                 {
                   locationName: ev.locationName,
                   locationCity: ev.locationCity,
-                  address: ev.address,
+                  address: ev.locationFormattedAddress ?? null,
                   locationFormattedAddress: ev.locationFormattedAddress,
                   locationSource: ev.locationSource,
                   locationComponents: ev.locationComponents,

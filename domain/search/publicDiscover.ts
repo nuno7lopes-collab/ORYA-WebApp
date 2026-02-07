@@ -132,7 +132,6 @@ function buildDiscoverWhere(params: DiscoverParams): Prisma.SearchIndexItemWhere
       { locationName: { contains: q, mode: "insensitive" } },
       { locationCity: { contains: q, mode: "insensitive" } },
       { locationFormattedAddress: { contains: q, mode: "insensitive" } },
-      { address: { contains: q, mode: "insensitive" } },
     ];
   }
 
@@ -195,7 +194,6 @@ function mapSearchItemToPublicEventCardWithPrice(
     | "hostUsername"
     | "locationName"
     | "locationCity"
-    | "address"
     | "latitude"
     | "longitude"
     | "locationFormattedAddress"
@@ -219,7 +217,6 @@ function mapSearchItemToPublicEventCardWithPrice(
     hostUsername: event.hostUsername ?? null,
     locationName: event.locationName ?? null,
     locationCity: event.locationCity ?? null,
-    address: event.address ?? null,
     latitude: event.latitude ?? null,
     longitude: event.longitude ?? null,
     locationFormattedAddress: event.locationFormattedAddress ?? null,

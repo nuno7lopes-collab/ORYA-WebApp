@@ -1664,7 +1664,6 @@ async function processSendEmailReceipt(op: OperationRecord) {
       endsAt: true,
       locationName: true,
       locationCity: true,
-      address: true,
       locationSource: true,
       locationFormattedAddress: true,
       locationComponents: true,
@@ -1685,7 +1684,7 @@ async function processSendEmailReceipt(op: OperationRecord) {
     endsAt: event.endsAt?.toISOString() ?? null,
     locationName: event.locationName ?? null,
     locationCity: event.locationCity ?? null,
-    address: event.address ?? null,
+    address: event.locationFormattedAddress ?? null,
     locationSource: event.locationSource ?? null,
     locationFormattedAddress: event.locationFormattedAddress ?? null,
     locationComponents:

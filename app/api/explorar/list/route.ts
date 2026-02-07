@@ -183,7 +183,6 @@ async function _GET(req: NextRequest) {
         hostUsername: event.hostUsername ?? null,
         locationName: event.locationName ?? null,
         locationCity: event.locationCity ?? null,
-        address: event.address ?? null,
         latitude: event.latitude ?? null,
         longitude: event.longitude ?? null,
         locationFormattedAddress: event.locationFormattedAddress ?? null,

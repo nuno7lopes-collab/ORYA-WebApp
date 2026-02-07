@@ -144,7 +144,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           endsAt: event.endsAt.toISOString(),
           locationName: event.locationName,
           locationCity: event.locationCity,
-          address: event.address,
+          address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
           addressId: (event as { addressId?: string | null }).addressId ?? null,
           locationSource: event.locationSource,
           locationProviderId: event.locationProviderId,

@@ -61,7 +61,6 @@ type PublicEventCardInput = {
   organization?: { publicName: string | null } | null;
   locationName: string | null;
   locationCity: string | null;
-  address: string | null;
   latitude: number | null;
   longitude: number | null;
   locationFormattedAddress: string | null;
@@ -104,7 +103,6 @@ type PublicEventCardIndexInput = {
   hostUsername: string | null;
   locationName: string | null;
   locationCity: string | null;
-  address: string | null;
   latitude: number | null;
   longitude: number | null;
   locationFormattedAddress: string | null;
@@ -193,7 +191,7 @@ export function toPublicEventCardWithPrice(params: {
     location: {
       name: event.locationName ?? null,
       city: event.locationCity ?? null,
-      address: event.address ?? null,
+      address: event.locationFormattedAddress ?? null,
       lat: event.latitude ?? null,
       lng: event.longitude ?? null,
       formattedAddress: event.locationFormattedAddress ?? null,
@@ -254,7 +252,7 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     location: {
       name: input.locationName ?? null,
       city: input.locationCity ?? null,
-      address: input.address ?? null,
+      address: input.locationFormattedAddress ?? null,
       lat: input.latitude ?? null,
       lng: input.longitude ?? null,
       formattedAddress: input.locationFormattedAddress ?? null,

@@ -202,7 +202,6 @@ async function _POST(req: NextRequest) {
           latitude: true,
           longitude: true,
           city: true,
-          address: true,
           isDefault: true,
           isActive: true,
           addressRef: {
@@ -239,7 +238,6 @@ async function _POST(req: NextRequest) {
           locationComponents: true,
           locationSource: true,
           city: true,
-          address: true,
           latitude: true,
           longitude: true,
           addressRef: {
@@ -342,7 +340,6 @@ async function _POST(req: NextRequest) {
           name: resolvedName,
           shortName: resolvedName,
           city: resolvedCity || null,
-          address: resolvedAddress || null,
           addressId: resolvedAddressId,
           courtsCount,
           hours: null,
@@ -364,7 +361,6 @@ async function _POST(req: NextRequest) {
       name: resolvedName,
       shortName: resolvedName,
       city: resolvedCity || null,
-      address: resolvedAddress || null,
       addressId: resolvedAddressId,
       courtsCount,
       hours: null,

@@ -37,7 +37,8 @@ type EventPayload = {
   status: string;
   locationName: string;
   locationCity: string | null;
-  address: string | null;
+  address?: string | null;
+  addressRef?: { formattedAddress: string | null } | null;
   locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress: string | null;
   locationComponents: Record<string, unknown> | null;
@@ -1972,7 +1973,7 @@ function OneVOneLiveLayout({
     {
       locationName: event.locationName,
       locationCity: event.locationCity,
-      address: event.address,
+      address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
       locationSource: event.locationSource,
       locationFormattedAddress: event.locationFormattedAddress,
       locationComponents: event.locationComponents,
@@ -2834,7 +2835,8 @@ export default function EventLiveClient({
   const locationLabel =
     event.locationFormattedAddress ||
     event.locationName ||
-    event.address ||
+    event.addressRef?.formattedAddress ||
+    event.locationFormattedAddress ||
     event.locationCity ||
     null;
 

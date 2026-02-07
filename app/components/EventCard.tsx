@@ -12,7 +12,6 @@ type EventForCard = {
   endDate: string;
   timezone: string;
   locationName: string;
-  address?: string | null;
   locationCity?: string | null;
   locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress?: string | null;
@@ -76,7 +75,7 @@ export default function EventCard({ event }: Props) {
     {
       locationName: event.locationName,
       locationCity: event.locationCity ?? null,
-      address: event.address ?? null,
+      address: event.locationFormattedAddress ?? null,
       locationSource: event.locationSource ?? null,
       locationFormattedAddress: event.locationFormattedAddress ?? null,
       locationComponents: event.locationComponents ?? null,

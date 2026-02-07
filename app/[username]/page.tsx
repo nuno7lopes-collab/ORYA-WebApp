@@ -168,11 +168,11 @@ type OrganizationEvent = {
   endsAt: Date | null;
   locationName: string | null;
   locationCity: string | null;
-  address: string | null;
   locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress: string | null;
   locationComponents: Record<string, unknown> | null;
   locationOverrides: Record<string, unknown> | null;
+  addressRef?: { formattedAddress: string | null } | null;
   timezone: string | null;
   templateType: string | null;
   coverImageUrl: string | null;
@@ -275,11 +275,11 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
         }).format(event.startsAt as Date)
       : "data-a-definir";
     const label = hasDate ? formatDayLabel(event.startsAt as Date, timezone) : "Data a definir";
-    const locationLabel = formatEventLocationLabel(
+      const locationLabel = formatEventLocationLabel(
       {
         locationName: event.locationName,
         locationCity: event.locationCity,
-        address: event.address,
+        address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
         locationSource: event.locationSource,
         locationFormattedAddress: event.locationFormattedAddress,
         locationComponents: event.locationComponents,
@@ -469,11 +469,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           endsAt: true,
           locationName: true,
           locationCity: true,
-          address: true,
           locationSource: true,
           locationFormattedAddress: true,
           locationComponents: true,
           locationOverrides: true,
+          addressRef: { select: { formattedAddress: true } },
           timezone: true,
           templateType: true,
           coverImageUrl: true,
@@ -656,11 +656,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         endsAt: event.endsAt,
         locationName: event.locationName,
         locationCity: event.locationCity,
-        address: event.address,
         locationSource: event.locationSource,
         locationFormattedAddress: event.locationFormattedAddress,
         locationComponents,
         locationOverrides,
+        addressRef: event.addressRef ?? null,
         timezone: event.timezone,
         templateType: event.templateType,
         coverImageUrl: event.coverImageUrl,
@@ -1866,7 +1866,7 @@ function EventSpotlightCard({
             {
               locationName: event.locationName,
               locationCity: event.locationCity,
-              address: event.address,
+              address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
               locationSource: event.locationSource,
               locationFormattedAddress: event.locationFormattedAddress,
               locationComponents: event.locationComponents,

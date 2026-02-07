@@ -104,7 +104,6 @@ type EventEditClientProps = {
     endsAt: string;
     locationName: string | null;
     locationCity: string | null;
-    address: string | null;
     addressId?: string | null;
     locationSource?: LocationSource | null;
     locationProviderId?: string | null;
@@ -179,7 +178,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [endsAt, setEndsAt] = useState(event.endsAt);
   const [locationName, setLocationName] = useState(event.locationName ?? "");
   const [locationCity, setLocationCity] = useState(event.locationCity ?? "");
-  const [address, setAddress] = useState(event.address ?? "");
+  const initialAddress =
+    event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? "";
+  const [address, setAddress] = useState(initialAddress);
   const [locationAddressId, setLocationAddressId] = useState<string | null>(event.addressId ?? null);
   const [locationMode, setLocationMode] = useState<LocationMode>(
     event.locationSource === "APPLE_MAPS" || event.locationSource === "OSM" || event.locationProviderId
@@ -188,7 +189,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   );
   const [locationQuery, setLocationQuery] = useState(
     event.locationFormattedAddress ||
-      [event.locationName, event.locationCity, event.address].filter(Boolean).join(", "),
+      [event.locationName, event.locationCity, initialAddress].filter(Boolean).join(", "),
   );
   const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
@@ -236,7 +237,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   );
   const [locationTbd, setLocationTbd] = useState(() => {
     if (event.locationSource === "APPLE_MAPS" || event.locationSource === "OSM" || event.locationProviderId) return false;
-    return !event.locationName && !event.locationCity && !event.address && !event.locationFormattedAddress;
+    return !event.locationName && !event.locationCity && !initialAddress && !event.locationFormattedAddress;
   });
   const [templateType] = useState(event.templateType ?? "OTHER");
   const isPadel = templateType === "PADEL";
@@ -1071,7 +1072,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           }
         : null;
     const resolvedFormattedAddress =
-      resolvedLocationSource === "APPLE_MAPS" ? buildLocationFormattedAddress() : null;
+      resolvedLocationSource === "APPLE_MAPS"
+        ? buildLocationFormattedAddress()
+        : address.trim() || null;
     if (resolvedLocationSource === "APPLE_MAPS" && !resolvedAddressId) {
       setValidationAlert("Seleciona uma morada normalizada antes de guardar.");
       pushToast("Seleciona uma morada normalizada.");
@@ -1129,10 +1132,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           endsAt,
           locationName,
           locationCity,
-          address,
           locationSource: resolvedLocationSource,
           locationProviderId: resolvedLocationSource === "APPLE_MAPS" ? locationProviderId : null,
-          locationFormattedAddress: resolvedLocationSource === "APPLE_MAPS" ? resolvedFormattedAddress : null,
+          locationFormattedAddress: resolvedFormattedAddress,
           locationComponents: resolvedLocationSource === "APPLE_MAPS" ? locationComponents : null,
           locationOverrides: resolvedLocationOverrides,
           addressId: resolvedAddressId,

@@ -57,7 +57,6 @@ type PadelClubSummary = {
   id: number;
   name: string;
   city?: string | null;
-  address?: string | null;
   addressId?: string | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
@@ -150,9 +149,10 @@ const resolvePadelClubLocation = (club: PadelClubSummary | null) => {
     pickCanonicalField(canonical, ["city", "addressLine2", "locality"]) ||
     club.city ||
     "";
+  const manualAddress = club.locationFormattedAddress || "";
   const address =
     pickCanonicalField(canonical, ["addressLine1", "street", "road"]) ||
-    club.address ||
+    manualAddress ||
     "";
   const formatted =
     club.addressRef?.formattedAddress ||
@@ -1387,7 +1387,8 @@ export function NewOrganizationEventPage({
     setPadelDirectoryError(null);
     setCreatingPartnerClubId(club.id);
     try {
-      const formattedAddress = [club.address, club.city].filter(Boolean).join(", ");
+      const resolvedLocation = resolvePadelClubLocation(club);
+      const formattedAddress = resolvedLocation.formatted;
       const res = await fetch("/api/padel/clubs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1395,7 +1396,6 @@ export function NewOrganizationEventPage({
           organizationId: organizationIdFromStatus,
           name: club.name,
           city: club.city ?? "",
-          address: club.address ?? "",
           kind: "PARTNER",
           sourceClubId: club.id,
           locationSource: "MANUAL",
@@ -1529,7 +1529,11 @@ export function NewOrganizationEventPage({
                         >
                           <div>
                             <p className="font-semibold text-white">{club.name}</p>
-                            <p className="text-white/60">{[club.city, club.address].filter(Boolean).join(" · ")}</p>
+                            <p className="text-white/60">
+                              {[club.city, club.locationFormattedAddress ?? club.addressRef?.formattedAddress]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -1574,7 +1578,9 @@ export function NewOrganizationEventPage({
                           <div>
                             <p className="font-semibold text-white">{club.name}</p>
                             <p className="text-[11px] text-white/60">
-                              {[club.city, club.address].filter(Boolean).join(" · ") || "Local por definir"}
+                              {[club.city, club.locationFormattedAddress ?? club.addressRef?.formattedAddress]
+                                .filter(Boolean)
+                                .join(" · ") || "Local por definir"}
                             </p>
                             {club.organizationName && (
                               <p className="text-[10px] text-white/45">{club.organizationName}</p>
@@ -2612,7 +2618,9 @@ export function NewOrganizationEventPage({
             }
           : null;
       const resolvedFormattedAddress =
-        resolvedLocationSource === "APPLE_MAPS" ? buildLocationFormattedAddress() : null;
+        resolvedLocationSource === "APPLE_MAPS"
+          ? buildLocationFormattedAddress()
+          : address.trim() || null;
       if (resolvedLocationSource === "APPLE_MAPS" && !resolvedAddressId) {
         setErrorMessage("Seleciona uma morada normalizada antes de criar o evento.");
         return;
@@ -2648,11 +2656,9 @@ export function NewOrganizationEventPage({
         locationName: locationName.trim() || null,
         locationCity: locationCity.trim() || null,
         templateType: templateToSend,
-        address: address.trim() || null,
         locationSource: resolvedLocationSource,
         locationProviderId: resolvedLocationSource === "APPLE_MAPS" ? locationProviderId : null,
-        locationFormattedAddress:
-          resolvedLocationSource === "APPLE_MAPS" ? resolvedFormattedAddress : null,
+        locationFormattedAddress: resolvedFormattedAddress,
         locationComponents: resolvedLocationSource === "APPLE_MAPS" ? locationComponents : null,
         locationOverrides: resolvedLocationOverrides,
         addressId: resolvedAddressId,

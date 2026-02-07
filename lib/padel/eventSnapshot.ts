@@ -94,7 +94,7 @@ export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEve
           numberOfCourts: true,
           partnerClubIds: true,
           advancedSettings: true,
-          club: { select: { id: true, name: true, city: true, address: true } },
+          club: { select: { id: true, name: true, city: true } },
         },
       },
     },

@@ -27,6 +27,12 @@
 - Dropped enums: `MembershipBillingInterval`, `MembershipStatus`.
 - Migration: `prisma/migrations/20260207120000_drop_membership_legacy/migration.sql`.
 
+## Phase B Changes Applied — Legacy Address Columns
+
+- Dropped legacy text address columns: `events.address`, `padel_clubs.address`, `search_index_items.address`.
+- Dropped unused `tournament_entries.sale_summary_id`.
+- Migration: `prisma/migrations/20260207124000_drop_legacy_address_columns/migration.sql`.
+
 ## Key Findings (high-confidence)
 
 ### 1) Schema drift / legacy columns

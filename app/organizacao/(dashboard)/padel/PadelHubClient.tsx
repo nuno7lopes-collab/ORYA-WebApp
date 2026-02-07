@@ -22,7 +22,6 @@ type PadelClub = {
   id: number;
   name: string;
   city: string | null;
-  address: string | null;
   addressId?: string | null;
   kind?: "OWN" | "PARTNER" | null;
   sourceClubId?: number | null;
@@ -2576,7 +2575,6 @@ export default function PadelHubClient({
             organizationId,
             name: clubForm.name.trim(),
             city: clubForm.city.trim(),
-            address: clubForm.address.trim(),
             addressId: clubForm.addressId || null,
             kind: clubForm.kind,
             sourceClubId: clubForm.sourceClubId,
@@ -2672,7 +2670,6 @@ export default function PadelHubClient({
           organizationId,
           name: club.name,
           city: resolvedLocation.city,
-          address: resolvedLocation.address,
           addressId: club.addressId ?? null,
           kind: club.kind ?? "OWN",
           locationSource: club.locationSource ?? "MANUAL",
@@ -2798,7 +2795,6 @@ export default function PadelHubClient({
           organizationId,
           name: club.name,
           city: club.city,
-          address: club.address,
           addressId: club.addressId ?? null,
           courtsCount: club.courtsCount,
           isActive: next,

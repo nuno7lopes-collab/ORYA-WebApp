@@ -1648,7 +1648,6 @@ model Event {
   endsAt                            DateTime                @map("ends_at")
   locationName                      String                  @map("location_name")
   locationCity                      String?                 @map("location_city")
-  address                           String?
   locationSource                    LocationSource          @default(MANUAL) @map("location_source")
   locationProviderId                String?                 @map("location_provider_id")
   locationFormattedAddress          String?                 @map("location_formatted_address")
@@ -2338,7 +2337,6 @@ model SearchIndexItem {
   hostUsername             String?               @map("host_username")
   locationName             String?               @map("location_name")
   locationCity             String?               @map("location_city")
-  address                  String?
   locationFormattedAddress String?               @map("location_formatted_address")
   latitude                 Float?                @map("lat")
   longitude                Float?                @map("lng")
@@ -2551,7 +2549,6 @@ model PadelClub {
   name                String
   shortName           String?                 @map("short_name")
   city                String?
-  address             String?
   addressId           String                 @map("address_id") @db.Uuid
   kind                PadelClubKind           @default(OWN) @map("kind")
   sourceClubId        Int?                    @map("source_club_id")

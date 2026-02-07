@@ -35,7 +35,6 @@ const EVENT_SELECT = {
   },
   locationName: true,
   locationCity: true,
-  address: true,
   latitude: true,
   longitude: true,
   locationFormattedAddress: true,

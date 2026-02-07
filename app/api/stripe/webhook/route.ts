@@ -276,7 +276,6 @@ const eventWithTicketsSelect = {
   endsAt: true,
   locationName: true,
   locationCity: true,
-  address: true,
   locationSource: true,
   locationFormattedAddress: true,
   locationComponents: true,
@@ -1227,7 +1226,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         endsAt: eventRecord.endsAt?.toISOString() ?? null,
         locationName: eventRecord.locationName ?? null,
         locationCity: eventRecord.locationCity ?? null,
-        address: eventRecord.address ?? null,
+        address: eventRecord.locationFormattedAddress ?? null,
         locationSource: eventRecord.locationSource ?? null,
         locationFormattedAddress: eventRecord.locationFormattedAddress ?? null,
         locationComponents:

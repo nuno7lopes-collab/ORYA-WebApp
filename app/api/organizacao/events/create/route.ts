@@ -70,7 +70,6 @@ type CreateOrganizationEventBody = {
   locationCity?: string;
   templateType?: string; // PADEL | OTHER
   ticketTypes?: TicketTypeInput[];
-  address?: string | null;
   locationSource?: string | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
@@ -309,7 +308,6 @@ export async function POST(req: NextRequest) {
     const endsAtRaw = body.endsAt;
     const locationName = body.locationName?.trim() ?? "";
     const locationCity = body.locationCity?.trim() ?? "";
-    const address = body.address?.trim() || null;
     const locationSourceRaw = typeof body.locationSource === "string" ? body.locationSource.toUpperCase() : null;
     const locationSource =
       locationSourceRaw === "APPLE_MAPS"
@@ -389,8 +387,8 @@ export async function POST(req: NextRequest) {
     const resolvedLongitude = addressRecord ? addressRecord.longitude : longitude;
     const resolvedAddress =
       addressRecord?.formattedAddress ||
+      locationFormattedAddress ||
       pickCanonicalField(canonical, "addressLine1", "street", "road") ||
-      address ||
       null;
     const resolvedCity =
       locationCity || pickCanonicalField(canonical, "city", "addressLine2", "locality") || "";
@@ -799,7 +797,6 @@ export async function POST(req: NextRequest) {
           endsAt,
           locationName,
           locationCity: resolvedCity,
-          address: resolvedAddress,
           locationSource: resolvedLocationSource,
           locationProviderId: resolvedLocationProviderId,
           locationFormattedAddress: resolvedLocationFormattedAddress,

@@ -27,7 +27,8 @@ const WRAPPER_PADDING = 16;
 const TRACK_PADDING_X = 12;
 const TRACK_PADDING_Y = 8;
 const MAX_LEFT_PILL_WIDTH = 260;
-const BUBBLE_INSET = 2;
+const BUBBLE_INSET = 3;
+const EDGE_GAP = 0;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -53,10 +54,10 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const rowWidth = leftPillWidth + rightPillWidth + PILL_GAP;
   const [trackWidth, setTrackWidth] = useState(0);
   const slotWidth = trackWidth ? trackWidth / LEFT_TABS.length : 0;
-  const bubbleWidth = Math.max(slotWidth - BUBBLE_INSET * 2, 0);
+  const bubbleWidth = Math.max(slotWidth - (BUBBLE_INSET * 2 + EDGE_GAP * 2), 0);
 
   const slotCentersRef = useRef<number[]>([]);
-  const [, forceSlotUpdate] = useState(0);
+  const [slotVersion, setSlotVersion] = useState(0);
 
   const currentRouteName = state.routes[state.index]?.name;
   const activeLeftIndex = LEFT_TABS.findIndex((tab) => tab.key === currentRouteName);
@@ -71,10 +72,15 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
 
   const setBubbleToIndex = useCallback(
     (index: number, animated = true) => {
-      if (!slotWidth || !bubbleWidth) return;
+      if (!slotWidth || !bubbleWidth || !trackWidth) return;
       const center = slotCentersRef.current[index];
-      const targetX =
-        typeof center === "number" ? center - bubbleWidth / 2 : slotWidth * index + BUBBLE_INSET;
+      const rawX =
+        typeof center === "number"
+          ? center - bubbleWidth / 2
+          : slotWidth * index + BUBBLE_INSET + EDGE_GAP;
+      const minX = BUBBLE_INSET + EDGE_GAP;
+      const maxX = trackWidth - BUBBLE_INSET - EDGE_GAP - bubbleWidth;
+      const targetX = clamp(rawX, minX, maxX);
       if (animated) {
         Animated.spring(bubbleX, {
           toValue: targetX,
@@ -90,7 +96,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
         bubbleX.setValue(targetX);
       }
     },
-    [bubbleX, slotWidth],
+    [bubbleWidth, bubbleX, slotWidth, trackWidth],
   );
 
   useEffect(() => {
@@ -109,7 +115,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
         useNativeDriver: true,
       }).start();
     }
-  }, [activeLeftIndex, bubbleOpacity, setBubbleToIndex, slotWidth]);
+  }, [activeLeftIndex, bubbleOpacity, setBubbleToIndex, slotVersion, slotWidth]);
 
   const animatePress = useCallback(
     (pressed: boolean) => {
@@ -147,8 +153,8 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const updateBubbleFromLocation = useCallback(
     (locationX: number) => {
       if (!slotWidth || !bubbleWidth) return;
-      const minX = BUBBLE_INSET;
-      const maxX = trackWidth - BUBBLE_INSET - bubbleWidth;
+      const minX = BUBBLE_INSET + EDGE_GAP;
+      const maxX = trackWidth - BUBBLE_INSET - EDGE_GAP - bubbleWidth;
       const nextX = clamp(locationX - bubbleWidth / 2, minX, maxX);
       bubbleX.setValue(nextX);
 
@@ -230,7 +236,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
       <View pointerEvents="box-none" style={[styles.wrapper, { bottom: safeBottom }]}>
       <View style={[styles.row, { width: rowWidth }]}>
         <View style={[styles.leftPill, { width: leftPillWidth }]}>
-          <View pointerEvents="none" style={[styles.pillFillWrap, styles.rightPillFillWrap]}>
+          <View pointerEvents="none" style={styles.pillFillWrap}>
             <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
             <LinearGradient
               colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
@@ -239,7 +245,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
               style={StyleSheet.absoluteFill}
             />
           </View>
-          <View style={[styles.pillBorder, styles.rightPillBorder]} pointerEvents="none" />
+          <View style={styles.pillBorder} pointerEvents="none" />
 
           <View style={styles.track}>
             <View
@@ -292,7 +298,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                         const center = layout.x + layout.width / 2;
                         if (slotCentersRef.current[index] !== center) {
                           slotCentersRef.current[index] = center;
-                          forceSlotUpdate((value) => value + 1);
+                          setSlotVersion((value) => value + 1);
                         }
                       }}
                       onPress={() => {
@@ -334,17 +340,17 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
             navigation.navigate(RIGHT_TAB.key, { search: "1" });
           }}
         >
-          <View pointerEvents="none" style={styles.pillFillWrap}>
-            <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
-            <LinearGradient
-              colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </View>
-          <View style={styles.pillBorder} pointerEvents="none" />
-          <View style={styles.rightTrack}>
+          <View style={styles.rightCircle}>
+            <View pointerEvents="none" style={styles.rightFillWrap}>
+              <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+              <LinearGradient
+                colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
+            <View style={styles.rightBorder} pointerEvents="none" />
             {rightActive && (
               <View pointerEvents="none" style={styles.rightBubble}>
                 <View pointerEvents="none" style={styles.bubbleFillWrap}>
@@ -407,11 +413,10 @@ const styles = StyleSheet.create({
     maxWidth: RIGHT_PILL_SIZE,
     aspectRatio: 1,
     borderRadius: RIGHT_PILL_SIZE / 2,
-    overflow: "hidden",
     flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(14,18,28,0.45)",
+    backgroundColor: "transparent",
   },
   pillBorder: {
     ...StyleSheet.absoluteFillObject,
@@ -424,11 +429,24 @@ const styles = StyleSheet.create({
     borderRadius: TAB_BAR_HEIGHT / 2,
     overflow: "hidden",
   },
-  rightPillFillWrap: {
+  rightCircle: {
+    width: RIGHT_PILL_SIZE,
+    height: RIGHT_PILL_SIZE,
     borderRadius: RIGHT_PILL_SIZE / 2,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  rightPillBorder: {
+  rightFillWrap: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: RIGHT_PILL_SIZE / 2,
+    overflow: "hidden",
+  },
+  rightBorder: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: RIGHT_PILL_SIZE / 2,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
   },
   bubbleTrack: {
     position: "absolute",
@@ -469,17 +487,6 @@ const styles = StyleSheet.create({
   tabPressed: {
     opacity: 0.85,
     transform: [{ scale: 0.98 }],
-  },
-  rightTrack: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    borderRadius: RIGHT_PILL_SIZE / 2,
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
   },
   rightBubble: {
     position: "absolute",

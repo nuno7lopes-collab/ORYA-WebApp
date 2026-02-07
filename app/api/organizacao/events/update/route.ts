@@ -77,7 +77,6 @@ type UpdateEventBody = {
   endsAt?: string | null;
   locationName?: string | null;
   locationCity?: string | null;
-  address?: string | null;
   locationSource?: string | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
@@ -543,7 +542,6 @@ export async function POST(req: NextRequest) {
       // Permitimos cidades fora da whitelist
       dataUpdate.locationCity = city;
     }
-    if (body.address !== undefined) dataUpdate.address = body.address ?? null;
     if (body.locationSource !== undefined) {
       const sourceRaw = typeof body.locationSource === "string" ? body.locationSource.toUpperCase() : null;
       if (sourceRaw === "APPLE_MAPS") dataUpdate.locationSource = LocationSource.APPLE_MAPS;
@@ -597,17 +595,12 @@ export async function POST(req: NextRequest) {
       dataUpdate.latitude = addressRecord.latitude ?? null;
       dataUpdate.longitude = addressRecord.longitude ?? null;
       const canonicalCity = pickCanonicalField(canonical, "city", "addressLine2", "locality");
-      const canonicalAddress = pickCanonicalField(canonical, "addressLine1", "street", "road");
       if (canonicalCity) dataUpdate.locationCity = canonicalCity;
-      if (canonicalAddress || addressRecord.formattedAddress) {
-        dataUpdate.address = addressRecord.formattedAddress || canonicalAddress || null;
-      }
     }
 
     const hasLocationUpdate =
       body.locationName !== undefined ||
       body.locationCity !== undefined ||
-      body.address !== undefined ||
       body.locationSource !== undefined ||
       body.locationProviderId !== undefined ||
       body.locationFormattedAddress !== undefined ||

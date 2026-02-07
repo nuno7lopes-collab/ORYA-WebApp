@@ -35,11 +35,14 @@ type EventWithTickets = {
   endsAt: Date;
   locationName: string | null;
   locationCity: string | null;
-  address: string | null;
   locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
   locationFormattedAddress: string | null;
   locationComponents: Record<string, unknown> | null;
   locationOverrides: Record<string, unknown> | null;
+  addressRef?: {
+    formattedAddress: string | null;
+    canonical: Record<string, unknown> | null;
+  } | null;
   status: string;
   liveHubVisibility: "PUBLIC" | "PRIVATE" | "DISABLED";
   coverImageUrl: string | null;
@@ -67,7 +70,11 @@ type EventWithTickets = {
   }>;
   padelTournamentConfig: {
     numberOfCourts: number;
-    club?: { name: string; city: string | null; address: string | null } | null;
+    club?: {
+      name: string;
+      city: string | null;
+      addressRef?: { formattedAddress: string | null } | null;
+    } | null;
     partnerClubIds?: number[];
     advancedSettings?: Record<string, unknown> | null;
     lifecycleStatus?: string | null;
@@ -110,10 +117,31 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
             include: { category: { select: { label: true } } },
           },
           padelTournamentConfig: {
-            include: { club: true },
+            include: {
+              club: {
+                select: {
+                  name: true,
+                  city: true,
+                  addressRef: { select: { formattedAddress: true } },
+                },
+              },
+            },
+          },
+          addressRef: {
+            select: {
+              formattedAddress: true,
+              canonical: true,
+            },
           },
         },
-      })) as (EventWithTickets & { padelTournamentConfig: { numberOfCourts: number; club?: { name: string; city: string | null; address: string | null } | null; partnerClubIds?: number[]; advancedSettings?: Record<string, unknown> | null } | null }) | null;
+      })) as (EventWithTickets & {
+        padelTournamentConfig: {
+          numberOfCourts: number;
+          club?: { name: string; city: string | null; addressRef?: { formattedAddress: string | null } | null } | null;
+          partnerClubIds?: number[];
+          advancedSettings?: Record<string, unknown> | null;
+        } | null;
+      }) | null;
 
   if (!event) {
     notFound();
@@ -157,7 +185,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     {
       locationName: event.locationName,
       locationCity: event.locationCity,
-      address: event.address,
+      address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
       locationSource: event.locationSource,
       locationFormattedAddress: event.locationFormattedAddress,
       locationComponents: event.locationComponents,
@@ -818,7 +846,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               </p>
               <p className="text-white/70">
                 {event.padelTournamentConfig.club?.city ?? "Cidade —"} ·{" "}
-                {event.padelTournamentConfig.club?.address ?? "Morada em falta"}
+                {event.padelTournamentConfig.club?.addressRef?.formattedAddress ?? "Morada em falta"}
               </p>
               <p className="text-white/75">
                 Courts usados: {event.padelTournamentConfig.numberOfCourts}

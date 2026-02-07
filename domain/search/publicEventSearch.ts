@@ -140,7 +140,6 @@ export async function searchPublicEvents(
       { locationName: { contains: q, mode: "insensitive" } },
       { locationCity: { contains: q, mode: "insensitive" } },
       { locationFormattedAddress: { contains: q, mode: "insensitive" } },
-      { address: { contains: q, mode: "insensitive" } },
     ];
   }
 
@@ -211,7 +210,6 @@ export async function searchPublicEvents(
       hostUsername: event.hostUsername ?? null,
       locationName: event.locationName ?? null,
       locationCity: event.locationCity ?? null,
-      address: event.address ?? null,
       latitude: event.latitude ?? null,
       longitude: event.longitude ?? null,
       locationFormattedAddress: event.locationFormattedAddress ?? null,

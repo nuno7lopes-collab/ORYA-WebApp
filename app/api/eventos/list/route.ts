@@ -103,7 +103,6 @@ async function _GET(req: NextRequest) {
           { locationName: { contains: q, mode: "insensitive" } },
           { locationCity: { contains: q, mode: "insensitive" } },
           { locationFormattedAddress: { contains: q, mode: "insensitive" } },
-          { address: { contains: q, mode: "insensitive" } },
         ],
       });
     }
@@ -128,7 +127,6 @@ async function _GET(req: NextRequest) {
         startsAt: true,
         endsAt: true,
         locationName: true,
-        address: true,
         locationCity: true,
         locationFormattedAddress: true,
         locationSource: true,
@@ -181,7 +179,7 @@ async function _GET(req: NextRequest) {
         endDate: e.endsAt ? new Date(e.endsAt).toISOString() : "",
         venue: {
           name: e.locationName ?? null,
-          address: e.address ?? null,
+          address: e.locationFormattedAddress ?? null,
           city: e.locationCity ?? null,
           lat: e.latitude ?? null,
           lng: e.longitude ?? null,
