@@ -8,6 +8,9 @@ import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
 describe("EventAccessPolicy lock", () => {
   it("bloqueia mudança mais restritiva após venda/entitlement", async () => {
     const client = {
+      event: {
+        findUnique: vi.fn().mockResolvedValue({ templateType: null }),
+      },
       eventAccessPolicy: {
         findFirst: vi.fn().mockResolvedValue({
           eventId: 1,
@@ -62,6 +65,9 @@ describe("EventAccessPolicy lock", () => {
 
   it("bloqueia mudança mais restritiva após pagamento SUCCEEDED", async () => {
     const client = {
+      event: {
+        findUnique: vi.fn().mockResolvedValue({ templateType: null }),
+      },
       eventAccessPolicy: {
         findFirst: vi.fn().mockResolvedValue({
           eventId: 2,
@@ -116,6 +122,9 @@ describe("EventAccessPolicy lock", () => {
 
   it("permite relaxar regras após lock", async () => {
     const client = {
+      event: {
+        findUnique: vi.fn().mockResolvedValue({ templateType: null }),
+      },
       eventAccessPolicy: {
         findFirst: vi.fn().mockResolvedValue({
           eventId: 3,

@@ -9,6 +9,46 @@ let currentNow = new Date();
 const STALE_CLAIM_MS = 15 * 60 * 1000;
 const lockedIds = new Set<string>();
 
+const runOutboxQueryRaw = vi.hoisted(
+  () => (query: any) => {
+    const sql = typeof query === "string" ? query : query?.sql ?? "";
+    const values = Array.isArray(query?.values) ? query.values : [];
+    const stringValues = values.filter((value: unknown): value is string => typeof value === "string");
+    const processingToken = stringValues[0] ?? `token-${Math.random().toString(36).slice(2)}`;
+    const eventIds = stringValues.slice(1);
+    const staleBefore = new Date(currentNow.getTime() - STALE_CLAIM_MS);
+    const pending = outboxEvents.filter(
+      (evt) =>
+        !evt.publishedAt &&
+        !evt.deadLetteredAt &&
+        (!evt.nextAttemptAt || evt.nextAttemptAt <= currentNow) &&
+        (!evt.claimedAt || evt.claimedAt <= staleBefore),
+    );
+    const sorted = pending
+      .map((evt) => ({ ...evt, createdAt: evt.createdAt ?? currentNow }))
+      .sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || String(a.eventId).localeCompare(String(b.eventId)),
+      );
+
+    if (sql.includes("UPDATE app_v3.outbox_events")) {
+      const claimIds = eventIds.length ? new Set(eventIds) : null;
+      const claimed = eventIds.length
+        ? eventIds
+            .map((id) => sorted.find((evt) => evt.eventId === id))
+            .filter(Boolean)
+        : sorted.filter((evt) => !claimIds || claimIds.has(evt.eventId));
+      for (const evt of outboxEvents) {
+        if (!claimed.find((c) => c?.eventId === evt.eventId)) continue;
+        evt.processingToken = processingToken;
+        evt.claimedAt = currentNow;
+      }
+      return claimed as typeof sorted;
+    }
+
+    return sorted;
+  },
+);
+
 vi.mock("@/lib/prisma", () => {
   const operation = {
     findUnique: vi.fn(({ where }: any) => operations.find((op) => op.dedupeKey === where.dedupeKey) ?? null),
@@ -41,31 +81,19 @@ vi.mock("@/lib/prisma", () => {
   const prisma = {
     outboxEvent,
     operation,
+    $queryRaw: vi.fn(runOutboxQueryRaw),
     $transaction: async (fn: any) => {
       const txLocks = new Set<string>();
       const tx = {
         ...prisma,
-        $queryRaw: vi.fn(() => {
-          const staleBefore = new Date(currentNow.getTime() - STALE_CLAIM_MS);
-          const pending = outboxEvents.filter(
-            (evt) =>
-              !evt.publishedAt &&
-              !evt.deadLetteredAt &&
-              (!evt.nextAttemptAt || evt.nextAttemptAt <= currentNow) &&
-              (!evt.claimedAt || evt.claimedAt <= staleBefore) &&
-              !lockedIds.has(evt.eventId),
-          );
-          if (!pending.length) return [];
-          const sorted = pending
-            .map((evt) => ({ ...evt, createdAt: evt.createdAt ?? currentNow }))
-            .sort((a, b) =>
-              a.createdAt.getTime() - b.createdAt.getTime() || String(a.eventId).localeCompare(String(b.eventId)),
-            );
-          for (const evt of sorted) {
+        $queryRaw: vi.fn((query: any) => {
+          const candidates = runOutboxQueryRaw(query);
+          const unlocked = candidates.filter((evt) => !lockedIds.has(evt.eventId));
+          for (const evt of unlocked) {
             lockedIds.add(evt.eventId);
             txLocks.add(evt.eventId);
           }
-          return sorted;
+          return unlocked;
         }),
       };
       try {

@@ -1,29 +1,63 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-export const registerForPushToken = async (): Promise<string | null> => {
-  if (Platform.OS !== "ios") return null;
-  if (!Constants.isDevice) return null;
-  if (Constants.appOwnership === "expo") return null;
+export type PushPermissionStatus = "granted" | "denied" | "undetermined" | "unavailable";
 
-  const Notifications = await import("expo-notifications");
+const isPushSupported = () => {
+  if (Platform.OS !== "ios") return false;
+  if (!Constants.isDevice) return false;
+  if (Constants.appOwnership === "expo") return false;
+  return true;
+};
 
-  const permissions = await Notifications.getPermissionsAsync();
-  let status = permissions.status;
-  if (status !== "granted") {
-    const request = await Notifications.requestPermissionsAsync();
-    status = request.status;
+const normalizeStatus = (status?: string | null): PushPermissionStatus => {
+  if (status === "granted" || status === "denied" || status === "undetermined") {
+    return status;
+  }
+  return "unavailable";
+};
+
+export const getPushPermissionStatus = async (): Promise<{
+  status: PushPermissionStatus;
+  granted: boolean;
+}> => {
+  if (!isPushSupported()) {
+    return { status: "unavailable", granted: false };
   }
 
+  const Notifications = await import("expo-notifications");
+  const permissions = await Notifications.getPermissionsAsync();
+  const status = normalizeStatus(permissions.status);
+  return { status, granted: status === "granted" };
+};
+
+export const requestPushPermission = async (): Promise<{
+  status: PushPermissionStatus;
+  granted: boolean;
+}> => {
+  if (!isPushSupported()) {
+    return { status: "unavailable", granted: false };
+  }
+
+  const Notifications = await import("expo-notifications");
+  const permissions = await Notifications.getPermissionsAsync();
+  let status = normalizeStatus(permissions.status);
+  if (status !== "granted") {
+    const request = await Notifications.requestPermissionsAsync();
+    status = normalizeStatus(request.status);
+  }
+
+  return { status, granted: status === "granted" };
+};
+
+export const registerForPushToken = async (): Promise<string | null> => {
+  if (!isPushSupported()) return null;
+
+  const Notifications = await import("expo-notifications");
+  const permissions = await Notifications.getPermissionsAsync();
+  const status = normalizeStatus(permissions.status);
   if (status !== "granted") return null;
 
-  const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
-  if (!projectId) return null;
-
-  const token = await Notifications.getExpoPushTokenAsync({
-    projectId,
-  });
-
+  const token = await Notifications.getDevicePushTokenAsync();
   return token.data ?? null;
 };

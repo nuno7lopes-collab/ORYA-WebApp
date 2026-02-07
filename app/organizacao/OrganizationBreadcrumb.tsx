@@ -9,7 +9,6 @@ const SECTION_LABELS: Record<string, string> = {
   overview: "Visão geral",
   modulos: "Ferramentas",
   eventos: "Eventos",
-  "padel-hub": "Padel Clube",
   "padel-club": "Padel Clube",
   "padel-tournaments": "Padel Torneios",
   calendar: "Calendário",
@@ -83,8 +82,7 @@ function resolveLabel(
   if (pathname.startsWith("/organizacao/padel/torneios") || pathname.startsWith("/organizacao/torneios")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     const padelLabel = padel ? SECTION_LABELS[padel] : null;
-    const isPadelSection =
-      section === "padel-hub" || section === "padel-club" || section === "padel-tournaments";
+    const isPadelSection = section === "padel-club" || section === "padel-tournaments";
     if (isPadelSection && padelLabel) {
       return `${sectionLabel ?? "Padel"} · ${padelLabel}`;
     }
@@ -132,7 +130,7 @@ function resolveLabel(
   const sectionKey =
     tab === "promote" && section === "marketing" && marketing
       ? marketing
-      : (section === "padel-hub" || section === "padel-club" || section === "padel-tournaments") && padel
+      : (section === "padel-club" || section === "padel-tournaments") && padel
         ? padel
         : section;
   const sectionLabel = sectionKey ? SECTION_LABELS[sectionKey] : null;

@@ -28,7 +28,7 @@ export function computeSplitDeadlineAt(
     return inviteDeadline;
   }
   const eventDeadline = new Date(eventStartsAt.getTime() - BEFORE_EVENT_DEADLINE_HOURS * 60 * 60 * 1000);
-  return eventDeadline;
+  return eventDeadline.getTime() < inviteDeadline.getTime() ? eventDeadline : inviteDeadline;
 }
 
 export function clampLinkMinutes(raw?: number | null): number {

@@ -11,7 +11,6 @@ const EVENT_EDITOR_PREFIXES = [
   "/organizacao/eventos/",
   "/organizacao/torneios/",
   "/organizacao/padel/torneios/",
-  "/organizacao/padel/mix/",
 ];
 const LANDING_PREFIXES = ["/landing"];
 

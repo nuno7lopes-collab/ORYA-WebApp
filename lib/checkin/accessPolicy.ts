@@ -3,6 +3,7 @@ import {
   CheckinMethod,
   EntitlementType,
   EventAccessMode,
+  EventTemplateType,
   InviteIdentityMatch,
   PaymentStatus,
   SourceType,
@@ -19,6 +20,9 @@ type PolicyClient = {
 type PolicyLockClient = PolicyClient & {
   entitlement: {
     count: typeof prisma.entitlement.count;
+  };
+  event: {
+    findUnique: typeof prisma.event.findUnique;
   };
   payment: {
     findFirst: typeof prisma.payment.findFirst;
@@ -258,8 +262,19 @@ export async function createEventAccessPolicyVersion(
   if (input.inviteTokenAllowed && input.inviteTokenTtlSeconds == null) {
     throw new Error("INVITE_TOKEN_TTL_REQUIRED");
   }
+  const event = await client.event.findUnique({
+    where: { id: eventId },
+    select: { templateType: true },
+  });
+  const isPadel = event?.templateType === EventTemplateType.PADEL;
   const previous = await getLatestPolicyForEvent(eventId, client);
-  const normalizedNext = normalizePolicyInput(input, previous ?? undefined);
+  const normalizedNext = normalizePolicyInput(
+    {
+      ...input,
+      requiresEntitlementForEntry: isPadel ? true : input.requiresEntitlementForEntry,
+    },
+    previous ?? undefined,
+  );
   const locked = previous ? await isEventAccessPolicyLocked(eventId, client) : false;
   if (previous && locked) {
     const normalizedPrev = normalizePolicyInput(

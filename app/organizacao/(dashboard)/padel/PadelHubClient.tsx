@@ -3768,18 +3768,8 @@ export default function PadelHubClient({
               Ops hoje
             </button>
           )}
-          {isClubTool ? (
-            <Link
-              href="/organizacao/padel/mix/novo"
-              className={CTA_PAD_SECONDARY_SM}
-            >
-              Criar Mix rápido
-            </Link>
-          ) : (
-            <Link
-              href="/organizacao/padel/torneios/novo"
-              className={CTA_PAD_SECONDARY_SM}
-            >
+          {!isClubTool && (
+            <Link href="/organizacao/padel/torneios/novo" className={CTA_PAD_SECONDARY_SM}>
               Criar torneio
             </Link>
           )}
@@ -3992,9 +3982,6 @@ export default function PadelHubClient({
             <div className="flex flex-wrap gap-2">
               <Link href="/organizacao/padel/torneios/novo" className={CTA_PAD_PRIMARY_SM}>
                 Abrir wizard
-              </Link>
-              <Link href="/organizacao/padel/mix/novo" className={CTA_PAD_SECONDARY_SM}>
-                Criar Mix rápido
               </Link>
             </div>
           </div>

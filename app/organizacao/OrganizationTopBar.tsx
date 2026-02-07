@@ -150,7 +150,6 @@ export default function OrganizationTopBar({
         if (sectionParam === "reservas") return setApp("Reservas", "RESERVAS");
         if (sectionParam === "padel-club") return setApp("Padel Clube", "TORNEIOS");
         if (sectionParam === "padel-tournaments") return setApp("Padel Torneios", "TORNEIOS");
-        if (sectionParam === "padel-hub") return setApp("Padel Clube", "TORNEIOS");
         return setApp(OPERATION_LABELS[moduleState.primary], moduleState.primary);
       }
       if (tabParam === "promote") return setApp("Promoções", "MARKETING");
@@ -227,7 +226,7 @@ export default function OrganizationTopBar({
     const padelParam = searchParams?.get("padel");
     const eventIdParam = searchParams?.get("eventId");
     const hasEventId = eventIdParam ? Number.isFinite(Number(eventIdParam)) : false;
-    const isPadelClubSection = sectionParam === "padel-club" || sectionParam === "padel-hub";
+    const isPadelClubSection = sectionParam === "padel-club";
     const isPadelTournamentsSection = sectionParam === "padel-tournaments";
     const padelFallback = isPadelTournamentsSection || hasEventId ? "calendar" : "clubs";
     const isPadelSection = isPadelClubSection || isPadelTournamentsSection;

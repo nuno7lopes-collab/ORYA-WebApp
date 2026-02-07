@@ -272,6 +272,8 @@ model Organization {
   crmCampaigns            CrmCampaign[]
   crmCampaignDeliveries   CrmCampaignDelivery[]
   userConsents            UserConsent[]
+  invoices                Invoice[]
+  payouts                 Payout[]
   loyaltyProgram          LoyaltyProgram?
   activeProfiles          Profile[]                    @relation("ProfileActiveOrganization")
   group                   OrganizationGroup               @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -2437,6 +2439,11 @@ model Address {
   lookups                AddressLookup[]
   padelClubs             PadelClub[]
   events                 Event[]
+  organizations          Organization[]
+  storeOrderAddresses    StoreOrderAddress[]
+  searchIndexItems       SearchIndexItem[]
+  services               Service[]
+  bookings               Booking[]
 
   @@index([sourceProvider], map: "addresses_provider_idx")
   @@map("addresses")

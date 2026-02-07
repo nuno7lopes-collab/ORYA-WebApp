@@ -6,13 +6,20 @@ import { Ionicons } from "../icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { useNotificationsUnread } from "../../features/notifications/hooks";
+import { useAuth } from "../../lib/auth";
 
 export const TOP_APP_HEADER_HEIGHT = 54;
-const ACTIONS_WIDTH = tokens.layout.touchTarget;
+const ACTIONS_WIDTH = tokens.layout.touchTarget * 2 + 10;
 
 export function TopAppHeader() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { session } = useAuth();
+  const unreadQuery = useNotificationsUnread(Boolean(session?.user?.id));
+  const unreadCount = unreadQuery.data?.unreadCount ?? 0;
+  const showBadge = unreadCount > 0;
+  const badgeLabel = unreadCount > 9 ? "9+" : String(unreadCount);
 
   const containerStyle = useMemo(
     () => [
@@ -50,6 +57,22 @@ export function TopAppHeader() {
           ORYA
         </Text>
         <View style={styles.actions}>
+          <View style={styles.iconWrap}>
+            <Pressable
+              onPress={() => router.push("/notifications")}
+              accessibilityRole="button"
+              accessibilityLabel="Notificações"
+              hitSlop={10}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.iconPressed]}
+            >
+              <Ionicons name="notifications" size={19} color="rgba(238,245,255,0.95)" />
+            </Pressable>
+            {showBadge ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{badgeLabel}</Text>
+              </View>
+            ) : null}
+          </View>
           <Pressable
             onPress={() => router.push("/messages")}
             accessibilityRole="button"
@@ -107,6 +130,9 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     marginTop: 1,
   },
+  iconWrap: {
+    position: "relative",
+  },
   iconButton: {
     width: tokens.layout.touchTarget,
     height: tokens.layout.touchTarget,
@@ -120,6 +146,25 @@ const styles = StyleSheet.create({
   iconPressed: {
     opacity: 0.75,
     transform: [{ scale: 0.97 }],
+  },
+  badge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: "#ff4757",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(8,12,20,0.8)",
+  },
+  badgeText: {
+    color: "white",
+    fontSize: 9,
+    fontWeight: "700",
   },
   edgeFade: {
     position: "absolute",

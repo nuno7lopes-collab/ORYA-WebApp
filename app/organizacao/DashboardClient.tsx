@@ -340,7 +340,6 @@ const OPERATION_LABELS: Record<OperationModule, string> = {
 
 const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA", "CRM"] as const;
 type OptionalModule = (typeof OPTIONAL_MODULES)[number];
-const LEGACY_PADEL_SECTION = "padel-hub";
 const PADEL_CLUB_SECTION = "padel-club";
 const PADEL_TOURNAMENTS_SECTION = "padel-tournaments";
 const PADEL_MANAGE_SECTIONS = [PADEL_CLUB_SECTION, PADEL_TOURNAMENTS_SECTION] as const;
@@ -466,16 +465,12 @@ function OrganizacaoPageInner({
   const sectionParamRaw = searchParams?.get("section") ?? null;
   const marketingParamRaw = searchParams?.get("marketing");
   const activeObjective = mapTabToObjective(tabParamRaw);
-  const normalizedSectionParam =
-    sectionParamRaw === LEGACY_PADEL_SECTION ? PADEL_CLUB_SECTION : sectionParamRaw;
-  const normalizedDefaultSection =
-    defaultSection === LEGACY_PADEL_SECTION ? PADEL_CLUB_SECTION : defaultSection;
+  const normalizedSectionParam = sectionParamRaw;
+  const normalizedDefaultSection = defaultSection;
   const normalizedSection = normalizedSectionParam ?? normalizedDefaultSection ?? undefined;
   const scrollSection = normalizedSectionParam ?? undefined;
   const isPadelManageSection =
-    sectionParamRaw === LEGACY_PADEL_SECTION ||
-    sectionParamRaw === PADEL_CLUB_SECTION ||
-    sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
+    sectionParamRaw === PADEL_CLUB_SECTION || sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
 
   useEffect(() => {
     if (!pathname || pathname.startsWith("/organizacao/padel")) return;

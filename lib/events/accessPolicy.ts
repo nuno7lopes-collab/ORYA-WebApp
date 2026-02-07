@@ -84,6 +84,9 @@ function normalizeCheckinMethods(
 export function resolveEventAccessPolicyInput(params: ResolvePolicyParams): PolicyResolution {
   const defaultMode = params.defaultMode ?? EventAccessMode.UNLISTED;
   const fallbackCheckin = resolveDefaultCheckinMethods(params.templateType);
+  const isPadelTemplate =
+    typeof params.templateType === "string" &&
+    params.templateType.trim().toUpperCase() === EventTemplateType.PADEL;
   const explicit = params.accessPolicy ?? null;
 
   if (explicit) {
@@ -104,7 +107,9 @@ export function resolveEventAccessPolicyInput(params: ResolvePolicyParams): Poli
           )
         : null;
     const guestCheckoutAllowed = explicit.guestCheckoutAllowed === true;
-    const requiresEntitlementForEntry = explicit.requiresEntitlementForEntry === true;
+    const requiresEntitlementForEntry = isPadelTemplate
+      ? true
+      : explicit.requiresEntitlementForEntry === true;
 
     return {
       policyInput: {
@@ -137,7 +142,7 @@ export function resolveEventAccessPolicyInput(params: ResolvePolicyParams): Poli
       inviteIdentityMatch: InviteIdentityMatch.BOTH,
       inviteTokenTtlSeconds:
         defaultMode === EventAccessMode.INVITE_ONLY ? DEFAULT_INVITE_TOKEN_TTL_SECONDS : null,
-      requiresEntitlementForEntry: false,
+      requiresEntitlementForEntry: isPadelTemplate,
       checkinMethods: fallbackCheckin,
       scannerRequired: null,
       allowReentry: null,

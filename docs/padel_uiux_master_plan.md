@@ -45,7 +45,7 @@ Transformar o backend já fechado em operação premium de UI/UX, com:
 
 - Descoberta de funcionalidades avançadas ainda dispersa entre páginas.
 - Nem todas as capacidades backend têm entrada óbvia no UI (ex.: geração de seeds por ranking).
-- Legacy (`section=padel-hub`) ainda precisava ficar apenas como compatibilidade, nunca como rota emitida.
+- Legacy (`section=padel-hub`) removido do UI (sem alias/compatibilidade).
 
 ## 4) Plano de execução UI/UX (sem infra)
 
@@ -57,9 +57,9 @@ Transformar o backend já fechado em operação premium de UI/UX, com:
 - [x] Separar secções de gestão:
   - `section=padel-club`
   - `section=padel-tournaments`
-- [x] Manter `padel-hub` apenas como alias de compatibilidade.
+- [x] Remover `padel-hub` (sem alias/compatibilidade).
 - [x] Ajustar topbar/breadcrumb/objective nav para A/B.
-- [x] Atualizar deep links internos que ainda apontavam para `padel-hub`.
+- [x] Atualizar deep links internos (apenas `padel-club` / `padel-tournaments`).
 
 ## Fase P1 — Operação premium da Ferramenta B
 
@@ -88,7 +88,7 @@ Transformar o backend já fechado em operação premium de UI/UX, com:
 
 ## 5) Política de legacy
 
-- Legacy suportado: apenas leitura/alias para não quebrar links antigos.
+- Legacy removido: `padel-hub` não é suportado.
 - Legacy proibido: gerar novas rotas/links/estado UI com `padel-hub`.
 - Regra de revisão: qualquer novo link Padel deve usar `padel-club` ou `padel-tournaments`.
 
