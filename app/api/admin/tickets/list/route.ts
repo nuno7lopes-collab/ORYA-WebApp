@@ -35,8 +35,13 @@ async function _GET(req: NextRequest) {
     const skip = (page - 1) * pageSize;
 
     const where: Prisma.TicketWhereInput = {};
+    const andFilters: Prisma.TicketWhereInput[] = [];
     if (statusRaw !== "ALL") {
-      if (Object.values(TicketStatus).includes(statusRaw as TicketStatus)) {
+      if (statusRaw === "CHECKED_IN") {
+        andFilters.push({
+          entitlement: { checkins: { some: {} } },
+        });
+      } else if (Object.values(TicketStatus).includes(statusRaw as TicketStatus)) {
         where.status = statusRaw as TicketStatus;
       }
     }
@@ -69,13 +74,18 @@ async function _GET(req: NextRequest) {
       where.userId = { in: filteredUserIds };
     }
     if (q) {
-      where.OR = [
-        { id: { contains: q, mode: "insensitive" } },
-        { purchaseId: { contains: q, mode: "insensitive" } },
-        { stripePaymentIntentId: { contains: q, mode: "insensitive" } },
-        { event: { title: { contains: q, mode: "insensitive" } } },
-        { event: { slug: { contains: q, mode: "insensitive" } } },
-      ];
+      andFilters.push({
+        OR: [
+          { id: { contains: q, mode: "insensitive" } },
+          { purchaseId: { contains: q, mode: "insensitive" } },
+          { stripePaymentIntentId: { contains: q, mode: "insensitive" } },
+          { event: { title: { contains: q, mode: "insensitive" } } },
+          { event: { slug: { contains: q, mode: "insensitive" } } },
+        ],
+      });
+    }
+    if (andFilters.length > 0) {
+      where.AND = [...(where.AND ?? []), ...andFilters];
     }
 
     const [total, tickets] = await prisma.$transaction([
@@ -104,6 +114,20 @@ async function _GET(req: NextRequest) {
       }),
     ]);
 
+    const ticketIds = tickets.map((ticket) => ticket.id);
+    const entitlements = ticketIds.length
+      ? await prisma.entitlement.findMany({
+          where: { ticketId: { in: ticketIds } },
+          select: {
+            ticketId: true,
+            checkins: { select: { checkedInAt: true }, orderBy: { checkedInAt: "desc" }, take: 1 },
+          },
+        })
+      : [];
+    const consumedMap = new Map(
+      entitlements.map((ent) => [ent.ticketId, ent.checkins?.[0]?.checkedInAt ?? null]),
+    );
+
     const userIds = Array.from(
       new Set(
         tickets
@@ -119,43 +143,48 @@ async function _GET(req: NextRequest) {
       : [];
     const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
 
-    const payload = tickets.map((ticket) => ({
-      userId: ticket.userId ?? ticket.ownerUserId ?? null,
-      id: ticket.id,
-      status: ticket.status,
-      purchasedAt: ticket.purchasedAt,
-      currency: ticket.currency,
-      purchaseId: ticket.purchaseId,
-      paymentIntentId: ticket.stripePaymentIntentId ?? null,
-      platformFeeCents: ticket.platformFeeCents,
-      totalPaidCents: ticket.totalPaidCents,
-      pricePaidCents: ticket.pricePaid,
-      paymentEventStatus: ticket.saleSummary?.status ?? null,
-      event: ticket.event
-        ? {
-            id: ticket.event.id,
-            title: ticket.event.title,
-            slug: ticket.event.slug,
-            startsAt: ticket.event.startsAt,
-          }
-        : null,
-      ticketType: ticket.ticketType
-        ? { id: ticket.ticketType.id, name: ticket.ticketType.name }
-        : null,
-      user: (() => {
-        const resolvedUserId = ticket.userId ?? ticket.ownerUserId ?? null;
-        if (!resolvedUserId) return null;
-        const profile = profileById.get(resolvedUserId) ?? null;
-        return {
-          id: resolvedUserId,
-          email: profile?.users?.email ?? null,
-          profile: {
-            username: profile?.username ?? null,
-            fullName: profile?.fullName ?? null,
-          },
-        };
-      })(),
-    }));
+    const payload = tickets.map((ticket) => {
+      const consumedAt = consumedMap.get(ticket.id) ?? null;
+      const status = consumedAt && ticket.status === TicketStatus.ACTIVE ? "CHECKED_IN" : ticket.status;
+      return {
+        userId: ticket.userId ?? ticket.ownerUserId ?? null,
+        id: ticket.id,
+        status,
+        consumedAt,
+        purchasedAt: ticket.purchasedAt,
+        currency: ticket.currency,
+        purchaseId: ticket.purchaseId,
+        paymentIntentId: ticket.stripePaymentIntentId ?? null,
+        platformFeeCents: ticket.platformFeeCents,
+        totalPaidCents: ticket.totalPaidCents,
+        pricePaidCents: ticket.pricePaid,
+        paymentEventStatus: ticket.saleSummary?.status ?? null,
+        event: ticket.event
+          ? {
+              id: ticket.event.id,
+              title: ticket.event.title,
+              slug: ticket.event.slug,
+              startsAt: ticket.event.startsAt,
+            }
+          : null,
+        ticketType: ticket.ticketType
+          ? { id: ticket.ticketType.id, name: ticket.ticketType.name }
+          : null,
+        user: (() => {
+          const resolvedUserId = ticket.userId ?? ticket.ownerUserId ?? null;
+          if (!resolvedUserId) return null;
+          const profile = profileById.get(resolvedUserId) ?? null;
+          return {
+            id: resolvedUserId,
+            email: profile?.users?.email ?? null,
+            profile: {
+              username: profile?.username ?? null,
+              fullName: profile?.fullName ?? null,
+            },
+          };
+        })(),
+      };
+    });
 
     return jsonWrap(
       { ok: true, tickets: payload, page, pageSize, total },

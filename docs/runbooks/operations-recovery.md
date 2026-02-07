@@ -5,6 +5,7 @@ com claim winner-only e recuperação segura após crash.
 
 ## Como funciona (SSOT)
 - Claim usa `FOR UPDATE SKIP LOCKED` + `locked_at` + `status=RUNNING` (winner-only).
+- Em pooler `:6543` (ou `OPERATIONS_SKIP_TX=true`), usa claim sem transação com `UPDATE ... RETURNING`.
 - `attempts` incrementa no claim (1 tentativa por execução).
 - Operações presas são recuperadas via `/api/internal/reconcile`.
 

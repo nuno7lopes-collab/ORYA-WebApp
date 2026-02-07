@@ -172,7 +172,6 @@ export async function promoteNextPadelWaitlistEntry(params: PromoteParams): Prom
       slots: {
         create: [
           {
-            ticketId: null,
             profileId: entry.userId,
             invitedContact: null,
             isPublicOpen,
@@ -181,7 +180,6 @@ export async function promoteNextPadelWaitlistEntry(params: PromoteParams): Prom
             paymentStatus: PadelPairingPaymentStatus.UNPAID,
           },
           {
-            ticketId: null,
             profileId: null,
             invitedContact: entry.invitedContact,
             isPublicOpen,

@@ -61,7 +61,6 @@ Profile,bookings,app_v3,profiles,,Booking,false,true,true,,
 Profile,serviceCreditBalances,app_v3,profiles,,ServiceCreditBalance,false,true,true,,
 Profile,serviceCreditLedger,app_v3,profiles,,ServiceCreditLedger,false,true,true,,
 Profile,serviceReviews,app_v3,profiles,,ServiceReview,false,true,true,,
-Profile,transactions,app_v3,profiles,,Transaction,false,true,true,,
 Profile,padelPairingSlots,app_v3,profiles,,PadelPairingSlot,false,true,true,,"@relation(""PadelPairingSlotProfile"")"
 Profile,padelPairingInvites,app_v3,profiles,,PadelPairingSlot,false,true,true,,"@relation(""PadelPairingSlotInvitedUser"")"
 Profile,padelPairingsPlayer1,app_v3,profiles,,PadelPairing,false,true,true,,"@relation(""PadelPairingPlayer1"")"
@@ -238,7 +237,6 @@ Organization,weeklyAvailabilityTemplates,app_v3,organizations,,WeeklyAvailabilit
 Organization,analyticsRollups,app_v3,organizations,,AnalyticsRollup,false,true,true,,
 Organization,availabilityOverrides,app_v3,organizations,,AvailabilityOverride,false,true,true,,
 Organization,serviceReviews,app_v3,organizations,,ServiceReview,false,true,true,,
-Organization,transactions,app_v3,organizations,,Transaction,false,true,true,,
 Organization,crmCustomers,app_v3,organizations,,CrmCustomer,false,true,true,,
 Organization,crmCustomerNotes,app_v3,organizations,,CrmCustomerNote,false,true,true,,
 Organization,crmInteractions,app_v3,organizations,,CrmInteraction,false,true,true,,
@@ -1216,24 +1214,18 @@ Ticket,userId,app_v3,tickets,user_id,String,true,false,false,,"@map(""user_id"")
 Ticket,platformFeeCents,app_v3,tickets,platform_fee_cents,Int,false,false,false,0,"@default(0) @map(""platform_fee_cents"")"
 Ticket,totalPaidCents,app_v3,tickets,total_paid_cents,Int,false,false,false,0,"@default(0) @map(""total_paid_cents"")"
 Ticket,pairingId,app_v3,tickets,pairing_id,Int,true,false,false,,"@map(""pairing_id"")"
-Ticket,padelSplitShareCents,app_v3,tickets,padel_split_share_cents,Int,true,false,false,,"@map(""padel_split_share_cents"")"
 Ticket,purchaseId,app_v3,tickets,purchase_id,String,true,false,false,,"@map(""purchase_id"") @db.Text"
 Ticket,stripePaymentIntentId,app_v3,tickets,stripe_payment_intent_id,String,true,false,false,,"@map(""stripe_payment_intent_id"")"
 Ticket,emissionIndex,app_v3,tickets,emission_index,Int,false,false,false,0,"@default(0) @map(""emission_index"")"
 Ticket,saleSummaryId,app_v3,tickets,sale_summary_id,Int,true,false,false,,"@map(""sale_summary_id"")"
 Ticket,guestLink,app_v3,tickets,,GuestTicketLink,true,false,true,,
 Ticket,notifications,app_v3,tickets,,Notification,false,true,true,,"@relation(""NotificationTicket"")"
-Ticket,pairingSlot,app_v3,tickets,,PadelPairingSlot,true,false,true,,"@relation(""TicketPairingSlot"")"
-Ticket,createdPadelPairings,app_v3,tickets,,PadelPairing,false,true,true,,"@relation(""PadelPairingCreatedByTicket"")"
 Ticket,entitlement,app_v3,tickets,,Entitlement,true,false,true,,"@relation(""TicketEntitlement"")"
 Ticket,resales,app_v3,tickets,,TicketResale,false,true,true,,
 Ticket,event,app_v3,tickets,,Event,false,false,true,,"@relation(fields: [eventId], references: [id], onDelete: Cascade)"
-Ticket,pairing,app_v3,tickets,,PadelPairing,true,false,true,,"@relation(""PairingTickets"", fields: [pairingId], references: [id])"
 Ticket,ticketType,app_v3,tickets,,TicketType,false,false,true,,"@relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)"
 Ticket,ownerUserId,app_v3,tickets,owner_user_id,String,true,false,false,,"@map(""owner_user_id"") @db.Uuid"
 Ticket,ownerIdentityId,app_v3,tickets,owner_identity_id,String,true,false,false,,"@map(""owner_identity_id"") @db.Uuid"
-Ticket,tournamentEntryId,app_v3,tickets,tournament_entry_id,Int,true,false,false,,"@map(""tournament_entry_id"")"
-Ticket,tournamentEntry,app_v3,tickets,,TournamentEntry,true,false,true,,"@relation(""TicketTournamentEntry"", fields: [tournamentEntryId], references: [id], onDelete: SetNull)"
 Ticket,saleSummary,app_v3,tickets,,SaleSummary,true,false,true,,"@relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)"
 GuestTicketLink,env,app_v3,guest_ticket_links,env,String,false,false,false,"""prod""","@default(""prod"")"
 GuestTicketLink,ticketId,app_v3,guest_ticket_links,ticket_id,String,false,false,false,,"@id @map(""ticket_id"")"
@@ -1932,7 +1924,6 @@ PadelPairing,payment_mode,app_v3,padel_pairings,,PadelPaymentMode,false,false,tr
 PadelPairing,pairingStatus,app_v3,padel_pairings,pairing_status,PadelPairingStatus,false,false,true,INCOMPLETE,"@default(INCOMPLETE) @map(""pairing_status"")"
 PadelPairing,pairingJoinMode,app_v3,padel_pairings,pairing_join_mode,PadelPairingJoinMode,false,false,true,INVITE_PARTNER,"@default(INVITE_PARTNER) @map(""pairing_join_mode"")"
 PadelPairing,createdByUserId,app_v3,padel_pairings,created_by_user_id,String,true,false,false,,"@map(""created_by_user_id"") @db.Uuid"
-PadelPairing,createdByTicketId,app_v3,padel_pairings,created_by_ticket_id,String,true,false,false,,"@map(""created_by_ticket_id"")"
 PadelPairing,partnerInviteToken,app_v3,padel_pairings,invite_token,String,true,false,false,,"@unique @map(""invite_token"")"
 PadelPairing,partnerInviteUsedAt,app_v3,padel_pairings,partner_invite_used_at,DateTime,true,false,false,,"@map(""partner_invite_used_at"") @db.Timestamptz(6)"
 PadelPairing,partnerLinkToken,app_v3,padel_pairings,partner_link_token,String,true,false,false,,"@map(""partner_link_token"")"
@@ -1956,10 +1947,8 @@ PadelPairing,matchSlotsB,app_v3,padel_pairings,,EventMatchSlot,false,true,true,,
 PadelPairing,matchSlotsWinner,app_v3,padel_pairings,,EventMatchSlot,false,true,true,,"@relation(""MatchWinnerPairing"")"
 PadelPairing,slots,app_v3,padel_pairings,,PadelPairingSlot,false,true,true,,
 PadelPairing,category,app_v3,padel_pairings,,PadelCategory,true,false,true,,"@relation(fields: [categoryId], references: [id])"
-PadelPairing,createdByTicket,app_v3,padel_pairings,,Ticket,true,false,true,,"@relation(""PadelPairingCreatedByTicket"", fields: [createdByTicketId], references: [id], map: ""padel_pairings_created_ticket_fkey"")"
 PadelPairing,event,app_v3,padel_pairings,,Event,false,false,true,,"@relation(fields: [eventId], references: [id], onDelete: Cascade)"
 PadelPairing,organization,app_v3,padel_pairings,,Organization,false,false,true,,"@relation(fields: [organizationId], references: [id], onDelete: Cascade)"
-PadelPairing,tickets,app_v3,padel_pairings,,Ticket,false,true,true,,"@relation(""PairingTickets"")"
 PadelPairing,player1,app_v3,padel_pairings,,Profile,true,false,true,,"@relation(""PadelPairingPlayer1"", fields: [player1UserId], references: [id], onUpdate: NoAction)"
 PadelPairing,player2,app_v3,padel_pairings,,Profile,true,false,true,,"@relation(""PadelPairingPlayer2"", fields: [player2UserId], references: [id], onUpdate: NoAction)"
 PadelPairing,waitlistPromotions,app_v3,padel_pairings,,PadelWaitlistEntry,false,true,true,,
@@ -2036,11 +2025,9 @@ TournamentEntry,event,app_v3,tournament_entries,,Event,false,false,true,,"@relat
 TournamentEntry,user,app_v3,tournament_entries,,Profile,false,false,true,,"@relation(fields: [userId], references: [id], onDelete: Cascade)"
 TournamentEntry,pairing,app_v3,tournament_entries,,PadelPairing,true,false,true,,"@relation(fields: [pairingId], references: [id], onDelete: Cascade)"
 TournamentEntry,category,app_v3,tournament_entries,,PadelCategory,true,false,true,,"@relation(fields: [categoryId], references: [id], onUpdate: NoAction)"
-TournamentEntry,tickets,app_v3,tournament_entries,,Ticket,false,true,true,,"@relation(""TicketTournamentEntry"")"
 PadelPairingSlot,env,app_v3,padel_pairing_slots,env,String,false,false,false,"""prod""","@default(""prod"")"
 PadelPairingSlot,id,app_v3,padel_pairing_slots,id,Int,false,false,false,autoincrement(,@id @default(autoincrement())
 PadelPairingSlot,pairingId,app_v3,padel_pairing_slots,pairing_id,Int,false,false,false,,"@map(""pairing_id"")"
-PadelPairingSlot,ticketId,app_v3,padel_pairing_slots,ticket_id,String,true,false,false,,"@unique @map(""ticket_id"")"
 PadelPairingSlot,profileId,app_v3,padel_pairing_slots,profile_id,String,true,false,false,,"@map(""profile_id"") @db.Uuid"
 PadelPairingSlot,invitedUserId,app_v3,padel_pairing_slots,invited_user_id,String,true,false,false,,"@map(""invited_user_id"") @db.Uuid"
 PadelPairingSlot,slot_role,app_v3,padel_pairing_slots,,PadelPairingSlotRole,false,false,true,,
@@ -2055,7 +2042,6 @@ PadelPairingSlot,pairing,app_v3,padel_pairing_slots,,PadelPairing,false,false,tr
 PadelPairingSlot,playerProfile,app_v3,padel_pairing_slots,,PadelPlayerProfile,true,false,true,,"@relation(fields: [playerProfileId], references: [id], onUpdate: NoAction, map: ""padel_pairing_slots_player_profile_fk"")"
 PadelPairingSlot,profile,app_v3,padel_pairing_slots,,Profile,true,false,true,,"@relation(""PadelPairingSlotProfile"", fields: [profileId], references: [id])"
 PadelPairingSlot,invitedUser,app_v3,padel_pairing_slots,,Profile,true,false,true,,"@relation(""PadelPairingSlotInvitedUser"", fields: [invitedUserId], references: [id], onDelete: SetNull)"
-PadelPairingSlot,ticket,app_v3,padel_pairing_slots,,Ticket,true,false,true,,"@relation(""TicketPairingSlot"", fields: [ticketId], references: [id])"
 PadelPairingSlot,registrationLines,app_v3,padel_pairing_slots,,PadelRegistrationLine,false,true,true,,
 EventMatchSlot,env,app_v3,padel_matches,env,String,false,false,false,"""prod""","@default(""prod"")"
 EventMatchSlot,id,app_v3,padel_matches,id,Int,false,false,false,autoincrement(,@id @default(autoincrement())
@@ -2686,43 +2672,6 @@ BookingPolicyRef,policyId,app_v3,booking_policy_refs,policy_id,Int,false,false,f
 BookingPolicyRef,createdAt,app_v3,booking_policy_refs,created_at,DateTime,false,false,false,now(,"@default(now()) @map(""created_at"") @db.Timestamptz(6)"
 BookingPolicyRef,booking,app_v3,booking_policy_refs,,Booking,false,false,true,,"@relation(fields: [bookingId], references: [id], onDelete: Cascade)"
 BookingPolicyRef,policy,app_v3,booking_policy_refs,,OrganizationPolicy,false,false,true,,"@relation(fields: [policyId], references: [id], onDelete: Cascade)"
-Transaction,env,app_v3,transactions,env,String,false,false,false,"""prod""","@default(""prod"")"
-Transaction,id,app_v3,transactions,id,Int,false,false,false,autoincrement(,@id @default(autoincrement())
-Transaction,organizationId,app_v3,transactions,organization_id,Int,false,false,false,,"@map(""organization_id"")"
-Transaction,userId,app_v3,transactions,user_id,String,true,false,false,,"@map(""user_id"") @db.Uuid"
-Transaction,amountCents,app_v3,transactions,amount_cents,Int,false,false,false,,"@map(""amount_cents"")"
-Transaction,currency,app_v3,transactions,currency,String,false,false,false,"""EUR""","@default(""EUR"")"
-Transaction,stripeChargeId,app_v3,transactions,stripe_charge_id,String,true,false,false,,"@map(""stripe_charge_id"")"
-Transaction,stripePaymentIntentId,app_v3,transactions,stripe_payment_intent_id,String,true,false,false,,"@map(""stripe_payment_intent_id"")"
-Transaction,platformFeeCents,app_v3,transactions,platform_fee_cents,Int,false,false,false,0,"@default(0) @map(""platform_fee_cents"")"
-Transaction,stripeFeeCents,app_v3,transactions,stripe_fee_cents,Int,false,false,false,0,"@default(0) @map(""stripe_fee_cents"")"
-Transaction,payoutStatus,app_v3,transactions,payout_status,TransactionPayoutStatus,false,false,true,PENDING,"@default(PENDING) @map(""payout_status"")"
-Transaction,metadata,app_v3,transactions,metadata,Json,true,false,false,"""{}""","@default(""{}"")"
-Transaction,createdAt,app_v3,transactions,created_at,DateTime,false,false,false,now(,"@default(now()) @map(""created_at"") @db.Timestamptz(6)"
-Transaction,updatedAt,app_v3,transactions,updated_at,DateTime,false,false,false,now(,"@default(now()) @updatedAt @map(""updated_at"") @db.Timestamptz(6)"
-Transaction,organization,app_v3,transactions,,Organization,false,false,true,,"@relation(fields: [organizationId], references: [id], onDelete: Cascade)"
-Transaction,user,app_v3,transactions,,Profile,true,false,true,,"@relation(fields: [userId], references: [id], onDelete: SetNull)"
-PendingPayout,env,app_v3,pending_payouts,env,String,false,false,false,"""prod""","@default(""prod"")"
-PendingPayout,id,app_v3,pending_payouts,id,Int,false,false,false,autoincrement(,@id @default(autoincrement())
-PendingPayout,sourceType,app_v3,pending_payouts,source_type,String,false,false,false,,"@map(""source_type"")"
-PendingPayout,sourceId,app_v3,pending_payouts,source_id,String,false,false,false,,"@map(""source_id"")"
-PendingPayout,paymentIntentId,app_v3,pending_payouts,payment_intent_id,String,false,false,false,,"@unique @map(""payment_intent_id"")"
-PendingPayout,chargeId,app_v3,pending_payouts,charge_id,String,true,false,false,,"@map(""charge_id"")"
-PendingPayout,recipientConnectAccountId,app_v3,pending_payouts,recipient_connect_account_id,String,false,false,false,,"@map(""recipient_connect_account_id"")"
-PendingPayout,currency,app_v3,pending_payouts,currency,String,false,false,false,"""EUR""","@default(""EUR"")"
-PendingPayout,grossAmountCents,app_v3,pending_payouts,gross_amount_cents,Int,false,false,false,,"@map(""gross_amount_cents"")"
-PendingPayout,platformFeeCents,app_v3,pending_payouts,platform_fee_cents,Int,false,false,false,,"@map(""platform_fee_cents"")"
-PendingPayout,feeMode,app_v3,pending_payouts,fee_mode,FeeMode,false,false,true,,"@map(""fee_mode"")"
-PendingPayout,amountCents,app_v3,pending_payouts,amount_cents,Int,false,false,false,,"@map(""amount_cents"")"
-PendingPayout,holdUntil,app_v3,pending_payouts,hold_until,DateTime,false,false,false,,"@map(""hold_until"") @db.Timestamptz(6)"
-PendingPayout,status,app_v3,pending_payouts,,PendingPayoutStatus,false,false,true,HELD,@default(HELD)
-PendingPayout,blockedReason,app_v3,pending_payouts,blocked_reason,String,true,false,false,,"@map(""blocked_reason"")"
-PendingPayout,retryCount,app_v3,pending_payouts,retry_count,Int,false,false,false,0,"@default(0) @map(""retry_count"")"
-PendingPayout,nextAttemptAt,app_v3,pending_payouts,next_attempt_at,DateTime,true,false,false,,"@map(""next_attempt_at"") @db.Timestamptz(6)"
-PendingPayout,releasedAt,app_v3,pending_payouts,released_at,DateTime,true,false,false,,"@map(""released_at"") @db.Timestamptz(6)"
-PendingPayout,transferId,app_v3,pending_payouts,transfer_id,String,true,false,false,,"@map(""transfer_id"")"
-PendingPayout,createdAt,app_v3,pending_payouts,created_at,DateTime,false,false,false,now(,"@default(now()) @map(""created_at"") @db.Timestamptz(6)"
-PendingPayout,updatedAt,app_v3,pending_payouts,updated_at,DateTime,false,false,false,,"@updatedAt @map(""updated_at"") @db.Timestamptz(6)"
 CrmCustomer,env,app_v3,crm_customers,env,String,false,false,false,"""prod""","@default(""prod"")"
 CrmCustomer,id,app_v3,crm_customers,id,String,false,false,false,"dbgenerated(""gen_random_uuid(","@id @default(dbgenerated(""gen_random_uuid()"")) @db.Uuid"
 CrmCustomer,organizationId,app_v3,crm_customers,organization_id,Int,false,false,false,,"@map(""organization_id"")"

@@ -30,16 +30,16 @@ type ChargePayload = {
     durationMinutes: number;
     status: string;
     snapshotTimezone: string | null;
-    locationText: string | null;
+    locationFormattedAddress: string | null;
   };
   service: { id: number; title: string | null } | null;
   organization: {
     id: number;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     username: string | null;
     brandingAvatarUrl: string | null;
+    addressRef?: { formattedAddress?: string | null } | null;
   } | null;
 };
 
@@ -228,8 +228,10 @@ export default function ChargeClient({ token }: { token: string }) {
                   <p className="text-sm text-white">
                     {payload.organization?.publicName || payload.organization?.businessName || "Organização"}
                   </p>
-                  {payload.organization?.city && (
-                    <p className="text-[12px] text-white/60">{payload.organization.city}</p>
+                  {payload.organization?.addressRef?.formattedAddress && (
+                    <p className="text-[12px] text-white/60">
+                      {payload.organization.addressRef.formattedAddress}
+                    </p>
                   )}
                 </div>
               </div>
@@ -242,9 +244,9 @@ export default function ChargeClient({ token }: { token: string }) {
                     Data: <span className="text-white">{scheduleLabel}</span>
                   </p>
                 )}
-                {payload.booking.locationText && (
+                {payload.booking.locationFormattedAddress && (
                   <p>
-                    Local: <span className="text-white">{payload.booking.locationText}</span>
+                    Local: <span className="text-white">{payload.booking.locationFormattedAddress}</span>
                   </p>
                 )}
                 {payload.charge.label && (

@@ -68,7 +68,6 @@ async function _GET(req: NextRequest) {
         status: {
           in: [
             TicketStatus.ACTIVE,
-            TicketStatus.USED,
             TicketStatus.REFUNDED,
             TicketStatus.TRANSFERRED,
             TicketStatus.RESALE_LISTED,
@@ -93,7 +92,7 @@ async function _GET(req: NextRequest) {
     const profiles = userIds.length
       ? await prisma.profile.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, fullName: true, username: true, city: true },
+          select: { id: true, fullName: true, username: true },
         })
       : [];
     const profileMap = new Map(profiles.map((p) => [p.id, p]));
@@ -112,7 +111,6 @@ async function _GET(req: NextRequest) {
         purchasedAt: t.purchasedAt,
         buyerName,
         buyerEmail,
-        buyerCity: profile?.city ?? null,
         paymentIntentId: t.stripePaymentIntentId,
       };
     });

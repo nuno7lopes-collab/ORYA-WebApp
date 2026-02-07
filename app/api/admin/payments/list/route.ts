@@ -68,37 +68,21 @@ async function _GET(req: NextRequest) {
     const intentIds = Array.from(
       new Set(summaries.map((summary) => summary.paymentIntentId).filter(Boolean)),
     ) as string[];
-    const payouts = intentIds.length
-      ? await prisma.pendingPayout.findMany({
-          where: { paymentIntentId: { in: intentIds } },
-          select: {
-            paymentIntentId: true,
-            status: true,
-            holdUntil: true,
-            transferId: true,
-            amountCents: true,
-          },
-        })
-      : [];
-    const payoutByIntent = new Map(payouts.map((p) => [p.paymentIntentId, p]));
     const summaryByPurchaseId = new Map(
       summaries.map((summary) => [summary.purchaseId, summary]),
     );
 
     const enriched = trimmed.map((item) => {
       const summary = item.purchaseId ? summaryByPurchaseId.get(item.purchaseId) : null;
-      const payout = summary?.paymentIntentId
-        ? payoutByIntent.get(summary.paymentIntentId)
-        : null;
       return {
         ...item,
         paymentIntentId: summary?.paymentIntentId ?? null,
         saleSummaryId: summary?.id ?? null,
         saleStatus: summary?.status ?? null,
-        payoutStatus: payout?.status ?? null,
-        payoutHoldUntil: payout?.holdUntil ?? null,
-        payoutTransferId: payout?.transferId ?? null,
-        payoutAmountCents: payout?.amountCents ?? null,
+        payoutStatus: null,
+        payoutHoldUntil: null,
+        payoutTransferId: null,
+        payoutAmountCents: null,
       };
     });
 

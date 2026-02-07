@@ -24,9 +24,10 @@ type AttendeesResponse = {
 
 const STATUS_FILTERS = [
   { key: "ACTIVE", label: "Ativos" },
-  { key: "USED", label: "Check-in" },
-  { key: "REFUNDED", label: "Reembolsados" },
+  { key: "CHECKED_IN", label: "Check-in" },
+  { key: "PENDING", label: "Pendentes" },
   { key: "REVOKED", label: "Revogados" },
+  { key: "EXPIRED", label: "Expirados" },
   { key: "SUSPENDED", label: "Suspensos" },
 ];
 
@@ -35,17 +36,21 @@ const STATUS_META: Record<string, { label: string; tone: string }> = {
     label: "Ativo",
     tone: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100",
   },
-  USED: {
+  CHECKED_IN: {
     label: "Check-in",
     tone: "border-[#6BFFFF]/50 bg-[#6BFFFF]/10 text-[#E6FFFF]",
   },
-  REFUNDED: {
-    label: "Reembolsado",
-    tone: "border-rose-400/50 bg-rose-500/10 text-rose-100",
+  PENDING: {
+    label: "Pendente",
+    tone: "border-slate-400/50 bg-slate-500/10 text-slate-100",
   },
   REVOKED: {
     label: "Revogado",
     tone: "border-amber-400/50 bg-amber-500/10 text-amber-100",
+  },
+  EXPIRED: {
+    label: "Expirado",
+    tone: "border-orange-400/50 bg-orange-500/10 text-orange-100",
   },
   SUSPENDED: {
     label: "Suspenso",
@@ -80,7 +85,7 @@ export default function EventAttendeesPanel({
 }) {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [statuses, setStatuses] = useState<string[]>(["ACTIVE", "USED"]);
+  const [statuses, setStatuses] = useState<string[]>(["ACTIVE", "CHECKED_IN"]);
   const [items, setItems] = useState<AttendeeItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

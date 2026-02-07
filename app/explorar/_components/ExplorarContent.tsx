@@ -63,13 +63,20 @@ type ServiceItem = {
   durationMinutes: number;
   unitPriceCents: number;
   currency: string;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+  } | null;
   organization: {
     id: number;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     username: string | null;
     brandingAvatarUrl: string | null;
+    addressRef?: {
+      formattedAddress?: string | null;
+      canonical?: Record<string, unknown> | null;
+    } | null;
   };
   nextAvailability: string | null;
 };
@@ -100,8 +107,7 @@ type PadelTournamentItem = {
   startsAt: string | null;
   endsAt: string | null;
   coverImageUrl: string | null;
-  locationName: string | null;
-  locationCity: string | null;
+  locationFormattedAddress: string | null;
   priceFrom: number | null;
   organizationName: string | null;
   format: string | null;
@@ -134,8 +140,7 @@ type PadelOpenPairingItem = {
     slug: string;
     title: string;
     startsAt: string | null;
-    locationName: string | null;
-    locationCity: string | null;
+    locationFormattedAddress: string | null;
     coverImageUrl: string | null;
   };
 };
@@ -2229,15 +2234,11 @@ function BaseCard({
   const dateLabel = formatDateRange(item.startsAt, item.endsAt);
   const venueLabel = formatEventLocationLabel(
     {
-      locationName: item.location.name,
-      locationCity: item.location.city,
-      address: item.location.address,
-      locationFormattedAddress: item.location.formattedAddress,
-      locationSource: item.location.source,
-      locationComponents: item.location.components,
-      locationOverrides: item.location.overrides,
-      latitude: item.location.lat,
-      longitude: item.location.lng,
+      addressRef: {
+        formattedAddress: item.location.formattedAddress ?? null,
+        latitude: item.location.lat ?? null,
+        longitude: item.location.lng ?? null,
+      },
     },
     "Local a anunciar",
   );
@@ -2412,7 +2413,9 @@ function ServiceCard({ item, imagePriority }: ServiceCardProps) {
         <div className="flex items-center justify-between text-[11px] text-white/75">
           <span className="truncate">{organizationName}</span>
           <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
-            {item.organization.city || "Cidade"}
+            {item.addressRef?.formattedAddress ||
+              item.organization.addressRef?.formattedAddress ||
+              "Local"}
           </span>
         </div>
 
@@ -2437,7 +2440,7 @@ function ServiceCard({ item, imagePriority }: ServiceCardProps) {
 
 function PadelTournamentCard({ item, imagePriority }: PadelTournamentCardProps) {
   const dateLabel = formatPadelDate(item.startsAt, item.endsAt);
-  const locationLabel = item.locationName || item.locationCity || "Local a anunciar";
+  const locationLabel = item.locationFormattedAddress || "Local a anunciar";
   const priceLabel =
     item.priceFrom == null ? "Preço a anunciar" : item.priceFrom === 0 ? "Grátis" : `Desde ${item.priceFrom.toFixed(2)} €`;
   const formatLabel = formatPadelFormat(item.format);
@@ -2583,7 +2586,7 @@ function PadelOpenPairingCard({
   imagePriority,
 }: PadelOpenPairingCardProps) {
   const dateLabel = formatPadelDate(item.event.startsAt, item.event.startsAt);
-  const locationLabel = item.event.locationName || item.event.locationCity || "Local a anunciar";
+  const locationLabel = item.event.locationFormattedAddress || "Local a anunciar";
   const deadlineLabel = item.isExpired ? "Expirado" : formatPadelDeadline(item.deadlineAt);
   const paymentLabel = formatPadelPaymentMode(item.paymentMode);
   const slotsLabel = item.openSlots === 1 ? "1 vaga" : `${item.openSlots} vagas`;

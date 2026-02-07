@@ -18,7 +18,8 @@ type Service = {
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";
-  defaultLocationText?: string | null;
+  addressId?: string | null;
+  addressRef?: { formattedAddress?: string | null } | null;
   professionalLinks?: Array<{ professionalId: number }>;
   resourceLinks?: Array<{ resourceId: number }>;
   addons?: Array<{
@@ -61,10 +62,10 @@ type ReservasBookingSectionProps = {
     id: number;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     username: string | null;
     timezone: string | null;
-    address: string | null;
+    addressId?: string | null;
+    addressRef?: { formattedAddress?: string | null } | null;
     reservationAssignmentMode: "PROFESSIONAL" | "RESOURCE";
   };
   services: Service[];

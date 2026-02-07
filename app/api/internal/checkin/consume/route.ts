@@ -153,6 +153,13 @@ export async function POST(req: NextRequest) {
       policyVersionApplied: ent.policyVersionApplied ?? null,
     });
   }
+  if (effectiveStatus !== "ACTIVE") {
+    return allow({
+      allow: false,
+      reasonCode: "NOT_ALLOWED",
+      policyVersionApplied: ent.policyVersionApplied ?? null,
+    });
+  }
 
   const alreadyConsumed = isConsumed({ status: ent.status, checkins: ent.checkins });
   if (alreadyConsumed) {

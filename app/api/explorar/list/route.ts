@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrganizationFollowingSet } from "@/domain/social/follows";
 import { listPublicDiscoverIndex } from "@/domain/search/publicDiscover";
@@ -36,7 +35,6 @@ async function _GET(req: NextRequest) {
 
   const typeParam = searchParams.get("type"); // event | all
   const categoriesParam = searchParams.get("categories"); // comma separated
-  const cityParam = searchParams.get("city");
   const searchParam = searchParams.get("q");
   const cursorParam = searchParams.get("cursor");
   const limitParam = searchParams.get("limit");
@@ -44,6 +42,7 @@ async function _GET(req: NextRequest) {
   const priceMaxParam = searchParams.get("priceMax");
   const dateParam = searchParams.get("date"); // today | upcoming | all | day | weekend
   const dayParam = searchParams.get("day"); // YYYY-MM-DD opcional
+  const cityParam = searchParams.get("city")?.trim() || null;
 
   const take = clampTake(limitParam ? parseInt(limitParam, 10) : DEFAULT_PAGE_SIZE);
   const cursorId = cursorParam ? cursorParam : null;
@@ -56,34 +55,14 @@ async function _GET(req: NextRequest) {
   const priceMaxCents = priceMax !== null ? Math.round(priceMax * 100) : null;
 
   let viewerId: string | null = null;
-  let profileLocation:
-    | {
-        locationConsent: "PENDING" | "GRANTED" | "DENIED";
-        locationGranularity: "PRECISE" | "COARSE";
-        locationCity: string | null;
-        locationRegion: string | null;
-      }
-    | null = null;
   try {
     const supabase = await createSupabaseServer();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     viewerId = user?.id ?? null;
-    if (viewerId) {
-      profileLocation = await prisma.profile.findUnique({
-        where: { id: viewerId },
-        select: {
-          locationConsent: true,
-          locationGranularity: true,
-          locationCity: true,
-          locationRegion: true,
-        },
-      });
-    }
   } catch {
     viewerId = null;
-    profileLocation = null;
   }
 
   const categoryFilters = (categoriesParam || "")
@@ -95,22 +74,13 @@ async function _GET(req: NextRequest) {
     // Sem filtro extra: todos os eventos publicados entram.
   }
 
-  const profileCity =
-    profileLocation &&
-    profileLocation.locationConsent === "GRANTED" &&
-    profileLocation.locationGranularity === "COARSE"
-      ? profileLocation.locationCity || profileLocation.locationRegion
-      : null;
-  const normalizedCity = cityParam?.trim() || profileCity || null;
-  const applyCityFilter = normalizedCity && normalizedCity.toLowerCase() !== "portugal";
-
   // Filtros são aplicados no builder canónico.
 
   try {
     const cacheKey = buildCacheKey([
       "explorar",
       searchParam,
-      normalizedCity ?? "",
+      cityParam ?? "",
       categoryFilters.join(","),
       dateParam ?? "",
       dayParam ?? "",
@@ -128,7 +98,7 @@ async function _GET(req: NextRequest) {
 
     const { items: indexItems, nextCursor } = await listPublicDiscoverIndex({
       q: searchParam,
-      city: applyCityFilter ? normalizedCity : null,
+      city: cityParam,
       categories: categoryFilters.join(",") || null,
       date: dateParam,
       day: dayParam,
@@ -181,12 +151,8 @@ async function _GET(req: NextRequest) {
         coverImageUrl: event.coverImageUrl ?? null,
         hostName: event.hostName ?? null,
         hostUsername: event.hostUsername ?? null,
-        locationName: event.locationName ?? null,
-        locationCity: event.locationCity ?? null,
-        latitude: event.latitude ?? null,
-        longitude: event.longitude ?? null,
-        locationFormattedAddress: event.locationFormattedAddress ?? null,
-        locationSource: event.locationSource ?? null,
+        addressId: event.addressId ?? null,
+        addressRef: event.addressRef ?? null,
       }),
     );
 

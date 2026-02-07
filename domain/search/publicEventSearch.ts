@@ -17,7 +17,6 @@ function parseDate(value: string | null): Date | null {
 
 export type PublicSearchParams = {
   q?: string | null;
-  city?: string | null;
   categories?: string | null;
   date?: string | null;
   day?: string | null;
@@ -119,7 +118,6 @@ export async function searchPublicEvents(
   params: PublicSearchParams,
 ): Promise<{ items: PublicEventCard[]; nextCursor: string | null }> {
   const q = params.q?.trim() || null;
-  const city = params.city?.trim() || null;
   const cursorId = params.cursor ?? null;
   const take = clampTake(params.limit ?? DEFAULT_PAGE_SIZE);
   const fromDate = parseDate(params.from ?? null);
@@ -137,14 +135,8 @@ export async function searchPublicEvents(
     where.OR = [
       { title: { contains: q, mode: "insensitive" } },
       { description: { contains: q, mode: "insensitive" } },
-      { locationName: { contains: q, mode: "insensitive" } },
-      { locationCity: { contains: q, mode: "insensitive" } },
-      { locationFormattedAddress: { contains: q, mode: "insensitive" } },
+      { addressRef: { formattedAddress: { contains: q, mode: "insensitive" } } },
     ];
-  }
-
-  if (city) {
-    where.locationCity = { contains: city, mode: "insensitive" };
   }
 
   if (params.date || params.day) {
@@ -165,7 +157,14 @@ export async function searchPublicEvents(
     ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
   } satisfies Prisma.SearchIndexItemFindManyArgs;
 
-  const events = await prisma.searchIndexItem.findMany(query);
+  const events = await prisma.searchIndexItem.findMany({
+    ...query,
+    include: {
+      addressRef: {
+        select: { formattedAddress: true, canonical: true, latitude: true, longitude: true },
+      },
+    },
+  });
 
   let nextCursor: string | null = null;
   if (events.length > take) {
@@ -208,12 +207,8 @@ export async function searchPublicEvents(
       coverImageUrl: event.coverImageUrl ?? null,
       hostName: event.hostName ?? null,
       hostUsername: event.hostUsername ?? null,
-      locationName: event.locationName ?? null,
-      locationCity: event.locationCity ?? null,
-      latitude: event.latitude ?? null,
-      longitude: event.longitude ?? null,
-      locationFormattedAddress: event.locationFormattedAddress ?? null,
-      locationSource: event.locationSource ?? null,
+      addressId: event.addressId ?? null,
+      addressRef: event.addressRef ?? null,
     }),
   );
 

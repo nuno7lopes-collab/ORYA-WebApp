@@ -7,7 +7,7 @@ import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, canCheckoutStore } from "@/lib/storeAccess";
-import { ProcessorFeesStatus, SourceType, StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
+import { AddressSourceProvider, ProcessorFeesStatus, SourceType, StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { computePricing } from "@/lib/pricing";
@@ -25,13 +25,8 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 const CART_SESSION_COOKIE = "orya_store_cart";
 
 const addressSchema = z.object({
+  addressId: z.string().uuid(),
   fullName: z.string().trim().min(1).max(160),
-  line1: z.string().trim().min(1).max(160),
-  line2: z.string().trim().max(160).optional().nullable(),
-  city: z.string().trim().min(1).max(120),
-  region: z.string().trim().max(120).optional().nullable(),
-  postalCode: z.string().trim().min(1).max(32),
-  country: z.string().trim().min(2).max(3),
   nif: z.string().trim().max(32).optional().nullable(),
 });
 
@@ -82,6 +77,48 @@ function buildOrderNumber(storeId: number) {
   const stamp = Date.now().toString(36).toUpperCase();
   const rand = crypto.randomBytes(3).toString("hex").toUpperCase();
   return `ORD-${storeId}-${stamp}-${rand}`;
+}
+
+const pickString = (value: unknown) => (typeof value === "string" ? value.trim() || null : null);
+
+function resolveCountryCode(canonical: Record<string, unknown> | null): string | null {
+  if (!canonical) return null;
+  const code =
+    pickString(canonical.countryCode) ||
+    pickString(canonical.country_code) ||
+    pickString(canonical.countryCodeISO) ||
+    pickString(canonical.country_code_iso) ||
+    pickString(canonical.isoCountryCode) ||
+    pickString(canonical.iso_country_code);
+  if (code) return code.toUpperCase();
+  const fallback = pickString(canonical.country) || pickString(canonical.countryName);
+  if (fallback && fallback.length <= 3) return fallback.toUpperCase();
+  return null;
+}
+
+async function resolveCheckoutAddress(
+  input: z.infer<typeof addressSchema> | null | undefined,
+  kind: "shipping" | "billing",
+) {
+  if (!input) return null;
+  const address = await prisma.address.findUnique({
+    where: { id: input.addressId },
+    select: { id: true, canonical: true, sourceProvider: true },
+  });
+  if (!address) {
+    throw new Error(`${kind.toUpperCase()}_ADDRESS_INVALID`);
+  }
+  if (address.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+    throw new Error(`${kind.toUpperCase()}_ADDRESS_PROVIDER`);
+  }
+  const canonical = (address.canonical as Record<string, unknown> | null) ?? null;
+  const countryCode = resolveCountryCode(canonical);
+  return {
+    addressId: address.id,
+    fullName: input.fullName,
+    nif: input.nif ?? null,
+    countryCode,
+  };
 }
 
 async function _POST(req: NextRequest) {
@@ -545,7 +582,23 @@ async function _POST(req: NextRequest) {
 
     const orderDiscountCents = bundleDiscountCents + promoDiscountCents;
 
-    if (requiresShipping && !payload.shippingAddress) {
+    let shippingAddress = null as Awaited<ReturnType<typeof resolveCheckoutAddress>> | null;
+    let billingAddress = null as Awaited<ReturnType<typeof resolveCheckoutAddress>> | null;
+    try {
+      shippingAddress = await resolveCheckoutAddress(payload.shippingAddress ?? null, "shipping");
+      billingAddress = await resolveCheckoutAddress(payload.billingAddress ?? null, "billing");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("SHIPPING_ADDRESS_INVALID") || message.includes("BILLING_ADDRESS_INVALID")) {
+        return fail("ADDRESS_INVALID", "Morada inválida.", 400);
+      }
+      if (message.includes("SHIPPING_ADDRESS_PROVIDER") || message.includes("BILLING_ADDRESS_PROVIDER")) {
+        return fail("ADDRESS_PROVIDER", "Morada deve ser Apple Maps.", 400);
+      }
+      throw err;
+    }
+
+    if (requiresShipping && !shippingAddress) {
       return fail("ADDRESS_REQUIRED", "Morada obrigatoria.", 400);
     }
 
@@ -605,9 +658,12 @@ async function _POST(req: NextRequest) {
     let shippingMethodId: number | null = null;
     let shippingZoneId: number | null = null;
     if (requiresShipping) {
+      if (!shippingAddress?.countryCode) {
+        return fail("ADDRESS_COUNTRY_MISSING", "País da morada inválido.", 400);
+      }
       const quote = await computeStoreShippingQuote({
         storeId: store.id,
-        country: payload.shippingAddress?.country ?? "",
+        country: shippingAddress.countryCode,
         subtotalCents,
         methodId: payload.shippingMethodId ?? null,
       });
@@ -666,22 +722,20 @@ async function _POST(req: NextRequest) {
           purchaseId: providedPurchaseId ?? null,
           addresses: {
             create: [
-              payload.shippingAddress
+              shippingAddress
                 ? {
                     addressType: StoreAddressType.SHIPPING,
-                    ...payload.shippingAddress,
-                    line2: payload.shippingAddress.line2 ?? null,
-                    region: payload.shippingAddress.region ?? null,
-                    nif: payload.shippingAddress.nif ?? null,
+                    addressId: shippingAddress.addressId,
+                    fullName: shippingAddress.fullName,
+                    nif: shippingAddress.nif ?? null,
                   }
                 : null,
-              payload.billingAddress
+              billingAddress
                 ? {
                     addressType: StoreAddressType.BILLING,
-                    ...payload.billingAddress,
-                    line2: payload.billingAddress.line2 ?? null,
-                    region: payload.billingAddress.region ?? null,
-                    nif: payload.billingAddress.nif ?? null,
+                    addressId: billingAddress.addressId,
+                    fullName: billingAddress.fullName,
+                    nif: billingAddress.nif ?? null,
                   }
                 : null,
             ].filter(Boolean) as Prisma.StoreOrderAddressCreateWithoutOrderInput[],

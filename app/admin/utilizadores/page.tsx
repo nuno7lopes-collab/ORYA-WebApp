@@ -48,7 +48,6 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
     where.OR = [
       { username: { contains: search, mode: "insensitive" } },
       { fullName: { contains: search, mode: "insensitive" } },
-      { city: { contains: search, mode: "insensitive" } },
     ];
   }
 
@@ -76,7 +75,6 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
         id: true,
         username: true,
         fullName: true,
-        city: true,
         roles: true,
         createdAt: true,
         isDeleted: true,
@@ -98,7 +96,7 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
 
           <form className="w-full md:w-72" action="/admin/utilizadores" method="GET">
             <label className="block text-[10px] uppercase tracking-[0.2em] text-white/45 mb-1">
-              Pesquisar utilizador (username, nome, cidade)
+              Pesquisar utilizador (username ou nome)
             </label>
             <div className="flex items-center gap-2">
               <input

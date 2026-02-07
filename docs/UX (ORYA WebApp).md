@@ -1,5 +1,5 @@
 # Documento central de qualidade UI/UX (ORYA WebApp) — “pronto para App Store + deploy web”
-> Escopo: UX/UI. Para regras de produto/SSOT, ver `docs/v9_ssot_registry.md` e `docs/orya_blueprint_v9_final.md`.
+> Escopo: UX/UI. Para regras de produto/SSOT, ver `docs/ssot_registry.md` e `docs/blueprint.md`.
 
 Este texto junta e organiza **tudo o que está nos vários textos** num **único documento central**: critérios de “perfeição”, riscos reais, o que corrigir/melhorar, padrões globais a aplicar, checklist por fluxos/ecrãs e um plano de execução por prioridades (P0→P2) com gates de QA.
 

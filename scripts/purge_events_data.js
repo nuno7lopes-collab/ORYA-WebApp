@@ -61,10 +61,6 @@ async function main() {
 
   await runDelete("PadelPairingSlot", () => prisma.padelPairingSlot.deleteMany());
 
-  await prisma.padelPairing.updateMany({
-    data: { createdByTicketId: null },
-  });
-
   await runDelete("EventMatchSlot", () => prisma.eventMatchSlot.deleteMany());
   await runDelete("PadelPairingHold", () => prisma.padelPairingHold.deleteMany());
   await runDelete("PadelWaitlistEntry", () => prisma.padelWaitlistEntry.deleteMany());
@@ -94,8 +90,6 @@ async function main() {
       },
     })
   );
-  await runDelete("PendingPayout", () => prisma.pendingPayout.deleteMany());
-  await runDelete("Transaction", () => prisma.transaction.deleteMany());
 
   await runDelete("CalendarAvailability", () => prisma.calendarAvailability.deleteMany());
   await runDelete("CalendarBlock", () => prisma.calendarBlock.deleteMany());

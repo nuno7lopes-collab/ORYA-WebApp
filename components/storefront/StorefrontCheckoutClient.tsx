@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
+import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import type { GeoAutocompleteItem } from "@/lib/geo/provider";
 
 type CartItem = {
   id: number;
@@ -54,13 +56,9 @@ type ShippingMethod = {
 };
 
 type CheckoutAddress = {
+  addressId: string;
   fullName: string;
-  line1: string;
-  line2: string | null;
-  city: string;
-  region: string | null;
-  postalCode: string;
-  country: string;
+  formattedAddress: string | null;
   nif: string | null;
 };
 
@@ -86,10 +84,7 @@ type CheckoutResponse = {
   error?: string;
 };
 
-const CHECKOUT_COUNTRIES = [
-  { code: "PT", label: "Portugal" },
-  { code: "disabled", label: "Mais paises em breve", disabled: true },
-];
+const SHIPPING_COUNTRY = "PT";
 
 function formatMoney(cents: number, currency: string) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
@@ -170,25 +165,37 @@ export default function StorefrontCheckoutClient({
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
   const [shipping, setShipping] = useState({
     fullName: "",
-    line1: "",
-    line2: "",
-    city: "",
-    region: "",
-    postalCode: "",
-    country: "PT",
+    addressId: null as string | null,
+    formattedAddress: "",
     nif: "",
   });
+  const [shippingAddressQuery, setShippingAddressQuery] = useState("");
+  const [shippingAddressSuggestions, setShippingAddressSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [shippingAddressLoading, setShippingAddressLoading] = useState(false);
+  const [shippingAddressError, setShippingAddressError] = useState<string | null>(null);
+  const [showShippingSuggestions, setShowShippingSuggestions] = useState(false);
+  const shippingSearchSeqRef = useRef(0);
+  const shippingDetailsSeqRef = useRef(0);
+  const shippingSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shippingBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeShippingProviderRef = useRef<string | null>(null);
   const [billingSame, setBillingSame] = useState(true);
   const [billing, setBilling] = useState({
     fullName: "",
-    line1: "",
-    line2: "",
-    city: "",
-    region: "",
-    postalCode: "",
-    country: "PT",
+    addressId: null as string | null,
+    formattedAddress: "",
     nif: "",
   });
+  const [billingAddressQuery, setBillingAddressQuery] = useState("");
+  const [billingAddressSuggestions, setBillingAddressSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [billingAddressLoading, setBillingAddressLoading] = useState(false);
+  const [billingAddressError, setBillingAddressError] = useState<string | null>(null);
+  const [showBillingSuggestions, setShowBillingSuggestions] = useState(false);
+  const billingSearchSeqRef = useRef(0);
+  const billingDetailsSeqRef = useRef(0);
+  const billingSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const billingBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeBillingProviderRef = useRef<string | null>(null);
   const [notes, setNotes] = useState("");
   const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<number | null>(null);
 
@@ -287,24 +294,12 @@ export default function StorefrontCheckoutClient({
     return next?.trim() ? next : "";
   };
 
-  const resolveCountry = (value: string) => {
-    const normalized = value.trim().toUpperCase();
-    const allowed = CHECKOUT_COUNTRIES.find(
-      (country) => !country.disabled && country.code === normalized,
-    );
-    return allowed ? normalized : "PT";
-  };
-
   const applyAddressPrefill = (current: typeof shipping, next?: CheckoutAddress | null, fallbackName?: string | null) => {
     if (!next) return current;
     return {
       fullName: applyPrefill(current.fullName, next.fullName || fallbackName || null),
-      line1: applyPrefill(current.line1, next.line1),
-      line2: applyPrefill(current.line2, next.line2),
-      city: applyPrefill(current.city, next.city),
-      region: applyPrefill(current.region, next.region),
-      postalCode: applyPrefill(current.postalCode, next.postalCode),
-      country: resolveCountry(applyPrefill(current.country, next.country ? next.country.toUpperCase() : null)),
+      addressId: current.addressId ?? next.addressId ?? null,
+      formattedAddress: applyPrefill(current.formattedAddress, next.formattedAddress),
       nif: applyPrefill(current.nif, next.nif),
     };
   };
@@ -359,6 +354,12 @@ export default function StorefrontCheckoutClient({
         }));
         setShipping((prev) => applyAddressPrefill(prev, json.shippingAddress, customerData.name));
         setBilling((prev) => applyAddressPrefill(prev, json.billingAddress, customerData.name));
+        if (json.shippingAddress?.formattedAddress) {
+          setShippingAddressQuery((prev) => (prev.trim() ? prev : json.shippingAddress?.formattedAddress ?? ""));
+        }
+        if (json.billingAddress?.formattedAddress) {
+          setBillingAddressQuery((prev) => (prev.trim() ? prev : json.billingAddress?.formattedAddress ?? ""));
+        }
       } catch {
         return;
       } finally {
@@ -369,10 +370,177 @@ export default function StorefrontCheckoutClient({
   }, [storeId, prefillLoaded]);
 
   useEffect(() => {
+    if (!requiresShipping) {
+      if (shippingSearchTimeoutRef.current) {
+        clearTimeout(shippingSearchTimeoutRef.current);
+      }
+      setShippingAddressSuggestions([]);
+      setShippingAddressLoading(false);
+      setShippingAddressError(null);
+      return;
+    }
+    const query = shippingAddressQuery.trim();
+    if (query.length < 2) {
+      setShippingAddressSuggestions([]);
+      setShippingAddressLoading(false);
+      setShippingAddressError(null);
+      return;
+    }
+    if (shippingSearchTimeoutRef.current) {
+      clearTimeout(shippingSearchTimeoutRef.current);
+    }
+    setShippingAddressError(null);
+    const seq = ++shippingSearchSeqRef.current;
+    shippingSearchTimeoutRef.current = setTimeout(async () => {
+      setShippingAddressLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        if (shippingSearchSeqRef.current === seq) {
+          setShippingAddressSuggestions(items);
+        }
+      } catch (err) {
+        if (shippingSearchSeqRef.current === seq) {
+          setShippingAddressSuggestions([]);
+          setShippingAddressError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+        }
+      } finally {
+        if (shippingSearchSeqRef.current === seq) {
+          setShippingAddressLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => {
+      if (shippingSearchTimeoutRef.current) {
+        clearTimeout(shippingSearchTimeoutRef.current);
+      }
+    };
+  }, [requiresShipping, shippingAddressQuery]);
+
+  useEffect(() => {
+    if (!requiresShipping || billingSame) {
+      if (billingSearchTimeoutRef.current) {
+        clearTimeout(billingSearchTimeoutRef.current);
+      }
+      setBillingAddressSuggestions([]);
+      setBillingAddressLoading(false);
+      setBillingAddressError(null);
+      return;
+    }
+    const query = billingAddressQuery.trim();
+    if (query.length < 2) {
+      setBillingAddressSuggestions([]);
+      setBillingAddressLoading(false);
+      setBillingAddressError(null);
+      return;
+    }
+    if (billingSearchTimeoutRef.current) {
+      clearTimeout(billingSearchTimeoutRef.current);
+    }
+    setBillingAddressError(null);
+    const seq = ++billingSearchSeqRef.current;
+    billingSearchTimeoutRef.current = setTimeout(async () => {
+      setBillingAddressLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        if (billingSearchSeqRef.current === seq) {
+          setBillingAddressSuggestions(items);
+        }
+      } catch (err) {
+        if (billingSearchSeqRef.current === seq) {
+          setBillingAddressSuggestions([]);
+          setBillingAddressError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+        }
+      } finally {
+        if (billingSearchSeqRef.current === seq) {
+          setBillingAddressLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => {
+      if (billingSearchTimeoutRef.current) {
+        clearTimeout(billingSearchTimeoutRef.current);
+      }
+    };
+  }, [requiresShipping, billingSame, billingAddressQuery]);
+
+  const handleSelectShippingSuggestion = async (item: GeoAutocompleteItem) => {
+    setShippingAddressError(null);
+    setShipping((prev) => ({ ...prev, addressId: null, formattedAddress: item.label }));
+    setShippingAddressQuery(item.label);
+    setShippingAddressSuggestions([]);
+    setShowShippingSuggestions(false);
+    activeShippingProviderRef.current = item.providerId;
+    const seq = ++shippingDetailsSeqRef.current;
+    setShippingAddressLoading(true);
+    try {
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
+      if (shippingDetailsSeqRef.current !== seq) return;
+      if (activeShippingProviderRef.current !== item.providerId) return;
+      const addressId = details?.addressId ?? null;
+      if (!addressId) {
+        setShippingAddressError("Morada inválida.");
+        return;
+      }
+      const formatted = details?.formattedAddress ?? item.label;
+      setShipping((prev) => ({ ...prev, addressId, formattedAddress: formatted }));
+      setShippingAddressQuery(formatted);
+    } catch (err) {
+      if (shippingDetailsSeqRef.current === seq) {
+        setShippingAddressError(err instanceof Error ? err.message : "Falha ao normalizar morada.");
+      }
+    } finally {
+      if (shippingDetailsSeqRef.current === seq) {
+        setShippingAddressLoading(false);
+      }
+    }
+  };
+
+  const handleSelectBillingSuggestion = async (item: GeoAutocompleteItem) => {
+    setBillingAddressError(null);
+    setBilling((prev) => ({ ...prev, addressId: null, formattedAddress: item.label }));
+    setBillingAddressQuery(item.label);
+    setBillingAddressSuggestions([]);
+    setShowBillingSuggestions(false);
+    activeBillingProviderRef.current = item.providerId;
+    const seq = ++billingDetailsSeqRef.current;
+    setBillingAddressLoading(true);
+    try {
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
+      if (billingDetailsSeqRef.current !== seq) return;
+      if (activeBillingProviderRef.current !== item.providerId) return;
+      const addressId = details?.addressId ?? null;
+      if (!addressId) {
+        setBillingAddressError("Morada inválida.");
+        return;
+      }
+      const formatted = details?.formattedAddress ?? item.label;
+      setBilling((prev) => ({ ...prev, addressId, formattedAddress: formatted }));
+      setBillingAddressQuery(formatted);
+    } catch (err) {
+      if (billingDetailsSeqRef.current === seq) {
+        setBillingAddressError(err instanceof Error ? err.message : "Falha ao normalizar morada.");
+      }
+    } finally {
+      if (billingDetailsSeqRef.current === seq) {
+        setBillingAddressLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
     if (!requiresShipping) return;
-    if (!shipping.country.trim()) return;
-    void loadShippingMethods(shipping.country.trim());
-  }, [shipping.country, requiresShipping, subtotalCents]);
+    void loadShippingMethods(SHIPPING_COUNTRY);
+  }, [requiresShipping, subtotalCents]);
 
   const handleStartCheckout = async () => {
     if (!items.length && !bundles.length) {
@@ -384,12 +552,8 @@ export default function StorefrontCheckoutClient({
       return;
     }
     if (requiresShipping) {
-      if (!shipping.fullName.trim() || !shipping.line1.trim() || !shipping.city.trim() || !shipping.postalCode.trim()) {
-        setError("Preenche a morada de envio.");
-        return;
-      }
-      if (!shipping.country.trim()) {
-        setError("Seleciona o pais.");
+      if (!shipping.fullName.trim() || !shipping.addressId) {
+        setError("Seleciona a morada de envio.");
         return;
       }
       if (!selectedShippingMethodId) {
@@ -397,12 +561,8 @@ export default function StorefrontCheckoutClient({
         return;
       }
       if (!billingSame) {
-        if (!billing.fullName.trim() || !billing.line1.trim() || !billing.city.trim() || !billing.postalCode.trim()) {
-          setError("Preenche a morada de faturacao.");
-          return;
-        }
-        if (!billing.country.trim()) {
-          setError("Seleciona o pais de faturacao.");
+        if (!billing.fullName.trim() || !billing.addressId) {
+          setError("Seleciona a morada de faturação.");
           return;
         }
       }
@@ -423,13 +583,8 @@ export default function StorefrontCheckoutClient({
           },
           shippingAddress: requiresShipping
             ? {
+                addressId: shipping.addressId,
                 fullName: shipping.fullName,
-                line1: shipping.line1,
-                line2: shipping.line2 || null,
-                city: shipping.city,
-                region: shipping.region || null,
-                postalCode: shipping.postalCode,
-                country: shipping.country,
                 nif: shipping.nif || null,
               }
             : null,
@@ -437,13 +592,8 @@ export default function StorefrontCheckoutClient({
             !requiresShipping || billingSame
               ? null
               : {
+                  addressId: billing.addressId,
                   fullName: billing.fullName,
-                  line1: billing.line1,
-                  line2: billing.line2 || null,
-                  city: billing.city,
-                  region: billing.region || null,
-                  postalCode: billing.postalCode,
-                  country: billing.country,
                   nif: billing.nif || null,
                 },
           shippingMethodId: requiresShipping ? selectedShippingMethodId : null,
@@ -515,54 +665,86 @@ export default function StorefrontCheckoutClient({
           {requiresShipping ? (
             <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4 space-y-3">
               <p className="text-xs uppercase tracking-[0.3em] text-white/50">Morada de envio</p>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-3">
                 <input
                   value={shipping.fullName}
                   onChange={(e) => setShipping((prev) => ({ ...prev, fullName: e.target.value }))}
                   className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   placeholder="Nome completo"
                 />
-                <input
-                  value={shipping.line1}
-                  onChange={(e) => setShipping((prev) => ({ ...prev, line1: e.target.value }))}
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  placeholder="Morada"
-                />
-                <input
-                  value={shipping.line2}
-                  onChange={(e) => setShipping((prev) => ({ ...prev, line2: e.target.value }))}
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  placeholder="Complemento"
-                />
-                <input
-                  value={shipping.city}
-                  onChange={(e) => setShipping((prev) => ({ ...prev, city: e.target.value }))}
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  placeholder="Cidade"
-                />
-                <input
-                  value={shipping.region}
-                  onChange={(e) => setShipping((prev) => ({ ...prev, region: e.target.value }))}
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  placeholder="Regiao"
-                />
-                <input
-                  value={shipping.postalCode}
-                  onChange={(e) => setShipping((prev) => ({ ...prev, postalCode: e.target.value }))}
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  placeholder="Codigo postal"
-                />
-                <select
-                  value={shipping.country}
-                  onChange={(e) => setShipping((prev) => ({ ...prev, country: e.target.value }))}
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                >
-                  {CHECKOUT_COUNTRIES.map((country) => (
-                    <option key={country.code} value={country.code} disabled={country.disabled}>
-                      {country.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <label className="text-xs uppercase tracking-[0.2em] text-white/50">Morada (Apple Maps)</label>
+                  <div className="relative overflow-visible">
+                    <input
+                      value={shippingAddressQuery}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setShippingAddressQuery(next);
+                        setShipping((prev) => ({ ...prev, addressId: null, formattedAddress: "" }));
+                        setShippingAddressError(null);
+                        activeShippingProviderRef.current = null;
+                        setShowShippingSuggestions(true);
+                      }}
+                      onFocus={() => setShowShippingSuggestions(true)}
+                      onBlur={() => {
+                        if (shippingBlurTimeoutRef.current) {
+                          clearTimeout(shippingBlurTimeoutRef.current);
+                        }
+                        shippingBlurTimeoutRef.current = setTimeout(
+                          () => setShowShippingSuggestions(false),
+                          120,
+                        );
+                      }}
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                      placeholder="Procura um local ou morada"
+                    />
+                    {showShippingSuggestions && (
+                      <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
+                        {shippingAddressLoading ? (
+                          <div className="px-3 py-2 text-sm text-white/70 animate-pulse">
+                            A procurar…
+                          </div>
+                        ) : shippingAddressError ? (
+                          <div className="px-3 py-2 text-sm text-amber-100">{shippingAddressError}</div>
+                        ) : shippingAddressSuggestions.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
+                        ) : (
+                          shippingAddressSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion.providerId}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => handleSelectShippingSuggestion(suggestion)}
+                              className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                            >
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <span className="font-semibold text-white">{suggestion.label}</span>
+                                <div className="flex items-center gap-2 text-[12px] text-white/65">
+                                  <span>{suggestion.city || "—"}</span>
+                                  {suggestion.sourceProvider === "APPLE_MAPS" && (
+                                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
+                                      Apple
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {shipping.addressId && (
+                    <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
+                      Morada confirmada: {shipping.formattedAddress || shippingAddressQuery}
+                    </div>
+                  )}
+                  {shippingAddressError && (
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                      {shippingAddressError}
+                    </div>
+                  )}
+                </div>
                 <input
                   value={shipping.nif}
                   onChange={(e) => setShipping((prev) => ({ ...prev, nif: e.target.value }))}
@@ -585,54 +767,86 @@ export default function StorefrontCheckoutClient({
                 Usar morada de envio para faturacao
               </label>
               {!billingSame ? (
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-3">
                   <input
                     value={billing.fullName}
                     onChange={(e) => setBilling((prev) => ({ ...prev, fullName: e.target.value }))}
                     className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                     placeholder="Nome completo"
                   />
-                  <input
-                    value={billing.line1}
-                    onChange={(e) => setBilling((prev) => ({ ...prev, line1: e.target.value }))}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    placeholder="Morada"
-                  />
-                  <input
-                    value={billing.line2}
-                    onChange={(e) => setBilling((prev) => ({ ...prev, line2: e.target.value }))}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    placeholder="Complemento"
-                  />
-                  <input
-                    value={billing.city}
-                    onChange={(e) => setBilling((prev) => ({ ...prev, city: e.target.value }))}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    placeholder="Cidade"
-                  />
-                  <input
-                    value={billing.region}
-                    onChange={(e) => setBilling((prev) => ({ ...prev, region: e.target.value }))}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    placeholder="Regiao"
-                  />
-                  <input
-                    value={billing.postalCode}
-                    onChange={(e) => setBilling((prev) => ({ ...prev, postalCode: e.target.value }))}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    placeholder="Codigo postal"
-                  />
-                  <select
-                    value={billing.country}
-                    onChange={(e) => setBilling((prev) => ({ ...prev, country: e.target.value }))}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  >
-                    {CHECKOUT_COUNTRIES.map((country) => (
-                      <option key={country.code} value={country.code} disabled={country.disabled}>
-                        {country.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="space-y-2">
+                    <label className="text-xs uppercase tracking-[0.2em] text-white/50">Morada (Apple Maps)</label>
+                    <div className="relative overflow-visible">
+                      <input
+                        value={billingAddressQuery}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setBillingAddressQuery(next);
+                          setBilling((prev) => ({ ...prev, addressId: null, formattedAddress: "" }));
+                          setBillingAddressError(null);
+                          activeBillingProviderRef.current = null;
+                          setShowBillingSuggestions(true);
+                        }}
+                        onFocus={() => setShowBillingSuggestions(true)}
+                        onBlur={() => {
+                          if (billingBlurTimeoutRef.current) {
+                            clearTimeout(billingBlurTimeoutRef.current);
+                          }
+                          billingBlurTimeoutRef.current = setTimeout(
+                            () => setShowBillingSuggestions(false),
+                            120,
+                          );
+                        }}
+                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                        placeholder="Procura um local ou morada"
+                      />
+                      {showBillingSuggestions && (
+                        <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
+                          {billingAddressLoading ? (
+                            <div className="px-3 py-2 text-sm text-white/70 animate-pulse">
+                              A procurar…
+                            </div>
+                          ) : billingAddressError ? (
+                            <div className="px-3 py-2 text-sm text-amber-100">{billingAddressError}</div>
+                          ) : billingAddressSuggestions.length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
+                          ) : (
+                            billingAddressSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion.providerId}
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => handleSelectBillingSuggestion(suggestion)}
+                                className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                              >
+                                <div className="flex w-full items-center justify-between gap-3">
+                                  <span className="font-semibold text-white">{suggestion.label}</span>
+                                  <div className="flex items-center gap-2 text-[12px] text-white/65">
+                                    <span>{suggestion.city || "—"}</span>
+                                    {suggestion.sourceProvider === "APPLE_MAPS" && (
+                                      <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
+                                        Apple
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {billing.addressId && (
+                      <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
+                        Morada confirmada: {billing.formattedAddress || billingAddressQuery}
+                      </div>
+                    )}
+                    {billingAddressError && (
+                      <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                        {billingAddressError}
+                      </div>
+                    )}
+                  </div>
                   <input
                     value={billing.nif}
                     onChange={(e) => setBilling((prev) => ({ ...prev, nif: e.target.value }))}
@@ -651,7 +865,7 @@ export default function StorefrontCheckoutClient({
                 <p className="text-xs text-white/60">A carregar metodos...</p>
               ) : shippingMethods.length === 0 ? (
                 <p className="text-xs text-white/60">
-                  {shipping.country.trim() ? "Sem metodos para o pais selecionado." : "Seleciona o pais para ver metodos."}
+                  Sem metodos para Portugal.
                 </p>
               ) : (
                 <div className="space-y-2">

@@ -113,7 +113,6 @@ async function resolveOrCreateUser() {
           avatarUrl: source.avatarUrl,
           coverUrl: source.coverUrl,
           bio: source.bio ?? "",
-          city: source.city,
           gender: source.gender,
           padelLevel: source.padelLevel,
           padelPreferredSide: source.padelPreferredSide,
@@ -133,8 +132,6 @@ async function resolveOrCreateUser() {
           locationConsent: source.locationConsent ?? "PENDING",
           locationGranularity: source.locationGranularity ?? "COARSE",
           locationSource: null,
-          locationCity: null,
-          locationRegion: null,
           locationUpdatedAt: null,
           activeOrganizationId: null,
         },
@@ -157,7 +154,6 @@ async function resolveOrCreateUser() {
       avatarUrl: source.avatarUrl,
       coverUrl: source.coverUrl,
       bio: source.bio ?? "",
-      city: source.city,
       gender: source.gender,
       padelLevel: source.padelLevel,
       padelPreferredSide: source.padelPreferredSide,
@@ -177,8 +173,6 @@ async function resolveOrCreateUser() {
       locationConsent: source.locationConsent ?? "PENDING",
       locationGranularity: source.locationGranularity ?? "COARSE",
       locationSource: null,
-      locationCity: null,
-      locationRegion: null,
       locationUpdatedAt: null,
 
       // <- usa o user de teste (auth.users)

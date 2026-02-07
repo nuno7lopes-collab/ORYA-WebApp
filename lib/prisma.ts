@@ -104,6 +104,59 @@ function stripEnvFromWhere(where: unknown): Record<string, unknown> | null {
   return rest;
 }
 
+function splitCompositeKeyParts(
+  compositeKey: string,
+  valueRecord: Record<string, unknown>,
+): string[] | null {
+  const candidateKeys = Reflect.ownKeys(valueRecord).filter((key): key is string => typeof key === "string");
+  if (candidateKeys.length === 0) return null;
+  const tokens = compositeKey.split("_").filter(Boolean);
+  if (tokens.length <= 1) return null;
+
+  const candidates = candidateKeys.map((key) => ({
+    key,
+    tokens: key.split("_").filter(Boolean),
+  }));
+
+  const memo = new Map<number, string[] | null>();
+  const matchesAt = (index: number, candidateTokens: string[]) => {
+    if (index + candidateTokens.length > tokens.length) return false;
+    for (let i = 0; i < candidateTokens.length; i += 1) {
+      if (tokens[index + i] !== candidateTokens[i]) return false;
+    }
+    return true;
+  };
+
+  const walk = (index: number): string[] | null => {
+    if (index === tokens.length) return [];
+    if (memo.has(index)) return memo.get(index) ?? null;
+    for (const candidate of candidates) {
+      if (!matchesAt(index, candidate.tokens)) continue;
+      const next = walk(index + candidate.tokens.length);
+      if (next) {
+        const result = [candidate.key, ...next];
+        memo.set(index, result);
+        return result;
+      }
+    }
+    memo.set(index, null);
+    return null;
+  };
+
+  const direct = walk(0);
+  if (direct) return direct;
+
+  const positions = candidateKeys.map((key) => ({
+    key,
+    index: compositeKey.indexOf(key),
+  }));
+  if (positions.some((entry) => entry.index < 0)) return null;
+  positions.sort((a, b) => a.index - b.index);
+  const joined = positions.map((entry) => entry.key).join("_");
+  if (joined !== compositeKey) return null;
+  return positions.map((entry) => entry.key);
+}
+
 function expandCompositeWhere(where: unknown): Record<string, unknown> | null {
   if (!where || typeof where !== "object") return null;
   const record = where as Record<string, unknown>;
@@ -129,9 +182,22 @@ function expandCompositeWhere(where: unknown): Record<string, unknown> | null {
     if (isCompositeCandidate && value && typeof value === "object" && !Array.isArray(value)) {
       const valueRecord = value as Record<string, unknown>;
       const expectedKeys = key.split("_");
-      const hasAllKeys = expectedKeys.every((entryKey) => entryKey in valueRecord);
+      const valueKeys = new Set(
+        Reflect.ownKeys(valueRecord).filter((entryKey): entryKey is string => typeof entryKey === "string"),
+      );
+      const hasAllKeys = expectedKeys.every((entryKey) => valueKeys.has(entryKey));
       if (hasAllKeys) {
         for (const entryKey of expectedKeys) {
+          if (!(entryKey in next)) {
+            next[entryKey] = valueRecord[entryKey];
+          }
+        }
+        changed = true;
+        continue;
+      }
+      const splitKeys = splitCompositeKeyParts(key, valueRecord);
+      if (splitKeys) {
+        for (const entryKey of splitKeys) {
           if (!(entryKey in next)) {
             next[entryKey] = valueRecord[entryKey];
           }
@@ -171,15 +237,7 @@ const EVENT_SCHEMA_SAFE_SELECT = {
   organizationId: true,
   startsAt: true,
   endsAt: true,
-  locationName: true,
-  locationCity: true,
-  locationSource: true,
-  locationProviderId: true,
-  locationFormattedAddress: true,
-  locationComponents: true,
-  locationOverrides: true,
-  latitude: true,
-  longitude: true,
+  addressId: true,
   pricingMode: true,
   status: true,
   timezone: true,
@@ -211,10 +269,7 @@ const EVENT_BASELINE_COLUMNS = new Set([
   "organization_id",
   "starts_at",
   "ends_at",
-  "location_name",
-  "location_city",
-  "lat",
-  "lng",
+  "address_id",
   "status",
   "timezone",
   "cover_image_url",
@@ -652,7 +707,7 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
                 guardArgs.select = { id: true };
               }
               await (delegate as any).findFirstOrThrow(guardArgs);
-              const where = stripEnvFromWhere(normalized) ?? normalized;
+              const where = stripEnvFromWhere(safeArgs.where) ?? safeArgs.where;
               return (delegate as any)[operation]({
                 ...safeArgs,
                 where,
@@ -676,7 +731,7 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
                 guardArgs.select = { id: true };
               }
               await (delegate as any).findFirstOrThrow(guardArgs);
-              const where = stripEnvFromWhere(normalized) ?? normalized;
+              const where = stripEnvFromWhere(safeArgs.where) ?? safeArgs.where;
               return (delegate as any)[operation]({ ...safeArgs, where });
             }
             case "deleteMany": {
@@ -695,7 +750,7 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
                   : { where: lookupWhere },
               );
               if (existing) {
-                const where = stripEnvFromWhere(normalized) ?? normalized;
+                const where = stripEnvFromWhere(safeArgs.where) ?? safeArgs.where;
                 return (delegate as any).update({
                   where,
                   data: withEnvData(safeArgs.update, envValue),

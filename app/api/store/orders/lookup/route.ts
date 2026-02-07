@@ -111,13 +111,10 @@ async function _POST(req: NextRequest) {
         addresses: {
           select: {
             addressType: true,
+            addressId: true,
             fullName: true,
-            line1: true,
-            line2: true,
-            city: true,
-            region: true,
-            postalCode: true,
-            country: true,
+            nif: true,
+            addressRef: { select: { formattedAddress: true } },
           },
         },
         shipments: {
@@ -264,13 +261,10 @@ async function _POST(req: NextRequest) {
           etaMaxDays: order.shippingMethod?.etaMaxDays ?? null,
           address: shippingAddress
             ? {
+                addressId: shippingAddress.addressId,
                 fullName: shippingAddress.fullName,
-                line1: shippingAddress.line1,
-                line2: shippingAddress.line2,
-                city: shippingAddress.city,
-                region: shippingAddress.region,
-                postalCode: shippingAddress.postalCode,
-                country: shippingAddress.country,
+                formattedAddress: shippingAddress.addressRef?.formattedAddress ?? null,
+                nif: shippingAddress.nif ?? null,
               }
             : null,
         },

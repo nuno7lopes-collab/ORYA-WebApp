@@ -50,28 +50,41 @@ async function _GET(req: NextRequest) {
       where: {
         organizationId: organization.id,
         isDeleted: false,
-        locationName: {
-          not: "",
-          ...(q
-            ? {
-                contains: q,
-                mode: "insensitive",
-              }
-            : {}),
-        },
+        addressId: { not: null },
+        ...(q
+          ? {
+              addressRef: {
+                formattedAddress: { contains: q, mode: "insensitive" },
+              },
+            }
+          : {}),
       },
-      select: { locationName: true, locationCity: true, updatedAt: true },
+      select: {
+        addressId: true,
+        updatedAt: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
+      },
       orderBy: { updatedAt: "desc" },
       take: 20,
     });
 
-    const unique = new Map<string, { name: string; city?: string | null }>();
+    const unique = new Map<
+      string,
+      { addressId: string; formattedAddress: string | null; city?: string | null }
+    >();
     venues.forEach((row) => {
-      if (!row.locationName) return;
-      const key = `${row.locationName.toLowerCase()}__${(row.locationCity || "").toLowerCase()}`;
-      if (!unique.has(key)) {
-        unique.set(key, { name: row.locationName, city: row.locationCity });
-      }
+      if (!row.addressId) return;
+      if (unique.has(row.addressId)) return;
+      const canonical = (row.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+      const city =
+        (canonical && typeof canonical.city === "string" && canonical.city.trim()
+          ? canonical.city.trim()
+          : null) ?? null;
+      unique.set(row.addressId, {
+        addressId: row.addressId,
+        formattedAddress: row.addressRef?.formattedAddress ?? null,
+        city,
+      });
     });
 
     return jsonWrap({ ok: true, items: Array.from(unique.values()) });

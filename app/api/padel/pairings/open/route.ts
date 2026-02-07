@@ -36,7 +36,6 @@ const pairingSlotSelect = {
   slot_role: true,
   slotStatus: true,
   paymentStatus: true,
-  ticketId: true,
   profileId: true,
   invitedUserId: true,
   invitedContact: true,

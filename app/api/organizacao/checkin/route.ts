@@ -185,12 +185,15 @@ export async function POST(req: NextRequest) {
     status: ent.status,
     checkins: ent.checkins,
   });
-  if (effectiveStatus === "SUSPENDED") {
-    return respondOk(ctx, { code: CheckinResultCode.SUSPENDED }, { status: 200 });
-  }
-  if (effectiveStatus === "REVOKED") {
-    return respondOk(ctx, { code: CheckinResultCode.REVOKED }, { status: 200 });
-  }
+    if (effectiveStatus === "SUSPENDED") {
+      return respondOk(ctx, { code: CheckinResultCode.SUSPENDED }, { status: 200 });
+    }
+    if (effectiveStatus === "REVOKED") {
+      return respondOk(ctx, { code: CheckinResultCode.REVOKED }, { status: 200 });
+    }
+    if (effectiveStatus !== "ACTIVE") {
+      return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+    }
 
   const idempotencyKey = `${eventId}:${ent.id}:${deviceId}`;
   const causationId = idempotencyKey;

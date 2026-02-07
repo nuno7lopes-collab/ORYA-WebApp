@@ -17,7 +17,6 @@ type SuggestedPerson = {
   username: string | null;
   fullName: string | null;
   avatarUrl: string | null;
-  city: string | null;
   mutualsCount: number;
   isFollowing: boolean;
 };
@@ -151,7 +150,7 @@ export default function RedePage() {
                         <div className="space-y-1">
                           <p className="text-[13px] font-semibold text-white line-clamp-1">{label}</p>
                           <p className="text-[10px] text-white/60 line-clamp-1">
-                            {person.city ?? "Evento recente"}
+                            Evento recente
                           </p>
                         </div>
                         <button

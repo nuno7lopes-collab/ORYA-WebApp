@@ -48,7 +48,7 @@ export default function ServiceDetailScreen() {
     serviceDuration,
     serviceKind,
     serviceOrg,
-    serviceCity,
+    serviceAddress,
     serviceInstructor,
     serviceCoverUrl,
     imageTag,
@@ -60,7 +60,7 @@ export default function ServiceDetailScreen() {
     serviceDuration?: string;
     serviceKind?: string;
     serviceOrg?: string;
-    serviceCity?: string;
+    serviceAddress?: string;
     serviceInstructor?: string;
     serviceCoverUrl?: string;
     imageTag?: string;
@@ -88,10 +88,10 @@ export default function ServiceDetailScreen() {
     if (Array.isArray(serviceOrg)) return serviceOrg[0];
     return serviceOrg ?? null;
   }, [serviceOrg]);
-  const previewCity = useMemo(() => {
-    if (Array.isArray(serviceCity)) return serviceCity[0];
-    return serviceCity ?? null;
-  }, [serviceCity]);
+  const previewAddress = useMemo(() => {
+    if (Array.isArray(serviceAddress)) return serviceAddress[0];
+    return serviceAddress ?? null;
+  }, [serviceAddress]);
   const previewInstructor = useMemo(() => {
     if (Array.isArray(serviceInstructor)) return serviceInstructor[0];
     return serviceInstructor ?? null;
@@ -137,11 +137,18 @@ export default function ServiceDetailScreen() {
     data?.instructor?.avatarUrl ??
     null;
   const displayImageTag = previewImageTag ?? (data?.id ? `service-${data.id}` : null);
+  const resolvedAddress = useMemo(() => {
+    return (
+      data?.addressRef?.formattedAddress ??
+      data?.organization?.addressRef?.formattedAddress ??
+      null
+    );
+  }, [data?.addressRef?.formattedAddress, data?.organization?.addressRef?.formattedAddress]);
+
   const mapUrl = useMemo(() => {
-    const label = data?.defaultLocationText || data?.organization?.city || null;
-    if (!label) return null;
-    return `http://maps.apple.com/?q=${encodeURIComponent(label)}`;
-  }, [data?.defaultLocationText, data?.organization?.city]);
+    if (!resolvedAddress) return null;
+    return `http://maps.apple.com/?q=${encodeURIComponent(resolvedAddress)}`;
+  }, [resolvedAddress]);
 
   const handleOpenMap = async () => {
     if (!mapUrl) return;
@@ -224,10 +231,10 @@ export default function ServiceDetailScreen() {
                     </View>
                   ) : null}
 
-                  {previewCity ? (
+                  {previewAddress ? (
                     <View className="flex-row items-center gap-2">
                       <Ionicons name="location-outline" size={15} color="rgba(255,255,255,0.55)" />
-                      <Text className="text-white/65 text-sm">{previewCity}</Text>
+                      <Text className="text-white/65 text-sm">{previewAddress}</Text>
                     </View>
                   ) : null}
 
@@ -327,16 +334,10 @@ export default function ServiceDetailScreen() {
                   </Text>
                 </View>
 
-                {data.organization.city ? (
+                {resolvedAddress ? (
                   <View className="flex-row items-center gap-2">
                     <Ionicons name="location-outline" size={15} color="rgba(255,255,255,0.55)" />
-                    <Text className="text-white/65 text-sm">{data.organization.city}</Text>
-                  </View>
-                ) : null}
-                {data.defaultLocationText ? (
-                  <View className="flex-row items-center gap-2">
-                    <Ionicons name="pin-outline" size={15} color="rgba(255,255,255,0.45)" />
-                    <Text className="text-white/60 text-sm">{data.defaultLocationText}</Text>
+                    <Text className="text-white/65 text-sm">{resolvedAddress}</Text>
                   </View>
                 ) : null}
                 {mapUrl ? (

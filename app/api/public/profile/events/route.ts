@@ -28,19 +28,20 @@ const EVENT_SELECT = {
   status: true,
   templateType: true,
   ownerUserId: true,
+  addressId: true,
+  addressRef: {
+    select: {
+      formattedAddress: true,
+      canonical: true,
+      latitude: true,
+      longitude: true,
+    },
+  },
   organization: {
     select: {
       publicName: true,
     },
   },
-  locationName: true,
-  locationCity: true,
-  latitude: true,
-  longitude: true,
-  locationFormattedAddress: true,
-  locationSource: true,
-  locationComponents: true,
-  locationOverrides: true,
   coverImageUrl: true,
   pricingMode: true,
   ticketTypes: {
@@ -117,10 +118,7 @@ async function _GET(req: NextRequest) {
       prisma.event.findMany({
         where: {
           ...baseWhere,
-          OR: [
-            { endsAt: { gte: now } },
-            { endsAt: null, startsAt: { gte: now } },
-          ],
+          endsAt: { gte: now },
         },
         orderBy: { startsAt: "asc" },
         take: limit,
@@ -129,10 +127,7 @@ async function _GET(req: NextRequest) {
       prisma.event.findMany({
         where: {
           ...baseWhere,
-          OR: [
-            { endsAt: { lt: now } },
-            { endsAt: null, startsAt: { lt: now } },
-          ],
+          endsAt: { lt: now },
         },
         orderBy: { startsAt: "desc" },
         take: limit,
@@ -177,10 +172,7 @@ async function _GET(req: NextRequest) {
     prisma.event.findMany({
       where: {
         ...baseWhere,
-        OR: [
-          { endsAt: { gte: now } },
-          { endsAt: null, startsAt: { gte: now } },
-        ],
+        endsAt: { gte: now },
       },
       orderBy: { startsAt: "asc" },
       take: limit,
@@ -189,10 +181,7 @@ async function _GET(req: NextRequest) {
     prisma.event.findMany({
       where: {
         ...baseWhere,
-        OR: [
-          { endsAt: { lt: now } },
-          { endsAt: null, startsAt: { lt: now } },
-        ],
+        endsAt: { lt: now },
       },
       orderBy: { startsAt: "desc" },
       take: limit,

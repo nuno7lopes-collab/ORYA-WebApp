@@ -17,7 +17,6 @@ interface SaveBasicBody {
   avatarUrl?: string | null;
   coverUrl?: string | null;
   bio?: string | null;
-  city?: string | null;
   padelLevel?: string | null;
   visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   favouriteCategories?: string[];
@@ -63,7 +62,6 @@ async function _POST(req: NextRequest) {
     const avatarUrl = rawAvatarUrl === undefined ? undefined : normalizeProfileAvatarUrl(rawAvatarUrl);
     const coverUrl = rawCoverUrl === undefined ? undefined : normalizeProfileCoverUrl(rawCoverUrl);
     const rawBio = body.bio;
-    const rawCity = body.city;
     const rawPadelLevel = body.padelLevel;
     const visibility =
       body.visibility === "PRIVATE" || body.visibility === "PUBLIC" || body.visibility === "FOLLOWERS"
@@ -87,12 +85,6 @@ async function _POST(req: NextRequest) {
       typeof rawBio === "string"
         ? rawBio.trim().slice(0, 280)
         : rawBio === null
-          ? null
-          : undefined;
-    const city =
-      typeof rawCity === "string"
-        ? rawCity.trim().slice(0, 80)
-        : rawCity === null
           ? null
           : undefined;
     const padelLevel =
@@ -159,7 +151,6 @@ async function _POST(req: NextRequest) {
           ...(normalizedPhone !== undefined ? { contactPhone: normalizedPhone } : {}),
           ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
           ...(coverUrl !== undefined ? { coverUrl: coverUrl || null } : {}),
-          ...(city !== undefined ? { city } : {}),
           ...(padelLevel !== undefined ? { padelLevel } : {}),
           ...(visibility ? { visibility } : {}),
           ...(favouriteCategories !== undefined ? { favouriteCategories } : {}),
@@ -174,7 +165,6 @@ async function _POST(req: NextRequest) {
           contactPhone: normalizedPhone ?? null,
           avatarUrl: avatarUrl ?? null,
           coverUrl: coverUrl ?? null,
-          city: city ?? null,
           padelLevel: padelLevel ?? null,
           visibility: visibility ?? "PUBLIC",
           favouriteCategories: favouriteCategories ?? [],
@@ -202,7 +192,6 @@ async function _POST(req: NextRequest) {
       coverUrl: profile.coverUrl,
       updatedAt: profile.updatedAt,
       bio: profile.bio,
-      city: profile.city,
       padelLevel: profile.padelLevel,
       favouriteCategories: profile.favouriteCategories,
       onboardingDone: profile.onboardingDone,

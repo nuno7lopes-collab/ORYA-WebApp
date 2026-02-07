@@ -4,6 +4,7 @@ import { SourceType, SearchIndexVisibility } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { pickCanonicalField } from "@/lib/location/eventLocation";
 
 const DEFAULT_LIMIT = 10;
 
@@ -43,9 +44,9 @@ async function _GET(req: NextRequest) {
           id: true,
           publicName: true,
           businessName: true,
-          city: true,
           username: true,
           brandingAvatarUrl: true,
+          addressRef: { select: { canonical: true } },
         },
       }),
       prisma.searchIndexItem.findMany({
@@ -55,8 +56,7 @@ async function _GET(req: NextRequest) {
           OR: [
             { title: { contains: q, mode: "insensitive" } },
             { description: { contains: q, mode: "insensitive" } },
-            { locationName: { contains: q, mode: "insensitive" } },
-            { locationCity: { contains: q, mode: "insensitive" } },
+            { addressRef: { formattedAddress: { contains: q, mode: "insensitive" } } },
           ],
         },
         take: perGroup,
@@ -68,7 +68,7 @@ async function _GET(req: NextRequest) {
           title: true,
           startsAt: true,
           coverImageUrl: true,
-          locationCity: true,
+          addressRef: { select: { canonical: true } },
           templateType: true,
         },
       }),
@@ -83,7 +83,7 @@ async function _GET(req: NextRequest) {
           ],
         },
         take: perGroup,
-        select: { id: true, fullName: true, username: true, avatarUrl: true, city: true },
+        select: { id: true, fullName: true, username: true, avatarUrl: true },
       }),
     ]);
 
@@ -92,7 +92,15 @@ async function _GET(req: NextRequest) {
       id: org.id,
       name: org.publicName || org.businessName || "Organização",
       username: org.username,
-      city: org.city,
+      city:
+        pickCanonicalField(
+          (org.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+          "city",
+          "locality",
+          "addressLine2",
+          "region",
+          "state",
+        ) ?? null,
       avatarUrl: org.brandingAvatarUrl,
     }));
 
@@ -103,7 +111,15 @@ async function _GET(req: NextRequest) {
       title: event.title,
       startsAt: event.startsAt,
       coverImageUrl: event.coverImageUrl,
-      city: event.locationCity,
+      city:
+        pickCanonicalField(
+          (event.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+          "city",
+          "locality",
+          "addressLine2",
+          "region",
+          "state",
+        ) ?? null,
       templateType: event.templateType,
     }));
 
@@ -112,7 +128,6 @@ async function _GET(req: NextRequest) {
       id: user.id,
       name: user.fullName || user.username || "Utilizador",
       username: user.username,
-      city: user.city,
       avatarUrl: user.avatarUrl,
     }));
 

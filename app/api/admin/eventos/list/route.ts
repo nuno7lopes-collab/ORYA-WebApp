@@ -77,7 +77,7 @@ async function _GET(req: NextRequest) {
             by: ["eventId"],
             where: {
               eventId: { in: eventIds },
-              status: { in: [TicketStatus.ACTIVE, TicketStatus.USED, TicketStatus.REFUNDED] },
+              status: { in: [TicketStatus.ACTIVE, TicketStatus.REFUNDED] },
             },
             _count: { _all: true },
           })

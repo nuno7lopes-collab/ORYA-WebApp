@@ -8,6 +8,8 @@ const DEFAULT_BATCH_SIZE = 50;
 const LOOKAHEAD_MULTIPLIER = 5;
 const BASE_BACKOFF_MS = 5 * 60 * 1000;
 const STALE_CLAIM_MS = 15 * 60 * 1000;
+const DEFAULT_TX_TIMEOUT_MS = 60_000;
+const DEFAULT_TX_MAX_WAIT_MS = 5_000;
 
 type OutboxCandidate = {
   eventId: string;
@@ -45,6 +47,33 @@ function resolveLookahead(batchSize: number) {
 function computeBackoffMs(attempts: number) {
   const backoff = attempts * BASE_BACKOFF_MS;
   return Math.min(backoff, 30 * 60 * 1000);
+}
+
+function resolveTxTimeoutMs() {
+  const raw = Number(process.env.OUTBOX_PUBLISH_TX_TIMEOUT_MS ?? DEFAULT_TX_TIMEOUT_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TX_TIMEOUT_MS;
+  return Math.max(5_000, Math.floor(raw));
+}
+
+function resolveTxMaxWaitMs() {
+  const raw = Number(process.env.OUTBOX_PUBLISH_TX_MAX_WAIT_MS ?? DEFAULT_TX_MAX_WAIT_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TX_MAX_WAIT_MS;
+  return Math.max(1_000, Math.floor(raw));
+}
+
+function shouldSkipOutboxTransaction() {
+  if (process.env.OUTBOX_PUBLISH_SKIP_TX === "true") return true;
+  const urls = [process.env.DATABASE_URL, process.env.DIRECT_URL].filter(Boolean) as string[];
+  if (urls.length === 0) return false;
+  for (const raw of urls) {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.port === "6543") return true;
+    } catch {
+      if (raw.includes(":6543")) return true;
+    }
+  }
+  return false;
 }
 
 function summarizeError(err: unknown) {
@@ -100,10 +129,42 @@ async function processClaimedOutboxEvent(params: {
   const { event, processingToken, now } = params;
   const operationKey = `outbox:${event.eventId}`;
 
-  const current = await prisma.outboxEvent.findUnique({
-    where: { eventId: event.eventId },
-    select: { processingToken: true, attempts: true },
-  });
+  let current: { processingToken: string | null; attempts: number | null } | null = null;
+  try {
+    current = await prisma.outboxEvent.findUnique({
+      where: { eventId: event.eventId },
+      select: { processingToken: true, attempts: true },
+    });
+  } catch (err) {
+    const { message, errorClass, reasonCode, stackSummary } = summarizeError(err);
+    const attempts = typeof event.attempts === "number" ? event.attempts + 1 : 1;
+    await prisma.outboxEvent.updateMany({
+      where: { eventId: event.eventId, processingToken },
+      data: {
+        attempts,
+        nextAttemptAt: new Date(now.getTime() + computeBackoffMs(attempts)),
+        reasonCode,
+        errorClass,
+        errorStack: stackSummary,
+        firstSeenAt: event.firstSeenAt ?? now,
+        lastSeenAt: now,
+      },
+    });
+    logWarn(
+      "outbox.publish-failed",
+      {
+        eventId: event.eventId,
+        eventType: event.eventType,
+        attempts,
+        correlationId: event.correlationId ?? null,
+        errorClass,
+        reasonCode,
+        error: message,
+      },
+      { fallbackToRequestContext: false },
+    );
+    return { eventId: event.eventId, status: "RETRY" as const };
+  }
   if (!current || current.processingToken !== processingToken) {
     return { eventId: event.eventId, status: "SKIPPED" as const };
   }
@@ -326,12 +387,12 @@ async function processClaimedOutboxEvent(params: {
   }
 }
 
-export async function publishOutboxBatch(params?: { now?: Date; batchSize?: number }) {
-  const now = params?.now ?? new Date();
-  const batchSize = resolveBatchSize(params?.batchSize);
-  if (batchSize <= 0) return [];
-
-  const lookahead = resolveLookahead(batchSize);
+async function claimOutboxBatchWithTransaction(params: {
+  now: Date;
+  batchSize: number;
+  lookahead: number;
+}) {
+  const { now, batchSize, lookahead } = params;
   const claimed = await prisma.$transaction(async (tx) => {
     const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS);
     const candidates = await tx.$queryRaw<OutboxCandidate[]>(
@@ -373,7 +434,107 @@ export async function publishOutboxBatch(params?: { now?: Date; batchSize?: numb
       data: { processingToken, claimedAt: now },
     });
     return { processingToken, events };
-  }, { timeout: 20000, maxWait: 5000 });
+  }, { timeout: resolveTxTimeoutMs(), maxWait: resolveTxMaxWaitMs() });
+
+  return claimed;
+}
+
+async function claimOutboxBatchWithoutTransaction(params: {
+  now: Date;
+  batchSize: number;
+  lookahead: number;
+}) {
+  const { now, batchSize, lookahead } = params;
+  const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS);
+  const candidates = await prisma.$queryRaw<OutboxCandidate[]>(
+    Prisma.sql`
+      SELECT
+        event_id as "eventId",
+        event_type as "eventType",
+        payload,
+        created_at as "createdAt",
+        published_at as "publishedAt",
+        attempts,
+        next_attempt_at as "nextAttemptAt",
+        reason_code as "reasonCode",
+        error_class as "errorClass",
+        error_stack as "errorStack",
+        first_seen_at as "firstSeenAt",
+        last_seen_at as "lastSeenAt",
+        causation_id as "causationId",
+        correlation_id as "correlationId",
+        dead_lettered_at as "deadLetteredAt"
+      FROM app_v3.outbox_events
+      WHERE published_at IS NULL
+        AND dead_lettered_at IS NULL
+        AND (next_attempt_at IS NULL OR next_attempt_at <= ${now})
+        AND (claimed_at IS NULL OR claimed_at <= ${staleBefore})
+      ORDER BY created_at ASC, event_id ASC
+      LIMIT ${lookahead}
+    `,
+  );
+
+  if (!candidates.length) return { processingToken: null, events: [] as OutboxCandidate[] };
+  const events = buildFairOutboxBatch(candidates, batchSize);
+  if (!events.length) return { processingToken: null, events: [] as OutboxCandidate[] };
+
+  const processingToken = crypto.randomUUID();
+  const eventIds = events.map((event) => event.eventId);
+  const claimed = await prisma.$queryRaw<OutboxCandidate[]>(
+    Prisma.sql`
+      UPDATE app_v3.outbox_events
+      SET processing_token = ${processingToken},
+          claimed_at = ${now}
+      WHERE event_id IN (${Prisma.join(eventIds)})
+        AND published_at IS NULL
+        AND dead_lettered_at IS NULL
+        AND (next_attempt_at IS NULL OR next_attempt_at <= ${now})
+        AND (claimed_at IS NULL OR claimed_at <= ${staleBefore})
+      RETURNING
+        event_id as "eventId",
+        event_type as "eventType",
+        payload,
+        created_at as "createdAt",
+        published_at as "publishedAt",
+        attempts,
+        next_attempt_at as "nextAttemptAt",
+        reason_code as "reasonCode",
+        error_class as "errorClass",
+        error_stack as "errorStack",
+        first_seen_at as "firstSeenAt",
+        last_seen_at as "lastSeenAt",
+        causation_id as "causationId",
+        correlation_id as "correlationId",
+        dead_lettered_at as "deadLetteredAt"
+    `,
+  );
+
+  if (!claimed.length) return { processingToken: null, events: [] as OutboxCandidate[] };
+  return { processingToken, events: claimed };
+}
+
+export async function publishOutboxBatch(params?: { now?: Date; batchSize?: number }) {
+  const now = params?.now ?? new Date();
+  const batchSize = resolveBatchSize(params?.batchSize);
+  if (batchSize <= 0) return [];
+
+  const lookahead = resolveLookahead(batchSize);
+  let claimed: { processingToken: string | null; events: OutboxCandidate[] };
+  if (shouldSkipOutboxTransaction()) {
+    claimed = await claimOutboxBatchWithoutTransaction({ now, batchSize, lookahead });
+  } else {
+    try {
+      claimed = await claimOutboxBatchWithTransaction({ now, batchSize, lookahead });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logWarn(
+        "outbox.claim.fallback",
+        { error: message },
+        { fallbackToRequestContext: false },
+      );
+      claimed = await claimOutboxBatchWithoutTransaction({ now, batchSize, lookahead });
+    }
+  }
 
   if (!claimed.processingToken || claimed.events.length === 0) {
     logInfo("outbox.batch.empty", { batchSize }, { fallbackToRequestContext: false });

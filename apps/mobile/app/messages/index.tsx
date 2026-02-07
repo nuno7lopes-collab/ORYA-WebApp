@@ -160,7 +160,7 @@ export default function MessagesScreen() {
                       {event.title}
                     </Text>
                     <Text className="text-white/60 text-xs">
-                      {formatDate(event.startsAt)} · {event.locationCity || event.locationName || "Local a anunciar"}
+                      {formatDate(event.startsAt)} · {event.locationFormattedAddress || "Local a anunciar"}
                     </Text>
                     <Text className="text-white/65 text-xs" numberOfLines={1}>
                       {lastMessage

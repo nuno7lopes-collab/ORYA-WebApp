@@ -34,7 +34,6 @@ type OrgOption = {
     username: string | null;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     entityType: string | null;
     organizationKind?: string | null;
     status: string | null;

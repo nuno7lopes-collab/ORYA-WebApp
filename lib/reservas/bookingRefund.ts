@@ -5,7 +5,6 @@ import {
   createRefund,
   retrievePaymentIntent,
 } from "@/domain/finance/gateway/stripeGateway";
-import { cancelPendingPayout } from "@/lib/payments/pendingPayout";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { SourceType } from "@prisma/client";
@@ -50,10 +49,19 @@ export async function refundBookingPayment(params: RefundBookingParams) {
     throw new Error("FINANCE_ORG_NOT_RESOLVED");
   }
 
-  const transaction = await prisma.transaction.findFirst({
+  const paymentEvent = await prisma.paymentEvent.findFirst({
     where: { stripePaymentIntentId: params.paymentIntentId },
-    select: { amountCents: true },
+    select: { purchaseId: true },
   });
+  const paymentId = paymentEvent?.purchaseId ?? null;
+  const payment = paymentId
+    ? await prisma.payment.findUnique({
+        where: { id: paymentId },
+        select: { pricingSnapshotJson: true },
+      })
+    : null;
+  const snapshot = payment?.pricingSnapshotJson as { total?: number } | null;
+  const snapshotTotal = typeof snapshot?.total === "number" ? snapshot.total : null;
 
   const idempotencyKey =
     params.idempotencyKey ??
@@ -83,12 +91,11 @@ export async function refundBookingPayment(params: RefundBookingParams) {
         console.warn("[reservas/refund] failed to cancel payment intent", err);
       }
     }
-    await cancelPendingPayout(params.paymentIntentId, params.reason);
     return null;
   }
 
   const amountAvailable =
-    transaction?.amountCents ?? intent.amount_received ?? intent.amount ?? 0;
+    snapshotTotal ?? intent.amount_received ?? intent.amount ?? 0;
   const requestedAmount = toAmountCents(params.amountCents);
   const refundAmountCents =
     requestedAmount && amountAvailable > 0
@@ -97,10 +104,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
         ? amountAvailable
         : null;
 
-  if (!refundAmountCents) {
-    await cancelPendingPayout(params.paymentIntentId, params.reason);
-    return null;
-  }
+  if (!refundAmountCents) return null;
 
   try {
     const refund = await createRefund(
@@ -110,8 +114,6 @@ export async function refundBookingPayment(params: RefundBookingParams) {
       },
       { idempotencyKey, org, requireStripe: true },
     );
-
-    await cancelPendingPayout(params.paymentIntentId, params.reason);
 
     await prisma.$transaction(async (tx) => {
       const outbox = await recordOutboxEvent(
@@ -153,7 +155,6 @@ export async function refundBookingPayment(params: RefundBookingParams) {
   } catch (err) {
     const message = err && typeof err === "object" && "message" in err ? String(err.message) : "";
     if (message.includes("does not have a successful charge")) {
-      await cancelPendingPayout(params.paymentIntentId, params.reason);
       return null;
     }
     if (message.includes("FINANCE_CONNECT_NOT_READY") || message.includes("FINANCE_ORG_NOT_RESOLVED")) {

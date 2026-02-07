@@ -2,7 +2,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
@@ -11,7 +10,7 @@ import { OrganizationModule } from "@prisma/client";
 import { toCsv } from "@/lib/exports/csv";
 import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { respondError, respondOk } from "@/lib/http/envelope";
+import { respondError } from "@/lib/http/envelope";
 
 function parseRange(req: NextRequest) {
   const from = req.nextUrl.searchParams.get("from");
@@ -91,25 +90,6 @@ export async function GET(req: NextRequest) {
   });
   if (!access.ok) return fail(403, "FORBIDDEN");
 
-  if (!organization.stripeAccountId) {
-    const csv = toCsv([["createdAt", "paymentIntentId", "amountCents"]]);
-    return new NextResponse(`\uFEFF${csv}`, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="payouts_empty.csv"`,
-      },
-    });
-  }
-
-  const rows = await prisma.pendingPayout.findMany({
-    where: {
-      recipientConnectAccountId: organization.stripeAccountId,
-      createdAt: { gte: range.fromDate, lte: range.toDate },
-    },
-    orderBy: { id: "asc" },
-  });
-
   const headers = [
     "createdAt",
     "paymentIntentId",
@@ -123,21 +103,8 @@ export async function GET(req: NextRequest) {
     "holdUntil",
     "releasedAt",
   ];
-  const csvRows = rows.map((row) => [
-    row.createdAt,
-    row.paymentIntentId,
-    row.chargeId,
-    row.recipientConnectAccountId,
-    row.grossAmountCents,
-    row.platformFeeCents,
-    row.amountCents,
-    row.currency,
-    row.status,
-    row.holdUntil,
-    row.releasedAt,
-  ]);
-  const csv = toCsv([headers, ...csvRows]);
-  const filename = `payouts_${range.fromDate.toISOString().slice(0, 10)}_${range.toDate
+  const csv = toCsv([headers]);
+  const filename = `payouts_empty_${range.fromDate.toISOString().slice(0, 10)}_${range.toDate
     .toISOString()
     .slice(0, 10)}.csv`;
 

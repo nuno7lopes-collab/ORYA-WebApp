@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   Text,
@@ -10,9 +9,8 @@ import {
   View,
   InteractionManager,
 } from "react-native";
-import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -30,27 +28,11 @@ import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPad
 import { sanitizeUsername, validateUsername } from "../../lib/username";
 import { checkUsernameAvailability } from "../../features/onboarding/api";
 import { INTEREST_OPTIONS, InterestId } from "../../features/onboarding/types";
-import { api, unwrapApiResponse } from "../../lib/api";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-
-const fetchFollowers = async (userId: string, accessToken?: string | null) => {
-  const response = await api.requestWithAccessToken<unknown>(
-    `/api/social/followers?userId=${encodeURIComponent(userId)}&limit=30`,
-    accessToken,
-  );
-  const payload = unwrapApiResponse<{ items?: any[] }>(response);
-  return Array.isArray(payload?.items) ? payload.items : [];
-};
-
-const fetchFollowing = async (userId: string, accessToken?: string | null) => {
-  const response = await api.requestWithAccessToken<unknown>(
-    `/api/social/following?userId=${encodeURIComponent(userId)}&limit=30&includeOrganizations=true`,
-    accessToken,
-  );
-  const payload = unwrapApiResponse<{ items?: any[] }>(response);
-  return Array.isArray(payload?.items) ? payload.items : [];
-};
+import { useUserFollowers, useUserFollowing } from "../../features/network/followLists";
+import { FollowListModal } from "../../components/profile/FollowListModal";
+import { ProfileHeader } from "../../components/profile/ProfileHeader";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -71,7 +53,6 @@ export default function ProfileScreen() {
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
-  const [city, setCity] = useState("");
   const [interests, setInterests] = useState<InterestId[]>([]);
   const [avatarLocalUri, setAvatarLocalUri] = useState<string | null>(null);
   const [coverLocalUri, setCoverLocalUri] = useState<string | null>(null);
@@ -80,23 +61,14 @@ export default function ProfileScreen() {
   const [showPadel, setShowPadel] = useState(false);
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
-  const followersList = useQuery({
-    queryKey: ["profile", "followers", userId ?? "anon"],
-    queryFn: () => fetchFollowers(userId ?? "", accessToken),
-    enabled: Boolean(followersOpen && userId),
-  });
-  const followingList = useQuery({
-    queryKey: ["profile", "following", userId ?? "anon"],
-    queryFn: () => fetchFollowing(userId ?? "", accessToken),
-    enabled: Boolean(followingOpen && userId),
-  });
+  const followersList = useUserFollowers(userId, accessToken, Boolean(followersOpen && userId));
+  const followingList = useUserFollowing(userId, accessToken, Boolean(followingOpen && userId));
 
   useEffect(() => {
     if (!profile) return;
     setFullName(profile.fullName ?? "");
     setUsername(profile.username ?? "");
     setBio(profile.bio ?? "");
-    setCity(profile.city ?? "");
     setInterests((profile.favouriteCategories ?? []) as InterestId[]);
     setAvatarLocalUri(null);
     setCoverLocalUri(null);
@@ -113,6 +85,8 @@ export default function ProfileScreen() {
       return () => {
         active = false;
         task.cancel();
+        setFollowersOpen(false);
+        setFollowingOpen(false);
         setDataReady(false);
       };
     }, []),
@@ -120,8 +94,6 @@ export default function ProfileScreen() {
 
   const avatarPreview = avatarRemoved ? null : avatarLocalUri ?? profile?.avatarUrl ?? null;
   const coverPreview = coverRemoved ? null : coverLocalUri ?? profile?.coverUrl ?? null;
-  const coverFallbackColor = "#4B5462";
-  const coverHasImage = Boolean(coverPreview);
 
   const usernameValidation = useMemo(() => validateUsername(username), [username]);
   const normalizedUsername = usernameValidation.valid ? usernameValidation.normalized : sanitizeUsername(username);
@@ -131,12 +103,11 @@ export default function ProfileScreen() {
     if (fullName.trim() !== (profile.fullName ?? "").trim()) return true;
     if (normalizedUsername !== (profile.username ?? "")) return true;
     if (bio.trim() !== (profile.bio ?? "").trim()) return true;
-    if (city.trim() !== (profile.city ?? "").trim()) return true;
     const profileInterests = (profile.favouriteCategories ?? []) as InterestId[];
     if (interests.slice().sort().join("|") !== profileInterests.slice().sort().join("|")) return true;
     if (avatarRemoved || coverRemoved || avatarLocalUri || coverLocalUri) return true;
     return false;
-  }, [avatarLocalUri, avatarRemoved, bio, city, coverLocalUri, coverRemoved, fullName, interests, normalizedUsername, profile]);
+  }, [avatarLocalUri, avatarRemoved, bio, coverLocalUri, coverRemoved, fullName, interests, normalizedUsername, profile]);
 
   const canSave = Boolean(
     fullName.trim().length >= 2 && usernameValidation.valid && isDirty && !saving,
@@ -203,7 +174,6 @@ export default function ProfileScreen() {
             setFullName(profile.fullName ?? "");
             setUsername(profile.username ?? "");
             setBio(profile.bio ?? "");
-            setCity(profile.city ?? "");
             setInterests((profile.favouriteCategories ?? []) as InterestId[]);
             setAvatarLocalUri(null);
             setCoverLocalUri(null);
@@ -242,7 +212,6 @@ export default function ProfileScreen() {
         fullName: fullName.trim(),
         username: normalizedUsername,
         bio: bio.trim() || null,
-        city: city.trim() || null,
         avatarUrl,
         coverUrl,
         favouriteCategories: interests,
@@ -288,171 +257,102 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <View className="gap-5">
-            <View style={{ position: "relative" }}>
-              <Pressable
-                onPress={() => pickImage("cover")}
-                disabled={!editMode}
-                style={{
-                  height: 180,
-                  borderRadius: 26,
-                  overflow: "hidden",
-                  borderWidth: coverHasImage ? 1 : 0,
-                  borderColor: coverHasImage ? "rgba(255,255,255,0.12)" : "transparent",
-                  backgroundColor: coverHasImage ? "rgba(255,255,255,0.06)" : coverFallbackColor,
-                }}
-              >
-                {coverPreview ? (
-                  <Image
-                    source={{ uri: coverPreview }}
-                    contentFit="cover"
-                    style={{ width: "100%", height: "100%" }}
-                    transition={160}
-                  />
-                ) : null}
-              </Pressable>
-
-              <View
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: -40,
-                  alignItems: "center",
-                }}
-              >
-                {coverHasImage ? (
-                  <View
+            <ProfileHeader
+              isUser
+              coverUrl={coverPreview}
+              avatarUrl={avatarPreview}
+              displayName={profile?.fullName ?? "Utilizador ORYA"}
+              username={profile?.username ?? null}
+              bio={profile?.bio ?? null}
+              counts={{
+                followers: counts.followers,
+                following: counts.following,
+                events: counts.events ?? totalEvents,
+              }}
+              onCoverPress={editMode ? () => pickImage("cover") : undefined}
+              onAvatarPress={editMode ? () => pickImage("avatar") : undefined}
+              onFollowersPress={() => setFollowersOpen(true)}
+              onFollowingPress={() => setFollowingOpen(true)}
+              rightActions={
+                <>
+                  <Pressable
+                    onPress={() => router.push("/settings")}
+                    className="rounded-full border border-white/15 bg-white/10 p-2"
+                  >
+                    <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
+                  </Pressable>
+                  <Pressable
+                    onPress={editMode ? handleSave : handleToggleEdit}
+                    disabled={editMode && !canSave}
+                    className={
+                      editMode
+                        ? "rounded-full bg-white/90 px-3 py-2"
+                        : "rounded-full border border-white/15 bg-white/10 px-3 py-2"
+                    }
+                    style={editMode && !canSave ? { opacity: 0.5 } : undefined}
+                  >
+                    <Text className={editMode ? "text-black text-xs font-semibold" : "text-white text-xs font-semibold"}>
+                      {editMode ? (saving ? "A guardar..." : "Guardar") : "Editar"}
+                    </Text>
+                  </Pressable>
+                </>
+              }
+              nameNode={
+                editMode ? (
+                  <TextInput
+                    value={fullName}
+                    onChangeText={setFullName}
+                    placeholder="Nome completo"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
                     style={{
-                      position: "absolute",
-                      width: 86,
-                      height: 86,
-                      borderRadius: 43,
-                      borderWidth: 2,
-                      borderColor: "rgba(255,255,255,0.22)",
+                      color: "#ffffff",
+                      fontSize: 20,
+                      fontWeight: "700",
+                      textAlign: "center",
+                      borderBottomWidth: 1,
+                      borderBottomColor: "rgba(255,255,255,0.12)",
+                      paddingBottom: 4,
+                      minWidth: 220,
                     }}
                   />
-                ) : null}
-                <Pressable
-                  onPress={() => pickImage("avatar")}
-                  disabled={!editMode}
-                  style={{
-                    width: 80,
-                    height: 80,
-                    borderRadius: 40,
-                    borderWidth: 2,
-                    borderColor: "rgba(255,255,255,0.9)",
-                    backgroundColor: coverFallbackColor,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    overflow: "hidden",
-                  }}
-                >
-                  {avatarPreview ? (
-                    <Image source={{ uri: avatarPreview }} style={{ width: 80, height: 80 }} contentFit="cover" />
-                  ) : (
-                    <Ionicons name="person" size={28} color="rgba(255,255,255,0.8)" />
-                  )}
-                </Pressable>
-              </View>
-
-              <View style={{ position: "absolute", right: 12, top: 12, flexDirection: "row", gap: 10 }}>
-                <Pressable
-                  onPress={() => router.push("/settings")}
-                  className="rounded-full border border-white/15 bg-white/10 p-2"
-                >
-                  <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
-                </Pressable>
-                <Pressable
-                  onPress={editMode ? handleSave : handleToggleEdit}
-                  disabled={editMode && !canSave}
-                  className={editMode ? "rounded-full bg-white/90 px-3 py-2" : "rounded-full border border-white/15 bg-white/10 px-3 py-2"}
-                  style={editMode && !canSave ? { opacity: 0.5 } : undefined}
-                >
-                  <Text className={editMode ? "text-black text-xs font-semibold" : "text-white text-xs font-semibold"}>
-                    {editMode ? (saving ? "A guardar..." : "Guardar") : "Editar"}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={{ paddingTop: 48, gap: 6, alignItems: "center" }}>
-              {editMode ? (
-                <TextInput
-                  value={fullName}
-                  onChangeText={setFullName}
-                  placeholder="Nome completo"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={{
-                    color: "#ffffff",
-                    fontSize: 20,
-                    fontWeight: "700",
-                    textAlign: "center",
-                    borderBottomWidth: 1,
-                    borderBottomColor: "rgba(255,255,255,0.12)",
-                    paddingBottom: 4,
-                    minWidth: 220,
-                  }}
-                />
-              ) : (
-                <Text className="text-white text-2xl font-semibold" numberOfLines={1}>
-                  {profile?.fullName ?? "Utilizador ORYA"}
-                </Text>
-              )}
-
-              {editMode ? (
-                <TextInput
-                  value={username}
-                  onChangeText={(value) => setUsername(sanitizeUsername(value))}
-                  placeholder="username"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{
-                    color: "rgba(255,255,255,0.7)",
-                    fontSize: 13,
-                    textAlign: "center",
-                    paddingBottom: 2,
-                  }}
-                />
-              ) : profile?.username ? (
-                <Text className="text-white/60 text-sm">@{profile.username}</Text>
-              ) : null}
-
-              {editMode ? (
-                <TextInput
-                  value={bio}
-                  onChangeText={setBio}
-                  placeholder="Escreve uma bio curta"
-                  placeholderTextColor="rgba(255,255,255,0.35)"
-                  multiline
-                  style={{
-                    color: "rgba(255,255,255,0.8)",
-                    fontSize: 13,
-                    textAlign: "center",
-                    marginTop: 6,
-                  }}
-                />
-              ) : profile?.bio ? (
-                <Text className="text-white/70 text-sm text-center" numberOfLines={3}>
-                  {profile.bio}
-                </Text>
-              ) : null}
-            </View>
-
-            <View className="flex-row justify-center gap-8">
-              <Pressable onPress={() => setFollowersOpen(true)} className="items-center">
-                <Text className="text-white text-base font-semibold">{counts.followers}</Text>
-                <Text className="text-white/60 text-xs">Seguidores</Text>
-              </Pressable>
-              <Pressable onPress={() => setFollowingOpen(true)} className="items-center">
-                <Text className="text-white text-base font-semibold">{counts.following}</Text>
-                <Text className="text-white/60 text-xs">A seguir</Text>
-              </Pressable>
-              <View className="items-center">
-                <Text className="text-white text-base font-semibold">{counts.events ?? totalEvents}</Text>
-                <Text className="text-white/60 text-xs">Eventos</Text>
-              </View>
-            </View>
+                ) : undefined
+              }
+              usernameNode={
+                editMode ? (
+                  <TextInput
+                    value={username}
+                    onChangeText={(value) => setUsername(sanitizeUsername(value))}
+                    placeholder="username"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={{
+                      color: "rgba(255,255,255,0.7)",
+                      fontSize: 13,
+                      textAlign: "center",
+                      paddingBottom: 2,
+                    }}
+                  />
+                ) : undefined
+              }
+              bioNode={
+                editMode ? (
+                  <TextInput
+                    value={bio}
+                    onChangeText={setBio}
+                    placeholder="Escreve uma bio curta"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    multiline
+                    style={{
+                      color: "rgba(255,255,255,0.8)",
+                      fontSize: 13,
+                      textAlign: "center",
+                      marginTop: 6,
+                    }}
+                  />
+                ) : undefined
+              }
+            />
 
             <View className="flex-row justify-center gap-8">
               <Pressable
@@ -488,29 +388,6 @@ export default function ProfileScreen() {
             ) : (
               <GlassCard intensity={52}>
                 <View className="gap-3">
-                  {editMode ? (
-                    <View style={{ gap: 10 }}>
-                      <Text className="text-white/70 text-xs">Cidade</Text>
-                      <TextInput
-                        value={city}
-                        onChangeText={setCity}
-                        placeholder="Cidade"
-                        placeholderTextColor="rgba(255,255,255,0.4)"
-                        style={{
-                          minHeight: 44,
-                          borderRadius: 14,
-                          borderWidth: 1,
-                          borderColor: "rgba(255,255,255,0.15)",
-                          backgroundColor: "rgba(255,255,255,0.08)",
-                          paddingHorizontal: 14,
-                          color: "#ffffff",
-                        }}
-                      />
-                    </View>
-                  ) : profile?.city ? (
-                    <Text className="text-white/70 text-sm">{profile.city}</Text>
-                  ) : null}
-
                   {editMode ? (
                     <View className="flex-row flex-wrap gap-3">
                       {INTEREST_OPTIONS.map((interest) => {
@@ -585,111 +462,26 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={followersOpen} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>
-          <GlassCard intensity={60}>
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-white text-sm font-semibold">Seguidores</Text>
-              <Pressable onPress={() => setFollowersOpen(false)}>
-                <Ionicons name="close" size={18} color="rgba(255,255,255,0.8)" />
-              </Pressable>
-            </View>
-            {followersList.isLoading ? (
-              <ActivityIndicator color="rgba(255,255,255,0.8)" />
-            ) : (
-              <ScrollView style={{ maxHeight: 320 }}>
-                {(followersList.data ?? []).map((item) => (
-                  <Pressable
-                    key={item.userId}
-                    onPress={() => {
-                      if (item.username) router.push(`/${item.username}`);
-                    }}
-                    className="flex-row items-center gap-3 py-2"
-                  >
-                    <View
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 12,
-                        backgroundColor: "rgba(255,255,255,0.08)",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={{ width: 36, height: 36 }} />
-                      ) : (
-                        <Ionicons name="person" size={18} color="rgba(255,255,255,0.8)" />
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text className="text-white text-sm font-semibold">{item.fullName ?? "Utilizador"}</Text>
-                      {item.username ? <Text className="text-white/60 text-xs">@{item.username}</Text> : null}
-                    </View>
-                  </Pressable>
-                ))}
-                {followersList.data?.length === 0 ? (
-                  <Text className="text-white/60 text-xs">Sem seguidores ainda.</Text>
-                ) : null}
-              </ScrollView>
-            )}
-          </GlassCard>
-        </View>
-      </Modal>
-
-      <Modal visible={followingOpen} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 24 }}>
-          <GlassCard intensity={60}>
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-white text-sm font-semibold">A seguir</Text>
-              <Pressable onPress={() => setFollowingOpen(false)}>
-                <Ionicons name="close" size={18} color="rgba(255,255,255,0.8)" />
-              </Pressable>
-            </View>
-            {followingList.isLoading ? (
-              <ActivityIndicator color="rgba(255,255,255,0.8)" />
-            ) : (
-              <ScrollView style={{ maxHeight: 320 }}>
-                {(followingList.data ?? []).map((item) => (
-                  <Pressable
-                    key={item.userId}
-                    onPress={() => {
-                      if (item.username) router.push(`/${item.username}`);
-                    }}
-                    className="flex-row items-center gap-3 py-2"
-                  >
-                    <View
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 12,
-                        backgroundColor: "rgba(255,255,255,0.08)",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={{ width: 36, height: 36 }} />
-                      ) : (
-                        <Ionicons name={item.kind === "organization" ? "business" : "person"} size={18} color="rgba(255,255,255,0.8)" />
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text className="text-white text-sm font-semibold">{item.fullName ?? "Perfil"}</Text>
-                      {item.username ? <Text className="text-white/60 text-xs">@{item.username}</Text> : null}
-                    </View>
-                  </Pressable>
-                ))}
-                {followingList.data?.length === 0 ? (
-                  <Text className="text-white/60 text-xs">Ainda não segues ninguém.</Text>
-                ) : null}
-              </ScrollView>
-            )}
-          </GlassCard>
-        </View>
-      </Modal>
+      <FollowListModal
+        open={followersOpen}
+        title="Seguidores"
+        items={followersList.data}
+        isLoading={followersList.isLoading}
+        isError={followersList.isError}
+        emptyLabel="Sem seguidores ainda."
+        onClose={() => setFollowersOpen(false)}
+        onRetry={() => followersList.refetch()}
+      />
+      <FollowListModal
+        open={followingOpen}
+        title="A seguir"
+        items={followingList.data}
+        isLoading={followingList.isLoading}
+        isError={followingList.isError}
+        emptyLabel="Ainda não segues ninguém."
+        onClose={() => setFollowingOpen(false)}
+        onRetry={() => followingList.refetch()}
+      />
     </LiquidBackground>
   );
 }

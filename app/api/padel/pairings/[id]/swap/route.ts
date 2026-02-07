@@ -94,7 +94,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
             data: {
               profileId: null,
               playerProfileId: null,
-              ticketId: null,
               slotStatus: PadelPairingSlotStatus.PENDING,
               paymentStatus: PadelPairingPaymentStatus.UNPAID,
               invitedContact: null,

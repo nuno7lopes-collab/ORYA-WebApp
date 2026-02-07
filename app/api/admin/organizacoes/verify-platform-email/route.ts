@@ -7,7 +7,7 @@ import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOffic
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
-import { OrgType, PendingPayoutStatus } from "@prisma/client";
+import { OrgType } from "@prisma/client";
 import { logError } from "@/lib/observability/logger";
 
 type VerifyPlatformEmailBody = {
@@ -74,16 +74,7 @@ export async function POST(req: NextRequest) {
 
     let cancelledPayouts = 0;
     if (organization.orgType !== OrgType.PLATFORM && organization.stripeAccountId) {
-      const cancelled = await prisma.pendingPayout.updateMany({
-        where: {
-          recipientConnectAccountId: organization.stripeAccountId,
-          status: {
-            in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED],
-          },
-        },
-        data: { status: PendingPayoutStatus.CANCELLED, blockedReason: "ADMIN_PLATFORM_TAKEOVER" },
-      });
-      cancelledPayouts = cancelled.count;
+      cancelledPayouts = 0;
     }
 
     const updated = await prisma.organization.update({

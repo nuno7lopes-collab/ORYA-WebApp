@@ -41,7 +41,7 @@ Já existe base sólida para reservas:
 1. Modelo `Booking` e `OrganizationPolicy` em `prisma/schema.prisma`.
 2. Snapshots de confirmação e cálculo de fees: `lib/reservas/confirmationSnapshot.ts`.
 3. Checkout já cria `Payment` (SourceType `BOOKING`) e PaymentIntent: `app/api/servicos/[id]/checkout/route.ts`.
-4. Fulfillment do booking e Transaction com `stripeFeeCents`: `lib/operations/fulfillServiceBooking.ts`.
+4. Fulfillment do booking e fees reais via `PaymentEvent`/`SaleSummary`: `lib/operations/fulfillServiceBooking.ts`.
 5. Cancelamento do cliente: `app/api/me/reservas/[id]/cancel/route.ts`.
 6. Cancelamento e reagendamento pela org: `app/api/organizacao/reservas/[id]/cancel/route.ts`, `app/api/organizacao/reservas/[id]/reschedule/route.ts`.
 

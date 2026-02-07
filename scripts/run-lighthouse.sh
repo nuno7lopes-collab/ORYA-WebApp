@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${LIGHTHOUSE_URL:-https://app.orya.pt}"
+URL="${LIGHTHOUSE_URL:-https://orya.pt}"
 OUTDIR="${LIGHTHOUSE_OUTDIR:-reports/lighthouse}"
 mkdir -p "$OUTDIR"
 

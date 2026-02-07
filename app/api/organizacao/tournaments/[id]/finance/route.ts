@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { readNumericParam } from "@/lib/routeParams";
-import { PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
+import { SaleSummaryStatus } from "@prisma/client";
 import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -74,19 +74,6 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   });
 
   const event = await prisma.event.findUnique({ where: { id: tournament.eventId }, select: { payoutMode: true } });
-  const pending = await prisma.pendingPayout.findMany({
-    where: {
-      sourceType: SourceType.TICKET_ORDER,
-      sourceId: String(tournament.eventId),
-      status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
-    },
-    select: { amountCents: true, holdUntil: true, status: true },
-  });
-  const holdCents = pending.reduce((acc, p) => acc + p.amountCents, 0);
-  const hasBlocked = pending.some((p) => p.status === PendingPayoutStatus.BLOCKED);
-  const releaseAt = pending
-    .filter((p) => p.status !== PendingPayoutStatus.BLOCKED)
-    .reduce<Date | null>((acc, p) => (!acc || p.holdUntil < acc ? p.holdUntil : acc), null);
 
   // Placeholder refunds/disputes (não temos tabelas dedicadas aqui)
   const refundsCents = 0;
@@ -102,9 +89,9 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         countSales: agg._count._all ?? 0,
         refundsCents,
         disputesCents,
-        releaseAt,
-        holdCents,
-        holdReason: hasBlocked ? "BLOCKED" : holdCents > 0 ? "HELD" : null,
+        releaseAt: null,
+        holdCents: 0,
+        holdReason: null,
         payoutMode: event?.payoutMode ?? null,
       },
       recent,

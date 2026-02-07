@@ -36,7 +36,6 @@ import {
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule";
-import { createManualAddress } from "../lib/address/service";
 
 const loadEnvFile = (file: string) => {
   if (!fs.existsSync(file)) return;
@@ -73,7 +72,7 @@ const prisma = new PrismaClient({ adapter, log: ["error"] });
 
 const ORGANIZATION_USERNAME = "club-padel-demo";
 const ORGANIZATION_PUBLIC_NAME = "Clube Padel Demo";
-const ORGANIZATION_CITY = "Lisboa";
+const DEFAULT_ADDRESS_ID = process.env.SEED_ADDRESS_ID ?? process.env.PADEL_ADDRESS_ID ?? null;
 
 const MAIN_CLUB_SLUG = "padel-demo-club";
 const PARTNER_CLUB_SLUG = "padel-demo-partner";
@@ -96,6 +95,15 @@ const parseNumberEnv = (key: string) => {
   if (!raw) return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const resolveSeedAddressId = async (tx: PrismaClient) => {
+  if (DEFAULT_ADDRESS_ID) return DEFAULT_ADDRESS_ID;
+  const existing = await tx.address.findFirst({ select: { id: true } });
+  if (!existing) {
+    throw new Error("Define SEED_ADDRESS_ID (addressId Apple) ou cria uma morada via Address Service antes de seed.");
+  }
+  return existing.id;
 };
 
 const ORG_ID = parseNumberEnv("ORG_ID");
@@ -168,8 +176,7 @@ const ensureClub = async ({
   organizationId,
   name,
   slug,
-  city,
-  address,
+  addressId,
   courtsCount,
   isDefault,
   kind,
@@ -177,32 +184,20 @@ const ensureClub = async ({
   organizationId: number;
   name: string;
   slug: string;
-  city: string;
-  address: string;
+  addressId?: string | null;
   courtsCount: number;
   isDefault: boolean;
   kind: PadelClubKind;
 }) => {
   const existing = await prisma.padelClub.findUnique({ where: { slug } });
-  const formattedAddress = [address, city].filter(Boolean).join(", ") || name;
-  const addressResult = await createManualAddress({
-    formattedAddress,
-    latitude: 0,
-    longitude: 0,
-  });
-  if (!addressResult.ok) {
-    throw new Error("SEED_ADDRESS_FAILED");
-  }
-  const addressId = existing?.addressId ?? addressResult.address.id;
+  const resolvedAddressId = addressId ?? existing?.addressId ?? (await resolveSeedAddressId(prisma));
   if (existing) {
     return prisma.padelClub.update({
       where: { id: existing.id },
       data: {
         organizationId,
         name,
-        city,
-        address,
-        addressId,
+        addressId: resolvedAddressId,
         courtsCount,
         isDefault,
         kind,
@@ -215,9 +210,7 @@ const ensureClub = async ({
       organizationId,
       name,
       slug,
-      city,
-      address,
-      addressId,
+      addressId: resolvedAddressId,
       courtsCount,
       isDefault,
       kind,
@@ -490,6 +483,8 @@ async function main() {
     throw new Error(`Utilizador não encontrado para USER_ID_TEST=${userId}.`);
   }
 
+  const seedAddressId = await resolveSeedAddressId(prisma);
+
   let organization: Awaited<ReturnType<typeof prisma.organization.findUnique>>;
   if (ORG_ID) {
     organization = await prisma.organization.findUnique({ where: { id: ORG_ID } });
@@ -500,26 +495,26 @@ async function main() {
     organization = existingOrganization
       ? await prisma.organization.update({
           where: { id: existingOrganization.id },
-          data: {
-            publicName: ORGANIZATION_PUBLIC_NAME,
-            businessName: ORGANIZATION_PUBLIC_NAME,
-            city: ORGANIZATION_CITY,
-            entityType: "CLUBE",
-            status: OrganizationStatus.ACTIVE,
-            primaryModule: OrganizationModule.TORNEIOS,
-          },
-        })
+        data: {
+          publicName: ORGANIZATION_PUBLIC_NAME,
+          businessName: ORGANIZATION_PUBLIC_NAME,
+          addressId: seedAddressId,
+          entityType: "CLUBE",
+          status: OrganizationStatus.ACTIVE,
+          primaryModule: OrganizationModule.TORNEIOS,
+        },
+      })
       : await prisma.organization.create({
-          data: {
-            username: ORGANIZATION_USERNAME,
-            publicName: ORGANIZATION_PUBLIC_NAME,
-            businessName: ORGANIZATION_PUBLIC_NAME,
-            city: ORGANIZATION_CITY,
-            entityType: "CLUBE",
-            status: OrganizationStatus.ACTIVE,
-            primaryModule: OrganizationModule.TORNEIOS,
-            group: { create: {} },
-          },
+        data: {
+          username: ORGANIZATION_USERNAME,
+          publicName: ORGANIZATION_PUBLIC_NAME,
+          businessName: ORGANIZATION_PUBLIC_NAME,
+          addressId: seedAddressId,
+          entityType: "CLUBE",
+          status: OrganizationStatus.ACTIVE,
+          primaryModule: OrganizationModule.TORNEIOS,
+          group: { create: {} },
+        },
         });
   }
   if (!organization) {
@@ -547,8 +542,6 @@ async function main() {
     });
   }
 
-  const organizationCity = organization.city ?? ORGANIZATION_CITY;
-
   const mainClubSlug = ORG_ID ? `padel-org-${organization.id}-main` : MAIN_CLUB_SLUG;
   const partnerClubSlug = ORG_ID ? `padel-org-${organization.id}-partner` : PARTNER_CLUB_SLUG;
 
@@ -556,8 +549,7 @@ async function main() {
     organizationId: organization.id,
     name: MAIN_CLUB_NAME,
     slug: mainClubSlug,
-    city: organizationCity,
-    address: "Rua do Padel, 123",
+    addressId: organization.addressId ?? seedAddressId,
     courtsCount: MAIN_COURTS_COUNT,
     isDefault: true,
     kind: PadelClubKind.OWN,
@@ -567,8 +559,7 @@ async function main() {
     organizationId: organization.id,
     name: PARTNER_CLUB_NAME,
     slug: partnerClubSlug,
-    city: organizationCity,
-    address: "Avenida Parceiro, 45",
+    addressId: organization.addressId ?? seedAddressId,
     courtsCount: PARTNER_COURTS_COUNT,
     isDefault: false,
     kind: PadelClubKind.PARTNER,
@@ -625,8 +616,7 @@ async function main() {
       organizationId: organization.id,
       startsAt: eventStart,
       endsAt: eventEnd,
-      locationName: MAIN_CLUB_NAME,
-      locationCity: organizationCity,
+      addressId: mainClub.addressId,
       pricingMode: EventPricingMode.FREE_ONLY,
       status: "PUBLISHED",
       resaleMode: ResaleMode.ALWAYS,

@@ -83,7 +83,6 @@ async function _POST(req: NextRequest) {
                 data: {
                   profileId: null,
                   playerProfileId: null,
-                  ticketId: null,
                   invitedContact: null,
                   invitedUserId: null,
                   slotStatus: PadelPairingSlotStatus.PENDING,

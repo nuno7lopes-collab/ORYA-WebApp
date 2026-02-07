@@ -6,7 +6,6 @@ type UserItem = {
   id: string;
   username: string | null;
   fullName: string | null;
-  city: string | null;
   roles: string[] | null;
   createdAt: string;
   isDeleted: boolean;
@@ -54,7 +53,6 @@ export function UsersTableClient({ users }: Props) {
             <tr>
               <th className="px-4 py-3">Username</th>
               <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Cidade</th>
               <th className="px-4 py-3">Roles</th>
               <th className="px-4 py-3">Criado</th>
               <th className="px-4 py-3">Estado</th>
@@ -69,9 +67,6 @@ export function UsersTableClient({ users }: Props) {
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-white/80">
                   {u.fullName || "—"}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-white/70">
-                  {u.city || "—"}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="flex flex-wrap gap-2">

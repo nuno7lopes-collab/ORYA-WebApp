@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import useSWR from "swr";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
@@ -520,354 +519,19 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
   );
 }
 
-type PendingPayout = {
-  id: number;
-  sourceType: string;
-  sourceId: string;
-  paymentIntentId: string;
-  recipientConnectAccountId: string;
-  amountCents: number;
-  currency: string;
-  status: string;
-  holdUntil: string;
-  nextAttemptAt: string | null;
-  retryCount: number;
-  blockedReason: string | null;
-  transferId: string | null;
-  releasedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  organization?: { id: number; publicName: string | null; username: string | null; stripeAccountId: string | null } | null;
-  source?: { title: string | null; href: string | null } | null;
-};
-
-type PayoutListResponse =
-  | { ok: true; items: PendingPayout[]; pagination: { nextCursor: number | null; hasMore: boolean } }
-  | { ok: false; error?: string };
-
-type AuditEntry = {
-  id: string;
-  action: string;
-  createdAt: string | null;
-  metadata: unknown;
-  actor: { id: string; fullName: string | null; username: string | null } | null;
-};
-
-type DetailResponse =
-  | {
-      ok: true;
-      payout: PendingPayout;
-      organization: { id: number; publicName: string; username: string | null; status: string; stripeAccountId: string | null } | null;
-      source: { title: string | null; href: string | null };
-      audit: AuditEntry[];
-    }
-  | { ok: false; error?: string };
-
-function payoutBadgeClass(status: string) {
-  switch (status) {
-    case "RELEASED":
-      return "bg-emerald-500/15 text-emerald-100 border border-emerald-400/30";
-    case "BLOCKED":
-      return "bg-amber-500/15 text-amber-100 border border-amber-400/30";
-    case "ACTION_REQUIRED":
-      return "bg-amber-500/20 text-amber-100 border border-amber-400/40";
-    case "RELEASING":
-      return "bg-sky-500/15 text-sky-100 border border-sky-400/30";
-    case "CANCELLED":
-      return "bg-rose-500/15 text-rose-100 border border-rose-400/30";
-    case "HELD":
-    default:
-      return "bg-white/10 text-white/80 border border-white/20";
-  }
-}
-
-function resolvePayoutStatus(payout: Pick<PendingPayout, "status" | "blockedReason">) {
-  if (payout.blockedReason?.startsWith("ACTION_REQUIRED")) return "ACTION_REQUIRED";
-  return payout.status;
-}
-
-function formatActor(actor: AuditEntry["actor"]) {
-  if (!actor) return "Sistema";
-  if (actor.fullName) return actor.fullName;
-  if (actor.username) return `@${actor.username}`;
-  return "Utilizador";
-}
-
-function formatAuditMeta(meta: AuditEntry["metadata"]) {
-  if (!meta || typeof meta !== "object") return [];
-  const metadata = meta as Record<string, unknown>;
-  const labels: Array<[string, string]> = [
-    ["reason", "Motivo"],
-    ["blockedReason", "Bloqueio"],
-    ["transferId", "Transfer"],
-    ["paymentIntentId", "PaymentIntent"],
-    ["status", "Estado"],
-  ];
-  const lines = labels
-    .map(([key, label]) => {
-      const value = metadata[key];
-      if (value === null || value === undefined || value === "") return null;
-      return `${label}: ${String(value)}`;
-    })
-    .filter((line): line is string => Boolean(line));
-  return lines;
-}
-
 function PayoutsSection() {
-  const [status, setStatus] = useState("ALL");
-  const [q, setQ] = useState("");
-  const [cursor, setCursor] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-
-  const queryParams = useMemo(() => {
-    const params = new URLSearchParams();
-    if (status !== "ALL") params.set("status", status);
-    if (q.trim()) params.set("q", q.trim());
-    if (cursor) params.set("cursor", String(cursor));
-    return params.toString() ? `?${params.toString()}` : "";
-  }, [status, q, cursor]);
-
-  const { data, isLoading, mutate } = useSWR<PayoutListResponse>(
-    `/api/admin/payouts/list${queryParams}`,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-
-  const detailKey = selectedId ? `/api/admin/payouts/${selectedId}` : null;
-  const { data: detail, mutate: mutateDetail } = useSWR<DetailResponse>(detailKey, fetcher, {
-    revalidateOnFocus: false,
-  });
-
-  const items = data && "ok" in data && data.ok ? data.items : [];
-  const pagination = data && "ok" in data && data.ok ? data.pagination : { nextCursor: null, hasMore: false };
-  const detailPayout = detail && "ok" in detail && detail.ok ? detail.payout : null;
-  const detailOrg = detail && "ok" in detail && detail.ok ? detail.organization : null;
-  const detailSource = detail && "ok" in detail && detail.ok ? detail.source : null;
-  const detailAudit = detail && "ok" in detail && detail.ok ? detail.audit : [];
-
-  async function runAction(id: number, action: string, reason?: string) {
-    const body = reason ? JSON.stringify({ reason }) : undefined;
-    await fetch(`/api/admin/payouts/${id}/${action}`, {
-      method: "POST",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body,
-    });
-    await mutate();
-    if (selectedId === id) await mutateDetail();
-  }
-
   return (
     <section className="admin-section space-y-6">
       <SectionHeader
         id="payouts"
         title="Payouts"
-        subtitle="Gestão de holds, releases e bloqueios com auditoria completa."
+        subtitle="Controlo interno desativado; settlement é feito pela Stripe Connect."
       />
-
-      <div className="admin-card-soft p-4">
-        <div className="grid gap-3 md:grid-cols-[1.5fr_1fr]">
-          <div>
-            <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Pesquisa</label>
-            <input
-              type="text"
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setCursor(null);
-              }}
-              placeholder="payment_intent, source, recipient..."
-              className="admin-input"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Estado</label>
-            <select
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                setCursor(null);
-              }}
-              className="admin-select"
-            >
-              {["ALL", "HELD", "RELEASING", "RELEASED", "BLOCKED", "ACTION_REQUIRED", "CANCELLED"].map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <div className="admin-card overflow-hidden">
-          <table className="admin-table text-left">
-            <thead>
-              <tr>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Limite hold</th>
-                <th className="px-4 py-3">Recetor</th>
-                <th className="px-4 py-3">Origem</th>
-                <th className="px-4 py-3">Montante</th>
-                <th className="px-4 py-3">Tentativas</th>
-                <th className="px-4 py-3">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-4 text-center text-white/60">
-                    A carregar...
-                  </td>
-                </tr>
-              )}
-              {!isLoading && (!items || items.length === 0) && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-4 text-center text-white/60">
-                    Sem payouts para estes filtros.
-                  </td>
-                </tr>
-              )}
-              {items.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-b border-white/10 last:border-0 cursor-pointer hover:bg-white/5"
-                  onClick={() => setSelectedId(p.id)}
-                >
-                  <td className="px-4 py-3 text-[11px] text-white/70">#{p.id}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-1 text-[11px] ${payoutBadgeClass(resolvePayoutStatus(p))}`}>
-                      {resolvePayoutStatus(p)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-[11px] text-white/70">{formatDate(p.holdUntil)}</td>
-                  <td className="px-4 py-3 text-[11px] text-white/70">
-                    <div className="flex flex-col gap-1">
-                      <span>{p.organization?.publicName ?? "—"}</span>
-                      <span className="text-white/50">{p.recipientConnectAccountId}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-[11px] text-white/70">
-                    <div className="flex flex-col gap-1">
-                      <span>{p.source?.title ?? p.sourceType}</span>
-                      <span className="text-white/50">#{p.sourceId}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-[11px] text-white/70">{formatMoney(p.amountCents, p.currency)}</td>
-                  <td className="px-4 py-3 text-[11px] text-white/70">{p.retryCount}</td>
-                  <td className="px-4 py-3 text-[11px] text-white/70">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          runAction(p.id, "release");
-                        }}
-                        className="admin-button-secondary px-2 py-1 text-xs"
-                      >
-                        Release
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          runAction(p.id, "force-release");
-                        }}
-                        className="admin-button-secondary px-2 py-1 text-xs"
-                      >
-                        Force
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const reason = window.prompt("Razão do cancel?", "ADMIN_CANCEL");
-                          if (reason) runAction(p.id, "cancel", reason);
-                        }}
-                        className="admin-button-secondary px-2 py-1 text-xs"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {pagination.hasMore && (
-            <div className="flex justify-center border-t border-white/10 p-4">
-              <button
-                onClick={() => setCursor(pagination.nextCursor)}
-                className="admin-button-secondary px-4 py-2 text-xs"
-              >
-                Carregar mais
-              </button>
-            </div>
-          )}
-        </div>
-
-        {detailPayout && (
-          <div className="admin-card-soft p-4">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Payout #{detailPayout.id}</h2>
-                <div className="text-sm text-white/60">
-                  <span>{detailPayout.sourceType}</span>
-                  <span className="mx-1">·</span>
-                  {detailSource?.href ? (
-                    <Link href={detailSource.href} className="hover:underline">
-                      #{detailPayout.sourceId}
-                    </Link>
-                  ) : (
-                    <span>#{detailPayout.sourceId}</span>
-                  )}
-                  {detailSource?.title && <span className="ml-2 text-white/50">{detailSource.title}</span>}
-                </div>
-              </div>
-              <span className={`inline-flex rounded-full px-2 py-1 text-[11px] ${payoutBadgeClass(resolvePayoutStatus(detailPayout))}`}>
-                {resolvePayoutStatus(detailPayout)}
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-2 text-[12px] text-white/70">
-              <p>Montante: {formatMoney(detailPayout.amountCents, detailPayout.currency)}</p>
-              <p>Hold até: {formatDate(detailPayout.holdUntil)}</p>
-              <p>Próxima tentativa: {formatDate(detailPayout.nextAttemptAt)}</p>
-              <p>Transfer: {detailPayout.transferId || "—"}</p>
-              <p>Liberado: {formatDate(detailPayout.releasedAt)}</p>
-              {detailOrg && (
-                <p>
-                  Org: {detailOrg.publicName} ({detailOrg.username ?? "—"})
-                </p>
-              )}
-              {detailPayout.blockedReason && <p>Bloqueio: {detailPayout.blockedReason}</p>}
-            </div>
-
-            <div className="mt-4">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Audit</p>
-              <div className="mt-2 space-y-3 text-[12px] text-white/70">
-                {detailAudit.length === 0 && <p>Sem eventos de audit.</p>}
-                {detailAudit.map((item) => {
-                  const metaLines = formatAuditMeta(item.metadata);
-                  return (
-                    <div key={item.id} className="admin-card-soft p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-white/90">{item.action}</p>
-                        <p className="text-[11px] text-white/50">{formatDate(item.createdAt)}</p>
-                      </div>
-                      <p className="text-[11px] text-white/60">Actor: {formatActor(item.actor)}</p>
-                      {metaLines.length > 0 && (
-                        <div className="mt-2 space-y-0.5 text-[11px] text-white/60">
-                          {metaLines.map((line) => (
-                            <div key={line}>{line}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
+      <div className="admin-card-soft p-4 text-sm text-white/70">
+        <p>
+          Nesta fase não existem holds, releases ou bloqueios manuais. O backoffice apenas acompanha pagamentos,
+          reembolsos e o ledger.
+        </p>
       </div>
     </section>
   );
@@ -1097,12 +761,12 @@ export default function AdminFinancePage() {
   return (
     <AdminLayout
       title="Financeiro"
-      subtitle="Pagamentos, payouts e reembolsos num painel único."
+      subtitle="Pagamentos e reembolsos num painel único (payouts internos desativados)."
     >
       <section className="space-y-10">
         <AdminPageHeader
           title="Financeiro"
-          subtitle="Visão consolidada de receita, payouts e reembolsos com ações críticas num só local."
+          subtitle="Visão consolidada de receita e reembolsos com ações críticas num só local."
           eyebrow="Admin • Financeiro"
           actions={<AdminTopActions showPaymentsExport />}
         />

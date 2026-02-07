@@ -21,14 +21,13 @@ type EventCard = {
   description: string | null;
   startsAt: Date | null;
   endsAt: Date | null;
-  locationName: string | null;
-  locationCity: string | null;
-  locationFormattedAddress: string | null;
-  locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationComponents: Record<string, unknown> | null;
-  locationOverrides: Record<string, unknown> | null;
-  latitude: number | null;
-  longitude: number | null;
+  addressId: string | null;
+  addressRef: {
+    formattedAddress: string | null;
+    canonical: Record<string, unknown> | null;
+    latitude: number | null;
+    longitude: number | null;
+  } | null;
   isGratis: boolean;
   priceFrom: number | null;
   coverImageUrl: string | null;
@@ -63,9 +62,7 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       OR: [
         { title: { contains: q, mode: "insensitive" } },
         { description: { contains: q, mode: "insensitive" } },
-        { locationName: { contains: q, mode: "insensitive" } },
-        { locationCity: { contains: q, mode: "insensitive" } },
-        { locationFormattedAddress: { contains: q, mode: "insensitive" } },
+        { addressRef: { formattedAddress: { contains: q, mode: "insensitive" } } },
       ],
     });
   }
@@ -81,14 +78,15 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       description: true,
       startsAt: true,
       endsAt: true,
-      locationName: true,
-      locationCity: true,
-      locationFormattedAddress: true,
-      locationSource: true,
-      locationComponents: true,
-      locationOverrides: true,
-      latitude: true,
-      longitude: true,
+      addressId: true,
+      addressRef: {
+        select: {
+          formattedAddress: true,
+          canonical: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
       coverImageUrl: true,
       ticketTypes: {
         select: { price: true },
@@ -108,20 +106,15 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       description: ev.description?.slice(0, 160) ?? null,
       startsAt: ev.startsAt ?? null,
       endsAt: ev.endsAt ?? null,
-      locationName: ev.locationName ?? null,
-      locationCity: ev.locationCity ?? null,
-      locationFormattedAddress: ev.locationFormattedAddress ?? null,
-      locationSource: ev.locationSource ?? null,
-      locationComponents:
-        ev.locationComponents && typeof ev.locationComponents === "object"
-          ? (ev.locationComponents as Record<string, unknown>)
-          : null,
-      locationOverrides:
-        ev.locationOverrides && typeof ev.locationOverrides === "object"
-          ? (ev.locationOverrides as Record<string, unknown>)
-          : null,
-      latitude: ev.latitude ?? null,
-      longitude: ev.longitude ?? null,
+      addressId: ev.addressId ?? null,
+      addressRef: ev.addressRef
+        ? {
+            formattedAddress: ev.addressRef.formattedAddress ?? null,
+            canonical: (ev.addressRef.canonical as Record<string, unknown> | null) ?? null,
+            latitude: ev.addressRef.latitude ?? null,
+            longitude: ev.addressRef.longitude ?? null,
+          }
+        : null,
       isGratis,
       priceFrom,
       coverImageUrl: ev.coverImageUrl ?? null,
@@ -198,15 +191,7 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
             events.map((ev, index) => {
               const locationDisplay = getEventLocationDisplay(
                 {
-                  locationName: ev.locationName,
-                  locationCity: ev.locationCity,
-                  address: ev.locationFormattedAddress ?? null,
-                  locationFormattedAddress: ev.locationFormattedAddress,
-                  locationSource: ev.locationSource,
-                  locationComponents: ev.locationComponents,
-                  locationOverrides: ev.locationOverrides,
-                  latitude: ev.latitude,
-                  longitude: ev.longitude,
+                  addressRef: ev.addressRef ?? null,
                 },
                 "Local a definir",
               );

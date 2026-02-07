@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { isOrganizationFollowed } from "@/domain/social/follows";
-import { OrganizationMemberRole } from "@prisma/client";
+import { EntitlementType, OrganizationMemberRole } from "@prisma/client";
 import { resolveLiveHubModules } from "@/lib/liveHubConfig";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
@@ -19,6 +19,7 @@ import { extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutA
 import { canScanTickets } from "@/lib/organizationAccess";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
+import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
 
 function slugify(input: string): string {
   return input
@@ -84,12 +85,8 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         startsAt: true,
         endsAt: true,
         status: true,
-        locationName: true,
-        locationCity: true,
-        locationSource: true,
-        locationFormattedAddress: true,
-        locationComponents: true,
-        locationOverrides: true,
+        addressId: true,
+        addressRef: { select: { formattedAddress: true, canonical: true, latitude: true, longitude: true } },
         coverImageUrl: true,
         organizationId: true,
         liveHubVisibility: true,
@@ -129,12 +126,8 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
             startsAt: true,
             endsAt: true,
             status: true,
-            locationName: true,
-            locationCity: true,
-            locationSource: true,
-            locationFormattedAddress: true,
-            locationComponents: true,
-            locationOverrides: true,
+            addressId: true,
+            addressRef: { select: { formattedAddress: true, canonical: true, latitude: true, longitude: true } },
             coverImageUrl: true,
             organizationId: true,
             liveHubVisibility: true,
@@ -174,7 +167,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           status: "ACTIVE",
           OR: [{ userId }, { ownerUserId: userId }],
         },
-        select: { id: true, ticketTypeId: true, tournamentEntryId: true, pairingId: true },
+        select: { id: true },
       })
     : [];
 
@@ -217,18 +210,19 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
   const isParticipantInvited = Boolean(participantInviteMatch);
 
   const hasAnyTicket = tickets.length > 0;
-  const hasParticipantTicket =
+  const hasPadelEntitlement =
+    event.templateType === "PADEL" && userId
+      ? await hasActiveEntitlementForEvent({ eventId: event.id, userId, type: EntitlementType.PADEL_ENTRY })
+      : false;
+  const hasInscription = Boolean(
+    userId &&
+      (await prisma.tournamentEntry.findFirst({ where: { eventId: event.id, userId }, select: { id: true } })),
+  );
+
+  const isParticipant =
     event.templateType === "PADEL"
-      ? tickets.some((t) => Boolean(t.tournamentEntryId || t.pairingId))
-      : hasAnyTicket;
-
-  const hasInscription =
-    Boolean(
-      userId &&
-        (await prisma.tournamentEntry.findFirst({ where: { eventId: event.id, userId }, select: { id: true } })),
-    ) || tickets.some((t) => Boolean(t.tournamentEntryId));
-
-  const isParticipant = hasParticipantTicket || hasInscription || isParticipantInvited;
+      ? hasPadelEntitlement || hasInscription || isParticipantInvited
+      : hasAnyTicket || isParticipantInvited;
 
   const viewerRole = isOrganization ? "ORGANIZATION" : isParticipant ? "PARTICIPANT" : "PUBLIC";
   const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
@@ -346,11 +340,6 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
       });
       if (pairing?.id) {
         userPairingId = pairing.id;
-      } else {
-        const ticketPairingId = tickets.find((t) => Number.isFinite(t.pairingId))?.pairingId ?? null;
-        if (ticketPairingId) {
-          userPairingId = ticketPairingId;
-        }
       }
     }
 
@@ -605,16 +594,11 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         if (pairing?.id) {
           userPairingId = pairing.id;
         } else {
-          const ticketEntryId = tickets.find((t) => Boolean(t.tournamentEntryId))?.tournamentEntryId ?? null;
-          if (ticketEntryId) {
-            userPairingId = ticketEntryId;
-          } else {
-            const entry = await prisma.tournamentEntry.findFirst({
-              where: { eventId: event.id, userId },
-              select: { id: true },
-            });
-            userPairingId = entry?.id ?? null;
-          }
+          const entry = await prisma.tournamentEntry.findFirst({
+            where: { eventId: event.id, userId },
+            select: { id: true },
+          });
+          userPairingId = entry?.id ?? null;
         }
       }
 
@@ -757,19 +741,9 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           startsAt: event.startsAt,
           endsAt: event.endsAt,
           status: event.status,
-          locationName: event.locationName,
-          locationCity: event.locationCity,
-          address: event.locationFormattedAddress ?? null,
-          locationSource: event.locationSource,
-          locationFormattedAddress: event.locationFormattedAddress,
-          locationComponents:
-            event.locationComponents && typeof event.locationComponents === "object"
-              ? (event.locationComponents as Record<string, unknown>)
-              : null,
-          locationOverrides:
-            event.locationOverrides && typeof event.locationOverrides === "object"
-              ? (event.locationOverrides as Record<string, unknown>)
-              : null,
+          addressId: event.addressId ?? null,
+          addressRef: event.addressRef ?? null,
+          locationFormattedAddress: event.addressRef?.formattedAddress ?? null,
           coverImageUrl: event.coverImageUrl,
           liveStreamUrl: event.liveStreamUrl,
           timezone: event.timezone,

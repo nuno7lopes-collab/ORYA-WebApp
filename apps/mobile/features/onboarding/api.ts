@@ -103,19 +103,3 @@ export const saveLocationConsent = async (payload: {
     }),
   });
 };
-
-export const saveLocationCoarse = async (payload: {
-  city?: string | null;
-  region?: string | null;
-  source: "IP" | "GPS" | "WIFI" | "MANUAL";
-  accessToken?: string | null;
-}): Promise<void> => {
-  await api.requestWithAccessToken("/api/me/location/coarse", payload.accessToken, {
-    method: "POST",
-    body: JSON.stringify({
-      city: payload.city ?? null,
-      region: payload.region ?? null,
-      source: payload.source,
-    }),
-  });
-};

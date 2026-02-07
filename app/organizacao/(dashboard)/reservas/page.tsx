@@ -13,6 +13,8 @@ import {
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 import { cn } from "@/lib/utils";
+import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import type { GeoAutocompleteItem } from "@/lib/geo/provider";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { resolveServiceAssignmentMode, type ReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import AvailabilityEditor from "@/app/organizacao/(dashboard)/reservas/_components/AvailabilityEditor";
@@ -273,7 +275,8 @@ type ServiceItem = {
   isActive: boolean;
   categoryTag?: string | null;
   locationMode?: string | null;
-  defaultLocationText?: string | null;
+  addressId?: string | null;
+  addressRef?: { formattedAddress?: string | null } | null;
   professionalLinks?: Array<{ professionalId: number }>;
   resourceLinks?: Array<{ resourceId: number }>;
   _count?: { bookings: number; availabilities: number };
@@ -506,7 +509,18 @@ export default function ReservasDashboardPage() {
   const [createProfessionalId, setCreateProfessionalId] = useState<number | null>(null);
   const [createResourceId, setCreateResourceId] = useState<number | null>(null);
   const [createPartySize, setCreatePartySize] = useState("");
-  const [createLocationText, setCreateLocationText] = useState("");
+  const [createAddressQuery, setCreateAddressQuery] = useState("");
+  const [createAddressSuggestions, setCreateAddressSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [createAddressLoading, setCreateAddressLoading] = useState(false);
+  const [createAddressError, setCreateAddressError] = useState<string | null>(null);
+  const [showCreateAddressSuggestions, setShowCreateAddressSuggestions] = useState(false);
+  const [createAddressId, setCreateAddressId] = useState<string | null>(null);
+  const [createAddressLabel, setCreateAddressLabel] = useState<string | null>(null);
+  const createAddressSeqRef = useRef(0);
+  const createAddressDetailsSeqRef = useRef(0);
+  const createAddressSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createAddressBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeCreateProviderRef = useRef<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
   const [checkout, setCheckout] = useState<BookingCheckout | null>(null);
@@ -822,14 +836,33 @@ export default function ReservasDashboardPage() {
 
   useEffect(() => {
     if (!selectedCreateService) {
-      setCreateLocationText("");
+      setCreateAddressId(null);
+      setCreateAddressLabel(null);
+      setCreateAddressQuery("");
+      setCreateAddressSuggestions([]);
+      setCreateAddressError(null);
+      setShowCreateAddressSuggestions(false);
+      activeCreateProviderRef.current = null;
       return;
     }
     if (selectedCreateService.locationMode === "CHOOSE_AT_BOOKING") {
-      setCreateLocationText(selectedCreateService.defaultLocationText ?? "");
+      const label = selectedCreateService.addressRef?.formattedAddress ?? "";
+      setCreateAddressId(selectedCreateService.addressId ?? null);
+      setCreateAddressLabel(label || null);
+      setCreateAddressQuery(label);
+      setCreateAddressSuggestions([]);
+      setCreateAddressError(null);
+      setShowCreateAddressSuggestions(false);
+      activeCreateProviderRef.current = null;
       return;
     }
-    setCreateLocationText("");
+    setCreateAddressId(null);
+    setCreateAddressLabel(null);
+    setCreateAddressQuery("");
+    setCreateAddressSuggestions([]);
+    setCreateAddressError(null);
+    setShowCreateAddressSuggestions(false);
+    activeCreateProviderRef.current = null;
   }, [selectedCreateService?.id]);
 
   useEffect(() => {
@@ -867,6 +900,92 @@ export default function ReservasDashboardPage() {
       controller.abort();
     };
   }, [clientQuery, createSlot]);
+
+  useEffect(() => {
+    if (!createSlot || selectedCreateService?.locationMode !== "CHOOSE_AT_BOOKING") {
+      if (createAddressSearchTimeoutRef.current) {
+        clearTimeout(createAddressSearchTimeoutRef.current);
+      }
+      setCreateAddressSuggestions([]);
+      setCreateAddressLoading(false);
+      setCreateAddressError(null);
+      return;
+    }
+    const query = createAddressQuery.trim();
+    if (query.length < 2) {
+      setCreateAddressSuggestions([]);
+      setCreateAddressLoading(false);
+      setCreateAddressError(null);
+      return;
+    }
+    if (createAddressSearchTimeoutRef.current) {
+      clearTimeout(createAddressSearchTimeoutRef.current);
+    }
+    setCreateAddressError(null);
+    const seq = ++createAddressSeqRef.current;
+    createAddressSearchTimeoutRef.current = setTimeout(async () => {
+      setCreateAddressLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        if (createAddressSeqRef.current === seq) {
+          setCreateAddressSuggestions(items);
+        }
+      } catch (err) {
+        if (createAddressSeqRef.current === seq) {
+          setCreateAddressSuggestions([]);
+          setCreateAddressError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+        }
+      } finally {
+        if (createAddressSeqRef.current === seq) {
+          setCreateAddressLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => {
+      if (createAddressSearchTimeoutRef.current) {
+        clearTimeout(createAddressSearchTimeoutRef.current);
+      }
+    };
+  }, [createSlot, selectedCreateService?.locationMode, createAddressQuery]);
+
+  const handleSelectCreateAddressSuggestion = async (item: GeoAutocompleteItem) => {
+    setCreateAddressError(null);
+    setCreateAddressId(null);
+    setCreateAddressLabel(item.label);
+    setCreateAddressQuery(item.label);
+    setCreateAddressSuggestions([]);
+    setShowCreateAddressSuggestions(false);
+    activeCreateProviderRef.current = item.providerId;
+    const seq = ++createAddressDetailsSeqRef.current;
+    setCreateAddressLoading(true);
+    try {
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
+      if (createAddressDetailsSeqRef.current !== seq) return;
+      if (activeCreateProviderRef.current !== item.providerId) return;
+      const addressId = details?.addressId ?? null;
+      if (!addressId) {
+        setCreateAddressError("Morada inválida.");
+        return;
+      }
+      const formatted = details?.formattedAddress ?? item.label;
+      setCreateAddressId(addressId);
+      setCreateAddressLabel(formatted);
+      setCreateAddressQuery(formatted);
+    } catch (err) {
+      if (createAddressDetailsSeqRef.current === seq) {
+        setCreateAddressError(err instanceof Error ? err.message : "Falha ao normalizar morada.");
+      }
+    } finally {
+      if (createAddressDetailsSeqRef.current === seq) {
+        setCreateAddressLoading(false);
+      }
+    }
+  };
 
   const calendarStart = useMemo(() => {
     return calendarView === "week" ? getWeekStart(focusDate, timezone) : buildZonedDate(getDateParts(focusDate, timezone), timezone, 0, 0);
@@ -1600,7 +1719,6 @@ export default function ReservasDashboardPage() {
           currency: "EUR",
           categoryTag: null,
           locationMode: "FIXED",
-          defaultLocationText: null,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1644,7 +1762,13 @@ export default function ReservasDashboardPage() {
     setCreatePartySize(
       initialAssignmentMode === "RESOURCE" ? String(selectedResource?.capacity ?? "") : "",
     );
-    setCreateLocationText("");
+    setCreateAddressQuery("");
+    setCreateAddressId(null);
+    setCreateAddressLabel(null);
+    setCreateAddressSuggestions([]);
+    setCreateAddressError(null);
+    setShowCreateAddressSuggestions(false);
+    activeCreateProviderRef.current = null;
     setCreateError(null);
     setCheckout(null);
     setPaymentError(null);
@@ -1693,9 +1817,9 @@ export default function ReservasDashboardPage() {
     }
     if (
       selectedCreateService.locationMode === "CHOOSE_AT_BOOKING" &&
-      !createLocationText.trim()
+      !createAddressId
     ) {
-      setCreateError("Local obrigatório para esta marcação.");
+      setCreateError("Seleciona uma morada Apple Maps.");
       return;
     }
     setCreateLoading(true);
@@ -1710,9 +1834,9 @@ export default function ReservasDashboardPage() {
         professionalId: createAssignmentMode === "PROFESSIONAL" ? createProfessionalId : null,
         resourceId: createAssignmentMode === "RESOURCE" ? createResourceId : null,
         partySize: createAssignmentMode === "RESOURCE" ? parsedPartySize : null,
-        locationText:
+        addressId:
           selectedCreateService.locationMode === "CHOOSE_AT_BOOKING"
-            ? createLocationText.trim()
+            ? createAddressId
             : null,
       };
 
@@ -3222,13 +3346,80 @@ export default function ReservasDashboardPage() {
 
               {selectedCreateService?.locationMode === "CHOOSE_AT_BOOKING" && (
                 <div className="space-y-2">
-                  <label className="text-white/50">Local</label>
-                  <input
-                    className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                    placeholder="Ex: Rua Central, 45"
-                    value={createLocationText}
-                    onChange={(event) => setCreateLocationText(event.target.value)}
-                  />
+                  <label className="text-white/50">Morada (Apple Maps)</label>
+                  <div className="relative overflow-visible">
+                    <input
+                      className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      placeholder="Procura um local ou morada"
+                      value={createAddressQuery}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        setCreateAddressQuery(next);
+                        setCreateAddressId(null);
+                        setCreateAddressLabel(null);
+                        setCreateAddressError(null);
+                        activeCreateProviderRef.current = null;
+                        setShowCreateAddressSuggestions(true);
+                      }}
+                      onFocus={() => setShowCreateAddressSuggestions(true)}
+                      onBlur={() => {
+                        if (createAddressBlurTimeoutRef.current) {
+                          clearTimeout(createAddressBlurTimeoutRef.current);
+                        }
+                        createAddressBlurTimeoutRef.current = setTimeout(
+                          () => setShowCreateAddressSuggestions(false),
+                          120,
+                        );
+                      }}
+                    />
+                    {showCreateAddressSuggestions && (
+                      <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
+                        {createAddressLoading ? (
+                          <div className="px-3 py-2 text-sm text-white/70 animate-pulse">
+                            A procurar…
+                          </div>
+                        ) : createAddressError ? (
+                          <div className="px-3 py-2 text-sm text-amber-100">
+                            {createAddressError}
+                          </div>
+                        ) : createAddressSuggestions.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
+                        ) : (
+                          createAddressSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion.providerId}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => handleSelectCreateAddressSuggestion(suggestion)}
+                              className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                            >
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <span className="font-semibold text-white">{suggestion.label}</span>
+                                <div className="flex items-center gap-2 text-[12px] text-white/65">
+                                  <span>{suggestion.city || "—"}</span>
+                                  {suggestion.sourceProvider === "APPLE_MAPS" && (
+                                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
+                                      Apple
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {createAddressId && (
+                    <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
+                      Morada confirmada: {createAddressLabel || createAddressQuery}
+                    </div>
+                  )}
+                  {createAddressError && (
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                      {createAddressError}
+                    </div>
+                  )}
                 </div>
               )}
 

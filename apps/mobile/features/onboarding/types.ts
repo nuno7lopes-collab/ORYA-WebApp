@@ -21,8 +21,6 @@ export type OnboardingPayload = {
   padelGender?: string | null;
   padelPreferredSide?: string | null;
   padelLevel?: string | null;
-  locationCity?: string | null;
-  locationRegion?: string | null;
 };
 
 export const PADEL_GENDERS = [

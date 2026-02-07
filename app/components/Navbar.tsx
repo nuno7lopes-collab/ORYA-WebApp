@@ -19,8 +19,7 @@ type SearchEvent = {
   slug: string;
   title: string;
   startsAt: string | null;
-  locationName: string | null;
-  locationCity: string | null;
+  locationFormattedAddress: string | null;
   coverImageUrl: string | null;
   priceFrom: number | null;
   isGratis: boolean;
@@ -353,7 +352,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
               slug: string;
               title: string;
               startsAt?: string | null;
-              location?: { name?: string | null; city?: string | null };
+              location?: { formattedAddress?: string | null; city?: string | null };
               coverImageUrl?: string | null;
               priceFrom?: number | null;
               isGratis?: boolean;
@@ -374,8 +373,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
             slug: it.slug,
             title: it.title,
             startsAt: it.startsAt ?? null,
-            locationName: it.location?.name ?? null,
-            locationCity: it.location?.city ?? null,
+            locationFormattedAddress: it.location?.formattedAddress ?? null,
             coverImageUrl: it.coverImageUrl ?? null,
             priceFrom: typeof it.priceFrom === "number" ? it.priceFrom : null,
             isGratis: Boolean(it.isGratis),
@@ -909,7 +907,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                       {item.title}
                                     </p>
                                     <p className="text-[10px] text-white/80 line-clamp-1">
-                                      {item.locationName || item.locationCity || "Local a anunciar"}
+                                      {item.locationFormattedAddress || "Local a anunciar"}
                                     </p>
                                     <p className="text-[10px] text-white/70">
                                       {formatEventDate(item.startsAt)}
@@ -1114,7 +1112,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                   {item.title}
                                 </p>
                                 <p className="text-[10px] text-white/80 line-clamp-1">
-                                  {item.locationName || item.locationCity || "Local a anunciar"}
+                                  {item.locationFormattedAddress || "Local a anunciar"}
                                 </p>
                                 <p className="text-[10px] text-white/70">
                                   {formatEventDate(item.startsAt)}

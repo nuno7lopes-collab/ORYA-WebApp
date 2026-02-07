@@ -16,13 +16,6 @@ import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { enqueueOperation } from "@/lib/operations/enqueue";
-import {
-  blockPendingPayout,
-  cancelPendingPayout,
-  createPendingPayout,
-  parsePendingPayoutMetadata,
-  unblockPendingPayout,
-} from "@/lib/payments/pendingPayout";
 import { upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 import { shouldNotify, createNotification } from "@/lib/notifications";
@@ -453,25 +446,6 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
           ? intent.metadata.purchaseId.trim()
           : intent.id;
       const paymentId = resolvePaymentIdFromMetadata(intent.metadata, purchaseAnchor);
-      const chargeId =
-        typeof intent.latest_charge === "string"
-          ? intent.latest_charge
-          : intent.latest_charge?.id ?? null;
-      const chargeCreated =
-        typeof intent.latest_charge === "object" && intent.latest_charge?.created
-          ? intent.latest_charge.created
-          : null;
-      const paidAtUnix = chargeCreated ?? event.created ?? intent.created ?? Math.floor(Date.now() / 1000);
-      const paidAt = new Date(paidAtUnix * 1000);
-      const pendingMeta = parsePendingPayoutMetadata(intent.metadata ?? {}, intent.id, paidAt, chargeId);
-      if (pendingMeta) {
-        await createPendingPayout(pendingMeta);
-      } else if (intent.metadata?.recipientConnectAccountId) {
-        logWarn("finance.webhook.pending_payout_metadata_missing", {
-          paymentIntentId: intent.id,
-          purchaseId: purchaseAnchor,
-        });
-      }
       // Registar PaymentEvent ingest-only (tolerante a PI múltiplos para o mesmo purchaseId)
       try {
         const updateData = {
@@ -564,7 +538,6 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
     case "payment_intent.payment_failed":
     case "payment_intent.canceled": {
       const intent = event.data.object as Stripe.PaymentIntent;
-      await cancelPendingPayout(intent.id, event.type);
       const purchaseAnchor = readString(intent.metadata?.purchaseId) ?? intent.id;
       const paymentId = resolvePaymentIdFromMetadata(intent.metadata, purchaseAnchor);
       const nextStatus =
@@ -615,13 +588,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
         typeof charge.payment_intent === "string"
           ? charge.payment_intent
           : charge.payment_intent?.id ?? null;
-      if (paymentIntentId) {
-        if ((charge.amount_refunded ?? 0) >= charge.amount) {
-          await cancelPendingPayout(paymentIntentId, "REFUND_FULL");
-        } else if ((charge.amount_refunded ?? 0) > 0) {
-          await blockPendingPayout(paymentIntentId, "REFUND_PARTIAL");
-        }
-      }
+      void paymentIntentId;
       await enqueueOperation({
         operationType: "PROCESS_STRIPE_EVENT",
         dedupeKey: event.id,
@@ -650,9 +617,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
         typeof dispute.payment_intent === "string"
           ? dispute.payment_intent
           : dispute.payment_intent?.id ?? null;
-      if (paymentIntentId) {
-        await blockPendingPayout(paymentIntentId, `DISPUTE_${dispute.reason ?? "UNKNOWN"}`);
-      }
+      void paymentIntentId;
       await enqueueOperation({
         operationType: "PROCESS_STRIPE_EVENT",
         dedupeKey: event.id,
@@ -672,13 +637,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
         typeof dispute.payment_intent === "string"
           ? dispute.payment_intent
           : dispute.payment_intent?.id ?? null;
-      if (paymentIntentId) {
-        if (dispute.status === "lost") {
-          await cancelPendingPayout(paymentIntentId, "DISPUTE_LOST");
-        } else {
-          await unblockPendingPayout(paymentIntentId);
-        }
-      }
+      void paymentIntentId;
       const disputeEventType =
         dispute.status === "won" ? "dispute.won" : dispute.status === "lost" ? "dispute.lost" : null;
       if (disputeEventType) {

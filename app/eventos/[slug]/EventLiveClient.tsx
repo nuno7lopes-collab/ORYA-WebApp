@@ -35,14 +35,13 @@ type EventPayload = {
   startsAt: string;
   endsAt: string;
   status: string;
-  locationName: string;
-  locationCity: string | null;
-  address?: string | null;
-  addressRef?: { formattedAddress: string | null } | null;
-  locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationFormattedAddress: string | null;
-  locationComponents: Record<string, unknown> | null;
-  locationOverrides: Record<string, unknown> | null;
+  addressId?: string | null;
+  addressRef?: {
+    formattedAddress: string | null;
+    canonical?: Record<string, unknown> | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
   coverImageUrl: string | null;
   liveStreamUrl: string | null;
   timezone?: string | null;
@@ -296,7 +295,7 @@ function getStreamEmbed(url?: string | null) {
     const parentHost =
       typeof window !== "undefined"
         ? window.location.hostname
-        : (process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "app.orya.pt")
+        : (process.env.NEXT_PUBLIC_BASE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "orya.pt")
             .replace(/^https?:\/\//, "");
 
     if (host === "youtu.be") {
@@ -1970,15 +1969,7 @@ function OneVOneLiveLayout({
   const firstRoundMatches = bracketStage?.matches?.filter((m: MatchPayload) => (m.round ?? 0) === 1) ?? [];
   const playerCount = firstRoundMatches.length ? firstRoundMatches.length * 2 : null;
   const locationLabel = formatEventLocationLabel(
-    {
-      locationName: event.locationName,
-      locationCity: event.locationCity,
-      address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
-      locationSource: event.locationSource,
-      locationFormattedAddress: event.locationFormattedAddress,
-      locationComponents: event.locationComponents,
-      locationOverrides: event.locationOverrides,
-    },
+    { addressRef: event.addressRef ?? null },
     t("locationTbd", locale),
   );
 
@@ -2832,13 +2823,7 @@ export default function EventLiveClient({
   const pairingIdFromQuery = searchParams?.get("pairingId");
   const showCourt = event.templateType === "PADEL";
   const ticketCopy = getTicketCopy(showCourt ? "PADEL" : "DEFAULT");
-  const locationLabel =
-    event.locationFormattedAddress ||
-    event.locationName ||
-    event.addressRef?.formattedAddress ||
-    event.locationFormattedAddress ||
-    event.locationCity ||
-    null;
+  const locationLabel = event.addressRef?.formattedAddress ?? null;
 
   if (access?.liveHubAllowed === false) {
     const visibility = access?.liveHubVisibility ?? "PUBLIC";

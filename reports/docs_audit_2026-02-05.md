@@ -31,28 +31,28 @@
 - `docs/mobile_ios_plan.md:70`: - PENDING → MATCHMAKING → CONFIRMED/EXPIRED.
 - `docs/mobile_ios_plan.md:76`: - Analytics adapter required (provider pending); track screen/tap/funnel/purchase/resume/social/padel.
 - `docs/observability/slo_sli.md:7`: - `/api/internal/ops/slo` (pending backlog, oldest pending age, DLQ 24h, eventLog last1h).
-- `docs/orya_blueprint_v9_final.md:20`: - Multi‑tenancy explícita: todo o acesso/consulta é org‑scoped (fail‑closed).
-- `docs/orya_blueprint_v9_final.md:51`: - PricingSnapshot/fees: removidas “estimates”; `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
-- `docs/orya_blueprint_v9_final.md:168`: - irreversible actions are blocked
-- `docs/orya_blueprint_v9_final.md:381`: Todo torneio de Padel tem eventId obrigatório.
-- `docs/orya_blueprint_v9_final.md:452`:   - `processorFeesStatus: PENDING | FINAL`
-- `docs/orya_blueprint_v9_final.md:502`:     - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
-- `docs/orya_blueprint_v9_final.md:873`: 	•	existe estado pendente até T-24h do início do torneio
-- `docs/orya_blueprint_v9_final.md:901`: 	•	quando o utilizador cria conta com esse email, vê o pagamento pendente e consegue concluir
-- `docs/orya_blueprint_v9_final.md:905`: 	•	T-36h (pendente)
-- `docs/orya_blueprint_v9_final.md:1305`: 	•	Processor fees: `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` (nullable até reconciliação Stripe).
-- `docs/orya_blueprint_v9_final.md:2236`: `PENDING | ACTIVE | REVOKED | EXPIRED | SUSPENDED`
-- `docs/orya_blueprint_v9_final.md:2237`: - `PENDING`: criado mas ainda não “válido” (ex.: pagamento em processamento, hold de reserva).
-- `docs/orya_blueprint_v9_final.md:2559`: 	•	pendente até T-24h
-- `docs/orya_blueprint_v9_final.md:2569`: 		•	pagamento fica “pendente” associado ao email
-- `docs/orya_blueprint_v9_final.md:2597`: 	•	cada inscrição pendente mostra countdown até cutoff
-- `docs/orya_blueprint_v9_final.md:2598`: 	•	estado canónico (PENDING/MATCHMAKING/etc.)
-- `docs/orya_blueprint_v9_final.md:2666`: 	•	o método fica pendente (PROCESSING)
-- `docs/orya_blueprint_v9_final.md:3280`:   - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
-- `docs/orya_blueprint_v9_final.md:3528`: 	•	pagamento pendente associado ao email (aparece ao criar conta com o mesmo email)
-- `docs/orya_blueprint_v9_final.md:3535`: 	•	comportamento até T-24h (PENDING):
-- `docs/orya_blueprint_v9_final.md:3537`: 	•	“pagar pelo parceiro” (capitão cobre a parte em falta)
-- `docs/orya_blueprint_v9_final.md:4163`: **Regra D1 (v9):** todo torneio Padel tem **eventId obrigatorio** (Eventos e owner da base).
+- `docs/blueprint.md:20`: - Multi‑tenancy explícita: todo o acesso/consulta é org‑scoped (fail‑closed).
+- `docs/blueprint.md:51`: - PricingSnapshot/fees: removidas “estimates”; `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
+- `docs/blueprint.md:168`: - irreversible actions are blocked
+- `docs/blueprint.md:381`: Todo torneio de Padel tem eventId obrigatório.
+- `docs/blueprint.md:452`:   - `processorFeesStatus: PENDING | FINAL`
+- `docs/blueprint.md:502`:     - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
+- `docs/blueprint.md:873`: 	•	existe estado pendente até T-24h do início do torneio
+- `docs/blueprint.md:901`: 	•	quando o utilizador cria conta com esse email, vê o pagamento pendente e consegue concluir
+- `docs/blueprint.md:905`: 	•	T-36h (pendente)
+- `docs/blueprint.md:1305`: 	•	Processor fees: `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` (nullable até reconciliação Stripe).
+- `docs/blueprint.md:2236`: `PENDING | ACTIVE | REVOKED | EXPIRED | SUSPENDED`
+- `docs/blueprint.md:2237`: - `PENDING`: criado mas ainda não “válido” (ex.: pagamento em processamento, hold de reserva).
+- `docs/blueprint.md:2559`: 	•	pendente até T-24h
+- `docs/blueprint.md:2569`: 		•	pagamento fica “pendente” associado ao email
+- `docs/blueprint.md:2597`: 	•	cada inscrição pendente mostra countdown até cutoff
+- `docs/blueprint.md:2598`: 	•	estado canónico (PENDING/MATCHMAKING/etc.)
+- `docs/blueprint.md:2666`: 	•	o método fica pendente (PROCESSING)
+- `docs/blueprint.md:3280`:   - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
+- `docs/blueprint.md:3528`: 	•	pagamento pendente associado ao email (aparece ao criar conta com o mesmo email)
+- `docs/blueprint.md:3535`: 	•	comportamento até T-24h (PENDING):
+- `docs/blueprint.md:3537`: 	•	“pagar pelo parceiro” (capitão cobre a parte em falta)
+- `docs/blueprint.md:4163`: **Regra D1 (v9):** todo torneio Padel tem **eventId obrigatorio** (Eventos e owner da base).
 - `docs/padel_uiux_master_plan.md:85`: - [x] Context drawer com “estado operacional de hoje” (split pendente, waitlist, conflitos, live alerts).
 - `docs/padel_uiux_master_plan.md:87`: - [x] Uniformizar microcopy de estados (pending/matchmaking/confirmed/expired) em todas as superfícies.
 - `docs/plano_operacional.md:36`: pendente pagamento.

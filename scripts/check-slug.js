@@ -25,7 +25,8 @@ async function main() {
       status: true,
       startsAt: true,
       endsAt: true,
-      locationCity: true,
+      addressId: true,
+      addressRef: { select: { formattedAddress: true } },
       organizationId: true,
     },
   });

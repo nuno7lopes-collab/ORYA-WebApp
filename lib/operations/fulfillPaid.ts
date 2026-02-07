@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { CrmInteractionSource, CrmInteractionType, EntitlementType, EntitlementStatus } from "@prisma/client";
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";
@@ -112,7 +113,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       organizationId: true,
       title: true,
       coverImageUrl: true,
-      locationName: true,
+      addressRef: { select: { formattedAddress: true } },
       startsAt: true,
       timezone: true,
       ticketTypes: {
@@ -126,6 +127,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   if (!event) return false;
 
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
+  const snapshotVenueName = formatEventLocationLabel({ addressRef: event.addressRef ?? null }, "Local a anunciar");
 
   await prisma.$transaction(async (tx) => {
     const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
@@ -311,7 +313,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
             policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
-            snapshotVenueName: event.locationName,
+            snapshotVenueName,
             snapshotStartAt: event.startsAt,
             snapshotTimezone: event.timezone,
             ticketId: ticket.id,
@@ -329,7 +331,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
             policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
-            snapshotVenueName: event.locationName,
+            snapshotVenueName,
             snapshotStartAt: event.startsAt,
             snapshotTimezone: event.timezone,
             ticketId: ticket.id,

@@ -58,17 +58,17 @@ async function _GET(
             startsAt: true,
             durationMinutes: true,
             status: true,
-            locationText: true,
+            addressRef: { select: { formattedAddress: true } },
             snapshotTimezone: true,
-            service: { select: { id: true, title: true } },
+            service: { select: { id: true, title: true, addressRef: { select: { formattedAddress: true } } } },
             organization: {
               select: {
                 id: true,
                 publicName: true,
                 businessName: true,
-                city: true,
                 username: true,
                 brandingAvatarUrl: true,
+                addressRef: { select: { formattedAddress: true } },
               },
             },
             splitPayment: {
@@ -121,7 +121,11 @@ async function _GET(
         startsAt: invite.booking.startsAt,
         durationMinutes: invite.booking.durationMinutes,
         status: getBookingState(invite.booking),
-        locationText: invite.booking.locationText,
+        locationFormattedAddress:
+          invite.booking.addressRef?.formattedAddress ??
+          invite.booking.service?.addressRef?.formattedAddress ??
+          invite.booking.organization?.addressRef?.formattedAddress ??
+          null,
         snapshotTimezone: invite.booking.snapshotTimezone,
       },
       service: invite.booking.service,

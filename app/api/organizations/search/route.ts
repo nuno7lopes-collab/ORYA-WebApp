@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
+import { pickCanonicalField } from "@/lib/location/eventLocation";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrganizationFollowingSet } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -47,7 +48,7 @@ async function _GET(req: NextRequest) {
         businessName: true,
         brandingAvatarUrl: true,
         primaryModule: true,
-        city: true,
+        addressRef: { select: { canonical: true } },
       },
       orderBy: [{ updatedAt: "desc" }],
       take: limit,
@@ -66,7 +67,15 @@ async function _GET(req: NextRequest) {
       businessName: r.businessName,
       brandingAvatarUrl: r.brandingAvatarUrl,
       primaryModule: r.primaryModule,
-      city: r.city,
+      city:
+        pickCanonicalField(
+          (r.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+          "city",
+          "locality",
+          "addressLine2",
+          "region",
+          "state",
+        ) ?? null,
       isFollowing: followingSet.has(r.id),
     }));
 

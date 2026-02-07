@@ -19,7 +19,7 @@ import {
   parseOrganizationModules,
   type OrganizationModule,
 } from "@/lib/organizationCategories";
-import { OrganizationStatus } from "@prisma/client";
+import { AddressSourceProvider, OrganizationStatus } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -93,11 +93,17 @@ async function _GET(req: NextRequest) {
     const memberPermissionsModel = (prisma as {
       organizationMemberPermission?: { findMany?: (args: unknown) => Promise<unknown[]> };
     }).organizationMemberPermission;
-    const [platformFees, orgTransferEnabled, platformOfficialEmail, organizationModules, memberPermissions] =
+    const [platformFees, orgTransferEnabled, platformOfficialEmail, organizationAddressRef, organizationModules, memberPermissions] =
       await Promise.all([
         getPlatformFees(),
         getOrgTransferEnabled(),
         getPlatformOfficialEmail(),
+        organization?.addressId
+          ? prisma.address.findUnique({
+              where: { id: organization.addressId },
+              select: { formattedAddress: true, canonical: true },
+            })
+          : Promise.resolve(null),
         organization
           ? prisma.organizationModuleEntry.findMany({
               where: { organizationId: organization.id, enabled: true },
@@ -126,7 +132,6 @@ async function _GET(req: NextRequest) {
       fullName: profile.fullName,
       avatarUrl: profile.avatarUrl,
       bio: profile.bio,
-      city: profile.city,
       favouriteCategories: profile.favouriteCategories,
       onboardingDone: profile.onboardingDone,
       roles: profile.roles,
@@ -147,7 +152,6 @@ async function _GET(req: NextRequest) {
           platformFeeFixedCents: organization.platformFeeFixedCents,
           businessName: organization.businessName,
           entityType: organization.entityType,
-          city: organization.city,
           payoutIban: organization.payoutIban,
           language: (organization as { language?: string | null }).language ?? "pt",
           timezone: (organization as { timezone?: string | null }).timezone ?? "Europe/Lisbon",
@@ -168,7 +172,8 @@ async function _GET(req: NextRequest) {
             (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? "PROFESSIONAL",
           modules: organizationModules.map((module) => module.moduleKey),
           publicName: organization.publicName,
-          address: (organization as { address?: string | null }).address ?? null,
+          addressId: (organization as { addressId?: string | null }).addressId ?? null,
+          addressRef: organizationAddressRef,
           showAddressPublicly: (organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false,
           publicWebsite: (organization as { publicWebsite?: string | null }).publicWebsite ?? null,
           publicInstagram: (organization as { publicInstagram?: string | null }).publicInstagram ?? null,
@@ -183,8 +188,6 @@ async function _GET(req: NextRequest) {
           infoLocationNotes: (organization as { infoLocationNotes?: string | null }).infoLocationNotes ?? null,
           padelDefaults: {
             shortName: (organization as any).padelDefaultShortName ?? null,
-            city: (organization as any).padelDefaultCity ?? null,
-            address: (organization as any).padelDefaultAddress ?? null,
             courts: (organization as any).padelDefaultCourts ?? 0,
             hours: (organization as any).padelDefaultHours ?? null,
             ruleSetId: (organization as any).padelDefaultRuleSetId ?? null,
@@ -196,7 +199,7 @@ async function _GET(req: NextRequest) {
     const profileStatus =
       organization &&
       organization.businessName &&
-      organization.city &&
+      organization.addressId &&
       user.email
         ? "OK"
         : "MISSING_CONTACT";
@@ -276,7 +279,6 @@ async function _PATCH(req: NextRequest) {
     const {
       businessName,
       entityType,
-      city,
       payoutIban,
       fullName,
       contactPhone,
@@ -302,11 +304,9 @@ async function _PATCH(req: NextRequest) {
       infoRequirements,
       infoPolicies,
       infoLocationNotes,
-      address,
+      addressId,
       showAddressPublicly,
       padelDefaultShortName,
-      padelDefaultCity,
-      padelDefaultAddress,
       padelDefaultCourts,
       padelDefaultHours,
       padelDefaultRuleSetId,
@@ -385,7 +385,7 @@ async function _PATCH(req: NextRequest) {
     if (isAdmin) {
       const adminAllowed = new Set([
         "contactPhone",
-        "address",
+        "addressId",
         "showAddressPublicly",
         "publicWebsite",
         "publicInstagram",
@@ -409,7 +409,6 @@ async function _PATCH(req: NextRequest) {
 
     const profileUpdates: Record<string, unknown> = {};
     if (typeof fullName === "string") profileUpdates.fullName = fullName.trim() || null;
-    if (typeof city === "string") profileUpdates.city = city.trim() || null;
     if (typeof contactPhone === "string") profileUpdates.contactPhone = normalizePhone(contactPhone.trim()) || null;
     if (typeof alertsEmail === "string" && alertsEmail.trim()) {
       const email = alertsEmail.trim();
@@ -422,7 +421,7 @@ async function _PATCH(req: NextRequest) {
     const organizationUpdates: Record<string, unknown> = {};
     const businessNameClean = typeof businessName === "string" ? businessName.trim() : undefined;
     const publicNameInput = typeof publicName === "string" ? publicName.trim() : undefined;
-    const addressInput = typeof address === "string" ? address.trim() : undefined;
+    const addressIdInput = typeof addressId === "string" ? addressId.trim() : undefined;
     const showAddressPubliclyInput = typeof showAddressPublicly === "boolean" ? showAddressPublicly : undefined;
     const normalizeSocialLink = (value: string, kind: "instagram" | "youtube") => {
       const trimmed = value.trim();
@@ -453,7 +452,23 @@ async function _PATCH(req: NextRequest) {
         null;
       organizationUpdates.publicName = publicNameInput || fallbackPublic || null;
     }
-    if (addressInput !== undefined) organizationUpdates.address = addressInput || null;
+    if (addressIdInput !== undefined) {
+      if (!addressIdInput) {
+        organizationUpdates.addressId = null;
+      } else {
+        const resolved = await prisma.address.findUnique({
+          where: { id: addressIdInput },
+          select: { sourceProvider: true },
+        });
+        if (!resolved) {
+          return fail(400, "Morada inválida.");
+        }
+        if (resolved.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+          return fail(400, "Morada deve ser Apple Maps.");
+        }
+        organizationUpdates.addressId = addressIdInput;
+      }
+    }
     if (showAddressPubliclyInput !== undefined) organizationUpdates.showAddressPublicly = showAddressPubliclyInput;
     if (typeof publicWebsite === "string") {
       const trimmed = publicWebsite.trim();
@@ -515,7 +530,6 @@ async function _PATCH(req: NextRequest) {
       organizationUpdates.infoLocationNotes = infoLocationNotes.trim() || null;
     }
     if (typeof entityType === "string") organizationUpdates.entityType = entityType.trim() || null;
-    if (typeof city === "string") organizationUpdates.city = city.trim() || null;
     if (typeof payoutIban === "string") organizationUpdates.payoutIban = payoutIban.trim() || null;
     if (typeof language === "string") {
       const lang = language.toLowerCase();
@@ -555,12 +569,6 @@ async function _PATCH(req: NextRequest) {
     }
     if (typeof padelDefaultShortName === "string") {
       organizationUpdates.padelDefaultShortName = padelDefaultShortName.trim() || null;
-    }
-    if (typeof padelDefaultCity === "string") {
-      organizationUpdates.padelDefaultCity = padelDefaultCity.trim() || null;
-    }
-    if (typeof padelDefaultAddress === "string") {
-      organizationUpdates.padelDefaultAddress = padelDefaultAddress.trim() || null;
     }
     if (typeof padelDefaultHours === "string") {
       organizationUpdates.padelDefaultHours = padelDefaultHours.trim() || null;

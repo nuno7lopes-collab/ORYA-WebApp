@@ -130,15 +130,6 @@ async function _POST(req: Request) {
         tx,
       );
 
-      await tx.padelPairing.updateMany({
-        where: { eventId },
-        data: { createdByTicketId: null },
-      });
-      await tx.ticket.updateMany({
-        where: { eventId },
-        data: { pairingId: null },
-      });
-
       const notificationOr: Prisma.NotificationWhereInput[] = [{ eventId }];
       if (ticketIds.length) {
         notificationOr.push({ ticketId: { in: ticketIds } });
@@ -222,11 +213,6 @@ async function _POST(req: Request) {
           operationOr.push({ purchaseId: { in: salePurchaseIds } });
         }
         await tx.operation.deleteMany({ where: { OR: operationOr } });
-        if (salePaymentIntentIds.length) {
-          await tx.pendingPayout.deleteMany({
-            where: { paymentIntentId: { in: salePaymentIntentIds } },
-          });
-        }
       } else {
         await tx.operation.deleteMany({ where: { eventId } });
       }

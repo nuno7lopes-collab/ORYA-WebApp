@@ -5,13 +5,10 @@ type PurchaseEmailPayload = {
   eventSlug: string;
   startsAt?: string | null;
   endsAt?: string | null;
-  locationName?: string | null;
-  locationCity?: string | null;
-  address?: string | null;
-  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationFormattedAddress?: string | null;
-  locationComponents?: Record<string, unknown> | null;
-  locationOverrides?: Record<string, unknown> | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+  } | null;
   ticketsCount: number;
   ticketUrl: string;
 };
@@ -72,13 +69,7 @@ export function renderPurchaseConfirmationEmail(payload: PurchaseEmailPayload) {
 
   const whereLine = formatEventLocationLabel(
     {
-      locationName: payload.locationName,
-      locationCity: payload.locationCity,
-      address: payload.address,
-      locationSource: payload.locationSource,
-      locationFormattedAddress: payload.locationFormattedAddress,
-      locationComponents: payload.locationComponents,
-      locationOverrides: payload.locationOverrides,
+      addressRef: payload.addressRef ?? null,
     },
     "Local a anunciar",
   );

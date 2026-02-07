@@ -5,9 +5,9 @@ vi.mock("@prisma/client", async () => {
   return {
     ...actual,
     EntitlementStatus: {
+      PENDING: "PENDING",
       ACTIVE: "ACTIVE",
-      USED: "USED",
-      REFUNDED: "REFUNDED",
+      EXPIRED: "EXPIRED",
       REVOKED: "REVOKED",
       SUSPENDED: "SUSPENDED",
     },
@@ -19,7 +19,6 @@ vi.mock("@prisma/client", async () => {
       OK: "OK",
       ALREADY_USED: "ALREADY_USED",
       INVALID: "INVALID",
-      REFUNDED: "REFUNDED",
       REVOKED: "REVOKED",
       SUSPENDED: "SUSPENDED",
       NOT_ALLOWED: "NOT_ALLOWED",
@@ -150,5 +149,17 @@ describe("checkin.consume v7", () => {
     res = await POST(makeReq({ qrPayload: "token", eventId: 1 }) as any);
     json = await res.json();
     expect(json.data.reasonCode).toBe(CheckinResultCode.REVOKED);
+  });
+
+  it("PENDING/EXPIRED bloqueiam check-in", async () => {
+    entitlementState.status = EntitlementStatus.PENDING;
+    let res = await POST(makeReq({ qrPayload: "token", eventId: 1 }) as any);
+    let json = await res.json();
+    expect(json.data.reasonCode).toBe(CheckinResultCode.NOT_ALLOWED);
+
+    entitlementState.status = EntitlementStatus.EXPIRED;
+    res = await POST(makeReq({ qrPayload: "token", eventId: 1 }) as any);
+    json = await res.json();
+    expect(json.data.reasonCode).toBe(CheckinResultCode.NOT_ALLOWED);
   });
 });

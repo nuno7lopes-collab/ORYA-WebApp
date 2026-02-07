@@ -1,26 +1,10 @@
-type LocationComponents = {
-  address?: Record<string, unknown> | null;
-  canonical?: Record<string, unknown> | null;
-  road?: string | null;
-  houseNumber?: string | null;
-  postalCode?: string | null;
-};
-
-type LocationOverrides = {
-  houseNumber?: string | null;
-  postalCode?: string | null;
-};
-
 export type EventLocationInput = {
-  locationName?: string | null;
-  locationCity?: string | null;
-  address?: string | null;
-  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationFormattedAddress?: string | null;
-  locationComponents?: LocationComponents | Record<string, unknown> | null;
-  locationOverrides?: LocationOverrides | Record<string, unknown> | null;
-  latitude?: number | null;
-  longitude?: number | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
 };
 
 export type EventLocationResolved = {
@@ -36,139 +20,37 @@ export type EventLocationResolved = {
 
 const pickString = (value: unknown) => (typeof value === "string" ? value.trim() || null : null);
 const normalizeToken = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
-const isCanonicalAddress = (value: unknown): value is Record<string, unknown> => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return (
-    "addressLine1" in value ||
-    "addressLine2" in value ||
-    "houseNumber" in value ||
-    "postalCode" in value ||
-    "street" in value
-  );
+
+export const pickCanonicalField = (canonical: Record<string, unknown> | null, ...keys: string[]) => {
+  if (!canonical) return null;
+  for (const key of keys) {
+    const value = pickString(canonical[key]);
+    if (value) return value;
+  }
+  return null;
 };
 
 export function resolveEventLocation(input: EventLocationInput): EventLocationResolved {
-  const locationName = pickString(input.locationName);
-  const locationCity = pickString(input.locationCity);
-  const address = pickString(input.address);
-  const locationFormattedAddress = pickString(input.locationFormattedAddress);
-
-  const rawOverrides =
-    input.locationOverrides && typeof input.locationOverrides === "object"
-      ? (input.locationOverrides as LocationOverrides)
-      : null;
-  const overrideHouse = pickString(rawOverrides?.houseNumber);
-  const overridePostal = pickString(rawOverrides?.postalCode);
-  const hasOverrides = Boolean(overrideHouse || overridePostal);
-
-  const rawComponents =
-    input.locationComponents && typeof input.locationComponents === "object"
-      ? (input.locationComponents as LocationComponents)
-      : null;
-  const rawRecord =
-    rawComponents && typeof rawComponents === "object"
-      ? (rawComponents as Record<string, unknown>)
-      : null;
-  const componentsAddress =
-    rawRecord?.address && typeof rawRecord.address === "object"
-      ? (rawRecord.address as Record<string, unknown>)
-      : null;
-  const canonical =
-    (isCanonicalAddress(rawRecord?.canonical) ? (rawRecord?.canonical as Record<string, unknown>) : null) ||
-    (isCanonicalAddress(componentsAddress) ? componentsAddress : null) ||
-    (isCanonicalAddress(rawRecord) ? rawRecord : null);
-
-  const fallbackRoad = address ? address.split(",")[0]?.trim() || null : null;
-  const resolvedRoad =
-    pickString(rawComponents?.road) ||
-    pickString(componentsAddress?.road) ||
-    pickString(componentsAddress?.pedestrian) ||
-    pickString(componentsAddress?.footway) ||
-    pickString(componentsAddress?.path) ||
-    pickString(canonical?.street) ||
-    fallbackRoad;
-  const resolvedHouse =
-    overrideHouse ||
-    pickString(rawComponents?.houseNumber) ||
-    pickString(componentsAddress?.house_number) ||
-    pickString(componentsAddress?.house_name) ||
-    pickString(canonical?.houseNumber) ||
-    null;
-  const resolvedPostal =
-    overridePostal ||
-    pickString(rawComponents?.postalCode) ||
-    pickString(componentsAddress?.postcode) ||
-    pickString(canonical?.postalCode) ||
-    null;
+  const canonical = (input.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const formattedAddress = pickString(input.addressRef?.formattedAddress) || null;
   const resolvedCity =
-    locationCity ||
-    pickString(canonical?.city) ||
-    pickString(componentsAddress?.city) ||
-    pickString(componentsAddress?.town) ||
-    pickString(componentsAddress?.village) ||
-    pickString(componentsAddress?.municipality) ||
-    pickString(componentsAddress?.county) ||
-    pickString(componentsAddress?.state) ||
-    null;
-  const resolvedCountry = pickString(canonical?.country) || pickString(componentsAddress?.country);
-
-  const line1 =
-    pickString(canonical?.addressLine1) || [resolvedRoad, resolvedHouse].filter(Boolean).join(" ").trim();
-  const line2 =
-    pickString(canonical?.addressLine2) || [resolvedPostal, resolvedCity].filter(Boolean).join(" ").trim();
-  const structuredAddressRaw = [line1, line2, resolvedCountry].filter(Boolean).join(", ").trim();
-  const structuredAddress = structuredAddressRaw || null;
-  const hasPreciseAddress =
-    Boolean(resolvedRoad && (resolvedHouse || resolvedPostal)) ||
-    (structuredAddress ? /\d/.test(structuredAddress) : false);
-
-  const withOverrides = (base: string) => {
-    let next = base;
-    if (overrideHouse && !normalizeToken(next).includes(normalizeToken(overrideHouse))) {
-      next = next ? `${next} ${overrideHouse}` : overrideHouse;
-    }
-    if (overridePostal && !normalizeToken(next).includes(normalizeToken(overridePostal))) {
-      next = next ? `${next}, ${overridePostal}` : overridePostal;
-    }
-    return next.trim();
-  };
-
-  const formattedWithOverrides = locationFormattedAddress ? withOverrides(locationFormattedAddress) : "";
-  const hasFormattedDigits = formattedWithOverrides ? /\d/.test(formattedWithOverrides) : false;
-  const manualAddressRaw = withOverrides(address || "") || formattedWithOverrides;
-  const manualQuery = [manualAddressRaw || null, locationCity, locationName].filter(Boolean).join(", ");
-
-  const displayAddress =
-    input.locationSource === "MANUAL"
-      ? structuredAddress || manualAddressRaw || resolvedCity
-      : locationFormattedAddress && locationName
-        ? structuredAddress || formattedWithOverrides || locationFormattedAddress
-        : structuredAddress || manualAddressRaw || formattedWithOverrides || resolvedCity;
-
-  const addressQuery =
-    structuredAddress ||
-    formattedWithOverrides ||
-    manualQuery ||
-    [locationName, locationCity].filter(Boolean).join(", ") ||
-    null;
+    pickCanonicalField(canonical, "city", "locality", "addressLine2", "region", "state") || null;
+  const structuredAddress = formattedAddress;
+  const hasPreciseAddress = Boolean(formattedAddress && /\d/.test(formattedAddress));
   const coordsQuery =
-    Number.isFinite(input.latitude ?? NaN) && Number.isFinite(input.longitude ?? NaN)
-      ? `${input.latitude},${input.longitude}`
+    Number.isFinite(input.addressRef?.latitude ?? NaN) && Number.isFinite(input.addressRef?.longitude ?? NaN)
+      ? `${input.addressRef?.latitude},${input.addressRef?.longitude}`
       : null;
-  const shouldPreferAddress =
-    input.locationSource === "MANUAL" || hasOverrides || hasPreciseAddress || hasFormattedDigits;
-  const mapQuery = shouldPreferAddress ? addressQuery || coordsQuery : coordsQuery || addressQuery;
-
-  const formattedAddress = structuredAddress || formattedWithOverrides || manualAddressRaw || null;
+  const mapQuery = coordsQuery || formattedAddress || null;
 
   return {
-    name: locationName || locationFormattedAddress || null,
+    name: null,
     city: resolvedCity,
     structuredAddress,
     formattedAddress,
-    displayAddress: displayAddress || null,
-    mapQuery: mapQuery || null,
-    hasOverrides,
+    displayAddress: formattedAddress || null,
+    mapQuery,
+    hasOverrides: false,
     hasPreciseAddress,
   };
 }

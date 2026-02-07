@@ -39,6 +39,14 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     return jsonWrap({ error: "Not found" }, { status: 404 });
   }
 
+  const entCheckins = await prisma.entitlementCheckin.findMany({
+    where: { entitlementId: ent.id },
+    select: { resultCode: true, checkedInAt: true },
+    orderBy: { checkedInAt: "desc" },
+    take: 1,
+  });
+  const consumedAt = entCheckins[0]?.checkedInAt ?? null;
+
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { roles: true, username: true },
@@ -91,6 +99,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     isOwner: true,
     isOrganization: false,
     isAdmin,
+    checkins: entCheckins,
     checkinWindow,
     outsideWindow,
     emailVerified: Boolean(data.user.email_confirmed_at),
@@ -100,7 +109,8 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     isWalletPassEnabled() &&
     actions.canShowQr &&
     ent.type === "EVENT_TICKET" &&
-    ["ACTIVE", "USED"].includes(ent.status.toUpperCase());
+    ent.status.toUpperCase() === "ACTIVE" &&
+    !consumedAt;
   const passUrl = passAvailable
     ? `${getAppBaseUrl()}/api/me/wallet/${encodeURIComponent(ent.id)}/pass`
     : null;
@@ -154,35 +164,26 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   } = null;
 
   if (ent.eventId && ent.purchaseId) {
-    const purchaseFilters = [
-      { purchaseId: ent.purchaseId },
-      { stripePaymentIntentId: ent.purchaseId },
-      { saleSummary: { purchaseId: ent.purchaseId } },
-      { saleSummary: { paymentIntentId: ent.purchaseId } },
-    ];
-    let ticket = await prisma.ticket.findFirst({
-      where: {
-        eventId: ent.eventId,
-        pairingId: { not: null },
-        OR: [{ ownerUserId: userId }, { userId }],
-        AND: [{ OR: purchaseFilters }],
-      },
-      select: { pairingId: true },
-    });
-    if (!ticket) {
-      ticket = await prisma.ticket.findFirst({
-        where: {
-          eventId: ent.eventId,
-          pairingId: { not: null },
-          OR: [{ ownerUserId: userId }, { userId }],
-        },
-        orderBy: { purchasedAt: "desc" },
-        select: { pairingId: true },
+    let resolvedPairingId: number | null = null;
+
+    if (ent.type === "PADEL_ENTRY" && ent.saleLineId) {
+      const saleLine = await prisma.saleLine.findUnique({
+        where: { id: ent.saleLineId },
+        select: { padelRegistrationLine: { select: { pairingSlotId: true } } },
       });
+      const pairingSlotId = saleLine?.padelRegistrationLine?.pairingSlotId ?? null;
+      if (pairingSlotId) {
+        const slot = await prisma.padelPairingSlot.findUnique({
+          where: { id: pairingSlotId },
+          select: { pairingId: true },
+        });
+        resolvedPairingId = slot?.pairingId ?? null;
+      }
     }
-    if (ticket?.pairingId) {
+
+    if (resolvedPairingId) {
       const pairing = await prisma.padelPairing.findUnique({
-        where: { id: ticket.pairingId },
+        where: { id: resolvedPairingId },
         select: {
           id: true,
           payment_mode: true,
@@ -316,7 +317,8 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     entitlementId: ent.id,
     type: ent.type,
     scope: { eventId: ent.eventId, tournamentId: ent.tournamentId, seasonId: ent.seasonId },
-    status: ent.status,
+    status: consumedAt && ent.status === "ACTIVE" ? "CHECKED_IN" : ent.status,
+    consumedAt,
     snapshot: {
       title: ent.snapshotTitle,
       coverUrl: ent.snapshotCoverUrl,

@@ -1,5 +1,5 @@
 > Nota: este documento é um **snapshot de auditoria**. O estado corrente das decisões e implementações
-> está em `docs/v9_ssot_registry.md` (SSOT) e `docs/v10_execution_checklist.md` (execução).
+> está em `docs/ssot_registry.md` (SSOT) e `docs/v10_execution_checklist.md` (execução).
 
 Plano Técnico v10: Auditoria Final e Ação para
 ORYA
@@ -1202,10 +1202,9 @@ ownerIdentityId  e campos snapshot (título, data do evento, etc.) para exibiç�
 . Isso
 significa que agora a fonte de verdade para acesso ao evento é a tabela Entitlement, e o QR code do
 ticket serve para lookup do entitlement no check-in.
-- O check-in (rota /api/internal/checkin/consume ) muito provavelmente usa o QR (que contém
-Ticket.id ou secret) para encontrar o Ticket e marcar seu Entitlement como usado (maybe via linking to
-Ticket.usedAt). Precisamos confirmar se implementaram o consumo: dado que entitlements agora
-existem, possivelmente sim.
+- O check-in (rota /api/internal/checkin/consume ) usa o QR de `EntitlementQrToken` para resolver o
+Entitlement e registar consumo via `EntitlementCheckin` (`consumedAt`). `Ticket.usedAt` foi removido
+para evitar drift; consumo é metadata no Entitlement.
 - Sobre Loja (produtos físicos/digitais): UI de gestão + storefront público + checkout existem e estão
 ativos. Fluxo completo (catálogo → carrinho → checkout → encomenda) já está exposto, com bundles,
 portes e promo codes. As definições de suporte/políticas ficam no painel da loja.
@@ -1240,9 +1239,9 @@ Depois, simular check-in usando /api/internal/checkin/consume : fornecer o QR (o
 105
 17
 
-org secret. Esperado: marcar entitlement como usado (talvez definindo Entitlement.status = USED ou
-Ticket.usedAt timestamp). Ver logs ou retornos. Ajustar se necessário para garantir atomicidade (talvez
-criar transação: marcar ticket e entitlement usados juntos). 
+org secret. Esperado: marcar entitlement como consumido via check-in (EntitlementCheckin + consumedAt)
+em vez de usar estado de consumo no Entitlement. Ver logs ou retornos. Ajustar se necessário para garantir
+atomicidade (talvez criar transação: registar check-in e snapshot ao mesmo tempo).
 (P0) Consistência Tickets/Entitlements: Garantir que todos entitlements de tickets referenciam
 corretamente os tickets e vice-versa. 
 Status: Feito – No upsert, entitlements guardam ticketId
@@ -1797,11 +1796,11 @@ ORYA (branch develop)
 105
 27
 
-v9_ssot_registry.md
+ssot_registry.md
 file://file_00000000ebd471f49a53c37184524c7e
 v9_close_plan.md
 file://file_00000000c62071f49a5d1a0c2bf94254
-orya_blueprint_v9_final.md
+blueprint.md
 file://file_000000006d0471f488bcdbd1cef5eead
 paymentIntent.ts
 https://github.com/nuno7lopes-collab/ORYA-WebApp/blob/b7e630f81b66dc8b19d8b771f80b123d4b4c911f/domain/finance/

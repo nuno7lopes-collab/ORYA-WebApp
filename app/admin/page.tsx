@@ -142,7 +142,6 @@ export default async function AdminDashboardPage() {
     recentEvents,
     recentTickets,
     recentPaymentEvents,
-    payoutCounts,
     recentOpsFeed,
   ] = await Promise.all([
       prisma.profile.count(),
@@ -182,10 +181,6 @@ export default async function AdminDashboardPage() {
         },
       }),
       paymentEventQuery,
-      prisma.pendingPayout.groupBy({
-        by: ["status"],
-        _count: { _all: true },
-      }),
       prisma.activityFeedItem.findMany({
         orderBy: { createdAt: "desc" },
         take: 8,
@@ -202,11 +197,6 @@ export default async function AdminDashboardPage() {
     ]);
 
   const totalRevenueCents = revenueAgg._sum.totalCents ?? 0;
-  const payoutCountMap = new Map(payoutCounts.map((row) => [row.status, row._count._all]));
-  const heldCount = payoutCountMap.get("HELD") ?? 0;
-  const blockedCount = payoutCountMap.get("BLOCKED") ?? 0;
-  const releasingCount = payoutCountMap.get("RELEASING") ?? 0;
-  const releasedCount = payoutCountMap.get("RELEASED") ?? 0;
   return (
     <AdminLayout
       title="Admin ORYA – visão geral da plataforma"
@@ -265,29 +255,11 @@ export default async function AdminDashboardPage() {
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_1.6fr]">
           <SectionCard title="Payouts e bloqueios">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">HELD</p>
-                <p className="text-2xl font-semibold text-white/90">{heldCount}</p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">BLOCKED</p>
-                <p className="text-2xl font-semibold text-white/90">{blockedCount}</p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">RELEASING</p>
-                <p className="text-2xl font-semibold text-white/90">{releasingCount}</p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">RELEASED</p>
-                <p className="text-2xl font-semibold text-white/90">{releasedCount}</p>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
-              <Badge tone="warning">HELD</Badge>
-              <Badge tone="warning">BLOCKED</Badge>
-              <Badge tone="neutral">RELEASING</Badge>
-              <Badge tone="positive">RELEASED</Badge>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Estado</p>
+              <p className="mt-2 text-sm text-white/70">
+                Controlo interno de payouts está desativado. Settlement é feito diretamente pela Stripe Connect.
+              </p>
             </div>
           </SectionCard>
 

@@ -7,7 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
-import { OrganizationMemberRole } from "@prisma/client";
+import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -122,7 +122,8 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         categoryTag: true,
         coverImageUrl: true,
         locationMode: true,
-        defaultLocationText: true,
+        addressId: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
         policy: {
           select: {
             id: true,
@@ -244,9 +245,25 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       }
       updates.locationMode = locationMode;
     }
-    if (typeof payload?.defaultLocationText === "string") {
-      const text = payload.defaultLocationText.trim();
-      updates.defaultLocationText = text ? text.slice(0, 160) : null;
+    if (payload?.addressId === null) {
+      updates.addressId = null;
+    } else if (typeof payload?.addressId === "string") {
+      const addressId = payload.addressId.trim();
+      if (addressId) {
+        const address = await prisma.address.findUnique({
+          where: { id: addressId },
+          select: { sourceProvider: true },
+        });
+        if (!address) {
+          return fail(400, "Morada inválida.");
+        }
+        if (address.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+          return fail(400, "Morada deve ser Apple Maps.");
+        }
+        updates.addressId = addressId;
+      } else {
+        updates.addressId = null;
+      }
     }
     if (payload?.policyId === null) {
       updates.policyId = null;
@@ -350,7 +367,8 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           categoryTag: true,
           coverImageUrl: true,
           locationMode: true,
-          defaultLocationText: true,
+          addressId: true,
+          addressRef: { select: { formattedAddress: true, canonical: true } },
           policy: {
             select: {
               id: true,

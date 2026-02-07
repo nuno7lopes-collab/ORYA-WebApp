@@ -249,7 +249,6 @@ export default async function PadelProfilePage({ params }: PageProps) {
         avatarUrl: true,
         coverUrl: true,
         bio: true,
-        city: true,
         contactPhone: true,
         gender: true,
         padelLevel: true,
@@ -341,7 +340,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
             avatarUrl={resolvedProfile.avatarUrl}
             avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
             coverUrl={headerCoverUrl}
-            city={resolvedProfile.city}
+            city={null}
             visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
             followers={followersCount}
             following={followingCount}
@@ -375,7 +374,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
             avatarUrl={resolvedProfile.avatarUrl}
             avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
             coverUrl={headerCoverUrl}
-            city={resolvedProfile.city}
+            city={null}
             visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
             followers={followersCount}
             following={followingCount}
@@ -611,7 +610,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
           avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
           coverUrl={headerCoverUrl}
           bio={resolvedProfile.bio}
-          city={resolvedProfile.city}
+          city={null}
           visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
           followers={followersCount}
           following={followingCount}

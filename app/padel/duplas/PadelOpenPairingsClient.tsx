@@ -19,8 +19,8 @@ type PairingItem = {
     slug: string;
     title: string;
     startsAt: string | null;
-    locationName: string | null;
-    locationCity: string | null;
+    locationFormattedAddress: string | null;
+    addressId: string | null;
     coverImageUrl: string | null;
   };
 };
@@ -32,16 +32,14 @@ type OpenPairingsResponse = {
 };
 
 export default function PadelOpenPairingsClient() {
-  const [city, setCity] = useState("");
   const [query, setQuery] = useState("");
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
-    if (city.trim()) params.set("city", city.trim());
     if (query.trim()) params.set("q", query.trim());
     params.set("limit", "18");
     return params.toString();
-  }, [city, query]);
+  }, [query]);
 
   const { data, isLoading } = useSWR<OpenPairingsResponse>(
     `/api/padel/public/open-pairings?${queryString}`,
@@ -57,16 +55,9 @@ export default function PadelOpenPairingsClient() {
       <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-3">
         <div className="space-y-1">
           <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Filtros</p>
-          <p className="text-xs text-white/70">Encontra parceiros por cidade ou evento.</p>
+          <p className="text-xs text-white/70">Encontra parceiros por evento.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <input
-            type="text"
-            value={city}
-            onChange={(event) => setCity(event.target.value)}
-            placeholder="Cidade"
-            className="w-28 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80 placeholder:text-white/40"
-          />
           <input
             type="text"
             value={query}
@@ -93,9 +84,7 @@ export default function PadelOpenPairingsClient() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((pairing) => {
             const startAt = pairing.event.startsAt ? new Date(pairing.event.startsAt) : null;
-            const location = [pairing.event.locationName, pairing.event.locationCity]
-              .filter(Boolean)
-              .join(" · ");
+            const location = pairing.event.locationFormattedAddress || null;
 
             return (
               <article

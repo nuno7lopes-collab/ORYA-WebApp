@@ -32,10 +32,10 @@ type InviteItem = {
     publicName: string | null;
     username: string | null;
     businessName: string | null;
-    city: string | null;
     entityType: string | null;
     brandingAvatarUrl: string | null;
     brandingCoverUrl: string | null;
+    addressRef?: { formattedAddress: string | null; canonical: Record<string, unknown> | null } | null;
   } | null;
 };
 
@@ -54,6 +54,21 @@ const STATUS_STYLES: Record<InviteStatus, string> = {
   DECLINED: "border-rose-300/40 bg-rose-400/10 text-rose-100",
   CANCELLED: "border-white/15 bg-white/5 text-white/55",
 };
+
+const pickCanonicalField = (
+  canonical: Record<string, unknown> | null | undefined,
+  keys: string[],
+) => {
+  if (!canonical) return null;
+  for (const key of keys) {
+    const value = canonical[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const resolveCanonicalCity = (canonical?: Record<string, unknown> | null) =>
+  pickCanonicalField(canonical, ["city", "locality", "addressLine2", "region", "state"]);
 
 export default function OrganizationInvitesClient({
   initialInviteId,
@@ -187,7 +202,13 @@ export default function OrganizationInvitesClient({
             const orgName =
               invite.organization?.publicName ?? invite.organization?.businessName ?? t("orgInvitesFallbackOrg", locale);
             const orgHandle = invite.organization?.username ? `@${invite.organization.username}` : null;
-            const locationLabel = [invite.organization?.city, invite.organization?.entityType].filter(Boolean).join(" · ");
+            const cityLabel = resolveCanonicalCity(invite.organization?.addressRef?.canonical);
+            const locationLabel = [
+              cityLabel || invite.organization?.addressRef?.formattedAddress,
+              invite.organization?.entityType,
+            ]
+              .filter(Boolean)
+              .join(" · ");
             const cardHighlight = focusedInviteId === invite.id;
             const invitedByName =
               invite.invitedBy?.fullName ?? invite.invitedBy?.username ?? t("orgInvitesFallbackInviter", locale);

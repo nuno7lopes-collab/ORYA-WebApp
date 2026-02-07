@@ -10,10 +10,11 @@ type Props = {
 };
 
 export function WalletCard({ item, compact = false }: Props) {
+  const isConsumed = Boolean(item.consumedAt);
   const badgeColor =
-    item.status === "ACTIVE"
+    item.status === "ACTIVE" && !isConsumed
       ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-50"
-      : item.status === "USED"
+      : isConsumed
         ? "bg-blue-500/10 border-blue-400/30 text-blue-50"
         : "bg-red-500/10 border-red-400/30 text-red-50";
 
@@ -54,7 +55,7 @@ export function WalletCard({ item, compact = false }: Props) {
       <div className="relative h-full flex flex-col justify-end p-3 text-[12px] text-white">
         <div className="flex items-center justify-between mb-2">
           <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${badgeColor}`}>
-            {item.status}
+            {isConsumed ? "CHECKED_IN" : item.status}
           </span>
           <span className="text-[10px] uppercase tracking-[0.16em] text-white/70">{item.type}</span>
         </div>

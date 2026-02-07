@@ -1,4 +1,4 @@
-import { EntitlementStatus, EntitlementType } from "@prisma/client";
+import { CheckinResultCode, EntitlementStatus, EntitlementType } from "@prisma/client";
 import { getEntitlementEffectiveStatus, isConsumed } from "@/lib/entitlements/status";
 
 export type RequesterRole = "OWNER" | "ORGANIZATION" | "ADMIN";
@@ -17,6 +17,7 @@ export type ResolverInput = {
   isOwner: boolean;
   isOrganization: boolean;
   isAdmin: boolean;
+  checkins?: Array<{ resultCode: CheckinResultCode }>;
   checkinWindow?: { start: Date | null; end: Date | null };
   outsideWindow?: boolean;
   emailVerified?: boolean;
@@ -32,9 +33,9 @@ function insideWindow(window?: { start: Date | null; end: Date | null }) {
 }
 
 export function resolveActions(input: ResolverInput): EntitlementActions {
-  const { type, status, isOwner, isOrganization, isAdmin, checkinWindow, outsideWindow, emailVerified, isGuestOwner } = input;
+  const { type, status, isOwner, isOrganization, isAdmin, checkins, checkinWindow, outsideWindow, emailVerified, isGuestOwner } = input;
   const effectiveStatus = getEntitlementEffectiveStatus({ status });
-  const consumed = isConsumed({ status });
+  const consumed = isConsumed({ status, checkins });
   const baseBlocked = effectiveStatus === "REVOKED" || effectiveStatus === "SUSPENDED";
   const qrEligible = type === EntitlementType.EVENT_TICKET || type === EntitlementType.PADEL_ENTRY;
 

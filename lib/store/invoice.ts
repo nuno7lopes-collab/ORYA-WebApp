@@ -1,10 +1,12 @@
 import PDFDocument from "pdfkit";
-import { StoreAddressType, StoreOrderStatus } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { InvoiceKind, InvoiceStatus, SourceType, StoreAddressType, StoreOrderStatus } from "@prisma/client";
 
 type InvoiceOrder = {
   id: number;
   orderNumber: string | null;
   status: StoreOrderStatus;
+  purchaseId?: string | null;
   subtotalCents: number;
   discountCents: number;
   shippingCents: number;
@@ -16,6 +18,7 @@ type InvoiceOrder = {
   createdAt: Date;
   store: {
     id: number;
+    organizationId?: number | null;
     supportEmail: string | null;
     supportPhone: string | null;
     organization: { username: string | null; publicName: string | null; businessName: string | null } | null;
@@ -24,12 +27,7 @@ type InvoiceOrder = {
   addresses: Array<{
     addressType: StoreAddressType;
     fullName: string;
-    line1: string;
-    line2: string | null;
-    city: string;
-    region: string | null;
-    postalCode: string;
-    country: string;
+    formattedAddress: string | null;
     nif: string | null;
   }>;
   lines: Array<{
@@ -68,6 +66,76 @@ function formatStatusLabel(status: StoreOrderStatus) {
     default:
       return status;
   }
+}
+
+function resolveInvoiceStatusForOrder(status: StoreOrderStatus): InvoiceStatus {
+  switch (status) {
+    case StoreOrderStatus.CANCELLED:
+      return InvoiceStatus.CANCELLED;
+    case StoreOrderStatus.REFUNDED:
+      return InvoiceStatus.VOID;
+    default:
+      return InvoiceStatus.ISSUED;
+  }
+}
+
+export async function ensureStoreInvoiceRecord(params: {
+  order: {
+    id: number;
+    orderNumber: string | null;
+    status: StoreOrderStatus;
+    currency: string;
+    totalCents: number;
+    createdAt: Date;
+    purchaseId?: string | null;
+    store: { organizationId?: number | null };
+  };
+  customerIdentityId?: string | null;
+}) {
+  const { order, customerIdentityId } = params;
+  const organizationId = order.store.organizationId;
+  if (!organizationId) return null;
+
+  const sourceId = String(order.id);
+  const invoiceNumber = order.orderNumber ?? sourceId;
+  const status = resolveInvoiceStatusForOrder(order.status);
+
+  const existing = await prisma.invoice.findFirst({
+    where: { sourceType: SourceType.STORE_ORDER, sourceId },
+  });
+
+  if (existing) {
+    const updates: Record<string, unknown> = {};
+    if (existing.status !== status) updates.status = status;
+    if (existing.currency !== order.currency) updates.currency = order.currency;
+    if (existing.amountCents !== order.totalCents) updates.amountCents = order.totalCents;
+    if (existing.invoiceNumber !== invoiceNumber) updates.invoiceNumber = invoiceNumber;
+    if (customerIdentityId && existing.customerIdentityId !== customerIdentityId) {
+      updates.customerIdentityId = customerIdentityId;
+    }
+    if (Object.keys(updates).length === 0) return existing;
+    return prisma.invoice.update({ where: { id: existing.id }, data: updates });
+  }
+
+  return prisma.invoice.create({
+    data: {
+      organizationId,
+      customerIdentityId: customerIdentityId ?? null,
+      sourceType: SourceType.STORE_ORDER,
+      sourceId,
+      kind: InvoiceKind.CONSUMER,
+      status,
+      invoiceNumber,
+      currency: order.currency,
+      amountCents: order.totalCents,
+      issuedAt: order.createdAt,
+      metadata: {
+        storeOrderId: order.id,
+        orderNumber: order.orderNumber ?? null,
+        purchaseId: order.purchaseId ?? null,
+      },
+    },
+  });
 }
 
 export async function buildStoreInvoicePdf(order: InvoiceOrder) {
@@ -117,12 +185,9 @@ export async function buildStoreInvoicePdf(order: InvoiceOrder) {
   doc.fontSize(10).fillColor("#333");
   if (billingAddress) {
     doc.text(billingAddress.fullName);
-    doc.text(billingAddress.line1);
-    if (billingAddress.line2) doc.text(billingAddress.line2);
-    doc.text(
-      `${billingAddress.postalCode} ${billingAddress.city}${billingAddress.region ? `, ${billingAddress.region}` : ""}`,
-    );
-    doc.text(billingAddress.country);
+    if (billingAddress.formattedAddress) {
+      doc.text(billingAddress.formattedAddress);
+    }
     if (billingAddress.nif) doc.text(`NIF: ${billingAddress.nif}`);
   } else {
     doc.text("Sem morada de faturacao registada.");

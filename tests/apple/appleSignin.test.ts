@@ -10,7 +10,7 @@ async function setAppleEnv() {
   const privateKeyBase64 = Buffer.from(pkcs8).toString("base64");
 
   process.env.APPLE_SIGNIN_SERVICE_ID = "com.orya.web";
-  process.env.APPLE_SIGNIN_REDIRECT_URI = "https://app.orya.pt/auth/callback";
+  process.env.APPLE_SIGNIN_REDIRECT_URI = "https://orya.pt/auth/callback";
   process.env.APPLE_SIGNIN_TEAM_ID = "TEAM123456";
   process.env.APPLE_SIGNIN_KEY_ID = "KEY123456";
   process.env.APPLE_SIGNIN_PRIVATE_KEY_BASE64 = privateKeyBase64;

@@ -11,23 +11,15 @@ type PrefillResponse = {
   ok: boolean;
   customer?: { name: string | null; email: string | null; phone: string | null };
   shippingAddress?: {
+    addressId: string;
     fullName: string;
-    line1: string;
-    line2: string | null;
-    city: string;
-    region: string | null;
-    postalCode: string;
-    country: string;
+    formattedAddress: string | null;
     nif: string | null;
   } | null;
   billingAddress?: {
+    addressId: string;
     fullName: string;
-    line1: string;
-    line2: string | null;
-    city: string;
-    region: string | null;
-    postalCode: string;
-    country: string;
+    formattedAddress: string | null;
     nif: string | null;
   } | null;
   error?: string;
@@ -105,14 +97,10 @@ async function _GET(req: NextRequest) {
           addresses: {
             select: {
               addressType: true,
+              addressId: true,
               fullName: true,
-              line1: true,
-              line2: true,
-              city: true,
-              region: true,
-              postalCode: true,
-              country: true,
               nif: true,
+              addressRef: { select: { formattedAddress: true } },
             },
           },
         },
@@ -123,6 +111,15 @@ async function _GET(req: NextRequest) {
       lastOrder?.addresses.find((address) => address.addressType === StoreAddressType.SHIPPING) ?? null;
     const billingAddress =
       lastOrder?.addresses.find((address) => address.addressType === StoreAddressType.BILLING) ?? null;
+    const serializeAddress = (address: typeof shippingAddress) =>
+      address
+        ? {
+            addressId: address.addressId,
+            fullName: address.fullName,
+            formattedAddress: address.addressRef?.formattedAddress ?? null,
+            nif: address.nif ?? null,
+          }
+        : null;
 
     const metadata = user.user_metadata as { full_name?: string; name?: string } | null;
     const customer = {
@@ -131,9 +128,10 @@ async function _GET(req: NextRequest) {
       phone: profile?.contactPhone ?? lastOrder?.customerPhone ?? null,
     };
 
-    return respondOk(ctx, { customer,
-      shippingAddress,
-      billingAddress,
+    return respondOk(ctx, {
+      customer,
+      shippingAddress: serializeAddress(shippingAddress),
+      billingAddress: serializeAddress(billingAddress),
     });
   } catch (err) {
     console.error("GET /api/store/checkout/prefill error:", err);

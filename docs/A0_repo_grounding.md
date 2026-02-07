@@ -1,5 +1,5 @@
 # A0 - Repo grounding + inventario (Bloco A)
-> Nota: snapshot de diagnóstico do repo (data/commit específicos). Para SSOT atual, ver `docs/v9_ssot_registry.md`.
+> Nota: snapshot de diagnóstico do repo (data/commit específicos). Para SSOT atual, ver `docs/ssot_registry.md`.
 
 ## Estado repo (A0)
 - Branch: developer
@@ -19,7 +19,6 @@
   - lib/organizationId.ts (resolveOrganizationIdFromRequest com allowFallback)
 - API que resolve org via cookie (nao so redirect):
   - app/api/organizacao/me/route.ts (forcedOrgId via cookie + allowFallback quando nao ha query)
-  - app/api/me/location/coarse/route.ts (orgContext via ORG_CONTEXT_API para EventLog)
   - app/api/me/location/consent/route.ts (orgContext via ORG_CONTEXT_API para EventLog)
 - Server Components com allowFallback true (renderizam conteudo com org resolvida por cookie):
   - app/organizacao/(dashboard)/page.tsx

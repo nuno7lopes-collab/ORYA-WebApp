@@ -9,6 +9,7 @@ import {
   Prisma,
 } from "@prisma/client";
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
@@ -55,7 +56,17 @@ async function resolveEventForTicketTypes(
     throw new Error("TICKET_TYPE_NOT_FOUND");
   }
   const eventId = ticketTypes[0].eventId;
-  const event = await tx.event.findUnique({ where: { id: eventId } });
+  const event = await tx.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      title: true,
+      coverImageUrl: true,
+      startsAt: true,
+      timezone: true,
+      addressRef: { select: { formattedAddress: true } },
+    },
+  });
   if (!event) {
     throw new Error("EVENT_NOT_FOUND");
   }
@@ -107,6 +118,7 @@ async function issueTicketOrderEntitlements(
   const grossTotal = snapshot?.gross ?? 0;
   const platformFeeTotal = snapshot?.platformFee ?? 0;
   const currency = snapshot?.currency ?? order.currency ?? "EUR";
+  const snapshotVenueName = formatEventLocationLabel({ addressRef: event.addressRef ?? null }, "Local a anunciar");
 
   for (const line of order.lines) {
     const ticketTypeId = parseIntId(line.ticketTypeId);
@@ -142,7 +154,6 @@ async function issueTicketOrderEntitlements(
           pricePaid: unitTotal,
           currency,
           stripePaymentIntentId: null,
-          usedAt: null,
           platformFeeCents: unitPlatformFee,
           totalPaidCents: unitTotal,
           purchaseId: payment.id,
@@ -169,7 +180,7 @@ async function issueTicketOrderEntitlements(
           policyVersionApplied,
           snapshotTitle: event.title,
           snapshotCoverUrl: event.coverImageUrl,
-          snapshotVenueName: event.locationName,
+          snapshotVenueName,
           snapshotStartAt: event.startsAt,
           snapshotTimezone: event.timezone,
           ticketId: ticket.id,
@@ -187,7 +198,7 @@ async function issueTicketOrderEntitlements(
           policyVersionApplied,
           snapshotTitle: event.title,
           snapshotCoverUrl: event.coverImageUrl,
-          snapshotVenueName: event.locationName,
+          snapshotVenueName,
           snapshotStartAt: event.startsAt,
           snapshotTimezone: event.timezone,
           ticketId: ticket.id,
@@ -221,7 +232,17 @@ async function issuePadelRegistrationEntitlements(
 
   const eventId = parseIntId(registration.eventId);
   if (!eventId) throw new Error("EVENT_ID_INVALID");
-  const event = await tx.event.findUnique({ where: { id: eventId } });
+  const event = await tx.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      title: true,
+      coverImageUrl: true,
+      startsAt: true,
+      timezone: true,
+      addressRef: { select: { formattedAddress: true } },
+    },
+  });
   if (!event) throw new Error("EVENT_NOT_FOUND");
 
   const saleSummary = await tx.saleSummary.findFirst({
@@ -268,6 +289,7 @@ async function issuePadelRegistrationEntitlements(
   const slotMap = new Map((pairing?.slots ?? []).map((slot) => [slot.id, slot]));
 
   const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
+  const snapshotVenueName = formatEventLocationLabel({ addressRef: event.addressRef ?? null }, "Local a anunciar");
 
   const normalizeEmail = (value: string | null | undefined) => {
     const email = typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -316,7 +338,7 @@ async function issuePadelRegistrationEntitlements(
           policyVersionApplied,
           snapshotTitle: event.title,
           snapshotCoverUrl: event.coverImageUrl,
-          snapshotVenueName: event.locationName,
+          snapshotVenueName,
           snapshotStartAt: event.startsAt,
           snapshotTimezone: event.timezone,
         },
@@ -333,7 +355,7 @@ async function issuePadelRegistrationEntitlements(
           policyVersionApplied,
           snapshotTitle: event.title,
           snapshotCoverUrl: event.coverImageUrl,
-          snapshotVenueName: event.locationName,
+          snapshotVenueName,
           snapshotStartAt: event.startsAt,
           snapshotTimezone: event.timezone,
         },
@@ -401,7 +423,7 @@ export async function applyPaymentStatusToEntitlements(
     FAILED: null,
     CANCELLED: null,
     PARTIAL_REFUND: null,
-    REFUNDED: null,
+    REFUNDED: TicketStatus.REFUNDED,
     DISPUTED: TicketStatus.DISPUTED,
     CHARGEBACK_WON: TicketStatus.ACTIVE,
     CHARGEBACK_LOST: TicketStatus.CANCELLED,

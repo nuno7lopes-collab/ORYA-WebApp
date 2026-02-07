@@ -29,7 +29,6 @@ import {
 } from "@/domain/padelDeadlines";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { checkPadelCategoryCapacity } from "@/domain/padelCategoryCapacity";
 import {
   checkPadelRegistrationWindow,
@@ -46,7 +45,6 @@ import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { queuePairingInvite, queueWaitlistJoined } from "@/domain/notifications/splitPayments";
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
-import { requireActiveEntitlementForTicket } from "@/lib/entitlements/accessChecks";
 import { ensurePadelPlayerProfileId, upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -156,7 +154,6 @@ async function _POST(req: NextRequest) {
   const categoryId = body && typeof body.categoryId === "number" ? body.categoryId : body?.categoryId === null ? null : Number(body?.categoryId);
   const paymentMode = typeof body?.paymentMode === "string" ? (body?.paymentMode as PadelPaymentMode) : null;
   const pairingJoinModeRaw = typeof body?.pairingJoinMode === "string" ? (body?.pairingJoinMode as PadelPairingJoinMode) : "INVITE_PARTNER";
-  const createdByTicketId = typeof body?.createdByTicketId === "string" ? body?.createdByTicketId : null;
   const inviteExpiresAt = body?.inviteExpiresAt ? new Date(String(body.inviteExpiresAt)) : null;
   const lockedUntil = body?.lockedUntil ? new Date(String(body.lockedUntil)) : null;
   const isPublicOpen = Boolean(body?.isPublicOpen);
@@ -369,7 +366,7 @@ async function _POST(req: NextRequest) {
     const slotUpdates: Record<string, unknown> = {};
     const partnerSlot = existingActive.slots.find((s) => s.slot_role === "PARTNER");
     const partnerLocked =
-      Boolean(partnerSlot?.paymentStatus === "PAID" || partnerSlot?.ticketId);
+      Boolean(partnerSlot?.paymentStatus === "PAID");
     const canUpdatePartner = partnerSlot && !partnerSlot.profileId && !partnerLocked;
 
     if (paymentMode && existingActive.payment_mode !== paymentMode) {
@@ -599,7 +596,6 @@ async function _POST(req: NextRequest) {
           pairingStatus: true,
           pairingJoinMode: true,
           createdByUserId: true,
-          createdByTicketId: true,
           partnerInviteToken: true,
           partnerInviteUsedAt: true,
           partnerLinkToken: true,
@@ -622,7 +618,6 @@ async function _POST(req: NextRequest) {
             select: {
               id: true,
               pairingId: true,
-              ticketId: true,
               profileId: true,
               invitedUserId: true,
               slot_role: true,
@@ -646,56 +641,8 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  let validatedTicketId: string | null = null;
-  if (createdByTicketId) {
-    const ticket = await prisma.ticket.findUnique({
-      where: { id: createdByTicketId },
-      select: {
-        id: true,
-        eventId: true,
-        pairingId: true,
-        ticketType: {
-          select: {
-            padelEventCategoryLinkId: true,
-            padelEventCategoryLink: { select: { padelCategoryId: true } },
-          },
-        },
-      },
-    });
-    if (!ticket || ticket.eventId !== eventId) {
-      return jsonWrap({ ok: false, error: "INVALID_TICKET" }, { status: 400 });
-    }
-    const entitlementGate = await requireActiveEntitlementForTicket({
-      ticketId: ticket.id,
-      eventId,
-      userId: user.id,
-    });
-    if (!entitlementGate.ok) {
-      return jsonWrap(
-        { ok: false, error: entitlementGate.reason ?? "ENTITLEMENT_REQUIRED" },
-        { status: 403 },
-      );
-    }
-    if (ticket.pairingId) {
-      return jsonWrap({ ok: false, error: "TICKET_ALREADY_USED" }, { status: 409 });
-    }
-    const slotUsingTicket = await prisma.padelPairingSlot.findUnique({
-      where: { ticketId: createdByTicketId },
-      select: { id: true },
-    });
-    if (slotUsingTicket) {
-      return jsonWrap({ ok: false, error: "TICKET_ALREADY_USED" }, { status: 409 });
-    }
-    const ticketCategoryId = ticket.ticketType?.padelEventCategoryLink?.padelCategoryId ?? null;
-    if (ticketCategoryId && ticketCategoryId !== effectiveCategoryId) {
-      return jsonWrap({ ok: false, error: "TICKET_CATEGORY_MISMATCH" }, { status: 409 });
-    }
-    validatedTicketId = ticket.id;
-  }
-
   // Build slots: se não vierem slots no payload, cria duas entradas (capitão + parceiro pendente)
   type IncomingSlot = {
-    ticketId?: unknown;
     profileId?: unknown;
     invitedContact?: unknown;
     invitedUserId?: unknown;
@@ -718,7 +665,6 @@ async function _POST(req: NextRequest) {
     const payRaw = typeof s.paymentStatus === "string" ? s.paymentStatus : "UNPAID";
 
     return {
-      ticketId: typeof s.ticketId === "string" ? s.ticketId : null,
       profileId: typeof s.profileId === "string" ? s.profileId : null,
       invitedContact: typeof s.invitedContact === "string" ? s.invitedContact : null,
       invitedUserId: typeof s.invitedUserId === "string" ? s.invitedUserId : null,
@@ -735,32 +681,12 @@ async function _POST(req: NextRequest) {
   };
 
   const incomingSlots = Array.isArray(body?.slots) ? (body!.slots as unknown[]) : [];
-  const captainPaid = Boolean(validatedTicketId);
-  if (captainPaid) {
-    const limitCheck = await prisma.$transaction((tx) =>
-      checkPadelCategoryLimit({
-        tx,
-        eventId,
-        userId: user.id,
-        categoryId: effectiveCategoryId,
-      }),
-    );
-    if (!limitCheck.ok) {
-      return jsonWrap(
-        {
-          ok: false,
-          error: limitCheck.code === "ALREADY_IN_CATEGORY" ? "ALREADY_IN_CATEGORY" : "MAX_CATEGORIES",
-        },
-        { status: 409 },
-      );
-    }
-  }
+  const captainPaid = false;
   const slotsToCreate =
     incomingSlots.length > 0
       ? (incomingSlots
           .map((slot) => normalizeSlot(slot))
           .filter(Boolean) as Array<{
-          ticketId: string | null;
           profileId: string | null;
           invitedContact: string | null;
           invitedUserId: string | null;
@@ -771,7 +697,6 @@ async function _POST(req: NextRequest) {
         }>)
       : [
           {
-            ticketId: validatedTicketId,
             profileId: user.id,
             invitedContact: null,
             invitedUserId: null,
@@ -781,7 +706,6 @@ async function _POST(req: NextRequest) {
             paymentStatus: captainPaid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
           },
           {
-            ticketId: null,
             profileId: null,
             invitedContact:
               pairingJoinModeRaw === "INVITE_PARTNER" && invitedContactNormalized
@@ -879,7 +803,6 @@ async function _POST(req: NextRequest) {
           payment_mode: paymentMode,
           createdByUserId: user.id,
           player1UserId: user.id,
-          createdByTicketId: validatedTicketId,
           partnerInviteToken,
           partnerLinkToken: partnerInviteToken,
           partnerLinkExpiresAt: partnerInviteToken ? partnerLinkExpiresAtNormalized : null,

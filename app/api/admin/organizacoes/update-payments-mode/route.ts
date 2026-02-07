@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getClientIp } from "@/lib/auth/requestValidation";
-import { OrgType, PendingPayoutStatus } from "@prisma/client";
+import { OrgType } from "@prisma/client";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
@@ -70,16 +70,7 @@ async function _POST(req: NextRequest) {
       }
     }
     if (orgType === OrgType.PLATFORM && organization.stripeAccountId) {
-      const cancelled = await prisma.pendingPayout.updateMany({
-        where: {
-          recipientConnectAccountId: organization.stripeAccountId,
-          status: {
-            in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED],
-          },
-        },
-        data: { status: PendingPayoutStatus.CANCELLED, blockedReason: "ADMIN_PLATFORM_TAKEOVER" },
-      });
-      cancelledPayouts = cancelled.count;
+      cancelledPayouts = 0;
     }
 
     const updated = await prisma.organization.update({

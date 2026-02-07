@@ -77,7 +77,7 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
     // Bloquear se existir algum bilhete ativo/usado associado a eventos desta org
     const hasSales = await prisma.ticket.count({
       where: {
-        status: { in: ["ACTIVE", "USED"] },
+        status: { in: ["ACTIVE"] },
         event: { organizationId },
       },
     });

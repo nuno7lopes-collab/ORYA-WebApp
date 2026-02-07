@@ -42,6 +42,14 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     return jsonWrap({ error: "Not found" }, { status: 404 });
   }
 
+  const entCheckins = await prisma.entitlementCheckin.findMany({
+    where: { entitlementId: ent.id },
+    select: { resultCode: true, checkedInAt: true },
+    orderBy: { checkedInAt: "desc" },
+    take: 1,
+  });
+  const consumedAt = entCheckins[0]?.checkedInAt ?? null;
+
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
     select: { roles: true, username: true },
@@ -94,6 +102,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     isOwner: true,
     isOrganization: false,
     isAdmin,
+    checkins: entCheckins,
     checkinWindow,
     outsideWindow,
     emailVerified: Boolean(data.user.email_confirmed_at),
@@ -103,7 +112,8 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   const isEligible =
     ent.type === "EVENT_TICKET" &&
     actions.canShowQr &&
-    ["ACTIVE", "USED"].includes(ent.status.toUpperCase());
+    ent.status.toUpperCase() === "ACTIVE" &&
+    !consumedAt;
 
   if (!isEligible) {
     return jsonWrap({ error: "PASS_NOT_AVAILABLE" }, { status: 400 });

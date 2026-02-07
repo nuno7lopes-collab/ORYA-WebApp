@@ -17,11 +17,12 @@ import {
 } from "@/lib/organizationCategories";
 import { isValidWebsite } from "@/lib/validation/organization";
 import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { AddressSourceProvider } from "@prisma/client";
 
 type OrganizationPayload = {
   entityType?: string | null;
   businessName?: string | null;
-  city?: string | null;
+  addressId?: string | null;
   payoutIban?: string | null;
   username?: string | null;
   primaryModule?: string | null;
@@ -71,7 +72,7 @@ async function _GET() {
               stripeAccountId: fallbackOrganization.stripeAccountId,
               entityType: fallbackOrganization.entityType,
               businessName: fallbackOrganization.businessName,
-              city: fallbackOrganization.city,
+              addressId: fallbackOrganization.addressId ?? null,
               payoutIban: fallbackOrganization.payoutIban,
               primaryModule: normalizePrimaryModule(fallbackOrganization.primaryModule ?? null),
               modules: organizationModules.map((module) => module.moduleKey),
@@ -123,7 +124,7 @@ async function _POST(req: NextRequest) {
         payload = {
           entityType: form.get("entityType") as string | null,
           businessName: form.get("businessName") as string | null,
-          city: form.get("city") as string | null,
+          addressId: form.get("addressId") as string | null,
           payoutIban: form.get("payoutIban") as string | null,
           username: form.get("username") as string | null,
           primaryModule: form.get("primaryModule") as string | null,
@@ -136,7 +137,7 @@ async function _POST(req: NextRequest) {
 
     const entityType = sanitizeString(payload.entityType);
     const businessName = sanitizeString(payload.businessName);
-    const city = sanitizeString(payload.city);
+    const addressId = typeof payload.addressId === "string" ? payload.addressId.trim() : null;
     const payoutIban = sanitizeString(payload.payoutIban);
     const usernameRaw = sanitizeString(payload.username);
     const primaryModuleRaw = payload.primaryModule;
@@ -155,6 +156,19 @@ async function _POST(req: NextRequest) {
         { ok: false, error: "Website inválido. Usa um URL válido (ex: https://orya.pt)." },
         { status: 400 },
       );
+    }
+
+    if (addressId) {
+      const address = await prisma.address.findUnique({
+        where: { id: addressId },
+        select: { sourceProvider: true },
+      });
+      if (!address) {
+        return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
+      }
+      if (address.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+        return jsonWrap({ ok: false, error: "Morada deve ser Apple Maps." }, { status: 400 });
+      }
     }
 
     const primaryModuleProvided = Object.prototype.hasOwnProperty.call(payload, "primaryModule");
@@ -239,7 +253,7 @@ async function _POST(req: NextRequest) {
             publicName: publicNameValue,
             entityType,
             businessName,
-            city,
+            ...(addressId ? { addressId } : {}),
             payoutIban,
             username,
             ...(publicWebsite ? { publicWebsite } : {}),
@@ -257,7 +271,7 @@ async function _POST(req: NextRequest) {
             status: "ACTIVE", // self-serve aberto
             entityType,
             businessName,
-            city,
+            ...(addressId ? { addressId } : {}),
             payoutIban,
             username,
             primaryModule: primaryFallback,
@@ -343,7 +357,7 @@ async function _POST(req: NextRequest) {
           stripeAccountId: organization.stripeAccountId,
           entityType: organization.entityType,
           businessName: organization.businessName,
-          city: organization.city,
+          addressId: organization.addressId ?? null,
           payoutIban: organization.payoutIban,
           username: organization.username,
           primaryModule: normalizePrimaryModule(organization.primaryModule ?? null),

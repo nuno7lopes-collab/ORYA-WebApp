@@ -34,7 +34,6 @@ async function _GET(req: NextRequest) {
         avatarUrl: true,
         coverUrl: true,
         bio: true,
-        city: true,
         contactPhone: true,
         status: true,
         createdAt: true,

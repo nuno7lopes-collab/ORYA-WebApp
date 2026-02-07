@@ -32,7 +32,9 @@ export const SearchOrganizationRow = memo(function SearchOrganizationRow({
       <View className="flex-row items-center gap-3">
         <Pressable
           onPress={() => {
-            if (item.username) router.push(`/${item.username}`);
+            if (item.username) {
+              router.push({ pathname: "/[username]", params: { username: item.username } });
+            }
           }}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >

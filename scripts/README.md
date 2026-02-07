@@ -79,7 +79,7 @@ AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
 
 ### Healthcheck
 ```bash
-ORYA_CRON_SECRET=*** scripts/healthcheck.sh https://app.orya.pt
+ORYA_CRON_SECRET=*** scripts/healthcheck.sh https://orya.pt
 ```
 
 ### Migrations

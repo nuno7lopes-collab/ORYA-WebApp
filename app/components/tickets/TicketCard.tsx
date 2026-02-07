@@ -14,7 +14,7 @@ export type TicketCardProps = {
     slug?: string;
     title: string;
     startDate?: string;
-    locationName?: string;
+    locationFormattedAddress?: string | null;
     coverImageUrl?: string | null;
   };
   ticket: {
@@ -116,9 +116,9 @@ export function TicketCard(props: TicketCardProps) {
             <h3 className="text-sm font-semibold leading-snug line-clamp-2">
               {event.title}
             </h3>
-            {event.locationName && (
+            {event.locationFormattedAddress && (
               <p className="text-[11px] text-white/70 line-clamp-1">
-                {event.locationName}
+                {event.locationFormattedAddress}
               </p>
             )}
             {dateLabel && (

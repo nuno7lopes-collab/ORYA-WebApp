@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Modal,
@@ -12,15 +12,18 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { DiscoverDateFilter, DiscoverPriceFilter } from "../../features/discover/types";
+import { useDiscoverStore } from "../../features/discover/store";
+import {
+  fetchGeoAutocomplete,
+  fetchGeoDetails,
+  type MobileGeoAutocompleteItem,
+} from "../../features/discover/location";
 
 type FilterSheetProps = {
   visible: boolean;
   onClose: () => void;
   distanceKm: number;
   onDistanceChange: (value: number) => void;
-  city: string;
-  onCityChange: (value: string) => void;
-  onCityReset: () => void;
   date: DiscoverDateFilter;
   onDateChange: (value: DiscoverDateFilter) => void;
   price: DiscoverPriceFilter;
@@ -48,9 +51,6 @@ export function FiltersBottomSheet({
   onClose,
   distanceKm,
   onDistanceChange,
-  city,
-  onCityChange,
-  onCityReset,
   date,
   onDateChange,
   price,
@@ -58,6 +58,20 @@ export function FiltersBottomSheet({
 }: FilterSheetProps) {
   const translateY = useRef(new Animated.Value(300)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const locationLabel = useDiscoverStore((state) => state.locationLabel);
+  const locationSource = useDiscoverStore((state) => state.locationSource);
+  const city = useDiscoverStore((state) => state.city);
+  const setLocation = useDiscoverStore((state) => state.setLocation);
+  const clearLocation = useDiscoverStore((state) => state.clearLocation);
+  const [locationQuery, setLocationQuery] = useState(locationLabel || city || "");
+  const [locationSuggestions, setLocationSuggestions] = useState<MobileGeoAutocompleteItem[]>([]);
+  const [locationSearchLoading, setLocationSearchLoading] = useState(false);
+  const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
+  const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const locationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locationSearchSeq = useRef(0);
+  const locationDetailsSeq = useRef(0);
 
   useEffect(() => {
     if (!visible) return;
@@ -68,6 +82,106 @@ export function FiltersBottomSheet({
       Animated.spring(translateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
     ]).start();
   }, [opacity, translateY, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    setLocationQuery(locationLabel || city || "");
+    setLocationSearchError(null);
+  }, [visible, locationLabel, city]);
+
+  useEffect(() => {
+    const query = locationQuery.trim();
+    if (!showSuggestions) return;
+    if (query.length < 2) {
+      setLocationSuggestions([]);
+      setLocationSearchError(null);
+      return;
+    }
+    if (locationSearchTimeout.current) {
+      clearTimeout(locationSearchTimeout.current);
+    }
+    const seq = ++locationSearchSeq.current;
+    setLocationSearchError(null);
+    locationSearchTimeout.current = setTimeout(async () => {
+      setLocationSearchLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        if (locationSearchSeq.current === seq) {
+          setLocationSuggestions(items);
+        }
+      } catch (err) {
+        if (locationSearchSeq.current === seq) {
+          setLocationSuggestions([]);
+          setLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+        }
+      } finally {
+        if (locationSearchSeq.current === seq) {
+          setLocationSearchLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      if (locationSearchTimeout.current) {
+        clearTimeout(locationSearchTimeout.current);
+      }
+    };
+  }, [locationQuery, showSuggestions]);
+
+  const pickString = (...values: Array<unknown>) => {
+    for (const value of values) {
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (trimmed) return trimmed;
+      }
+    }
+    return null;
+  };
+
+  const pickCanonicalField = (canonical: Record<string, unknown> | null | undefined, keys: string[]) => {
+    if (!canonical) return null;
+    return pickString(...keys.map((key) => canonical[key]));
+  };
+
+  const handleSelectSuggestion = async (item: MobileGeoAutocompleteItem) => {
+    setLocationDetailsLoading(true);
+    setLocationSearchError(null);
+    setShowSuggestions(false);
+    setLocationQuery(item.label);
+    const seq = ++locationDetailsSeq.current;
+    try {
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
+      if (locationDetailsSeq.current !== seq) return;
+      const canonical = (details?.canonical as Record<string, unknown> | null) ?? null;
+      const resolvedCity = pickString(
+        details?.city,
+        pickCanonicalField(canonical, ["city", "locality", "addressLine2", "region", "state"]),
+        item.city,
+      );
+      const label = details?.formattedAddress || item.label;
+      setLocation({
+        city: resolvedCity ?? "",
+        label,
+        addressId: details?.addressId ?? null,
+        lat: typeof details?.lat === "number" ? details?.lat : item.lat,
+        lng: typeof details?.lng === "number" ? details?.lng : item.lng,
+        source: "APPLE_MAPS",
+      });
+      setLocationQuery(label);
+    } catch (err) {
+      if (locationDetailsSeq.current === seq) {
+        setLocationSearchError("Não foi possível validar esta morada.");
+      }
+    } finally {
+      if (locationDetailsSeq.current === seq) {
+        setLocationDetailsLoading(false);
+      }
+    }
+  };
 
   const renderOption = (
     key: string,
@@ -121,22 +235,73 @@ export function FiltersBottomSheet({
         </View>
 
         <View style={styles.block}>
-          <Text style={styles.label}>Cidade / Local</Text>
+          <View style={styles.locationHeader}>
+            <Text style={styles.label}>Localização</Text>
+            {locationSource !== "NONE" ? (
+              <Text style={styles.locationSource}>
+                {locationSource === "APPLE_MAPS" ? "Apple" : "IP"}
+              </Text>
+            ) : null}
+          </View>
           <View style={styles.inputRow}>
             <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.65)" />
             <TextInput
-              value={city}
-              onChangeText={onCityChange}
-              placeholder="Lisboa, Porto, Faro..."
+              value={locationQuery}
+              onChangeText={(value) => {
+                setLocationQuery(value);
+                setShowSuggestions(true);
+                setLocationSearchError(null);
+              }}
+              placeholder="Procura uma localizacao"
               placeholderTextColor="rgba(255,255,255,0.4)"
               style={styles.input}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
             />
-            {city ? (
-              <Pressable onPress={onCityReset} style={styles.clear}>
+            {locationQuery ? (
+              <Pressable
+                onPress={() => {
+                  setLocationQuery("");
+                  setLocationSuggestions([]);
+                  setLocationSearchError(null);
+                  clearLocation();
+                }}
+                style={styles.clear}
+              >
                 <Ionicons name="close" size={12} color="rgba(255,255,255,0.7)" />
               </Pressable>
             ) : null}
           </View>
+          {locationDetailsLoading ? (
+            <Text style={styles.helper}>A validar morada...</Text>
+          ) : locationLabel ? (
+            <Text style={styles.helper}>{locationLabel}</Text>
+          ) : city ? (
+            <Text style={styles.helper}>Localização: {city}</Text>
+          ) : null}
+          {locationSearchError ? <Text style={styles.errorText}>{locationSearchError}</Text> : null}
+          {showSuggestions ? (
+            <View style={styles.suggestions}>
+              {locationSearchLoading ? (
+                <Text style={styles.suggestionMuted}>A procurar...</Text>
+              ) : locationSuggestions.length === 0 ? (
+                <Text style={styles.suggestionMuted}>Sem resultados</Text>
+              ) : (
+                locationSuggestions.map((item) => (
+                  <Pressable
+                    key={item.providerId}
+                    onPress={() => handleSelectSuggestion(item)}
+                    style={styles.suggestionItem}
+                  >
+                    <Text style={styles.suggestionTitle}>{item.label}</Text>
+                    <Text style={styles.suggestionSubtitle}>
+                      {item.city || "—"}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.block}>
@@ -220,6 +385,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     textTransform: "uppercase",
   },
+  locationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  locationSource: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
   row: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -257,6 +433,10 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.5)",
     fontSize: 11,
   },
+  errorText: {
+    color: "rgba(255,180,180,0.9)",
+    fontSize: 11,
+  },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -281,5 +461,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  suggestions: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(6, 8, 14, 0.9)",
+    paddingVertical: 6,
+    maxHeight: 160,
+  },
+  suggestionItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  suggestionTitle: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  suggestionSubtitle: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  suggestionMuted: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
 });

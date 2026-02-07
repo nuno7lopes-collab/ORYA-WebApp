@@ -77,7 +77,6 @@ const isAuthMissing =
         avatarUrl: true,
         coverUrl: true,
         bio: true,
-        city: true,
         padelLevel: true,
         favouriteCategories: true,
         visibility: true,
@@ -114,7 +113,7 @@ const isAuthMissing =
       const supabaseProfileResult = await supabase
         .from("profiles")
         .select(
-          "id, full_name, username, avatar_url, cover_url, bio, city, padel_level, favourite_categories, visibility, allow_email_notifications, allow_event_reminders, allow_follow_requests, onboarding_done, onboardingDone",
+          "id, full_name, username, avatar_url, cover_url, bio, padel_level, favourite_categories, visibility, allow_email_notifications, allow_event_reminders, allow_follow_requests, onboarding_done, onboardingDone",
         )
         .eq("id", user.id)
         .single();
@@ -149,7 +148,6 @@ const isAuthMissing =
           avatar_url: prismaProfile.avatarUrl ?? (supabaseProfile as any)?.avatar_url ?? null,
           cover_url: prismaProfile.coverUrl ?? (supabaseProfile as any)?.cover_url ?? null,
           bio: prismaProfile.bio ?? (supabaseProfile as any)?.bio ?? null,
-          city: prismaProfile.city ?? (supabaseProfile as any)?.city ?? null,
           padel_level: prismaProfile.padelLevel ?? (supabaseProfile as any)?.padel_level ?? null,
           favourite_categories: prismaProfile.favouriteCategories ?? (supabaseProfile as any)?.favourite_categories ?? [],
           visibility: prismaProfile.visibility ?? (supabaseProfile as any)?.visibility ?? null,

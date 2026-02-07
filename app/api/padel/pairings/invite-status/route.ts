@@ -119,7 +119,6 @@ async function _GET(req: NextRequest) {
             invitedUserId: true,
             invitedContact: true,
             profileId: true,
-            ticketId: true,
           },
         },
       },
@@ -425,32 +424,29 @@ async function _GET(req: NextRequest) {
   const declineUrl = `/api/padel/pairings/${pairing.id}/decline`;
 
   let entitlementId: string | null = null;
-  if (userSlot.ticketId) {
-    const ticket = await prisma.ticket.findUnique({
-      where: { id: userSlot.ticketId },
-      select: {
-        purchaseId: true,
-        saleSummary: { select: { purchaseId: true, paymentIntentId: true } },
-      },
+  if (userSlot.id) {
+    const line = await prisma.padelRegistrationLine.findFirst({
+      where: { pairingSlotId: userSlot.id },
+      select: { id: true },
     });
-    const purchaseId =
-      ticket?.purchaseId ??
-      ticket?.saleSummary?.purchaseId ??
-      ticket?.saleSummary?.paymentIntentId ??
-      null;
-    if (purchaseId) {
-      const entitlement = await prisma.entitlement.findFirst({
-        where: {
-          purchaseId,
-          ownerUserId: userId,
-          type: "PADEL_ENTRY",
-        },
+    if (line) {
+      const saleLine = await prisma.saleLine.findFirst({
+        where: { padelRegistrationLineId: line.id },
         select: { id: true },
       });
-      entitlementId = entitlement?.id ?? null;
+      if (saleLine) {
+        const entitlement = await prisma.entitlement.findFirst({
+          where: {
+            saleLineId: saleLine.id,
+            ownerUserId: userId,
+            type: "PADEL_ENTRY",
+          },
+          select: { id: true },
+        });
+        entitlementId = entitlement?.id ?? null;
+      }
     }
   }
-
   const detailUrl = entitlementId ? `/me/bilhetes/${entitlementId}` : null;
 
   const captainProfile = pairing.createdByUserId

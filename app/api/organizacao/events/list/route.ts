@@ -116,8 +116,13 @@ async function _GET(req: NextRequest) {
         description: true,
         startsAt: true,
         endsAt: true,
-        locationName: true,
-        locationCity: true,
+        addressId: true,
+        addressRef: {
+          select: {
+            formattedAddress: true,
+            canonical: true,
+          },
+        },
         status: true,
         templateType: true,
         coverImageUrl: true,
@@ -157,7 +162,7 @@ async function _GET(req: NextRequest) {
         ? await prisma.ticket.groupBy({
             by: ["eventId"],
             where: {
-              status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
+              status: { in: [TicketStatus.ACTIVE] },
               eventId: { in: eventIds },
             },
             _count: { _all: true },
@@ -263,7 +268,6 @@ async function _GET(req: NextRequest) {
       const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
       const isGratis = deriveIsFreeEvent({ ticketPrices });
       const partnerClubIds = (event.padelTournamentConfig?.partnerClubIds ?? []) as number[];
-
       return {
         id: event.id,
         slug: event.slug,
@@ -271,8 +275,8 @@ async function _GET(req: NextRequest) {
         description: event.description,
         startsAt: event.startsAt,
         endsAt: event.endsAt,
-        locationName: event.locationName,
-        locationCity: event.locationCity,
+        addressId: event.addressId ?? null,
+        locationFormattedAddress: event.addressRef?.formattedAddress ?? null,
         status: event.status,
         templateType: event.templateType,
         tournamentId: event.tournament?.id ?? null,

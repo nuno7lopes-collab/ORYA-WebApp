@@ -37,7 +37,6 @@ const pairingSlotSelect = {
   slot_role: true,
   slotStatus: true,
   paymentStatus: true,
-  ticketId: true,
   profileId: true,
   invitedUserId: true,
   invitedContact: true,
@@ -282,13 +281,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   try {
     const playerProfileId = await ensurePlayerProfile({ organizationId: pairing.organizationId, userId: user.id });
     const { pairing: updated, shouldEnsureEntries, nextRegistrationStatus } = await prisma.$transaction(async (tx) => {
-      if (pendingSlot.ticketId) {
-        const ticket = await tx.ticket.findUnique({ where: { id: pendingSlot.ticketId } });
-        if (!ticket) throw new Error("TICKET_NOT_FOUND");
-        if (ticket.userId && ticket.userId !== user.id) throw new Error("TICKET_ALREADY_CLAIMED");
-        await tx.ticket.update({ where: { id: pendingSlot.ticketId }, data: { userId: user.id } });
-      }
-
       const slotClaim = await tx.padelPairingSlot.updateMany({
         where: {
           id: pendingSlot.id,
@@ -296,7 +288,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           profileId: null,
         },
         data: {
-          ticketId: pendingSlot.ticketId ?? undefined,
           profileId: user.id,
           playerProfileId,
           slotStatus: PadelPairingSlotStatus.FILLED,
@@ -362,9 +353,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const lifecycleStatus = mapRegistrationToPairingLifecycle(nextRegistrationStatus, pairing.payment_mode);
     return jsonWrap({ ok: true, pairing: { ...updated, lifecycleStatus } }, { status: 200 });
   } catch (err) {
-    if (err instanceof Error && err.message === "TICKET_ALREADY_CLAIMED") {
-      return jsonWrap({ ok: false, error: "TICKET_ALREADY_CLAIMED" }, { status: 409 });
-    }
     if (err instanceof Error && err.message === "SLOT_ALREADY_CLAIMED") {
       return jsonWrap({ ok: false, error: "SLOT_ALREADY_CLAIMED" }, { status: 409 });
     }

@@ -58,7 +58,6 @@ async function _POST(req: NextRequest) {
               username: null,
               fullName: "Conta apagada",
               bio: null,
-              city: null,
               avatarUrl: null,
               contactPhone: null,
               roles: ["user"],

@@ -64,7 +64,6 @@ async function _GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get("q")?.trim() || "";
-    const cityParam = searchParams.get("city")?.trim();
     const cursorParam = searchParams.get("cursor");
     const limitParam = searchParams.get("limit");
     const priceMinParam = searchParams.get("priceMin");
@@ -85,7 +84,6 @@ async function _GET(req: NextRequest) {
     const cacheKey = buildCacheKey([
       "servicos",
       q,
-      cityParam ?? "",
       cursorParam ?? "",
       take,
       priceMinParam ?? "",
@@ -111,10 +109,6 @@ async function _GET(req: NextRequest) {
     const organizationFilter: Prisma.OrganizationWhereInput = {
       status: "ACTIVE",
     };
-
-    if (cityParam && cityParam.toLowerCase() !== "portugal") {
-      organizationFilter.city = { contains: cityParam, mode: "insensitive" };
-    }
 
     const where: Prisma.ServiceWhereInput = {
       isActive: true,
@@ -193,6 +187,8 @@ async function _GET(req: NextRequest) {
         currency: true,
         kind: true,
         categoryTag: true,
+        addressId: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
         instructor: {
           select: { id: true, fullName: true, username: true, avatarUrl: true },
         },
@@ -201,11 +197,11 @@ async function _GET(req: NextRequest) {
             id: true,
             publicName: true,
             businessName: true,
-            city: true,
             username: true,
             brandingAvatarUrl: true,
             timezone: true,
             reservationAssignmentMode: true,
+            addressRef: { select: { formattedAddress: true, canonical: true } },
           },
         },
       },

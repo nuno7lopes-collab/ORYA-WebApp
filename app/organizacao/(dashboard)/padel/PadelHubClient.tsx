@@ -25,10 +25,6 @@ type PadelClub = {
   addressId?: string | null;
   kind?: "OWN" | "PARTNER" | null;
   sourceClubId?: number | null;
-  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationProviderId?: string | null;
-  locationFormattedAddress?: string | null;
-  locationComponents?: Record<string, unknown> | null;
   latitude?: number | null;
   longitude?: number | null;
   addressRef?: {
@@ -216,8 +212,6 @@ type PadelEventSummary = {
   startsAt?: string | Date | null;
   endsAt?: string | Date | null;
   status?: string | null;
-  locationName?: string | null;
-  locationCity?: string | null;
   padelClubName?: string | null;
   padelPartnerClubNames?: Array<string | null>;
   isInterclub?: boolean;
@@ -417,10 +411,8 @@ const DEFAULT_FORM = {
   city: "",
   address: "",
   addressId: "" as string | "",
-  locationSource: "APPLE_MAPS" as "APPLE_MAPS" | "MANUAL",
   locationProviderId: "",
   locationFormattedAddress: "",
-  locationComponents: null as Record<string, unknown> | null,
   locationSourceProvider: null as string | null,
   locationConfidenceScore: null as number | null,
   locationValidationStatus: null as string | null,
@@ -1165,7 +1157,6 @@ export default function PadelHubClient({
   const [savingClub, setSavingClub] = useState(false);
   const [clubError, setClubError] = useState<string | null>(null);
   const [clubMessage, setClubMessage] = useState<string | null>(null);
-  const [clubLocationMode, setClubLocationMode] = useState<"APPLE_MAPS" | "MANUAL">("APPLE_MAPS");
   const [clubLocationQuery, setClubLocationQuery] = useState("");
   const [clubLocationSuggestions, setClubLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
   const [clubLocationSearchLoading, setClubLocationSearchLoading] = useState(false);
@@ -2041,7 +2032,6 @@ export default function PadelHubClient({
           currency: "EUR",
           categoryTag: LESSON_TAG,
           locationMode: "FIXED",
-          defaultLocationText: null,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -2324,23 +2314,19 @@ export default function PadelHubClient({
 
   const openNewClubModal = () => {
     const nextKind: ClubKind = operationMode === "CLUB_OWNER" ? "OWN" : "PARTNER";
-    const nextLocationMode = "APPLE_MAPS";
     setClubForm({
       ...DEFAULT_FORM,
       kind: nextKind,
       courtsCount: nextKind === "OWN" ? "2" : "1",
-      locationSource: nextLocationMode,
       addressId: "",
       locationProviderId: "",
       locationFormattedAddress: "",
-      locationComponents: null,
       latitude: null,
       longitude: null,
     });
     setClubError(null);
     setClubMessage(null);
     setSlugError(null);
-    setClubLocationMode(nextLocationMode);
     setClubLocationQuery("");
     setClubLocationSuggestions([]);
     setClubLocationSearchError(null);
@@ -2355,10 +2341,6 @@ export default function PadelHubClient({
         : operationMode === "CLUB_OWNER"
           ? "OWN"
           : "PARTNER";
-    const resolvedLocationSource =
-      club.locationSource === "APPLE_MAPS" || club.locationSource === "OSM" || club.locationSource === "MANUAL" ? club.locationSource : "MANUAL";
-    const isOwnClub = inferredKind === "OWN";
-    const normalizedSource = isOwnClub ? "APPLE_MAPS" : (resolvedLocationSource === "OSM" ? "APPLE_MAPS" : resolvedLocationSource);
     const resolvedLocation = resolveClubLocation(club);
     setClubForm({
       id: club.id,
@@ -2366,10 +2348,8 @@ export default function PadelHubClient({
       city: resolvedLocation.city,
       address: resolvedLocation.address,
       addressId: club.addressId || "",
-      locationSource: normalizedSource,
-      locationProviderId: club.locationProviderId || "",
+      locationProviderId: club.addressRef?.sourceProviderPlaceId ?? "",
       locationFormattedAddress: resolvedLocation.formatted,
-      locationComponents: club.locationComponents ?? null,
       locationSourceProvider: club.addressRef?.sourceProvider ?? null,
       locationConfidenceScore: club.addressRef?.confidenceScore ?? null,
       locationValidationStatus: club.addressRef?.validationStatus ?? null,
@@ -2385,7 +2365,6 @@ export default function PadelHubClient({
     setClubError(null);
     setClubMessage(null);
     setSlugError(null);
-    setClubLocationMode(normalizedSource);
     setClubLocationQuery(resolvedLocation.formatted || club.name || "");
     setClubLocationSuggestions([]);
     setClubLocationSearchError(null);
@@ -2433,17 +2412,13 @@ export default function PadelHubClient({
     if (!details) return;
     const nextAddress = details.address || clubForm.address;
     const nextCity = details.city || clubForm.city;
-    const canonical = (details.canonical as Record<string, unknown> | null) ?? null;
-    const mergedComponents = canonical ?? details.components ?? null;
     setClubForm((prev) => ({
       ...prev,
       address: nextAddress || prev.address,
       city: nextCity || prev.city,
       addressId: details.addressId || prev.addressId,
-      locationSource: "APPLE_MAPS",
       locationProviderId: details.providerId || prev.locationProviderId,
       locationFormattedAddress: details.formattedAddress || fallbackLabel || prev.locationFormattedAddress,
-      locationComponents: mergedComponents ?? prev.locationComponents,
       locationSourceProvider: details.sourceProvider ?? prev.locationSourceProvider,
       locationConfidenceScore:
         typeof details.confidenceScore === "number" ? details.confidenceScore : prev.locationConfidenceScore,
@@ -2454,12 +2429,6 @@ export default function PadelHubClient({
   };
 
   useEffect(() => {
-    if (clubLocationMode !== "APPLE_MAPS") {
-      setClubLocationSuggestions([]);
-      setClubLocationSearchLoading(false);
-      setClubLocationSearchError(null);
-      return;
-    }
     const query = clubLocationQuery.trim();
     if (query.length < 2) {
       setClubLocationSuggestions([]);
@@ -2489,17 +2458,14 @@ export default function PadelHubClient({
         clearTimeout(clubLocationSearchTimeout.current);
       }
     };
-  }, [clubLocationMode, clubLocationQuery]);
+  }, [clubLocationQuery]);
 
   const handleSelectClubLocationSuggestion = async (item: GeoAutocompleteItem) => {
-    setClubLocationMode("APPLE_MAPS");
     setClubForm((prev) => ({
       ...prev,
-      locationSource: "APPLE_MAPS",
       addressId: "",
       locationProviderId: item.providerId,
       locationFormattedAddress: item.label,
-      locationComponents: null,
       locationSourceProvider: item.sourceProvider ?? null,
       locationConfidenceScore: null,
       locationValidationStatus: null,
@@ -2530,21 +2496,6 @@ export default function PadelHubClient({
     }
   };
 
-  const enableClubOsmLocation = () => {
-    setClubLocationMode("APPLE_MAPS");
-    setClubLocationSearchError(null);
-    if (!clubLocationQuery) {
-      const fallback = buildClubFormattedAddress() || clubForm.name.trim();
-      if (fallback) setClubLocationQuery(fallback);
-    }
-    setClubForm((prev) => ({
-      ...prev,
-      locationSource: "APPLE_MAPS",
-      addressId: prev.addressId || "",
-      locationProviderId: prev.locationProviderId || "",
-    }));
-  };
-
   const handleSubmitClub = async () => {
     setClubError(null);
     setSlugError(null);
@@ -2560,7 +2511,6 @@ export default function PadelHubClient({
     }
     const courtsNum = Number(clubForm.courtsCount);
     const courtsCount = Number.isFinite(courtsNum) ? Math.min(1000, Math.max(1, Math.floor(courtsNum))) : 1;
-    const formattedAddress = (clubForm.locationFormattedAddress || buildClubFormattedAddress()).trim();
     setSavingClub(true);
     const slugCandidates = buildSlugCandidates(clubForm.slug || clubForm.name, 15);
     let savedClub: PadelClub | null = null;
@@ -2574,16 +2524,9 @@ export default function PadelHubClient({
             id: clubForm.id,
             organizationId,
             name: clubForm.name.trim(),
-            city: clubForm.city.trim(),
             addressId: clubForm.addressId || null,
             kind: clubForm.kind,
             sourceClubId: clubForm.sourceClubId,
-            locationSource: clubForm.locationSource,
-            locationProviderId: clubForm.locationProviderId || null,
-            locationFormattedAddress: formattedAddress || null,
-            locationComponents: clubForm.locationComponents,
-            latitude: clubForm.latitude,
-            longitude: clubForm.longitude,
             courtsCount,
             isActive: clubForm.isActive,
             slug: candidate,
@@ -2618,7 +2561,6 @@ export default function PadelHubClient({
       setClubMessage(clubForm.id ? "Clube atualizado." : "Clube criado.");
       setClubModalOpen(false);
       setClubForm({ ...DEFAULT_FORM, courtsCount: String(courtsCount) });
-      setClubLocationMode("APPLE_MAPS");
       setClubLocationQuery("");
       setClubLocationSuggestions([]);
       setClubLocationSearchError(null);
@@ -2669,15 +2611,8 @@ export default function PadelHubClient({
           id: club.id,
           organizationId,
           name: club.name,
-          city: resolvedLocation.city,
           addressId: club.addressId ?? null,
           kind: club.kind ?? "OWN",
-          locationSource: club.locationSource ?? "MANUAL",
-          locationProviderId: club.locationProviderId ?? null,
-          locationFormattedAddress: club.locationFormattedAddress ?? null,
-          locationComponents: club.locationComponents ?? null,
-          latitude: club.latitude ?? null,
-          longitude: club.longitude ?? null,
           courtsCount: club.courtsCount,
           isActive: club.isActive,
           slug: club.slug,
@@ -3011,7 +2946,6 @@ export default function PadelHubClient({
       getCanonicalField(canonical, ["addressLine1", "street", "road"]) || "";
     const formatted =
       club.addressRef?.formattedAddress ||
-      club.locationFormattedAddress ||
       [address, city].filter(Boolean).join(", ");
     return { city, address, formatted };
   };
@@ -6929,19 +6863,15 @@ export default function PadelHubClient({
                         key={opt.key}
                         type="button"
                         onClick={() => {
-                          const nextMode = "APPLE_MAPS";
                           setClubForm((prev) => ({
                             ...prev,
                             kind: opt.key,
-                            locationSource: nextMode,
                             addressId: "",
                             locationProviderId: "",
                             locationFormattedAddress: "",
-                            locationComponents: null,
                             latitude: null,
                             longitude: null,
                           }));
-                          setClubLocationMode(nextMode);
                         }}
                         className={`rounded-full px-3 py-1 transition ${
                           clubForm.kind === opt.key
@@ -6966,22 +6896,11 @@ export default function PadelHubClient({
                 <div className="rounded-xl border border-white/12 bg-black/35 p-3 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Morada normalizada</p>
-                    <div className="inline-flex rounded-full border border-white/15 bg-black/60 p-1 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={enableClubOsmLocation}
-                        className={`rounded-full px-3 py-1 transition ${
-                          clubLocationMode === "APPLE_MAPS"
-                            ? "bg-white text-black font-semibold shadow"
-                            : "text-white/70 hover:bg-white/10"
-                        }`}
-                      >
-                        Auto (Apple Maps)
-                      </button>
-                    </div>
+                    <span className="rounded-full border border-white/15 bg-black/60 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/70">
+                      Apple Maps
+                    </span>
                   </div>
-                  {clubLocationMode === "APPLE_MAPS" && (
-                    <div className="space-y-2">
+                  <div className="space-y-2">
                       <input
                         value={clubLocationQuery}
                         onChange={(e) => {
@@ -6991,7 +6910,6 @@ export default function PadelHubClient({
                             addressId: "",
                             locationProviderId: "",
                             locationFormattedAddress: "",
-                            locationComponents: null,
                             locationSourceProvider: null,
                             locationConfidenceScore: null,
                             locationValidationStatus: null,
@@ -7020,13 +6938,9 @@ export default function PadelHubClient({
                                 <span className="font-semibold text-white">{item.label}</span>
                                 <div className="flex items-center gap-2 text-[10px] text-white/60">
                                   <span>{item.city || "—"}</span>
-                                  {item.sourceProvider && (
+                                  {item.sourceProvider === "APPLE_MAPS" && (
                                     <span className="rounded-full border border-white/20 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em]">
-                                      {item.sourceProvider === "APPLE_MAPS"
-                                        ? "Apple"
-                                        : item.sourceProvider.startsWith("OSM")
-                                          ? "OSM legado"
-                                          : "GPS"}
+                                      Apple
                                     </span>
                                   )}
                                 </div>
@@ -7049,9 +6963,7 @@ export default function PadelHubClient({
                                 <span className="rounded-full border border-white/15 px-2 py-0.5">
                                   {clubForm.locationSourceProvider === "APPLE_MAPS"
                                     ? "Apple Maps"
-                                    : clubForm.locationSourceProvider.startsWith("OSM")
-                                      ? "OpenStreetMap (legado)"
-                                      : clubForm.locationSourceProvider}
+                                    : clubForm.locationSourceProvider}
                                 </span>
                               )}
                               {clubForm.locationConfidenceScore !== null && (
@@ -7075,7 +6987,6 @@ export default function PadelHubClient({
                         </div>
                       )}
                     </div>
-                  )}
                 </div>
               )}
               <div className="grid gap-3 sm:grid-cols-2">

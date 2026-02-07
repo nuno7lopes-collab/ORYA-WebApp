@@ -1,7 +1,7 @@
 # v10 Execution Checklist (FINAL) — ORYA
 
 Atualizado: 2026-02-02
-Fonte de verdade: `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md` + `docs/orya_blueprint_v9_final.md` + `docs/v9_ssot_registry.md` + `docs/v9_close_plan.md` + `docs/v9_close_checklist.md` + `docs/envs_required.md`
+Fonte de verdade: `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md` + `docs/blueprint.md` + `docs/ssot_registry.md` + `docs/v9_close_plan.md` + `docs/v9_close_checklist.md` + `docs/envs_required.md`
 Legenda estado: DONE | PARTIAL | TODO | N/A
 
 ---

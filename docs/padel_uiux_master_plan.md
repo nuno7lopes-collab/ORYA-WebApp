@@ -1,12 +1,12 @@
 # Padel UI/UX Master Plan (Blueprint v9)
-> Escopo: UI/UX Padel. Regras de produto/SSOT em `docs/v9_ssot_registry.md` e `docs/orya_blueprint_v9_final.md`.
+> Escopo: UI/UX Padel. Regras de produto/SSOT em `docs/ssot_registry.md` e `docs/blueprint.md`.
 
 Data: 2026-02-02  
 Escopo: UI/UX (sem mexer em infra), com split real Ferramenta A/Ferramenta B e limpeza de legacy.
 
 ## 1) Fonte de verdade usada
 
-- Blueprint v9 + Anexo A (Padel): `docs/orya_blueprint_v9_final.md`
+- Blueprint v9 + Anexo A (Padel): `docs/blueprint.md`
 - Checklist de execução: `docs/v10_execution_checklist.md`
 - Inventário técnico atual (gerado): `docs/padel_uiux_inventory.md`
 

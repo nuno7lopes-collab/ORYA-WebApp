@@ -13,7 +13,6 @@ type MePayload = {
     avatar_url?: string | null;
     cover_url?: string | null;
     bio?: string | null;
-    city?: string | null;
     padel_level?: string | null;
     onboardingDone?: boolean | null;
     onboarding_done?: boolean | null;
@@ -80,7 +79,6 @@ export const fetchProfileSummary = async (
     avatarUrl: profile?.avatar_url ?? null,
     coverUrl: profile?.cover_url ?? null,
     bio: profile?.bio ?? null,
-    city: profile?.city ?? null,
     padelLevel: profile?.padel_level ?? null,
     favouriteCategories: profile?.favourite_categories ?? undefined,
     visibility: profile?.visibility ?? undefined,
@@ -98,7 +96,6 @@ export const updateProfile = async (payload: {
   bio?: string | null;
   avatarUrl?: string | null;
   coverUrl?: string | null;
-  city?: string | null;
   padelLevel?: string | null;
   favouriteCategories?: string[];
   visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
@@ -114,7 +111,6 @@ export const updateProfile = async (payload: {
       bio: payload.bio,
       avatarUrl: payload.avatarUrl,
       coverUrl: payload.coverUrl,
-      city: payload.city,
       padelLevel: payload.padelLevel,
       favouriteCategories: payload.favouriteCategories,
       visibility: payload.visibility,
@@ -135,7 +131,6 @@ export const updateProfile = async (payload: {
     avatarUrl: (profile?.avatarUrl as string | null | undefined) ?? null,
     coverUrl: (profile?.coverUrl as string | null | undefined) ?? null,
     bio: (profile?.bio as string | null | undefined) ?? null,
-    city: (profile?.city as string | null | undefined) ?? null,
     padelLevel: (profile?.padelLevel as string | null | undefined) ?? null,
     favouriteCategories: (profile?.favouriteCategories as string[] | undefined) ?? undefined,
     visibility: (profile?.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | undefined) ?? undefined,

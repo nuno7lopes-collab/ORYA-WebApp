@@ -141,13 +141,9 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ orderId: s
             id: true,
             addressType: true,
             fullName: true,
-            line1: true,
-            line2: true,
-            city: true,
-            region: true,
-            postalCode: true,
-            country: true,
             nif: true,
+            addressId: true,
+            addressRef: { select: { formattedAddress: true } },
           },
         },
         shipments: {
@@ -171,7 +167,15 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ orderId: s
       return fail(404, "Encomenda nao encontrada.");
     }
 
-    return respondOk(ctx, {order });
+    const normalized = {
+      ...order,
+      addresses: order.addresses.map((address) => ({
+        ...address,
+        formattedAddress: address.addressRef?.formattedAddress ?? null,
+      })),
+    };
+
+    return respondOk(ctx, { order: normalized });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");

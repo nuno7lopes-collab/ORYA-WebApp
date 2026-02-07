@@ -11,6 +11,7 @@
  *   SEED_ORGS=5
  *   SEED_CLEAR=true (remove previous data for prefix before seeding)
  *   SEED_PASSWORD=TestOrya123!
+ *   SEED_ADDRESS_ID=<uuid> (Apple Maps addressId para orgs/eventos)
  */
 
 import fs from "fs";
@@ -77,6 +78,7 @@ const seedOrgs = Number(process.env.SEED_ORGS || 5);
 const shouldClear = ["1", "true", "yes"].includes(String(process.env.SEED_CLEAR || "").toLowerCase());
 const seedPassword = process.env.SEED_PASSWORD || "TestOrya123!";
 const seedPadel = !["0", "false", "no"].includes(String(process.env.SEED_PADEL || "").toLowerCase());
+const seedAddressId = typeof process.env.SEED_ADDRESS_ID === "string" ? process.env.SEED_ADDRESS_ID.trim() : "";
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
@@ -124,7 +126,6 @@ const LAST_NAMES = [
   "Martins",
   "Carvalho",
 ];
-const CITIES = ["Lisboa", "Porto", "Braga", "Coimbra", "Faro", "Aveiro"];
 const BIOS = [
   "Apaixonado por eventos e experiências únicas.",
   "Sempre à procura do próximo torneio de padel.",
@@ -165,40 +166,30 @@ const EVENT_TEMPLATES = [
   {
     title: "Neon Nights Lisboa",
     description: "Uma noite de luz, música e energia no coração da cidade.",
-    city: "Lisboa",
-    location: "LX Factory",
     cover: "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1600&q=80",
     templateType: EventTemplateType.PARTY,
   },
   {
     title: "Sunset Rooftop Porto",
     description: "Rooftop premium com sunset session e DJs convidados.",
-    city: "Porto",
-    location: "Miradouro Porto Sky",
     cover: "https://images.unsplash.com/photo-1494515843206-f3117d3f51b7?auto=format&fit=crop&w=1600&q=80",
     templateType: EventTemplateType.TALK,
   },
   {
     title: "ORYA Run Club",
     description: "Corrida urbana com after coffee e live set.",
-    city: "Lisboa",
-    location: "Parque das Nações",
     cover: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=1600&q=80",
     templateType: EventTemplateType.OTHER,
   },
   {
     title: "Techno Warehouse",
     description: "Sessão techno premium em ambiente industrial.",
-    city: "Lisboa",
-    location: "Armazém 23",
     cover: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1600&q=80",
     templateType: EventTemplateType.PARTY,
   },
   {
     title: "Yoga & Sound Bath",
     description: "Manhã relax com yoga, sound bath e brunch.",
-    city: "Lisboa",
-    location: "Jardim da Estrela",
     cover: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1600&q=80",
     templateType: EventTemplateType.OTHER,
   },
@@ -336,7 +327,6 @@ async function main() {
         username,
         fullName,
         bio: pick(BIOS, i),
-        city: pick(CITIES, i),
         avatarUrl: pick(AVATARS, i),
         coverUrl: pick(COVERS, i),
         favouriteCategories: ["padel", "concertos", "gastronomia"].slice(0, randomBetween(1, 3)),
@@ -351,7 +341,6 @@ async function main() {
         username,
         fullName,
         bio: pick(BIOS, i),
-        city: pick(CITIES, i),
         avatarUrl: pick(AVATARS, i),
         coverUrl: pick(COVERS, i),
         favouriteCategories: ["padel", "concertos", "gastronomia"].slice(0, randomBetween(1, 3)),
@@ -373,7 +362,6 @@ async function main() {
     const name = ORG_NAMES[i % ORG_NAMES.length];
     const username = `${seedPrefix}-org-${i + 1}`;
     const description = ORG_DESCRIPTIONS[i % ORG_DESCRIPTIONS.length];
-    const city = pick(CITIES, i + 2);
     const avatar = pick(AVATARS, i + 1);
     const cover = pick(COVERS, i + 2);
 
@@ -393,7 +381,7 @@ async function main() {
           publicName: name,
           businessName: name,
           publicDescription: description,
-          city,
+          addressId: seedAddressId || null,
           status: OrganizationStatus.ACTIVE,
           primaryModule: OrganizationModule.EVENTOS,
           brandingAvatarUrl: avatar,
@@ -408,7 +396,7 @@ async function main() {
           publicName: name,
           businessName: name,
           publicDescription: description,
-          city,
+          addressId: seedAddressId || null,
           status: OrganizationStatus.ACTIVE,
           primaryModule: OrganizationModule.EVENTOS,
           brandingAvatarUrl: avatar,
@@ -479,9 +467,7 @@ async function main() {
           ownerUserId: owner?.id ?? users[0].id,
           startsAt,
           endsAt,
-          locationName: template.location,
-          locationCity: template.city,
-          locationFormattedAddress: template.location,
+          addressId: seedAddressId || null,
           coverImageUrl: template.cover,
           pricingMode,
           ticketTypes: ticketTypes.length ? { create: ticketTypes } : undefined,
@@ -511,9 +497,7 @@ async function main() {
           ownerUserId: owner?.id ?? users[0].id,
           startsAt,
           endsAt,
-          locationName: `${org.username} Arena`,
-          locationCity: pick(CITIES, i),
-          locationFormattedAddress: `${org.username} Arena`,
+          addressId: seedAddressId || null,
           coverImageUrl: pick(COVERS, i),
           pricingMode: EventPricingMode.STANDARD,
           ticketTypes: {

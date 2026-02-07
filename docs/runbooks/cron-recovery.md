@@ -11,7 +11,7 @@
 ## Manual run examples
 ```bash
 # Example: invoke cron endpoint
-curl -s -H "x-orya-cron-secret: $ORYA_CRON_SECRET" https://app.orya.pt/api/cron/loyalty/expire
+curl -s -H "x-orya-cron-secret: $ORYA_CRON_SECRET" https://orya.pt/api/cron/loyalty/expire
 
 # Example: run task
 aws ecs run-task --cluster orya-prod --task-definition orya-worker --launch-type FARGATE \

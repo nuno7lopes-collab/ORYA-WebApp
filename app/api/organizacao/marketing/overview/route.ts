@@ -80,8 +80,6 @@ async function _GET(req: NextRequest) {
         slug: true,
         startsAt: true,
         templateType: true,
-        locationName: true,
-        locationCity: true,
         padelTournamentConfig: {
           select: { advancedSettings: true },
         },
@@ -128,7 +126,7 @@ async function _GET(req: NextRequest) {
 
     const tickets30d = await prisma.ticket.findMany({
       where: {
-        status: { in: [TicketStatus.ACTIVE, TicketStatus.USED] },
+        status: { in: [TicketStatus.ACTIVE] },
         purchasedAt: { gte: from, lte: now },
         eventId: { in: eventIds },
       },

@@ -27,7 +27,7 @@ import { OrganizationFormStatus } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
 import { ensurePublicProfileLayout, type PublicProfileModuleType } from "@/lib/publicProfileLayout";
-import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+import { formatEventLocationLabel, pickCanonicalField } from "@/lib/location/eventLocation";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import type { Metadata } from "next";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
@@ -166,13 +166,13 @@ type OrganizationEvent = {
   title: string;
   startsAt: Date | null;
   endsAt: Date | null;
-  locationName: string | null;
-  locationCity: string | null;
-  locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationFormattedAddress: string | null;
-  locationComponents: Record<string, unknown> | null;
-  locationOverrides: Record<string, unknown> | null;
-  addressRef?: { formattedAddress: string | null } | null;
+  addressId?: string | null;
+  addressRef?: {
+    formattedAddress: string | null;
+    canonical?: Record<string, unknown> | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
   timezone: string | null;
   templateType: string | null;
   coverImageUrl: string | null;
@@ -276,17 +276,9 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
       : "data-a-definir";
     const label = hasDate ? formatDayLabel(event.startsAt as Date, timezone) : "Data a definir";
       const locationLabel = formatEventLocationLabel(
-      {
-        locationName: event.locationName,
-        locationCity: event.locationCity,
-        address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
-        locationSource: event.locationSource,
-        locationFormattedAddress: event.locationFormattedAddress,
-        locationComponents: event.locationComponents,
-        locationOverrides: event.locationOverrides,
-      },
-      "Local a anunciar",
-    );
+        { addressRef: event.addressRef ?? null },
+        "Local a anunciar",
+      );
     const item: AgendaItem = {
       id: event.id,
       slug: event.slug,
@@ -332,7 +324,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         avatarUrl: true,
         coverUrl: true,
         bio: true,
-        city: true,
         contactPhone: true,
         gender: true,
         padelLevel: true,
@@ -352,7 +343,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         username: true,
         publicName: true,
         businessName: true,
-        city: true,
+        addressId: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
         primaryModule: true,
         reservationAssignmentMode: true,
         brandingAvatarUrl: true,
@@ -375,7 +367,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         infoRequirements: true,
         infoPolicies: true,
         infoLocationNotes: true,
-        address: true,
         showAddressPublicly: true,
         timezone: true,
         organizationModules: {
@@ -387,6 +378,17 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   ]);
 
   const organizationProfile = organizationProfileRaw;
+  const organizationCity = organizationProfile
+    ? pickCanonicalField(
+        (organizationProfile.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+        "city",
+        "locality",
+        "addressLine2",
+        "region",
+        "state",
+      )
+    : null;
+  const organizationAddress = organizationProfile?.addressRef?.formattedAddress ?? null;
   const initialServiceId =
     resolvedSearchParams?.serviceId && Number.isFinite(Number(resolvedSearchParams.serviceId))
       ? Number(resolvedSearchParams.serviceId)
@@ -467,13 +469,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           title: true,
           startsAt: true,
           endsAt: true,
-          locationName: true,
-          locationCity: true,
-          locationSource: true,
-          locationFormattedAddress: true,
-          locationComponents: true,
-          locationOverrides: true,
-          addressRef: { select: { formattedAddress: true } },
+          addressId: true,
+          addressRef: { select: { formattedAddress: true, canonical: true, latitude: true, longitude: true } },
           timezone: true,
           templateType: true,
           coverImageUrl: true,
@@ -525,7 +522,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             categoryTag: true,
             coverImageUrl: true,
             locationMode: true,
-            defaultLocationText: true,
+            addressId: true,
+            addressRef: { select: { formattedAddress: true, canonical: true } },
             addons: {
               where: { isActive: true },
               orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
@@ -580,7 +578,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             categoryTag: string | null;
             coverImageUrl: string | null;
             locationMode: string | null;
-            defaultLocationText: string | null;
+            addressId: string | null;
+            addressRef?: { formattedAddress: string | null; canonical?: Record<string, unknown> | null } | null;
             addons?: Array<{
               id: number;
               label: string;
@@ -640,26 +639,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const orgEvents: OrganizationEvent[] = events.map((event) => {
       const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
       const isGratis = deriveIsFreeEvent({ ticketPrices });
-      const locationComponents =
-        event.locationComponents && typeof event.locationComponents === "object"
-          ? (event.locationComponents as Record<string, unknown>)
-          : null;
-      const locationOverrides =
-        event.locationOverrides && typeof event.locationOverrides === "object"
-          ? (event.locationOverrides as Record<string, unknown>)
-          : null;
       return {
         id: event.id,
         slug: event.slug,
         title: event.title,
         startsAt: event.startsAt,
         endsAt: event.endsAt,
-        locationName: event.locationName,
-        locationCity: event.locationCity,
-        locationSource: event.locationSource,
-        locationFormattedAddress: event.locationFormattedAddress,
-        locationComponents,
-        locationOverrides,
+        addressId: event.addressId ?? null,
         addressRef: event.addressRef ?? null,
         timezone: event.timezone,
         templateType: event.templateType,
@@ -893,7 +879,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     {reviewsCount} avaliações
                   </span>
                   <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                    {organizationProfile.city ?? "Localização"}
+                    {organizationCity ?? "Localização"}
                   </span>
                 </div>
               )}
@@ -913,10 +899,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
               id: organizationProfile.id,
               publicName: organizationProfile.publicName,
               businessName: organizationProfile.businessName,
-              city: organizationProfile.city,
+              city: organizationCity,
               username: organizationProfile.username ?? null,
               timezone: organizationProfile.timezone ?? "Europe/Lisbon",
-              address: organizationProfile.address ?? null,
+              address: organizationAddress,
               reservationAssignmentMode:
                 organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL",
             }}
@@ -1308,7 +1294,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             avatarUrl={organizationProfile.brandingAvatarUrl ?? null}
             coverUrl={headerCoverUrl}
             bio={publicDescription}
-            city={organizationProfile.city ?? null}
+            city={organizationCity ?? null}
             followersCount={followersTotal}
             organizationId={organizationProfile.id}
             initialIsFollowing={initialIsFollowing}
@@ -1628,7 +1614,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           avatarUrl={resolvedProfile.avatarUrl}
           avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
           coverUrl={headerCoverUrl}
-          city={resolvedProfile.city}
+          city={null}
           bio={resolvedProfile.bio}
           isOwner={isOwner}
           targetUserId={resolvedProfile.id}
@@ -1650,7 +1636,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
           coverUrl={headerCoverUrl}
           bio={resolvedProfile.bio}
-          city={resolvedProfile.city}
+          city={null}
           visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
           followers={followersCount}
           following={followingCount}
@@ -1863,15 +1849,7 @@ function EventSpotlightCard({
         </p>
         <p className="text-[12px] text-white/65">
           {formatEventLocationLabel(
-            {
-              locationName: event.locationName,
-              locationCity: event.locationCity,
-              address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
-              locationSource: event.locationSource,
-              locationFormattedAddress: event.locationFormattedAddress,
-              locationComponents: event.locationComponents,
-              locationOverrides: event.locationOverrides,
-            },
+            { addressRef: event.addressRef ?? null },
             "Local a anunciar",
           )}
         </p>

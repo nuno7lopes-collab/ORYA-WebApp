@@ -102,7 +102,7 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    // 3. Transaction – marcar revenda como CANCELLED
+    // 3. Transação de BD – marcar revenda como CANCELLED
     //    e (opcional) voltar o ticket a ACTIVE
     await prisma.$transaction(async (tx) => {
       await tx.ticketResale.update({

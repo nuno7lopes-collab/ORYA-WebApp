@@ -8,7 +8,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
-import { OrganizationMemberRole } from "@prisma/client";
+import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -81,6 +81,9 @@ async function _GET(req: NextRequest) {
       },
       orderBy: { createdAt: "desc" },
       include: {
+        addressRef: {
+          select: { formattedAddress: true, canonical: true, latitude: true, longitude: true, sourceProvider: true },
+        },
         policy: {
           select: {
             id: true,
@@ -166,7 +169,7 @@ async function _POST(req: NextRequest) {
     const policyIdRaw = Number(payload?.policyId);
     const categoryTag = typeof payload?.categoryTag === "string" ? payload.categoryTag.trim() : "";
     const locationModeRaw = typeof payload?.locationMode === "string" ? payload.locationMode.trim().toUpperCase() : "FIXED";
-    const defaultLocationText = typeof payload?.defaultLocationText === "string" ? payload.defaultLocationText.trim() : "";
+    const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const coverImageUrl = typeof payload?.coverImageUrl === "string" ? payload.coverImageUrl.trim() : "";
 
     const allowedDurations = new Set([30, 60, 90, 120]);
@@ -199,6 +202,20 @@ async function _POST(req: NextRequest) {
       return fail(400, "Localização inválida.");
     }
 
+    const resolvedAddressId = addressIdInput || null;
+    if (resolvedAddressId) {
+      const address = await prisma.address.findUnique({
+        where: { id: resolvedAddressId },
+        select: { sourceProvider: true },
+      });
+      if (!address) {
+        return fail(400, "Morada inválida.");
+      }
+      if (address.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+        return fail(400, "Morada deve ser Apple Maps.");
+      }
+    }
+
     const service = await prisma.service.create({
       data: {
         organizationId: organization.id,
@@ -213,7 +230,7 @@ async function _POST(req: NextRequest) {
         categoryTag: categoryTag || null,
         coverImageUrl: coverImageUrl || null,
         locationMode: locationModeRaw as "FIXED" | "CHOOSE_AT_BOOKING",
-        defaultLocationText: defaultLocationText || null,
+        addressId: resolvedAddressId,
       },
     });
 

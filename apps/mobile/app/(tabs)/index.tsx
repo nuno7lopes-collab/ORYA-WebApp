@@ -15,6 +15,7 @@ import { i18n, tokens } from "@orya/shared";
 import { useDebouncedValue, useDiscoverFeed } from "../../features/discover/hooks";
 import { useDiscoverStore } from "../../features/discover/store";
 import { useIpLocation } from "../../features/onboarding/hooks";
+import { resolveCityToAddress } from "../../features/discover/location";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
@@ -51,10 +52,14 @@ export default function DiscoverScreen() {
   const worlds = useDiscoverStore((state) => state.worlds);
   const dateFilter = useDiscoverStore((state) => state.dateFilter);
   const city = useDiscoverStore((state) => state.city);
+  const locationAddressId = useDiscoverStore((state) => state.locationAddressId);
+  const locationLat = useDiscoverStore((state) => state.locationLat);
+  const locationLng = useDiscoverStore((state) => state.locationLng);
+  const locationSource = useDiscoverStore((state) => state.locationSource);
   const setPriceFilter = useDiscoverStore((state) => state.setPriceFilter);
   const setWorlds = useDiscoverStore((state) => state.setWorlds);
   const setDateFilter = useDiscoverStore((state) => state.setDateFilter);
-  const setCity = useDiscoverStore((state) => state.setCity);
+  const setLocation = useDiscoverStore((state) => state.setLocation);
   const distanceKm = useDiscoverStore((state) => state.distanceKm);
   const setDistanceKm = useDiscoverStore((state) => state.setDistanceKm);
   const resetFilters = useDiscoverStore((state) => state.resetFilters);
@@ -64,12 +69,13 @@ export default function DiscoverScreen() {
   const [dataReady, setDataReady] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
   const debouncedCity = useDebouncedValue(city, 320);
-  const shouldFetchLocation = dataReady && (!city.trim() || distanceKm > 0);
+  const shouldFetchLocation = dataReady && locationSource === "NONE";
   const { data: ipLocation } = useIpLocation(shouldFetchLocation);
-  const userLat = ipLocation?.approxLatLon?.lat ?? null;
-  const userLon = ipLocation?.approxLatLon?.lon ?? null;
+  const userLat = locationLat ?? ipLocation?.approxLatLon?.lat ?? null;
+  const userLon = locationLng ?? ipLocation?.approxLatLon?.lon ?? null;
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(12);
+  const locationResolveRef = useRef(false);
 
   const isAllWorlds = worlds.length === 0 || worlds.length === WORLD_OPTIONS.length;
   const resolvedKind: DiscoverKind = isAllWorlds
@@ -125,6 +131,7 @@ export default function DiscoverScreen() {
         return false;
       }
       if (distanceKm > 0 && item.type === "event") {
+        if (userLat == null || userLon == null) return true;
         const distance = getDistanceKm(
           item.event.location?.lat ?? null,
           item.event.location?.lng ?? null,
@@ -142,7 +149,7 @@ export default function DiscoverScreen() {
   const showSkeleton = isLoading && items.length === 0;
   const showEmpty = !isLoading && !isError && feedItems.length === 0;
   const hasActiveFilters = Boolean(
-    city.trim() ||
+    locationSource !== "NONE" ||
       priceFilter !== "all" ||
       !isAllWorlds ||
       dateFilter !== "all" ||
@@ -190,10 +197,36 @@ export default function DiscoverScreen() {
   );
 
   useEffect(() => {
-    if (!city.trim() && ipLocation?.city) {
-      setCity(ipLocation.city);
+    if (!ipLocation?.city) return;
+    if (locationSource === "APPLE_MAPS") return;
+    if (!city.trim()) {
+      setLocation({ city: ipLocation.city, label: ipLocation.city, source: "IP" });
     }
-  }, [city, ipLocation?.city, setCity]);
+    if (locationResolveRef.current) return;
+    if (locationAddressId) return;
+    locationResolveRef.current = true;
+    resolveCityToAddress(ipLocation.city)
+      .then((details) => {
+        if (!details?.addressId) return;
+        const canonical = (details.canonical as Record<string, unknown> | null) ?? null;
+        const cityFromCanonical =
+          (canonical && typeof canonical.city === "string" && canonical.city.trim()
+            ? canonical.city.trim()
+            : null) ?? details.city ?? ipLocation.city;
+        setLocation({
+          city: cityFromCanonical ?? "",
+          label: details.formattedAddress || ipLocation.city,
+          addressId: details.addressId,
+          lat: typeof details.lat === "number" ? details.lat : null,
+          lng: typeof details.lng === "number" ? details.lng : null,
+          source: "APPLE_MAPS",
+        });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        locationResolveRef.current = false;
+      });
+  }, [city, ipLocation?.city, locationAddressId, locationSource, setLocation]);
 
   useEffect(() => {
     const shouldOpen = params.search === "1" || params.search === "true";
@@ -492,9 +525,6 @@ export default function DiscoverScreen() {
         onClose={() => setFiltersOpen(false)}
         distanceKm={distanceKm}
         onDistanceChange={setDistanceKm}
-        city={city}
-        onCityChange={setCity}
-        onCityReset={() => setCity("")}
         date={dateFilter as DiscoverDateFilter}
         onDateChange={setDateFilter}
         price={priceFilter}

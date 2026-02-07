@@ -28,7 +28,7 @@ async function userHasEventAccess(userId: string, eventId: number) {
     where: {
       ownerUserId: userId,
       eventId,
-      status: { in: ["ACTIVE", "USED"] },
+      status: { in: ["ACTIVE"] },
     },
     select: { id: true },
   });
@@ -70,8 +70,8 @@ async function _GET(req: NextRequest) {
         status: true,
         organizationId: true,
         ownerUserId: true,
-        locationName: true,
-        locationCity: true,
+        addressId: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
       },
     });
 
@@ -145,8 +145,8 @@ async function _GET(req: NextRequest) {
         startsAt: event.startsAt ? event.startsAt.toISOString() : null,
         endsAt: event.endsAt ? event.endsAt.toISOString() : null,
         coverImageUrl: event.coverImageUrl ?? null,
-        locationName: event.locationName ?? null,
-        locationCity: event.locationCity ?? null,
+        addressId: event.addressId ?? null,
+        locationFormattedAddress: event.addressRef?.formattedAddress ?? null,
       },
     });
   } catch (err) {

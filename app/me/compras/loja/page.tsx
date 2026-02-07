@@ -55,7 +55,7 @@ type StoreOrderItem = {
     methodName: string | null;
     etaMinDays: number | null;
     etaMaxDays: number | null;
-    address: { city: string; country: string; postalCode: string } | null;
+    address: { formattedAddress: string | null } | null;
   };
   shipments: StoreShipment[];
   lines: StoreOrderLine[];
@@ -327,8 +327,8 @@ export default function StoreDownloadsPage() {
             const previewLines = order.lines.slice(0, 3);
             const extraLines = Math.max(0, order.lines.length - previewLines.length);
             const needsShipping = order.lines.some((line) => line.requiresShipping);
-            const shippingLabel = order.shipping.address
-              ? `${order.shipping.address.city}, ${order.shipping.address.country}`
+            const shippingLabel = order.shipping.address?.formattedAddress
+              ? order.shipping.address.formattedAddress
               : needsShipping
                 ? "Envio pendente"
                 : "Entrega digital";

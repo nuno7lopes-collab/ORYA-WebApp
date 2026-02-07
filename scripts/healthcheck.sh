@@ -3,7 +3,7 @@ set -euo pipefail
 
 BASE_URL=${1:-${BASE_URL:-}}
 CRON_SECRET=${ORYA_CRON_SECRET:-}
-PATH=${HEALTH_PATH:-/api/internal/health}
+PATH=${HEALTH_PATH:-/api/internal/ops/health}
 
 if [[ -z "$BASE_URL" ]]; then
   echo "Usage: healthcheck.sh <base_url>" >&2

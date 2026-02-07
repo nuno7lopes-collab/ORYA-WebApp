@@ -72,5 +72,5 @@
 - `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1757`: Status: Necessário polir – Não vimos referência a A11y audit, então assumir que há pontos a
 - `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1786`: Status: Médio – Next.js já ajuda com divisão de código, mas podemos melhorar.
 - `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md:1794`: Status: Precisa teste – Provavelmente algumas telas do dashboard são complexas em mobile.
-- `docs/orya_blueprint_v9_final.md:452`: - `processorFeesStatus: PENDING | FINAL`
+- `docs/blueprint.md:452`: - `processorFeesStatus: PENDING | FINAL`
 - `docs/v9_close_checklist.md:1192`: - [N/A] L452:   - `processorFeesStatus: PENDING | FINAL`

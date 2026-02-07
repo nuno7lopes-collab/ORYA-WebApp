@@ -96,9 +96,8 @@ async function _GET(req: NextRequest) {
         addresses: {
           select: {
             addressType: true,
-            city: true,
-            country: true,
-            postalCode: true,
+            addressId: true,
+            addressRef: { select: { formattedAddress: true } },
           },
         },
         shipments: {
@@ -159,9 +158,8 @@ async function _GET(req: NextRequest) {
           etaMaxDays: order.shippingMethod?.etaMaxDays ?? null,
           address: shippingAddress
             ? {
-                city: shippingAddress.city,
-                country: shippingAddress.country,
-                postalCode: shippingAddress.postalCode,
+                addressId: shippingAddress.addressId,
+                formattedAddress: shippingAddress.addressRef?.formattedAddress ?? null,
               }
             : null,
         },

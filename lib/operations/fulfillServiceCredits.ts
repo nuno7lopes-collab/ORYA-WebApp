@@ -1,7 +1,6 @@
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { retrieveCharge } from "@/domain/finance/gateway/stripeGateway";
-import { getStripeBaseFees } from "@/lib/platformSettings";
 import { addCredits } from "@/lib/reservas/credits";
 import { logError } from "@/lib/observability/logger";
 
@@ -15,14 +14,6 @@ function parseId(value: unknown) {
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
 }
 
-async function estimateStripeFee(amountCents: number) {
-  const stripeBase = await getStripeBaseFees();
-  return Math.max(
-    0,
-    Math.round((amountCents * (stripeBase.feeBps ?? 0)) / 10_000) +
-      (stripeBase.feeFixedCents ?? 0),
-  );
-}
 
 export async function fulfillServiceCreditPurchaseIntent(intent: Stripe.PaymentIntent): Promise<boolean> {
   const meta = intent.metadata ?? {};
@@ -72,9 +63,6 @@ export async function fulfillServiceCreditPurchaseIntent(intent: Stripe.PaymentI
   }
 
   const amountCents = intent.amount_received ?? intent.amount ?? 0;
-  if (stripeFeeCents == null) {
-    stripeFeeCents = await estimateStripeFee(amountCents);
-  }
 
   await prisma.$transaction(async (tx) => {
     const { expiresAt } = await addCredits(tx, {
@@ -100,30 +88,6 @@ export async function fulfillServiceCreditPurchaseIntent(intent: Stripe.PaymentI
       },
     });
 
-    const existingTransaction = await tx.transaction.findFirst({
-      where: { stripePaymentIntentId: intent.id },
-      select: { id: true },
-    });
-    if (!existingTransaction) {
-      await tx.transaction.create({
-        data: {
-          organizationId,
-          userId,
-          amountCents,
-          currency: (intent.currency ?? "eur").toUpperCase(),
-          stripeChargeId,
-          stripePaymentIntentId: intent.id,
-          platformFeeCents,
-          stripeFeeCents: stripeFeeCents ?? 0,
-          payoutStatus: "PENDING",
-          metadata: {
-            serviceId,
-            units,
-            packId,
-          },
-        },
-      });
-    }
   });
 
   return true;

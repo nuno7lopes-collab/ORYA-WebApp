@@ -34,12 +34,7 @@ type OrderAddress = {
   id: number;
   addressType: string;
   fullName: string;
-  line1: string;
-  line2: string | null;
-  city: string;
-  region: string | null;
-  postalCode: string;
-  country: string;
+  formattedAddress: string | null;
   nif: string | null;
 };
 
@@ -464,15 +459,8 @@ export default function StoreOrdersPanel({ endpointBase, storeEnabled }: StoreOr
                       {address.addressType === "SHIPPING" ? "Envio" : "Faturacao"}
                     </p>
                     <p>{address.fullName}</p>
-                    <p>
-                      {address.line1}
-                      {address.line2 ? `, ${address.line2}` : ""}
-                    </p>
-                    <p>
-                      {address.postalCode} {address.city}
-                      {address.region ? `, ${address.region}` : ""}
-                    </p>
-                    <p>{address.country}</p>
+                    {address.formattedAddress ? <p>{address.formattedAddress}</p> : null}
+                    {address.nif ? <p>NIF: {address.nif}</p> : null}
                   </div>
                 ))}
               </div>

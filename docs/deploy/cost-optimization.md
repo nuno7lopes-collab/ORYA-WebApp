@@ -1,31 +1,34 @@
 # Cost optimization (prod)
 
-Goal: minimize AWS cost without sacrificing robustness.
+Objetivo: custo **mínimo possível** mantendo a plataforma funcional em produção
+(não "0 euros" com local). Este documento define o **baseline atual** e não
+propõe variantes "melhores".
 
 ## ECS/Fargate
-- Keep web service on **FARGATE** (min 2 tasks for HA).
-- Use **FARGATE_SPOT** for worker with on-demand fallback (already in infra skeleton).
-- Consider scheduled scaling for low-traffic windows (reduce worker desired count).
+- Web em **FARGATE** com **1 task** (custo mínimo; sem HA).
+- Worker **desligado por padrão**; ligar apenas quando necessário e por janelas curtas.
+- **Sem FARGATE_SPOT** por padrão; a poupança vem do dimensionamento mínimo e do tempo
+  de execução, não de complexidade adicional.
 
 ## ECR
-- Lifecycle policy: keep last 20 images (enabled in CFN skeleton).
+- Lifecycle policy: **manter as últimas 5 imagens** (rollback curto, custo mínimo).
 
 ## CloudWatch
-- Log retention: 14–30 days (parameterized in CFN).
-- Use Insights queries for debugging; avoid full export unless necessary.
+- Retenção de logs: **30 dias** (mínimo aceitável para diagnóstico).
+- Usar Insights apenas quando necessário; evitar exports.
 
 ## ALB
-- Keep a single ALB per environment.
-- Enable access logs only when needed to reduce S3 costs.
+- **Um ALB** por ambiente.
+- Access logs só quando necessário.
 
 ## EventBridge
-- Use a 1-minute schedule for outbox; avoid overly frequent schedules.
+- Agendamentos **apenas se necessários** e no intervalo mínimo.
 
 ## Secrets Manager
-- One secret per key for least privilege.
+- Um segredo por chave (mínimo necessário).
 
-## Observability
-- AWS‑only: CloudWatch Logs + native ALB/ECS metrics (evita custos de custom metrics).
+## Observabilidade
+- AWS‑only: CloudWatch Logs + métricas nativas (sem métricas custom).
 
 ## Supabase
-- Monitor DB usage; keep connection pooling configured.
+- Monitorar uso de DB; pooling configurado para evitar custo extra.

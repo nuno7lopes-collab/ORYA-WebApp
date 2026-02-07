@@ -13,8 +13,6 @@ export type OnboardingDraft = {
     skipped?: boolean;
   };
   location?: {
-    city?: string | null;
-    region?: string | null;
     source?: "GPS" | "IP";
     consent?: "GRANTED" | "DENIED";
   };

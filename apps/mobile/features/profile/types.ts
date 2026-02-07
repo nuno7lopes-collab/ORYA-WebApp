@@ -8,7 +8,6 @@ export type ProfileSummary = {
   avatarUrl: string | null;
   coverUrl?: string | null;
   bio: string | null;
-  city: string | null;
   padelLevel: string | null;
   favouriteCategories?: string[];
   visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
@@ -43,7 +42,6 @@ export type PublicProfile = {
   avatarUrl?: string | null;
   coverUrl?: string | null;
   bio?: string | null;
-  city?: string | null;
   visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   padelLevel?: string | null;
   padelPreferredSide?: string | null;

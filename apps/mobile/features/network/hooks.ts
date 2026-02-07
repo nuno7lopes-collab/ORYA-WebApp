@@ -12,11 +12,14 @@ import {
 } from "./api";
 import { FollowRequest, FollowStatus, SocialSuggestion } from "./types";
 import { SearchOrganization, SearchUser } from "../search/types";
+import { PublicProfilePayload } from "../profile/types";
 
 const suggestionsKey = ["network", "suggestions"];
 const followRequestsKey = ["network", "follow-requests"];
 const searchUsersKey = ["search", "users"];
 const searchOrgsKey = ["search", "orgs"];
+const publicProfileKey = ["profile", "public"];
+const publicProfileEventsKey = ["profile", "public", "events"];
 
 export const useNetworkSuggestions = (enabled = true) =>
   useQuery({
@@ -69,6 +72,33 @@ const updateUserCaches = (
         : item,
     );
   });
+
+  client.setQueriesData<PublicProfilePayload | undefined>({ queryKey: publicProfileKey }, (old) => {
+    if (!old || old.type !== "user") return old;
+    if (String(old.profile?.id ?? "") !== targetUserId) return old;
+    if (old.isSelf) return old;
+
+    const prevFollowing = Boolean(old.viewer?.isFollowing);
+    const nextFollowing = status === "FOLLOWING";
+    const nextRequested = status === "REQUESTED";
+    let followers = old.counts?.followers ?? 0;
+
+    if (nextFollowing && !prevFollowing) followers += 1;
+    if (!nextFollowing && prevFollowing) followers = Math.max(0, followers - 1);
+
+    return {
+      ...old,
+      counts: {
+        ...old.counts,
+        followers,
+      },
+      viewer: {
+        ...(old.viewer ?? {}),
+        isFollowing: nextFollowing,
+        isRequested: nextRequested,
+      },
+    };
+  });
 };
 
 export const useNetworkActions = () => {
@@ -82,6 +112,10 @@ export const useNetworkActions = () => {
     },
     onSuccess: (status, targetUserId) => {
       updateUserCaches(client, targetUserId, status);
+      client.invalidateQueries({ queryKey: ["social", "feed"] });
+      if (status === "FOLLOWING") {
+        client.invalidateQueries({ queryKey: publicProfileEventsKey });
+      }
     },
     onSettled: () => {
       setPendingUserId(null);
@@ -95,6 +129,7 @@ export const useNetworkActions = () => {
     },
     onSuccess: (_, targetUserId) => {
       updateUserCaches(client, targetUserId, "NONE");
+      client.invalidateQueries({ queryKey: ["social", "feed"] });
     },
     onSettled: () => {
       setPendingUserId(null);
@@ -180,6 +215,28 @@ export const useOrganizationFollowActions = () => {
           : item,
       );
     });
+
+    client.setQueriesData<PublicProfilePayload | undefined>({ queryKey: publicProfileKey }, (old) => {
+      if (!old || old.type !== "organization") return old;
+      if (Number(old.profile?.id) !== organizationId) return old;
+
+      const prevFollowing = Boolean(old.viewer?.isFollowing);
+      let followers = old.counts?.followers ?? 0;
+      if (isFollowing && !prevFollowing) followers += 1;
+      if (!isFollowing && prevFollowing) followers = Math.max(0, followers - 1);
+
+      return {
+        ...old,
+        counts: {
+          ...old.counts,
+          followers,
+        },
+        viewer: {
+          ...(old.viewer ?? {}),
+          isFollowing,
+        },
+      };
+    });
   };
 
   const follow = useMutation({
@@ -191,6 +248,7 @@ export const useOrganizationFollowActions = () => {
     onSuccess: (organizationId) => {
       applyOrganizationStatus(organizationId, true);
       client.invalidateQueries({ queryKey: ["social", "feed"] });
+      client.invalidateQueries({ queryKey: publicProfileEventsKey });
     },
     onSettled: () => {
       setPendingOrgId(null);

@@ -7,7 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus } from "@prisma/client";
-import { buildStoreInvoicePdf } from "@/lib/store/invoice";
+import { buildStoreInvoicePdf, ensureStoreInvoiceRecord } from "@/lib/store/invoice";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -49,6 +49,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
         id: true,
         orderNumber: true,
         status: true,
+        purchaseId: true,
         subtotalCents: true,
         discountCents: true,
         shippingCents: true,
@@ -61,6 +62,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
         store: {
           select: {
             id: true,
+            organizationId: true,
             supportEmail: true,
             supportPhone: true,
             organization: { select: { username: true, publicName: true, businessName: true } },
@@ -70,14 +72,10 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
         addresses: {
           select: {
             addressType: true,
+            addressId: true,
             fullName: true,
-            line1: true,
-            line2: true,
-            city: true,
-            region: true,
-            postalCode: true,
-            country: true,
             nif: true,
+            addressRef: { select: { formattedAddress: true } },
           },
         },
         lines: {
@@ -98,6 +96,17 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
     if (!order) {
       return jsonWrap({ ok: false, error: "Fatura indisponivel." }, { status: 404 });
     }
+
+    const payment = order.purchaseId
+      ? await prisma.payment.findUnique({
+          where: { id: order.purchaseId },
+          select: { customerIdentityId: true },
+        })
+      : null;
+    await ensureStoreInvoiceRecord({
+      order,
+      customerIdentityId: payment?.customerIdentityId ?? null,
+    });
 
     const productIds = Array.from(
       new Set(order.lines.map((line) => line.productId).filter((id): id is number => Boolean(id))),
@@ -130,6 +139,12 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
 
     const orderWithPersonalization = {
       ...order,
+      addresses: order.addresses.map((address) => ({
+        addressType: address.addressType,
+        fullName: address.fullName,
+        formattedAddress: address.addressRef?.formattedAddress ?? null,
+        nif: address.nif ?? null,
+      })),
       lines: order.lines.map((line) => ({
         ...line,
         personalization: buildPersonalizationSummary({

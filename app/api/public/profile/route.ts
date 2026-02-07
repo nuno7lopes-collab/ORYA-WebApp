@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getUserFollowCounts, getUserFollowStatus, isOrganizationFollowed } from "@/domain/social/follows";
+import { pickCanonicalField } from "@/lib/location/eventLocation";
 
 const normalizeUsername = (raw: string) => raw.trim().replace(/^@/, "");
 
@@ -34,7 +35,6 @@ async function _GET(req: NextRequest) {
       avatarUrl: true,
       coverUrl: true,
       bio: true,
-      city: true,
       visibility: true,
       padelLevel: true,
       padelPreferredSide: true,
@@ -77,7 +77,6 @@ async function _GET(req: NextRequest) {
           avatarUrl: profile.avatarUrl,
           coverUrl: profile.coverUrl,
           bio: profile.bio,
-          city: profile.city,
           visibility: profile.visibility,
           padelLevel: profile.padelLevel,
           padelPreferredSide: profile.padelPreferredSide,
@@ -112,7 +111,7 @@ async function _GET(req: NextRequest) {
       brandingAvatarUrl: true,
       brandingCoverUrl: true,
       publicDescription: true,
-      city: true,
+      addressRef: { select: { canonical: true } },
     },
   });
 
@@ -137,7 +136,15 @@ async function _GET(req: NextRequest) {
         avatarUrl: organization.brandingAvatarUrl,
         coverUrl: organization.brandingCoverUrl,
         bio: organization.publicDescription,
-        city: organization.city,
+        city:
+          pickCanonicalField(
+            (organization.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+            "city",
+            "locality",
+            "addressLine2",
+            "region",
+            "state",
+          ) ?? null,
       },
       counts: {
         followers: followersCount,

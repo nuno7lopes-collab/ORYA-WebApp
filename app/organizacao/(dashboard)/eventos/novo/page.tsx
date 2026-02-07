@@ -10,7 +10,6 @@ import styles from "./page.module.css";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
-import { PT_CITIES } from "@/lib/constants/ptCities";
 import {
   getEventCoverSuggestionIds,
   getEventCoverUrl,
@@ -44,22 +43,14 @@ type FieldKey =
   | "description"
   | "startsAt"
   | "endsAt"
-  | "locationName"
-  | "locationCity"
-  | "address"
+  | "location"
   | "tickets"
   | "padel";
-
-type LocationMode = "APPLE_MAPS" | "MANUAL";
-type LocationSource = "APPLE_MAPS" | "MANUAL";
 
 type PadelClubSummary = {
   id: number;
   name: string;
-  city?: string | null;
   addressId?: string | null;
-  locationProviderId?: string | null;
-  locationFormattedAddress?: string | null;
   addressRef?: {
     formattedAddress?: string | null;
     canonical?: Record<string, unknown> | null;
@@ -99,6 +90,7 @@ type PadelPublicClub = {
   id: number;
   name: string;
   shortName?: string | null;
+  addressId?: string | null;
   city?: string | null;
   address?: string | null;
   courtsCount?: number | null;
@@ -143,22 +135,22 @@ const pickCanonicalField = (canonical: Record<string, unknown> | null | undefine
 };
 
 const resolvePadelClubLocation = (club: PadelClubSummary | null) => {
-  if (!club) return { city: "", address: "", formatted: "" };
+  if (!club) return { formatted: "" };
   const canonical = club.addressRef?.canonical ?? null;
-  const city =
-    pickCanonicalField(canonical, ["city", "addressLine2", "locality"]) ||
-    club.city ||
-    "";
-  const manualAddress = club.locationFormattedAddress || "";
-  const address =
-    pickCanonicalField(canonical, ["addressLine1", "street", "road"]) ||
-    manualAddress ||
-    "";
+  const city = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]);
+  const addressLine1 = pickCanonicalField(canonical, ["addressLine1", "street", "road"]);
   const formatted =
     club.addressRef?.formattedAddress ||
-    club.locationFormattedAddress ||
-    [address, city].filter(Boolean).join(", ");
-  return { city, address, formatted };
+    [addressLine1, city].filter(Boolean).join(", ");
+  return { formatted, city: city || "" };
+};
+
+const formatPadelClubLocationLabel = (club: PadelClubSummary | null) => {
+  if (!club) return "";
+  const canonical = club.addressRef?.canonical ?? null;
+  const city = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]);
+  const formatted = club.addressRef?.formattedAddress ?? "";
+  return [city, formatted].filter(Boolean).join(" · ");
 };
 
 const formatMonthLabel = (value: Date) =>
@@ -301,11 +293,6 @@ export function NewOrganizationEventPage({
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
-  const [locationName, setLocationName] = useState("");
-  const [locationCity, setLocationCity] = useState<string>(PT_CITIES[0]);
-  const [address, setAddress] = useState("");
-  const [locationManuallySet, setLocationManuallySet] = useState(false);
-  const [locationMode, setLocationMode] = useState<LocationMode>("APPLE_MAPS");
   const [locationQuery, setLocationQuery] = useState("");
   const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
   const [locationSearchLoading, setLocationSearchLoading] = useState(false);
@@ -315,12 +302,9 @@ export function NewOrganizationEventPage({
   const [locationProviderId, setLocationProviderId] = useState<string | null>(null);
   const [locationAddressId, setLocationAddressId] = useState<string | null>(null);
   const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(null);
-  const [locationComponents, setLocationComponents] = useState<Record<string, unknown> | null>(null);
   const [locationSourceProvider, setLocationSourceProvider] = useState<string | null>(null);
   const [locationConfidenceScore, setLocationConfidenceScore] = useState<number | null>(null);
   const [locationValidationStatus, setLocationValidationStatus] = useState<string | null>(null);
-  const [locationHouseNumber, setLocationHouseNumber] = useState("");
-  const [locationPostalCode, setLocationPostalCode] = useState("");
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
   const [locationTbd, setLocationTbd] = useState(false);
@@ -678,9 +662,8 @@ export function NewOrganizationEventPage({
         description: string;
         startsAt: string;
         endsAt: string;
-        locationName: string;
-        locationCity: string;
-        address: string;
+        locationQuery: string;
+        locationFormattedAddress: string | null;
         ticketTypes: TicketTypeRow[];
         coverUrl: string | null;
         selectedPreset: string | null;
@@ -695,15 +678,12 @@ export function NewOrganizationEventPage({
       setDescription(draft.description ?? "");
       setStartsAt(draft.startsAt ?? "");
       setEndsAt(draft.endsAt ?? "");
-      setLocationName(draft.locationName ?? "");
-      setLocationCity(draft.locationCity ?? PT_CITIES[0]);
-      setAddress(draft.address ?? "");
-      if (draft.locationName || draft.locationCity || draft.address) {
-        setLocationMode("MANUAL");
-        setLocationManuallySet(true);
-        setLocationQuery(
-          [draft.locationName, draft.locationCity, draft.address].filter(Boolean).join(", ")
-        );
+      const preferredQuery = draft.locationQuery?.trim() || "";
+      if (preferredQuery) {
+        setLocationQuery(preferredQuery);
+      }
+      if (draft.locationFormattedAddress) {
+        setLocationFormattedAddress(draft.locationFormattedAddress);
       }
       const draftTicketTypes =
         Array.isArray(draft.ticketTypes) && draft.ticketTypes.length > 0
@@ -841,7 +821,6 @@ export function NewOrganizationEventPage({
     setPadelClubSourceTouched(false);
     setPadelDirectoryQuery("");
     setPadelDirectoryError(null);
-    setLocationManuallySet(false);
     setPadelFormat("TODOS_CONTRA_TODOS");
     setPadelEligibility("OPEN");
     setPadelRuleSetId(null);
@@ -1060,57 +1039,22 @@ export function NewOrganizationEventPage({
     const club = padelClubs?.items?.find((c) => c.id === selectedPadelClubId);
     if (!club) return;
     const resolved = resolvePadelClubLocation(club);
-    const composed = resolved.formatted?.trim() || [resolved.address?.trim(), resolved.city?.trim()].filter(Boolean).join(", ");
-    if (!locationManuallySet) {
-      if (composed) setLocationName(composed);
-      else if (!locationName) setLocationName(club.name ?? "");
-    }
-    if (resolved.city) {
-      // Preenche cidade a partir do clube, mas não sobrepõe escolha manual já feita.
-      if (!locationManuallySet || !locationCity) {
-        setLocationCity(resolved.city);
-      }
-    }
-    if (!locationManuallySet) {
-      if (club.addressId || club.addressRef?.formattedAddress) {
-        setLocationMode("APPLE_MAPS");
-        setLocationProviderId(club.addressRef?.sourceProviderPlaceId || club.locationProviderId || null);
-        setLocationAddressId(club.addressId || null);
-        setLocationFormattedAddress(resolved.formatted || null);
-        setLocationComponents(club.addressRef?.canonical ?? null);
-        setLocationLat(
-          typeof club.addressRef?.latitude === "number" ? club.addressRef?.latitude ?? null : null,
-        );
-        setLocationLng(
-          typeof club.addressRef?.longitude === "number" ? club.addressRef?.longitude ?? null : null,
-        );
-        setLocationSourceProvider(club.addressRef?.sourceProvider ?? null);
-        setLocationConfidenceScore(
-          typeof club.addressRef?.confidenceScore === "number" ? club.addressRef?.confidenceScore ?? null : null,
-        );
-        setLocationValidationStatus(club.addressRef?.validationStatus ?? null);
-        setLocationQuery(composed || club.name || "");
-        setLocationConfirmed(Boolean(club.addressId));
-      } else {
-        setLocationMode("MANUAL");
-        setLocationProviderId(null);
-        setLocationAddressId(null);
-        setLocationFormattedAddress(null);
-        setLocationComponents(null);
-        setLocationLat(null);
-        setLocationLng(null);
-        setLocationQuery(composed || club.name || "");
-      }
-    }
-  }, [selectedPreset, selectedPadelClubId, padelClubs?.items, locationManuallySet, locationName]);
+    const composed = resolved.formatted?.trim() || resolved.city?.trim() || club.name || "";
+    setLocationProviderId(club.addressRef?.sourceProviderPlaceId || null);
+    setLocationAddressId(club.addressId || null);
+    setLocationFormattedAddress(resolved.formatted || null);
+    setLocationLat(typeof club.addressRef?.latitude === "number" ? club.addressRef?.latitude ?? null : null);
+    setLocationLng(typeof club.addressRef?.longitude === "number" ? club.addressRef?.longitude ?? null : null);
+    setLocationSourceProvider(club.addressRef?.sourceProvider ?? null);
+    setLocationConfidenceScore(
+      typeof club.addressRef?.confidenceScore === "number" ? club.addressRef?.confidenceScore ?? null : null,
+    );
+    setLocationValidationStatus(club.addressRef?.validationStatus ?? null);
+    setLocationQuery(composed || "");
+    setLocationConfirmed(Boolean(club.addressId));
+  }, [selectedPreset, selectedPadelClubId, padelClubs?.items]);
 
   useEffect(() => {
-    if (locationMode !== "APPLE_MAPS") {
-      setLocationSuggestions([]);
-      setLocationSearchLoading(false);
-      setLocationSearchError(null);
-      return;
-    }
     const query = locationQuery.trim();
     if (query.length < 2) {
       setLocationSuggestions([]);
@@ -1147,17 +1091,11 @@ export function NewOrganizationEventPage({
         clearTimeout(locationSearchTimeout.current);
       }
     };
-  }, [locationMode, locationQuery]);
+  }, [locationQuery]);
 
   const applyGeoDetails = (details: GeoDetailsItem | null, fallbackName?: string | null) => {
     if (!details) return;
-    const nextName = details.name || fallbackName || locationName;
-    const nextCity = details.city || locationCity;
-    const nextAddress = details.address || address;
-    const canonical = (details.canonical as Record<string, unknown> | null) ?? null;
-    const mergedComponents = canonical ?? details.components ?? null;
     setLocationFormattedAddress(details.formattedAddress || locationFormattedAddress);
-    setLocationComponents(mergedComponents);
     setLocationAddressId(details.addressId ?? null);
     setLocationSourceProvider(details.sourceProvider ?? null);
     setLocationConfidenceScore(
@@ -1167,30 +1105,15 @@ export function NewOrganizationEventPage({
     if (details.providerId) {
       setLocationProviderId(details.providerId);
     }
-    const detailsHouse =
-      (canonical && typeof canonical.houseNumber === "string" ? canonical.houseNumber : "") ||
-      (details.components && typeof (details.components as { houseNumber?: unknown }).houseNumber === "string"
-        ? ((details.components as { houseNumber?: string }).houseNumber ?? "")
-        : "");
-    const detailsPostal =
-      (canonical && typeof canonical.postalCode === "string" ? canonical.postalCode : "") ||
-      (details.components && typeof (details.components as { postalCode?: unknown }).postalCode === "string"
-        ? ((details.components as { postalCode?: string }).postalCode ?? "")
-        : "");
-    setLocationHouseNumber(detailsHouse);
-    setLocationPostalCode(detailsPostal);
     if (Number.isFinite(details.lat ?? NaN) && Number.isFinite(details.lng ?? NaN)) {
       setLocationLat(details.lat);
       setLocationLng(details.lng);
     }
-    if (nextName) setLocationName(nextName);
-    if (nextCity) setLocationCity(nextCity);
-    if (nextAddress) setAddress(nextAddress);
+    const nextLabel = details.formattedAddress || details.name || fallbackName || "";
+    if (nextLabel) setLocationQuery(nextLabel);
   };
 
   const handleSelectGeoSuggestion = async (item: GeoAutocompleteItem) => {
-    setLocationMode("APPLE_MAPS");
-    setLocationManuallySet(true);
     setLocationTbd(false);
     setLocationProviderId(item.providerId);
     setLocationAddressId(null);
@@ -1201,13 +1124,7 @@ export function NewOrganizationEventPage({
     setLocationLat(item.lat);
     setLocationLng(item.lng);
     setLocationQuery(item.label);
-    setLocationName(item.name || item.label);
-    setLocationCity(item.city || "");
-    setAddress(item.address || "");
     setLocationFormattedAddress(item.label);
-    setLocationComponents(null);
-    setLocationHouseNumber("");
-    setLocationPostalCode("");
     setLocationSearchError(null);
     setShowLocationSuggestions(false);
     setLocationConfirmed(false);
@@ -1235,63 +1152,16 @@ export function NewOrganizationEventPage({
     }
   };
 
-  const enableManualLocation = () => {
-    setLocationMode("MANUAL");
-    setLocationManuallySet(true);
-    setLocationProviderId(null);
-    setLocationAddressId(null);
-    setLocationSourceProvider(null);
-    setLocationConfidenceScore(null);
-    setLocationValidationStatus(null);
-    activeProviderRef.current = null;
-    setLocationFormattedAddress(null);
-    setLocationComponents(null);
-    setLocationHouseNumber("");
-    setLocationPostalCode("");
-    setLocationLat(null);
-    setLocationLng(null);
-    setLocationSuggestions([]);
-    setLocationSearchLoading(false);
-    setLocationSearchError(null);
-    setLocationConfirmed(true);
-  };
-
-  const enableAppleLocation = () => {
-    setLocationMode("APPLE_MAPS");
-    setLocationTbd(false);
-    setLocationProviderId(null);
-    setLocationAddressId(null);
-    setLocationSourceProvider(null);
-    setLocationConfidenceScore(null);
-    setLocationValidationStatus(null);
-    activeProviderRef.current = null;
-    setLocationFormattedAddress(null);
-    setLocationComponents(null);
-    setLocationHouseNumber("");
-    setLocationPostalCode("");
-    setLocationLat(null);
-    setLocationLng(null);
-    setLocationSearchError(null);
-    setLocationConfirmed(false);
-    if (!locationQuery) {
-      const fallback = [locationName, locationCity, address].filter(Boolean).join(", ");
-      if (fallback) setLocationQuery(fallback);
-    }
-  };
-
   const markLocationTbd = () => {
-    setLocationMode("MANUAL");
-    setLocationManuallySet(true);
     setLocationTbd(true);
-    setLocationName("");
-    setLocationCity("");
-    setAddress("");
+    setLocationQuery("");
     setLocationProviderId(null);
+    setLocationAddressId(null);
+    setLocationSourceProvider(null);
+    setLocationConfidenceScore(null);
+    setLocationValidationStatus(null);
     activeProviderRef.current = null;
     setLocationFormattedAddress(null);
-    setLocationComponents(null);
-    setLocationHouseNumber("");
-    setLocationPostalCode("");
     setLocationLat(null);
     setLocationLng(null);
     setLocationQuery("");
@@ -1374,7 +1244,9 @@ export function NewOrganizationEventPage({
       return;
     }
     const existingPartner = partnerPadelClubs.find(
-      (item) => item.sourceClubId === club.id || (item.name === club.name && item.city === club.city),
+      (item) =>
+        item.sourceClubId === club.id ||
+        (item.addressId && club.addressId && item.addressId === club.addressId),
     );
     if (existingPartner) {
       setPadelClubMode("PARTNER");
@@ -1387,23 +1259,24 @@ export function NewOrganizationEventPage({
     setPadelDirectoryError(null);
     setCreatingPartnerClubId(club.id);
     try {
-      const resolvedLocation = resolvePadelClubLocation(club);
-      const formattedAddress = resolvedLocation.formatted;
-      const res = await fetch("/api/padel/clubs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          organizationId: organizationIdFromStatus,
-          name: club.name,
-          city: club.city ?? "",
-          kind: "PARTNER",
-          sourceClubId: club.id,
-          locationSource: "MANUAL",
-          locationFormattedAddress: formattedAddress || null,
-          courtsCount: club.courtsCount ?? 1,
-          isActive: true,
-        }),
-      });
+    const addressId = typeof club.addressId === "string" ? club.addressId.trim() : "";
+    if (!addressId) {
+      setPadelDirectoryError("Clube sem morada Apple confirmada.");
+      return;
+    }
+    const res = await fetch("/api/padel/clubs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId: organizationIdFromStatus,
+        name: club.name,
+        kind: "PARTNER",
+        sourceClubId: club.id,
+        addressId,
+        courtsCount: club.courtsCount ?? 1,
+        isActive: true,
+      }),
+    });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.club) {
         setPadelDirectoryError(json?.error || "Nao foi possivel criar o clube parceiro.");
@@ -1420,7 +1293,6 @@ export function NewOrganizationEventPage({
       setPadelClubSourceTouched(true);
       setSelectedPadelClubId(savedClub.id);
       clearErrorsForFields(["padel"]);
-      setLocationManuallySet(false);
       const createdCourtIds = await createPartnerCourts(savedClub.id, club);
       if (createdCourtIds.length > 0) {
         setSelectedPadelCourtIds(createdCourtIds);
@@ -1475,7 +1347,6 @@ export function NewOrganizationEventPage({
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
                   value={selectedPadelClubId ?? ""}
                   onChange={(e) => {
-                    setLocationManuallySet(false);
                     setSelectedPadelClubId(Number(e.target.value) || null);
                     clearErrorsForFields(["padel"]);
                   }}
@@ -1530,9 +1401,7 @@ export function NewOrganizationEventPage({
                           <div>
                             <p className="font-semibold text-white">{club.name}</p>
                             <p className="text-white/60">
-                              {[club.city, club.locationFormattedAddress ?? club.addressRef?.formattedAddress]
-                                .filter(Boolean)
-                                .join(" · ")}
+                              {formatPadelClubLocationLabel(club) || "Local por definir"}
                             </p>
                           </div>
                           <button
@@ -1578,9 +1447,7 @@ export function NewOrganizationEventPage({
                           <div>
                             <p className="font-semibold text-white">{club.name}</p>
                             <p className="text-[11px] text-white/60">
-                              {[club.city, club.locationFormattedAddress ?? club.addressRef?.formattedAddress]
-                                .filter(Boolean)
-                                .join(" · ") || "Local por definir"}
+                              {formatPadelClubLocationLabel(club) || "Local por definir"}
                             </p>
                             {club.organizationName && (
                               <p className="text-[10px] text-white/45">{club.organizationName}</p>
@@ -1981,16 +1848,12 @@ export function NewOrganizationEventPage({
 
   const locationSummary = useMemo(() => {
     if (locationFormattedAddress) return locationFormattedAddress;
-    const parts = [locationName.trim(), locationCity.trim(), address.trim()].filter(Boolean);
-    if (parts.length === 0) return "Localização";
-    return parts.join(" · ");
-  }, [locationFormattedAddress, locationName, locationCity, address]);
+    const trimmed = locationQuery.trim();
+    return trimmed || "Localização";
+  }, [locationFormattedAddress, locationQuery]);
   const locationProviderLabel = useMemo(() => {
     if (!locationSourceProvider) return null;
-    if (locationSourceProvider === "APPLE_MAPS") return "Apple Maps";
-    if (locationSourceProvider.startsWith("OSM")) return "OpenStreetMap (legado)";
-    if (locationSourceProvider === "MANUAL") return "Manual";
-    return locationSourceProvider;
+    return locationSourceProvider === "APPLE_MAPS" ? "Apple Maps" : locationSourceProvider;
   }, [locationSourceProvider]);
   const locationValidationLabel = useMemo(() => {
     if (!locationValidationStatus) return null;
@@ -2000,49 +1863,8 @@ export function NewOrganizationEventPage({
     return locationValidationStatus;
   }, [locationValidationStatus]);
 
-  const buildLocationFormattedAddress = () => {
-    const components = locationComponents as
-      | {
-          road?: string | null;
-          houseNumber?: string | null;
-          postalCode?: string | null;
-          address?: Record<string, unknown>;
-          canonical?: Record<string, unknown>;
-        }
-      | null;
-    const canonical =
-      (components && typeof components.canonical === "object" ? (components.canonical as Record<string, unknown>) : null) ||
-      (components && typeof components === "object" && !Array.isArray(components) && ("addressLine1" in components || "houseNumber" in components)
-        ? (components as Record<string, unknown>)
-        : null);
-    const road =
-      (typeof components?.road === "string" && components.road.trim()) ||
-      (typeof components?.address?.road === "string" && components.address.road.trim()) ||
-      (canonical && typeof canonical.street === "string" ? canonical.street.trim() : null) ||
-      null;
-    const houseNumber =
-      locationHouseNumber.trim() ||
-      (components?.houseNumber ?? "") ||
-      (canonical && typeof canonical.houseNumber === "string" ? canonical.houseNumber : "");
-    const postalCode =
-      locationPostalCode.trim() ||
-      (components?.postalCode ?? "") ||
-      (canonical && typeof canonical.postalCode === "string" ? canonical.postalCode : "");
-    const country =
-      (canonical && typeof canonical.country === "string" ? canonical.country.trim() : null) ||
-      (typeof components?.address?.country === "string" && components.address.country.trim()) ||
-      "";
-    const line1 =
-      (canonical && typeof canonical.addressLine1 === "string" ? canonical.addressLine1.trim() : "") ||
-      [road, houseNumber].filter(Boolean).join(" ").trim();
-    const line2 =
-      (canonical && typeof canonical.addressLine2 === "string" ? canonical.addressLine2.trim() : "") ||
-      [postalCode.trim(), locationCity.trim()].filter(Boolean).join(" ").trim();
-    const parts = [line1, line2, country].filter(Boolean);
-    if (parts.length > 0) return parts.join(", ");
-    if (locationFormattedAddress) return locationFormattedAddress;
-    return [locationName, locationCity, address].filter(Boolean).join(", ");
-  };
+  const buildLocationFormattedAddress = () =>
+    locationFormattedAddress || locationQuery.trim();
   const descriptionSummary = useMemo(() => {
     const trimmed = description.trim();
     if (!trimmed) return "Descrição";
@@ -2127,7 +1949,7 @@ export function NewOrganizationEventPage({
   const padelChecklistComplete = padelChecklistRequired.filter((item) => item.status === "ok").length;
   const padelChecklistTotal = padelChecklistRequired.length;
   const scheduleError = fieldErrors.startsAt ?? fieldErrors.endsAt ?? (dateOrderWarning ? "Fim antes do início." : null);
-  const locationError = fieldErrors.locationCity ?? fieldErrors.locationName ?? null;
+  const locationError = fieldErrors.location ?? null;
 
   function collectFormErrors() {
     const issues: { field: FieldKey; message: string }[] = [];
@@ -2137,18 +1959,11 @@ export function NewOrganizationEventPage({
     if (!startsAt) {
       issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
     }
-    const requiresCity = !(locationMode === "MANUAL" && locationTbd);
-    if (!locationCity.trim() && requiresCity) {
-      issues.push({ field: "locationCity", message: "Cidade obrigatória." });
+    if (!locationTbd && !locationProviderId) {
+      issues.push({ field: "location", message: "Seleciona uma sugestão de localização." });
     }
-    if (locationMode === "MANUAL" && !locationTbd && !locationName.trim()) {
-      issues.push({ field: "locationName", message: "Local obrigatório." });
-    }
-    if (locationMode === "APPLE_MAPS" && !locationProviderId) {
-      issues.push({ field: "locationName", message: "Seleciona uma sugestão de localização." });
-    }
-    if (locationMode === "APPLE_MAPS" && locationProviderId && !locationConfirmed) {
-      issues.push({ field: "locationName", message: "Confirma a localização antes de guardar." });
+    if (!locationTbd && locationProviderId && !locationConfirmed) {
+      issues.push({ field: "location", message: "Confirma a localização antes de guardar." });
     }
     if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
       issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
@@ -2299,7 +2114,7 @@ export function NewOrganizationEventPage({
       setPendingFocusField(field);
       return;
     }
-    if (field === "locationName" || field === "locationCity" || field === "address") {
+    if (field === "location") {
       setShowLocationModal(true);
       setPendingFocusField(field);
       return;
@@ -2336,17 +2151,8 @@ export function NewOrganizationEventPage({
       return;
     }
 
-    if (
-      (pendingFocusField === "locationName" ||
-        pendingFocusField === "locationCity" ||
-        pendingFocusField === "address") &&
-      showLocationModal
-    ) {
-      const container = locationModalRef.current?.querySelector(`[data-field="${pendingFocusField}"]`);
-      const focusable = container?.querySelector("input,button,select,textarea") as HTMLElement | null;
-      if (focusable) {
-        focusable.focus({ preventScroll: true });
-      }
+    if (pendingFocusField === "location" && showLocationModal) {
+      locationSearchRef.current?.focus({ preventScroll: true });
       setPendingFocusField(null);
       return;
     }
@@ -2430,20 +2236,10 @@ export function NewOrganizationEventPage({
   }, [startsAt]);
 
   useEffect(() => {
-    if (locationMode === "APPLE_MAPS") {
-      if (locationProviderId && locationConfirmed) {
-        clearErrorsForFields(["locationName"]);
-      }
-    } else if (locationName.trim()) {
-      clearErrorsForFields(["locationName"]);
+    if (locationProviderId && locationConfirmed) {
+      clearErrorsForFields(["location"]);
     }
-  }, [locationMode, locationName, locationProviderId, locationConfirmed]);
-
-  useEffect(() => {
-    if (locationCity.trim() || (locationMode === "MANUAL" && locationTbd)) {
-      clearErrorsForFields(["locationCity"]);
-    }
-  }, [locationCity, locationMode, locationTbd]);
+  }, [locationProviderId, locationConfirmed]);
 
   useEffect(() => {
     if (endsAt && startsAt && new Date(endsAt).getTime() > new Date(startsAt).getTime()) {
@@ -2607,21 +2403,8 @@ export function NewOrganizationEventPage({
         requiresEntitlementForEntry: false,
         checkinMethods: selectedPreset === "padel" ? ["QR_REGISTRATION"] : ["QR_TICKET"],
       };
-      const resolvedLocationSource: LocationSource =
-        locationMode === "APPLE_MAPS" && locationProviderId ? "APPLE_MAPS" : "MANUAL";
-      const resolvedAddressId = resolvedLocationSource === "APPLE_MAPS" ? locationAddressId : null;
-      const resolvedLocationOverrides =
-        resolvedLocationSource === "APPLE_MAPS"
-          ? {
-              houseNumber: locationHouseNumber.trim() || null,
-              postalCode: locationPostalCode.trim() || null,
-            }
-          : null;
-      const resolvedFormattedAddress =
-        resolvedLocationSource === "APPLE_MAPS"
-          ? buildLocationFormattedAddress()
-          : address.trim() || null;
-      if (resolvedLocationSource === "APPLE_MAPS" && !resolvedAddressId) {
+      const resolvedAddressId = locationTbd ? null : locationAddressId;
+      if (!locationTbd && !resolvedAddressId) {
         setErrorMessage("Seleciona uma morada normalizada antes de criar o evento.");
         return;
       }
@@ -2653,17 +2436,8 @@ export function NewOrganizationEventPage({
         description: description.trim() || null,
         startsAt,
         endsAt,
-        locationName: locationName.trim() || null,
-        locationCity: locationCity.trim() || null,
         templateType: templateToSend,
-        locationSource: resolvedLocationSource,
-        locationProviderId: resolvedLocationSource === "APPLE_MAPS" ? locationProviderId : null,
-        locationFormattedAddress: resolvedFormattedAddress,
-        locationComponents: resolvedLocationSource === "APPLE_MAPS" ? locationComponents : null,
-        locationOverrides: resolvedLocationOverrides,
         addressId: resolvedAddressId,
-        latitude: resolvedLocationSource === "APPLE_MAPS" ? locationLat : null,
-        longitude: resolvedLocationSource === "APPLE_MAPS" ? locationLng : null,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
         accessPolicy,
@@ -2754,25 +2528,22 @@ export function NewOrganizationEventPage({
     setStartTimeInput("");
     setEndDateInput("");
     setEndTimeInput("");
-    setLocationName("");
-    setLocationCity(PT_CITIES[0]);
-    setAddress("");
-    setLocationMode("APPLE_MAPS");
     setLocationQuery("");
     setLocationSuggestions([]);
     setLocationSearchLoading(false);
     setLocationDetailsLoading(false);
     setLocationProviderId(null);
+    setLocationAddressId(null);
     activeProviderRef.current = null;
     setLocationFormattedAddress(null);
-    setLocationComponents(null);
+    setLocationSourceProvider(null);
+    setLocationConfidenceScore(null);
+    setLocationValidationStatus(null);
+    setLocationSearchError(null);
     setLocationLat(null);
     setLocationLng(null);
     setLocationTbd(false);
-    setLocationManuallySet(false);
     setLocationConfirmed(false);
-    setLocationHouseNumber("");
-    setLocationPostalCode("");
     setTicketTypes([]);
     setIsFreeEvent(false);
     setFreeTicketName(freeTicketPlaceholder);
@@ -3304,23 +3075,6 @@ export function NewOrganizationEventPage({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className={labelClass}>Local / Morada</label>
           <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-            {locationMode === "APPLE_MAPS" ? (
-              <button
-                type="button"
-                onClick={enableManualLocation}
-                className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
-              >
-                Modo manual
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={enableAppleLocation}
-                className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
-              >
-                Pesquisar no Apple Maps
-              </button>
-            )}
             <button
               type="button"
               onClick={markLocationTbd}
@@ -3331,8 +3085,7 @@ export function NewOrganizationEventPage({
           </div>
         </div>
 
-        {locationMode === "APPLE_MAPS" ? (
-          <div className="space-y-3">
+        <div className="space-y-3">
             <div className="relative overflow-visible">
                 <input
                   type="text"
@@ -3362,8 +3115,8 @@ export function NewOrganizationEventPage({
                   if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
                   suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
                 }}
-                aria-invalid={Boolean(fieldErrors.locationName)}
-                className={inputClass(Boolean(fieldErrors.locationName))}
+                aria-invalid={Boolean(fieldErrors.location)}
+                className={inputClass(Boolean(fieldErrors.location))}
                 placeholder="Procura um local ou morada"
               />
               {showLocationSuggestions && (
@@ -3387,13 +3140,9 @@ export function NewOrganizationEventPage({
                           <span className="font-semibold text-white">{suggestion.label}</span>
                           <div className="flex items-center gap-2 text-[12px] text-white/65">
                             <span>{suggestion.city || "—"}</span>
-                            {suggestion.sourceProvider && (
+                            {suggestion.sourceProvider === "APPLE_MAPS" && (
                               <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
-                                {suggestion.sourceProvider === "APPLE_MAPS"
-                                  ? "Apple"
-                                  : suggestion.sourceProvider.startsWith("OSM")
-                                    ? "OSM legado"
-                                    : "GPS"}
+                                Apple
                               </span>
                             )}
                           </div>
@@ -3460,98 +3209,14 @@ export function NewOrganizationEventPage({
                     Confirmar local
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={enableManualLocation}
-                  className="rounded-full border border-white/15 px-3 py-1 text-white/60 hover:border-white/40"
-                >
-                  Ajustar manualmente
-                </button>
               </div>
             )}
             {locationProviderId && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-white/60">Nº porta (opcional)</label>
-                  <input
-                    value={locationHouseNumber}
-                    onChange={(e) => {
-                      setLocationHouseNumber(e.target.value);
-                      setLocationConfirmed(false);
-                    }}
-                    className={inputClass(false)}
-                    placeholder="Ex.: 123"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-white/60">Código‑postal (opcional)</label>
-                  <input
-                    value={locationPostalCode}
-                    onChange={(e) => {
-                      setLocationPostalCode(e.target.value);
-                      setLocationConfirmed(false);
-                    }}
-                    className={inputClass(false)}
-                    placeholder="Ex.: 4000-123"
-                  />
-                </div>
-                <div className="sm:col-span-2 text-[11px] text-white/60">
-                  {locationConfirmed ? "Confirmado" : "Confirma o endereço antes de guardar."}
-                </div>
+              <div className="text-[11px] text-white/60">
+                {locationConfirmed ? "Confirmado" : "Confirma o endereço antes de guardar."}
               </div>
             )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div data-field="locationName" className="space-y-1">
-              <label className={labelClass}>Local</label>
-              <input
-                type="text"
-                value={locationName}
-                onChange={(e) => {
-                  setLocationManuallySet(true);
-                  setLocationName(e.target.value);
-                  setLocationTbd(false);
-                }}
-                aria-invalid={Boolean(fieldErrors.locationName)}
-                className={inputClass(Boolean(fieldErrors.locationName))}
-                placeholder="Local"
-              />
-            </div>
-
-            <div data-field="locationCity" className="space-y-1">
-              <label className={labelClass}>
-                Cidade <span aria-hidden>*</span>
-              </label>
-              <input
-                type="text"
-                value={locationCity}
-                onChange={(e) => {
-                  setLocationManuallySet(true);
-                  setLocationCity(e.target.value);
-                  setLocationTbd(false);
-                }}
-                aria-invalid={Boolean(fieldErrors.locationCity)}
-                className={inputClass(Boolean(fieldErrors.locationCity))}
-                placeholder="Cidade"
-              />
-            </div>
-
-            <div data-field="address" className="space-y-1 sm:col-span-2">
-              <label className={labelClass}>Morada</label>
-              <input
-                type="text"
-                value={address}
-                onChange={(e) => {
-                  setAddress(e.target.value);
-                  setLocationTbd(false);
-                }}
-                className={inputClass(false)}
-                placeholder="Rua e número"
-              />
-            </div>
-          </div>
-        )}
+        </div>
 
         {locationError && (
           <p className={errorTextClass}>

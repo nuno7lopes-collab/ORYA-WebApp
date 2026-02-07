@@ -11,14 +11,12 @@ type EventForCard = {
   startDate: string;
   endDate: string;
   timezone: string;
-  locationName: string;
-  locationCity?: string | null;
-  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationFormattedAddress?: string | null;
-  locationComponents?: Record<string, unknown> | null;
-  locationOverrides?: Record<string, unknown> | null;
-  latitude?: number | null;
-  longitude?: number | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
   isGratis: boolean;
   tickets?: EventTicket[];
   interestedCount: number;
@@ -73,15 +71,7 @@ export default function EventCard({ event }: Props) {
   const coverUrl = getEventCoverFallback(event.slug);
   const locationDisplay = getEventLocationDisplay(
     {
-      locationName: event.locationName,
-      locationCity: event.locationCity ?? null,
-      address: event.locationFormattedAddress ?? null,
-      locationSource: event.locationSource ?? null,
-      locationFormattedAddress: event.locationFormattedAddress ?? null,
-      locationComponents: event.locationComponents ?? null,
-      locationOverrides: event.locationOverrides ?? null,
-      latitude: event.latitude ?? null,
-      longitude: event.longitude ?? null,
+      addressRef: event.addressRef ?? null,
     },
     'Local a anunciar'
   );

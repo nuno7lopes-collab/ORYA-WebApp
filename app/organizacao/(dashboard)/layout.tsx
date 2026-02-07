@@ -21,7 +21,6 @@ type OrganizationSwitcherOption = {
     username: string | null;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     entityType: string | null;
     organizationKind?: string | null;
     primaryModule?: string | null;
@@ -87,7 +86,6 @@ export default async function OrganizationDashboardLayout({ children }: { childr
           brandingSecondaryColor: (organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
           organizationKind: (organization as { organizationKind?: string | null }).organizationKind ?? null,
           primaryModule: (organization as { primaryModule?: string | null }).primaryModule ?? null,
-          city: (organization as { city?: string | null }).city ?? null,
           entityType: (organization as { entityType?: string | null }).entityType ?? null,
           status: organization.status ?? null,
           language: (organization as { language?: string | null }).language ?? null,
@@ -122,7 +120,6 @@ export default async function OrganizationDashboardLayout({ children }: { childr
             username: m.organization!.username,
             publicName: m.organization!.publicName,
             businessName: m.organization!.businessName,
-            city: m.organization!.city,
             entityType: m.organization!.entityType,
             organizationKind: (m.organization as { organizationKind?: string | null }).organizationKind ?? null,
             primaryModule: (m.organization as { primaryModule?: string | null }).primaryModule ?? null,

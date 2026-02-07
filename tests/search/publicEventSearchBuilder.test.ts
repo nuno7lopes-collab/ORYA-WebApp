@@ -34,7 +34,6 @@ const baseItem = (overrides: Partial<any> = {}) => ({
   hostName: "Org",
   hostUsername: null,
   locationName: "Local",
-  locationCity: "Lisboa",
   address: null,
   latitude: null,
   longitude: null,

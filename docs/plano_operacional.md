@@ -5,8 +5,8 @@ Versao Data Alteracoes-chave
 v1.0 03/02/2026 Primeira versao unificada. Inclui: decisoes finais fechadas, plano operacional revisto
 (alinhado com Padel), e anexo com Plano Padel original.
 Regra de precedencia (para evitar contradicoes):
-0) `docs/v9_ssot_registry.md` e o SSOT global do sistema.
-1) `docs/orya_blueprint_v9_final.md` e o blueprint global (v9).
+0) `docs/ssot_registry.md` e o SSOT global do sistema.
+1) `docs/blueprint.md` e o blueprint global (v9).
 2) Secao 2 (Decisoes finais fechadas) e a fonte de verdade para pontos decididos aqui, desde que
    nao conflite com o SSOT/blueprint acima.
 3) Capitulo Padel (anexo) e SSOT para tudo o que e Padel (modelo, UX, fases, DoD), exceto onde a Secao 2

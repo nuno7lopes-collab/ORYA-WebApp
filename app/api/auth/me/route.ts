@@ -30,7 +30,6 @@ type ApiAuthMeResponse = {
     coverUrl: string | null;
     updatedAt: string | Date | null;
     bio: string | null;
-    city: string | null;
     isVerified: boolean;
     contactPhone: string | null;
     favouriteCategories: string[];
@@ -160,7 +159,6 @@ async function _GET() {
       coverUrl: resolvedProfile.coverUrl,
       updatedAt: resolvedProfile.updatedAt ?? null,
       bio: resolvedProfile.bio,
-      city: resolvedProfile.city,
       contactPhone: resolvedProfile.contactPhone,
       isVerified: resolvedProfile.is_verified,
       favouriteCategories: resolvedProfile.favouriteCategories,

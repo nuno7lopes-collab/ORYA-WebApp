@@ -205,12 +205,29 @@ export async function ensurePaymentIntent(
     metadata.clientIdempotencyKey = input.clientIdempotencyKey.trim();
   }
 
+  const stripeDestination =
+    input.requireStripe && typeof input.orgContext?.stripeAccountId === "string"
+      ? input.orgContext.stripeAccountId.trim()
+      : null;
+  const snapshotPlatformFee =
+    typeof snapshot?.platformFee === "number" ? Math.max(0, snapshot.platformFee) : null;
+  const applicationFeeAmount =
+    stripeDestination && snapshotPlatformFee != null
+      ? Math.max(0, Math.min(snapshotPlatformFee, expectedAmount))
+      : null;
+
   const intentParams: Stripe.PaymentIntentCreateParams = {
     ...(input.intentParams ?? {}),
     amount: expectedAmount,
     currency: input.currency.toLowerCase(),
     metadata,
   };
+  if (stripeDestination) {
+    intentParams.transfer_data = { destination: stripeDestination };
+    if (applicationFeeAmount != null) {
+      intentParams.application_fee_amount = applicationFeeAmount;
+    }
+  }
 
   const stripeIdempotencyKey =
     input.clientIdempotencyKey && input.clientIdempotencyKey.trim()

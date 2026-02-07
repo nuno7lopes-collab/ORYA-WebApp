@@ -127,7 +127,6 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
       data: {
         slotStatus: PadelPairingSlotStatus.CANCELLED,
         paymentStatus: PadelPairingPaymentStatus.UNPAID,
-        ticketId: null,
       },
     });
 

@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
-import { getStripeBaseFees } from "@/lib/platformSettings";
 import type { Prisma, PaymentMode } from "@prisma/client";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -45,13 +44,6 @@ async function _GET(req: NextRequest) {
     const fromDate = fromParam ? new Date(fromParam) : null;
     const toDate = toParam ? new Date(toParam) : null;
 
-    const stripeFees = await getStripeBaseFees();
-    const estimateStripeFee = (amountCents: number) =>
-      Math.max(
-        0,
-        Math.round((amountCents * (stripeFees.feeBps ?? 0)) / 10_000) +
-          (stripeFees.feeFixedCents ?? 0),
-      );
 
     // Filtrar intents por modo (TEST/LIVE) via payment_events
     let purchaseIds: string[] | null = null;
@@ -134,7 +126,7 @@ async function _GET(req: NextRequest) {
       const discount = s.discountCents ?? 0;
       const platformFee = (s.platformFeeCents ?? 0) + (s.cardPlatformFeeCents ?? 0);
       const total = s.totalCents ?? gross - discount + platformFee;
-      const stripeFee = s.stripeFeeCents != null ? s.stripeFeeCents : estimateStripeFee(total);
+      const stripeFee = s.stripeFeeCents ?? 0;
       const net =
         s.netCents != null && s.netCents >= 0
           ? s.netCents

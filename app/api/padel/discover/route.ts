@@ -75,7 +75,6 @@ async function _GET(req: NextRequest) {
 
     const params = req.nextUrl.searchParams;
     const q = params.get("q")?.trim() ?? "";
-    const city = params.get("city")?.trim() ?? "";
     const dateParam = params.get("date");
     const dayParam = params.get("day");
     const limit = clampLimit(params.get("limit"));
@@ -99,16 +98,11 @@ async function _GET(req: NextRequest) {
       organization: { status: "ACTIVE" },
     };
 
-    if (city && city.toLowerCase() !== "portugal") {
-      where.locationCity = { contains: city, mode: "insensitive" };
-    }
-
     if (q) {
       where.OR = [
         { title: { contains: q, mode: "insensitive" } },
         { description: { contains: q, mode: "insensitive" } },
-        { locationName: { contains: q, mode: "insensitive" } },
-        { locationCity: { contains: q, mode: "insensitive" } },
+        { addressRef: { formattedAddress: { contains: q, mode: "insensitive" } } },
       ];
     }
 
@@ -152,8 +146,10 @@ async function _GET(req: NextRequest) {
         startsAt: true,
         endsAt: true,
         coverImageUrl: true,
-        locationName: true,
-        locationCity: true,
+        addressId: true,
+        addressRef: {
+          select: { formattedAddress: true, canonical: true },
+        },
         status: true,
         ticketTypes: { select: { price: true, status: true } },
         organization: { select: { publicName: true, username: true } },
@@ -190,7 +186,6 @@ async function _GET(req: NextRequest) {
         .map((link) => link.category)
         .filter((c): c is { id: number; label: string } => Boolean(c));
       levels.forEach((level) => levelsMap.set(level.id, level));
-
       return {
         id: event.id,
         slug: event.slug,
@@ -198,8 +193,8 @@ async function _GET(req: NextRequest) {
         startsAt: event.startsAt ? event.startsAt.toISOString() : null,
         endsAt: event.endsAt ? event.endsAt.toISOString() : null,
         coverImageUrl: event.coverImageUrl ?? null,
-        locationName: event.locationName ?? null,
-        locationCity: event.locationCity ?? null,
+        locationFormattedAddress: event.addressRef?.formattedAddress ?? null,
+        addressId: event.addressId ?? null,
         priceFrom,
         organizationName: event.organization?.publicName ?? event.organization?.username ?? null,
         format: event.padelTournamentConfig?.format ?? null,

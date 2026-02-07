@@ -290,9 +290,16 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   }, [event, service]);
 
   const title = service ? service.title : event?.title ?? "Oferta";
+  const serviceAddress =
+    service?.addressRef?.formattedAddress ??
+    service?.organization?.addressRef?.formattedAddress ??
+    null;
   const location = service
-    ? service.organization.city || service.organization.publicName || service.organization.businessName || "Local a anunciar"
-    : event?.location?.city ?? event?.location?.name ?? "Local a anunciar";
+    ? serviceAddress || "Local a anunciar"
+    : event?.location?.formattedAddress ??
+        event?.location?.city ??
+        event?.location?.name ??
+        "Local a anunciar";
   const date = service
     ? formatServiceNextAvailability(service.nextAvailability)
     : formatDateRange(event?.startsAt, event?.endsAt);
@@ -402,13 +409,13 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             serviceDuration: durationLabel ?? "",
             serviceKind: resolveServiceKind(service.kind),
             serviceOrg: host,
-            serviceCity: service.organization.city ?? "",
+            serviceAddress: serviceAddress ?? "",
             serviceInstructor: instructorLabel ?? "",
             serviceCoverUrl: serviceCover ?? "",
             ...(transitionTag ? { imageTag: transitionTag } : {}),
           }
         : undefined,
-    [service, title, cardPrice, durationLabel, host, instructorLabel, serviceCover, transitionTag],
+    [service, title, cardPrice, durationLabel, host, instructorLabel, serviceCover, serviceAddress, transitionTag],
   );
 
   const linkHref = useMemo(

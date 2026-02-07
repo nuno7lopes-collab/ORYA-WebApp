@@ -5,7 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationModule, PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
+import { OrganizationModule, SaleSummaryStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Aggregate = {
@@ -133,35 +133,10 @@ async function _GET(req: NextRequest) {
       refundsMap.set(row.eventId, row._sum.baseAmountCents ?? 0);
     });
 
-    const pending = await prisma.pendingPayout.findMany({
-      where: {
-        sourceType: SourceType.TICKET_ORDER,
-        sourceId: { in: eventIds.map((id) => String(id)) },
-        status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
-      },
-      select: { sourceId: true, amountCents: true, holdUntil: true, status: true, blockedReason: true },
-    });
-    const pendingByEvent = new Map<
-      string,
-      { holdCents: number; releaseAt: Date | null; hasBlocked: boolean }
-    >();
-    for (const payout of pending) {
-      const key = payout.sourceId;
-      const current = pendingByEvent.get(key) ?? { holdCents: 0, releaseAt: null, hasBlocked: false };
-      current.holdCents += payout.amountCents;
-      if (payout.status === PendingPayoutStatus.BLOCKED) {
-        current.hasBlocked = true;
-      } else if (!current.releaseAt || (payout.holdUntil && payout.holdUntil < current.releaseAt)) {
-        current.releaseAt = payout.holdUntil ?? null;
-      }
-      pendingByEvent.set(key, current);
-    }
-
     const eventRows = events.map((event) => {
       const stat = eventStats.get(event.id) ?? { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0 };
       const refundsCents = refundsMap.get(event.id) ?? 0;
       const netAfterRefundsCents = Math.max(0, stat.netCents - refundsCents);
-      const pendingStats = pendingByEvent.get(String(event.id)) ?? { holdCents: 0, releaseAt: null, hasBlocked: false };
       return {
         id: event.id,
         title: event.title,
@@ -173,9 +148,9 @@ async function _GET(req: NextRequest) {
         netCents: stat.netCents,
         refundsCents,
         netAfterRefundsCents,
-        holdCents: pendingStats.holdCents,
-        holdReason: pendingStats.hasBlocked ? "BLOCKED" : pendingStats.holdCents > 0 ? "HELD" : null,
-        releaseAt: pendingStats.releaseAt,
+        holdCents: 0,
+        holdReason: null,
+        releaseAt: null,
       };
     });
 
@@ -186,7 +161,6 @@ async function _GET(req: NextRequest) {
         acc.netCents += row.netCents;
         acc.refundsCents += row.refundsCents;
         acc.netAfterRefundsCents += row.netAfterRefundsCents;
-        acc.holdCents += row.holdCents;
         return acc;
       },
       {

@@ -21,6 +21,7 @@ export type WalletItem = {
   snapshot: WalletSnapshot;
   actions: WalletAction;
   updatedAt?: string | null;
+  consumedAt?: string | null;
 };
 
 export function useWallet() {
@@ -57,6 +58,7 @@ export function useWallet() {
         },
         actions: e.actions ?? {},
         updatedAt: e.updatedAt ?? null,
+        consumedAt: e.consumedAt ?? null,
       }));
       setItems(mapped);
     } catch (err) {

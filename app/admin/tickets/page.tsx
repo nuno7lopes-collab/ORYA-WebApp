@@ -30,6 +30,7 @@ type AdminTicketUser = {
 type AdminTicket = {
   id: string;
   status?: string | null;
+  consumedAt?: string | null;
   event?: AdminTicketEvent | null;
   user?: AdminTicketUser | null;
   ticketType?: { id?: number | null; name?: string | null } | null;
@@ -75,7 +76,7 @@ function statusBadgeClasses(status: string) {
   switch (status) {
     case "ACTIVE":
       return "bg-emerald-500/12 text-emerald-100 border-emerald-400/30";
-    case "USED":
+    case "CHECKED_IN":
       return "bg-sky-500/12 text-sky-100 border-sky-400/30";
     case "REFUNDED":
       return "bg-amber-500/12 text-amber-100 border-amber-400/30";
@@ -93,8 +94,8 @@ function statusLabel(status?: string | null) {
   switch (status) {
     case "ACTIVE":
       return "Ativo";
-    case "USED":
-      return "Usado";
+    case "CHECKED_IN":
+      return "Check-in";
     case "REFUNDED":
       return "Reembolsado";
     case "CANCELLED":
@@ -307,7 +308,7 @@ export default function AdminTicketsPage() {
                 >
                   <option value="ALL">Todos</option>
                   <option value="ACTIVE">Ativos</option>
-                  <option value="USED">Usados</option>
+                  <option value="CHECKED_IN">Check-in</option>
                   <option value="REFUNDED">Reembolsados</option>
                   <option value="CANCELLED">Cancelados</option>
                   <option value="RESALE_LISTED">Em revenda</option>
@@ -441,7 +442,14 @@ export default function AdminTicketsPage() {
                             </span>
                           </td>
                           <td className="px-3 py-3 align-top text-[11px] text-white/60">
-                            {formatDate(t.purchasedAt)}
+                            <div className="flex flex-col gap-1">
+                              <span>{formatDate(t.purchasedAt)}</span>
+                              {t.consumedAt && (
+                                <span className="text-[10px] text-sky-200/70">
+                                  Check-in: {formatDate(t.consumedAt)}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-3 align-top max-w-[160px] truncate font-mono text-[10px] text-white/50">
                             <div className="flex flex-col gap-1">

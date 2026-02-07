@@ -16,7 +16,6 @@ model Profile {
   avatarUrl                                                        String?                 @map("avatar_url")
   coverUrl                                                         String?                 @map("cover_url")
   bio                                                              String?
-  city                                                             String?
   gender                                                           Gender?
   padelLevel                                                       String?                 @map("padel_level")
   padelPreferredSide                                               PadelPreferredSide?     @map("padel_preferred_side")
@@ -33,6 +32,10 @@ model Profile {
   visibility                                                       Visibility              @default(PUBLIC)
   is_verified                                                      Boolean                 @default(false)
   contactPhone                                                     String?                 @map("contact_phone")
+  locationConsent                                                  LocationConsent         @default(PENDING) @map("location_consent")
+  locationGranularity                                              LocationGranularity     @default(COARSE) @map("location_granularity")
+  locationSource                                                   UserLocationSource?     @map("location_source")
+  locationUpdatedAt                                                DateTime?               @map("location_updated_at") @db.Timestamptz(6)
   status                                                           AccountStatus?          @default(ACTIVE)
   deletionRequestedAt                                              DateTime?               @map("deletion_requested_at") @db.Timestamptz(6)
   deletionScheduledFor                                             DateTime?               @map("deletion_scheduled_for") @db.Timestamptz(6)
@@ -72,7 +75,6 @@ model Profile {
   serviceCreditBalances                                             ServiceCreditBalance[]
   serviceCreditLedger                                               ServiceCreditLedger[]
   serviceReviews                                                    ServiceReview[]
-  transactions                                                     Transaction[]
   padelPairingSlots                                                PadelPairingSlot[]      @relation("PadelPairingSlotProfile")
   padelPairingInvites                                              PadelPairingSlot[]      @relation("PadelPairingSlotInvitedUser")
   padelPairingsPlayer1                                             PadelPairing[]          @relation("PadelPairingPlayer1")
@@ -111,12 +113,6 @@ model Profile {
   chatUserPresence                                                ChatUserPresence?        @relation("ChatUserPresenceUser")
   internalChatChannelsCreated                                      InternalChatChannel[]   @relation("InternalChatChannelCreator")
   internalChatMessagesAuthored                                     InternalChatMessage[]   @relation("InternalChatMessageAuthor")
-  locationConsent                                                  LocationConsent         @default(PENDING) @map("location_consent")
-  locationGranularity                                              LocationGranularity     @default(COARSE) @map("location_granularity")
-  locationSource                                                   UserLocationSource?      @map("location_source")
-  locationCity                                                     String?                 @map("location_city")
-  locationRegion                                                   String?                 @map("location_region")
-  locationUpdatedAt                                                DateTime?               @map("location_updated_at") @db.Timestamptz(6)
   store                                                            Store?
   storeCarts                                                       StoreCart[]
   storeOrders                                                      StoreOrder[]
@@ -180,7 +176,6 @@ model Organization {
   stripePayoutsEnabled    Boolean                         @default(false) @map("stripe_payouts_enabled")
   entityType              String?                         @map("entity_type")
   businessName            String?                         @map("business_name")
-  city                    String?                         @map("city")
   payoutIban              String?                         @map("payout_iban")
   username                String?                         @unique @db.Citext
   language                String?                         @default("pt")
@@ -196,14 +191,12 @@ model Organization {
   primaryModule           OrganizationModule              @default(EVENTOS) @map("primary_module")
   reservationAssignmentMode ReservationAssignmentMode     @default(PROFESSIONAL) @map("reservation_assignment_mode")
   padelDefaultShortName   String?                         @map("padel_default_short_name")
-  padelDefaultCity        String?                         @map("padel_default_city")
-  padelDefaultAddress     String?                         @map("padel_default_address")
   padelDefaultCourts      Int                             @default(0) @map("padel_default_courts")
   padelDefaultHours       String?                         @map("padel_default_hours")
   padelDefaultRuleSetId   Int?                            @map("padel_default_rule_set_id")
   padelFavoriteCategories Int[]                           @default([]) @map("padel_favorite_categories")
   publicName              String                          @map("public_name")
-  address                 String?                         @map("address")
+  addressId               String?                         @map("address_id") @db.Uuid
   showAddressPublicly     Boolean                         @default(false) @map("show_address_publicly")
   publicWebsite           String?                         @map("public_website")
   publicInstagram         String?                         @map("public_instagram")
@@ -238,6 +231,7 @@ model Organization {
   publicApiKeys           PublicApiKey[]
   settings                OrganizationSettings?
   ownerTransfers          OrganizationOwnerTransfer[]
+  addressRef              Address?                        @relation(fields: [addressId], references: [id], onDelete: SetNull)
   trainerProfiles         TrainerProfile[]
   padelDefaultRuleSet     PadelRuleSet?                   @relation("OrganizationPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onUpdate: NoAction, map: "organizations_padel_default_rule_set_fk")
   padelCategories         PadelCategory[]
@@ -271,7 +265,6 @@ model Organization {
   analyticsRollups        AnalyticsRollup[]
   availabilityOverrides   AvailabilityOverride[]
   serviceReviews           ServiceReview[]
-  transactions            Transaction[]
   crmCustomers            CrmCustomer[]
   crmCustomerNotes        CrmCustomerNote[]
   crmInteractions         CrmInteraction[]
@@ -287,6 +280,7 @@ model Organization {
   store                   Store?
   organization_follows_organization_follows_organization_idToorganizations organization_follows[] @relation("organization_follows_organization_idToorganizations")
 
+  @@index([addressId], map: "organizations_address_idx")
   @@map("organizations")
   @@schema("app_v3")
 }
@@ -812,17 +806,14 @@ model StoreOrderAddress {
   orderId     Int             @map("order_id")
   addressType StoreAddressType @map("address_type")
   fullName    String          @map("full_name")
-  line1       String
-  line2       String?
-  city        String
-  region      String?
-  postalCode  String          @map("postal_code")
-  country     String
+  addressId   String          @map("address_id") @db.Uuid
   nif         String?         @map("nif") @db.Text
   createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   order       StoreOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  addressRef  Address         @relation(fields: [addressId], references: [id], onDelete: Cascade)
 
   @@index([orderId], map: "store_order_addresses_order_idx")
+  @@index([addressId], map: "store_order_addresses_address_idx")
   @@map("store_order_addresses")
   @@schema("app_v3")
 }
@@ -1646,16 +1637,7 @@ model Event {
   organizationId                       Int?                    @map("organization_id")
   startsAt                          DateTime                @map("starts_at")
   endsAt                            DateTime                @map("ends_at")
-  locationName                      String                  @map("location_name")
-  locationCity                      String?                 @map("location_city")
-  locationSource                    LocationSource          @default(MANUAL) @map("location_source")
-  locationProviderId                String?                 @map("location_provider_id")
-  locationFormattedAddress          String?                 @map("location_formatted_address")
-  locationComponents                Json?                   @map("location_components")
-  locationOverrides                 Json?                   @map("location_overrides")
   addressId                         String?                 @map("address_id") @db.Uuid
-  latitude                          Float?                  @map("lat")
-  longitude                         Float?                  @map("lng")
   pricingMode                       EventPricingMode        @default(STANDARD) @map("pricing_mode")
   status                            EventStatus             @default(DRAFT)
   timezone                          String                  @default("Europe/Lisbon")
@@ -1839,36 +1821,27 @@ model Ticket {
   rotatingSeed          String?           @map("rotating_seed") @db.Uuid
   pricePaid             Int               @map("price_paid")
   currency              String            @default("EUR")
-  usedAt                DateTime?         @map("used_at")
   userId                String?           @map("user_id") @db.Uuid
   platformFeeCents      Int               @default(0) @map("platform_fee_cents")
   totalPaidCents        Int               @default(0) @map("total_paid_cents")
-  pairingId             Int?              @map("pairing_id")
-  padelSplitShareCents  Int?              @map("padel_split_share_cents")
   purchaseId            String?           @map("purchase_id") @db.Text
   stripePaymentIntentId String?           @map("stripe_payment_intent_id")
   emissionIndex         Int               @default(0) @map("emission_index")
   saleSummaryId         Int?              @map("sale_summary_id")
   guestLink             GuestTicketLink?
   notifications         Notification[]    @relation("NotificationTicket")
-  pairingSlot           PadelPairingSlot? @relation("TicketPairingSlot")
-  createdPadelPairings  PadelPairing[]    @relation("PadelPairingCreatedByTicket")
   entitlement           Entitlement?      @relation("TicketEntitlement")
   resales               TicketResale[]
   event                 Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  pairing               PadelPairing?     @relation("PairingTickets", fields: [pairingId], references: [id])
   ticketType            TicketType        @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
   ownerUserId           String?           @map("owner_user_id") @db.Uuid
   ownerIdentityId       String?           @map("owner_identity_id") @db.Uuid
-  tournamentEntryId     Int?              @map("tournament_entry_id")
-  tournamentEntry       TournamentEntry?  @relation("TicketTournamentEntry", fields: [tournamentEntryId], references: [id], onDelete: SetNull)
   saleSummary           SaleSummary?      @relation(fields: [saleSummaryId], references: [id], onDelete: SetNull)
 
   @@unique([purchaseId, ticketTypeId, emissionIndex], map: "tickets_purchase_ticket_idx")
   @@index([eventId])
   @@index([userId])
   @@index([ticketTypeId])
-  @@index([pairingId])
   @@index([stripePaymentIntentId], map: "tickets_stripe_intent_idx")
   @@index([saleSummaryId], map: "tickets_sale_summary_idx")
   @@map("tickets")
@@ -2335,22 +2308,18 @@ model SearchIndexItem {
   coverImageUrl            String?               @map("cover_image_url")
   hostName                 String?               @map("host_name")
   hostUsername             String?               @map("host_username")
-  locationName             String?               @map("location_name")
-  locationCity             String?               @map("location_city")
-  locationFormattedAddress String?               @map("location_formatted_address")
-  latitude                 Float?                @map("lat")
-  longitude                Float?                @map("lng")
-  locationSource           LocationSource?       @map("location_source")
+  addressId                String?               @map("address_id") @db.Uuid
   status                   EventStatus           @map("status")
   visibility               SearchIndexVisibility @map("visibility")
   lastEventId              String                @map("last_event_id") @db.Uuid
   updatedAt                DateTime              @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  addressRef   Address?     @relation(fields: [addressId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, sourceType, sourceId], map: "search_index_items_unique")
   @@index([visibility, startsAt, id], map: "search_index_items_visibility_start_idx")
-  @@index([locationCity, startsAt, id], map: "search_index_items_city_start_idx")
+  @@index([addressId], map: "search_index_items_address_idx")
   @@index([organizationId, startsAt, id], map: "search_index_items_org_start_idx")
   @@map("search_index_items")
   @@schema("app_v3")
@@ -2548,16 +2517,9 @@ model PadelClub {
   organizationId         Int                     @map("organization_id")
   name                String
   shortName           String?                 @map("short_name")
-  city                String?
   addressId           String                 @map("address_id") @db.Uuid
   kind                PadelClubKind           @default(OWN) @map("kind")
   sourceClubId        Int?                    @map("source_club_id")
-  locationSource      LocationSource          @default(MANUAL) @map("location_source")
-  locationProviderId  String?                 @map("location_provider_id")
-  locationFormattedAddress String?            @map("location_formatted_address")
-  locationComponents  Json?                   @map("location_components")
-  latitude            Float?                  @map("lat")
-  longitude           Float?                  @map("lng")
   courtsCount         Int                     @default(1) @map("courts_count")
   hours               String?
   favoriteCategoryIds Int[]                   @default([]) @map("favorite_category_ids")
@@ -2982,7 +2944,6 @@ model PadelPairing {
   pairingStatus               PadelPairingStatus          @default(INCOMPLETE) @map("pairing_status")
   pairingJoinMode             PadelPairingJoinMode        @default(INVITE_PARTNER) @map("pairing_join_mode")
   createdByUserId             String?                     @map("created_by_user_id") @db.Uuid
-  createdByTicketId           String?                     @map("created_by_ticket_id")
   partnerInviteToken          String?                     @unique @map("invite_token")
   partnerInviteUsedAt         DateTime?                   @map("partner_invite_used_at") @db.Timestamptz(6)
   partnerLinkToken            String?                     @map("partner_link_token")
@@ -3006,10 +2967,8 @@ model PadelPairing {
   matchSlotsWinner            EventMatchSlot[]            @relation("MatchWinnerPairing")
   slots                       PadelPairingSlot[]
   category                    PadelCategory?              @relation(fields: [categoryId], references: [id])
-  createdByTicket             Ticket?                     @relation("PadelPairingCreatedByTicket", fields: [createdByTicketId], references: [id], map: "padel_pairings_created_ticket_fkey")
   event                       Event                       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   organization                   Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  tickets                     Ticket[]                    @relation("PairingTickets")
   player1                     Profile?                    @relation("PadelPairingPlayer1", fields: [player1UserId], references: [id], onUpdate: NoAction)
   player2                     Profile?                    @relation("PadelPairingPlayer2", fields: [player2UserId], references: [id], onUpdate: NoAction)
   waitlistPromotions          PadelWaitlistEntry[]
@@ -3135,7 +3094,6 @@ model TournamentEntry {
   user            Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
   pairing         PadelPairing?         @relation(fields: [pairingId], references: [id], onDelete: Cascade)
   category        PadelCategory?        @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
-  tickets         Ticket[]              @relation("TicketTournamentEntry")
 
   @@unique([eventId, categoryId, userId], map: "tournament_entries_event_category_user_unique")
   @@unique([purchaseId, emissionIndex], map: "tournament_entries_purchase_idx")
@@ -3150,7 +3108,6 @@ model PadelPairingSlot {
   env                     String                         @default("prod")
   id              Int                       @id @default(autoincrement())
   pairingId       Int                       @map("pairing_id")
-  ticketId        String?                   @unique @map("ticket_id")
   profileId       String?                   @map("profile_id") @db.Uuid
   invitedUserId   String?                   @map("invited_user_id") @db.Uuid
   slot_role       PadelPairingSlotRole
@@ -3165,7 +3122,6 @@ model PadelPairingSlot {
   playerProfile   PadelPlayerProfile?       @relation(fields: [playerProfileId], references: [id], onUpdate: NoAction, map: "padel_pairing_slots_player_profile_fk")
   profile         Profile?                  @relation("PadelPairingSlotProfile", fields: [profileId], references: [id])
   invitedUser     Profile?                  @relation("PadelPairingSlotInvitedUser", fields: [invitedUserId], references: [id], onDelete: SetNull)
-  ticket          Ticket?                   @relation("TicketPairingSlot", fields: [ticketId], references: [id])
   registrationLines PadelRegistrationLine[]
 
   @@index([pairingId])
@@ -3647,10 +3603,11 @@ model Service {
   categoryTag     String?       @map("category_tag")
   coverImageUrl   String?       @map("cover_image_url")
   locationMode    ServiceLocationMode @default(FIXED) @map("location_mode")
-  defaultLocationText String?   @map("default_location_text")
+  addressId       String?       @map("address_id") @db.Uuid
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  addressRef      Address?      @relation(fields: [addressId], references: [id], onDelete: SetNull)
   policy          OrganizationPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
   instructor      Profile?       @relation("ServiceInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
   packs           ServicePack[]
@@ -3668,6 +3625,7 @@ model Service {
   @@index([isActive])
   @@index([instructorId])
   @@index([categoryTag])
+  @@index([addressId], map: "services_address_idx")
   @@map("services")
   @@schema("app_v3")
 }
@@ -3927,7 +3885,7 @@ model Booking {
   confirmationSnapshotVersion Int? @map("confirmation_snapshot_version")
   confirmationSnapshotCreatedAt DateTime? @map("confirmation_snapshot_created_at") @db.Timestamptz(6)
   locationMode    ServiceLocationMode @default(FIXED) @map("location_mode")
-  locationText    String?       @map("location_text")
+  addressId       String?       @map("address_id") @db.Uuid
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   service         Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -3937,6 +3895,7 @@ model Booking {
   court           PadelClubCourt? @relation(fields: [courtId], references: [id], onDelete: SetNull)
   professional    ReservationProfessional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
   resource        ReservationResource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  addressRef      Address?      @relation(fields: [addressId], references: [id], onDelete: SetNull)
   policyRef       BookingPolicyRef?
   bookingPackage  BookingPackage?
   addons          BookingAddon[]
@@ -3958,6 +3917,7 @@ model Booking {
   @@index([partySize])
   @@index([status])
   @@index([pendingExpiresAt])
+  @@index([addressId], map: "bookings_address_idx")
   @@map("bookings")
   @@schema("app_v3")
 }
@@ -4190,62 +4150,6 @@ model BookingPolicyRef {
 
   @@index([policyId])
   @@map("booking_policy_refs")
-  @@schema("app_v3")
-}
-
-model Transaction {
-  env                     String                         @default("prod")
-  id                   Int                     @id @default(autoincrement())
-  organizationId          Int                     @map("organization_id")
-  userId               String?                 @map("user_id") @db.Uuid
-  amountCents          Int                     @map("amount_cents")
-  currency             String                  @default("EUR")
-  stripeChargeId       String?                 @map("stripe_charge_id")
-  stripePaymentIntentId String?                @map("stripe_payment_intent_id")
-  platformFeeCents     Int                     @default(0) @map("platform_fee_cents")
-  stripeFeeCents       Int                     @default(0) @map("stripe_fee_cents")
-  payoutStatus         TransactionPayoutStatus @default(PENDING) @map("payout_status")
-  metadata             Json?                   @default("{}")
-  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organization            Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user                 Profile?                @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([organizationId])
-  @@index([userId])
-  @@index([stripeChargeId])
-  @@index([stripePaymentIntentId])
-  @@map("transactions")
-  @@schema("app_v3")
-}
-
-model PendingPayout {
-  env                     String                         @default("prod")
-  id                        Int                 @id @default(autoincrement())
-  sourceType                String              @map("source_type")
-  sourceId                  String              @map("source_id")
-  paymentIntentId           String              @unique @map("payment_intent_id")
-  chargeId                  String?             @map("charge_id")
-  recipientConnectAccountId String              @map("recipient_connect_account_id")
-  currency                  String              @default("EUR")
-  grossAmountCents          Int                 @map("gross_amount_cents")
-  platformFeeCents          Int                 @map("platform_fee_cents")
-  feeMode                   FeeMode             @map("fee_mode")
-  amountCents               Int                 @map("amount_cents")
-  holdUntil                 DateTime            @map("hold_until") @db.Timestamptz(6)
-  status                    PendingPayoutStatus @default(HELD)
-  blockedReason             String?             @map("blocked_reason")
-  retryCount                Int                 @default(0) @map("retry_count")
-  nextAttemptAt             DateTime?           @map("next_attempt_at") @db.Timestamptz(6)
-  releasedAt                DateTime?           @map("released_at") @db.Timestamptz(6)
-  transferId                String?             @map("transfer_id")
-  createdAt                 DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                 DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  @@index([status, holdUntil])
-  @@index([paymentIntentId])
-  @@index([recipientConnectAccountId])
-  @@map("pending_payouts")
   @@schema("app_v3")
 }
 
@@ -5462,7 +5366,6 @@ enum TicketTypeStatus {
 
 enum TicketStatus {
   ACTIVE
-  USED
   REFUNDED
   TRANSFERRED
   RESALE_LISTED
@@ -5511,13 +5414,91 @@ enum padel_match_status {
 }
 
 enum EntitlementStatus {
+  PENDING
   ACTIVE
-  USED
-  REFUNDED
   REVOKED
+  EXPIRED
   SUSPENDED
 
   @@map("entitlement_status")
+  @@schema("app_v3")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum InvoiceKind {
+  CONSUMER
+  PLATFORM_FEE
+
+  @@schema("app_v3")
+}
+
+enum PayoutStatus {
+  PENDING
+  RELEASED
+  FAILED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+model Invoice {
+  env                     String                         @default("prod")
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    Int                 @map("organization_id")
+  customerIdentityId String?            @map("customer_identity_id") @db.Uuid
+  sourceType        SourceType          @map("source_type")
+  sourceId          String              @map("source_id") @db.Text
+  kind              InvoiceKind         @default(CONSUMER)
+  status            InvoiceStatus       @default(ISSUED)
+  invoiceNumber     String?             @map("invoice_number")
+  currency          String              @default("EUR")
+  amountCents       Int                 @map("amount_cents")
+  issuedAt          DateTime?           @map("issued_at") @db.Timestamptz(6)
+  paidAt            DateTime?           @map("paid_at") @db.Timestamptz(6)
+  metadata          Json?               @default("{}")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "invoices_org_idx")
+  @@index([sourceType, sourceId], map: "invoices_source_idx")
+  @@index([invoiceNumber], map: "invoices_number_idx")
+  @@map("invoices")
+  @@schema("app_v3")
+}
+
+model Payout {
+  env                     String                         @default("prod")
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    Int                 @map("organization_id")
+  sourceType        String?             @map("source_type")
+  sourceId          String?             @map("source_id")
+  paymentId         String?             @map("payment_id")
+  paymentIntentId   String?             @map("payment_intent_id")
+  transferId        String?             @map("transfer_id")
+  currency          String              @default("EUR")
+  grossAmountCents  Int?                @map("gross_amount_cents")
+  platformFeeCents  Int?                @map("platform_fee_cents")
+  feeMode           FeeMode?            @map("fee_mode")
+  amountCents       Int                 @map("amount_cents")
+  status            PayoutStatus        @default(PENDING)
+  releasedAt        DateTime?           @map("released_at") @db.Timestamptz(6)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "payouts_org_idx")
+  @@index([paymentIntentId], map: "payouts_pi_idx")
+  @@map("payouts")
   @@schema("app_v3")
 }
 
@@ -5538,7 +5519,6 @@ enum CheckinResultCode {
   OK
   ALREADY_USED
   INVALID
-  REFUNDED
   REVOKED
   SUSPENDED
   NOT_ALLOWED
@@ -5739,24 +5719,6 @@ enum ServiceKind {
   GENERAL
   COURT
   CLASS
-
-  @@schema("app_v3")
-}
-
-enum TransactionPayoutStatus {
-  PENDING
-  PAID
-  FAILED
-
-  @@schema("app_v3")
-}
-
-enum PendingPayoutStatus {
-  HELD
-  RELEASING
-  RELEASED
-  BLOCKED
-  CANCELLED
 
   @@schema("app_v3")
 }

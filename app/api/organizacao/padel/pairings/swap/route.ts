@@ -110,7 +110,6 @@ async function _POST(req: NextRequest) {
           slot_role: true,
           slotStatus: true,
           paymentStatus: true,
-          ticketId: true,
           profileId: true,
           playerProfileId: true,
           invitedUserId: true,
@@ -157,9 +156,7 @@ async function _POST(req: NextRequest) {
   }
   if (
     partnerSlotA.paymentStatus === PadelPairingPaymentStatus.PAID ||
-    partnerSlotB.paymentStatus === PadelPairingPaymentStatus.PAID ||
-    partnerSlotA.ticketId ||
-    partnerSlotB.ticketId
+    partnerSlotB.paymentStatus === PadelPairingPaymentStatus.PAID
   ) {
     return fail(409, "PARTNER_LOCKED");
   }
@@ -196,7 +193,6 @@ async function _POST(req: NextRequest) {
       where: { id: partnerSlotA.id },
       data: {
         ...swapSlotPayload(partnerSlotB),
-        ticketId: null,
         invitedUserId: null,
         invitedContact: null,
       },
@@ -205,7 +201,6 @@ async function _POST(req: NextRequest) {
       where: { id: partnerSlotB.id },
       data: {
         ...swapSlotPayload(partnerSlotA),
-        ticketId: null,
         invitedUserId: null,
         invitedContact: null,
       },

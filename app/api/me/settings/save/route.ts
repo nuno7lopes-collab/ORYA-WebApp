@@ -68,7 +68,6 @@ async function _PATCH(req: NextRequest) {
             deletedAt: new Date(),
             fullName: "Conta apagada",
             bio: null,
-            city: null,
             avatarUrl: null,
           },
         });
@@ -80,7 +79,6 @@ async function _PATCH(req: NextRequest) {
             deletedAt: new Date(),
             fullName: "Conta apagada",
             bio: null,
-            city: null,
             avatarUrl: null,
           },
         });

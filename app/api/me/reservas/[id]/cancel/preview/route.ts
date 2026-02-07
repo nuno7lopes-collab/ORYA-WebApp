@@ -88,17 +88,24 @@ async function _POST(
       });
     }
 
-    const stripeFeeRow =
+    const paymentEvent =
       booking.paymentIntentId
-        ? await prisma.transaction.findFirst({
+        ? await prisma.paymentEvent.findFirst({
             where: { stripePaymentIntentId: booking.paymentIntentId },
-            select: { stripeFeeCents: true },
+            select: { purchaseId: true },
+          })
+        : null;
+    const payment =
+      paymentEvent?.purchaseId
+        ? await prisma.payment.findUnique({
+            where: { id: paymentEvent.purchaseId },
+            select: { processorFeesActual: true },
           })
         : null;
     const refund = snapshot
       ? computeCancellationRefundFromSnapshot(snapshot, {
           actor: "CLIENT",
-          stripeFeeCentsActual: stripeFeeRow?.stripeFeeCents ?? null,
+          stripeFeeCentsActual: payment?.processorFeesActual ?? null,
         })
       : null;
 

@@ -48,14 +48,14 @@ async function _GET(req: NextRequest) {
       deletedAt: null,
       kind: "OWN",
       ...(city && city.toLowerCase() !== "portugal" && PORTUGAL_CITIES.includes(city as (typeof PORTUGAL_CITIES)[number])
-        ? { city }
+        ? { addressRef: { formattedAddress: { contains: city, mode: Prisma.QueryMode.insensitive } } }
         : {}),
       ...(q
         ? {
             OR: [
               { name: { contains: q, mode: Prisma.QueryMode.insensitive } },
               { shortName: { contains: q, mode: Prisma.QueryMode.insensitive } },
-              { city: { contains: q, mode: Prisma.QueryMode.insensitive } },
+              { addressRef: { formattedAddress: { contains: q, mode: Prisma.QueryMode.insensitive } } },
             ],
           }
         : {}),
@@ -69,6 +69,7 @@ async function _GET(req: NextRequest) {
         id: true,
         name: true,
         shortName: true,
+        addressId: true,
         courtsCount: true,
         slug: true,
         addressRef: {
@@ -114,6 +115,7 @@ async function _GET(req: NextRequest) {
           id: club.id,
           name: club.name,
           shortName: club.shortName ?? club.name,
+          addressId: club.addressId ?? null,
           city:
             pickCanonicalField(club.addressRef?.canonical ?? null, "city", "addressLine2") ?? null,
           address: club.addressRef?.formattedAddress ?? null,

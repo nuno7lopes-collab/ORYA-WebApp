@@ -171,7 +171,7 @@ if [[ "$WITH_ACM" == "true" ]]; then
     exit 1
   fi
   ROOT_DOMAIN=${ROOT_DOMAIN:-orya.pt}
-  APP_DOMAIN=${APP_DOMAIN:-app.orya.pt}
+  APP_DOMAIN=${APP_DOMAIN:-orya.pt}
   ADMIN_DOMAIN=${ADMIN_DOMAIN:-admin.orya.pt}
   aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
     --stack-name "$ACM_STACK_NAME" \

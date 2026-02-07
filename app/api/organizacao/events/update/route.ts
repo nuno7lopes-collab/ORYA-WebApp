@@ -13,7 +13,6 @@ import {
   EventStatus,
   LiveHubVisibility,
   EventPricingMode,
-  LocationSource,
   AddressSourceProvider,
   PayoutMode,
   OrganizationMemberRole,
@@ -75,16 +74,7 @@ type UpdateEventBody = {
   description?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
-  locationName?: string | null;
-  locationCity?: string | null;
-  locationSource?: string | null;
-  locationProviderId?: string | null;
-  locationFormattedAddress?: string | null;
-  locationComponents?: Record<string, unknown> | null;
-  locationOverrides?: Record<string, unknown> | null;
   addressId?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
   templateType?: string | null;
   isGratis?: boolean;
   pricingMode?: string | null;
@@ -119,16 +109,6 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
-  if (!canonical || typeof canonical !== "object") return null;
-  const record = canonical as Record<string, unknown>;
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
-};
-
 const ADDRESS_SELECT = {
   id: true,
   formattedAddress: true,
@@ -140,12 +120,6 @@ const ADDRESS_SELECT = {
   confidenceScore: true,
   validationStatus: true,
 } satisfies Prisma.AddressSelect;
-
-const mapAddressProviderToLocationSource = (provider?: AddressSourceProvider | null) => {
-  if (!provider || provider === AddressSourceProvider.MANUAL) return LocationSource.MANUAL;
-  if (provider === AddressSourceProvider.APPLE_MAPS) return LocationSource.APPLE_MAPS;
-  return LocationSource.OSM;
-};
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -225,7 +199,6 @@ export async function POST(req: NextRequest) {
       templateType: EventTemplateType | null;
       payoutMode: PayoutMode | null;
       addressId?: string | null;
-      locationSource?: LocationSource | null;
       ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus; currency: string | null }[];
       organization: {
         id: number;
@@ -261,7 +234,6 @@ export async function POST(req: NextRequest) {
               templateType: true,
               payoutMode: true,
               addressId: true,
-              locationSource: true,
               ticketTypes: {
                 select: {
                   id: true,
@@ -306,10 +278,9 @@ export async function POST(req: NextRequest) {
                 pricing_mode: EventPricingMode | null;
                 template_type: EventTemplateType | null;
                 address_id: string | null;
-                location_source: LocationSource | null;
               }[]
             >(
-              Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode, template_type, address_id, location_source FROM app_v3.events WHERE id = ${eventId} LIMIT 1`,
+              Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode, template_type, address_id FROM app_v3.events WHERE id = ${eventId} LIMIT 1`,
             );
             const row = rows[0];
             if (!row) return null;
@@ -353,7 +324,6 @@ export async function POST(req: NextRequest) {
               templateType: row.template_type ?? null,
               payoutMode: row.payout_mode,
               addressId: row.address_id,
-              locationSource: row.location_source,
               ticketTypes: ticketTypes.map((t) => ({
                 id: t.id,
                 soldQuantity: Number(t.sold_quantity ?? 0),
@@ -481,6 +451,15 @@ export async function POST(req: NextRequest) {
     if (addressIdInput && !addressRecord) {
       return fail(400, "Morada inválida.");
     }
+    if (addressRecord && addressRecord.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+      return fail(400, "Morada deve ser Apple Maps.");
+    }
+
+    const effectiveAddressId =
+      (addressRecord?.id ?? (addressIdInput !== undefined ? addressIdInput : event.addressId ?? null)) ?? null;
+    if (!effectiveAddressId) {
+      return fail(400, "Seleciona uma morada normalizada.");
+    }
 
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
     if (body.archive === true) {
@@ -536,85 +515,8 @@ export async function POST(req: NextRequest) {
       }
       dataUpdate.endsAt = d;
     }
-    if (body.locationName !== undefined) dataUpdate.locationName = body.locationName ?? "";
-    if (body.locationCity !== undefined) {
-      const city = body.locationCity ?? "";
-      // Permitimos cidades fora da whitelist
-      dataUpdate.locationCity = city;
-    }
-    if (body.locationSource !== undefined) {
-      const sourceRaw = typeof body.locationSource === "string" ? body.locationSource.toUpperCase() : null;
-      if (sourceRaw === "APPLE_MAPS") dataUpdate.locationSource = LocationSource.APPLE_MAPS;
-      if (sourceRaw === "OSM") dataUpdate.locationSource = LocationSource.OSM;
-      if (sourceRaw === "MANUAL") dataUpdate.locationSource = LocationSource.MANUAL;
-    }
-    if (body.locationProviderId !== undefined) {
-      dataUpdate.locationProviderId = body.locationProviderId?.trim() || null;
-    }
-    if (body.locationFormattedAddress !== undefined) {
-      dataUpdate.locationFormattedAddress = body.locationFormattedAddress?.trim() || null;
-    }
-    if (body.locationComponents !== undefined) {
-      dataUpdate.locationComponents =
-        body.locationComponents && typeof body.locationComponents === "object"
-          ? (body.locationComponents as Prisma.InputJsonValue)
-          : Prisma.DbNull;
-    }
-    if (body.locationOverrides !== undefined) {
-      const rawOverrides =
-        body.locationOverrides && typeof body.locationOverrides === "object"
-          ? (body.locationOverrides as Record<string, unknown>)
-          : null;
-      const overridesHouse =
-        typeof rawOverrides?.houseNumber === "string" ? rawOverrides.houseNumber.trim() || null : null;
-      const overridesPostal =
-        typeof rawOverrides?.postalCode === "string" ? rawOverrides.postalCode.trim() || null : null;
-      dataUpdate.locationOverrides =
-        overridesHouse || overridesPostal
-          ? ({ houseNumber: overridesHouse, postalCode: overridesPostal } as Prisma.InputJsonValue)
-          : Prisma.DbNull;
-    }
     if (addressIdInput !== undefined) {
-      dataUpdate.addressId = addressIdInput;
-    }
-    if (body.latitude !== undefined) {
-      const lat = typeof body.latitude === "number" || typeof body.latitude === "string" ? Number(body.latitude) : NaN;
-      dataUpdate.latitude = Number.isFinite(lat) ? lat : null;
-    }
-    if (body.longitude !== undefined) {
-      const lng = typeof body.longitude === "number" || typeof body.longitude === "string" ? Number(body.longitude) : NaN;
-      dataUpdate.longitude = Number.isFinite(lng) ? lng : null;
-    }
-    if (addressRecord) {
-      const canonical = addressRecord.canonical ?? null;
       dataUpdate.addressId = addressRecord.id;
-      dataUpdate.locationSource = mapAddressProviderToLocationSource(addressRecord.sourceProvider);
-      dataUpdate.locationProviderId = addressRecord.sourceProviderPlaceId || null;
-      dataUpdate.locationFormattedAddress = addressRecord.formattedAddress ?? null;
-      dataUpdate.locationComponents = canonical ? (canonical as Prisma.InputJsonValue) : Prisma.DbNull;
-      dataUpdate.latitude = addressRecord.latitude ?? null;
-      dataUpdate.longitude = addressRecord.longitude ?? null;
-      const canonicalCity = pickCanonicalField(canonical, "city", "addressLine2", "locality");
-      if (canonicalCity) dataUpdate.locationCity = canonicalCity;
-    }
-
-    const hasLocationUpdate =
-      body.locationName !== undefined ||
-      body.locationCity !== undefined ||
-      body.locationSource !== undefined ||
-      body.locationProviderId !== undefined ||
-      body.locationFormattedAddress !== undefined ||
-      body.locationComponents !== undefined ||
-      body.locationOverrides !== undefined ||
-      body.latitude !== undefined ||
-      body.longitude !== undefined ||
-      body.addressId !== undefined;
-    const effectiveLocationSource =
-      (dataUpdate.locationSource as LocationSource | undefined) ?? event.locationSource ?? LocationSource.MANUAL;
-    const effectiveAddressId =
-      (addressRecord?.id ?? (addressIdInput !== undefined ? addressIdInput : (event as any).addressId ?? null)) ?? null;
-    if (hasLocationUpdate && effectiveLocationSource !== LocationSource.MANUAL && !effectiveAddressId) {
-      return fail(400, "Seleciona uma morada normalizada.");
     }
     if (body.templateType) {
       const tpl = body.templateType.toUpperCase();

@@ -57,23 +57,13 @@ type OrderDetail = {
     etaMaxDays: number | null;
     address: {
       fullName: string;
-      line1: string;
-      line2: string | null;
-      city: string;
-      region: string | null;
-      postalCode: string;
-      country: string;
+      formattedAddress: string | null;
       nif: string | null;
     } | null;
   };
   billing: {
     fullName: string;
-    line1: string;
-    line2: string | null;
-    city: string;
-    region: string | null;
-    postalCode: string;
-    country: string;
+    formattedAddress: string | null;
     nif: string | null;
   } | null;
   shipments: Shipment[];
@@ -353,13 +343,10 @@ export default function StoreOrderDetailPage({ params }: { params: Promise<{ ord
                 {shippingAddress ? (
                   <>
                     <p>{shippingAddress.fullName}</p>
-                    <p>{shippingAddress.line1}</p>
-                    {shippingAddress.line2 ? <p>{shippingAddress.line2}</p> : null}
-                    <p>
-                      {shippingAddress.postalCode} {shippingAddress.city}
-                      {shippingAddress.region ? `, ${shippingAddress.region}` : ""}
-                    </p>
-                    <p>{shippingAddress.country}</p>
+                    {shippingAddress.formattedAddress ? (
+                      <p>{shippingAddress.formattedAddress}</p>
+                    ) : null}
+                    {shippingAddress.nif ? <p>NIF: {shippingAddress.nif}</p> : null}
                   </>
                 ) : (
                   <p>Sem morada de envio.</p>

@@ -10,7 +10,7 @@ import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type Sco
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
-import { OrganizationMemberRole } from "@prisma/client";
+import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createBooking } from "@/domain/bookings/commands";
@@ -310,8 +310,7 @@ async function _POST(req: NextRequest) {
     const startsAtRaw = typeof payload?.startsAt === "string" ? payload.startsAt : null;
     const startsAt = startsAtRaw ? new Date(startsAtRaw) : null;
     const userId = typeof payload?.userId === "string" ? payload.userId : null;
-    const locationTextInputRaw = typeof payload?.locationText === "string" ? payload.locationText.trim() : "";
-    const locationTextInput = locationTextInputRaw ? locationTextInputRaw.slice(0, 160) : "";
+    const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const professionalIdRaw = parsePositiveInt(payload?.professionalId);
     const resourceIdRaw = parsePositiveInt(payload?.resourceId);
     const partySizeRaw = parsePositiveInt(payload?.partySize);
@@ -351,7 +350,7 @@ async function _POST(req: NextRequest) {
         unitPriceCents: true,
         currency: true,
         locationMode: true,
-        defaultLocationText: true,
+        addressId: true,
         professionalLinks: {
           select: { professionalId: true, professional: { select: { isActive: true } } },
         },
@@ -359,7 +358,7 @@ async function _POST(req: NextRequest) {
           select: { resourceId: true, resource: { select: { isActive: true } } },
         },
         organization: {
-          select: { timezone: true, address: true, reservationAssignmentMode: true },
+          select: { timezone: true, addressId: true, reservationAssignmentMode: true },
         },
       },
     });
@@ -661,12 +660,24 @@ async function _POST(req: NextRequest) {
     }
 
     const pendingExpiresAt = new Date(now.getTime() + PENDING_HOLD_MINUTES * 60 * 1000);
-    const locationText =
+    const resolvedAddressId =
       service.locationMode === "CHOOSE_AT_BOOKING"
-        ? locationTextInput || null
-        : service.defaultLocationText ?? service.organization?.address ?? null;
-    if (service.locationMode === "CHOOSE_AT_BOOKING" && !locationText) {
-      return fail(ctx, 400, "LOCATION_REQUIRED", "Local obrigatório para esta marcação.");
+        ? addressIdInput || null
+        : service.addressId ?? service.organization?.addressId ?? null;
+    if (service.locationMode === "CHOOSE_AT_BOOKING" && !resolvedAddressId) {
+      return fail(ctx, 400, "LOCATION_REQUIRED", "Morada obrigatória para esta marcação.");
+    }
+    if (resolvedAddressId) {
+      const address = await prisma.address.findUnique({
+        where: { id: resolvedAddressId },
+        select: { sourceProvider: true },
+      });
+      if (!address) {
+        return fail(ctx, 400, "LOCATION_REQUIRED", "Morada inválida.");
+      }
+      if (address.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+        return fail(ctx, 400, "LOCATION_REQUIRED", "Morada deve ser Apple Maps.");
+      }
     }
 
     const { booking } = await createBooking({
@@ -688,7 +699,7 @@ async function _POST(req: NextRequest) {
         pendingExpiresAt,
         snapshotTimezone: timezone,
         locationMode: service.locationMode,
-        locationText,
+        addressId: resolvedAddressId,
       },
       select: { id: true, status: true, pendingExpiresAt: true },
     });

@@ -11,8 +11,7 @@ type MarketingEvent = {
   title: string;
   slug: string;
   startsAt?: string | null;
-  locationName?: string | null;
-  locationCity?: string | null;
+  locationFormattedAddress?: string | null;
   templateType?: string | null;
 };
 
@@ -138,7 +137,7 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
     return formatDateTime(date);
   }, [selectedEvent?.startsAt]);
   const locationLabel = selectedEvent
-    ? selectedEvent.locationCity || selectedEvent.locationName || "local a anunciar"
+    ? selectedEvent.locationFormattedAddress || "local a anunciar"
     : "local a anunciar";
 
   const shareTemplates = useMemo(() => {

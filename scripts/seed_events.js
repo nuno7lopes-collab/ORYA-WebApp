@@ -10,6 +10,7 @@
  *   SEED_USERNAME=<username>
  *   SEED_ORG_USERNAME=<username>
  *   SEED_ENV=prod|test
+ *   SEED_ADDRESS_ID=<uuid>
  */
 
 const { PrismaClient } = require("@prisma/client");
@@ -118,7 +119,6 @@ async function main() {
         username: organizationUsername,
         publicName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
         businessName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
-        city: "Lisboa",
         status: "ACTIVE",
         primaryModule: "EVENTOS",
         group: { create: { env: seedEnv } },
@@ -132,13 +132,23 @@ async function main() {
         env: seedEnv,
         publicName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
         businessName: seedEnv === "test" ? "ORYA Demo Studio (TEST)" : "ORYA Demo Studio",
-        city: "Lisboa",
         status: "ACTIVE",
         primaryModule: "EVENTOS",
       },
     });
   }
   console.log("[seed-events] Organization:", { id: organization.id, username: organization.username ?? null });
+
+  const seedAddressId = typeof process.env.SEED_ADDRESS_ID === "string" ? process.env.SEED_ADDRESS_ID.trim() : "";
+  const resolvedAddressId = seedAddressId || null;
+  const resolvedAddress =
+    resolvedAddressId
+      ? await prisma.address.findUnique({
+          where: { id: resolvedAddressId },
+          select: { formattedAddress: true },
+        })
+      : null;
+  const snapshotVenueName = resolvedAddress?.formattedAddress ?? null;
 
   const now = new Date();
   const dayMs = 24 * 60 * 60 * 1000;
@@ -148,9 +158,6 @@ async function main() {
     {
       title: "Neon Nights Lisboa",
       description: "Uma noite de luz, música e energia no coração da cidade.",
-      locationName: "LX Factory",
-      locationCity: "Lisboa",
-      address: "Rua Rodrigues de Faria, 103",
       coverImageUrl:
         "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1600&q=80",
       startOffsetDays: -10,
@@ -160,9 +167,6 @@ async function main() {
     {
       title: "Sunset Rooftop Porto",
       description: "Rooftop premium com sunset session e DJs convidados.",
-      locationName: "Miradouro Porto Sky",
-      locationCity: "Porto",
-      address: "Rua do Infante, 45",
       coverImageUrl:
         "https://images.unsplash.com/photo-1494515843206-f3117d3f51b7?auto=format&fit=crop&w=1600&q=80",
       startOffsetDays: -3,
@@ -172,9 +176,6 @@ async function main() {
     {
       title: "ORYA Run Club",
       description: "Corrida urbana com after coffee e live set.",
-      locationName: "Parque das Nações",
-      locationCity: "Lisboa",
-      address: "Cais do Sodré",
       coverImageUrl:
         "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=1600&q=80",
       startOffsetDays: 2,
@@ -184,9 +185,6 @@ async function main() {
     {
       title: "Techno Warehouse",
       description: "Sessão techno premium em ambiente industrial.",
-      locationName: "Armazém 23",
-      locationCity: "Lisboa",
-      address: "Av. Infante Dom Henrique, 109",
       coverImageUrl:
         "https://images.unsplash.com/photo-1507874457470-272b3c8d8ee2?auto=format&fit=crop&w=1600&q=80",
       startOffsetDays: 6,
@@ -196,9 +194,6 @@ async function main() {
     {
       title: "Yoga & Sound Bath",
       description: "Manhã relax com yoga, sound bath e brunch.",
-      locationName: "Jardim da Estrela",
-      locationCity: "Lisboa",
-      address: "Praça da Estrela",
       coverImageUrl:
         "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1600&q=80",
       startOffsetDays: 15,
@@ -208,9 +203,6 @@ async function main() {
     {
       title: "Cinema Open Air",
       description: "Sessão de cinema ao ar livre com filme surpresa.",
-      locationName: "Parque da Cidade",
-      locationCity: "Porto",
-      address: "Av. da Boavista",
       coverImageUrl:
         "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1600&q=80",
       startOffsetDays: 30,
@@ -241,9 +233,7 @@ async function main() {
         ownerUserId: owner.id,
         startsAt,
         endsAt,
-        locationName: seed.locationName,
-        locationCity: seed.locationCity,
-        address: seed.address,
+        addressId: resolvedAddressId,
         pricingMode,
         status: "PUBLISHED",
         timezone: "Europe/Lisbon",
@@ -259,9 +249,7 @@ async function main() {
         ownerUserId: owner.id,
         startsAt,
         endsAt,
-        locationName: seed.locationName,
-        locationCity: seed.locationCity,
-        address: seed.address,
+        addressId: resolvedAddressId,
         pricingMode,
         status: "PUBLISHED",
         timezone: "Europe/Lisbon",
@@ -363,7 +351,7 @@ async function main() {
         eventId: event.id,
         snapshotTitle: event.title,
         snapshotCoverUrl: event.coverImageUrl,
-        snapshotVenueName: event.locationName,
+        snapshotVenueName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
         policyVersionApplied,
@@ -380,7 +368,7 @@ async function main() {
         status: "ACTIVE",
         snapshotTitle: event.title,
         snapshotCoverUrl: event.coverImageUrl,
-        snapshotVenueName: event.locationName,
+        snapshotVenueName,
         snapshotStartAt: event.startsAt,
         snapshotTimezone: event.timezone,
         policyVersionApplied,

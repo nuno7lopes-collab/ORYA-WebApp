@@ -9,6 +9,15 @@ import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 const DEFAULT_PAGE_SIZE = 12;
 const CACHE_TTL_MS = 30 * 1000;
 
+const pickCanonicalField = (canonical: Record<string, unknown> | null, ...keys: string[]) => {
+  if (!canonical) return null;
+  for (const key of keys) {
+    const value = canonical[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
 async function _GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const cursor = searchParams.get("cursor");
@@ -29,15 +38,11 @@ async function _GET(req: NextRequest) {
     startDate: string;
     endDate: string;
     venue: {
-      name: string | null;
-      address: string | null;
+      addressId: string | null;
       city: string | null;
       lat: number | null;
       lng: number | null;
       formattedAddress: string | null;
-      source: string | null;
-      components: Record<string, unknown> | null;
-      overrides: Record<string, unknown> | null;
     };
     coverImageUrl: string | null;
     isGratis: boolean;
@@ -100,9 +105,7 @@ async function _GET(req: NextRequest) {
         OR: [
           { title: { contains: q, mode: "insensitive" } },
           { description: { contains: q, mode: "insensitive" } },
-          { locationName: { contains: q, mode: "insensitive" } },
-          { locationCity: { contains: q, mode: "insensitive" } },
-          { locationFormattedAddress: { contains: q, mode: "insensitive" } },
+          { addressRef: { formattedAddress: { contains: q, mode: "insensitive" } } },
         ],
       });
     }
@@ -126,14 +129,15 @@ async function _GET(req: NextRequest) {
         description: true,
         startsAt: true,
         endsAt: true,
-        locationName: true,
-        locationCity: true,
-        locationFormattedAddress: true,
-        locationSource: true,
-        locationComponents: true,
-        locationOverrides: true,
-        latitude: true,
-        longitude: true,
+        addressId: true,
+        addressRef: {
+          select: {
+            formattedAddress: true,
+            canonical: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
         coverImageUrl: true,
         templateType: true,
         ticketTypes: {
@@ -169,6 +173,8 @@ async function _GET(req: NextRequest) {
 
       const onSaleCount = e.ticketTypes?.filter((t) => t.status === "ON_SALE").length ?? 0;
       const soldOutCount = e.ticketTypes?.filter((t) => t.status === "SOLD_OUT").length ?? 0;
+      const canonical = (e.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+      const city = pickCanonicalField(canonical, "city", "locality", "addressLine2", "region", "state");
 
       return {
         id: e.id,
@@ -178,21 +184,11 @@ async function _GET(req: NextRequest) {
         startDate: e.startsAt ? new Date(e.startsAt).toISOString() : "",
         endDate: e.endsAt ? new Date(e.endsAt).toISOString() : "",
         venue: {
-          name: e.locationName ?? null,
-          address: e.locationFormattedAddress ?? null,
-          city: e.locationCity ?? null,
-          lat: e.latitude ?? null,
-          lng: e.longitude ?? null,
-          formattedAddress: e.locationFormattedAddress ?? null,
-          source: e.locationSource ?? null,
-          components:
-            e.locationComponents && typeof e.locationComponents === "object"
-              ? (e.locationComponents as Record<string, unknown>)
-              : null,
-          overrides:
-            e.locationOverrides && typeof e.locationOverrides === "object"
-              ? (e.locationOverrides as Record<string, unknown>)
-              : null,
+          addressId: e.addressId ?? null,
+          city: city ?? null,
+          lat: e.addressRef?.latitude ?? null,
+          lng: e.addressRef?.longitude ?? null,
+          formattedAddress: e.addressRef?.formattedAddress ?? null,
         },
         coverImageUrl: e.coverImageUrl ?? null,
         isGratis,

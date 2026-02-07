@@ -27,7 +27,7 @@ type InvitePayload = {
     startsAt: string;
     durationMinutes: number;
     status: string;
-    locationText: string | null;
+    locationFormattedAddress: string | null;
     snapshotTimezone: string | null;
   };
   service: { id: number; title: string | null } | null;
@@ -35,9 +35,9 @@ type InvitePayload = {
     id: number;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     username: string | null;
     brandingAvatarUrl: string | null;
+    addressRef?: { formattedAddress?: string | null } | null;
   } | null;
   split: {
     id: number;
@@ -329,8 +329,10 @@ export default function InviteClient({ token }: { token: string }) {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-white">{orgName}</p>
-                  {payload.organization?.city && (
-                    <p className="text-[12px] text-white/60">{payload.organization.city}</p>
+                  {payload.organization?.addressRef?.formattedAddress && (
+                    <p className="text-[12px] text-white/60">
+                      {payload.organization.addressRef.formattedAddress}
+                    </p>
                   )}
                 </div>
                 {statusLabel && (
@@ -351,8 +353,8 @@ export default function InviteClient({ token }: { token: string }) {
                     </span>
                   </p>
                 )}
-                {payload.booking.locationText && (
-                  <p className="text-[12px] text-white/60">{payload.booking.locationText}</p>
+                {payload.booking.locationFormattedAddress && (
+                  <p className="text-[12px] text-white/60">{payload.booking.locationFormattedAddress}</p>
                 )}
               </div>
 

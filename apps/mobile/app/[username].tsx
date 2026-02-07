@@ -1,6 +1,5 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../components/icons/Ionicons";
 import { LiquidBackground } from "../components/liquid/LiquidBackground";
@@ -12,11 +11,14 @@ import { useNetworkActions, useOrganizationFollowActions } from "../features/net
 import { useTabBarPadding } from "../components/navigation/useTabBarPadding";
 import { TopAppHeader } from "../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../components/navigation/useTopHeaderPadding";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { safeBack } from "../lib/navigation";
 import { tokens } from "@orya/shared";
 import { SectionHeader } from "../components/liquid/SectionHeader";
 import { EventCardSquare, EventCardSquareSkeleton } from "../components/events/EventCardSquare";
+import { useOrganizationFollowers, useUserFollowers, useUserFollowing } from "../features/network/followLists";
+import { FollowListModal } from "../components/profile/FollowListModal";
+import { ProfileHeader } from "../components/profile/ProfileHeader";
 
 export default function PublicProfileScreen() {
   const params = useLocalSearchParams<{ username?: string }>();
@@ -31,13 +33,38 @@ export default function PublicProfileScreen() {
   const orgActions = useOrganizationFollowActions();
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(16);
+  const [followersOpen, setFollowersOpen] = useState(false);
+  const [followingOpen, setFollowingOpen] = useState(false);
 
   const data = profileQuery.data ?? null;
   const profile = data?.profile ?? null;
   const isUser = data?.type === "user";
   const isSelf = Boolean(data?.isSelf);
+  const profileId = profile?.id ?? null;
+  const userProfileId = isUser && profileId ? String(profileId) : null;
+  const organizationIdRaw = !isUser && profileId ? Number(profileId) : null;
+  const organizationId = Number.isFinite(organizationIdRaw ?? NaN) ? (organizationIdRaw as number) : null;
   const coverUrl = profile?.coverUrl ?? null;
   const avatarUrl = profile?.avatarUrl ?? null;
+  const canOpenFollowers = Boolean(profileId);
+  const canOpenFollowing = Boolean(isUser);
+
+  const userFollowers = useUserFollowers(
+    userProfileId,
+    accessToken,
+    Boolean(followersOpen && isUser && userProfileId),
+  );
+  const orgFollowers = useOrganizationFollowers(
+    organizationId,
+    accessToken,
+    Boolean(followersOpen && !isUser && organizationId),
+  );
+  const followersList = isUser ? userFollowers : orgFollowers;
+  const followingList = useUserFollowing(
+    userProfileId,
+    accessToken,
+    Boolean(followingOpen && isUser && userProfileId),
+  );
 
   const followLabel = useMemo(() => {
     if (!data?.viewer) return "Seguir";
@@ -45,6 +72,15 @@ export default function PublicProfileScreen() {
     if (data.viewer.isFollowing) return "A seguir";
     return "Seguir";
   }, [data?.viewer]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setFollowersOpen(false);
+        setFollowingOpen(false);
+      };
+    }, []),
+  );
 
   const handleFollowPress = () => {
     if (!data || !profile) return;
@@ -100,89 +136,21 @@ export default function PublicProfileScreen() {
           </GlassCard>
         ) : (
           <View className="gap-4">
-            <View style={{ position: "relative" }}>
-              <View
-                style={{
-                  height: 180,
-                  borderRadius: 24,
-                  overflow: "hidden",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.12)",
-                  backgroundColor: "rgba(255,255,255,0.06)",
-                }}
-              >
-                {coverUrl ? (
-                  <Image
-                    source={{ uri: coverUrl }}
-                    style={{ width: "100%", height: "100%" }}
-                    contentFit="cover"
-                    transition={160}
-                  />
-                ) : null}
-              </View>
-              <View
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: -38,
-                  alignItems: "center",
-                }}
-              >
-                <View
-                  style={{
-                    width: 76,
-                    height: 76,
-                    borderRadius: 38,
-                    borderWidth: 2,
-                    borderColor: "rgba(255,255,255,0.85)",
-                    backgroundColor: "rgba(255,255,255,0.12)",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    overflow: "hidden",
-                  }}
-                >
-                  {avatarUrl ? (
-                    <Image
-                      source={{ uri: avatarUrl }}
-                      style={{ width: 76, height: 76 }}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <Ionicons name={isUser ? "person" : "business"} size={28} color="rgba(255,255,255,0.8)" />
-                  )}
-                </View>
-              </View>
-            </View>
-
-            <View style={{ paddingTop: 48, alignItems: "center", gap: 6 }}>
-              <Text className="text-white text-2xl font-semibold" numberOfLines={1}>
-                {profile.fullName ?? "Perfil"}
-              </Text>
-              {profile.username ? (
-                <Text className="text-white/60 text-sm">@{profile.username}</Text>
-              ) : null}
-              {profile.bio ? (
-                <Text className="text-white/70 text-sm text-center" numberOfLines={3}>
-                  {profile.bio}
-                </Text>
-              ) : null}
-            </View>
-
-            <View className="flex-row justify-center gap-8">
-              <View className="items-center">
-                <Text className="text-white text-base font-semibold">{data?.counts.followers ?? 0}</Text>
-                <Text className="text-white/60 text-xs">Seguidores</Text>
-              </View>
-              <View className="items-center">
-                <Text className="text-white text-base font-semibold">{data?.counts.following ?? 0}</Text>
-                <Text className="text-white/60 text-xs">A seguir</Text>
-              </View>
-              <View className="items-center">
-                <Text className="text-white text-base font-semibold">{data?.counts.events ?? 0}</Text>
-                <Text className="text-white/60 text-xs">Eventos</Text>
-              </View>
-            </View>
+            <ProfileHeader
+              isUser={isUser}
+              coverUrl={coverUrl}
+              avatarUrl={avatarUrl}
+              displayName={profile.fullName ?? "Perfil"}
+              username={profile.username ?? null}
+              bio={profile.bio ?? null}
+              counts={{
+                followers: data?.counts.followers ?? 0,
+                following: data?.counts.following ?? 0,
+                events: data?.counts.events ?? 0,
+              }}
+              onFollowersPress={canOpenFollowers ? () => setFollowersOpen(true) : undefined}
+              onFollowingPress={canOpenFollowing ? () => setFollowingOpen(true) : undefined}
+            />
 
             {!isSelf ? (
               <Pressable
@@ -203,12 +171,6 @@ export default function PublicProfileScreen() {
                   {followLabel}
                 </Text>
               </Pressable>
-            ) : null}
-
-            {profile.city ? (
-              <GlassCard intensity={50}>
-                <Text className="text-white/80 text-sm">{profile.city}</Text>
-              </GlassCard>
             ) : null}
 
             <View className="pt-2">
@@ -253,6 +215,27 @@ export default function PublicProfileScreen() {
           </View>
         )}
       </ScrollView>
+
+      <FollowListModal
+        open={followersOpen}
+        title="Seguidores"
+        items={followersList.data}
+        isLoading={followersList.isLoading}
+        isError={followersList.isError}
+        emptyLabel="Sem seguidores ainda."
+        onClose={() => setFollowersOpen(false)}
+        onRetry={() => followersList.refetch()}
+      />
+      <FollowListModal
+        open={followingOpen && isUser}
+        title="A seguir"
+        items={followingList.data}
+        isLoading={followingList.isLoading}
+        isError={followingList.isError}
+        emptyLabel="Ainda não segue ninguém."
+        onClose={() => setFollowingOpen(false)}
+        onRetry={() => followingList.refetch()}
+      />
     </LiquidBackground>
   );
 }

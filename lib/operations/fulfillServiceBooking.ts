@@ -1,7 +1,6 @@
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { retrieveCharge } from "@/domain/finance/gateway/stripeGateway";
-import { getStripeBaseFees } from "@/lib/platformSettings";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
@@ -49,7 +48,7 @@ function buildOwnerKey(userId: string | null) {
   return userId ? `user:${userId}` : "unknown";
 }
 
-async function resolveStripeFee(intent: Stripe.PaymentIntent, amountCents: number) {
+async function resolveStripeFee(intent: Stripe.PaymentIntent) {
   let stripeFeeCents: number | null = null;
   let stripeChargeId: string | null = null;
 
@@ -72,10 +71,6 @@ async function resolveStripeFee(intent: Stripe.PaymentIntent, amountCents: numbe
     logError("fulfill_service_booking.balance_transaction_failed", err, { paymentIntentId: intent.id });
   }
 
-  if (stripeFeeCents == null) {
-    stripeFeeCents = await estimateStripeFee(amountCents);
-  }
-
   return { stripeFeeCents, stripeChargeId };
 }
 
@@ -91,7 +86,7 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
   const platformFeeCents = parseNumber(meta.platformFeeCents) ?? 0;
 
   const amountCents = intent.amount_received ?? intent.amount ?? 0;
-  const { stripeFeeCents, stripeChargeId } = await resolveStripeFee(intent, amountCents);
+  const { stripeFeeCents, stripeChargeId } = await resolveStripeFee(intent);
 
   await prisma.$transaction(async (tx) => {
     const participant = await tx.bookingSplitParticipant.findUnique({
@@ -109,12 +104,12 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
                 availabilityId: true,
                 startsAt: true,
                 snapshotTimezone: true,
-                locationText: true,
+                addressRef: { select: { formattedAddress: true } },
                 service: {
                   select: {
                     title: true,
                     coverImageUrl: true,
-                    defaultLocationText: true,
+                    addressRef: { select: { formattedAddress: true } },
                   },
                 },
               },
@@ -143,31 +138,6 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
           paymentIntentId: intent.id,
           shareCents: amountCents,
           platformFeeCents,
-        },
-      });
-    }
-
-    const existingTransaction = await tx.transaction.findFirst({
-      where: { stripePaymentIntentId: intent.id },
-      select: { id: true },
-    });
-    if (!existingTransaction) {
-      await tx.transaction.create({
-        data: {
-          organizationId: organizationId ?? participant.split.booking.organizationId,
-          userId: userId ?? participant.userId ?? participant.split.booking.userId,
-          amountCents,
-          currency: (intent.currency ?? "eur").toUpperCase(),
-          stripeChargeId,
-          stripePaymentIntentId: intent.id,
-          platformFeeCents,
-          stripeFeeCents: stripeFeeCents ?? 0,
-          payoutStatus: "PENDING",
-          metadata: {
-            bookingId: participant.split.booking.id,
-            bookingSplitId: participant.splitId,
-            bookingSplitParticipantId: participant.id,
-          },
         },
       });
     }
@@ -267,8 +237,8 @@ async function upsertBookingEntitlement(params: {
     id: number;
     startsAt: Date;
     snapshotTimezone?: string | null;
-    locationText?: string | null;
-    service?: { title: string; coverImageUrl: string | null; defaultLocationText: string | null } | null;
+    addressRef?: { formattedAddress?: string | null } | null;
+    service?: { title: string; coverImageUrl: string | null; addressRef?: { formattedAddress?: string | null } | null } | null;
   };
   purchaseId: string;
   ownerUserId: string | null;
@@ -278,7 +248,8 @@ async function upsertBookingEntitlement(params: {
   const ownerKey = buildOwnerKey(ownerUserId);
   const snapshotTitle = booking.service?.title ?? `Reserva ${booking.id}`;
   const snapshotCoverUrl = booking.service?.coverImageUrl ?? null;
-  const snapshotVenueName = booking.locationText ?? booking.service?.defaultLocationText ?? null;
+  const snapshotVenueName =
+    booking.addressRef?.formattedAddress ?? booking.service?.addressRef?.formattedAddress ?? null;
   const snapshotTimezone = booking.snapshotTimezone ?? DEFAULT_TIMEZONE;
 
   await tx.entitlement.upsert({
@@ -433,15 +404,6 @@ async function ensureConfirmationSnapshot(params: {
   return { policyId: resolvedPolicyId };
 }
 
-async function estimateStripeFee(amountCents: number) {
-  const stripeBase = await getStripeBaseFees();
-  return Math.max(
-    0,
-    Math.round((amountCents * (stripeBase.feeBps ?? 0)) / 10_000) +
-      (stripeBase.feeFixedCents ?? 0),
-  );
-}
-
 export async function fulfillServiceBookingIntent(
   intent: Stripe.PaymentIntent,
 ): Promise<boolean> {
@@ -491,9 +453,6 @@ export async function fulfillServiceBookingIntent(
   }
 
   const amountCents = intent.amount_received ?? intent.amount ?? 0;
-  if (stripeFeeCents == null) {
-    stripeFeeCents = await estimateStripeFee(amountCents);
-  }
 
   let crmPayload:
     | { organizationId: number; userId: string; bookingId: number; amountCents: number; currency: string }
@@ -535,12 +494,12 @@ export async function fulfillServiceBookingIntent(
             paymentIntentId: true,
             startsAt: true,
             snapshotTimezone: true,
-            locationText: true,
+            addressRef: { select: { formattedAddress: true } },
             service: {
               select: {
                 title: true,
                 coverImageUrl: true,
-                defaultLocationText: true,
+                addressRef: { select: { formattedAddress: true } },
               },
             },
           },
@@ -577,31 +536,6 @@ export async function fulfillServiceBookingIntent(
           ownerUserId: userId ?? booking.userId,
         });
 
-        const existingTransaction = await tx.transaction.findFirst({
-          where: { stripePaymentIntentId: intent.id },
-          select: { id: true },
-        });
-        if (!existingTransaction) {
-          await tx.transaction.create({
-            data: {
-              organizationId: organizationId ?? booking.organizationId,
-              userId: userId ?? booking.userId,
-              amountCents,
-              currency: (intent.currency ?? "eur").toUpperCase(),
-              stripeChargeId,
-              stripePaymentIntentId: intent.id,
-              platformFeeCents,
-              stripeFeeCents: stripeFeeCents ?? 0,
-              payoutStatus: "PENDING",
-              metadata: {
-                bookingId: booking.id,
-                serviceId: booking.serviceId,
-                availabilityId: booking.availabilityId,
-              },
-            },
-          });
-        }
-
         await recordOrganizationAudit(tx, {
           organizationId: organizationId ?? booking.organizationId,
           actorUserId: userId ?? booking.userId,
@@ -636,13 +570,13 @@ export async function fulfillServiceBookingIntent(
               startsAt: true,
               status: true,
               paymentIntentId: true,
-              locationText: true,
+              addressRef: { select: { formattedAddress: true } },
               snapshotTimezone: true,
               availability: {
                 select: { id: true, capacity: true, status: true },
               },
               policyRef: { select: { policyId: true } },
-              service: { select: { title: true, coverImageUrl: true, defaultLocationText: true } },
+              service: { select: { title: true, coverImageUrl: true, addressRef: { select: { formattedAddress: true } } } },
             },
           })
         : null;
@@ -703,7 +637,7 @@ export async function fulfillServiceBookingIntent(
           include: {
             availability: true,
             policyRef: { select: { policyId: true } },
-            service: { select: { title: true, coverImageUrl: true, defaultLocationText: true } },
+            service: { select: { title: true, coverImageUrl: true, addressRef: { select: { formattedAddress: true } } } },
           },
         });
       }
@@ -772,31 +706,6 @@ export async function fulfillServiceBookingIntent(
           ownerUserId: userId ?? booking.userId,
         });
       }
-      const existingTransaction = await tx.transaction.findFirst({
-        where: { stripePaymentIntentId: intent.id },
-        select: { id: true },
-      });
-      if (!existingTransaction) {
-        await tx.transaction.create({
-          data: {
-            organizationId: organizationId ?? booking.organizationId,
-            userId: userId ?? booking.userId,
-            amountCents,
-            currency: (intent.currency ?? "eur").toUpperCase(),
-            stripeChargeId,
-            stripePaymentIntentId: intent.id,
-            platformFeeCents,
-            stripeFeeCents: stripeFeeCents ?? 0,
-            payoutStatus: "PENDING",
-            metadata: {
-              bookingId: booking.id,
-              serviceId: booking.serviceId,
-              availabilityId: booking.availabilityId,
-            },
-          },
-        });
-      }
-
       if (!isCancelled && (userId ?? booking.userId)) {
         crmPayload = {
           organizationId: booking.organizationId,

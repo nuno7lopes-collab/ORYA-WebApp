@@ -26,6 +26,6 @@ AWS_PROFILE=codex AWS_REGION=eu-west-1 \
 ```
 
 ## Verificações
-- `scripts/healthcheck.sh https://app.orya.pt`
+- `scripts/healthcheck.sh https://orya.pt`
 - CloudWatch logs ativos e sem erros 5xx.
 - `aws ecs describe-services` com desiredCount esperado.

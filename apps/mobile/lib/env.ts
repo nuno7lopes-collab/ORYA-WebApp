@@ -24,17 +24,43 @@ const resolveHostFromExpo = () => {
   return host ?? null;
 };
 
+const isPrivateIp = (host: string) => {
+  if (!host) return false;
+  if (host.startsWith("10.")) return true;
+  if (host.startsWith("192.168.")) return true;
+  if (host.startsWith("172.")) {
+    const second = Number(host.split(".")[1]);
+    return Number.isFinite(second) && second >= 16 && second <= 31;
+  }
+  return false;
+};
+
 const normalizeApiBaseUrl = (raw: string) => {
   if (!raw) return raw;
-  const lower = raw.toLowerCase();
+  const trimmed = raw.replace(/\/+$/, "");
+  const candidate = trimmed.includes("://") ? trimmed : `http://${trimmed}`;
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return trimmed;
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
   const isLocal =
-    lower.includes("localhost") ||
-    lower.includes("127.0.0.1") ||
-    lower.includes("0.0.0.0");
-  if (!isLocal) return raw.replace(/\/+$/, "");
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    isPrivateIp(hostname);
+
+  if (!isLocal) return trimmed;
+
   const host = resolveHostFromExpo();
-  if (!host) return raw.replace(/\/+$/, "");
-  return `http://${host}:3000`;
+  if (!host) return trimmed;
+
+  const port = parsed.port || "3000";
+  const protocol = parsed.protocol || "http:";
+  return `${protocol}//${host}:${port}`;
 };
 
 export const getMobileEnv = (): MobileEnv => {

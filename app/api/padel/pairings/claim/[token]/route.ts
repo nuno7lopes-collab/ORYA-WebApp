@@ -402,18 +402,6 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
   try {
     const playerProfileId = await ensurePlayerProfile({ organizationId: pairing.organizationId, userId: user.id });
     const { pairing: updated, shouldEnsureEntries, nextRegistrationStatus } = await prisma.$transaction(async (tx) => {
-      // Se já tem ticket, validar apropriação
-      if (pendingSlot.ticketId) {
-        const ticket = await tx.ticket.findUnique({ where: { id: pendingSlot.ticketId } });
-        if (!ticket) throw new Error("TICKET_NOT_FOUND");
-        if (ticket.userId && ticket.userId !== user.id) throw new Error("TICKET_ALREADY_CLAIMED");
-
-        await tx.ticket.update({
-          where: { id: pendingSlot.ticketId },
-          data: { userId: user.id },
-        });
-      }
-
       const nextRegistrationStatus = resolvePartnerActionStatus({
         partnerPaid: pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID,
       });
@@ -486,9 +474,6 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
     };
     return jsonWrap({ ok: true, pairing: pairingPayload }, { status: 200 });
   } catch (err) {
-    if (err instanceof Error && err.message === "TICKET_ALREADY_CLAIMED") {
-      return jsonWrap({ ok: false, error: "TICKET_ALREADY_CLAIMED" }, { status: 409 });
-    }
     console.error("[padel/pairings][claim][POST]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

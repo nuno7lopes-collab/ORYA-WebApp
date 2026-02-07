@@ -26,8 +26,8 @@ export async function listPublicEvents(params: {
       title: true,
       startsAt: true,
       endsAt: true,
-      locationName: true,
-      locationCity: true,
+      addressId: true,
+      addressRef: { select: { formattedAddress: true, canonical: true } },
       coverImageUrl: true,
       organization: {
         select: { id: true, publicName: true, username: true },

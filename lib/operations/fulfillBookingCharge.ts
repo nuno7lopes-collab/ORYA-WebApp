@@ -1,7 +1,6 @@
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { retrieveCharge } from "@/domain/finance/gateway/stripeGateway";
-import { getStripeBaseFees } from "@/lib/platformSettings";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { logError } from "@/lib/observability/logger";
 
@@ -15,15 +14,7 @@ function parseNumber(value: unknown) {
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
 }
 
-async function estimateStripeFee(amountCents: number) {
-  const stripeBase = await getStripeBaseFees();
-  return Math.max(
-    0,
-    Math.round((amountCents * (stripeBase.feeBps ?? 0)) / 10_000) + (stripeBase.feeFixedCents ?? 0),
-  );
-}
-
-async function resolveStripeFee(intent: Stripe.PaymentIntent, amountCents: number) {
+async function resolveStripeFee(intent: Stripe.PaymentIntent) {
   let stripeFeeCents: number | null = null;
   let stripeChargeId: string | null = null;
 
@@ -42,10 +33,6 @@ async function resolveStripeFee(intent: Stripe.PaymentIntent, amountCents: numbe
     logError("fulfill_booking_charge.balance_transaction_failed", err, { paymentIntentId: intent.id });
   }
 
-  if (stripeFeeCents == null) {
-    stripeFeeCents = await estimateStripeFee(amountCents);
-  }
-
   return { stripeFeeCents, stripeChargeId };
 }
 
@@ -59,7 +46,7 @@ export async function fulfillBookingChargeIntent(intent: Stripe.PaymentIntent): 
   const paymentId = typeof meta.paymentId === "string" ? meta.paymentId : null;
   const bookingId = parseId(meta.bookingId);
 
-  const { stripeFeeCents, stripeChargeId } = await resolveStripeFee(intent, amountCents);
+  const { stripeFeeCents, stripeChargeId } = await resolveStripeFee(intent);
 
   await prisma.$transaction(async (tx) => {
     const charge = await tx.bookingCharge.findUnique({
@@ -95,33 +82,6 @@ export async function fulfillBookingChargeIntent(intent: Stripe.PaymentIntent): 
       });
     }
 
-    const existingTransaction = await tx.transaction.findFirst({
-      where: { stripePaymentIntentId: intent.id },
-      select: { id: true },
-    });
-
-    if (!existingTransaction) {
-      await tx.transaction.create({
-        data: {
-          organizationId: charge.organizationId,
-          userId: charge.booking?.userId ?? null,
-          amountCents,
-          currency: (intent.currency ?? charge.currency ?? "EUR").toUpperCase(),
-          stripeChargeId,
-          stripePaymentIntentId: intent.id,
-          platformFeeCents,
-          stripeFeeCents: stripeFeeCents ?? 0,
-          payoutStatus: "PENDING",
-          metadata: {
-            bookingId: bookingId ?? charge.bookingId,
-            bookingChargeId: charge.id,
-            bookingChargeKind: charge.kind,
-            bookingChargePayerKind: charge.payerKind,
-            label: charge.label ?? null,
-          },
-        },
-      });
-    }
 
     await recordOrganizationAudit(tx, {
       organizationId: charge.organizationId,

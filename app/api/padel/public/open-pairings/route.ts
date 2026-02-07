@@ -3,7 +3,6 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { PORTUGAL_CITIES } from "@/config/cities";
 import { Prisma } from "@prisma/client";
 import { checkPadelRegistrationWindow, INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
@@ -26,7 +25,6 @@ async function _GET(req: NextRequest) {
     if (rateLimited) return rateLimited;
 
     const params = req.nextUrl.searchParams;
-    const city = params.get("city")?.trim() ?? "";
     const q = params.get("q")?.trim() ?? "";
     const limit = clampLimit(params.get("limit"));
     const now = new Date();
@@ -45,15 +43,12 @@ async function _GET(req: NextRequest) {
       event: {
         isDeleted: false,
         startsAt: { gte: now },
-        ...(city && city.toLowerCase() !== "portugal" && PORTUGAL_CITIES.includes(city as (typeof PORTUGAL_CITIES)[number])
-          ? { locationCity: { contains: city, mode: Prisma.QueryMode.insensitive } }
-          : {}),
         ...(q
           ? {
               OR: [
                 { title: { contains: q, mode: Prisma.QueryMode.insensitive } },
                 { description: { contains: q, mode: Prisma.QueryMode.insensitive } },
-                { locationName: { contains: q, mode: Prisma.QueryMode.insensitive } },
+                { addressRef: { formattedAddress: { contains: q, mode: Prisma.QueryMode.insensitive } } },
               ],
             }
           : {}),
@@ -75,8 +70,8 @@ async function _GET(req: NextRequest) {
             title: true,
             startsAt: true,
             status: true,
-            locationName: true,
-            locationCity: true,
+            addressId: true,
+            addressRef: { select: { formattedAddress: true, canonical: true } },
             coverImageUrl: true,
             padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
           },
@@ -128,8 +123,8 @@ async function _GET(req: NextRequest) {
             slug: pairing.event.slug,
             title: pairing.event.title,
             startsAt: pairing.event.startsAt?.toISOString() ?? null,
-            locationName: pairing.event.locationName ?? null,
-            locationCity: pairing.event.locationCity ?? null,
+            locationFormattedAddress: pairing.event.addressRef?.formattedAddress ?? null,
+            addressId: pairing.event.addressId ?? null,
             coverImageUrl: pairing.event.coverImageUrl ?? null,
           },
         })),

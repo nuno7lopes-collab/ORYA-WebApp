@@ -1,15 +1,11 @@
 import { z } from "zod";
 
 export const PublicEventLocationSchema = z.object({
-  name: z.string().nullable().optional(),
   city: z.string().nullable().optional(),
-  address: z.string().nullable().optional(),
+  addressId: z.string().nullable().optional(),
   lat: z.number().nullable().optional(),
   lng: z.number().nullable().optional(),
   formattedAddress: z.string().nullable().optional(),
-  source: z.string().nullable().optional(),
-  components: z.record(z.string(), z.unknown()).nullable().optional(),
-  overrides: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const PublicEventTicketTypeSchema = z.object({

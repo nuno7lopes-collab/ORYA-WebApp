@@ -1068,7 +1068,6 @@ app_v3.padel_pairing_slots.player_profile_id
 app_v3.padel_pairing_slots.profile_id
 app_v3.padel_pairing_slots.slot_role
 app_v3.padel_pairing_slots.slot_status
-app_v3.padel_pairing_slots.ticket_id
 app_v3.padel_pairing_slots.updated_at
 app_v3.padel_pairings.captain_consent_at
 app_v3.padel_pairings.captain_first_sale_id
@@ -1076,7 +1075,6 @@ app_v3.padel_pairings.captain_second_charged_at
 app_v3.padel_pairings.captain_second_sale_id
 app_v3.padel_pairings.category_id
 app_v3.padel_pairings.created_at
-app_v3.padel_pairings.created_by_ticket_id
 app_v3.padel_pairings.created_by_user_id
 app_v3.padel_pairings.deadline_at
 app_v3.padel_pairings.event_id
@@ -1889,8 +1887,6 @@ app_v3.tickets.id
 app_v3.tickets.owner_identity_id
 app_v3.tickets.owner_user_id
 app_v3.tickets.padel_pairing_version
-app_v3.tickets.padel_split_share_cents
-app_v3.tickets.pairing_id
 app_v3.tickets.platform_fee_cents
 app_v3.tickets.price_paid
 app_v3.tickets.purchase_id
@@ -1902,8 +1898,6 @@ app_v3.tickets.status
 app_v3.tickets.stripe_payment_intent_id
 app_v3.tickets.ticket_type_id
 app_v3.tickets.total_paid_cents
-app_v3.tickets.tournament_entry_id
-app_v3.tickets.used_at
 app_v3.tickets.user_id
 app_v3.tournament_audit_logs.action
 app_v3.tournament_audit_logs.created_at

@@ -116,12 +116,8 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
           select: {
             addressType: true,
             fullName: true,
-            line1: true,
-            line2: true,
-            city: true,
-            region: true,
-            postalCode: true,
-            country: true,
+            addressId: true,
+            addressRef: { select: { formattedAddress: true } },
             nif: true,
           },
         },
@@ -278,12 +274,8 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
           address: shippingAddress
             ? {
                 fullName: shippingAddress.fullName,
-                line1: shippingAddress.line1,
-                line2: shippingAddress.line2,
-                city: shippingAddress.city,
-                region: shippingAddress.region,
-                postalCode: shippingAddress.postalCode,
-                country: shippingAddress.country,
+                addressId: shippingAddress.addressId,
+                formattedAddress: shippingAddress.addressRef?.formattedAddress ?? null,
                 nif: shippingAddress.nif,
               }
             : null,
@@ -291,12 +283,8 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
         billing: billingAddress
           ? {
               fullName: billingAddress.fullName,
-              line1: billingAddress.line1,
-              line2: billingAddress.line2,
-              city: billingAddress.city,
-              region: billingAddress.region,
-              postalCode: billingAddress.postalCode,
-              country: billingAddress.country,
+              addressId: billingAddress.addressId,
+              formattedAddress: billingAddress.addressRef?.formattedAddress ?? null,
               nif: billingAddress.nif,
             }
           : null,

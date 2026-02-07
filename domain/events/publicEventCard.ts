@@ -11,15 +11,11 @@ export type PublicEventCard = {
   startsAt: string;
   endsAt: string;
   location: {
-    name: string | null;
     city: string | null;
-    address: string | null;
+    addressId: string | null;
     lat: number | null;
     lng: number | null;
     formattedAddress: string | null;
-    source: string | null;
-    components: Record<string, unknown> | null;
-    overrides: Record<string, unknown> | null;
   };
   coverImageUrl: string | null;
   isGratis: boolean;
@@ -59,14 +55,13 @@ type PublicEventCardInput = {
   templateType: string | null;
   ownerUserId: string | null;
   organization?: { publicName: string | null } | null;
-  locationName: string | null;
-  locationCity: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  locationFormattedAddress: string | null;
-  locationSource: string | null;
-  locationComponents: unknown | null;
-  locationOverrides: unknown | null;
+  addressId: string | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
   coverImageUrl: string | null;
   pricingMode: string | null;
   ticketTypes?:
@@ -101,17 +96,27 @@ type PublicEventCardIndexInput = {
   coverImageUrl: string | null;
   hostName: string | null;
   hostUsername: string | null;
-  locationName: string | null;
-  locationCity: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  locationFormattedAddress: string | null;
-  locationSource: string | null;
+  addressId: string | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
 };
 
 type PublicEventOwnerProfile = {
   fullName: string | null;
   username: string | null;
+};
+
+const pickCanonicalField = (canonical: Record<string, unknown> | null, ...keys: string[]) => {
+  if (!canonical) return null;
+  for (const key of keys) {
+    const value = canonical[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
 };
 
 export function resolvePublicEventStatus(event: {
@@ -162,6 +167,12 @@ export function toPublicEventCardWithPrice(params: {
     endsAt: event.endsAt,
     coverImageUrl: event.coverImageUrl,
   });
+  const canonical = (event.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const city =
+    pickCanonicalField(canonical, "city", "locality", "addressLine2", "region", "state") ?? null;
+  const formattedAddress = event.addressRef?.formattedAddress ?? null;
+  const lat = event.addressRef?.latitude ?? null;
+  const lng = event.addressRef?.longitude ?? null;
 
   const ticketTypes: PublicEventTicketType[] | undefined = Array.isArray(event.ticketTypes)
     ? event.ticketTypes.map((ticket) => ({
@@ -189,21 +200,11 @@ export function toPublicEventCardWithPrice(params: {
     startsAt: event.startsAt ? new Date(event.startsAt).toISOString() : "",
     endsAt: event.endsAt ? new Date(event.endsAt).toISOString() : "",
     location: {
-      name: event.locationName ?? null,
-      city: event.locationCity ?? null,
-      address: event.locationFormattedAddress ?? null,
-      lat: event.latitude ?? null,
-      lng: event.longitude ?? null,
-      formattedAddress: event.locationFormattedAddress ?? null,
-      source: event.locationSource ?? null,
-      components:
-        event.locationComponents && typeof event.locationComponents === "object"
-          ? (event.locationComponents as Record<string, unknown>)
-          : null,
-      overrides:
-        event.locationOverrides && typeof event.locationOverrides === "object"
-          ? (event.locationOverrides as Record<string, unknown>)
-          : null,
+      city,
+      addressId: event.addressId ?? null,
+      lat,
+      lng,
+      formattedAddress,
     },
     coverImageUrl: event.coverImageUrl ?? null,
     isGratis,
@@ -239,6 +240,12 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     endsAt: input.endsAt,
     coverImageUrl: input.coverImageUrl,
   });
+  const canonical = (input.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const city =
+    pickCanonicalField(canonical, "city", "locality", "addressLine2", "region", "state") ?? null;
+  const formattedAddress = input.addressRef?.formattedAddress ?? null;
+  const lat = input.addressRef?.latitude ?? null;
+  const lng = input.addressRef?.longitude ?? null;
 
   return {
     id: Number.isFinite(id) ? id : 0,
@@ -250,15 +257,11 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     startsAt: input.startsAt ? new Date(input.startsAt).toISOString() : "",
     endsAt: input.endsAt ? new Date(input.endsAt).toISOString() : "",
     location: {
-      name: input.locationName ?? null,
-      city: input.locationCity ?? null,
-      address: input.locationFormattedAddress ?? null,
-      lat: input.latitude ?? null,
-      lng: input.longitude ?? null,
-      formattedAddress: input.locationFormattedAddress ?? null,
-      source: input.locationSource ?? null,
-      components: null,
-      overrides: null,
+      city,
+      addressId: input.addressId ?? null,
+      lat,
+      lng,
+      formattedAddress,
     },
     coverImageUrl: input.coverImageUrl ?? null,
     isGratis: input.isGratis,

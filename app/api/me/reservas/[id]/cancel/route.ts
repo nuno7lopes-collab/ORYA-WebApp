@@ -222,18 +222,24 @@ export async function POST(
         splitRefunds.length === 0 &&
         !!booking.paymentIntentId &&
         (isPending || (booking.status === "CONFIRMED" && allowCancellation && decision.allowed));
-      const txAny = tx as any;
-      const stripeFeeRow =
-        booking.paymentIntentId && txAny?.transaction?.findFirst
-          ? await txAny.transaction.findFirst({
+      const paymentEvent =
+        booking.paymentIntentId
+          ? await tx.paymentEvent.findFirst({
               where: { stripePaymentIntentId: booking.paymentIntentId },
-              select: { stripeFeeCents: true },
+              select: { purchaseId: true },
+            })
+          : null;
+      const payment =
+        paymentEvent?.purchaseId
+          ? await tx.payment.findUnique({
+              where: { id: paymentEvent.purchaseId },
+              select: { processorFeesActual: true },
             })
           : null;
       const refundComputation = snapshot
         ? computeCancellationRefundFromSnapshot(snapshot, {
             actor: "CLIENT",
-            stripeFeeCentsActual: stripeFeeRow?.stripeFeeCents ?? null,
+            stripeFeeCentsActual: payment?.processorFeesActual ?? null,
           })
         : null;
       const refundAmountCents = refundComputation?.refundCents ?? null;
@@ -295,28 +301,44 @@ export async function POST(
 
     if (result.splitRefunds.length > 0) {
       const paymentIntentIds = result.splitRefunds.map((item) => item.paymentIntentId);
-      const transactions = await prisma.transaction.findMany({
+      const paymentEvents = await prisma.paymentEvent.findMany({
         where: { stripePaymentIntentId: { in: paymentIntentIds } },
-        select: { stripePaymentIntentId: true, amountCents: true, stripeFeeCents: true },
+        select: { stripePaymentIntentId: true, purchaseId: true },
       });
-      const txMap = new Map(
-        transactions.map((tx) => [tx.stripePaymentIntentId ?? "", tx]),
+      const purchaseIds = Array.from(
+        new Set(paymentEvents.map((evt) => evt.purchaseId).filter(Boolean)),
+      ) as string[];
+      const payments = purchaseIds.length
+        ? await prisma.payment.findMany({
+            where: { id: { in: purchaseIds } },
+            select: { id: true, pricingSnapshotJson: true, processorFeesActual: true },
+          })
+        : [];
+      const paymentById = new Map(payments.map((payment) => [payment.id, payment]));
+      const paymentByIntent = new Map(
+        paymentEvents.map((evt) => [
+          evt.stripePaymentIntentId,
+          evt.purchaseId ? paymentById.get(evt.purchaseId) ?? null : null,
+        ]),
       );
       const refundedParticipantIds: number[] = [];
 
       for (const refund of result.splitRefunds) {
-        const txRow = txMap.get(refund.paymentIntentId) ?? null;
-        if (!txRow) {
-          console.warn("[reservas/cancel] split transaction missing", {
+        const payment = paymentByIntent.get(refund.paymentIntentId) ?? null;
+        if (!payment) {
+          console.warn("[reservas/cancel] split payment missing", {
             bookingId,
             paymentIntentId: refund.paymentIntentId,
           });
         }
+        const snapshot = payment?.pricingSnapshotJson as { total?: number } | null;
+        const amountCents = typeof snapshot?.total === "number" ? snapshot.total : null;
+        const stripeFeeCents = payment?.processorFeesActual ?? 0;
         const refundAmountCents = computeSplitRefundAmount({
-          amountCents: txRow?.amountCents ?? null,
+          amountCents,
           baseShareCents: refund.baseShareCents,
           platformFeeCents: refund.platformFeeCents ?? 0,
-          stripeFeeCents: txRow?.stripeFeeCents ?? 0,
+          stripeFeeCents,
           penaltyBps: result.cancellationPenaltyBps ?? 0,
         });
 

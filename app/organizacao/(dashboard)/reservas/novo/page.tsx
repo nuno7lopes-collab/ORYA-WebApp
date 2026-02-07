@@ -60,7 +60,6 @@ export default function NovoServicoPage() {
           currency: DEFAULT_CURRENCY,
           categoryTag: null,
           locationMode: DEFAULT_LOCATION_MODE,
-          defaultLocationText: null,
         }),
       });
 

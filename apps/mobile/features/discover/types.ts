@@ -15,13 +15,16 @@ export type DiscoverServiceCard = {
   kind: "GENERAL" | "COURT" | "CLASS";
   categoryTag?: string | null;
   nextAvailability?: string | null;
+  addressId?: string | null;
+  addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
   organization: {
     id: number;
     publicName?: string | null;
     businessName?: string | null;
-    city?: string | null;
     username?: string | null;
     brandingAvatarUrl?: string | null;
+    addressId?: string | null;
+    addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
   };
   instructor?: {
     id: number;

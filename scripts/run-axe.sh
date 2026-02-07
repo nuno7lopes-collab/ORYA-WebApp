@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${AXE_URL:-https://app.orya.pt}"
+URL="${AXE_URL:-https://orya.pt}"
 OUTDIR="${AXE_OUTDIR:-reports/axe}"
 mkdir -p "$OUTDIR"
 

@@ -4,7 +4,6 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   AddressSourceProvider,
-  LocationSource,
   OrganizationMemberRole,
   OrganizationModule,
   PadelClubKind,
@@ -15,7 +14,6 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
-import { PORTUGAL_CITIES } from "@/config/cities";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -32,20 +30,6 @@ function normalizeSlug(raw: string | null | undefined) {
     .replace(/^-|-$/g, "");
 }
 
-const asRecord = (value: unknown) =>
-  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-
-const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
-  const record = asRecord(canonical);
-  if (!record) return null;
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return null;
-};
 
 const ADDRESS_SELECT = {
   id: true,
@@ -59,11 +43,6 @@ const ADDRESS_SELECT = {
   validationStatus: true,
 } satisfies Prisma.AddressSelect;
 
-const mapAddressProviderToLocationSource = (provider?: AddressSourceProvider | null) => {
-  if (!provider || provider === AddressSourceProvider.MANUAL) return LocationSource.MANUAL;
-  if (provider === AddressSourceProvider.APPLE_MAPS) return LocationSource.APPLE_MAPS;
-  return LocationSource.OSM;
-};
 
 async function generateUniqueSlug(base: string, organizationId: number, excludeId?: number | null) {
   if (!base) return "";
@@ -195,13 +174,6 @@ async function _POST(req: NextRequest) {
           addressId: true,
           kind: true,
           sourceClubId: true,
-          locationSource: true,
-          locationProviderId: true,
-          locationFormattedAddress: true,
-          locationComponents: true,
-          latitude: true,
-          longitude: true,
-          city: true,
           isDefault: true,
           isActive: true,
           addressRef: {
@@ -233,13 +205,6 @@ async function _POST(req: NextRequest) {
         select: {
           id: true,
           addressId: true,
-          locationFormattedAddress: true,
-          locationProviderId: true,
-          locationComponents: true,
-          locationSource: true,
-          city: true,
-          latitude: true,
-          longitude: true,
           addressRef: {
             select: {
               formattedAddress: true,
@@ -266,46 +231,14 @@ async function _POST(req: NextRequest) {
   if (!resolvedAddressRecord) {
     return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
   }
+  if (resolvedAddressRecord.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+    return jsonWrap({ ok: false, error: "Morada deve ser Apple Maps." }, { status: 400 });
+  }
 
   const resolvedName = name || existing?.name || "";
-  const resolvedCity =
-    pickCanonicalField(resolvedAddressRecord.canonical ?? null, "city", "addressLine2") ||
-    pickCanonicalField(sourceClub?.addressRef?.canonical ?? null, "city", "addressLine2") ||
-    "";
-  const resolvedAddress =
-    resolvedAddressRecord.formattedAddress ||
-    pickCanonicalField(resolvedAddressRecord.canonical ?? null, "addressLine1") ||
-    pickCanonicalField(sourceClub?.addressRef?.canonical ?? null, "addressLine1") ||
-    "";
-  const locationSource = mapAddressProviderToLocationSource(resolvedAddressRecord.sourceProvider);
-  const locationProviderId = resolvedAddressRecord.sourceProviderPlaceId || null;
-  const locationFormattedAddress = resolvedAddressRecord.formattedAddress || null;
-  const locationComponents = (resolvedAddressRecord.canonical as Record<string, unknown> | null) ?? null;
-  const latitude = resolvedAddressRecord.latitude ?? null;
-  const longitude = resolvedAddressRecord.longitude ?? null;
 
   if (!resolvedName || resolvedName.length < 3) {
     return jsonWrap({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });
-  }
-
-  if (resolvedCity && !PORTUGAL_CITIES.includes(resolvedCity as (typeof PORTUGAL_CITIES)[number])) {
-    return jsonWrap(
-      { ok: false, error: "Cidade inválida. Escolhe uma cidade da lista disponível na ORYA." },
-      { status: 400 },
-    );
-  }
-
-  if (!resolvedAddressId) {
-    return jsonWrap(
-      { ok: false, error: "Seleciona uma morada normalizada antes de guardar." },
-      { status: 400 },
-    );
-  }
-  if (!isPartner && !resolvedCity.trim()) {
-    return jsonWrap({ ok: false, error: "Cidade obrigatória para clube principal." }, { status: 400 });
-  }
-  if (!isPartner && !resolvedAddress.trim()) {
-    return jsonWrap({ ok: false, error: "Morada obrigatória para clube principal." }, { status: 400 });
   }
   if (isPartner && sourceClubIdRaw && !Number.isFinite(sourceClubIdRaw)) {
     return jsonWrap({ ok: false, error: "Clube parceiro inválido." }, { status: 400 });
@@ -339,7 +272,6 @@ async function _POST(req: NextRequest) {
       : {
           name: resolvedName,
           shortName: resolvedName,
-          city: resolvedCity || null,
           addressId: resolvedAddressId,
           courtsCount,
           hours: null,
@@ -349,18 +281,11 @@ async function _POST(req: NextRequest) {
           isDefault: safeIsDefault,
           kind,
           sourceClubId,
-          locationSource,
-          locationProviderId,
-          locationFormattedAddress,
-          locationComponents: locationComponents as Prisma.InputJsonValue,
-          latitude,
-          longitude,
         };
     const createData: Prisma.PadelClubUncheckedCreateInput = {
       organizationId: organization.id,
       name: resolvedName,
       shortName: resolvedName,
-      city: resolvedCity || null,
       addressId: resolvedAddressId,
       courtsCount,
       hours: null,
@@ -370,12 +295,6 @@ async function _POST(req: NextRequest) {
       isDefault: safeIsDefault,
       kind,
       sourceClubId,
-      locationSource,
-      locationProviderId,
-      locationFormattedAddress,
-      locationComponents: locationComponents as Prisma.InputJsonValue,
-      latitude,
-      longitude,
     };
 
     const club = await prisma.$transaction(async (tx) => {

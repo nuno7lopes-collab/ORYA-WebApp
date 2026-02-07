@@ -157,6 +157,21 @@ async function _GET(req: NextRequest) {
         : [];
     const eventMap = new Map(events.map((event) => [event.id, event]));
 
+    const entitlementIds = pageItems.map((e) => e.id);
+    const checkins = entitlementIds.length
+      ? await prisma.entitlementCheckin.findMany({
+          where: { entitlementId: { in: entitlementIds } },
+          select: { entitlementId: true, resultCode: true, checkedInAt: true },
+          orderBy: { checkedInAt: "desc" },
+        })
+      : [];
+    const checkinsByEntitlement = new Map<string, typeof checkins>();
+    for (const checkin of checkins) {
+      const list = checkinsByEntitlement.get(checkin.entitlementId) ?? [];
+      list.push(checkin);
+      checkinsByEntitlement.set(checkin.entitlementId, list);
+    }
+
     const responseItems = await Promise.all(
       pageItems.map(async (e) => {
         const eventInfo = e.eventId ? eventMap.get(e.eventId) ?? null : null;
@@ -164,6 +179,7 @@ async function _GET(req: NextRequest) {
           ? buildDefaultCheckinWindow(eventInfo.startsAt, eventInfo.endsAt)
           : undefined;
         const outsideWindow = eventInfo ? undefined : true;
+        const entitlementCheckins = checkinsByEntitlement.get(e.id) ?? [];
 
         const actions = resolveActions({
           type: e.type,
@@ -171,6 +187,7 @@ async function _GET(req: NextRequest) {
           isOwner: true,
           isOrganization: false,
           isAdmin,
+          checkins: entitlementCheckins,
           checkinWindow,
           outsideWindow,
           emailVerified: Boolean(data.user.email_confirmed_at),
@@ -180,7 +197,8 @@ async function _GET(req: NextRequest) {
           isWalletPassEnabled() &&
           actions.canShowQr &&
           e.type === "EVENT_TICKET" &&
-          ["ACTIVE", "USED"].includes(e.status.toUpperCase());
+          e.status.toUpperCase() === "ACTIVE";
+        const consumedAt = entitlementCheckins[0]?.checkedInAt ?? null;
 
         let qrToken: string | null = null;
         if (actions.canShowQr) {
@@ -205,6 +223,7 @@ async function _GET(req: NextRequest) {
           type: e.type,
           scope: { eventId: e.eventId, tournamentId: e.tournamentId, seasonId: e.seasonId },
           status: e.status,
+          consumedAt,
           snapshot: {
             title: e.snapshotTitle,
             coverUrl: e.snapshotCoverUrl,

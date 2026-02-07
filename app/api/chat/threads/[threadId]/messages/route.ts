@@ -47,7 +47,7 @@ async function userHasEventAccess(userId: string, eventId: number) {
     where: {
       ownerUserId: userId,
       eventId,
-      status: { in: ["ACTIVE", "USED"] },
+      status: { in: ["ACTIVE"] },
     },
     select: { id: true },
   });

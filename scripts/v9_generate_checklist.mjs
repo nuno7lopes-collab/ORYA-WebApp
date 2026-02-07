@@ -2,8 +2,8 @@ import fs from "node:fs";
 
 const sources = [
   { path: "docs/v9_close_plan.md", label: "v9_close_plan" },
-  { path: "docs/v9_ssot_registry.md", label: "v9_ssot_registry" },
-  { path: "docs/orya_blueprint_v9_final.md", label: "orya_blueprint_v9_final" },
+  { path: "docs/ssot_registry.md", label: "ssot_registry" },
+  { path: "docs/blueprint.md", label: "blueprint" },
 ];
 
 function detectStatus(line) {

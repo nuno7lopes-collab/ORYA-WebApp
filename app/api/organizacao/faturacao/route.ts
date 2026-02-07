@@ -6,7 +6,7 @@ import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationModule, PendingPayoutStatus, SaleSummaryStatus, SourceType } from "@prisma/client";
+import { OrganizationModule, SaleSummaryStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(_req: NextRequest) {
@@ -47,35 +47,9 @@ async function _GET(_req: NextRequest) {
     _count: { _all: true },
   });
 
-  const pending = await prisma.pendingPayout.findMany({
-    where: {
-      sourceType: SourceType.TICKET_ORDER,
-      sourceId: { in: events.map((e) => String(e.id)) },
-      status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING, PendingPayoutStatus.BLOCKED] },
-    },
-    select: { sourceId: true, amountCents: true, holdUntil: true, status: true },
-  });
-
-  const pendingByEvent = new Map<
-    string,
-    { holdCents: number; releaseAt: Date | null; hasBlocked: boolean }
-  >();
-  for (const p of pending) {
-    const key = p.sourceId;
-    const current = pendingByEvent.get(key) ?? { holdCents: 0, releaseAt: null, hasBlocked: false };
-    current.holdCents += p.amountCents;
-    if (p.status === PendingPayoutStatus.BLOCKED) {
-      current.hasBlocked = true;
-    } else if (!current.releaseAt || p.holdUntil < current.releaseAt) {
-      current.releaseAt = p.holdUntil;
-    }
-    pendingByEvent.set(key, current);
-  }
-
   const summaryPerEvent = events.map((evt) => {
     const agg = sales.find((s) => s.eventId === evt.id);
     const total = agg?._sum.totalCents ?? 0;
-    const pendingStats = pendingByEvent.get(String(evt.id)) ?? { holdCents: 0, releaseAt: null, hasBlocked: false };
     const connectStatus = resolveConnectStatus(
       evt.organization?.stripeAccountId ?? null,
       evt.organization?.stripeChargesEnabled ?? false,
@@ -88,9 +62,9 @@ async function _GET(_req: NextRequest) {
       netCents: agg?._sum.netCents ?? 0,
       platformFeeCents: agg?._sum.platformFeeCents ?? 0,
       countSales: agg?._count._all ?? 0,
-      releaseAt: pendingStats.releaseAt,
-      holdCents: pendingStats.holdCents,
-      holdReason: pendingStats.hasBlocked ? "BLOCKED" : pendingStats.holdCents > 0 ? "HELD" : null,
+      releaseAt: null,
+      holdCents: 0,
+      holdReason: null,
       connectStatus,
     };
   });
@@ -101,7 +75,6 @@ async function _GET(_req: NextRequest) {
       acc.netCents += e.netCents;
       acc.platformFeeCents += e.platformFeeCents;
       acc.countSales += e.countSales;
-      acc.holdCents += e.holdCents;
       return acc;
     },
     { totalCents: 0, netCents: 0, platformFeeCents: 0, countSales: 0, holdCents: 0 },

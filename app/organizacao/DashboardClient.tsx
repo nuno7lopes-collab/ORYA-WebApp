@@ -93,8 +93,7 @@ type EventItem = {
   endsAt?: string | null;
   templateType?: string | null;
   tournamentId?: number | null;
-  locationName: string | null;
-  locationCity: string | null;
+  locationFormattedAddress: string | null;
   status: string;
   isGratis: boolean;
   coverImageUrl?: string | null;
@@ -265,8 +264,7 @@ type MarketingOverviewResponse = {
     slug: string;
     startsAt: string | null;
     templateType: string | null;
-    locationName: string | null;
-    locationCity: string | null;
+    locationFormattedAddress: string | null;
     capacity: number | null;
     ticketsSold: number;
     revenueCents: number;
@@ -284,7 +282,6 @@ type OrganizationLite = {
   entityType?: string | null;
   publicName?: string | null;
   businessName?: string | null;
-  city?: string | null;
   payoutIban?: string | null;
   officialEmail?: string | null;
   officialEmailVerifiedAt?: string | null;
@@ -305,7 +302,6 @@ type OrganizationLite = {
   publicInstagram?: string | null;
   publicYoutube?: string | null;
   publicHours?: string | null;
-  address?: string | null;
   showAddressPublicly?: boolean | null;
   publicProfileLayout?: unknown | null;
 };
@@ -417,7 +413,6 @@ function OrganizacaoPageInner({
   const [ctaSuccess, setCtaSuccess] = useState<string | null>(null);
   const [entityType, setEntityType] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
-  const [city, setCity] = useState<string>("");
   const [payoutIban, setPayoutIban] = useState<string>("");
   const [eventStatusFilter, setEventStatusFilter] = useState<EventStatusFilter>("all");
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>("all");
@@ -566,7 +561,7 @@ function OrganizacaoPageInner({
 
   const { data: organizationData, isLoading: organizationLoading, mutate: mutateOrganization } = useSWR<
     OrganizationStatus & {
-      profile?: { fullName?: string | null; city?: string | null } | null;
+      profile?: { fullName?: string | null } | null;
       organization?: OrganizationLite | null;
       ok?: boolean;
       orgTransferEnabled?: boolean | null;
@@ -935,14 +930,12 @@ function OrganizacaoPageInner({
   // Prefill onboarding fields quando já existirem dados
   useEffect(() => {
     if (!businessName && profile?.fullName) setBusinessName(profile.fullName);
-    if (!city && profile?.city) setCity(profile.city);
     if (organization) {
       if (!entityType && organization.entityType) setEntityType(organization.entityType);
       if (!businessName && organization.publicName) setBusinessName(organization.publicName);
-      if (!city && organization.city) setCity(organization.city);
       if (!payoutIban && organization.payoutIban) setPayoutIban(organization.payoutIban);
     }
-  }, [organization, profile, businessName, city, entityType, payoutIban]);
+  }, [organization, profile, businessName, entityType, payoutIban]);
 
   const activeSection = useMemo(() => {
     const manageSections = [
@@ -3430,7 +3423,7 @@ function OrganizacaoPageInner({
                                     </Link>
                                     <p className="text-[12px] text-white/70">{dateLabel}</p>
                                     <p className="text-[12px] text-white/55">
-                                      {ev.locationCity || ev.locationName || "Local a confirmar"}
+                                      {ev.locationFormattedAddress || "Local a confirmar"}
                                     </p>
                                   </div>
                                   <div className="flex flex-col items-end gap-2">
@@ -4468,7 +4461,7 @@ function OrganizacaoPageInner({
                               : "Data por definir"}
                           </span>
                           <span>·</span>
-                          <span>{ev.locationCity || ev.locationName || "Local a anunciar"}</span>
+                          <span>{ev.locationFormattedAddress || "Local a anunciar"}</span>
                           <span>·</span>
                           <span>
                             Lotação: {ev.ticketsSold ?? 0} / {ev.capacity ?? "—"}{" "}

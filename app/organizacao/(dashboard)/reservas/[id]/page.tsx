@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 import { getEventCoverUrl } from "@/lib/eventCover";
+import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import type { GeoAutocompleteItem } from "@/lib/geo/provider";
 import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
 import {
   CTA_DANGER,
@@ -32,7 +34,8 @@ type Service = {
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode?: "FIXED" | "CHOOSE_AT_BOOKING" | null;
-  defaultLocationText?: string | null;
+  addressId?: string | null;
+  addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
   policy?: {
     id: number;
     name: string;
@@ -171,7 +174,18 @@ export default function ServicoDetalhePage() {
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [formLocationMode, setFormLocationMode] = useState<LocationMode>("FIXED");
-  const [formLocationText, setFormLocationText] = useState("");
+  const [formAddressQuery, setFormAddressQuery] = useState("");
+  const [formAddressSuggestions, setFormAddressSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [formAddressLoading, setFormAddressLoading] = useState(false);
+  const [formAddressError, setFormAddressError] = useState<string | null>(null);
+  const [showFormAddressSuggestions, setShowFormAddressSuggestions] = useState(false);
+  const [formAddressId, setFormAddressId] = useState<string | null>(null);
+  const [formAddressLabel, setFormAddressLabel] = useState<string | null>(null);
+  const formAddressSeqRef = useRef(0);
+  const formAddressDetailsSeqRef = useRef(0);
+  const formAddressSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const formAddressBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeFormProviderRef = useRef<string | null>(null);
   const [formPolicyId, setFormPolicyId] = useState("");
   const [linkedProfessionalIds, setLinkedProfessionalIds] = useState<number[]>([]);
   const [linkedResourceIds, setLinkedResourceIds] = useState<number[]>([]);
@@ -220,11 +234,103 @@ export default function ServicoDetalhePage() {
     setFormCategoryTag(service.categoryTag ?? "");
     setCoverUrl(service.coverImageUrl ?? null);
     setFormLocationMode(service.locationMode ?? "FIXED");
-    setFormLocationText(service.defaultLocationText ?? "");
+    setFormAddressId(service.addressId ?? null);
+    setFormAddressLabel(service.addressRef?.formattedAddress ?? null);
+    setFormAddressQuery(service.addressRef?.formattedAddress ?? "");
+    setFormAddressSuggestions([]);
+    setFormAddressError(null);
+    setShowFormAddressSuggestions(false);
+    activeFormProviderRef.current = null;
     setFormPolicyId(service.policyId ? String(service.policyId) : "");
     setLinkedProfessionalIds(service.professionalLinks?.map((link) => link.professionalId) ?? []);
     setLinkedResourceIds(service.resourceLinks?.map((link) => link.resourceId) ?? []);
   }, [service]);
+
+  useEffect(() => {
+    if (formLocationMode !== "FIXED") {
+      if (formAddressSearchTimeoutRef.current) {
+        clearTimeout(formAddressSearchTimeoutRef.current);
+      }
+      setFormAddressSuggestions([]);
+      setFormAddressLoading(false);
+      setFormAddressError(null);
+      return;
+    }
+    const query = formAddressQuery.trim();
+    if (query.length < 2) {
+      setFormAddressSuggestions([]);
+      setFormAddressLoading(false);
+      setFormAddressError(null);
+      return;
+    }
+    if (formAddressSearchTimeoutRef.current) {
+      clearTimeout(formAddressSearchTimeoutRef.current);
+    }
+    setFormAddressError(null);
+    const seq = ++formAddressSeqRef.current;
+    formAddressSearchTimeoutRef.current = setTimeout(async () => {
+      setFormAddressLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        if (formAddressSeqRef.current === seq) {
+          setFormAddressSuggestions(items);
+        }
+      } catch (err) {
+        if (formAddressSeqRef.current === seq) {
+          setFormAddressSuggestions([]);
+          setFormAddressError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+        }
+      } finally {
+        if (formAddressSeqRef.current === seq) {
+          setFormAddressLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => {
+      if (formAddressSearchTimeoutRef.current) {
+        clearTimeout(formAddressSearchTimeoutRef.current);
+      }
+    };
+  }, [formLocationMode, formAddressQuery]);
+
+  const handleSelectFormAddressSuggestion = async (item: GeoAutocompleteItem) => {
+    setFormAddressError(null);
+    setFormAddressId(null);
+    setFormAddressLabel(item.label);
+    setFormAddressQuery(item.label);
+    setFormAddressSuggestions([]);
+    setShowFormAddressSuggestions(false);
+    activeFormProviderRef.current = item.providerId;
+    const seq = ++formAddressDetailsSeqRef.current;
+    setFormAddressLoading(true);
+    try {
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
+      if (formAddressDetailsSeqRef.current !== seq) return;
+      if (activeFormProviderRef.current !== item.providerId) return;
+      const addressId = details?.addressId ?? null;
+      if (!addressId) {
+        setFormAddressError("Morada inválida.");
+        return;
+      }
+      const formatted = details?.formattedAddress ?? item.label;
+      setFormAddressId(addressId);
+      setFormAddressLabel(formatted);
+      setFormAddressQuery(formatted);
+    } catch (err) {
+      if (formAddressDetailsSeqRef.current === seq) {
+        setFormAddressError(err instanceof Error ? err.message : "Falha ao normalizar morada.");
+      }
+    } finally {
+      if (formAddressDetailsSeqRef.current === seq) {
+        setFormAddressLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!addonsData?.items) return;
@@ -353,8 +459,12 @@ export default function ServicoDetalhePage() {
 
   const handleServiceSave = async () => {
     if (!serviceId) return;
-    setServiceSaving(true);
     setServiceError(null);
+    if (formLocationMode === "FIXED" && !formAddressId) {
+      setServiceError("Seleciona uma morada Apple Maps.");
+      return;
+    }
+    setServiceSaving(true);
 
     try {
       const res = await fetch(`/api/organizacao/servicos/${serviceId}`, {
@@ -369,7 +479,7 @@ export default function ServicoDetalhePage() {
           categoryTag: formCategoryTag.trim() || null,
           coverImageUrl: coverUrl,
           locationMode: formLocationMode,
-          defaultLocationText: formLocationMode === "FIXED" ? formLocationText.trim() || null : null,
+          addressId: formLocationMode === "FIXED" ? formAddressId : null,
           policyId: formPolicyId ? Number(formPolicyId) : null,
           professionalIds: linkedProfessionalIds,
           resourceIds: linkedResourceIds,
@@ -745,7 +855,19 @@ export default function ServicoDetalhePage() {
             <select
               className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               value={formLocationMode}
-              onChange={(e) => setFormLocationMode(e.target.value as LocationMode)}
+              onChange={(e) => {
+                const next = e.target.value as LocationMode;
+                setFormLocationMode(next);
+                if (next !== "FIXED") {
+                  setFormAddressId(null);
+                  setFormAddressLabel(null);
+                  setFormAddressQuery("");
+                  setFormAddressSuggestions([]);
+                  setFormAddressError(null);
+                  setShowFormAddressSuggestions(false);
+                  activeFormProviderRef.current = null;
+                }
+              }}
             >
               <option value="FIXED">Local fixo</option>
               <option value="CHOOSE_AT_BOOKING">Escolher na marcação</option>
@@ -753,13 +875,76 @@ export default function ServicoDetalhePage() {
           </div>
           {formLocationMode === "FIXED" && (
             <div>
-              <label className="text-sm text-white/80">Local por defeito</label>
-              <input
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                value={formLocationText}
-                onChange={(e) => setFormLocationText(e.target.value)}
-                placeholder="Ex: Rua Central, 45 · Sala 2"
-              />
+              <label className="text-sm text-white/80">Morada (Apple Maps)</label>
+              <div className="relative mt-1 overflow-visible">
+                <input
+                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                  value={formAddressQuery}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setFormAddressQuery(next);
+                    setFormAddressId(null);
+                    setFormAddressLabel(null);
+                    setFormAddressError(null);
+                    activeFormProviderRef.current = null;
+                    setShowFormAddressSuggestions(true);
+                  }}
+                  onFocus={() => setShowFormAddressSuggestions(true)}
+                  onBlur={() => {
+                    if (formAddressBlurTimeoutRef.current) {
+                      clearTimeout(formAddressBlurTimeoutRef.current);
+                    }
+                    formAddressBlurTimeoutRef.current = setTimeout(
+                      () => setShowFormAddressSuggestions(false),
+                      120,
+                    );
+                  }}
+                  placeholder="Procura um local ou morada"
+                />
+                {showFormAddressSuggestions && (
+                  <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
+                    {formAddressLoading ? (
+                      <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar…</div>
+                    ) : formAddressError ? (
+                      <div className="px-3 py-2 text-sm text-amber-100">{formAddressError}</div>
+                    ) : formAddressSuggestions.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
+                    ) : (
+                      formAddressSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.providerId}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleSelectFormAddressSuggestion(suggestion)}
+                          className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                        >
+                          <div className="flex w-full items-center justify-between gap-3">
+                            <span className="font-semibold text-white">{suggestion.label}</span>
+                            <div className="flex items-center gap-2 text-[12px] text-white/65">
+                              <span>{suggestion.city || "—"}</span>
+                              {suggestion.sourceProvider === "APPLE_MAPS" && (
+                                <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
+                                  Apple
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              {formAddressId && (
+                <div className="mt-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
+                  Morada confirmada: {formAddressLabel || formAddressQuery}
+                </div>
+              )}
+              {formAddressError && (
+                <div className="mt-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                  {formAddressError}
+                </div>
+              )}
             </div>
           )}
         </div>

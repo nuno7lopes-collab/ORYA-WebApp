@@ -43,7 +43,7 @@ async function _GET(req: NextRequest) {
         now()
       FROM app_v3.chat_threads ct
       JOIN app_v3.tickets t ON ct.entity_type = 'EVENT'::app_v3."ChatEntityType" AND ct.entity_id = t.event_id
-      WHERE t.status IN ('ACTIVE', 'USED')
+      WHERE t.status IN ('ACTIVE')
         AND COALESCE(t.owner_user_id, t.user_id) IS NOT NULL
       ON CONFLICT (thread_id, user_id) DO UPDATE
         SET left_at = NULL,

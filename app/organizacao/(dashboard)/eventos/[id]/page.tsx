@@ -33,12 +33,7 @@ type EventWithTickets = {
   tournament?: { id: number } | null;
   startsAt: Date;
   endsAt: Date;
-  locationName: string | null;
-  locationCity: string | null;
-  locationSource: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationFormattedAddress: string | null;
-  locationComponents: Record<string, unknown> | null;
-  locationOverrides: Record<string, unknown> | null;
+  addressId: string | null;
   addressRef?: {
     formattedAddress: string | null;
     canonical: Record<string, unknown> | null;
@@ -72,14 +67,28 @@ type EventWithTickets = {
     numberOfCourts: number;
     club?: {
       name: string;
-      city: string | null;
-      addressRef?: { formattedAddress: string | null } | null;
+      addressRef?: { formattedAddress: string | null; canonical?: Record<string, unknown> | null } | null;
     } | null;
     partnerClubIds?: number[];
     advancedSettings?: Record<string, unknown> | null;
     lifecycleStatus?: string | null;
   } | null;
 };
+
+const pickCanonicalField = (
+  canonical: Record<string, unknown> | null | undefined,
+  keys: string[],
+) => {
+  if (!canonical) return null;
+  for (const key of keys) {
+    const value = canonical[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const resolveCanonicalCity = (canonical?: Record<string, unknown> | null) =>
+  pickCanonicalField(canonical, ["city", "addressLine2", "locality"]);
 
 export default async function OrganizationEventDetailPage({ params }: PageProps) {
   const resolved = await params;
@@ -121,8 +130,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               club: {
                 select: {
                   name: true,
-                  city: true,
-                  addressRef: { select: { formattedAddress: true } },
+                  addressRef: { select: { formattedAddress: true, canonical: true } },
                 },
               },
             },
@@ -137,7 +145,10 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       })) as (EventWithTickets & {
         padelTournamentConfig: {
           numberOfCourts: number;
-          club?: { name: string; city: string | null; addressRef?: { formattedAddress: string | null } | null } | null;
+          club?: {
+            name: string;
+            addressRef?: { formattedAddress: string | null; canonical?: Record<string, unknown> | null } | null;
+          } | null;
           partnerClubIds?: number[];
           advancedSettings?: Record<string, unknown> | null;
         } | null;
@@ -183,13 +194,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
   const locationDisplay = getEventLocationDisplay(
     {
-      locationName: event.locationName,
-      locationCity: event.locationCity,
-      address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
-      locationSource: event.locationSource,
-      locationFormattedAddress: event.locationFormattedAddress,
-      locationComponents: event.locationComponents,
-      locationOverrides: event.locationOverrides,
+      addressRef: event.addressRef ?? null,
     },
     "Local a anunciar",
   );
@@ -334,7 +339,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     event.padelTournamentConfig?.partnerClubIds?.length
       ? await prisma.padelClub.findMany({
           where: { id: { in: event.padelTournamentConfig.partnerClubIds as number[] } },
-          select: { id: true, name: true, city: true },
+          select: {
+            id: true,
+            name: true,
+            addressRef: { select: { formattedAddress: true, canonical: true } },
+          },
         })
       : [];
   const categoriesMeta =
@@ -845,7 +854,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 {event.padelTournamentConfig.club?.name ?? "Clube não definido"}
               </p>
               <p className="text-white/70">
-                {event.padelTournamentConfig.club?.city ?? "Cidade —"} ·{" "}
+                {resolveCanonicalCity(event.padelTournamentConfig.club?.addressRef?.canonical) ?? "Cidade —"} ·{" "}
                 {event.padelTournamentConfig.club?.addressRef?.formattedAddress ?? "Morada em falta"}
               </p>
               <p className="text-white/75">
@@ -855,11 +864,14 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 <div className="text-[12px] text-white/70">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/55 mt-2">Clubes parceiros</p>
                   <div className="flex flex-wrap gap-2">
-                    {partnerClubs.map((c) => (
-                      <span key={c.id} className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                        {c.name} {c.city ? `· ${c.city}` : ""}
-                      </span>
-                    ))}
+                    {partnerClubs.map((c) => {
+                      const city = resolveCanonicalCity(c.addressRef?.canonical);
+                      return (
+                        <span key={c.id} className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+                          {c.name} {city ? `· ${city}` : ""}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -29,7 +29,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/me/creditos (app/api/me/creditos/route.ts)
 - /api/me/inscricoes (app/api/me/inscricoes/route.ts)
 - /api/me/inscricoes/[id] (app/api/me/inscricoes/[id]/route.ts)
-- /api/me/location/coarse (app/api/me/location/coarse/route.ts)
 - /api/me/location/consent (app/api/me/location/consent/route.ts)
 - /api/me/loyalty/carteira (app/api/me/loyalty/carteira/route.ts)
 - /api/me/notifications (app/api/me/notifications/route.ts)

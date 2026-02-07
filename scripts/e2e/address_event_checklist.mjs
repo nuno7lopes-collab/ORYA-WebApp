@@ -88,30 +88,12 @@ async function runStep(name, fn, { optional = false } = {}) {
 }
 
 function buildEventPayloadFromAddress(details, title) {
-  const canonical = (details?.canonical && typeof details.canonical === "object") ? details.canonical : {};
-  const city = pick(canonical.city, canonical.locality, canonical.addressLine2, "Lisboa");
-  const formatted = pick(details?.formattedAddress, details?.name, "Morada Apple Maps");
-  const locationName = pick(details?.name, formatted, "Local Apple Maps");
-
   return {
     title,
     description: "E2E address flow (Apple Maps primary).",
     startsAt: nowIso(7 * 24 * 60 * 60 * 1000),
     endsAt: nowIso(7 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
-    locationName,
-    locationCity: city,
-    address: formatted,
-    locationSource: "APPLE_MAPS",
-    locationProviderId: pick(details?.providerId, details?.sourceProviderPlaceId),
-    locationFormattedAddress: formatted,
-    locationComponents: canonical,
-    locationOverrides: {
-      houseNumber: pick(canonical.houseNumber, canonical.streetNumber),
-      postalCode: pick(canonical.postalCode, canonical.zip),
-    },
     addressId: details?.addressId || null,
-    latitude: typeof details?.lat === "number" ? details.lat : null,
-    longitude: typeof details?.lng === "number" ? details.lng : null,
     templateType: "OTHER",
     pricingMode: "FREE_ONLY",
   };

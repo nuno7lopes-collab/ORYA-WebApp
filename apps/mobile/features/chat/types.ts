@@ -7,8 +7,8 @@ export type ChatEventSummary = {
   startsAt: string | null;
   endsAt: string | null;
   coverImageUrl: string | null;
-  locationName: string | null;
-  locationCity: string | null;
+  addressId: string | null;
+  locationFormattedAddress: string | null;
   status?: string | null;
 };
 

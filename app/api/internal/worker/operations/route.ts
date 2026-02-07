@@ -71,6 +71,8 @@ const BATCH_MAX_SIZE = Number(process.env.OPERATIONS_BATCH_MAX_SIZE || "50");
 const BATCH_TIME_LIMIT_MS = Number(process.env.OPERATIONS_BATCH_TIME_LIMIT_MS || "350");
 const OPERATIONS_LOCK_TTL_MS = Number(process.env.OPERATIONS_LOCK_TTL_MS || "90000");
 const OPERATIONS_LOCK_BACKOFF_MS = Number(process.env.OPERATIONS_LOCK_BACKOFF_MS || "2000");
+const OPERATIONS_TX_TIMEOUT_MS = Number(process.env.OPERATIONS_TX_TIMEOUT_MS || "20000");
+const OPERATIONS_TX_MAX_WAIT_MS = Number(process.env.OPERATIONS_TX_MAX_WAIT_MS || "5000");
 const STALE_OPERATION_LOCK_MS = 15 * 60 * 1000;
 const QUICK_RETRY_DELAYS_MS = (process.env.OPERATIONS_QUICK_RETRY_MS || "5000,15000,60000")
   .split(",")
@@ -86,8 +88,98 @@ const PRIORITY_TYPES = new Set(
     .filter(Boolean),
 );
 
+function shouldSkipOperationsTransaction() {
+  if (process.env.OPERATIONS_SKIP_TX === "true") return true;
+  const urls = [process.env.DATABASE_URL, process.env.DIRECT_URL].filter(Boolean) as string[];
+  if (urls.length === 0) return false;
+  for (const raw of urls) {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.port === "6543") return true;
+    } catch {
+      if (raw.includes(":6543")) return true;
+    }
+  }
+  return false;
+}
+
+async function claimOperationsBatchWithoutTransaction(now: Date, batchSize: number) {
+  if (batchSize <= 0) return [] as OperationRecord[];
+  const staleBefore = new Date(now.getTime() - STALE_OPERATION_LOCK_MS);
+  const priorityTypes = Array.from(PRIORITY_TYPES);
+  const prioritySql =
+    priorityTypes.length > 0
+      ? Prisma.sql`CASE WHEN operation_type IN (${Prisma.join(priorityTypes)}) THEN 0 ELSE 1 END`
+      : Prisma.sql`0`;
+
+  const candidates = await prisma.$queryRaw<OperationRecord[]>(Prisma.sql`
+      SELECT
+        id,
+        operation_type as "operationType",
+        dedupe_key as "dedupeKey",
+        status,
+        attempts,
+        first_seen_at as "firstSeenAt",
+        payload,
+        payment_intent_id as "paymentIntentId",
+        purchase_id as "purchaseId",
+        stripe_event_id as "stripeEventId",
+        event_id as "eventId",
+        pairing_id as "pairingId"
+      FROM app_v3.operations
+      WHERE
+        (
+          status = 'PENDING'
+          OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
+        )
+        AND (locked_at IS NULL OR locked_at <= ${staleBefore})
+      ORDER BY ${prioritySql}, id ASC
+      LIMIT ${batchSize}
+  `);
+
+  if (!candidates.length) return [] as OperationRecord[];
+  const ids = candidates.map((row) => row.id);
+
+  const claimed = await prisma.$queryRaw<OperationRecord[]>(Prisma.sql`
+      UPDATE app_v3.operations
+      SET status = 'RUNNING',
+          locked_at = ${now},
+          updated_at = ${now}
+      WHERE id IN (${Prisma.join(ids)})
+        AND (
+          status = 'PENDING'
+          OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
+        )
+        AND (locked_at IS NULL OR locked_at <= ${staleBefore})
+      RETURNING
+        id,
+        operation_type as "operationType",
+        dedupe_key as "dedupeKey",
+        status,
+        attempts,
+        first_seen_at as "firstSeenAt",
+        payload,
+        payment_intent_id as "paymentIntentId",
+        purchase_id as "purchaseId",
+        stripe_event_id as "stripeEventId",
+        event_id as "eventId",
+        pairing_id as "pairingId"
+  `);
+
+  return claimed;
+}
+
 const BASE_URL = getAppBaseUrl();
 const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
+
+const buildLocationPayload = (addressRef?: {
+  formattedAddress?: string | null;
+  canonical?: Record<string, unknown> | null;
+} | null) => {
+  return {
+    addressRef: addressRef ?? null,
+  };
+};
 
 type OperationRecord = {
   id: number;
@@ -359,25 +451,25 @@ async function processSendEmailOutbox(op: OperationRecord) {
     switch (templateKey) {
       case "PURCHASE_CONFIRMED":
       case "PURCHASE_CONFIRMED_GUEST": {
+        const addressRef =
+          tpl?.addressRef && typeof tpl.addressRef === "object"
+            ? (tpl.addressRef as { formattedAddress?: string | null; canonical?: Record<string, unknown> | null })
+            : tpl?.locationFormattedAddress
+              ? {
+                  formattedAddress: String(tpl.locationFormattedAddress),
+                  canonical:
+                    tpl.locationComponents && typeof tpl.locationComponents === "object"
+                      ? (tpl.locationComponents as Record<string, unknown>)
+                      : null,
+                }
+              : null;
         await sendPurchaseConfirmationEmail({
           to: recipient,
           eventTitle: tpl?.eventTitle ?? "Compra ORYA",
           eventSlug: tpl?.eventSlug ?? null,
           startsAt: tpl?.startsAt ?? null,
           endsAt: tpl?.endsAt ?? null,
-          locationName: tpl?.locationName ?? null,
-          locationCity: tpl?.locationCity ?? null,
-          address: tpl?.address ?? null,
-          locationSource: tpl?.locationSource ?? null,
-          locationFormattedAddress: tpl?.locationFormattedAddress ?? null,
-          locationComponents:
-            tpl?.locationComponents && typeof tpl.locationComponents === "object"
-              ? (tpl.locationComponents as Record<string, unknown>)
-              : null,
-          locationOverrides:
-            tpl?.locationOverrides && typeof tpl.locationOverrides === "object"
-              ? (tpl.locationOverrides as Record<string, unknown>)
-              : null,
+          addressRef,
           ticketsCount: tpl?.ticketsCount ?? 1,
           ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
@@ -385,11 +477,15 @@ async function processSendEmailOutbox(op: OperationRecord) {
       }
       case "ENTITLEMENT_DELIVERED":
       case "ENTITLEMENT_DELIVERED_GUEST": {
+        const venueLabel =
+          tpl?.addressRef && typeof tpl.addressRef === "object"
+            ? (tpl.addressRef as { formattedAddress?: string | null }).formattedAddress ?? null
+            : (tpl?.locationFormattedAddress as string | null) ?? null;
         await sendEntitlementDeliveredEmail({
           to: recipient,
           eventTitle: tpl?.eventTitle ?? "Entitlement entregue",
           startsAt: tpl?.startsAt ?? null,
-          venue: tpl?.locationName ?? null,
+          venue: venueLabel,
           ticketUrl: tpl?.ticketUrl ? absUrl(tpl.ticketUrl) : absUrl(fallbackTicketUrl),
         });
         break;
@@ -504,8 +600,12 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
     priorityTypes.length > 0
       ? Prisma.sql`CASE WHEN operation_type IN (${Prisma.join(priorityTypes)}) THEN 0 ELSE 1 END`
       : Prisma.sql`0`;
-  return prisma.$transaction(async (tx) => {
-    const candidates = await tx.$queryRaw<OperationRecord[]>(Prisma.sql`
+  if (shouldSkipOperationsTransaction()) {
+    return claimOperationsBatchWithoutTransaction(now, batchSize);
+  }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const candidates = await tx.$queryRaw<OperationRecord[]>(Prisma.sql`
       SELECT
         id,
         operation_type as "operationType",
@@ -530,20 +630,25 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
       FOR UPDATE SKIP LOCKED
     `);
 
-    if (!candidates.length) return [] as OperationRecord[];
+      if (!candidates.length) return [] as OperationRecord[];
 
-    const ids = candidates.map((row) => row.id);
-    await tx.operation.updateMany({
-      where: { id: { in: ids } },
-      data: {
-        status: "RUNNING",
-        lockedAt: now,
-        updatedAt: now,
-      },
-    });
+      const ids = candidates.map((row) => row.id);
+      await tx.operation.updateMany({
+        where: { id: { in: ids } },
+        data: {
+          status: "RUNNING",
+          lockedAt: now,
+          updatedAt: now,
+        },
+      });
 
-    return candidates;
-  }, { timeout: 20000, maxWait: 5000 });
+      return candidates;
+    }, { timeout: OPERATIONS_TX_TIMEOUT_MS, maxWait: OPERATIONS_TX_MAX_WAIT_MS });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logWarn("operations.claim.fallback", { error: message });
+    return claimOperationsBatchWithoutTransaction(now, batchSize);
+  }
 }
 
 export async function runOperationsBatch() {
@@ -1108,7 +1213,7 @@ async function processUpsertLedger(op: OperationRecord) {
       id: true,
       title: true,
       coverImageUrl: true,
-      locationName: true,
+      addressRef: { select: { formattedAddress: true } },
       startsAt: true,
       timezone: true,
       ticketTypes: { select: { id: true, currency: true } },
@@ -1307,7 +1412,7 @@ async function processUpsertLedger(op: OperationRecord) {
             policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
-            snapshotVenueName: event.locationName,
+            snapshotVenueName: event.addressRef?.formattedAddress ?? null,
             snapshotStartAt: event.startsAt,
             snapshotTimezone: event.timezone,
             ticketId: ticket.id,
@@ -1325,7 +1430,7 @@ async function processUpsertLedger(op: OperationRecord) {
             policyVersionApplied,
             snapshotTitle: event.title,
             snapshotCoverUrl: event.coverImageUrl,
-            snapshotVenueName: event.locationName,
+            snapshotVenueName: event.addressRef?.formattedAddress ?? null,
             snapshotStartAt: event.startsAt,
             snapshotTimezone: event.timezone,
             ticketId: ticket.id,
@@ -1420,6 +1525,12 @@ async function processRefundSingle(op: OperationRecord) {
   });
 
   await markEntitlementsStatusByPurchase(purchaseId, "REVOKED");
+  await prisma.ticket.updateMany({
+    where: {
+      OR: [{ purchaseId }, { stripePaymentIntentId: paymentIntentId ?? purchaseId }],
+    },
+    data: { status: "REFUNDED" },
+  });
 
   const paymentId = await resolvePaymentIdForOperation({ purchaseId, paymentIntentId });
   await publishPaymentStatusChanged({
@@ -1662,12 +1773,7 @@ async function processSendEmailReceipt(op: OperationRecord) {
       slug: true,
       startsAt: true,
       endsAt: true,
-      locationName: true,
-      locationCity: true,
-      locationSource: true,
-      locationFormattedAddress: true,
-      locationComponents: true,
-      locationOverrides: true,
+      addressRef: { select: { formattedAddress: true, canonical: true } },
     },
   });
   if (!event) throw new Error("Event not found for email receipt");
@@ -1676,25 +1782,14 @@ async function processSendEmailReceipt(op: OperationRecord) {
     where: { purchaseId: sale.purchaseId ?? sale.paymentIntentId ?? purchaseId },
   });
 
+  const locationPayload = buildLocationPayload(event.addressRef);
   await sendPurchaseConfirmationEmail({
     to: targetEmail,
     eventTitle: event.title,
     eventSlug: event.slug,
     startsAt: event.startsAt?.toISOString() ?? null,
     endsAt: event.endsAt?.toISOString() ?? null,
-    locationName: event.locationName ?? null,
-    locationCity: event.locationCity ?? null,
-    address: event.locationFormattedAddress ?? null,
-    locationSource: event.locationSource ?? null,
-    locationFormattedAddress: event.locationFormattedAddress ?? null,
-    locationComponents:
-      event.locationComponents && typeof event.locationComponents === "object"
-        ? (event.locationComponents as Record<string, unknown>)
-        : null,
-    locationOverrides:
-      event.locationOverrides && typeof event.locationOverrides === "object"
-        ? (event.locationOverrides as Record<string, unknown>)
-        : null,
+    ...locationPayload,
     ticketsCount,
     ticketUrl: absUrl("/me/carteira?section=wallet"),
   });

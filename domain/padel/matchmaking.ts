@@ -38,7 +38,6 @@ type PairingCandidate = {
     slot_role: PadelPairingSlotRole;
     slotStatus: PadelPairingSlotStatus;
     paymentStatus: PadelPairingPaymentStatus;
-    ticketId: string | null;
   }>;
 };
 
@@ -139,7 +138,6 @@ async function mergePairings(params: {
             slot_role: true,
             slotStatus: true,
             paymentStatus: true,
-            ticketId: true,
           },
         },
       },
@@ -164,7 +162,6 @@ async function mergePairings(params: {
             slot_role: true,
             slotStatus: true,
             paymentStatus: true,
-            ticketId: true,
           },
         },
       },
@@ -180,24 +177,11 @@ async function mergePairings(params: {
   const partnerCaptainSlot = partner.slots.find((slot) => slot.slot_role === PadelPairingSlotRole.CAPTAIN);
   if (!hostPartnerSlot || !partnerCaptainSlot) return false;
   if (hostPartnerSlot.slotStatus !== PadelPairingSlotStatus.PENDING) return false;
-  if (hostPartnerSlot.ticketId) return false;
 
   const partnerUserId = partner.player1UserId;
   if (!partnerUserId) return false;
 
-  const partnerTicketId = partnerCaptainSlot.ticketId;
   const partnerPaid = partnerCaptainSlot.paymentStatus === PadelPairingPaymentStatus.PAID;
-
-  if (partnerTicketId) {
-    await tx.padelPairingSlot.update({
-      where: { id: partnerCaptainSlot.id },
-      data: { ticketId: null },
-    });
-    await tx.ticket.update({
-      where: { id: partnerTicketId },
-      data: { pairingId: host.id, userId: partnerUserId },
-    });
-  }
 
   await tx.padelPairingSlot.update({
     where: { id: hostPartnerSlot.id },
@@ -207,7 +191,6 @@ async function mergePairings(params: {
       invitedContact: null,
       slotStatus: PadelPairingSlotStatus.FILLED,
       paymentStatus: partnerPaid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
-      ticketId: partnerTicketId ?? null,
     },
   });
 
@@ -231,7 +214,6 @@ async function mergePairings(params: {
     data: {
       slotStatus: PadelPairingSlotStatus.CANCELLED,
       paymentStatus: PadelPairingPaymentStatus.UNPAID,
-      ticketId: null,
     },
   });
 
@@ -315,7 +297,6 @@ export async function matchmakeOpenPairings(params: {
           slot_role: true,
           slotStatus: true,
           paymentStatus: true,
-          ticketId: true,
         },
       },
     },

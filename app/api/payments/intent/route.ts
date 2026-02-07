@@ -61,7 +61,6 @@ const pairingSlotSelect = {
   slot_role: true,
   slotStatus: true,
   paymentStatus: true,
-  ticketId: true,
   profileId: true,
   invitedContact: true,
   invitedUserId: true,
@@ -76,7 +75,6 @@ const pairingEventSelect = {
   startsAt: true,
   timezone: true,
   coverImageUrl: true,
-  locationName: true,
   organizationId: true,
   organization: {
     select: {
@@ -987,7 +985,6 @@ async function _POST(req: NextRequest) {
         pricing_mode: string | null;
         ends_at: Date | null;
         cover_image_url: string | null;
-        location_name: string | null;
         starts_at: Date;
         timezone: string;
         fee_mode: string | null;
@@ -1015,7 +1012,6 @@ async function _POST(req: NextRequest) {
         e.pricing_mode,
         e.ends_at,
         e.cover_image_url,
-        e.location_name,
         e.starts_at,
         e.timezone,
         e.fee_mode,
@@ -1959,7 +1955,7 @@ async function _POST(req: NextRequest) {
       }
 
       if (scenarioAdjusted === "GROUP_SPLIT") {
-        const paidSlots = pairing.slots.filter((s) => Boolean(s.ticketId));
+        const paidSlots = pairing.slots.filter((s) => s.paymentStatus === PadelPairingPaymentStatus.PAID);
         const requiredSlots = paidSlots.length === 0 ? 2 : 1;
         const firstItem = normalizedItems[0];
         const ticketType = firstItem ? ticketTypeMap.get(firstItem.ticketTypeId) : null;

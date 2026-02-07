@@ -6,6 +6,8 @@ const {
   cancelBookingMock,
   refundBookingPaymentMock,
   bookingFindUnique,
+  paymentEventFindFirst,
+  paymentFindUnique,
   prismaMockShape,
 } = vi.hoisted(() => {
   const ensureAuthenticatedMock = vi.fn();
@@ -13,14 +15,28 @@ const {
   const cancelBookingMock = vi.fn();
   const refundBookingPaymentMock = vi.fn();
   const bookingFindUnique = vi.fn();
+  const paymentEventFindFirst = vi.fn();
+  const paymentFindUnique = vi.fn();
   const prismaMockShape = {
     booking: {
       findUnique: bookingFindUnique,
+    },
+    paymentEvent: {
+      findFirst: paymentEventFindFirst,
+    },
+    payment: {
+      findUnique: paymentFindUnique,
     },
     $transaction: vi.fn(async (fn: any) =>
       fn({
         booking: {
           findUnique: bookingFindUnique,
+        },
+        paymentEvent: {
+          findFirst: paymentEventFindFirst,
+        },
+        payment: {
+          findUnique: paymentFindUnique,
         },
       }),
     ),
@@ -32,6 +48,8 @@ const {
     cancelBookingMock,
     refundBookingPaymentMock,
     bookingFindUnique,
+    paymentEventFindFirst,
+    paymentFindUnique,
     prismaMockShape,
   };
 });
@@ -114,6 +132,8 @@ describe("booking cancel snapshot route", () => {
     cancelBookingMock.mockReset();
     refundBookingPaymentMock.mockReset();
     bookingFindUnique.mockReset();
+    paymentEventFindFirst.mockReset();
+    paymentFindUnique.mockReset();
     prismaMock.$transaction.mockClear();
   });
 
@@ -131,6 +151,7 @@ describe("booking cancel snapshot route", () => {
       snapshotTimezone: "Europe/Lisbon",
       confirmationSnapshot: snapshot,
     } as any);
+    paymentEventFindFirst.mockResolvedValue(null);
     cancelBookingMock.mockResolvedValue({
       booking: { id: 1, status: "CANCELLED_BY_CLIENT" },
       outboxEventId: "evt_1",

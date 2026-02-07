@@ -35,7 +35,8 @@ async function _GET(
         currency: true,
         categoryTag: true,
         locationMode: true,
-        defaultLocationText: true,
+        addressId: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
         policy: {
           select: {
             id: true,
@@ -57,7 +58,6 @@ async function _GET(
             id: true,
             publicName: true,
             businessName: true,
-            city: true,
             username: true,
             brandingAvatarUrl: true,
             publicDescription: true,
@@ -65,6 +65,8 @@ async function _GET(
             publicInstagram: true,
             timezone: true,
             reservationAssignmentMode: true,
+            addressId: true,
+            addressRef: { select: { formattedAddress: true, canonical: true } },
             orgType: true,
             stripeAccountId: true,
             stripeChargesEnabled: true,

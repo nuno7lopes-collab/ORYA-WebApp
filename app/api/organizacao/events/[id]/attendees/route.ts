@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
-import { EntitlementStatus, OrganizationMemberRole } from "@prisma/client";
+import { EntitlementStatus, OrganizationMemberRole, Prisma } from "@prisma/client";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -109,8 +109,10 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   const searchParams = req.nextUrl.searchParams;
   const statusFilterRaw = searchParams.get("status");
   const statusFilter = statusFilterRaw
-    ? statusFilterRaw.split(",").map((s) => s.trim()).filter(Boolean) as EntitlementStatus[]
+    ? statusFilterRaw.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
+  const wantsCheckedIn = statusFilter.includes("CHECKED_IN");
+  const entitlementStatusFilter = statusFilter.filter((s) => s !== "CHECKED_IN") as EntitlementStatus[];
   const search = searchParams.get("search")?.trim();
   const cursor = parseCursor(searchParams.get("cursor"));
   const pageSizeRaw = Number(searchParams.get("pageSize"));
@@ -120,7 +122,16 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     AND: [{ eventId }],
   };
   if (statusFilter.length) {
-    where.AND.push({ status: { in: statusFilter } });
+    const statusClauses: Prisma.EntitlementWhereInput[] = [];
+    if (entitlementStatusFilter.length) {
+      statusClauses.push({ status: { in: entitlementStatusFilter } });
+    }
+    if (wantsCheckedIn) {
+      statusClauses.push({ checkins: { some: {} } });
+    }
+    if (statusClauses.length) {
+      where.AND.push({ OR: statusClauses });
+    }
   }
   if (cursor) {
     where.AND.push({
@@ -211,6 +222,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       isOwner: false,
       isOrganization: true,
       isAdmin: Boolean(access.isAdmin),
+      checkins: e.checkins ?? undefined,
       checkinWindow: window,
       emailVerified: true,
       isGuestOwner: false,
@@ -231,9 +243,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       guestEmail ||
       (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null);
 
+    const consumedAt = e.checkins?.[0]?.checkedInAt ?? null;
+    const displayStatus =
+      consumedAt && e.status === "ACTIVE" ? "CHECKED_IN" : e.status;
+
     return {
       entitlementId: e.id,
-      status: e.status,
+      status: displayStatus,
       holderKey: e.ownerKey,
       holder: {
         name: holderName,
@@ -242,7 +258,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       },
       purchaseId: e.purchaseId,
       ticketId: e.ticketId,
-      checkedInAt: e.checkins?.[0]?.checkedInAt ?? null,
+      checkedInAt: consumedAt,
       refundedAt: refundMap.get(e.purchaseId) ?? null,
       snapshot: {
         title: e.snapshotTitle,

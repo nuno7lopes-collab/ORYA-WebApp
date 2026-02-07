@@ -54,8 +54,6 @@ async function _GET(req: NextRequest) {
   const periodDays = Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? Math.floor(periodDaysRaw) : null;
   const since = periodDays ? new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000) : null;
   const levelFilter = req.nextUrl.searchParams.get("level");
-  const cityFilterRaw = req.nextUrl.searchParams.get("city");
-  const cityFilter = cityFilterRaw ? cityFilterRaw.trim() : null;
 
   if (eventId) {
     const eId = Number(eventId);
@@ -65,7 +63,6 @@ async function _GET(req: NextRequest) {
       where: { id: eId, isDeleted: false },
       select: {
         status: true,
-        locationCity: true,
         padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
         accessPolicies: {
           orderBy: { policyVersion: "desc" },
@@ -88,13 +85,6 @@ async function _GET(req: NextRequest) {
     if (!isPublicEvent) {
       return fail(ctx, 403, "FORBIDDEN");
     }
-    if (cityFilter) {
-      const eventCity = event.locationCity?.trim().toLowerCase() ?? null;
-      if (!eventCity || eventCity !== cityFilter.toLowerCase()) {
-        return respondOk(ctx, { items: [] }, { status: 200 });
-      }
-    }
-
     const entries = await prisma.padelRankingEntry.findMany({
       where: {
         eventId: eId,
@@ -125,16 +115,6 @@ async function _GET(req: NextRequest) {
         organizationId,
         ...(since ? { createdAt: { gte: since } } : {}),
         ...(levelFilter ? { player: { level: levelFilter } } : {}),
-        ...(cityFilter
-          ? {
-              event: {
-                locationCity: {
-                  equals: cityFilter,
-                  mode: "insensitive",
-                },
-              },
-            }
-          : {}),
       },
       include: { player: true },
     });
@@ -165,16 +145,6 @@ async function _GET(req: NextRequest) {
     where: {
       ...(since ? { createdAt: { gte: since } } : {}),
       ...(levelFilter ? { player: { level: levelFilter } } : {}),
-      ...(cityFilter
-        ? {
-            event: {
-              locationCity: {
-                equals: cityFilter,
-                mode: "insensitive",
-              },
-            },
-          }
-        : {}),
     },
     include: { player: true },
   });

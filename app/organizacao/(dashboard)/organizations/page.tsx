@@ -19,7 +19,6 @@ type OrgPayload = {
     username: string | null;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     entityType: string | null;
     status: string | null;
   };
@@ -54,7 +53,6 @@ export default async function OrganizationsHubPage() {
         username: m.organization!.username,
         publicName: m.organization!.publicName,
         businessName: m.organization!.businessName,
-        city: m.organization!.city,
         entityType: m.organization!.entityType,
         status: m.organization!.status,
       },

@@ -49,10 +49,8 @@ import {
 } from "../../features/onboarding/types";
 import {
   checkUsernameAvailability,
-  fetchIpLocation,
   saveBasicProfile,
   saveLocationConsent,
-  saveLocationCoarse,
   savePadelOnboarding,
 } from "../../features/onboarding/api";
 import type { ProfileSummary } from "../../features/profile/types";
@@ -119,7 +117,6 @@ export default function OnboardingScreen() {
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
   const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
   const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
-  const [locationHint, setLocationHint] = useState<{ city?: string | null; region?: string | null } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const nameInputRef = useRef<TextInput>(null);
   const usernameInputRef = useRef<TextInput>(null);
@@ -192,7 +189,6 @@ export default function OnboardingScreen() {
   const saveBasicMutation = useMutation({ mutationFn: saveBasicProfile, retry: 1 });
   const savePadelMutation = useMutation({ mutationFn: savePadelOnboarding, retry: 1 });
   const saveConsentMutation = useMutation({ mutationFn: saveLocationConsent, retry: 1 });
-  const saveCoarseMutation = useMutation({ mutationFn: saveLocationCoarse, retry: 1 });
 
   useEffect(() => {
     if (padelSelected) return;
@@ -227,7 +223,6 @@ export default function OnboardingScreen() {
           setPadelGender((draft.padel?.gender as PadelGender | null) ?? null);
           setPadelSide((draft.padel?.preferredSide as PadelPreferredSide | null) ?? null);
           setPadelLevel((draft.padel?.level as PadelLevel | null) ?? null);
-          setLocationHint(draft.location ? { city: draft.location.city, region: draft.location.region } : null);
           setStep(resolveStartStep(draft));
         }
       })
@@ -298,11 +293,6 @@ export default function OnboardingScreen() {
       cancelUsernameCheck();
     };
   }, [username, usernameValidation, session?.access_token]);
-
-  useEffect(() => {
-    if (step !== "location" || locationHint) return;
-    resolveIpLocation().catch(() => undefined);
-  }, [step, locationHint]);
 
   const canContinueBasic =
     fullName.trim().length >= 2 && usernameValidation.valid && usernameStatus === "available";
@@ -387,7 +377,6 @@ export default function OnboardingScreen() {
     fullName: string;
     username: string;
     interests: InterestId[];
-    city?: string | null;
     padelLevel?: string | null;
   }) => {
     const summaryKey = ["profile", "summary", session?.user?.id ?? "anon"];
@@ -398,7 +387,6 @@ export default function OnboardingScreen() {
       username: payload.username,
       avatarUrl: prev?.avatarUrl ?? null,
       bio: prev?.bio ?? null,
-      city: payload.city ?? prev?.city ?? null,
       padelLevel: payload.padelLevel ?? prev?.padelLevel ?? null,
       favouriteCategories: payload.interests,
       onboardingDone: true,
@@ -406,12 +394,7 @@ export default function OnboardingScreen() {
     queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
   };
 
-  const finalizeOnboarding = async (location?: {
-    city?: string | null;
-    region?: string | null;
-    consent?: "GRANTED" | "DENIED";
-    source?: "GPS" | "IP";
-  }) => {
+  const finalizeOnboarding = async (location?: { consent?: "GRANTED" | "DENIED" }) => {
     try {
       const usernameOk = await ensureUsernameAvailable();
       if (!usernameOk) {
@@ -456,27 +439,10 @@ export default function OnboardingScreen() {
           console.warn("Location consent save failed", err);
         }
       }
-      if (location && (location.city || location.region)) {
-        try {
-          await withTimeout(
-            saveCoarseMutation.mutateAsync({
-              city: location.city,
-              region: location.region,
-              source: location.source ?? "IP",
-              accessToken,
-            }),
-            NETWORK_TIMEOUT_MS,
-            "save_coarse_timeout",
-          );
-        } catch (err) {
-          console.warn("Location coarse save failed", err);
-        }
-      }
       updateProfileCache({
         fullName: fullName.trim(),
         username: normalizedUsername,
         interests,
-        city: location?.city ?? null,
         padelLevel: padelLevel ?? null,
       });
       await setOnboardingDone(true);
@@ -605,30 +571,14 @@ export default function OnboardingScreen() {
     setStep("location");
   };
 
-  async function resolveIpLocation() {
-    const accessToken = await resolveAccessToken();
-    try {
-      const ipLocation = await withTimeout(fetchIpLocation(accessToken), LOCATION_TIMEOUT_MS, "ip_timeout");
-      const next = { city: ipLocation?.city ?? null, region: ipLocation?.region ?? null };
-      setLocationHint(next);
-      return next;
-    } catch {
-      return { city: null, region: null };
-    }
-  }
-
   const handleLocationFlow = async (intent: "allow" | "skip") => {
     const requestId = ++locationRequestIdRef.current;
     const isActive = () => requestId === locationRequestIdRef.current;
     setLocationError(null);
     setSavingStep("location");
     try {
-      let locationPayload: {
-        city?: string | null;
-        region?: string | null;
-        consent: "GRANTED" | "DENIED";
-        source: "GPS" | "IP";
-      } = { city: null, region: null, consent: "DENIED", source: "IP" };
+      let consent: "GRANTED" | "DENIED" = "DENIED";
+      let source: "GPS" | "IP" = "IP";
 
       if (intent === "allow") {
         const permission = await withTimeout(
@@ -637,99 +587,18 @@ export default function OnboardingScreen() {
           "permission_timeout",
         );
         if (!isActive()) return;
-        if (permission.status !== Location.PermissionStatus.GRANTED) {
-          const ip = await resolveIpLocation();
-          if (!isActive()) return;
-          locationPayload = {
-            city: ip.city ?? null,
-            region: ip.region ?? null,
-            consent: "DENIED",
-            source: "IP",
-          };
-          await persistDraft({
-            step: 4,
-            location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
-          });
-          if (!isActive()) return;
-          await finalizeOnboarding(locationPayload);
-          return;
+        if (permission.status === Location.PermissionStatus.GRANTED) {
+          consent = "GRANTED";
+          source = "GPS";
         }
-
-        let position: Location.LocationObject | null = null;
-        try {
-          position = await withTimeout(
-            Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-              timeout: LOCATION_TIMEOUT_MS,
-            }),
-            LOCATION_TIMEOUT_MS + 1000,
-            "position_timeout",
-          );
-        } catch {
-          position = null;
-        }
-
-        if (!isActive()) return;
-        if (!position) {
-          const ip = await resolveIpLocation();
-          if (!isActive()) return;
-          locationPayload = {
-            city: ip.city ?? null,
-            region: ip.region ?? null,
-            consent: "DENIED",
-            source: "IP",
-          };
-          await persistDraft({
-            step: 4,
-            location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
-          });
-          if (!isActive()) return;
-          await finalizeOnboarding(locationPayload);
-          return;
-        }
-        let city: string | null = null;
-        let region: string | null = null;
-        try {
-        const [address] = await Location.reverseGeocodeAsync({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        city = (address?.city ?? address?.subregion ?? null) as string | null;
-        region = (address?.region ?? null) as string | null;
-        } catch {
-          // ignore reverse geocode errors
-        }
-
-        if (!isActive()) return;
-        locationPayload = {
-          city,
-          region,
-          consent: "GRANTED",
-          source: "GPS",
-        };
-        await persistDraft({
-          step: 4,
-          location: { city, region, source: "GPS", consent: "GRANTED" },
-        });
-        if (!isActive()) return;
-        await finalizeOnboarding(locationPayload);
-        return;
       }
 
-      const ip = await resolveIpLocation();
-      if (!isActive()) return;
-      locationPayload = {
-        city: ip.city ?? null,
-        region: ip.region ?? null,
-        consent: "DENIED",
-        source: "IP",
-      };
       await persistDraft({
         step: 4,
-        location: { city: ip.city ?? null, region: ip.region ?? null, source: "IP", consent: "DENIED" },
+        location: { source, consent },
       });
       if (!isActive()) return;
-      await finalizeOnboarding(locationPayload);
+      await finalizeOnboarding({ consent });
     } catch (err: any) {
       if (!isActive()) return;
       const rawMessage = err?.message ?? "location_error";

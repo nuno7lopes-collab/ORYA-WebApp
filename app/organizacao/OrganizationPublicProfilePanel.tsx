@@ -40,6 +40,7 @@ import {
   type PublicProfileModuleWidth,
 } from "@/lib/publicProfileLayout";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { pickCanonicalField } from "@/lib/location/eventLocation";
 
 const BIO_LIMIT = 280;
 const MODULE_LABELS: Record<
@@ -157,8 +158,7 @@ function buildAgendaGroups(
     slug: string;
     title: string;
     startsAt: Date | null;
-    locationName: string | null;
-    locationCity: string | null;
+    locationFormattedAddress: string | null;
     timezone: string | null;
     isGratis: boolean;
     templateType: string | null;
@@ -193,8 +193,7 @@ function buildAgendaGroups(
         }).format(event.startsAt as Date)
       : "data-a-definir";
     const label = hasDate ? formatDayLabel(event.startsAt as Date, timezone) : "Data a definir";
-    const locationLabel =
-      [event.locationName, event.locationCity].filter(Boolean).join(" · ") || "Local a anunciar";
+    const locationLabel = event.locationFormattedAddress || "Local a anunciar";
     const item = {
       id: event.id,
       slug: event.slug,
@@ -239,9 +238,9 @@ type OrganizationProfileInfo = {
   stripeChargesEnabled?: boolean | null;
   stripePayoutsEnabled?: boolean | null;
   orgType?: string | null;
-  address?: string | null;
+  addressId?: string | null;
+  addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
   showAddressPublicly?: boolean | null;
-  city?: string | null;
   timezone?: string | null;
   reservationAssignmentMode?: "PROFESSIONAL" | "RESOURCE" | string | null;
   primaryModule?: string | null;
@@ -261,7 +260,8 @@ type ServiceOption = {
   kind?: string | null;
   coverImageUrl?: string | null;
   locationMode?: string | null;
-  defaultLocationText?: string | null;
+  addressId?: string | null;
+  addressRef?: { formattedAddress?: string | null } | null;
   professionalLinks?: Array<{ professionalId: number }>;
   resourceLinks?: Array<{ resourceId: number }>;
   _count?: { bookings?: number; availabilities?: number };
@@ -276,8 +276,7 @@ type EventPreviewItem = {
   timezone?: string | null;
   status?: string | null;
   templateType?: string | null;
-  locationName?: string | null;
-  locationCity?: string | null;
+  locationFormattedAddress?: string | null;
   coverImageUrl?: string | null;
   isGratis?: boolean;
 };
@@ -372,8 +371,7 @@ type AgendaEvent = {
   endsAt: Date | null;
   timezone: string | null;
   coverImageUrl: string | null;
-  locationName: string | null;
-  locationCity: string | null;
+  locationFormattedAddress: string | null;
   isGratis: boolean;
   templateType: string | null;
 };
@@ -434,8 +432,7 @@ function EventSpotlightCard({
           {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
         </p>
         <p className="text-[12px] text-white/65">
-          {event.locationName}
-          {event.locationCity ? ` · ${event.locationCity}` : ""}
+        {event.locationFormattedAddress || "Local a anunciar"}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {ctaHref && (
@@ -481,10 +478,9 @@ export default function OrganizationPublicProfilePanel({
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
-  const [city, setCity] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
-  const [editingField, setEditingField] = useState<"name" | "username" | "city" | "bio" | null>(null);
+  const [editingField, setEditingField] = useState<"name" | "username" | "bio" | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingUsername, setSavingUsername] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -645,8 +641,7 @@ export default function OrganizationPublicProfilePanel({
         endsAt: ev.endsAt ? new Date(ev.endsAt) : null,
         timezone: ev.timezone ?? null,
         coverImageUrl: ev.coverImageUrl ?? null,
-        locationName: ev.locationName ?? null,
-        locationCity: ev.locationCity ?? null,
+        locationFormattedAddress: ev.locationFormattedAddress ?? null,
         isGratis: Boolean(ev.isGratis),
         templateType: ev.templateType ?? null,
       }))
@@ -671,7 +666,6 @@ export default function OrganizationPublicProfilePanel({
     setUsername(organization.username ?? "");
     setBio(organization.publicDescription ?? "");
     setAvatarUrl(organization.brandingAvatarUrl ?? null);
-    setCity(organization.city ?? "");
     if (!coverDirty) {
       setCoverImageUrl(
         sanitizeProfileCoverUrl(organization.brandingCoverUrl ?? coverUrl ?? null),
@@ -963,7 +957,6 @@ export default function OrganizationPublicProfilePanel({
           publicDescription: bio.trim(),
           brandingAvatarUrl: avatarUrl,
           brandingCoverUrl: coverImageUrl,
-          city: city.trim(),
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1056,7 +1049,17 @@ export default function OrganizationPublicProfilePanel({
   const displayName = name.trim() || organization?.businessName?.trim() || "Organização ORYA";
   const displayUsername = username.trim() || organization?.username?.trim() || null;
   const displayBio = bio.trim() || organization?.publicDescription?.trim() || "";
-  const displayCity = city.trim() || organization?.city?.trim() || "";
+  const organizationCanonical =
+    (organization?.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const displayCity =
+    pickCanonicalField(
+      organizationCanonical,
+      "city",
+      "locality",
+      "addressLine2",
+      "region",
+      "state",
+    ) ?? "";
   const avatarPreviewUrl = avatarUrl ?? organization?.brandingAvatarUrl ?? null;
   const coverPreviewUrl = getProfileCoverUrl(coverImageUrl ?? coverUrl ?? null, {
     width: 1500,
@@ -1218,10 +1221,10 @@ export default function OrganizationPublicProfilePanel({
             id: organization?.id ?? 0,
             publicName: organization?.publicName ?? null,
             businessName: organization?.businessName ?? null,
-            city: displayCity || organization?.city || null,
             username: displayUsername,
             timezone: organization?.timezone ?? "Europe/Lisbon",
-            address: organization?.address ?? null,
+            addressId: organization?.addressId ?? null,
+            addressRef: organization?.addressRef ?? null,
             reservationAssignmentMode:
               (organization?.reservationAssignmentMode as "PROFESSIONAL" | "RESOURCE") ??
               "PROFESSIONAL",
@@ -1230,7 +1233,8 @@ export default function OrganizationPublicProfilePanel({
             ...service,
             coverImageUrl: service.coverImageUrl ?? null,
             locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
-            defaultLocationText: service.defaultLocationText ?? null,
+            addressId: service.addressId ?? null,
+            addressRef: service.addressRef ?? null,
             professionalLinks: service.professionalLinks ?? [],
             resourceLinks: service.resourceLinks ?? [],
           }))}
@@ -1928,27 +1932,9 @@ export default function OrganizationPublicProfilePanel({
                       <PencilIcon />
                     </button>
                   )}
-                  {editingField === "city" ? (
-                    <input
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="rounded-xl border border-white/15 bg-black/30 px-3 py-1.5 text-sm text-white outline-none focus:border-white/40"
-                      placeholder="Cidade"
-                    />
-                  ) : (
-                    <span className="rounded-full border border-white/10 px-3 py-1 text-white/70">
-                      {displayCity || "Cidade por definir"}
-                    </span>
-                  )}
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => setEditingField(editingField === "city" ? null : "city")}
-                      className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 hover:bg-white/10"
-                    >
-                      <PencilIcon />
-                    </button>
-                  )}
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-white/70">
+                    {displayCity || "Cidade por definir"}
+                  </span>
                 </div>
 
                 <div className="flex items-start gap-2">

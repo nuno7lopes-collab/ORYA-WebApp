@@ -23,8 +23,8 @@
 
 ## Execução concluída (2026-02-01)
 ### DNS
-- `test.orya.pt` → ALB (mesmo target de `app.orya.pt`).
-- Evidência (curl): `HTTP/2 307` para `https://test.orya.pt` e `https://app.orya.pt` (proxy OK).
+- `test.orya.pt` → ALB (mesmo target de `orya.pt`).
+- Evidência (curl): `HTTP/2 307` para `https://test.orya.pt` e `https://orya.pt` (proxy OK).
 
 ### Seed env=test (idempotente)
 - Profile test criado/movido para env=test (user test-orya@orya.pt).

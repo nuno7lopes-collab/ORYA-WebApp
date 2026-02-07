@@ -3,7 +3,17 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, PanResponder, Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
+import {
+  Animated,
+  LayoutChangeEvent,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import type { TouchData } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const LEFT_TABS: Array<{
@@ -21,17 +31,19 @@ const RIGHT_TAB = { key: "index", icon: "search" as keyof typeof Ionicons.glyphM
 
 export const TAB_BAR_HEIGHT = 60;
 const RIGHT_PILL_SIZE = 56;
+const ICON_SIZE = 24;
+const ICON_NUDGE_Y = -1;
+const TAB_SLOT_SIZE = 52;
+const SLOTS_SIDE_PADDING = 23;
+const BUBBLE_EXTRA = 40;
 
 const PILL_GAP = 10;
 const WRAPPER_PADDING = 16;
-const TRACK_PADDING_X = 12;
-const TRACK_PADDING_Y = 8;
-const MAX_LEFT_PILL_WIDTH = 260;
-const BUBBLE_INSET = 3;
-const EDGE_GAP = 0;
+const TRACK_PADDING_X = 0;
+const TRACK_PADDING_Y = 0;
+const BUBBLE_GAP = 3;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
 export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
@@ -40,47 +52,55 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const bubbleX = useRef(new Animated.Value(0)).current;
   const bubbleOpacity = useRef(new Animated.Value(0)).current;
   const bubbleScale = useRef(new Animated.Value(1)).current;
-  const bubbleXValue = useRef(0);
+  const trackRef = useRef<View>(null);
+  const trackPageXRef = useRef(0);
+  const pointerIdRef = useRef<number | null>(null);
+  const latestTouchRef = useRef<TouchData | null>(null);
   const draggingRef = useRef(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const dragIndexRef = useRef<number | null>(null);
 
-  const maxRowWidth = Math.max(Math.min(windowWidth - WRAPPER_PADDING * 2, 560), 0);
+  const maxRowWidth = Math.max(windowWidth - WRAPPER_PADDING * 2, 0);
   const rightPillWidth = RIGHT_PILL_SIZE;
-  const leftPillWidth = Math.max(
-    Math.min(maxRowWidth - rightPillWidth - PILL_GAP, MAX_LEFT_PILL_WIDTH),
-    0,
-  );
-  const rowWidth = leftPillWidth + rightPillWidth + PILL_GAP;
+  const rowWidth = maxRowWidth;
   const [trackWidth, setTrackWidth] = useState(0);
-  const slotWidth = trackWidth ? trackWidth / LEFT_TABS.length : 0;
-  const bubbleWidth = Math.max(slotWidth - (BUBBLE_INSET * 2 + EDGE_GAP * 2), 0);
-
-  const slotCentersRef = useRef<number[]>([]);
-  const [slotVersion, setSlotVersion] = useState(0);
+  const innerTrackWidth = trackWidth || 0;
+  const slotWidthFallback = TAB_SLOT_SIZE;
+  const [slotLayouts, setSlotLayouts] = useState<Array<{ x: number; width: number } | null>>(
+    () => LEFT_TABS.map(() => null),
+  );
+  const hasSlotMetrics = slotLayouts.every(Boolean);
+  const slotCenters = useMemo(() => {
+    if (!hasSlotMetrics) return null;
+    return slotLayouts.map((slot) => (slot ? slot.x + slot.width / 2 : 0));
+  }, [hasSlotMetrics, slotLayouts]);
+  const slotWidth = hasSlotMetrics ? slotLayouts[0]!.width : slotWidthFallback;
+  const bubbleWidth = slotWidth + BUBBLE_EXTRA;
 
   const currentRouteName = state.routes[state.index]?.name;
   const activeLeftIndex = LEFT_TABS.findIndex((tab) => tab.key === currentRouteName);
   const rightActive = currentRouteName === RIGHT_TAB.key;
 
-  useEffect(() => {
-    const id = bubbleX.addListener(({ value }) => {
-      bubbleXValue.current = value;
+  const handleSlotLayout = useCallback((index: number, event: LayoutChangeEvent) => {
+    const { x, width } = event.nativeEvent.layout;
+    setSlotLayouts((prev) => {
+      const current = prev[index];
+      if (current && current.x === x && current.width === width) {
+        return prev;
+      }
+      const next = [...prev];
+      next[index] = { x, width };
+      return next;
     });
-    return () => bubbleX.removeListener(id);
-  }, [bubbleX]);
+  }, []);
 
   const setBubbleToIndex = useCallback(
     (index: number, animated = true) => {
-      if (!slotWidth || !bubbleWidth || !trackWidth) return;
-      const center = slotCentersRef.current[index];
-      const rawX =
-        typeof center === "number"
-          ? center - bubbleWidth / 2
-          : slotWidth * index + BUBBLE_INSET + EDGE_GAP;
-      const minX = BUBBLE_INSET + EDGE_GAP;
-      const maxX = trackWidth - BUBBLE_INSET - EDGE_GAP - bubbleWidth;
-      const targetX = clamp(rawX, minX, maxX);
+      if (!slotWidth || !bubbleWidth) return;
+      const center = slotCenters
+        ? slotCenters[index]
+        : SLOTS_SIDE_PADDING + slotWidthFallback * (index + 0.5);
+      const targetX = center - bubbleWidth / 2;
       if (animated) {
         Animated.spring(bubbleX, {
           toValue: targetX,
@@ -96,7 +116,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
         bubbleX.setValue(targetX);
       }
     },
-    [bubbleWidth, bubbleX, slotWidth, trackWidth],
+    [bubbleWidth, bubbleX, slotCenters, slotWidth, slotWidthFallback],
   );
 
   useEffect(() => {
@@ -115,13 +135,22 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
         useNativeDriver: true,
       }).start();
     }
-  }, [activeLeftIndex, bubbleOpacity, setBubbleToIndex, slotVersion, slotWidth]);
+  }, [activeLeftIndex, bubbleOpacity, setBubbleToIndex, slotWidth]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      trackRef.current?.measureInWindow((x) => {
+        trackPageXRef.current = x;
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [windowWidth, safeBottom]);
 
   const animatePress = useCallback(
     (pressed: boolean) => {
       Animated.parallel([
         Animated.spring(bubbleScale, {
-          toValue: pressed ? 1.06 : 1,
+          toValue: 1,
           useNativeDriver: true,
           damping: 18,
           stiffness: 260,
@@ -152,90 +181,126 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
 
   const updateBubbleFromLocation = useCallback(
     (locationX: number) => {
-      if (!slotWidth || !bubbleWidth) return;
-      const minX = BUBBLE_INSET + EDGE_GAP;
-      const maxX = trackWidth - BUBBLE_INSET - EDGE_GAP - bubbleWidth;
+      if (!slotWidth || !bubbleWidth || !innerTrackWidth) return;
+      const minX = slotCenters ? slotCenters[0] - bubbleWidth / 2 : 0;
+      const maxX = slotCenters
+        ? slotCenters[LEFT_TABS.length - 1] - bubbleWidth / 2
+        : innerTrackWidth - bubbleWidth;
       const nextX = clamp(locationX - bubbleWidth / 2, minX, maxX);
       bubbleX.setValue(nextX);
 
       const center = nextX + bubbleWidth / 2;
-      const centers = slotCentersRef.current;
       let nextIndex = 0;
-      if (centers.length === LEFT_TABS.length && centers.every((value) => typeof value === "number")) {
-        let minDistance = Number.POSITIVE_INFINITY;
-        centers.forEach((value, index) => {
-          const distance = Math.abs(center - value);
-          if (distance < minDistance) {
-            minDistance = distance;
-            nextIndex = index;
+      if (slotCenters) {
+        let closestDistance = Math.abs(center - slotCenters[0]);
+        for (let i = 1; i < slotCenters.length; i += 1) {
+          const distance = Math.abs(center - slotCenters[i]);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            nextIndex = i;
           }
-        });
+        }
       } else {
-        const rawIndex = Math.round(center / slotWidth - 0.5);
+        const rawIndex = Math.round((center - SLOTS_SIDE_PADDING) / slotWidthFallback - 0.5);
         nextIndex = clamp(rawIndex, 0, LEFT_TABS.length - 1);
       }
       updateDragIndex(nextIndex);
     },
-    [bubbleWidth, bubbleX, slotWidth, trackWidth, updateDragIndex],
+    [bubbleWidth, bubbleX, innerTrackWidth, slotCenters, slotWidth, slotWidthFallback, updateDragIndex],
   );
 
-  const panResponder = useMemo(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        trackWidth > 0 && Math.abs(gesture.dx) > 6 && Math.abs(gesture.dy) < 10,
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        trackWidth > 0 && Math.abs(gesture.dx) > 6 && Math.abs(gesture.dy) < 10,
-      onPanResponderGrant: (event) => {
-        if (!slotWidth) return;
-        draggingRef.current = true;
-        animatePress(true);
-        const locationX = event.nativeEvent.locationX;
-        updateBubbleFromLocation(locationX);
-      },
-      onPanResponderMove: (event) => {
-        const locationX = event.nativeEvent.locationX;
-        updateBubbleFromLocation(locationX);
-      },
-      onPanResponderRelease: () => {
-        const targetIndex = dragIndexRef.current ?? activeLeftIndex;
-        draggingRef.current = false;
-        animatePress(false);
-        dragIndexRef.current = null;
-        setDragIndex(null);
-        if (targetIndex != null && targetIndex >= 0) {
-          const routeKey = LEFT_TABS[targetIndex]?.key;
-          if (routeKey && routeKey !== currentRouteName) {
-            navigation.navigate(routeKey);
-          } else if (routeKey) {
-            setBubbleToIndex(targetIndex);
+  const updateBubbleFromTouch = useCallback(
+    (touch: TouchData) => {
+      const localX =
+        Number.isFinite(touch.absoluteX) && trackPageXRef.current
+          ? touch.absoluteX - trackPageXRef.current
+          : touch.x;
+      if (Number.isFinite(localX)) {
+        updateBubbleFromLocation(localX);
+      }
+    },
+    [updateBubbleFromLocation],
+  );
+
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .minPointers(1)
+        .maxPointers(2)
+        .minDistance(6)
+        .failOffsetY([-12, 12])
+        .shouldCancelWhenOutside(false)
+        .simultaneousWithExternalGesture(Gesture.Native())
+        .onTouchesDown((event) => {
+          if (pointerIdRef.current == null && event.allTouches.length) {
+            pointerIdRef.current = event.allTouches[0].id;
+            latestTouchRef.current = event.allTouches[0];
           }
-        }
-      },
-      onPanResponderTerminate: () => {
-        draggingRef.current = false;
-        animatePress(false);
-        dragIndexRef.current = null;
-        setDragIndex(null);
-      },
-    })
-  , [
-    activeLeftIndex,
-    animatePress,
-    currentRouteName,
-    navigation,
-    setBubbleToIndex,
-    slotWidth,
-    trackWidth,
-    updateBubbleFromLocation,
-  ]);
+        })
+        .onTouchesMove((event) => {
+          const pointerId = pointerIdRef.current;
+          if (pointerId == null) return;
+          const touch = event.allTouches.find((candidate) => candidate.id === pointerId);
+          if (!touch) return;
+          latestTouchRef.current = touch;
+          if (!draggingRef.current) return;
+          updateBubbleFromTouch(touch);
+        })
+        .onTouchesUp((event) => {
+          const pointerId = pointerIdRef.current;
+          if (pointerId == null) return;
+          if (event.changedTouches.some((touch) => touch.id === pointerId)) {
+            pointerIdRef.current = null;
+            latestTouchRef.current = null;
+          }
+        })
+        .onTouchesCancelled(() => {
+          pointerIdRef.current = null;
+          latestTouchRef.current = null;
+        })
+        .onStart(() => {
+          draggingRef.current = true;
+          animatePress(true);
+          if (latestTouchRef.current) {
+            updateBubbleFromTouch(latestTouchRef.current);
+          }
+        })
+        .onEnd(() => {
+          const targetIndex = dragIndexRef.current ?? activeLeftIndex;
+          if (targetIndex != null && targetIndex >= 0) {
+            const routeKey = LEFT_TABS[targetIndex]?.key;
+            if (routeKey && routeKey !== currentRouteName) {
+              navigation.navigate(routeKey);
+            } else if (routeKey) {
+              setBubbleToIndex(targetIndex);
+            }
+          }
+        })
+        .onFinalize(() => {
+          draggingRef.current = false;
+          animatePress(false);
+          pointerIdRef.current = null;
+          latestTouchRef.current = null;
+          dragIndexRef.current = null;
+          setDragIndex(null);
+        }),
+    [
+      activeLeftIndex,
+      animatePress,
+      currentRouteName,
+      navigation,
+      setBubbleToIndex,
+      updateBubbleFromTouch,
+    ],
+  );
 
   const visualLeftIndex = dragIndex ?? (activeLeftIndex >= 0 ? activeLeftIndex : null);
 
   return (
-      <View pointerEvents="box-none" style={[styles.wrapper, { bottom: safeBottom }]}>
+    <View pointerEvents="box-none" style={[styles.wrapper, { bottom: safeBottom }]}>
       <View style={[styles.row, { width: rowWidth }]}>
-        <View style={[styles.leftPill, { width: leftPillWidth }]}>
+        <View style={[styles.leftPill, { flex: 1 }]}>
           <View pointerEvents="none" style={styles.pillFillWrap}>
             <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
             <LinearGradient
@@ -247,87 +312,91 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           </View>
           <View style={styles.pillBorder} pointerEvents="none" />
 
-          <View style={styles.track}>
-            <View
-              style={styles.trackInner}
-              onLayout={(event) => {
-                const width = event.nativeEvent.layout.width;
-                setTrackWidth((prev) => (prev === width ? prev : width));
-              }}
-              {...panResponder.panHandlers}
-            >
-              {slotWidth > 0 && (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    styles.bubbleTrack,
-                    {
-                      opacity: bubbleOpacity,
-                      width: bubbleWidth,
-                      transform: [{ translateX: bubbleX }],
-                    },
-                  ]}
-                >
-                  <Animated.View style={[styles.bubble, { transform: [{ scale: bubbleScale }] }]}>
-                    <View pointerEvents="none" style={styles.bubbleFillWrap}>
-                      <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
-                      <LinearGradient
-                        colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                    </View>
-                  </Animated.View>
-                </Animated.View>
-              )}
-
-              <View style={styles.slotsRow}>
-                {LEFT_TABS.map((tab, index) => {
-                  const isActive = visualLeftIndex === index && !rightActive;
-                  const iconName = isActive ? tab.active : tab.inactive;
-                  return (
-                    <Pressable
-                      key={tab.key}
-                      accessibilityRole="button"
-                      accessibilityState={isActive ? { selected: true } : {}}
-                      hitSlop={10}
-                      style={({ pressed }) => [styles.tabSlot, pressed && styles.tabPressed]}
-                      onLayout={(event) => {
-                        const layout = event.nativeEvent.layout;
-                        const center = layout.x + layout.width / 2;
-                        if (slotCentersRef.current[index] !== center) {
-                          slotCentersRef.current[index] = center;
-                          setSlotVersion((value) => value + 1);
-                        }
-                      }}
-                      onPress={() => {
-                        if (tab.key !== currentRouteName) {
-                          navigation.navigate(tab.key);
-                        }
-                        if (slotWidth) setBubbleToIndex(index);
-                      }}
-                      onPressIn={() => {
-                        if (draggingRef.current) return;
-                        animatePress(true);
-                      }}
-                      onPressOut={() => {
-                        if (draggingRef.current) return;
-                        animatePress(false);
-                      }}
-                    >
-                      <View style={styles.iconBox}>
-                        <Ionicons
-                          name={iconName}
-                          size={24}
-                          color={isActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
+          <View
+            ref={trackRef}
+            style={styles.track}
+            onLayout={(event) => {
+              const width = event.nativeEvent.layout.width;
+              setTrackWidth((prev) => (prev === width ? prev : width));
+              trackRef.current?.measureInWindow((x) => {
+                trackPageXRef.current = x;
+              });
+            }}
+          >
+            <GestureDetector gesture={panGesture}>
+              <View
+                style={[
+                  styles.trackInner,
+                  innerTrackWidth ? { width: innerTrackWidth } : null,
+                ]}
+              >
+                {slotWidth > 0 && (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.bubbleTrack,
+                      {
+                        opacity: bubbleOpacity,
+                        width: bubbleWidth,
+                        transform: [{ translateX: bubbleX }],
+                      },
+                    ]}
+                  >
+                    <Animated.View style={[styles.bubble, { transform: [{ scale: bubbleScale }] }]}>
+                      <View pointerEvents="none" style={styles.bubbleFillWrap}>
+                        <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
+                        <LinearGradient
+                          colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={StyleSheet.absoluteFill}
                         />
                       </View>
-                    </Pressable>
-                  );
-                })}
+                    </Animated.View>
+                  </Animated.View>
+                )}
+
+                <View style={styles.slotsRow}>
+                  {LEFT_TABS.map((tab, index) => {
+                    const isActive = visualLeftIndex === index && !rightActive;
+                    const iconName = isActive ? tab.active : tab.inactive;
+                    return (
+                      <Pressable
+                        key={tab.key}
+                        accessibilityRole="button"
+                        accessibilityState={isActive ? { selected: true } : {}}
+                        hitSlop={10}
+                        onLayout={(event) => handleSlotLayout(index, event)}
+                        style={({ pressed }) => [styles.tabSlot, pressed && styles.tabPressed]}
+                        onPress={() => {
+                          if (tab.key !== currentRouteName) {
+                            navigation.navigate(tab.key);
+                          }
+                          if (slotWidth) setBubbleToIndex(index);
+                        }}
+                        onPressIn={() => {
+                          if (draggingRef.current) return;
+                          animatePress(true);
+                        }}
+                        onPressOut={() => {
+                          if (draggingRef.current) return;
+                          animatePress(false);
+                        }}
+                      >
+                        <View style={styles.iconBox}>
+                          <Ionicons
+                            name={iconName}
+                            size={ICON_SIZE}
+                            color={isActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
+                            style={styles.iconGlyph}
+                          />
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
+            </GestureDetector>
           </View>
         </View>
 
@@ -367,8 +436,9 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
             <View style={styles.iconBox}>
               <Ionicons
                 name={RIGHT_TAB.icon}
-                size={24}
+                size={ICON_SIZE}
                 color={rightActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
+                style={styles.iconGlyph}
               />
             </View>
           </View>
@@ -401,10 +471,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: TRACK_PADDING_X,
     paddingVertical: TRACK_PADDING_Y,
+    alignItems: "stretch",
   },
   trackInner: {
-    flex: 1,
+    height: "100%",
     position: "relative",
+    width: "100%",
   },
   rightPill: {
     height: RIGHT_PILL_SIZE,
@@ -450,8 +522,8 @@ const styles = StyleSheet.create({
   },
   bubbleTrack: {
     position: "absolute",
-    top: BUBBLE_INSET,
-    bottom: BUBBLE_INSET,
+    top: BUBBLE_GAP,
+    bottom: BUBBLE_GAP,
     left: 0,
   },
   bubble: {
@@ -472,9 +544,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: SLOTS_SIDE_PADDING,
   },
   tabSlot: {
-    flex: 1,
+    width: TAB_SLOT_SIZE,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -484,16 +557,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  iconGlyph: {
+    lineHeight: ICON_SIZE,
+    ...(Platform.OS === "android" ? { includeFontPadding: false, textAlignVertical: "center" } : null),
+    transform: [{ translateY: ICON_NUDGE_Y }],
+  },
   tabPressed: {
     opacity: 0.85,
     transform: [{ scale: 0.98 }],
   },
   rightBubble: {
     position: "absolute",
-    top: BUBBLE_INSET,
-    bottom: BUBBLE_INSET,
-    left: BUBBLE_INSET,
-    right: BUBBLE_INSET,
+    top: BUBBLE_GAP,
+    bottom: BUBBLE_GAP,
+    left: BUBBLE_GAP,
+    right: BUBBLE_GAP,
     borderRadius: 999,
     overflow: "hidden",
     backgroundColor: "rgba(255,255,255,0.22)",

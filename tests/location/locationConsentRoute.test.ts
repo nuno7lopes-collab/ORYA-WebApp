@@ -2,12 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/me/location/consent/route";
 import { prisma } from "@/lib/prisma";
-import { appendEventLog } from "@/domain/eventLog/append";
-
 vi.mock("@/lib/prisma", () => {
   const profile = {
-    findUnique: vi.fn(async () => ({ locationGranularity: "COARSE" })),
-    update: vi.fn(async () => ({ id: "user-1" })),
+    upsert: vi.fn(async () => ({ id: "user-1" })),
   };
   const prisma = {
     profile,
@@ -24,23 +21,7 @@ vi.mock("@/lib/supabaseServer", () => ({
   })),
 }));
 
-vi.mock("@/lib/organizationContext", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/organizationContext")>();
-  return {
-    ...actual,
-    getActiveOrganizationForUser: vi.fn(async () => ({
-      organization: { id: 10 },
-      membership: { role: "ADMIN" },
-    })),
-  };
-});
-
-vi.mock("@/domain/eventLog/append", () => ({
-  appendEventLog: vi.fn(async () => ({ id: "evt-1" })),
-}));
-
 const prismaMock = vi.mocked(prisma);
-const appendMock = vi.mocked(appendEventLog);
 
 describe("POST /api/me/location/consent", () => {
   beforeEach(() => {
@@ -55,29 +36,27 @@ describe("POST /api/me/location/consent", () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
 
-    expect(prismaMock.profile.update).toHaveBeenCalled();
-    const updateData = (prismaMock.profile.update as any).mock.calls[0][0].data;
+    expect(prismaMock.profile.upsert).toHaveBeenCalled();
+    const updateData = (prismaMock.profile.upsert as any).mock.calls[0][0].update;
+    const createData = (prismaMock.profile.upsert as any).mock.calls[0][0].create;
     expect(updateData.locationConsent).toBe("GRANTED");
     expect(updateData.locationGranularity).toBe("PRECISE");
-
-    expect(appendMock).toHaveBeenCalled();
-    const payload = (appendMock as any).mock.calls[0][0].payload;
-    const payloadStr = JSON.stringify(payload);
-    expect(payloadStr).not.toMatch(/lat|lon|latitude|longitude/i);
+    expect(createData.locationConsent).toBe("GRANTED");
+    expect(createData.locationGranularity).toBe("PRECISE");
   });
 
-  it("sem org ativa não escreve EventLog", async () => {
-    const { getActiveOrganizationForUser } = await import("@/lib/organizationContext");
-    vi.mocked(getActiveOrganizationForUser).mockResolvedValueOnce({
-      organization: null,
-      membership: null,
-    } as any);
+  it("guarda consentimento sem granularidade preferida", async () => {
     const req = new NextRequest("http://localhost/api/me/location/consent", {
       method: "POST",
       body: JSON.stringify({ consent: "DENIED" }),
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
-    expect(appendMock).not.toHaveBeenCalled();
+    expect(prismaMock.profile.upsert).toHaveBeenCalled();
+    const updateData = (prismaMock.profile.upsert as any).mock.calls[0][0].update;
+    const createData = (prismaMock.profile.upsert as any).mock.calls[0][0].create;
+    expect(updateData.locationConsent).toBe("DENIED");
+    expect(updateData.locationGranularity).toBeUndefined();
+    expect(createData.locationGranularity).toBe("COARSE");
   });
 });

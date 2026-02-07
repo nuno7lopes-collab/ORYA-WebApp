@@ -26,7 +26,6 @@ test("CloudFormation uses cost-first defaults", () => {
   const template = read("infra/ecs/orya-ecs-stack.yaml");
   expect(template).toContain("Keep last 5 images");
   expect(template).toContain("LogsRetentionDays");
-  expect(template).toContain("FARGATE_SPOT");
   expect(template).toContain("CreateALB");
 });
 

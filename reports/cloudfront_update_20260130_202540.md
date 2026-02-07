@@ -4,7 +4,7 @@
 - DIST_ID: E3B1FR4NMF6N3P
 - CERT_ARN_US_EAST: arn:aws:acm:us-east-1:495219734037:certificate/ca75794b-551c-4c4c-9597-6255df3239d8
 - ZONE_ID: Z01063466077T62XP3HQ
-- ALIASES: app.orya.pt, admin.orya.pt
+- ALIASES: orya.pt, admin.orya.pt
 
 ## Backup
 - ETAG: E23ZP02F085DFQ
@@ -23,7 +23,7 @@
 - ChangeId: /change/C04165922FRJA12500OU8
 
 ## Curl Checks
-### app.orya.pt
+### orya.pt
 
 
 ```

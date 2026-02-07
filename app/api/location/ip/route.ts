@@ -1,40 +1,43 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { getClientIp } from "@/lib/auth/requestValidation";
-import { resolveIpCoarseLocation } from "@/domain/location/ipProvider";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 
-const CACHE_TTL_MS = 30 * 60 * 1000;
+const pickHeader = (req: NextRequest, names: string[]) => {
+  for (const name of names) {
+    const value = req.headers.get(name);
+    if (value && value.trim()) return value.trim();
+  }
+  return null;
+};
 
 async function _GET(req: NextRequest) {
   try {
-    const ip = getClientIp(req);
-    const cacheKey = buildCacheKey(["ip-location", ip ?? "unknown"]);
-    const cached = getCache<Record<string, unknown>>(cacheKey);
-    if (cached) {
-      return jsonWrap({ ok: true, ...cached }, { status: 200 });
-    }
-    const location = await resolveIpCoarseLocation(ip);
-    if (!location) {
-      return jsonWrap({ ok: false, error: "Location unavailable" }, { status: 502 });
-    }
+    const city =
+      pickHeader(req, ["x-vercel-ip-city", "cf-ipcity", "x-geo-city", "x-country-city"]) ?? null;
+    const region =
+      pickHeader(req, [
+        "x-vercel-ip-country-region",
+        "x-vercel-ip-region",
+        "cf-region",
+        "x-geo-region",
+        "x-country-region",
+      ]) ?? null;
+    const country =
+      pickHeader(req, ["x-vercel-ip-country", "cf-ipcountry", "cloudfront-viewer-country", "x-geo-country"]) ??
+      null;
 
-    const payload = {
-      ok: true,
-      country: location.country,
-      region: location.region,
-      city: location.city,
-      approxLatLon:
-        location.approxLat != null && location.approxLon != null
-          ? { lat: location.approxLat, lon: location.approxLon }
-          : null,
-      accuracyMeters: location.accuracyMeters,
-      source: location.source,
-      granularity: location.granularity,
-    };
-    setCache(cacheKey, payload, CACHE_TTL_MS);
-    return jsonWrap(payload);
+    const hasAny = Boolean(city || region || country);
+    return jsonWrap(
+      {
+        ok: true,
+        city,
+        region,
+        country,
+        source: hasAny ? "EDGE_HEADERS" : "UNAVAILABLE",
+        granularity: hasAny ? "COARSE" : "UNKNOWN",
+      },
+      { status: 200 },
+    );
   } catch (err) {
     console.error("[location/ip] error", err);
     return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });

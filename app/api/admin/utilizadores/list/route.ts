@@ -39,7 +39,6 @@ async function _GET(req: NextRequest) {
       where.OR = [
         { username: { contains: search, mode: "insensitive" } },
         { fullName: { contains: search, mode: "insensitive" } },
-        { city: { contains: search, mode: "insensitive" } },
       ];
     }
 
@@ -60,7 +59,6 @@ async function _GET(req: NextRequest) {
           id: true,
           username: true,
           fullName: true,
-          city: true,
           roles: true,
           createdAt: true,
         },

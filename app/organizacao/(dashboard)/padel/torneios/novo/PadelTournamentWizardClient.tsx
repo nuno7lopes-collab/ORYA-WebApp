@@ -14,7 +14,7 @@ type PadelClub = {
   id: number;
   name: string;
   isActive: boolean;
-  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
+  locationSource?: "APPLE_MAPS" | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
   latitude?: number | null;
@@ -122,46 +122,20 @@ const shiftDateTimeLocal = (value: string, minutes: number) => {
   return formatDateTimeLocal(shifted);
 };
 
-const pickCanonicalField = (canonical: Record<string, unknown> | null | undefined, keys: string[]) => {
-  if (!canonical) return null;
-  for (const key of keys) {
-    const raw = canonical[key];
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-  }
-  return null;
-};
-
 function resolveClubLocation(club: PadelClub | null) {
   if (!club) {
     return {
-      city: "",
-      address: "",
       formatted: "",
-      providerId: null,
-      components: null,
-      latitude: null,
-      longitude: null,
-      source: "APPLE_MAPS",
+      addressId: null,
     };
   }
-  const canonical = club.addressRef?.canonical ?? null;
-  const city =
-    pickCanonicalField(canonical, ["city", "addressLine2", "locality"]) || "";
-  const address =
-    pickCanonicalField(canonical, ["addressLine1", "street", "road"]) || "";
   const formatted =
     club.addressRef?.formattedAddress ||
     club.locationFormattedAddress ||
-    [address, city].filter(Boolean).join(", ");
+    "";
   return {
-    city,
-    address,
     formatted,
-    providerId: club.addressRef?.sourceProviderPlaceId || club.locationProviderId || null,
-    components: canonical,
-    latitude: club.addressRef?.latitude ?? club.latitude ?? null,
-    longitude: club.addressRef?.longitude ?? club.longitude ?? null,
-    source: club.locationSource === "OSM" ? "APPLE_MAPS" : club.locationSource || "APPLE_MAPS",
+    addressId: club.addressId ?? null,
   };
 }
 
@@ -440,8 +414,8 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       setError("Seleciona pelo menos uma categoria para publicar.");
       return;
     }
-    if (!location.providerId || !Number.isFinite(location.latitude ?? NaN) || !Number.isFinite(location.longitude ?? NaN)) {
-      setError("A morada do clube precisa de estar normalizada.");
+    if (!location.addressId) {
+      setError("A morada do clube precisa de estar normalizada (Apple Maps).");
       return;
     }
     if (mode === "PUBLISH" && registrationWarnings.length > 0) {
@@ -497,15 +471,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       endsAt: endsAt || startsAt,
       status: "DRAFT",
       timezone: timezone || undefined,
-      locationName: selectedClub?.name ?? null,
-      locationCity: location.city || null,
-      address: location.formatted || null,
-      locationSource: location.source || "APPLE_MAPS",
-      locationProviderId: location.providerId,
-      locationFormattedAddress: location.formatted || null,
-      locationComponents: location.components || null,
-      latitude: location.latitude,
-      longitude: location.longitude,
+      addressId: location.addressId,
       templateType: "PADEL",
       pricingMode: hasPaid ? "STANDARD" : "FREE_ONLY",
       padel: {

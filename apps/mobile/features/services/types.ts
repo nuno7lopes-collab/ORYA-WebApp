@@ -22,8 +22,9 @@ export type ServiceDetail = {
   currency: string;
   kind: "GENERAL" | "COURT" | "CLASS";
   categoryTag: string | null;
-  defaultLocationText: string | null;
   locationMode: string | null;
+  addressId: string | null;
+  addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
   instructor: {
     id: string;
     fullName: string | null;
@@ -34,7 +35,6 @@ export type ServiceDetail = {
     id: number;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     username: string | null;
     brandingAvatarUrl: string | null;
     publicDescription: string | null;
@@ -42,6 +42,8 @@ export type ServiceDetail = {
     publicInstagram: string | null;
     timezone: string | null;
     reservationAssignmentMode: string | null;
+    addressId: string | null;
+    addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
   };
   packs: ServicePack[];
   policy: ServicePolicy | null;

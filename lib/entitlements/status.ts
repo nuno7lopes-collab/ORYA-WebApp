@@ -1,6 +1,6 @@
 import { CheckinResultCode, EntitlementStatus } from "@prisma/client";
 
-export type EntitlementV7Status = "ACTIVE" | "SUSPENDED" | "REVOKED";
+export type EntitlementV7Status = "PENDING" | "ACTIVE" | "SUSPENDED" | "REVOKED" | "EXPIRED";
 export type TicketV7Status = "ACTIVE" | "DISPUTED" | "CANCELLED";
 export type DisputeOutcome = "created" | "won" | "lost";
 
@@ -11,9 +11,12 @@ const CONSUMED_CHECKIN_CODES = new Set<CheckinResultCode>([
 
 export function mapLegacyStatusToV7(status: EntitlementStatus): EntitlementV7Status {
   switch (status) {
+    case EntitlementStatus.PENDING:
+      return "PENDING";
+    case EntitlementStatus.EXPIRED:
+      return "EXPIRED";
     case EntitlementStatus.SUSPENDED:
       return "SUSPENDED";
-    case EntitlementStatus.REFUNDED:
     case EntitlementStatus.REVOKED:
       return "REVOKED";
     case EntitlementStatus.ACTIVE:
@@ -24,6 +27,10 @@ export function mapLegacyStatusToV7(status: EntitlementStatus): EntitlementV7Sta
 
 export function mapV7StatusToLegacy(status: EntitlementV7Status): EntitlementStatus {
   switch (status) {
+    case "PENDING":
+      return EntitlementStatus.PENDING;
+    case "EXPIRED":
+      return EntitlementStatus.EXPIRED;
     case "SUSPENDED":
       return EntitlementStatus.SUSPENDED;
     case "REVOKED":

@@ -33,9 +33,9 @@ async function _GET(
         id: true,
         startsAt: true,
         durationMinutes: true,
-        locationText: true,
-        service: { select: { title: true, defaultLocationText: true } },
-        organization: { select: { publicName: true, businessName: true } },
+        addressRef: { select: { formattedAddress: true } },
+        service: { select: { title: true, addressRef: { select: { formattedAddress: true } } } },
+        organization: { select: { publicName: true, businessName: true, addressRef: { select: { formattedAddress: true } } } },
       },
     });
 
@@ -47,8 +47,9 @@ async function _GET(
     const endsAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
     const title = `Reserva — ${booking.service?.title ?? "Serviço"}`;
     const location =
-      booking.locationText ||
-      booking.service?.defaultLocationText ||
+      booking.addressRef?.formattedAddress ||
+      booking.service?.addressRef?.formattedAddress ||
+      booking.organization?.addressRef?.formattedAddress ||
       booking.organization?.publicName ||
       booking.organization?.businessName ||
       null;

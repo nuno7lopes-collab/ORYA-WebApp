@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
+import { AddressSourceProvider } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
@@ -89,8 +90,7 @@ async function _POST(
     const payload = await req.json().catch(() => ({}));
     const startsAtRaw = typeof payload?.startsAt === "string" ? payload.startsAt : null;
     const startsAt = startsAtRaw ? new Date(startsAtRaw) : null;
-    const locationTextInputRaw = typeof payload?.locationText === "string" ? payload.locationText.trim() : "";
-    const locationTextInput = locationTextInputRaw ? locationTextInputRaw.slice(0, 160) : "";
+    const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const addonSelection = normalizeAddonSelection(payload?.selectedAddons ?? payload?.addons);
     const packageId = parsePackageId(payload?.packageId);
     if (payload?.packageId != null && !packageId) {
@@ -117,7 +117,7 @@ async function _POST(
         unitPriceCents: true,
         currency: true,
         locationMode: true,
-        defaultLocationText: true,
+        addressId: true,
         professionalLinks: {
           select: { professionalId: true, professional: { select: { isActive: true } } },
         },
@@ -127,7 +127,7 @@ async function _POST(
         organization: {
           select: {
             timezone: true,
-            address: true,
+            addressId: true,
             reservationAssignmentMode: true,
             orgType: true,
             stripeAccountId: true,
@@ -478,12 +478,24 @@ async function _POST(
     }
 
     const pendingExpiresAt = new Date(now.getTime() + PENDING_HOLD_MINUTES * 60 * 1000);
-    const locationText =
+    const resolvedAddressId =
       service.locationMode === "CHOOSE_AT_BOOKING"
-        ? locationTextInput || null
-        : service.defaultLocationText ?? service.organization?.address ?? null;
-    if (service.locationMode === "CHOOSE_AT_BOOKING" && !locationText) {
-      return jsonWrap({ ok: false, error: "Local obrigatório para esta marcação." }, { status: 400 });
+        ? addressIdInput || null
+        : service.addressId ?? service.organization?.addressId ?? null;
+    if (service.locationMode === "CHOOSE_AT_BOOKING" && !resolvedAddressId) {
+      return jsonWrap({ ok: false, error: "Morada obrigatória para esta marcação." }, { status: 400 });
+    }
+    if (resolvedAddressId) {
+      const address = await prisma.address.findUnique({
+        where: { id: resolvedAddressId },
+        select: { sourceProvider: true },
+      });
+      if (!address) {
+        return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
+      }
+      if (address.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+        return jsonWrap({ ok: false, error: "Morada deve ser Apple Maps." }, { status: 400 });
+      }
     }
 
     const { booking } = await prisma.$transaction(async (tx) => {
@@ -506,7 +518,7 @@ async function _POST(
           pendingExpiresAt,
           snapshotTimezone: timezone,
           locationMode: service.locationMode,
-          locationText,
+          addressId: resolvedAddressId,
         },
         select: { id: true, status: true, pendingExpiresAt: true },
       });

@@ -4,7 +4,6 @@ import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import type { EventCardDTO } from "@/lib/events";
 
 type DiscoverEvent = EventCardDTO & {
-  locationName: string | null;
   latitude: number | null;
   longitude: number | null;
 };
@@ -28,10 +27,9 @@ const EVENT_SELECT = {
   title: true,
   startsAt: true,
   endsAt: true,
-  locationName: true,
-  locationCity: true,
-  latitude: true,
-  longitude: true,
+  addressRef: {
+    select: { formattedAddress: true, canonical: true, latitude: true, longitude: true },
+  },
   pricingMode: true,
   coverImageUrl: true,
 } satisfies Prisma.EventSelect;
@@ -95,13 +93,20 @@ function mapDiscoverEvent(event: RawEvent, priceMap: Map<number, TicketPriceRang
       ticketPrices: hasPriceRange ? [minPrice, maxPrice ?? minPrice] : [],
     });
 
+  const canonical = (event.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const locationFormattedAddress =
+    event.addressRef?.formattedAddress ??
+    (canonical && typeof canonical.formattedAddress === "string" && canonical.formattedAddress.trim()
+      ? canonical.formattedAddress.trim()
+      : null) ??
+    null;
   const base: EventCardDTO = {
     id: event.id,
     slug: event.slug,
     title: event.title,
     startsAt: event.startsAt ?? null,
     endsAt: event.endsAt ?? null,
-    locationCity: event.locationCity ?? null,
+    locationFormattedAddress,
     isGratis,
     priceFrom: minPrice !== null ? minPrice / 100 : null,
     coverImageUrl: event.coverImageUrl ?? null,
@@ -109,9 +114,9 @@ function mapDiscoverEvent(event: RawEvent, priceMap: Map<number, TicketPriceRang
 
   return {
     ...base,
-    locationName: event.locationName ?? null,
-    latitude: event.latitude ?? null,
-    longitude: event.longitude ?? null,
+    locationFormattedAddress,
+    latitude: event.addressRef?.latitude ?? null,
+    longitude: event.addressRef?.longitude ?? null,
   };
 }
 
@@ -156,7 +161,9 @@ function filterByPrice(events: DiscoverEvent[], min: number | null, max: number 
 }
 
 export function formatLocationLabel(event: DiscoverEvent) {
-  return [event.locationName, event.locationCity].filter(Boolean).join(" - ") || "Local a anunciar";
+  return (
+    event.locationFormattedAddress || "Local a anunciar"
+  );
 }
 
 export function formatPriceLabel(event: DiscoverEvent) {

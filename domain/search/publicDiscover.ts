@@ -129,14 +129,20 @@ function buildDiscoverWhere(params: DiscoverParams): Prisma.SearchIndexItemWhere
     where.OR = [
       { title: { contains: q, mode: "insensitive" } },
       { description: { contains: q, mode: "insensitive" } },
-      { locationName: { contains: q, mode: "insensitive" } },
-      { locationCity: { contains: q, mode: "insensitive" } },
-      { locationFormattedAddress: { contains: q, mode: "insensitive" } },
+      { addressRef: { formattedAddress: { contains: q, mode: "insensitive" } } },
     ];
   }
-
-  if (city && city.toLowerCase() !== "portugal") {
-    where.locationCity = { contains: city, mode: "insensitive" };
+  if (city) {
+    const cityFilter: Prisma.SearchIndexItemWhereInput = {
+      addressRef: { formattedAddress: { contains: city, mode: "insensitive" } },
+    };
+    if (Array.isArray(where.AND)) {
+      where.AND.push(cityFilter);
+    } else if (where.AND) {
+      where.AND = [where.AND, cityFilter];
+    } else {
+      where.AND = [cityFilter];
+    }
   }
 
   applyCategoryFilter(where, params.categories ?? null);
@@ -192,13 +198,9 @@ function mapSearchItemToPublicEventCardWithPrice(
     | "coverImageUrl"
     | "hostName"
     | "hostUsername"
-    | "locationName"
-    | "locationCity"
-    | "latitude"
-    | "longitude"
-    | "locationFormattedAddress"
-    | "locationSource"
+    | "addressId"
   >,
+  addressRef?: SearchIndexItem["addressRef"] | null,
 ): PublicEventCardWithPrice {
   return toPublicEventCardWithPriceFromIndex({
     sourceId: event.sourceId,
@@ -215,12 +217,8 @@ function mapSearchItemToPublicEventCardWithPrice(
     coverImageUrl: event.coverImageUrl ?? null,
     hostName: event.hostName ?? null,
     hostUsername: event.hostUsername ?? null,
-    locationName: event.locationName ?? null,
-    locationCity: event.locationCity ?? null,
-    latitude: event.latitude ?? null,
-    longitude: event.longitude ?? null,
-    locationFormattedAddress: event.locationFormattedAddress ?? null,
-    locationSource: event.locationSource ?? null,
+    addressId: event.addressId ?? null,
+    addressRef: addressRef ?? null,
   });
 }
 
@@ -237,7 +235,14 @@ export async function listPublicDiscoverIndex(
     ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
   } satisfies Prisma.SearchIndexItemFindManyArgs;
 
-  const items = await prisma.searchIndexItem.findMany(query);
+  const items = await prisma.searchIndexItem.findMany({
+    ...query,
+    include: {
+      addressRef: {
+        select: { formattedAddress: true, canonical: true, latitude: true, longitude: true },
+      },
+    },
+  });
 
   let nextCursor: string | null = null;
   if (items.length > take) {
@@ -258,7 +263,9 @@ export async function listPublicDiscover(
 
   const { items, nextCursor } = await listPublicDiscoverIndex(params);
 
-  const computed: PublicEventCardWithPrice[] = items.map(mapSearchItemToPublicEventCardWithPrice);
+  const computed: PublicEventCardWithPrice[] = items.map((item) =>
+    mapSearchItemToPublicEventCardWithPrice(item, item.addressRef),
+  );
 
   const filtered = filterDiscoverByPrice(computed, priceMinCents, priceMaxCents);
   const publicItems: PublicEventCard[] = filtered.map(({ _priceFromCents, ...rest }) => rest);
@@ -272,12 +279,17 @@ export async function getPublicDiscoverBySlug(slug: string): Promise<PublicEvent
       visibility: SearchIndexVisibility.PUBLIC,
       slug,
     },
+    include: {
+      addressRef: {
+        select: { formattedAddress: true, canonical: true, latitude: true, longitude: true },
+      },
+    },
   });
 
   if (!item) {
     return null;
   }
 
-  const { _priceFromCents, ...event } = mapSearchItemToPublicEventCardWithPrice(item);
+  const { _priceFromCents, ...event } = mapSearchItemToPublicEventCardWithPrice(item, item.addressRef);
   return event;
 }

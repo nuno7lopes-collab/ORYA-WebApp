@@ -262,10 +262,6 @@ async function main() {
 
   const deleteStatements = [
     {
-      label: "PadelPairing.createdByTicketId -> null",
-      sql: `UPDATE app_v3.padel_pairings SET created_by_ticket_id = NULL WHERE event_id = $1`,
-    },
-    {
       label: "Notifications",
       sql: `
         DELETE FROM app_v3.notifications

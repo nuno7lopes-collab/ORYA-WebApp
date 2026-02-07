@@ -23,11 +23,6 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { city: true },
-  });
-
   const followingSet = await getUserFollowingSet(user.id);
   const followingIds = Array.from(followingSet).filter(Boolean);
 
@@ -42,14 +37,12 @@ async function _GET(req: NextRequest) {
   const primary = await prisma.profile.findMany({
     where: {
       ...baseWhere,
-      ...(profile?.city ? { city: profile.city } : {}),
     },
     select: {
       id: true,
       username: true,
       fullName: true,
       avatarUrl: true,
-      city: true,
     },
     orderBy: { updatedAt: "desc" },
     take: limit,
@@ -68,7 +61,6 @@ async function _GET(req: NextRequest) {
             username: true,
             fullName: true,
             avatarUrl: true,
-            city: true,
           },
           orderBy: { updatedAt: "desc" },
           take: remaining,
@@ -99,7 +91,6 @@ async function _GET(req: NextRequest) {
     username: item.username,
     fullName: item.fullName,
     avatarUrl: item.avatarUrl,
-    city: item.city,
     mutualsCount: mutualsMap.get(item.id) ?? 0,
     isFollowing: false,
   }));

@@ -19,13 +19,10 @@ type PurchaseEmailInput = {
   eventSlug: string;
   startsAt?: string | null;
   endsAt?: string | null;
-  locationName?: string | null;
-  locationCity?: string | null;
-  address?: string | null;
-  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationFormattedAddress?: string | null;
-  locationComponents?: Record<string, unknown> | null;
-  locationOverrides?: Record<string, unknown> | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+  } | null;
   ticketsCount: number;
   ticketUrl: string;
 };
@@ -37,13 +34,7 @@ export async function sendPurchaseConfirmationEmail(input: PurchaseEmailInput) {
     eventSlug: input.eventSlug,
     startsAt: input.startsAt,
     endsAt: input.endsAt,
-    locationName: input.locationName,
-    locationCity: input.locationCity,
-    address: input.address,
-    locationSource: input.locationSource,
-    locationFormattedAddress: input.locationFormattedAddress,
-    locationComponents: input.locationComponents,
-    locationOverrides: input.locationOverrides,
+    addressRef: input.addressRef ?? null,
     ticketsCount: input.ticketsCount,
     ticketUrl: input.ticketUrl,
   });

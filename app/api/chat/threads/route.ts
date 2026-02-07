@@ -26,7 +26,7 @@ async function _GET(req: NextRequest) {
       where: {
         ownerUserId: user.id,
         eventId: { not: null },
-        status: { in: ["ACTIVE", "USED"] },
+        status: { in: ["ACTIVE"] },
       },
       select: { eventId: true },
     });
@@ -101,8 +101,8 @@ async function _GET(req: NextRequest) {
         startsAt: true,
         endsAt: true,
         coverImageUrl: true,
-        locationName: true,
-        locationCity: true,
+        addressId: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
         status: true,
       },
     });
@@ -123,8 +123,8 @@ async function _GET(req: NextRequest) {
             startsAt: event.startsAt ? event.startsAt.toISOString() : null,
             endsAt: event.endsAt ? event.endsAt.toISOString() : null,
             coverImageUrl: event.coverImageUrl ?? null,
-            locationName: event.locationName ?? null,
-            locationCity: event.locationCity ?? null,
+            addressId: event.addressId ?? null,
+            locationFormattedAddress: event.addressRef?.formattedAddress ?? null,
             status: event.status ?? null,
           },
           lastMessage: lastMessage

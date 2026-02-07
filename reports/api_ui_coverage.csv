@@ -114,7 +114,6 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/me/creditos,app/api/me/creditos/route.ts,public,orphan,0,
 /api/me/inscricoes,app/api/me/inscricoes/route.ts,public,orphan,0,
 /api/me/inscricoes/[id],app/api/me/inscricoes/[id]/route.ts,public,orphan,0,
-/api/me/location/coarse,app/api/me/location/coarse/route.ts,public,orphan,0,
 /api/me/location/consent,app/api/me/location/consent/route.ts,public,orphan,0,
 /api/me/loyalty/carteira,app/api/me/loyalty/carteira/route.ts,public,orphan,0,
 /api/me/loyalty/recompensas,app/api/me/loyalty/recompensas/route.ts,public,covered,1,app/me/carteira/WalletHubClient.tsx

@@ -8,12 +8,9 @@ type PadelClub = {
   id: number;
   name: string;
   city: string | null;
+  addressId?: string | null;
   kind?: "OWN" | "PARTNER";
   sourceClubId?: number | null;
-  locationSource?: "APPLE_MAPS" | "OSM" | "MANUAL" | null;
-  locationProviderId?: string | null;
-  locationFormattedAddress?: string | null;
-  locationComponents?: Record<string, unknown> | null;
   latitude?: number | null;
   longitude?: number | null;
   addressRef?: { formattedAddress?: string | null } | null;

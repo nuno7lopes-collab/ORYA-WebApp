@@ -43,8 +43,7 @@ type MixPayload = {
   durationMinutes?: number;
   teamsCount?: number;
   format?: "NON_STOP" | "FASE_FINALS";
-  locationName?: string;
-  locationCity?: string;
+  addressId?: string;
 };
 
 async function _POST(req: NextRequest) {
@@ -109,8 +108,18 @@ async function _POST(req: NextRequest) {
     const durationMinutes = Math.min(300, Math.max(60, Math.round(Number(body.durationMinutes ?? 180))));
     const teamsCount = Math.min(8, Math.max(2, Math.round(Number(body.teamsCount ?? 8))));
     const endsAt = new Date(startsAtRaw.getTime() + durationMinutes * 60 * 1000);
-    const locationName = body.locationName?.trim() || organization.publicName || "Mix rápido";
-    const locationCity = body.locationCity?.trim() || organization.city || "Lisboa";
+    const addressIdInput =
+      typeof body.addressId === "string" ? body.addressId.trim() || null : organization.addressId ?? null;
+    if (!addressIdInput) {
+      return fail(400, "Seleciona uma morada normalizada.");
+    }
+    const addressRecord = await prisma.address.findUnique({ where: { id: addressIdInput } });
+    if (!addressRecord) {
+      return fail(400, "Morada inválida.");
+    }
+    if (addressRecord.sourceProvider !== "APPLE_MAPS") {
+      return fail(400, "Morada deve ser Apple Maps.");
+    }
 
     const format =
       body.format === "FASE_FINALS" ? padel_format.GRUPOS_ELIMINATORIAS : padel_format.NON_STOP;
@@ -165,8 +174,7 @@ async function _POST(req: NextRequest) {
           templateType: EventTemplateType.PADEL,
           status: "PUBLISHED",
           pricingMode: "FREE_ONLY",
-          locationName,
-          locationCity,
+          addressId: addressRecord.id,
           startsAt: startsAtRaw,
           endsAt,
           timezone: organization.language === "en" ? "Europe/Lisbon" : "Europe/Lisbon",

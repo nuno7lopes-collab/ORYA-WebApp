@@ -30,7 +30,8 @@ type Service = {
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";
-  defaultLocationText?: string | null;
+  addressId?: string | null;
+  addressRef?: { formattedAddress?: string | null } | null;
   professionalLinks?: Array<{ professionalId: number }>;
   resourceLinks?: Array<{ resourceId: number }>;
   addons?: Array<{
@@ -107,10 +108,10 @@ type ReservasBookingClientProps = {
     id: number;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     username: string | null;
     timezone: string | null;
-    address: string | null;
+    addressId?: string | null;
+    addressRef?: { formattedAddress?: string | null } | null;
     reservationAssignmentMode: "PROFESSIONAL" | "RESOURCE";
   };
   services: Service[];
@@ -340,7 +341,6 @@ export default function ReservasBookingClient({
   const [bookingPending, setBookingPending] = useState<BookingPending | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
-  const [locationText, setLocationText] = useState("");
   const [checkout, setCheckout] = useState<BookingCheckout | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -354,6 +354,11 @@ export default function ReservasBookingClient({
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
 
   const selectedService = activeServices.find((service) => service.id === selectedServiceId) ?? null;
+  const resolvedAddressId = selectedService?.addressId ?? organization.addressId ?? null;
+  const resolvedAddressLabel =
+    selectedService?.addressRef?.formattedAddress ??
+    organization.addressRef?.formattedAddress ??
+    null;
   const selectedServiceProfessionalIds =
     selectedService?.professionalLinks?.map((link) => link.professionalId) ?? [];
   const selectedServiceResourceIds =
@@ -534,18 +539,10 @@ export default function ReservasBookingClient({
 
   useEffect(() => {
     if (!selectedService) {
-      setLocationText("");
       setSelectedAddons({});
       setSelectedPackageId(null);
       return;
     }
-    if (selectedService.locationMode === "CHOOSE_AT_BOOKING") {
-      setLocationText(selectedService.defaultLocationText ?? "");
-      setSelectedAddons({});
-      setSelectedPackageId(null);
-      return;
-    }
-    setLocationText("");
     setSelectedAddons({});
     setSelectedPackageId(null);
   }, [selectedServiceId]);
@@ -885,8 +882,8 @@ export default function ReservasBookingClient({
     setSelectedSlot(slot);
 
     try {
-      if (selectedService.locationMode === "CHOOSE_AT_BOOKING" && !locationText.trim()) {
-        setBookingError("Indica o local antes de reservar.");
+      if (selectedService.locationMode === "CHOOSE_AT_BOOKING" && !resolvedAddressId) {
+        setBookingError("Seleciona uma morada antes de reservar.");
         return;
       }
       const res = await fetch(`/api/servicos/${selectedServiceId}/reservar`, {
@@ -896,8 +893,7 @@ export default function ReservasBookingClient({
           startsAt: slot.startsAt,
           professionalId: assignmentMode === "PROFESSIONAL" ? selectedProfessionalId : null,
           partySize: assignmentMode === "RESOURCE" ? selectedPartySize : null,
-          locationText:
-            selectedService.locationMode === "CHOOSE_AT_BOOKING" ? locationText.trim() : null,
+          addressId: resolvedAddressId,
           selectedAddons: selectedAddonsPayload,
           packageId: selectedPackageId,
         }),
@@ -996,10 +992,7 @@ export default function ReservasBookingClient({
     selectedPartySize != null
       ? capacityOptions.find((opt) => opt.value === selectedPartySize)?.label ?? null
       : null;
-  const locationLabel =
-    selectedService?.locationMode === "CHOOSE_AT_BOOKING"
-      ? locationText.trim() || "Local por definir"
-      : selectedService?.defaultLocationText ?? organization.address ?? "Local por definir";
+  const locationLabel = resolvedAddressLabel ?? "Local por definir";
   const professionalLabel =
     assignmentMode === "RESOURCE"
       ? selectedCapacityLabel
@@ -1527,13 +1520,10 @@ export default function ReservasBookingClient({
 
                     {selectedService?.locationMode === "CHOOSE_AT_BOOKING" && (
                       <div className={panelSoftClass}>
-                        <label className="text-[11px] uppercase tracking-[0.2em] text-white/60">Local</label>
-                        <input
-                          value={locationText}
-                          onChange={(e) => setLocationText(e.target.value)}
-                          className="mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                          placeholder="Indica o local"
-                        />
+                        <label className="text-[11px] uppercase tracking-[0.2em] text-white/60">Morada</label>
+                        <p className="mt-2 text-sm text-white/80">
+                          {resolvedAddressLabel ?? "Seleciona uma morada antes de reservar."}
+                        </p>
                       </div>
                     )}
 

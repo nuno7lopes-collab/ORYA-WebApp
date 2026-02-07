@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -11,6 +11,8 @@ import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestruct
 import { CTA_DANGER, CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { cn } from "@/lib/utils";
+import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import type { GeoAutocompleteItem } from "@/lib/geo/provider";
 
 type OrganizationMeResponse = {
   ok: boolean;
@@ -20,8 +22,8 @@ type OrganizationMeResponse = {
     username?: string | null;
     businessName: string | null;
     entityType: string | null;
-    city: string | null;
-    address?: string | null;
+    addressId?: string | null;
+    addressRef?: { formattedAddress: string | null; canonical: Record<string, unknown> | null } | null;
     showAddressPublicly?: boolean | null;
     payoutIban: string | null;
     language?: string | null;
@@ -47,7 +49,6 @@ type OrganizationMeResponse = {
   } | null;
   profile: {
     fullName: string | null;
-    city: string | null;
     contactPhone?: string | null;
   } | null;
   contactEmail?: string | null;
@@ -83,7 +84,18 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const profile = data?.profile ?? null;
   const redirectTo = "/organizacao/settings";
 
-  const [address, setAddress] = useState("");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressId, setAddressId] = useState<string | null>(null);
+  const [addressLabel, setAddressLabel] = useState<string | null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
+  const addressSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressSeqRef = useRef(0);
+  const addressDetailsSeqRef = useRef(0);
+  const activeAddressProviderRef = useRef<string | null>(null);
   const [showAddressPublicly, setShowAddressPublicly] = useState(false);
   const [contactPhone, setContactPhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -100,11 +112,93 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
 
   useEffect(() => {
     if (!organization) return;
-    setAddress((organization as { address?: string | null }).address ?? "");
+    const formatted = organization.addressRef?.formattedAddress ?? "";
+    setAddressQuery(formatted);
+    setAddressId(organization.addressId ?? null);
+    setAddressLabel(formatted || null);
+    setAddressSuggestions([]);
+    setAddressError(null);
     setShowAddressPublicly((organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false);
     setOfficialEmail((organization as { officialEmail?: string | null })?.officialEmail ?? "");
     if (profile?.contactPhone) setContactPhone(profile.contactPhone);
   }, [organization, profile]);
+
+  useEffect(() => {
+    const query = addressQuery.trim();
+    if (query.length < 2) {
+      setAddressSuggestions([]);
+      setAddressLoading(false);
+      setAddressError(null);
+      return;
+    }
+    if (addressSearchTimeoutRef.current) {
+      clearTimeout(addressSearchTimeoutRef.current);
+    }
+    setAddressError(null);
+    const seq = ++addressSeqRef.current;
+    addressSearchTimeoutRef.current = setTimeout(async () => {
+      setAddressLoading(true);
+      try {
+        const items = await fetchGeoAutocomplete(query);
+        if (addressSeqRef.current === seq) {
+          setAddressSuggestions(items);
+        }
+      } catch (err) {
+        if (addressSeqRef.current === seq) {
+          setAddressSuggestions([]);
+          setAddressError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+        }
+      } finally {
+        if (addressSeqRef.current === seq) {
+          setAddressLoading(false);
+        }
+      }
+    }, 260);
+
+    return () => {
+      if (addressSearchTimeoutRef.current) {
+        clearTimeout(addressSearchTimeoutRef.current);
+      }
+    };
+  }, [addressQuery]);
+
+  const handleSelectAddressSuggestion = async (item: GeoAutocompleteItem) => {
+    setAddressError(null);
+    setAddressId(null);
+    setAddressLabel(item.label);
+    setAddressQuery(item.label);
+    setAddressSuggestions([]);
+    setShowAddressSuggestions(false);
+    activeAddressProviderRef.current = item.providerId;
+    const seq = ++addressDetailsSeqRef.current;
+    setAddressLoading(true);
+    try {
+      const details = await fetchGeoDetails(item.providerId, {
+        sourceProvider: item.sourceProvider ?? null,
+        lat: item.lat,
+        lng: item.lng,
+      });
+      if (addressDetailsSeqRef.current !== seq) return;
+      if (activeAddressProviderRef.current !== item.providerId) return;
+      const resolvedAddressId = details?.addressId ?? null;
+      if (!resolvedAddressId) {
+        setAddressError("Morada inválida.");
+        return;
+      }
+      const formatted = details?.formattedAddress ?? item.label;
+      setAddressId(resolvedAddressId);
+      setAddressLabel(formatted);
+      setAddressQuery(formatted);
+    } catch (err) {
+      if (addressDetailsSeqRef.current === seq) {
+        setAddressError(err instanceof Error ? err.message : "Falha ao normalizar morada.");
+      }
+    } finally {
+      if (addressDetailsSeqRef.current === seq) {
+        setAddressLoading(false);
+      }
+    }
+  };
 
   const hasOrganization = useMemo(() => organization && data?.ok, [organization, data]);
   const membershipRole = data?.membershipRole ?? null;
@@ -137,6 +231,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setPhoneError("Telefone inválido. Introduz um número válido (podes incluir indicativo, ex.: +351...).");
       return;
     }
+    if (addressQuery.trim() && !addressId) {
+      setOrgMessage("Seleciona uma morada Apple válida antes de guardar.");
+      return;
+    }
     setSavingOrg(true);
     setOrgMessage(null);
     try {
@@ -148,7 +246,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          address,
+          addressId: addressId ?? "",
           showAddressPublicly,
           contactPhone,
         }),
@@ -408,14 +506,81 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             {phoneError && <p className="text-[11px] text-red-300">{phoneError}</p>}
           </div>
           <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Morada</label>
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
-              placeholder="Rua e número"
-              disabled={!canEditOperational}
-            />
+            <label className="text-[12px] text-white/70">Morada (Apple Maps)</label>
+            <div className="relative overflow-visible">
+              <input
+                value={addressQuery}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setAddressQuery(next);
+                  setAddressId(null);
+                  setAddressLabel(null);
+                  setAddressError(null);
+                  activeAddressProviderRef.current = null;
+                  setShowAddressSuggestions(true);
+                }}
+                onFocus={() => setShowAddressSuggestions(true)}
+                onBlur={() => {
+                  if (addressBlurTimeoutRef.current) {
+                    clearTimeout(addressBlurTimeoutRef.current);
+                  }
+                  addressBlurTimeoutRef.current = setTimeout(
+                    () => setShowAddressSuggestions(false),
+                    120,
+                  );
+                }}
+                className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+                placeholder="Procura um local ou morada"
+                disabled={!canEditOperational}
+              />
+              {showAddressSuggestions && (
+                <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
+                  {addressLoading ? (
+                    <div className="px-3 py-2 text-sm text-white/70 animate-pulse">
+                      A procurar…
+                    </div>
+                  ) : addressError ? (
+                    <div className="px-3 py-2 text-sm text-amber-100">
+                      {addressError}
+                    </div>
+                  ) : addressSuggestions.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
+                  ) : (
+                    addressSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion.providerId}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleSelectAddressSuggestion(suggestion)}
+                        className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                      >
+                        <div className="flex w-full items-center justify-between gap-3">
+                          <span className="font-semibold text-white">{suggestion.label}</span>
+                          <div className="flex items-center gap-2 text-[12px] text-white/65">
+                            <span>{suggestion.city || "—"}</span>
+                            {suggestion.sourceProvider === "APPLE_MAPS" && (
+                              <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
+                                Apple
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {addressId && (addressLabel || addressQuery) && (
+              <div className="mt-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
+                Morada confirmada: {addressLabel || addressQuery}
+              </div>
+            )}
+            {addressError && (
+              <div className="mt-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                {addressError}
+              </div>
+            )}
             <label className="mt-1 flex items-center gap-2 text-[12px] text-white/70">
               <input
                 type="checkbox"

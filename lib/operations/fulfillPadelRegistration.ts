@@ -19,6 +19,7 @@ import { resolveRegistrationStatusFromSlots, upsertPadelRegistrationForPairing }
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
+import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 
 type IntentLike = {
   id: string;
@@ -102,7 +103,7 @@ export async function fulfillPadelRegistrationIntent(
           id: true,
           title: true,
           coverImageUrl: true,
-          locationName: true,
+          addressRef: { select: { formattedAddress: true } },
           startsAt: true,
           timezone: true,
           organizationId: true,
@@ -300,8 +301,9 @@ export async function fulfillPadelRegistrationIntent(
     const subtotalCents = snapshotLines.reduce((sum, line) => sum + (line.totalAmountCents ?? 0), 0);
     const platformFeeCents = snapshot?.platformFee ?? 0;
     const totalCents = snapshot?.total ?? subtotalCents;
-    const stripeFeeCents = stripeFeeForIntentValue ?? 0;
-    const netCents = Math.max(0, totalCents - platformFeeCents - stripeFeeCents);
+    const stripeFeeCents = stripeFeeForIntentValue ?? null;
+    const stripeFeeForNet = stripeFeeCents ?? 0;
+    const netCents = Math.max(0, totalCents - platformFeeCents - stripeFeeForNet);
 
     const saleSummary = await saleSummaryRepo(tx).upsert({
       where: { purchaseId },
@@ -342,6 +344,10 @@ export async function fulfillPadelRegistrationIntent(
     await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: saleSummary.id } });
 
     const policyVersionApplied = await requireLatestPolicyVersionForEvent(registration.eventId, tx);
+    const snapshotVenueName = formatEventLocationLabel(
+      { addressRef: registration.event.addressRef ?? null },
+      "Local a anunciar",
+    );
 
     for (const line of registrationLines) {
       const snapshotLine = snapshotLines.find((l) => Number(l.sourceLineId) === line.id);
@@ -397,7 +403,7 @@ export async function fulfillPadelRegistrationIntent(
             policyVersionApplied,
             snapshotTitle: registration.event.title ?? "",
             snapshotCoverUrl: registration.event.coverImageUrl,
-            snapshotVenueName: registration.event.locationName,
+            snapshotVenueName,
             snapshotStartAt: registration.event.startsAt,
             snapshotTimezone: registration.event.timezone,
           },
@@ -414,7 +420,7 @@ export async function fulfillPadelRegistrationIntent(
             policyVersionApplied,
             snapshotTitle: registration.event.title ?? "",
             snapshotCoverUrl: registration.event.coverImageUrl,
-            snapshotVenueName: registration.event.locationName,
+            snapshotVenueName,
             snapshotStartAt: registration.event.startsAt,
             snapshotTimezone: registration.event.timezone,
           },
@@ -433,7 +439,7 @@ export async function fulfillPadelRegistrationIntent(
         errorMessage: null,
         mode: intent.livemode ? "LIVE" : "TEST",
         isTest: !intent.livemode,
-        stripeFeeCents: stripeFeeForIntentValue ?? 0,
+        stripeFeeCents: stripeFeeForIntentValue ?? null,
         purchaseId,
         source: PaymentEventSource.WEBHOOK,
         dedupeKey: paymentDedupeKey,
@@ -451,7 +457,7 @@ export async function fulfillPadelRegistrationIntent(
         source: PaymentEventSource.WEBHOOK,
         dedupeKey: paymentDedupeKey,
         attempt: 1,
-        stripeFeeCents: stripeFeeForIntentValue ?? 0,
+        stripeFeeCents: stripeFeeForIntentValue ?? null,
       },
     });
   });

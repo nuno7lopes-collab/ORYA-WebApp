@@ -1,5 +1,5 @@
 # ORYA iOS Plan (B2C-only)
-> Escopo: iOS B2C. Regras de produto/SSOT em `docs/v9_ssot_registry.md` e `docs/orya_blueprint_v9_final.md`.
+> Escopo: iOS B2C. Regras de produto/SSOT em `docs/ssot_registry.md` e `docs/blueprint.md`.
 
 ## 1) Product scope (locked)
 - Mobile is **ONLY USER (B2C)**.

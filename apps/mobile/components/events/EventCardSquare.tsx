@@ -107,7 +107,11 @@ export const EventCardSquare = memo(function EventCardSquare({
   );
   const fallbackTint = useMemo(() => getFallbackTint(tintSeed), [tintSeed]);
   const [tint, setTint] = useState(fallbackTint);
-  const location = event.location?.city ?? event.location?.name ?? "Local a anunciar";
+  const location =
+    event.location?.formattedAddress ??
+    event.location?.city ??
+    event.location?.name ??
+    "Local a anunciar";
   const date = formatDate(event.startsAt, event.endsAt);
   const priceState = resolvePriceState(event);
   const secondaryTag = statusTag ?? priceState.label;

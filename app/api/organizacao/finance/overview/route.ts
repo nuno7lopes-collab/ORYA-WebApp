@@ -5,13 +5,11 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { getStripeBaseFees } from "@/lib/platformSettings";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import {
   EventTemplateType,
   OrganizationModule,
-  PendingPayoutStatus,
   Prisma,
   SaleSummaryStatus,
 } from "@prisma/client";
@@ -113,13 +111,6 @@ async function _GET(req: NextRequest) {
     const now = new Date();
     const last7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const stripeBaseFees = await getStripeBaseFees();
-    const estimateStripeFee = (amountCents: number) =>
-      Math.max(
-        0,
-        Math.round((amountCents * (stripeBaseFees.feeBps ?? 0)) / 10_000) +
-          (stripeBaseFees.feeFixedCents ?? 0),
-      );
 
     // Fonte preferencial: SaleSummary/SaleLine
     const summaries = await prisma.saleSummary.findMany({
@@ -203,10 +194,7 @@ async function _GET(req: NextRequest) {
       const gross = s.subtotalCents ?? 0;
       const platformFee = s.platformFeeCents ?? 0;
       const totalCents = s.totalCents ?? gross;
-      const stripeFee =
-        s.stripeFeeCents != null && s.stripeFeeCents > 0
-          ? s.stripeFeeCents
-          : estimateStripeFee(totalCents);
+      const stripeFee = s.stripeFeeCents ?? 0;
       const totalFees = platformFee + stripeFee;
       const net =
         s.netCents != null && s.netCents >= 0
@@ -269,48 +257,11 @@ async function _GET(req: NextRequest) {
     }
 
     const eventsWithSales = Array.from(eventStats.keys()).length;
-    const recipientConnectAccountId =
-      organization.orgType === "PLATFORM" ? null : organization.stripeAccountId ?? null;
-    const [pendingAgg, holdMin, nextAttemptMin, actionRequired] = recipientConnectAccountId
-      ? await Promise.all([
-          prisma.pendingPayout.aggregate({
-            where: {
-              recipientConnectAccountId,
-              status: { in: [PendingPayoutStatus.HELD, PendingPayoutStatus.RELEASING] },
-            },
-            _sum: { amountCents: true },
-          }),
-          prisma.pendingPayout.aggregate({
-            where: {
-              recipientConnectAccountId,
-              status: PendingPayoutStatus.HELD,
-              holdUntil: { gt: now },
-            },
-            _min: { holdUntil: true },
-          }),
-          prisma.pendingPayout.aggregate({
-            where: {
-              recipientConnectAccountId,
-              status: PendingPayoutStatus.HELD,
-              nextAttemptAt: { not: null, gte: now },
-            },
-            _min: { nextAttemptAt: true },
-          }),
-          prisma.pendingPayout.findFirst({
-            where: {
-              recipientConnectAccountId,
-              status: PendingPayoutStatus.HELD,
-              blockedReason: { startsWith: "ACTION_REQUIRED" },
-            },
-            select: { id: true },
-          }),
-        ])
-      : [null, null, null, null];
-    const upcomingPayoutCents = pendingAgg?._sum?.amountCents ?? 0;
+    const upcomingPayoutCents = 0;
     const payoutAlerts = {
-      holdUntil: holdMin?._min?.holdUntil ?? null,
-      nextAttemptAt: nextAttemptMin?._min?.nextAttemptAt ?? null,
-      actionRequired: Boolean(actionRequired),
+      holdUntil: null,
+      nextAttemptAt: null,
+      actionRequired: false,
     };
 
     return jsonWrap(

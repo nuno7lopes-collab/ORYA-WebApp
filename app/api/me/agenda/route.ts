@@ -86,7 +86,7 @@ async function _GET(req: NextRequest) {
     ] = await Promise.all([
       prisma.ticket.findMany({
         where: {
-          status: { in: ["ACTIVE", "USED"] },
+          status: { in: ["ACTIVE"] },
           OR: [{ userId }, { ownerUserId: userId }],
           event: {
             isDeleted: false,

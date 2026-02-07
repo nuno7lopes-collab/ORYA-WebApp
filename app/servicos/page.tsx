@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { PORTUGAL_CITIES } from "@/config/cities";
-
 const pageClass = "min-h-screen w-full text-white";
 
 const cardClass =
@@ -16,13 +14,20 @@ type ServiceItem = {
   durationMinutes: number;
   unitPriceCents: number;
   currency: string;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+  } | null;
   organization: {
     id: number;
     publicName: string | null;
     businessName: string | null;
-    city: string | null;
     username: string | null;
     brandingAvatarUrl: string | null;
+    addressRef?: {
+      formattedAddress?: string | null;
+      canonical?: Record<string, unknown> | null;
+    } | null;
   };
   nextAvailability: string | null;
 };
@@ -40,7 +45,6 @@ export default function ServicosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [city, setCity] = useState("");
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -48,9 +52,8 @@ export default function ServicosPage() {
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
     if (search.trim()) params.set("q", search.trim());
-    if (city.trim()) params.set("city", city.trim());
     return params;
-  }, [search, city]);
+  }, [search]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,8 +132,7 @@ export default function ServicosPage() {
         </div>
 
         <section className={cardClass}>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="md:col-span-2">
+          <div className="grid gap-3">
               <label className="text-xs text-white/70">Pesquisar</label>
               <input
                 value={search}
@@ -138,22 +140,6 @@ export default function ServicosPage() {
                 placeholder="Ex: manicure, sala"
                 className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/35"
               />
-            </div>
-            <div>
-              <label className="text-xs text-white/70">Cidade</label>
-              <select
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-white/15 bg-[#0a0f1e] px-3 py-2 text-sm text-white outline-none focus:border-white/35"
-              >
-                <option value="">Todas</option>
-                {PORTUGAL_CITIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         </section>
 
@@ -196,7 +182,9 @@ export default function ServicosPage() {
                   </p>
                 </div>
                 <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                  {item.organization.city || "Cidade"}
+                  {item.addressRef?.formattedAddress ||
+                    item.organization.addressRef?.formattedAddress ||
+                    "Local"}
                 </span>
               </div>
               {item.description && (

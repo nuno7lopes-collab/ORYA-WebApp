@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { OrganizationStatus, OrganizationMemberRole } from "@prisma/client";
+import { AddressSourceProvider, OrganizationStatus, OrganizationMemberRole } from "@prisma/client";
 import { normalizeAndValidateUsername, setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { requireUser } from "@/lib/auth/requireUser";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -58,7 +58,6 @@ async function _GET() {
           publicName: m.organization!.publicName,
           username: m.organization!.username,
           businessName: m.organization!.businessName,
-          city: m.organization!.city,
           entityType: m.organization!.entityType,
           status: m.organization!.status,
           primaryModule:
@@ -90,7 +89,7 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
-    const { businessName, publicName, entityType, city, username } = body as Record<string, unknown>;
+    const { businessName, publicName, entityType, addressId, username } = body as Record<string, unknown>;
     const primaryModuleRaw = (body as Record<string, unknown>).primaryModule;
     const modulesRaw = (body as Record<string, unknown>).modules;
     const publicWebsiteRaw =
@@ -101,9 +100,20 @@ async function _POST(req: NextRequest) {
         ? publicName.trim()
         : bName || "Organização";
     const eTypeRaw = typeof entityType === "string" ? entityType.trim() : "";
-    const cityRaw = typeof city === "string" ? city.trim() : "";
     const eType = eTypeRaw.length > 0 ? eTypeRaw : null;
-    const cityClean = cityRaw.length > 0 ? cityRaw : null;
+    const addressIdInput = typeof addressId === "string" ? addressId.trim() : "";
+    if (addressIdInput) {
+      const address = await prisma.address.findUnique({
+        where: { id: addressIdInput },
+        select: { sourceProvider: true },
+      });
+      if (!address) {
+        return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
+      }
+      if (address.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+        return jsonWrap({ ok: false, error: "Morada deve ser Apple Maps." }, { status: 400 });
+      }
+    }
 
     const publicWebsite = (() => {
       if (typeof publicWebsiteRaw !== "string") return null;
@@ -181,7 +191,7 @@ async function _POST(req: NextRequest) {
           publicName: pName,
           businessName: bName,
           entityType: eType,
-          city: cityClean,
+          ...(addressIdInput ? { addressId: addressIdInput } : {}),
           status: OrganizationStatus.ACTIVE,
           username: normalizedUsername,
           primaryModule: primaryFallback,
@@ -225,7 +235,7 @@ async function _POST(req: NextRequest) {
           publicName: organization.publicName,
           username: organization.username,
           businessName: organization.businessName,
-          city: organization.city,
+          addressId: organization.addressId ?? null,
           entityType: organization.entityType,
           primaryModule:
             (organization as { primaryModule?: string | null }).primaryModule ??

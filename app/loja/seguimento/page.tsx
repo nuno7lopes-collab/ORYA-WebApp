@@ -56,12 +56,8 @@ type OrderLookup = {
     etaMaxDays: number | null;
     address: {
       fullName: string;
-      line1: string;
-      line2: string | null;
-      city: string;
-      region: string | null;
-      postalCode: string;
-      country: string;
+      formattedAddress: string | null;
+      nif: string | null;
     } | null;
   };
   shipments: Shipment[];
@@ -343,13 +339,10 @@ export default function StoreOrderTrackingPage() {
                 {order.shipping.address ? (
                   <div className="mt-3 text-xs text-white/60 space-y-1">
                     <p>{order.shipping.address.fullName}</p>
-                    <p>{order.shipping.address.line1}</p>
-                    {order.shipping.address.line2 ? <p>{order.shipping.address.line2}</p> : null}
-                    <p>
-                      {order.shipping.address.postalCode} {order.shipping.address.city}
-                      {order.shipping.address.region ? `, ${order.shipping.address.region}` : ""}
-                    </p>
-                    <p>{order.shipping.address.country}</p>
+                    {order.shipping.address.formattedAddress ? (
+                      <p>{order.shipping.address.formattedAddress}</p>
+                    ) : null}
+                    {order.shipping.address.nif ? <p>NIF: {order.shipping.address.nif}</p> : null}
                   </div>
                 ) : (
                   <p className="mt-3 text-xs text-white/60">Sem morada de envio.</p>

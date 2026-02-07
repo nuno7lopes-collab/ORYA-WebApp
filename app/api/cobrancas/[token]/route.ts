@@ -39,16 +39,16 @@ async function _GET(
             durationMinutes: true,
             status: true,
             snapshotTimezone: true,
-            locationText: true,
-            service: { select: { id: true, title: true } },
+            addressRef: { select: { formattedAddress: true } },
+            service: { select: { id: true, title: true, addressRef: { select: { formattedAddress: true } } } },
             organization: {
               select: {
                 id: true,
                 publicName: true,
                 businessName: true,
-                city: true,
                 username: true,
                 brandingAvatarUrl: true,
+                addressRef: { select: { formattedAddress: true } },
               },
             },
           },
@@ -79,7 +79,11 @@ async function _GET(
         durationMinutes: charge.booking.durationMinutes,
         status: charge.booking.status,
         snapshotTimezone: charge.booking.snapshotTimezone,
-        locationText: charge.booking.locationText,
+        locationFormattedAddress:
+          charge.booking.addressRef?.formattedAddress ??
+          charge.booking.service?.addressRef?.formattedAddress ??
+          charge.booking.organization?.addressRef?.formattedAddress ??
+          null,
       },
       service: charge.booking.service,
       organization: charge.booking.organization,

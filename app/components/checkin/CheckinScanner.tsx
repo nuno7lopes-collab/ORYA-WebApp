@@ -50,12 +50,6 @@ const STATUS_META: Record<
     canConfirm: false,
     hint: "O QR não está ativo ou expirou.",
   },
-  REFUNDED: {
-    label: "Reembolsado",
-    tone: "border-red-400/50 bg-red-500/10 text-red-50",
-    canConfirm: false,
-    hint: "Bilhete reembolsado — não pode entrar.",
-  },
   REVOKED: {
     label: "Revogado",
     tone: "border-red-400/50 bg-red-500/10 text-red-50",
@@ -120,7 +114,7 @@ export function CheckinScanner({
     hasQueryEvent ? eventId : null,
   );
   const [events, setEvents] = useState<
-    Array<{ id: number; title: string; startsAt: string | null; locationName: string | null }>
+    Array<{ id: number; title: string; startsAt: string | null; locationFormattedAddress: string | null }>
   >([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsError, setEventsError] = useState<string | null>(null);
@@ -311,7 +305,8 @@ export function CheckinScanner({
               {selectedEventId && (
                 <p className="text-[11px] text-white/60">
                   {formatDateTime(events.find((ev) => ev.id === selectedEventId)?.startsAt ?? null)} ·{" "}
-                  {events.find((ev) => ev.id === selectedEventId)?.locationName ?? "Local a anunciar"}
+                  {events.find((ev) => ev.id === selectedEventId)?.locationFormattedAddress ??
+                    "Local a anunciar"}
                 </p>
               )}
             </div>

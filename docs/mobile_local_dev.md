@@ -16,10 +16,11 @@ npm run mobile:dev
 ```
 
 ## 3) Mobile env (LAN base URL)
-Ensure `apps/mobile/.env` contains:
+You can keep `apps/mobile/.env` with:
 ```
-EXPO_PUBLIC_API_BASE_URL=http://192.168.1.98:3000
+EXPO_PUBLIC_API_BASE_URL=http://localhost:3000
 ```
+The mobile app now auto-resolves the correct LAN IP at runtime.
 
 ## 4) Quick connectivity check (iPhone Safari)
 ```

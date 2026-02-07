@@ -5,8 +5,9 @@ vi.mock("@prisma/client", async () => {
   return {
     ...actual,
     EntitlementStatus: {
+      PENDING: "PENDING",
       ACTIVE: "ACTIVE",
-      REFUNDED: "REFUNDED",
+      EXPIRED: "EXPIRED",
       REVOKED: "REVOKED",
       SUSPENDED: "SUSPENDED",
     },
@@ -14,7 +15,6 @@ vi.mock("@prisma/client", async () => {
       OK: "OK",
       ALREADY_USED: "ALREADY_USED",
       INVALID: "INVALID",
-      REFUNDED: "REFUNDED",
       REVOKED: "REVOKED",
       SUSPENDED: "SUSPENDED",
       NOT_ALLOWED: "NOT_ALLOWED",
@@ -39,10 +39,10 @@ describe("entitlements v7 compatibility", () => {
     expect(getEntitlementEffectiveStatus({ status: EntitlementStatus.ACTIVE })).toBe("ACTIVE");
   });
 
-  it("refund/dispute bloqueia acesso pelo status efetivo", () => {
+  it("revoked bloqueia acesso pelo status efetivo", () => {
     const actions = resolveActions({
       type: "EVENT_TICKET" as any,
-      status: EntitlementStatus.REFUNDED,
+      status: EntitlementStatus.REVOKED,
       isOwner: true,
       isOrganization: false,
       isAdmin: false,

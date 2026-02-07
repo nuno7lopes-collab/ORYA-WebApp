@@ -69,10 +69,10 @@ const serializeInvite = (
       publicName: string | null;
       username: string | null;
       businessName: string | null;
-      city: string | null;
       entityType: string | null;
       brandingAvatarUrl: string | null;
       brandingCoverUrl: string | null;
+      addressRef?: { formattedAddress: string | null; canonical: Record<string, unknown> | null } | null;
     } | null;
   },
   viewer: { id: string; username?: string | null; email?: string | null },
@@ -146,10 +146,10 @@ async function _GET(req: NextRequest) {
           publicName: true,
           username: true,
           businessName: true,
-          city: true,
           entityType: true,
           brandingAvatarUrl: true,
           brandingCoverUrl: true,
+          addressRef: { select: { formattedAddress: true, canonical: true } },
         },
       },
     } satisfies Prisma.OrganizationMemberInviteInclude;

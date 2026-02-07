@@ -74,7 +74,7 @@ export type EventCardDTO = {
   title: string;
   startsAt: Date | null;
   endsAt: Date | null;
-  locationCity: string | null;
+  locationFormattedAddress: string | null;
   isGratis: boolean;
   priceFrom: number | null;
   coverImageUrl: string | null;
@@ -85,7 +85,10 @@ export type EventCardDTO = {
  */
 export function mapEventToCardDTO(
   event:
-    | (Partial<Event> & { ticketTypes?: (Partial<TicketType> | null)[] | null })
+    | (Partial<Event> & {
+        ticketTypes?: (Partial<TicketType> | null)[] | null;
+        addressRef?: { canonical?: Record<string, unknown> | null } | null;
+      })
     | null
 ): EventCardDTO | null {
   if (!event) return null;
@@ -115,13 +118,21 @@ export function mapEventToCardDTO(
       ticketPrices,
     });
 
+  const canonical = (event.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const locationFormattedAddress =
+    event.addressRef?.formattedAddress ??
+    (canonical && typeof canonical.formattedAddress === "string" && canonical.formattedAddress.trim()
+      ? canonical.formattedAddress.trim()
+      : null) ??
+    null;
+
   return {
     id: event.id,
     slug: event.slug,
     title: event.title,
     startsAt: event.startsAt ?? null,
     endsAt: event.endsAt ?? null,
-    locationCity: event.locationCity ?? null,
+    locationFormattedAddress,
     isGratis,
     priceFrom: priceFrom !== null ? priceFrom / 100 : null,
     coverImageUrl: event.coverImageUrl ?? null,

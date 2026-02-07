@@ -187,6 +187,9 @@ export async function POST(req: NextRequest) {
   if (effectiveStatus === "REVOKED") {
     return respondOk(ctx, { code: CheckinResultCode.REVOKED }, { status: 200 });
   }
+  if (effectiveStatus !== "ACTIVE") {
+    return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+  }
 
   const consumed = isConsumed({ status: ent.status, checkins: ent.checkins });
   if (consumed) {

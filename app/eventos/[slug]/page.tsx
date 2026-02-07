@@ -67,7 +67,7 @@ export async function generateMetadata(
     select: {
       title: true,
       description: true,
-      locationName: true,
+      addressRef: { select: { formattedAddress: true } },
       organizationId: true,
       coverImageUrl: true,
     },
@@ -80,7 +80,7 @@ export async function generateMetadata(
         select: {
           title: true,
           description: true,
-          locationName: true,
+          addressRef: { select: { formattedAddress: true } },
           organizationId: true,
           coverImageUrl: true,
         },
@@ -95,7 +95,7 @@ export async function generateMetadata(
     };
   }
 
-  const location = event.locationName || "ORYA";
+  const location = event.addressRef?.formattedAddress || "ORYA";
   const baseTitle = event.title || t("eventMetaBaseTitle", locale);
   const baseUrl = getAppBaseUrl();
   const canonicalUrl = `${baseUrl}/eventos/${slug}`;
@@ -244,15 +244,8 @@ export default async function EventPage({
     description: true,
     startsAt: true,
     endsAt: true,
-    locationName: true,
-    locationCity: true,
-    locationSource: true,
-    locationFormattedAddress: true,
-    locationComponents: true,
-    locationOverrides: true,
-    addressRef: { select: { formattedAddress: true } },
-    latitude: true,
-    longitude: true,
+    addressId: true,
+    addressRef: { select: { formattedAddress: true, canonical: true, latitude: true, longitude: true } },
     pricingMode: true,
     status: true,
     templateType: true,
@@ -483,15 +476,7 @@ export default async function EventPage({
   const liveInlineHref = `/eventos/${slug}?view=live`;
 
   const resolvedLocation = resolveEventLocation({
-    locationName: event.locationName,
-    locationCity: event.locationCity,
-    address: event.addressRef?.formattedAddress ?? event.locationFormattedAddress ?? null,
-    locationSource: event.locationSource,
-    locationFormattedAddress: event.locationFormattedAddress,
-    locationComponents: event.locationComponents as Record<string, unknown> | null,
-    locationOverrides: event.locationOverrides as Record<string, unknown> | null,
-    latitude: event.latitude,
-    longitude: event.longitude,
+    addressRef: event.addressRef ?? null,
   });
   const safeLocationName = resolvedLocation.name || t("locationTbd", locale);
   const safeLocationAddress = resolvedLocation.displayAddress || t("addressTbd", locale);
@@ -876,7 +861,7 @@ export default async function EventPage({
                 <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-white/60">
                   <span>{safeLocationName}</span>
                   <span className="h-1 w-1 rounded-full bg-white/30" />
-                  <span>{event.locationCity || t("cityTbd", locale)}</span>
+                  <span>{resolvedLocation.city || t("cityTbd", locale)}</span>
                 </div>
 
                   <div className="mt-4 flex flex-wrap gap-2 text-white/85">
@@ -1025,7 +1010,7 @@ export default async function EventPage({
                   {safeLocationName}
                 </p>
                 <p className="text-xs text-white/60">
-                  {event.locationCity || t("cityTbd", locale)}
+                  {resolvedLocation.city || t("cityTbd", locale)}
                 </p>
                 {googleMapsUrl && (
                   <a

@@ -68,17 +68,6 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
     entryIdsByUser[entry.userId] = upserted.id;
   }
 
-  // Linkar tickets existentes (se já criados) ao tournament_entry
-  const ticketUpdates = Object.entries(entryIdsByUser).map(([userId, entryId]) =>
-    prisma.ticket.updateMany({
-      where: { pairingId: pairing.id, userId, tournamentEntryId: null },
-      data: { tournamentEntryId: entryId },
-    }),
-  );
-  if (ticketUpdates.length) {
-    await Promise.all(ticketUpdates);
-  }
-
   const organizationId = pairing.event?.organizationId ?? null;
   if (organizationId) {
     const now = new Date();
