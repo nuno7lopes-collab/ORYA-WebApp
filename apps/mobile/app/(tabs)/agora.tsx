@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FlatList, Platform, Pressable, Text, View, InteractionManager } from "react-native";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -14,7 +14,7 @@ import { useFocusEffect } from "@react-navigation/native";
 
 export default function AgoraScreen() {
   const [dataReady, setDataReady] = useState(false);
-  const { isLoading, isError, hasLive, liveItems, soonItems, personalizedItems, refetch } =
+  const { isLoading, isError, hasLive, liveItems, soonItems, personalizedItems, timelineError, personalizedError, refetch } =
     useAgoraFeed(dataReady);
   const { data: ipLocation } = useIpLocation(dataReady);
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
@@ -42,6 +42,18 @@ export default function AgoraScreen() {
       };
     }, []),
   );
+
+  useEffect(() => {
+    if (!isError) return;
+    const formatError = (err: unknown) =>
+      err instanceof Error
+        ? { name: err.name, message: err.message, stack: err.stack }
+        : { message: String(err ?? "") };
+    console.warn("[agora] feed_error", {
+      timeline: timelineError ? formatError(timelineError) : null,
+      personalized: personalizedError ? formatError(personalizedError) : null,
+    });
+  }, [isError, timelineError, personalizedError]);
 
   return (
     <LiquidBackground variant="solid">

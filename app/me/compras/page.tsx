@@ -297,7 +297,7 @@ export default function PurchasesPage() {
                 Quando fizeres uma compra ORYA, o movimento aparece aqui com o respetivo detalhe.
               </p>
               <Link
-                href="/explorar/eventos"
+                href="/descobrir/eventos"
                 className="mt-4 inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black shadow-[0_18px_45px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_55px_rgba(255,255,255,0.25)]"
               >
                 Explorar eventos

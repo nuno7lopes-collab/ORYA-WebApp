@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getNotificationPrefs } from "@/lib/notifications";
@@ -27,6 +26,10 @@ async function _POST(req: Request) {
   const updates: Record<string, boolean> = {};
   const allowed = [
     "allowEmailNotifications",
+    "allowSocialNotifications",
+    "allowEventNotifications",
+    "allowSystemNotifications",
+    "allowMarketingNotifications",
     "allowEventReminders",
     "allowFollowRequests",
     "allowSalesAlerts",

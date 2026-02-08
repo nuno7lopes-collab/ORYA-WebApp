@@ -539,7 +539,6 @@ export default function ChatPreviewPage() {
     deleteMessage,
     toggleReaction,
     togglePin,
-    retryPendingMessage,
     removePendingMessage,
     scheduleReadReceipt,
     typingByConversation,
@@ -2206,15 +2205,6 @@ export default function ChatPreviewPage() {
                                       )}
                                     >
                                       <span className="text-rose-200">Falha ao enviar</span>
-                                      {activeConversationId ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => retryPendingMessage(activeConversationId, message.id)}
-                                          className="rounded-full border border-rose-200/40 px-2 py-0.5 text-[10px] text-rose-100 transition hover:bg-rose-200/10"
-                                        >
-                                          Reenviar
-                                        </button>
-                                      ) : null}
                                     </div>
                                   ) : null}
                                 </div>

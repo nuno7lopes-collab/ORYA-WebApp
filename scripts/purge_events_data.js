@@ -105,6 +105,16 @@ async function main() {
 
   await runDelete("PadelPairing", () => prisma.padelPairing.deleteMany());
   await runDelete("EventInvite", () => prisma.eventInvite.deleteMany());
+  await runDelete("EventLog (EVENT)", () =>
+    prisma.eventLog.deleteMany({
+      where: { sourceType: "EVENT" },
+    })
+  );
+  await runDelete("SearchIndexItem (EVENT)", () =>
+    prisma.searchIndexItem.deleteMany({
+      where: { sourceType: "EVENT" },
+    })
+  );
   await runDelete("Event", () => prisma.event.deleteMany());
 
   console.log("[purge-events] Limpeza concluida.");

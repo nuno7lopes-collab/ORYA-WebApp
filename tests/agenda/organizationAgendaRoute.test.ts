@@ -5,12 +5,17 @@ const getAgendaItemsForOrganization = vi.hoisted(() => vi.fn());
 const getActiveOrganizationForUser = vi.hoisted(() => vi.fn());
 const ensureMemberModuleAccess = vi.hoisted(() => vi.fn());
 const ensureReservasModuleAccess = vi.hoisted(() => vi.fn());
+const prismaMock = vi.hoisted(() => ({
+  padelClub: { findFirst: vi.fn() },
+  padelClubCourt: { findFirst: vi.fn() },
+}));
 
 vi.mock("@/domain/agendaReadModel/query", () => ({ getAgendaItemsForOrganization }));
 vi.mock("@/lib/organizationContext", () => ({ getActiveOrganizationForUser }));
 vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
 vi.mock("@/lib/reservas/access", () => ({ ensureReservasModuleAccess }));
 vi.mock("@/lib/organizationId", () => ({ resolveOrganizationIdFromRequest: () => null }));
+vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/supabaseServer", () => ({
   createSupabaseServer: vi.fn(async () => ({
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
@@ -27,6 +32,8 @@ beforeEach(async () => {
   getActiveOrganizationForUser.mockReset();
   ensureMemberModuleAccess.mockReset();
   ensureReservasModuleAccess.mockReset();
+  prismaMock.padelClub.findFirst.mockReset();
+  prismaMock.padelClubCourt.findFirst.mockReset();
   vi.resetModules();
   GET = (await import("@/app/api/organizacao/agenda/route")).GET;
 });

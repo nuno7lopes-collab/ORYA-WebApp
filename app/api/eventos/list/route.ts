@@ -5,6 +5,8 @@ import { Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { logError } from "@/lib/observability/logger";
 
 const DEFAULT_PAGE_SIZE = 12;
 const CACHE_TTL_MS = 30 * 1000;
@@ -19,6 +21,7 @@ const pickCanonicalField = (canonical: Record<string, unknown> | null, ...keys: 
 };
 
 async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const { searchParams } = new URL(req.url);
   const cursor = searchParams.get("cursor");
   const limitParam = searchParams.get("limit");
@@ -217,7 +220,18 @@ async function _GET(req: NextRequest) {
     items = mapped;
     shouldCache = true;
   } catch (error) {
-    console.error("[api/eventos/list] Erro ao carregar eventos, fallback para lista vazia:", error);
+    logError("api.eventos.list", error, {
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      orgId: ctx.orgId,
+      params: {
+        cursor,
+        limit: take,
+        category: category ?? null,
+        type: typeFilter ?? null,
+        q: search ?? null,
+      },
+    });
     items = [];
     nextCursor = null;
   }

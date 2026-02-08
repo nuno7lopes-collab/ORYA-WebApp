@@ -9,6 +9,14 @@ type CreateCheckoutInput = {
   purchaseId?: string | null;
   idempotencyKey?: string | null;
   paymentScenario?: string;
+  inviteToken?: string | null;
+};
+
+type CreatePairingCheckoutInput = {
+  pairingId: number;
+  ticketTypeId: number;
+  inviteToken?: string | null;
+  idempotencyKey?: string | null;
 };
 
 const toApiPaymentMethod = (method: CheckoutMethod): "card" | "mbway" => {
@@ -25,6 +33,21 @@ export const createCheckoutIntent = async (input: CreateCheckoutInput): Promise<
       paymentMethod: toApiPaymentMethod(input.paymentMethod),
       paymentScenario: input.paymentScenario ?? "SINGLE",
       purchaseId: input.purchaseId ?? undefined,
+      idempotencyKey: input.idempotencyKey ?? undefined,
+      inviteToken: input.inviteToken ?? undefined,
+    }),
+  });
+  return unwrapApiResponse<CheckoutIntentResponse>(response);
+};
+
+export const createPairingCheckoutIntent = async (
+  input: CreatePairingCheckoutInput,
+): Promise<CheckoutIntentResponse> => {
+  const response = await api.request<unknown>(`/api/padel/pairings/${input.pairingId}/checkout`, {
+    method: "POST",
+    body: JSON.stringify({
+      ticketTypeId: input.ticketTypeId,
+      inviteToken: input.inviteToken ?? undefined,
       idempotencyKey: input.idempotencyKey ?? undefined,
     }),
   });

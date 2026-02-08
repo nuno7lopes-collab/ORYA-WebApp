@@ -60,18 +60,25 @@ export const saveBasicProfile = async (payload: {
   });
 };
 
+export type UsernameAvailabilityResult = {
+  available: boolean;
+  reason?: "reserved" | "taken";
+};
+
 export const checkUsernameAvailability = async (
   username: string,
   accessToken?: string | null,
   signal?: AbortSignal,
-): Promise<boolean> => {
+): Promise<UsernameAvailabilityResult> => {
   const response = await api.requestWithAccessToken<unknown>("/api/profiles/check-username", accessToken, {
     method: "POST",
     body: JSON.stringify({ username }),
     signal,
   });
-  const payload = unwrapApiResponse<{ available?: boolean }>(response);
-  return Boolean(payload?.available);
+  const payload = unwrapApiResponse<{ available?: boolean; reason?: string }>(response);
+  const available = Boolean(payload?.available);
+  const reason = !available && payload?.reason === "reserved" ? "reserved" : undefined;
+  return { available, reason };
 };
 
 export const savePadelOnboarding = async (payload: {

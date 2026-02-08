@@ -28,20 +28,25 @@ const formatDate = (value: string | null | undefined) => {
   }
 };
 
-const statusLabel = (value: string) => {
+const statusLabel = (value: string, consumedAt?: string | null) => {
+  if (consumedAt) return "Usado";
   const normalized = value.toUpperCase();
   if (normalized === "ACTIVE") return "Ativo";
+  if (normalized === "PENDING") return "Pendente";
+  if (normalized === "REVOKED") return "Revogado";
+  if (normalized === "SUSPENDED") return "Suspenso";
+  if (normalized === "EXPIRED") return "Expirado";
+  if (normalized === "CHECKED_IN") return "Usado";
   if (normalized === "USED") return "Usado";
   if (normalized === "CANCELLED") return "Cancelado";
-  if (normalized === "EXPIRED") return "Expirado";
   return value;
 };
 
 const typeLabel = (value: string) => {
   const normalized = value.toUpperCase();
-  if (normalized === "TICKET") return "Bilhete";
-  if (normalized === "REGISTRATION") return "Inscrição";
-  if (normalized === "BOOKING") return "Reserva";
+  if (normalized === "EVENT_TICKET" || normalized === "TICKET") return "Bilhete";
+  if (normalized === "PADEL_ENTRY" || normalized === "REGISTRATION") return "Inscrição";
+  if (normalized === "SERVICE_BOOKING" || normalized === "BOOKING") return "Reserva";
   return value;
 };
 
@@ -50,7 +55,7 @@ export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item 
   const title = item.snapshot.title ?? "Entitlement";
   const venue = item.snapshot.venueName ?? "Local a anunciar";
   const dateLabel = formatDate(item.snapshot.startAt);
-  const canShowQr = Boolean(item.actions?.canShowQr && item.qrToken);
+  const canShowQr = Boolean(item.actions?.canShowQr && item.qrToken && !item.consumedAt);
   const passAvailable = Platform.OS === "ios" && Boolean(item.passAvailable);
 
   return (
@@ -69,7 +74,7 @@ export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item 
                   />
                   <View className="px-3 pt-3 flex-row items-center justify-between">
                     <GlassPill label={typeLabel(item.type)} />
-                    <GlassPill label={statusLabel(item.status)} variant="muted" />
+                    <GlassPill label={statusLabel(item.status, item.consumedAt)} variant="muted" />
                   </View>
                   <View className="px-3 pb-3">
                     <Text className="text-white text-base font-semibold" numberOfLines={2}>
@@ -89,7 +94,7 @@ export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item 
                 >
                   <View className="flex-row items-center justify-between">
                     <GlassPill label={typeLabel(item.type)} />
-                    <GlassPill label={statusLabel(item.status)} variant="muted" />
+                    <GlassPill label={statusLabel(item.status, item.consumedAt)} variant="muted" />
                   </View>
                   <Text className="text-white text-base font-semibold" numberOfLines={2}>
                     {title}

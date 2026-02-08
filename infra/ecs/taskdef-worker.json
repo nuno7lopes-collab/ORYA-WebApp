@@ -21,6 +21,7 @@
       "secrets": [
         {"name": "DATABASE_URL", "valueFrom": "{{orya/prod/app:DATABASE_URL}}"},
         {"name": "DIRECT_URL", "valueFrom": "{{orya/prod/app:DIRECT_URL}}"},
+        {"name": "APP_ENV", "valueFrom": "{{orya/prod/app:APP_ENV}}"},
         {"name": "QR_SECRET_KEY", "valueFrom": "{{orya/prod/app:QR_SECRET_KEY}}"},
         {"name": "ORYA_CRON_SECRET", "valueFrom": "{{orya/prod/app:ORYA_CRON_SECRET}}"},
         {"name": "SUPABASE_URL", "valueFrom": "{{orya/prod/supabase:SUPABASE_URL}}"},
@@ -28,8 +29,10 @@
         {"name": "SUPABASE_SERVICE_ROLE", "valueFrom": "{{orya/prod/supabase:SUPABASE_SERVICE_ROLE}}"},
         {"name": "STRIPE_SECRET_KEY", "valueFrom": "{{orya/prod/payments:STRIPE_SECRET_KEY}}"},
         {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "{{orya/prod/payments:STRIPE_WEBHOOK_SECRET}}"},
+        {"name": "STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE", "valueFrom": "{{orya/prod/payments:STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE}}"},
         {"name": "SES_REGION", "valueFrom": "{{orya/prod/email:SES_REGION}}"},
         {"name": "SES_IDENTITY_DOMAIN", "valueFrom": "{{orya/prod/email:SES_IDENTITY_DOMAIN}}"},
+        {"name": "EMAIL_FROM", "valueFrom": "{{orya/prod/email:EMAIL_FROM}}"},
         {"name": "SES_SMTP_USERNAME", "valueFrom": "{{orya/prod/email:SES_SMTP_USERNAME}}"},
         {"name": "SES_SMTP_PASSWORD", "valueFrom": "{{orya/prod/email:SES_SMTP_PASSWORD}}"}
       ],

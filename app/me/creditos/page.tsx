@@ -25,7 +25,7 @@ export default function MeCreditosPage() {
                 As reservas continuam com pagamento direto do horário. Aqui vamos mostrar pontos e benefícios.
               </p>
             </div>
-            <Link href="/explorar/reservas" className="text-[12px] text-[#6BFFFF]">
+            <Link href="/descobrir/reservas" className="text-[12px] text-[#6BFFFF]">
               Explorar serviços
             </Link>
           </div>

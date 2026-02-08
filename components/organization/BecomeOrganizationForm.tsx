@@ -18,10 +18,10 @@ import {
 } from "@/lib/validation/organization";
 import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
-type UsernameStatus = "idle" | "checking" | "available" | "taken" | "error";
+type UsernameStatus = "idle" | "checking" | "available" | "taken" | "reserved" | "error";
 
 const USERNAME_HELPER =
-  "O teu @ é único na ORYA e vai aparecer no teu perfil, eventos e links. 3-15 caracteres.";
+  "O teu @ é único na ORYA e vai aparecer no teu perfil, eventos e links. 3-15 caracteres e algumas palavras estão reservadas.";
 
 const suggestionSuffixes = ["events", "official", "pt", "live", "club", "hq"];
 
@@ -358,15 +358,22 @@ export default function BecomeOrganizationForm() {
     setUsernameHelper("A verificar disponibilidade…");
     setUsernameStatus("checking");
     try {
-      const res = await fetch(`/api/username/check?username=${encodeURIComponent(cleaned)}`);
+      const res = await fetch(
+        `/api/username/check?username=${encodeURIComponent(cleaned)}&ownerType=organization`,
+      );
       if (!res.ok) {
         setUsernameStatus("error");
         setUsernameHelper("Não foi possível verificar o @ agora.");
         return false;
       }
-      const data = (await res.json().catch(() => null)) as { available?: boolean } | null;
+      const data = (await res.json().catch(() => null)) as { available?: boolean; reason?: string } | null;
       const available = Boolean(data?.available);
       lastChecked.current = cleaned;
+      if (!available && data?.reason === "reserved") {
+        setUsernameStatus("reserved");
+        setUsernameHelper("Este username está reservado.");
+        return false;
+      }
       if (available) {
         setUsernameStatus("available");
         setUsernameHelper("Este @ está disponível.");
@@ -473,7 +480,7 @@ export default function BecomeOrganizationForm() {
 
   const usernameMessageClass = (() => {
     if (usernameStatus === "available") return "text-emerald-300";
-    if (usernameStatus === "taken" || usernameStatus === "error") return "text-red-300";
+    if (usernameStatus === "taken" || usernameStatus === "reserved" || usernameStatus === "error") return "text-red-300";
     if (usernameStatus === "checking") return "text-white/65";
     return "text-white/55";
   })();
@@ -481,12 +488,14 @@ export default function BecomeOrganizationForm() {
   const usernameBorderClass =
     usernameStatus === "available"
       ? "border-emerald-300/60 focus:border-emerald-300/80 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
-      : usernameStatus === "taken" || showUsernameError
+      : usernameStatus === "taken" || usernameStatus === "reserved" || showUsernameError
       ? "border-red-400/70 focus:border-red-300 shadow-[0_0_0_1px_rgba(248,113,113,0.4)]"
       : "border-white/15 focus:border-[#6BFFFF]";
 
   const usernameSuggestions =
-    usernameStatus === "taken" ? buildUsernameSuggestions(usernameClean || watchBusinessName) : [];
+    usernameStatus === "taken" || usernameStatus === "reserved"
+      ? buildUsernameSuggestions(usernameClean || watchBusinessName)
+      : [];
 
   const handleNextStep = async () => {
     setNavDirection("forward");

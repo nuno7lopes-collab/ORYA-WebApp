@@ -86,6 +86,10 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 **Contrato SSOT**
 - `EventAccessPolicy` é a única fonte de verdade para regras de acesso/check‑in.
 - Check‑in sempre valida policy version aplicada.
+- **Plataforma:** guest checkout é permitido apenas na WebApp e no site quando `guestCheckoutAllowed=true`.  
+  Na app mobile, guest checkout é sempre bloqueado (login obrigatório).
+- **Restrição:** `inviteTokenAllowed=true` exige `inviteIdentityMatch=EMAIL|BOTH` (USERNAME não suporta tokens).
+- **Integridade:** convites por username só para utilizadores existentes; sem conta → convite por email.
 
 **Estado:** VERIFIED (static)
 **Evidência:** `lib/checkin/accessPolicy.ts`, `app/api/organizacao/checkin/route.ts`,

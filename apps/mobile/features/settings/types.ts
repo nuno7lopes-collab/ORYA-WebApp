@@ -2,6 +2,11 @@ export type Visibility = "PUBLIC" | "PRIVATE" | "FOLLOWERS";
 
 export type NotificationPrefs = {
   allowEmailNotifications: boolean;
+  allowSocialNotifications: boolean;
+  allowEventNotifications: boolean;
+  allowSystemNotifications: boolean;
+  allowMarketingNotifications: boolean;
+  allowSalesAlerts: boolean;
   allowEventReminders: boolean;
   allowFollowRequests: boolean;
   allowMarketingCampaigns: boolean;

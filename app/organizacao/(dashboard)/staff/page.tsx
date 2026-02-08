@@ -674,7 +674,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
   };
 
-  const handleInviteAction = async (inviteId: string, action: "RESEND" | "CANCEL" | "ACCEPT" | "DECLINE") => {
+  const handleInviteAction = async (inviteId: string, action: "CANCEL" | "ACCEPT" | "DECLINE") => {
     if (!resolvedOrganizationId) return;
     setInviteActionLoading(inviteId);
     try {
@@ -688,13 +688,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         pushToast(json?.error || "Não foi possível atualizar o convite.");
       } else {
         pushToast(
-          action === "RESEND"
-            ? "Convite reenviado."
-            : action === "CANCEL"
-              ? "Convite cancelado."
-              : action === "ACCEPT"
-                ? "Convite aceite."
-                : "Convite recusado.",
+          action === "CANCEL"
+            ? "Convite cancelado."
+            : action === "ACCEPT"
+              ? "Convite aceite."
+              : "Convite recusado.",
           "success",
         );
         mutateInvites();
@@ -1503,24 +1501,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           </>
                         )}
                         {canInvite && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={inviteActionLoading === inv.id}
-                              onClick={() => handleInviteAction(inv.id, "RESEND")}
-                              className={`${neutralPill} ${inviteActionLoading === inv.id ? "opacity-60" : ""}`}
-                            >
-                              Re-enviar
-                            </button>
-                            <button
-                              type="button"
-                              disabled={inviteActionLoading === inv.id}
-                              onClick={() => handleInviteAction(inv.id, "CANCEL")}
-                              className={`${dangerPill} ${inviteActionLoading === inv.id ? "opacity-60" : ""}`}
-                            >
-                              Cancelar
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            disabled={inviteActionLoading === inv.id}
+                            onClick={() => handleInviteAction(inv.id, "CANCEL")}
+                            className={`${dangerPill} ${inviteActionLoading === inv.id ? "opacity-60" : ""}`}
+                          >
+                            Cancelar
+                          </button>
                         )}
                         {!canRespond && !canInvite && (
                           <span className="text-[11px] text-white/50">A aguardar resposta.</span>

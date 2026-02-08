@@ -71,6 +71,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const categoryLinkId = body && typeof body.ticketTypeId === "number" ? body.ticketTypeId : null;
   const inviteToken = typeof body?.inviteToken === "string" ? body.inviteToken : null;
+  const idempotencyKey = typeof body?.idempotencyKey === "string" ? body.idempotencyKey : null;
   if (!categoryLinkId) return fail("MISSING_CATEGORY_LINK", "Categoria inválida.", 400);
 
   const pairing = await prisma.padelPairing.findUnique({
@@ -322,6 +323,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         pairingId: pairing.id,
         slotId: payerSlot.id,
         inviteToken: inviteToken ?? undefined,
+        idempotencyKey: idempotencyKey ?? undefined,
         ticketTypeId: categoryLinkId,
         padelCategoryLinkId: categoryLinkId,
       }),

@@ -12,6 +12,7 @@
  *   SEED_CLEAR=true (remove previous data for prefix before seeding)
  *   SEED_PASSWORD=TestOrya123!
  *   SEED_ADDRESS_ID=<uuid> (Apple Maps addressId para orgs/eventos)
+ *   SEED_ADDRESS_IDS=<uuid,uuid,...> (lista para espalhar orgs/eventos no mapa)
  */
 
 import fs from "fs";
@@ -79,6 +80,12 @@ const shouldClear = ["1", "true", "yes"].includes(String(process.env.SEED_CLEAR 
 const seedPassword = process.env.SEED_PASSWORD || "TestOrya123!";
 const seedPadel = !["0", "false", "no"].includes(String(process.env.SEED_PADEL || "").toLowerCase());
 const seedAddressId = typeof process.env.SEED_ADDRESS_ID === "string" ? process.env.SEED_ADDRESS_ID.trim() : "";
+const seedAddressIds = (process.env.SEED_ADDRESS_IDS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const addressIds = seedAddressIds.length > 0 ? seedAddressIds : seedAddressId ? [seedAddressId] : [];
+const pickAddressId = (index: number) => (addressIds.length ? addressIds[index % addressIds.length] : null);
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
@@ -381,7 +388,7 @@ async function main() {
           publicName: name,
           businessName: name,
           publicDescription: description,
-          addressId: seedAddressId || null,
+          addressId: pickAddressId(i),
           status: OrganizationStatus.ACTIVE,
           primaryModule: OrganizationModule.EVENTOS,
           brandingAvatarUrl: avatar,
@@ -396,7 +403,7 @@ async function main() {
           publicName: name,
           businessName: name,
           publicDescription: description,
-          addressId: seedAddressId || null,
+          addressId: pickAddressId(i),
           status: OrganizationStatus.ACTIVE,
           primaryModule: OrganizationModule.EVENTOS,
           brandingAvatarUrl: avatar,
@@ -467,7 +474,7 @@ async function main() {
           ownerUserId: owner?.id ?? users[0].id,
           startsAt,
           endsAt,
-          addressId: seedAddressId || null,
+          addressId: pickAddressId(i + j),
           coverImageUrl: template.cover,
           pricingMode,
           ticketTypes: ticketTypes.length ? { create: ticketTypes } : undefined,
@@ -497,7 +504,7 @@ async function main() {
           ownerUserId: owner?.id ?? users[0].id,
           startsAt,
           endsAt,
-          addressId: seedAddressId || null,
+          addressId: pickAddressId(i + 3),
           coverImageUrl: pick(COVERS, i),
           pricingMode: EventPricingMode.STANDARD,
           ticketTypes: {

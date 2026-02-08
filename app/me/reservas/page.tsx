@@ -209,7 +209,6 @@ export default function MinhasReservasPage() {
     name: string;
     message: string;
     copiedToken: string | null;
-    resendingId: number | null;
   } | null>(null);
   const [splitState, setSplitState] = useState<SplitState | null>(null);
   const [splitEditorOpen, setSplitEditorOpen] = useState(false);
@@ -520,7 +519,6 @@ export default function MinhasReservasPage() {
       name: "",
       message: "",
       copiedToken: null,
-      resendingId: null,
     });
     try {
       const res = await fetch(`/api/me/reservas/${bookingId}/invites`);
@@ -745,32 +743,6 @@ export default function MinhasReservasPage() {
     }
   };
 
-  const resendInvite = async (inviteId: number) => {
-    if (!inviteState || inviteState.resendingId) return;
-    setInviteState((prev) =>
-      prev ? { ...prev, resendingId: inviteId, error: null, notice: null } : prev,
-    );
-    try {
-      const res = await fetch(`/api/me/reservas/${inviteState.bookingId}/invites/resend`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inviteId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Erro ao reenviar convite.");
-      }
-      setInviteState((prev) =>
-        prev ? { ...prev, resendingId: null, notice: "Convite reenviado." } : prev,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao reenviar convite.";
-      setInviteState((prev) =>
-        prev ? { ...prev, resendingId: null, error: message, notice: null } : prev,
-      );
-    }
-  };
-
   const copyInviteLink = async (token: string) => {
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
     const link = `${baseUrl}/convites/${token}`;
@@ -913,7 +885,7 @@ export default function MinhasReservasPage() {
               <h2 className="text-base font-semibold text-white">Próximas</h2>
               <p className="text-sm text-white/65">Reservas futuras e pendentes.</p>
             </div>
-            <Link href="/explorar/reservas" className="text-[12px] text-[#6BFFFF]">
+            <Link href="/descobrir/reservas" className="text-[12px] text-[#6BFFFF]">
               Explorar serviços
             </Link>
           </div>
@@ -1721,8 +1693,6 @@ export default function MinhasReservasPage() {
                                     ? "border-red-400/40 bg-red-500/10 text-red-100"
                                     : "border-white/15 bg-white/10 text-white/70";
                               const inviteHref = `/convites/${invite.token}`;
-                              const canResend =
-                                invite.status === "PENDING" && Boolean(invite.targetContact?.includes("@"));
                               return (
                                 <div key={invite.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1754,16 +1724,6 @@ export default function MinhasReservasPage() {
                                     >
                                       {inviteState.copiedToken === invite.token ? "Copiado" : "Copiar link"}
                                     </button>
-                                    {canResend && (
-                                      <button
-                                        type="button"
-                                        className="rounded-full border border-sky-300/40 bg-sky-400/10 px-3 py-1 text-[11px] text-sky-100 hover:bg-sky-400/15 disabled:opacity-60"
-                                        onClick={() => resendInvite(invite.id)}
-                                        disabled={inviteState.resendingId === invite.id}
-                                      >
-                                        {inviteState.resendingId === invite.id ? "A reenviar..." : "Reenviar email"}
-                                      </button>
-                                    )}
                                   </div>
                                 </div>
                               );

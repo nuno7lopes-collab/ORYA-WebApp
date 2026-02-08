@@ -49,6 +49,7 @@ import {
 } from "../../features/onboarding/types";
 import {
   checkUsernameAvailability,
+  type UsernameAvailabilityResult,
   saveBasicProfile,
   saveLocationConsent,
   savePadelOnboarding,
@@ -111,7 +112,7 @@ export default function OnboardingScreen() {
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<
-    "idle" | "invalid" | "checking" | "available" | "taken" | "error"
+    "idle" | "invalid" | "checking" | "available" | "taken" | "reserved" | "error"
   >("idle");
   const [interests, setInterests] = useState<InterestId[]>([]);
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
@@ -125,13 +126,13 @@ export default function OnboardingScreen() {
 
   const draftRef = useRef<OnboardingDraft | null>(null);
   const didInitDraftRef = useRef(false);
-  const usernameCacheRef = useRef<Map<string, boolean>>(new Map());
+  const usernameCacheRef = useRef<Map<string, UsernameAvailabilityResult>>(new Map());
   const usernameAbortRef = useRef<AbortController | null>(null);
   const usernameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usernameRequestIdRef = useRef(0);
   const usernameInflightRef = useRef<{
     normalized: string;
-    promise: Promise<boolean>;
+    promise: Promise<UsernameAvailabilityResult>;
     requestId: number;
   } | null>(null);
   const locationRequestIdRef = useRef(0);
@@ -157,10 +158,10 @@ export default function OnboardingScreen() {
     normalized: string,
     accessToken: string | null,
     controller: AbortController,
-  ) => {
+  ): Promise<UsernameAvailabilityResult> => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
-      return await new Promise<boolean>((resolve, reject) => {
+      return await new Promise<UsernameAvailabilityResult>((resolve, reject) => {
         timeoutId = setTimeout(() => {
           controller.abort();
           reject(new Error("username_timeout"));
@@ -181,7 +182,11 @@ export default function OnboardingScreen() {
   );
   const stepIndex = Math.max(0, steps.indexOf(step));
 
-  const usernameValidation = useMemo(() => validateUsername(username), [username]);
+  const allowReservedForEmail = session?.user?.email ?? null;
+  const usernameValidation = useMemo(
+    () => validateUsername(username, { allowReservedForEmail }),
+    [username, allowReservedForEmail],
+  );
   const normalizedUsername = usernameValidation.valid
     ? usernameValidation.normalized
     : sanitizeUsername(username);
@@ -260,7 +265,13 @@ export default function OnboardingScreen() {
 
     const normalized = usernameValidation.normalized;
     if (usernameCacheRef.current.has(normalized)) {
-      setUsernameStatus(usernameCacheRef.current.get(normalized) ? "available" : "taken");
+      const cached = usernameCacheRef.current.get(normalized);
+      const nextStatus = cached?.available
+        ? "available"
+        : cached?.reason === "reserved"
+          ? "reserved"
+          : "taken";
+      setUsernameStatus(nextStatus);
       return;
     }
 
@@ -275,10 +286,15 @@ export default function OnboardingScreen() {
       const promise = runUsernameCheck(normalized, accessToken, controller);
       usernameInflightRef.current = { normalized, promise, requestId };
       try {
-        const available = await promise;
+        const result = await promise;
         if (requestId !== usernameRequestIdRef.current || controller.signal.aborted) return;
-        usernameCacheRef.current.set(normalized, available);
-        setUsernameStatus(available ? "available" : "taken");
+        usernameCacheRef.current.set(normalized, result);
+        const nextStatus = result.available
+          ? "available"
+          : result.reason === "reserved"
+            ? "reserved"
+            : "taken";
+        setUsernameStatus(nextStatus);
       } catch {
         if (requestId !== usernameRequestIdRef.current) return;
         setUsernameStatus("error");
@@ -347,16 +363,25 @@ export default function OnboardingScreen() {
       usernameAbortRef.current = controller;
       const promise = runUsernameCheck(usernameValidation.normalized, accessToken, controller);
       usernameInflightRef.current = { normalized: usernameValidation.normalized, promise, requestId };
-      const available = await promise;
+      const result = await promise;
       if (requestId !== usernameRequestIdRef.current || controller.signal.aborted) {
         return false;
       }
-      usernameCacheRef.current.set(usernameValidation.normalized, available);
-      setUsernameStatus(available ? "available" : "taken");
-      if (!available) {
-        Alert.alert("Username indisponível", "Este username já está a ser utilizado.");
+      usernameCacheRef.current.set(usernameValidation.normalized, result);
+      const nextStatus = result.available
+        ? "available"
+        : result.reason === "reserved"
+          ? "reserved"
+          : "taken";
+      setUsernameStatus(nextStatus);
+      if (!result.available) {
+        const message =
+          result.reason === "reserved"
+            ? "Este username está reservado."
+            : "Este username já está a ser utilizado.";
+        Alert.alert("Username indisponível", message);
       }
-      return available;
+      return result.available;
     } catch (err: any) {
       if (requestId !== usernameRequestIdRef.current) return false;
       setUsernameStatus("error");
@@ -642,19 +667,21 @@ export default function OnboardingScreen() {
         ? "A verificar…"
         : usernameStatus === "available"
           ? "Disponível"
-        : usernameStatus === "taken"
-            ? "Indisponível"
-            : usernameStatus === "invalid"
-              ? usernameValidation.error || "Username inválido."
-              : usernameStatus === "error"
-                ? "Não foi possível verificar agora."
-                : "";
+        : usernameStatus === "reserved"
+            ? "Reservado"
+            : usernameStatus === "taken"
+              ? "Indisponível"
+              : usernameStatus === "invalid"
+                ? usernameValidation.error || "Username inválido."
+                : usernameStatus === "error"
+                  ? "Não foi possível verificar agora."
+                  : "";
     const tone =
       usernameStatus === "available"
         ? styles.helperSuccess
         : usernameStatus === "checking"
           ? styles.helperNeutral
-          : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error"
+          : usernameStatus === "taken" || usernameStatus === "reserved" || usernameStatus === "invalid" || usernameStatus === "error"
             ? styles.helperError
             : styles.helperText;
 
@@ -672,7 +699,7 @@ export default function OnboardingScreen() {
               <ActivityIndicator size="small" color="rgba(200,210,230,0.9)" />
             ) : usernameStatus === "available" ? (
               <Ionicons name="checkmark-circle" size={14} color="rgba(110, 231, 183, 0.9)" />
-            ) : usernameStatus === "taken" || usernameStatus === "invalid" || usernameStatus === "error" ? (
+            ) : usernameStatus === "taken" || usernameStatus === "reserved" || usernameStatus === "invalid" || usernameStatus === "error" ? (
               <Ionicons name="alert-circle" size={14} color="rgba(252, 165, 165, 0.9)" />
             ) : null}
             <Text style={[styles.helperText, tone]}>{statusMessage}</Text>

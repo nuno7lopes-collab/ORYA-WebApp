@@ -31,6 +31,7 @@ import { formatEventLocationLabel, pickCanonicalField } from "@/lib/location/eve
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import type { Metadata } from "next";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { isReservedUsername } from "@/lib/reservedUsernames";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -311,6 +312,9 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
   if (!usernameParam || usernameParam.toLowerCase() === "me") {
     redirect("/me");
+  }
+  if (isReservedUsername(usernameParam)) {
+    notFound();
   }
 
   const [viewerId, profile, organizationProfileRaw] = await Promise.all([

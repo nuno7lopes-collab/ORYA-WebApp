@@ -1,24 +1,22 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { fetchNotificationsPage, fetchNotificationsUnread } from "./api";
-import type { NotificationsStatus } from "./types";
 
 const PAGE_SIZE = 30;
 
 export const notificationsKeys = {
   all: ["notifications"] as const,
-  feed: (status: NotificationsStatus) => [...notificationsKeys.all, "feed", status] as const,
+  feed: () => [...notificationsKeys.all, "feed"] as const,
   unread: () => [...notificationsKeys.all, "unread"] as const,
 };
 
-export const useNotificationsFeed = (status: NotificationsStatus, enabled = true) =>
+export const useNotificationsFeed = (enabled = true) =>
   useInfiniteQuery({
-    queryKey: notificationsKeys.feed(status),
+    queryKey: notificationsKeys.feed(),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       fetchNotificationsPage({
         cursor: pageParam,
         limit: PAGE_SIZE,
-        status,
       }),
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled,

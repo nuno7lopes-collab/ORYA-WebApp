@@ -26,6 +26,7 @@ import { getMobileEnv } from "../../lib/env";
 import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { getUserFacingError } from "../../lib/errors";
+import { acceptInvite, declineInvite } from "../../features/tournaments/api";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
@@ -89,20 +90,25 @@ const formatMoney = (cents: number | null | undefined, currency?: string | null)
   return `${amount.toFixed(0)} ${currency?.toUpperCase() || "EUR"}`;
 };
 
-const statusLabel = (value: string) => {
+const statusLabel = (value: string, consumedAt?: string | null) => {
+  if (consumedAt) return "Usado";
   const normalized = value.toUpperCase();
   if (normalized === "ACTIVE") return "Ativo";
+  if (normalized === "PENDING") return "Pendente";
+  if (normalized === "REVOKED") return "Revogado";
+  if (normalized === "SUSPENDED") return "Suspenso";
+  if (normalized === "EXPIRED") return "Expirado";
+  if (normalized === "CHECKED_IN") return "Usado";
   if (normalized === "USED") return "Usado";
   if (normalized === "CANCELLED") return "Cancelado";
-  if (normalized === "EXPIRED") return "Expirado";
   return value;
 };
 
 const typeLabel = (value: string) => {
   const normalized = value.toUpperCase();
-  if (normalized === "TICKET") return "Bilhete";
-  if (normalized === "REGISTRATION") return "Inscrição";
-  if (normalized === "BOOKING") return "Reserva";
+  if (normalized === "EVENT_TICKET" || normalized === "TICKET") return "Bilhete";
+  if (normalized === "PADEL_ENTRY" || normalized === "REGISTRATION") return "Inscrição";
+  if (normalized === "SERVICE_BOOKING" || normalized === "BOOKING") return "Reserva";
   return value;
 };
 
@@ -124,6 +130,24 @@ const paymentMethodLabel = (value?: string | null) => {
   if (normalized === "card") return "Cartão";
   if (normalized === "apple_pay") return "Apple Pay";
   return value;
+};
+
+const pairingPaymentLabel = (value?: string | null) => {
+  const normalized = value?.toUpperCase();
+  if (normalized === "FULL") return "Pago completo";
+  if (normalized === "SPLIT") return "Split";
+  return value ?? "—";
+};
+
+const pairingLifecycleLabel = (value?: string | null) => {
+  const normalized = value?.toUpperCase();
+  if (normalized === "CONFIRMED_BOTH_PAID" || normalized === "CONFIRMED_CAPTAIN_FULL") {
+    return "Confirmado";
+  }
+  if (normalized === "PENDING_PARTNER_PAYMENT") return "Pagamento pendente";
+  if (normalized === "PENDING_ONE_PAID") return "Aguardando parceiro";
+  if (normalized === "CANCELLED_INCOMPLETE") return "Cancelado";
+  return value ?? "—";
 };
 
 export default function WalletDetailScreen() {
@@ -157,10 +181,14 @@ export default function WalletDetailScreen() {
   }, [data, fade, translate]);
 
   const baseUrl = getMobileEnv().apiBaseUrl.replace(/\/$/, "");
-  const qrUrl = data?.qrToken ? `${baseUrl}/api/qr/${encodeURIComponent(data.qrToken)}?theme=dark` : null;
+  const qrUrl =
+    data?.qrToken && !data?.consumedAt
+      ? `${baseUrl}/api/qr/${encodeURIComponent(data.qrToken)}?theme=dark`
+      : null;
   const passUrl = data?.passUrl ?? null;
   const shareUrl = data?.event?.slug ? `${baseUrl}/eventos/${data.event.slug}` : null;
   const updatedLabel = formatRelativeTime(data?.audit?.updatedAt);
+  const consumedAtLabel = formatShortDate(data?.consumedAt);
   const handleBack = () => {
     safeBack(router, navigation, "/(tabs)/tickets");
   };
@@ -216,6 +244,42 @@ export default function WalletDetailScreen() {
     }
   };
 
+  const [pairingAction, setPairingAction] = useState<"accept" | "decline" | null>(null);
+
+  const handleAcceptInvite = async () => {
+    if (!data?.pairing?.id) return;
+    setPairingAction("accept");
+    try {
+      await acceptInvite(data.pairing.id);
+      await refetch();
+    } catch (err: any) {
+      Alert.alert("Convite", getUserFacingError(err, "Não foi possível aceitar o convite."));
+    } finally {
+      setPairingAction(null);
+    }
+  };
+
+  const handleDeclineInvite = async () => {
+    if (!data?.pairing?.id) return;
+    setPairingAction("decline");
+    try {
+      await declineInvite(data.pairing.id);
+      await refetch();
+    } catch (err: any) {
+      Alert.alert("Convite", getUserFacingError(err, "Não foi possível recusar o convite."));
+    } finally {
+      setPairingAction(null);
+    }
+  };
+
+  const handlePayPairing = () => {
+    if (!data?.event?.slug || !data?.pairing?.id) return;
+    router.push({
+      pathname: "/event/[slug]",
+      params: { slug: data.event.slug, pairingId: String(data.pairing.id) },
+    });
+  };
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
@@ -263,12 +327,17 @@ export default function WalletDetailScreen() {
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <GlassPill label={typeLabel(data.type)} />
-                      <GlassPill label={statusLabel(data.status)} variant="muted" />
+                      <GlassPill label={statusLabel(data.status, data.consumedAt)} variant="muted" />
                     </View>
                     <Text className="text-[11px] text-white/45 uppercase tracking-[0.16em]">
                       {data.entitlementId.slice(0, 8)}
                     </Text>
                   </View>
+                  {consumedAtLabel && data.consumedAt ? (
+                    <Text className="text-[11px] text-white/50 uppercase tracking-[0.16em]">
+                      Usado em {consumedAtLabel}
+                    </Text>
+                  ) : null}
                   {updatedLabel ? (
                     <Text className="text-[11px] text-white/45 uppercase tracking-[0.16em]">
                       Atualizado {updatedLabel}
@@ -319,7 +388,9 @@ export default function WalletDetailScreen() {
               ) : (
                 <GlassCard intensity={50} className="mb-4">
                   <Text className="text-white/70 text-sm">
-                    Este entitlement não tem QR disponível neste momento.
+                    {data?.consumedAt
+                      ? "Este bilhete já foi usado."
+                      : "Este entitlement não tem QR disponível neste momento."}
                   </Text>
                 </GlassCard>
               )}
@@ -332,6 +403,58 @@ export default function WalletDetailScreen() {
                 >
                   <Text className="text-white text-sm font-semibold text-center">Abrir evento</Text>
                 </Pressable>
+              ) : null}
+
+              {data.pairing ? (
+                <GlassCard intensity={48} className="mb-4">
+                  <View className="gap-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-white text-sm font-semibold">Dupla</Text>
+                      <GlassPill label={pairingPaymentLabel(data.pairing.paymentMode)} variant="muted" />
+                    </View>
+                    <Text className="text-white/70 text-sm">
+                      {pairingLifecycleLabel(data.pairing.lifecycleStatus)}
+                    </Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {data.pairingActions?.canAccept ? (
+                        <Pressable
+                          onPress={handleAcceptInvite}
+                          disabled={pairingAction !== null}
+                          className="rounded-full bg-white/15 px-4 py-2"
+                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                        >
+                          <Text className="text-white text-xs font-semibold">
+                            {pairingAction === "accept" ? "A aceitar..." : "Aceitar convite"}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      {data.pairingActions?.canDecline ? (
+                        <Pressable
+                          onPress={handleDeclineInvite}
+                          disabled={pairingAction !== null}
+                          className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                        >
+                          <Text className="text-white/80 text-xs font-semibold">
+                            {pairingAction === "decline" ? "A recusar..." : "Recusar"}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      {data.pairingActions?.canPay ? (
+                        <Pressable
+                          onPress={handlePayPairing}
+                          disabled={pairingAction !== null}
+                          className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
+                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                        >
+                          <Text className="text-white text-xs font-semibold">
+                            Pagar inscrição
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                </GlassCard>
               ) : null}
 
               <Pressable

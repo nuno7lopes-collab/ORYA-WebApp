@@ -16,14 +16,14 @@ type MobileTopBarProps = {
 };
 
 export default function MobileTopBar({
-  logoHref = "/descobrir",
+  logoHref = "/",
   notificationsHref = "/social?tab=notifications",
   showSearch = true,
   showNotifications = true,
 }: MobileTopBarProps) {
   const { isLoggedIn } = useUser();
   const { data } = useSWR(
-    isLoggedIn ? "/api/notifications?status=unread&limit=1" : null,
+    isLoggedIn ? "/api/me/notifications/feed?limit=1" : null,
     fetcher,
   );
   const unreadCount = data?.unreadCount ?? 0;

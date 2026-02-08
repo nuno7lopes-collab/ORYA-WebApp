@@ -4846,7 +4846,7 @@ function OrganizacaoPageInner({
               ? [`Podes criar outro ${eventDialogLabel} quando quiseres.`]
               : eventDialog.mode === "unarchive"
                 ? ["Podes sempre voltar a arquivar mais tarde."]
-                : ["Sai de /explorar e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
+                : ["Sai de /descobrir e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
           }
           confirmLabel={
             eventDialog.mode === "delete"

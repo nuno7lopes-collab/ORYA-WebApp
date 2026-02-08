@@ -439,7 +439,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               />
               {!isOfficialEmailVerified && officialEmailNormalized && (
                 <p className="text-[11px] text-amber-200">
-                  Aguardamos confirmação. Reenvia se precisares de novo token.
+                  Aguardamos confirmação. Confirma a caixa de entrada.
                 </p>
               )}
             </div>
@@ -453,7 +453,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               <p>Email oficial para faturação, payouts e alertas operacionais.</p>
               {!isOfficialEmailVerified && officialEmailNormalized && (
                 <p className="text-[11px] text-amber-200">
-                  Se não receberes o email em 2–3 minutos, verifica o spam e reenviar.
+                  Se não receberes o email em 2–3 minutos, verifica o spam.
                 </p>
               )}
               <div className="flex flex-wrap gap-2">

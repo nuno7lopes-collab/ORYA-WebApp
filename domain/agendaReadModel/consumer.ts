@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { SourceType } from "@prisma/client";
+import { SourceType, SoftBlockScope } from "@prisma/client";
 import { AGENDA_SOURCE_TYPE_ALLOWLIST, normalizeAgendaSourceType, normalizeFinanceSourceType } from "@/domain/sourceType";
 import { randomUUID } from "node:crypto";
 
@@ -89,6 +89,8 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
   let startsAt = toDate(payload.startsAt);
   let endsAt = toDate(payload.endsAt);
   let status = typeof payload.status === "string" ? payload.status : null;
+  let padelClubId: number | null = null;
+  let courtId: number | null = null;
 
   if (!sourceType) return { ok: false, code: "SOURCE_TYPE_MISSING" };
 
@@ -104,14 +106,29 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     if (!title || !startsAt || !endsAt || !status) {
       const event = await prisma.event.findUnique({
         where: { id: eventIdNum },
-        select: { id: true, title: true, startsAt: true, endsAt: true, status: true },
+        select: {
+          id: true,
+          title: true,
+          startsAt: true,
+          endsAt: true,
+          status: true,
+          padelTournamentConfig: { select: { padelClubId: true } },
+        },
       });
       if (!event) return { ok: false, code: "EVENT_NOT_FOUND" };
       title = title ?? event.title;
       startsAt = startsAt ?? event.startsAt;
       endsAt = endsAt ?? event.endsAt ?? event.startsAt;
       status = status ?? event.status;
+      padelClubId = event.padelTournamentConfig?.padelClubId ?? null;
       sourceId = String(event.id);
+    }
+    if (padelClubId === null) {
+      const eventClub = await prisma.event.findUnique({
+        where: { id: eventIdNum },
+        select: { padelTournamentConfig: { select: { padelClubId: true } } },
+      });
+      padelClubId = eventClub?.padelTournamentConfig?.padelClubId ?? null;
     }
   }
 
@@ -120,13 +137,27 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     if (!Number.isFinite(tournamentId)) return { ok: false, code: "TOURNAMENT_ID_INVALID" };
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      select: { id: true, eventId: true, event: { select: { title: true, startsAt: true, endsAt: true, status: true, organizationId: true } } },
+      select: {
+        id: true,
+        eventId: true,
+        event: {
+          select: {
+            title: true,
+            startsAt: true,
+            endsAt: true,
+            status: true,
+            organizationId: true,
+            padelTournamentConfig: { select: { padelClubId: true } },
+          },
+        },
+      },
     });
     if (!tournament?.event) return { ok: false, code: "TOURNAMENT_NOT_FOUND" };
     title = title ?? tournament.event.title;
     startsAt = startsAt ?? tournament.event.startsAt;
     endsAt = endsAt ?? tournament.event.endsAt ?? tournament.event.startsAt;
     status = status ?? tournament.event.status;
+    padelClubId = tournament.event.padelTournamentConfig?.padelClubId ?? null;
     sourceId = String(tournament.id);
   }
 
@@ -142,6 +173,8 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
         durationMinutes: true,
         status: true,
         organizationId: true,
+        courtId: true,
+        court: { select: { padelClubId: true } },
         service: { select: { title: true } },
       },
     });
@@ -151,6 +184,8 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     startsAt = startsAt ?? booking.startsAt;
     endsAt = endsAt ?? ends;
     status = status ?? booking.status;
+    courtId = booking.courtId ?? null;
+    padelClubId = booking.court?.padelClubId ?? null;
     sourceId = String(booking.id);
   }
 
@@ -168,14 +203,44 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     if (!title || !startsAt || !endsAt || !status) {
       const softBlock = await prisma.softBlock.findUnique({
         where: { id: softBlockId },
-        select: { id: true, startsAt: true, endsAt: true, reason: true, organizationId: true },
+        select: {
+          id: true,
+          startsAt: true,
+          endsAt: true,
+          reason: true,
+          organizationId: true,
+          scopeType: true,
+          scopeId: true,
+        },
       });
       if (!softBlock) return { ok: false, code: "SOFT_BLOCK_NOT_FOUND" };
       title = title ?? softBlock.reason ?? "Bloqueio";
       startsAt = startsAt ?? softBlock.startsAt;
       endsAt = endsAt ?? softBlock.endsAt ?? softBlock.startsAt;
       status = status ?? "ACTIVE";
+      if (softBlock.scopeType === SoftBlockScope.COURT && softBlock.scopeId > 0) {
+        courtId = softBlock.scopeId;
+        const court = await prisma.padelClubCourt.findUnique({
+          where: { id: courtId },
+          select: { padelClubId: true },
+        });
+        padelClubId = court?.padelClubId ?? null;
+      }
       sourceId = String(softBlock.id);
+    }
+    if (padelClubId === null) {
+      const softBlock = await prisma.softBlock.findUnique({
+        where: { id: Number(sourceId) },
+        select: { scopeType: true, scopeId: true },
+      });
+      if (softBlock?.scopeType === SoftBlockScope.COURT && softBlock.scopeId > 0) {
+        courtId = softBlock.scopeId;
+        const court = await prisma.padelClubCourt.findUnique({
+          where: { id: courtId },
+          select: { padelClubId: true },
+        });
+        padelClubId = court?.padelClubId ?? null;
+      }
     }
   }
 
@@ -193,14 +258,32 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     if (!title || !startsAt || !endsAt || !status) {
       const hardBlock = await prisma.calendarBlock.findUnique({
         where: { id: hardBlockId },
-        select: { id: true, startAt: true, endAt: true, label: true, organizationId: true },
+        select: {
+          id: true,
+          startAt: true,
+          endAt: true,
+          label: true,
+          organizationId: true,
+          padelClubId: true,
+          courtId: true,
+        },
       });
       if (!hardBlock) return { ok: false, code: "HARD_BLOCK_NOT_FOUND" };
       title = title ?? hardBlock.label ?? "Bloqueio";
       startsAt = startsAt ?? hardBlock.startAt;
       endsAt = endsAt ?? hardBlock.endAt ?? hardBlock.startAt;
       status = status ?? "ACTIVE";
+      padelClubId = hardBlock.padelClubId ?? null;
+      courtId = hardBlock.courtId ?? null;
       sourceId = String(hardBlock.id);
+    }
+    if (padelClubId === null && courtId === null) {
+      const hardBlock = await prisma.calendarBlock.findUnique({
+        where: { id: Number(sourceId) },
+        select: { padelClubId: true, courtId: true },
+      });
+      padelClubId = hardBlock?.padelClubId ?? null;
+      courtId = hardBlock?.courtId ?? null;
     }
   }
 
@@ -218,7 +301,15 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
     if (!title || !startsAt || !endsAt || !status) {
       const match = await prisma.eventMatchSlot.findUnique({
         where: { id: matchId },
-        select: { id: true, plannedStartAt: true, plannedEndAt: true, plannedDurationMinutes: true, startTime: true, courtId: true },
+        select: {
+          id: true,
+          plannedStartAt: true,
+          plannedEndAt: true,
+          plannedDurationMinutes: true,
+          startTime: true,
+          courtId: true,
+          court: { select: { padelClubId: true } },
+        },
       });
       if (!match) return { ok: false, code: "MATCH_NOT_FOUND" };
       const start = match.plannedStartAt ?? match.startTime;
@@ -232,7 +323,17 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
       startsAt = startsAt ?? (start ?? null);
       endsAt = endsAt ?? (end ?? start ?? null);
       status = status ?? (scheduled ? "ACTIVE" : "DELETED");
+      courtId = match.courtId ?? null;
+      padelClubId = match.court?.padelClubId ?? null;
       sourceId = String(match.id);
+    }
+    if (padelClubId === null && courtId === null) {
+      const match = await prisma.eventMatchSlot.findUnique({
+        where: { id: Number(sourceId) },
+        select: { courtId: true, court: { select: { padelClubId: true } } },
+      });
+      courtId = match?.courtId ?? null;
+      padelClubId = match?.court?.padelClubId ?? null;
     }
   }
 
@@ -269,6 +370,8 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
       startsAt,
       endsAt,
       status,
+      padelClubId,
+      courtId,
       lastEventId: log.id,
       updatedAt: log.createdAt,
     },
@@ -280,6 +383,8 @@ export async function consumeAgendaMaterializationEvent(eventId: string): Promis
       startsAt,
       endsAt,
       status,
+      padelClubId,
+      courtId,
       lastEventId: log.id,
       updatedAt: log.createdAt,
     },
@@ -309,6 +414,8 @@ type AgendaRebuildItem = {
   startsAt: Date;
   endsAt: Date;
   status: string;
+  padelClubId?: number | null;
+  courtId?: number | null;
 };
 
 export type AgendaRebuildResult = {
@@ -325,14 +432,23 @@ const toKey = (item: { organizationId: number; sourceType: SourceType; sourceId:
 };
 
 const sameAgendaItem = (
-  existing: { title: string; startsAt: Date; endsAt: Date; status: string },
+  existing: {
+    title: string;
+    startsAt: Date;
+    endsAt: Date;
+    status: string;
+    padelClubId: number | null;
+    courtId: number | null;
+  },
   next: AgendaRebuildItem,
 ) => {
   return (
     existing.title === next.title &&
     existing.status === next.status &&
     existing.startsAt.getTime() === next.startsAt.getTime() &&
-    existing.endsAt.getTime() === next.endsAt.getTime()
+    existing.endsAt.getTime() === next.endsAt.getTime() &&
+    (existing.padelClubId ?? null) === (next.padelClubId ?? null) &&
+    (existing.courtId ?? null) === (next.courtId ?? null)
   );
 };
 
@@ -414,14 +530,25 @@ export async function rebuildAgendaItems(params?: {
     startsAt: Date;
     endsAt: Date;
     status: string;
+    padelClubId: number | null;
+    courtId: number | null;
   };
-  type SoftBlockRow = { id: number; startsAt: Date; endsAt: Date; reason: string | null };
+  type SoftBlockRow = {
+    id: number;
+    startsAt: Date;
+    endsAt: Date;
+    reason: string | null;
+    scopeType: SoftBlockScope;
+    scopeId: number;
+  };
   type BookingRow = {
     id: number;
     startsAt: Date;
     durationMinutes: number;
     status: string;
     service: { title: string } | null;
+    courtId: number | null;
+    court: { padelClubId: number } | null;
   };
   type MatchRow = {
     id: number;
@@ -430,8 +557,17 @@ export async function rebuildAgendaItems(params?: {
     plannedDurationMinutes: number | null;
     startTime: Date | null;
     status: string | null;
+    courtId: number | null;
+    court: { padelClubId: number } | null;
   };
-  type CourtBlockRow = { id: number; startAt: Date; endAt: Date; label: string | null };
+  type CourtBlockRow = {
+    id: number;
+    startAt: Date;
+    endAt: Date;
+    label: string | null;
+    padelClubId: number | null;
+    courtId: number | null;
+  };
 
   for (const [index, orgId] of orgIds.entries()) {
     const orgResult: AgendaRebuildResult = {
@@ -447,7 +583,20 @@ export async function rebuildAgendaItems(params?: {
       logger("agenda rebuild org start", { organizationId: orgId, index: index + 1, total: orgIds.length });
     }
 
-    const existingMap = new Map<string, { id: string; sourceType: SourceType; sourceId: string; title: string; startsAt: Date; endsAt: Date; status: string }>();
+    const existingMap = new Map<
+      string,
+      {
+        id: string;
+        sourceType: SourceType;
+        sourceId: string;
+        title: string;
+        startsAt: Date;
+        endsAt: Date;
+        status: string;
+        padelClubId: number | null;
+        courtId: number | null;
+      }
+    >();
 
     await forEachBatch<AgendaItemRow>(
       (cursor) =>
@@ -459,7 +608,17 @@ export async function rebuildAgendaItems(params?: {
           orderBy: { id: "asc" },
           take: batchSize,
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-          select: { id: true, sourceType: true, sourceId: true, title: true, startsAt: true, endsAt: true, status: true },
+          select: {
+            id: true,
+            sourceType: true,
+            sourceId: true,
+            title: true,
+            startsAt: true,
+            endsAt: true,
+            status: true,
+            padelClubId: true,
+            courtId: true,
+          },
         }),
       (rows) => {
         rows.forEach((item) => {
@@ -502,6 +661,8 @@ export async function rebuildAgendaItems(params?: {
           startsAt: item.startsAt,
           endsAt: item.endsAt,
           status: item.status,
+          padelClubId: item.padelClubId ?? null,
+          courtId: item.courtId ?? null,
           lastEventId: eventId,
           updatedAt: now,
         },
@@ -513,6 +674,8 @@ export async function rebuildAgendaItems(params?: {
           startsAt: item.startsAt,
           endsAt: item.endsAt,
           status: item.status,
+          padelClubId: item.padelClubId ?? null,
+          courtId: item.courtId ?? null,
           lastEventId: eventId,
           updatedAt: now,
         },
@@ -526,13 +689,23 @@ export async function rebuildAgendaItems(params?: {
           orderBy: { id: "asc" },
           take: batchSize,
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-          select: { id: true, startsAt: true, endsAt: true, reason: true },
+          select: { id: true, startsAt: true, endsAt: true, reason: true, scopeType: true, scopeId: true },
         }),
       async (rows) => {
         for (const block of rows) {
           if (!isValidInterval(block.startsAt, block.endsAt)) {
             markInvalid(SourceType.SOFT_BLOCK, String(block.id));
             continue;
+          }
+          let padelClubId: number | null = null;
+          let courtId: number | null = null;
+          if (block.scopeType === SoftBlockScope.COURT && block.scopeId > 0) {
+            courtId = block.scopeId;
+            const court = await prisma.padelClubCourt.findUnique({
+              where: { id: courtId },
+              select: { padelClubId: true },
+            });
+            padelClubId = court?.padelClubId ?? null;
           }
           await handleDesiredItem({
             organizationId: orgId,
@@ -542,6 +715,8 @@ export async function rebuildAgendaItems(params?: {
             startsAt: block.startsAt,
             endsAt: block.endsAt,
             status: "ACTIVE",
+            padelClubId,
+            courtId,
           });
         }
       },
@@ -560,6 +735,8 @@ export async function rebuildAgendaItems(params?: {
             durationMinutes: true,
             status: true,
             service: { select: { title: true } },
+            courtId: true,
+            court: { select: { padelClubId: true } },
           },
         }),
       async (rows) => {
@@ -578,6 +755,8 @@ export async function rebuildAgendaItems(params?: {
             booking.service?.title ??
             (booking.service as { name?: string | null } | null)?.name ??
             "Reserva";
+          const courtId = booking.courtId ?? null;
+          const padelClubId = booking.court?.padelClubId ?? null;
           await handleDesiredItem({
             organizationId: orgId,
             sourceType: SourceType.BOOKING,
@@ -586,6 +765,8 @@ export async function rebuildAgendaItems(params?: {
             startsAt: booking.startsAt,
             endsAt,
             status: booking.status,
+            padelClubId,
+            courtId,
           });
         }
       },
@@ -608,6 +789,8 @@ export async function rebuildAgendaItems(params?: {
             plannedDurationMinutes: true,
             startTime: true,
             status: true,
+            courtId: true,
+            court: { select: { padelClubId: true } },
           },
         }),
       async (rows) => {
@@ -617,6 +800,8 @@ export async function rebuildAgendaItems(params?: {
             markInvalid(SourceType.MATCH, String(match.id));
             continue;
           }
+          const courtId = match.courtId ?? null;
+          const padelClubId = match.court?.padelClubId ?? null;
           await handleDesiredItem({
             organizationId: orgId,
             sourceType: SourceType.MATCH,
@@ -625,6 +810,8 @@ export async function rebuildAgendaItems(params?: {
             startsAt: start as Date,
             endsAt: end as Date,
             status: String(match.status),
+            padelClubId,
+            courtId,
           });
         }
       },
@@ -637,7 +824,7 @@ export async function rebuildAgendaItems(params?: {
           orderBy: { id: "asc" },
           take: batchSize,
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-          select: { id: true, startAt: true, endAt: true, label: true },
+          select: { id: true, startAt: true, endAt: true, label: true, padelClubId: true, courtId: true },
         }),
       async (rows) => {
         for (const block of rows) {
@@ -653,6 +840,8 @@ export async function rebuildAgendaItems(params?: {
             startsAt: block.startAt,
             endsAt: block.endAt,
             status: "ACTIVE",
+            padelClubId: block.padelClubId ?? null,
+            courtId: block.courtId ?? null,
           });
         }
       },

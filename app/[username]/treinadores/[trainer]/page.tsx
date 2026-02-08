@@ -87,7 +87,7 @@ export default async function TrainerProfilePage({ params }: PageProps) {
             <div className="h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-white/10">
               {profile.user.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={profile.user.avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                <img src={profile.user.avatarUrl} alt={displayName} className="h-full w-full rounded-full object-cover" />
               ) : null}
             </div>
             <div>

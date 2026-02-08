@@ -4,6 +4,8 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { validateUsername } from "@/lib/username";
+import { resolveUserIdentifier } from "@/lib/userResolver";
+import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
@@ -19,7 +21,7 @@ function normalizeIdentifier(raw: string): CheckResult {
 
   const explicitUsername = value.startsWith("@") && !value.slice(1).includes("@");
   if (explicitUsername) {
-    const validation = validateUsername(value.slice(1));
+    const validation = validateUsername(value.slice(1), { skipReservedCheck: true });
     if (!validation.valid) return { ok: false, error: validation.error };
     return { ok: true, normalized: validation.normalized, type: "username" };
   }
@@ -33,7 +35,7 @@ function normalizeIdentifier(raw: string): CheckResult {
     return { ok: true, normalized, type: "email" };
   }
 
-  const validation = validateUsername(value);
+  const validation = validateUsername(value, { skipReservedCheck: true });
   if (!validation.valid) return { ok: false, error: validation.error };
   return { ok: true, normalized: validation.normalized, type: "username" };
 }
@@ -79,6 +81,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     if (!event) {
       return fail(404, "EVENT_NOT_FOUND");
     }
+    const accessPolicy = await getLatestPolicyForEvent(event.id, prisma);
+    const inviteIdentityMatch = accessPolicy?.inviteIdentityMatch ?? "BOTH";
+    const allowEmail = inviteIdentityMatch === "EMAIL" || inviteIdentityMatch === "BOTH";
+    const allowUsername = inviteIdentityMatch === "USERNAME" || inviteIdentityMatch === "BOTH";
 
     if (inviteToken) {
       const accessDecision = await evaluateEventAccess({ eventId: event.id, intent: "INVITE_TOKEN" });
@@ -139,6 +145,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     const normalized = normalizeIdentifier(identifier);
     if (!normalized.ok) {
       return fail(400, normalized.error);
+    }
+    if (normalized.type === "email" && !allowEmail) {
+      return respondOk(ctx, { invited: false, reason: "INVITE_IDENTITY_MATCH_REQUIRED" });
+    }
+    if (normalized.type === "username" && !allowUsername) {
+      return respondOk(ctx, { invited: false, reason: "INVITE_IDENTITY_MATCH_REQUIRED" });
+    }
+    if (normalized.type === "username") {
+      const resolvedUser = await resolveUserIdentifier(normalized.normalized).catch(() => null);
+      if (!resolvedUser?.userId) {
+        return respondOk(ctx, { invited: false, reason: "USERNAME_NOT_FOUND" });
+      }
     }
 
     const invite = await prisma.eventInvite.findFirst({

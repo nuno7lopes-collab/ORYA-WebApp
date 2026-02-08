@@ -42,7 +42,7 @@ export default function TicketsScreen() {
   );
   const emptyLabel =
     mode === "upcoming"
-      ? "Sem bilhetes ativos de momento."
+      ? "Sem acessos ativos de momento."
       : "Ainda sem histórico no mobile.";
 
   const handleRefresh = useCallback(() => {
@@ -128,7 +128,7 @@ export default function TicketsScreen() {
 
             <SectionHeader
               title={mode === "upcoming" ? "Ativos" : "Histórico"}
-              subtitle={mode === "upcoming" ? "Prontos para usar e mostrar QR." : "Bilhetes já usados ou expirados."}
+              subtitle={mode === "upcoming" ? "Prontos para usar e mostrar QR." : "Entradas e inscrições passadas."}
             />
 
             {feed.isError ? (

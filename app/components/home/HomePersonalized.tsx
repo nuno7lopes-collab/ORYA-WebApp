@@ -166,7 +166,7 @@ export default function HomePersonalized() {
           ) : (
             <div className="mt-4 rounded-2xl border border-white/12 bg-black/30 px-3 py-4 text-[12px] text-white/60">
               Ainda não tens eventos marcados.
-              <Link href="/explorar/eventos" className="ml-2 text-white/85 hover:text-white">
+              <Link href="/descobrir/eventos" className="ml-2 text-white/85 hover:text-white">
                 Explorar eventos
               </Link>
             </div>
@@ -200,7 +200,7 @@ export default function HomePersonalized() {
         ) : (
           <div className="mt-4 rounded-2xl border border-white/12 bg-black/30 px-3 py-4 text-[12px] text-white/60">
             Ainda não tens reservas confirmadas.
-            <Link href="/explorar/reservas" className="ml-2 text-white/85 hover:text-white">
+            <Link href="/descobrir/reservas" className="ml-2 text-white/85 hover:text-white">
               Explorar reservas
             </Link>
           </div>

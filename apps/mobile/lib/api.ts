@@ -202,6 +202,16 @@ export const unwrapApiResponse = <T>(payload: unknown): T => {
   if (payload.ok) {
     return (payload.data ?? payload.result ?? payload) as T;
   }
+  if (isDev) {
+    const envelope = payload as ApiEnvelope<unknown> & { requestId?: string; correlationId?: string };
+    console.warn("[api] envelope_error", {
+      errorCode: envelope.errorCode ?? null,
+      message: envelope.message ?? null,
+      requestId: (envelope as any).requestId ?? null,
+      correlationId: (envelope as any).correlationId ?? null,
+      error: typeof envelope.error === "string" ? envelope.error : (envelope.error as any)?.message ?? null,
+    });
+  }
   const message =
     (typeof payload.error === "string" && payload.error) ||
     (typeof payload.message === "string" && payload.message) ||

@@ -36,7 +36,7 @@ export async function issueInviteToken(
     throw new Error("INVITE_TOKEN_NOT_ALLOWED");
   }
   if (policy.inviteIdentityMatch === "USERNAME") {
-    throw new Error("INVITE_IDENTITY_MATCH_UNSUPPORTED");
+    throw new Error("INVITE_TOKEN_REQUIRES_EMAIL");
   }
   if (policy.inviteTokenTtlSeconds == null) {
     throw new Error("INVITE_TOKEN_TTL_REQUIRED");

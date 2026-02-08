@@ -91,6 +91,55 @@ async function _GET(req: NextRequest) {
       },
     });
     const standingsByGroup = computePadelStandingsByGroup(matches, pointsTable, tieBreakRules);
+    const pairingIds = new Set<number>();
+    Object.values(standingsByGroup).forEach((rows) => {
+      rows.forEach((row) => {
+        if (Number.isFinite(row.pairingId)) pairingIds.add(row.pairingId);
+      });
+    });
+
+    const pairingRows = pairingIds.size
+      ? await prisma.padelPairing.findMany({
+          where: { id: { in: Array.from(pairingIds) } },
+          select: {
+            id: true,
+            slots: {
+              select: {
+                slot_role: true,
+                playerProfile: { select: { fullName: true, username: true } },
+              },
+            },
+          },
+        })
+      : [];
+
+    const pairingMeta = new Map<
+      number,
+      { label: string | null; players: Array<{ name: string | null; username: string | null }> }
+    >();
+
+    const formatPairingLabel = (pairing: (typeof pairingRows)[number]) => {
+      const sortedSlots = [...(pairing.slots ?? [])].sort((a, b) => {
+        if (a.slot_role === b.slot_role) return 0;
+        if (a.slot_role === "CAPTAIN") return -1;
+        if (b.slot_role === "CAPTAIN") return 1;
+        return 0;
+      });
+      const players = sortedSlots.map((slot) => ({
+        name: slot.playerProfile?.fullName ?? null,
+        username: slot.playerProfile?.username ?? null,
+      }));
+      const names = players
+        .map((p) => p.name || p.username)
+        .filter(Boolean) as string[];
+      const label = names.length ? names.join(" / ") : `Dupla ${pairing.id}`;
+      return { label, players };
+    };
+
+    pairingRows.forEach((pairing) => {
+      pairingMeta.set(pairing.id, formatPairingLabel(pairing));
+    });
+
     const standings = Object.fromEntries(
       Object.entries(standingsByGroup).map(([label, rows]) => [
         label,
@@ -101,6 +150,8 @@ async function _GET(req: NextRequest) {
           losses: row.losses,
           setsFor: row.setsFor,
           setsAgainst: row.setsAgainst,
+          label: pairingMeta.get(row.pairingId)?.label ?? null,
+          players: pairingMeta.get(row.pairingId)?.players ?? null,
         })),
       ]),
     );

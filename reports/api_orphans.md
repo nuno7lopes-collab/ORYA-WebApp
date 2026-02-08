@@ -1,13 +1,13 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-01-29T10:54:19.983Z
+Generated: 2026-02-08T00:45:22.461Z
 CSV: reports/api_ui_coverage.csv
 
 ## Summary
-- API routes total: 438
-- Covered by UI: 263
-- Orphan (no UI): 137
-- Exempt (internal/cron/webhook): 38
+- API routes total: 513
+- Covered by UI: 326
+- Orphan (no UI): 143
+- Exempt (internal/cron/webhook): 44
 - UI endpoints missing API: 0
 
 ## UI endpoints missing API routes
@@ -16,24 +16,31 @@ CSV: reports/api_ui_coverage.csv
 ## API routes without UI usage (excluding internal/cron/webhook)
 - /api/admin/eventos/update-status (app/api/admin/eventos/update-status/route.ts)
 - /api/admin/organizacoes/update-payments-mode (app/api/admin/organizacoes/update-payments-mode/route.ts)
+- /api/admin/payouts/[id] (app/api/admin/payouts/[id]/route.ts)
+- /api/admin/payouts/[id]/block (app/api/admin/payouts/[id]/block/route.ts)
+- /api/admin/payouts/[id]/cancel (app/api/admin/payouts/[id]/cancel/route.ts)
+- /api/admin/payouts/[id]/force-release (app/api/admin/payouts/[id]/force-release/route.ts)
+- /api/admin/payouts/[id]/unblock (app/api/admin/payouts/[id]/unblock/route.ts)
+- /api/admin/payouts/list (app/api/admin/payouts/list/route.ts)
 - /api/admin/users/purge-pending (app/api/admin/users/purge-pending/route.ts)
 - /api/admin/utilizadores/list (app/api/admin/utilizadores/list/route.ts)
-- /api/auth/check-email (app/api/auth/check-email/route.ts)
 - /api/auth/clear (app/api/auth/clear/route.ts)
 - /api/chat/conversations/[conversationId]/threads/[messageId] (app/api/chat/conversations/[conversationId]/threads/[messageId]/route.ts)
 - /api/chat/messages/[messageId]/report (app/api/chat/messages/[messageId]/report/route.ts)
 - /api/email/verified (app/api/email/verified/route.ts)
 - /api/eventos/[slug]/resales (app/api/eventos/[slug]/resales/route.ts)
-- /api/location/ip (app/api/location/ip/route.ts)
-- /api/me (app/api/me/route.ts)
+- /api/eventos/lookup (app/api/eventos/lookup/route.ts)
+- /api/explorar/eventos/[slug] (app/api/explorar/eventos/[slug]/route.ts)
+- /api/geo/autocomplete (app/api/geo/autocomplete/route.ts)
+- /api/geo/details (app/api/geo/details/route.ts)
+- /api/geo/reverse (app/api/geo/reverse/route.ts)
 - /api/me/creditos (app/api/me/creditos/route.ts)
+- /api/me/dsar/export (app/api/me/dsar/export/route.ts)
 - /api/me/inscricoes (app/api/me/inscricoes/route.ts)
 - /api/me/inscricoes/[id] (app/api/me/inscricoes/[id]/route.ts)
-- /api/me/location/consent (app/api/me/location/consent/route.ts)
 - /api/me/loyalty/carteira (app/api/me/loyalty/carteira/route.ts)
 - /api/me/notifications (app/api/me/notifications/route.ts)
 - /api/me/notifications/[id]/read (app/api/me/notifications/[id]/read/route.ts)
-- /api/me/push-tokens (app/api/me/push-tokens/route.ts)
 - /api/me/reservas/[id]/calendar.ics (app/api/me/reservas/[id]/calendar.ics/route.ts)
 - /api/me/settings/delete/cancel (app/api/me/settings/delete/cancel/route.ts)
 - /api/me/store/bundles/[id] (app/api/me/store/bundles/[id]/route.ts)
@@ -60,6 +67,7 @@ CSV: reports/api_ui_coverage.csv
 - /api/me/store/shipping/zones (app/api/me/store/shipping/zones/route.ts)
 - /api/me/store/shipping/zones/[zoneId] (app/api/me/store/shipping/zones/[zoneId]/route.ts)
 - /api/me/store/shipping/zones/[zoneId]/methods (app/api/me/store/shipping/zones/[zoneId]/methods/route.ts)
+- /api/me/wallet/[entitlementId]/pass (app/api/me/wallet/[entitlementId]/pass/route.ts)
 - /api/organizacao/agenda (app/api/organizacao/agenda/route.ts)
 - /api/organizacao/agenda/soft-blocks (app/api/organizacao/agenda/soft-blocks/route.ts)
 - /api/organizacao/analytics/dimensoes (app/api/organizacao/analytics/dimensoes/route.ts)
@@ -114,6 +122,9 @@ CSV: reports/api_ui_coverage.csv
 - /api/organizacao/tournaments/[id]/structure (app/api/organizacao/tournaments/[id]/structure/route.ts)
 - /api/organizacao/tournaments/list (app/api/organizacao/tournaments/list/route.ts)
 - /api/organizacao/venues/recent (app/api/organizacao/venues/recent/route.ts)
+- /api/organization/official-email (app/api/organization/official-email/route.ts)
+- /api/padel/community/posts/[id]/comments (app/api/padel/community/posts/[id]/comments/route.ts)
+- /api/padel/community/posts/[id]/reactions (app/api/padel/community/posts/[id]/reactions/route.ts)
 - /api/padel/discover (app/api/padel/discover/route.ts)
 - /api/padel/matches/[id]/walkover (app/api/padel/matches/[id]/walkover/route.ts)
 - /api/padel/pairings/[id]/accept (app/api/padel/pairings/[id]/accept/route.ts)
@@ -128,13 +139,9 @@ CSV: reports/api_ui_coverage.csv
 - /api/padel/pairings/[id]/swap (app/api/padel/pairings/[id]/swap/route.ts)
 - /api/padel/pairings/my (app/api/padel/pairings/my/route.ts)
 - /api/padel/pairings/swap/confirm/[token] (app/api/padel/pairings/swap/confirm/[token]/route.ts)
-- /api/padel/public/calendar (app/api/padel/public/calendar/route.ts)
-- /api/padel/public/open-pairings (app/api/padel/public/open-pairings/route.ts)
-- /api/padel/rankings (app/api/padel/rankings/route.ts)
-- /api/padel/tournaments/seeds (app/api/padel/tournaments/seeds/route.ts)
+- /api/padel/teams/[id]/members (app/api/padel/teams/[id]/members/route.ts)
 - /api/platform/fees (app/api/platform/fees/route.ts)
-- /api/profiles/check-username (app/api/profiles/check-username/route.ts)
-- /api/servicos/[id] (app/api/servicos/[id]/route.ts)
+- /api/public/agenda (app/api/public/agenda/route.ts)
 - /api/servicos/[id]/creditos (app/api/servicos/[id]/creditos/route.ts)
 - /api/servicos/[id]/creditos/checkout (app/api/servicos/[id]/creditos/checkout/route.ts)
 - /api/servicos/[id]/disponibilidade (app/api/servicos/[id]/disponibilidade/route.ts)
@@ -158,10 +165,14 @@ CSV: reports/api_ui_coverage.csv
 - /api/cron/crm/campanhas (app/api/cron/crm/campanhas/route.ts)
 - /api/cron/crm/rebuild (app/api/cron/crm/rebuild/route.ts)
 - /api/cron/loyalty/expire (app/api/cron/loyalty/expire/route.ts)
+- /api/cron/notifications/weekly-digest (app/api/cron/notifications/weekly-digest/route.ts)
 - /api/cron/operations (app/api/cron/operations/route.ts)
 - /api/cron/padel/expire (app/api/cron/padel/expire/route.ts)
+- /api/cron/padel/matchmaking (app/api/cron/padel/matchmaking/route.ts)
 - /api/cron/padel/reminders (app/api/cron/padel/reminders/route.ts)
+- /api/cron/padel/split-reminders (app/api/cron/padel/split-reminders/route.ts)
 - /api/cron/padel/tournament-eve (app/api/cron/padel/tournament-eve/route.ts)
+- /api/cron/padel/waitlist (app/api/cron/padel/waitlist/route.ts)
 - /api/cron/payouts/release (app/api/cron/payouts/release/route.ts)
 - /api/cron/reservations/cleanup (app/api/cron/reservations/cleanup/route.ts)
 - /api/internal/analytics/rollup (app/api/internal/analytics/rollup/route.ts)
@@ -177,10 +188,12 @@ CSV: reports/api_ui_coverage.csv
 - /api/internal/ops/health (app/api/internal/ops/health/route.ts)
 - /api/internal/ops/outbox/replay (app/api/internal/ops/outbox/replay/route.ts)
 - /api/internal/ops/outbox/summary (app/api/internal/ops/outbox/summary/route.ts)
+- /api/internal/ops/padel/integrity (app/api/internal/ops/padel/integrity/route.ts)
 - /api/internal/ops/slo (app/api/internal/ops/slo/route.ts)
 - /api/internal/outbox/dlq (app/api/internal/outbox/dlq/route.ts)
 - /api/internal/outbox/replay (app/api/internal/outbox/replay/route.ts)
 - /api/internal/padel/registrations/backfill (app/api/internal/padel/registrations/backfill/route.ts)
+- /api/internal/ping (app/api/internal/ping/route.ts)
 - /api/internal/public-api/keys (app/api/internal/public-api/keys/route.ts)
 - /api/internal/reconcile (app/api/internal/reconcile/route.ts)
 - /api/internal/reprocess/payment-intent (app/api/internal/reprocess/payment-intent/route.ts)
@@ -190,54 +203,3 @@ CSV: reports/api_ui_coverage.csv
 - /api/organizacao/payouts/webhook (app/api/organizacao/payouts/webhook/route.ts)
 - /api/stripe/webhook (app/api/stripe/webhook/route.ts)
 - /api/webhooks/stripe (app/api/webhooks/stripe/route.ts)
-
-## P0 endpoints coverage (docs/v9_close_plan.md)
-- Total: 39
-
-### P0 missing files
-- none
-
-### P0 exempt (internal/cron/webhook)
-- /api/organizacao/payouts/webhook (app/api/organizacao/payouts/webhook/route.ts)
-- /api/stripe/webhook (app/api/stripe/webhook/route.ts)
-- /api/webhooks/stripe (app/api/webhooks/stripe/route.ts)
-- /api/internal/reconcile (app/api/internal/reconcile/route.ts)
-- /api/internal/reprocess/purchase (app/api/internal/reprocess/purchase/route.ts)
-- /api/internal/reprocess/payment-intent (app/api/internal/reprocess/payment-intent/route.ts)
-- /api/internal/reprocess/stripe-event (app/api/internal/reprocess/stripe-event/route.ts)
-- /api/internal/outbox/dlq (app/api/internal/outbox/dlq/route.ts)
-- /api/internal/outbox/replay (app/api/internal/outbox/replay/route.ts)
-- /api/internal/worker/operations (app/api/internal/worker/operations/route.ts)
-- /api/internal/checkout/timeline (app/api/internal/checkout/timeline/route.ts)
-- /api/internal/checkin/consume (app/api/internal/checkin/consume/route.ts)
-- /api/cron/operations (app/api/cron/operations/route.ts)
-- /api/cron/payouts/release (app/api/cron/payouts/release/route.ts)
-
-### P0 covered by UI
-- /api/payments/intent (files: app/components/checkout/Step2Pagamento.tsx)
-- /api/checkout/status (files: app/components/checkout/Step3Sucesso.tsx)
-- /api/store/checkout (files: components/storefront/StorefrontCheckoutClient.tsx)
-- /api/store/checkout/prefill (files: components/storefront/StorefrontCheckoutClient.tsx)
-- /api/servicos/[id]/checkout (files: app/[username]/_components/ReservasBookingClient.tsx)
-- /api/organizacao/reservas/[id]/checkout (files: app/organizacao/(dashboard)/reservas/page.tsx)
-- /api/admin/payments/refund (files: app/admin/finance/page.tsx, app/admin/tickets/page.tsx)
-- /api/admin/payments/dispute (files: app/admin/finance/page.tsx)
-- /api/admin/payments/reprocess (files: app/admin/components/PaymentTools.tsx, app/admin/finance/page.tsx)
-- /api/admin/refunds/list (files: app/admin/finance/page.tsx)
-- /api/admin/refunds/retry (files: app/admin/finance/page.tsx)
-- /api/organizacao/refunds/list (files: app/organizacao/pagamentos/RefundsPanel.tsx)
-- /api/organizacao/payouts/status (files: app/organizacao/DashboardClient.tsx)
-- /api/organizacao/payouts/list (files: app/organizacao/pagamentos/PayoutsPanel.tsx)
-- /api/organizacao/payouts/summary (files: app/organizacao/DashboardClient.tsx)
-- /api/organizacao/payouts/connect (files: app/organizacao/DashboardClient.tsx)
-- /api/admin/payouts/list (files: app/admin/finance/page.tsx)
-- /api/admin/payouts/[id] (files: app/admin/finance/page.tsx)
-- /api/admin/payouts/[id]/block (files: app/admin/finance/page.tsx)
-- /api/admin/payouts/[id]/unblock (files: app/admin/finance/page.tsx)
-- /api/admin/payouts/[id]/cancel (files: app/admin/finance/page.tsx)
-- /api/admin/payouts/[id]/force-release (files: app/admin/finance/page.tsx)
-
-### P0 missing UI usage
-- /api/servicos/[id]/creditos/checkout (app/api/servicos/[id]/creditos/checkout/route.ts)
-- /api/padel/pairings/[id]/checkout (app/api/padel/pairings/[id]/checkout/route.ts)
-- /api/organizacao/payouts/settings (app/api/organizacao/payouts/settings/route.ts)

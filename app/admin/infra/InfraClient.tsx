@@ -469,7 +469,7 @@ export default function InfraClient({
             <div>
               <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Infra</p>
               <h3 className="text-sm font-semibold text-white/90">Custos</h3>
-              <p className="mt-1 text-xs text-white/60">Cost Explorer (MTD + diário)</p>
+              <p className="mt-1 text-xs text-white/60">Budgets (MTD)</p>
             </div>
             <button
               className="rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10"

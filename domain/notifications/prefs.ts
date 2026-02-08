@@ -1,30 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import type { NotificationType } from "@prisma/client";
+import { resolveNotificationCategory } from "@/domain/notifications/registry";
 
 export async function shouldNotify(userId: string, type: NotificationType) {
   const prefs = await getNotificationPrefs(userId);
-  switch (type) {
-    case "EVENT_SALE":
-      return prefs.allowSalesAlerts;
-    case "FOLLOW_REQUEST":
-    case "FOLLOW_ACCEPT":
-      return prefs.allowFollowRequests;
-    case "FOLLOWED_YOU":
-      return prefs.allowFollowRequests;
-    case "SYSTEM_ANNOUNCE":
-    case "STRIPE_STATUS":
-    case "CHAT_OPEN":
-    case "CHAT_ANNOUNCEMENT":
-      return prefs.allowSystemAnnouncements;
-    case "EVENT_REMINDER":
-    case "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION":
-      return prefs.allowEventReminders;
-    case "CRM_CAMPAIGN":
-    case "MARKETING_PROMO_ALERT":
-      return prefs.allowMarketingCampaigns;
-    default:
-      return true;
-  }
+  const allowSocial = (prefs as any).allowSocialNotifications ?? prefs.allowFollowRequests ?? true;
+  const allowEvents = (prefs as any).allowEventNotifications ?? prefs.allowEventReminders ?? true;
+  const allowSystem = (prefs as any).allowSystemNotifications ?? prefs.allowSystemAnnouncements ?? true;
+  const allowMarketing = (prefs as any).allowMarketingNotifications ?? prefs.allowMarketingCampaigns ?? true;
+
+  const category = resolveNotificationCategory(type);
+  if (category === "network") return allowSocial;
+  if (category === "events") return allowEvents;
+  if (category === "marketing") return false;
+  if (category === "system" || category === "chat") return false;
+  return false;
 }
 
 export async function getNotificationPrefs(userId: string) {
@@ -34,6 +24,10 @@ export async function getNotificationPrefs(userId: string) {
   const defaults = {
     userId,
     allowEmailNotifications: true,
+    allowSocialNotifications: true,
+    allowEventNotifications: true,
+    allowSystemNotifications: true,
+    allowMarketingNotifications: true,
     allowEventReminders: true,
     allowFollowRequests: true,
     allowSalesAlerts: true,

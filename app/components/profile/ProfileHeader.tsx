@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
+import { useUser } from "@/app/hooks/useUser";
 import FollowClient from "@/app/[username]/FollowClient";
 import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
 import { Avatar } from "@/components/ui/avatar";
@@ -73,6 +74,7 @@ export default function ProfileHeader({
   padelAction,
 }: ProfileHeaderProps) {
   const router = useRouter();
+  const { user } = useUser();
   const orgFallbackHref = appendOrganizationIdToHref("/organizacao", getOrganizationIdFromBrowser());
   const displayName = name?.trim() || "Utilizador ORYA";
   const handle = username?.trim() || undefined;
@@ -103,6 +105,7 @@ export default function ProfileHeader({
     avatarUpdatedAt ?? null,
   );
   const showEditControls = isOwner && isEditing;
+  const allowReservedForEmail = user?.email ?? null;
 
   useEffect(() => {
     setNameInput(displayName);
@@ -133,7 +136,7 @@ export default function ProfileHeader({
     const fullName = (opts?.fullName ?? nameInput).trim();
     const rawUsername = opts?.username ?? usernameInput.replace(/^@/, "");
     const cleaned = sanitizeUsername(rawUsername);
-    const validation = validateUsername(cleaned);
+    const validation = validateUsername(cleaned, { allowReservedForEmail });
     if (!fullName || !validation.valid) {
       const message =
         !fullName ? "O nome é obrigatório." : "error" in validation ? validation.error : "Username inválido.";

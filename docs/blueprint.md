@@ -33,6 +33,12 @@ Padel ---------- C1/C2/C3/C6 --------------------------------------->
 Store/Serviços -- C2/C5 -------------------------------------------->
 ```
 
+## Ambiente & DB Única (NORMATIVE)
+- ORYA opera com **uma única DB** quando `SINGLE_DB_MODE=1`.
+- Nesse modo, `APP_ENV` é **forçado a `prod`** (sem “duplas verdades” na DB).
+- Stripe pode ser **forçado localmente para teste** via `STRIPE_MODE=test` e `NEXT_PUBLIC_STRIPE_MODE=test` **sem alterar o ambiente da DB**.
+- Em produção, **não** definir `STRIPE_MODE`; usa sempre chaves e webhooks **LIVE**.
+
 ## RACI mínimo (NÃO-NORMATIVO, mas EXECUTIVO)
 
 Roles: Eng Lead, Product, Ops, Security, Legal/Compliance
@@ -626,11 +632,16 @@ D8.1) EventAccessPolicy é a única verdade de acesso (FECHADO)
   - `inviteIdentityMatch: EMAIL | USERNAME | BOTH`
   - `inviteTokenTTL: duration` (obrigatório se `inviteTokenAllowed=true`)
   - `checkin: { requiresEntitlementForEntry, methods[...] }` (ver Secção 8)
+- **Restrição:** `inviteTokenAllowed=true` exige `inviteIdentityMatch=EMAIL|BOTH`.  
+  `inviteIdentityMatch=USERNAME` **não** suporta tokens (apenas convites por username existente).
+- **Regra de integridade:** convites por username só podem ser emitidos para utilizadores existentes.  
+  Para pessoas sem conta, usar convite por email.
 - **Sem fallback** entre campos. Migração/backfill obrigatório no write‑path (não na leitura).
 
 D8.2) Convites por token (guest checkout) — versão final (FECHADO)
 
-Convites permitem checkout como convidado via token. Login não é obrigatório, mas é incentivado.
+Convites permitem checkout como convidado via token **na WebApp e no site público**.  
+**Na app mobile, guest checkout não é permitido** — o utilizador tem de estar autenticado.
 
 Regras fechadas
 1) InviteToken one‑time + expira
@@ -641,6 +652,7 @@ Regras fechadas
 2) Match obrigatório de identidade
 - o token fica associado a `emailNormalizado` (e opcionalmente username, se usares BOTH)
 - no checkout guest, o email tem de bater certo (case‑insensitive, normalizado)
+- se `inviteIdentityMatch=USERNAME`, `inviteTokenAllowed` tem de ser **false** (sem tokens)
 
 3) Scope do token
 - token é válido só para 1 evento e (opcional) 1 `ticketTypeId` (controlo fino)
@@ -656,10 +668,12 @@ Regras fechadas
 
 6) Eventos VIP (login obrigatório)
 - Para eventos que exijam login: `guestCheckoutAllowed=false` e `mode=INVITE_ONLY` (sem exceções).
+- **App mobile (regra global):** mesmo que `guestCheckoutAllowed=true`, o checkout exige login.
 
 UX recomendada
-- Página de convite: “Aceitar convite” → pede nome + email (pré‑preenchido se possível)
-- Pós‑compra: “Criar conta para guardar bilhetes e entrar mais rápido” (1 clique)
+- Página de convite (web): “Aceitar convite” → pede nome + email (pré‑preenchido se possível)
+- Pós‑compra (web): “Criar conta para guardar bilhetes e entrar mais rápido” (1 clique)
+- Mobile: “Iniciar sessão” como gate obrigatório antes do checkout.
 
 ⸻
 
@@ -2229,7 +2243,8 @@ Consumer dedupe por eventId; replays não duplicam items.
   - `USER` (userId)
   - `GUEST_EMAIL` (emailNormalizado + emailHash)
 - Permite:
-  - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy`
+  - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy` **na WebApp e no site**  
+    (na app mobile, guest checkout é sempre bloqueado)
   - claim/merge posterior para user (quando o email for verificado)
   - RGPD delete/anonymize sem destruir ledger (ledger mantém apenas IDs/pseudónimos)
 

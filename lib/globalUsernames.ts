@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { validateUsername } from "@/lib/username";
+import { sanitizeUsername, validateUsername, type UsernameValidationOptions } from "@/lib/username";
+import { isReservedAllowlistEntry } from "@/lib/reservedUsernames";
 
 type Tx = Prisma.TransactionClient | PrismaClient;
 export type UsernameOwnerType = "user" | "organization";
@@ -12,17 +13,44 @@ export class UsernameTakenError extends Error {
   }
 }
 
-export function normalizeAndValidateUsername(raw: string) {
-  const result = validateUsername(raw);
+export function normalizeAndValidateUsername(raw: string, options?: UsernameValidationOptions) {
+  const result = validateUsername(raw, options);
   if (!result.valid) {
-    return { ok: false as const, error: result.error };
+    return {
+      ok: false as const,
+      error: result.error,
+      code: result.code ?? "USERNAME_INVALID",
+      username: result.normalized ?? sanitizeUsername(raw),
+    };
   }
   return { ok: true as const, username: result.normalized };
 }
 
-export async function checkUsernameAvailability(username: string, tx: Tx = prisma) {
-  const normalizedResult = normalizeAndValidateUsername(username);
-  if (!normalizedResult.ok) return normalizedResult;
+export async function checkUsernameAvailability(
+  username: string,
+  tx?: Tx,
+  options?: UsernameValidationOptions,
+) {
+  const client = tx ?? prisma;
+  const normalizedResult = normalizeAndValidateUsername(username, options);
+  if (!normalizedResult.ok) {
+    if (normalizedResult.code === "USERNAME_RESERVED") {
+      if (isReservedAllowlistEntry(normalizedResult.username)) {
+        return {
+          ok: true as const,
+          available: false,
+          username: normalizedResult.username,
+        };
+      }
+      return {
+        ok: true as const,
+        available: false,
+        reason: "reserved" as const,
+        username: normalizedResult.username,
+      };
+    }
+    return normalizedResult;
+  }
 
   const normalized = normalizedResult.username;
 
@@ -40,14 +68,14 @@ export async function checkUsernameAvailability(username: string, tx: Tx = prism
     return !profile && !organization;
   };
 
-  const existing = await tx.globalUsername.findUnique({
+  const existing = await client.globalUsername.findUnique({
     where: { username: normalized },
     select: { ownerType: true, ownerId: true },
   });
   if (existing) {
     return { ok: true as const, available: false, username: normalized };
   }
-  const available = await checkLocalAvailability(tx);
+  const available = await checkLocalAvailability(client);
   return { ok: true as const, available, username: normalized };
 }
 
@@ -56,11 +84,12 @@ export async function setUsernameForOwner(options: {
   ownerType: UsernameOwnerType;
   ownerId: string | number;
   tx?: Tx;
+  allowReservedForEmail?: string | null;
 }) {
-  const { username: rawUsername, ownerType, ownerId } = options;
+  const { username: rawUsername, ownerType, ownerId, allowReservedForEmail } = options;
   const providedTx = options.tx;
 
-  const validated = normalizeAndValidateUsername(rawUsername);
+  const validated = normalizeAndValidateUsername(rawUsername, { allowReservedForEmail });
   if (!validated.ok) {
     return { ok: false as const, error: validated.error };
   }

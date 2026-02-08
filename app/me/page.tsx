@@ -256,7 +256,7 @@ export default function MePage() {
                 </button>
               ) : (
                 <Link
-                  href="/explorar/eventos"
+                  href="/descobrir/eventos"
                   className="px-3 py-1.5 rounded-lg border border-white/30 text-[11px] text-white hover:bg-white/10"
                 >
                   Explorar eventos
@@ -283,7 +283,7 @@ export default function MePage() {
             </div>
             <div className="relative flex gap-2 flex-wrap justify-center">
               <Link
-                href="/explorar/eventos"
+                href="/descobrir/eventos"
                 className="inline-flex mt-2 px-4 py-2.5 rounded-full bg-white text-black text-xs font-semibold shadow-[0_10px_35px_rgba(255,255,255,0.2)] hover:scale-[1.03] active:scale-95 transition-transform"
               >
                 Explorar eventos

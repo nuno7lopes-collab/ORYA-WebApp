@@ -32,7 +32,7 @@ export default async function EventRankingPage({ params, searchParams }: PagePro
     select: { id: true, title: true, coverImageUrl: true, templateType: true },
   });
   if (!event) {
-    redirect("/descobrir?tab=torneios");
+    redirect("/?tab=torneios");
   }
   if (event.templateType !== "PADEL") {
     redirect(`/eventos/${slug}`);

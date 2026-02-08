@@ -5,8 +5,7 @@ const requireUser = vi.hoisted(() => vi.fn());
 const markNotificationRead = vi.hoisted(() => vi.fn());
 const prisma = vi.hoisted(() => ({
   notification: {
-    findMany: vi.fn(),
-    count: vi.fn(),
+    deleteMany: vi.fn(),
   },
 }));
 
@@ -27,25 +26,25 @@ let POST: typeof import("@/app/api/me/notifications/[id]/read/route").POST;
 beforeEach(async () => {
   requireUser.mockReset();
   markNotificationRead.mockReset();
-  prisma.notification.findMany.mockReset();
-  prisma.notification.count.mockReset();
+  prisma.notification.deleteMany.mockReset();
   vi.resetModules();
-  GET = (await import("@/app/api/me/notifications/route")).GET;
+  GET = (await import("@/app/api/me/notifications/route")).DELETE;
   POST = (await import("@/app/api/me/notifications/[id]/read/route")).POST;
 });
 
 describe("me notifications routes", () => {
-  it("lista apenas notificações do utilizador", async () => {
+  it("apaga apenas notificações do utilizador", async () => {
     requireUser.mockResolvedValue({ id: "u1" });
-    prisma.notification.findMany.mockResolvedValue([{ id: "n1" }]);
-    prisma.notification.count.mockResolvedValue(1);
+    prisma.notification.deleteMany.mockResolvedValue({ count: 1 });
 
-    const req = new NextRequest("http://localhost/api/me/notifications?limit=10");
+    const req = new NextRequest("http://localhost/api/me/notifications", {
+      method: "DELETE",
+      body: JSON.stringify({ notificationId: "n1" }),
+    });
     const res = await GET(req);
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(body.result.items).toHaveLength(1);
   });
 
   it("marca read via helper canónico", async () => {

@@ -28,6 +28,9 @@ type FilterSheetProps = {
   onDateChange: (value: DiscoverDateFilter) => void;
   price: DiscoverPriceFilter;
   onPriceChange: (value: DiscoverPriceFilter) => void;
+  showDistance?: boolean;
+  eventType?: "all" | "events" | "padel";
+  onEventTypeChange?: (value: "all" | "events" | "padel") => void;
 };
 
 const DISTANCE_OPTIONS = [5, 10, 25, 50];
@@ -46,6 +49,12 @@ const PRICE_OPTIONS: Array<{ key: DiscoverPriceFilter; label: string }> = [
   { key: "all", label: "Todos" },
 ];
 
+const EVENT_TYPE_OPTIONS: Array<{ key: "all" | "events" | "padel"; label: string }> = [
+  { key: "all", label: "Todos" },
+  { key: "events", label: "Eventos" },
+  { key: "padel", label: "Padel" },
+];
+
 export function FiltersBottomSheet({
   visible,
   onClose,
@@ -55,6 +64,9 @@ export function FiltersBottomSheet({
   onDateChange,
   price,
   onPriceChange,
+  showDistance = true,
+  eventType,
+  onEventTypeChange,
 }: FilterSheetProps) {
   const translateY = useRef(new Animated.Value(300)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -203,6 +215,7 @@ export function FiltersBottomSheet({
   );
 
   const distanceLabel = useMemo(() => `${distanceKm} km`, [distanceKm]);
+  const showEventType = typeof eventType === "string" && typeof onEventTypeChange === "function";
 
   return (
     <Modal transparent visible={visible} animationType="fade">
@@ -219,20 +232,22 @@ export function FiltersBottomSheet({
           </Pressable>
         </View>
 
-        <View style={styles.block}>
-          <Text style={styles.label}>Distância</Text>
-          <View style={styles.row}>
-            {DISTANCE_OPTIONS.map((value) =>
-              renderOption(
-                `distance-${value}`,
-                `${value}km`,
-                distanceKm === value,
-                () => onDistanceChange(value),
-              ),
-            )}
+        {showDistance ? (
+          <View style={styles.block}>
+            <Text style={styles.label}>Distância</Text>
+            <View style={styles.row}>
+              {DISTANCE_OPTIONS.map((value) =>
+                renderOption(
+                  `distance-${value}`,
+                  `${value}km`,
+                  distanceKm === value,
+                  () => onDistanceChange(value),
+                ),
+              )}
+            </View>
+            <Text style={styles.helper}>Perto de ti · {distanceLabel}</Text>
           </View>
-          <Text style={styles.helper}>Perto de ti · {distanceLabel}</Text>
-        </View>
+        ) : null}
 
         <View style={styles.block}>
           <View style={styles.locationHeader}>
@@ -312,6 +327,22 @@ export function FiltersBottomSheet({
             )}
           </View>
         </View>
+
+        {showEventType ? (
+          <View style={styles.block}>
+            <Text style={styles.label}>Tipo</Text>
+            <View style={styles.row}>
+              {EVENT_TYPE_OPTIONS.map((option) =>
+                renderOption(
+                  `event-type-${option.key}`,
+                  option.label,
+                  eventType === option.key,
+                  () => onEventTypeChange(option.key),
+                ),
+              )}
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.block}>
           <Text style={styles.label}>Preço</Text>

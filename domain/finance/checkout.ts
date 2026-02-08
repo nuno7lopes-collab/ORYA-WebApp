@@ -664,7 +664,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
           throw new Error("INVITE_TOKEN_INVALID");
         }
         if (policy.inviteIdentityMatch === "USERNAME") {
-          throw new Error("INVITE_TOKEN_INVALID");
+          throw new Error("INVITE_TOKEN_REQUIRES_EMAIL");
         }
         if (!input.buyerIdentityRef && !policy.guestCheckoutAllowed) {
           throw new Error("GUEST_CHECKOUT_NOT_ALLOWED");

@@ -16,7 +16,7 @@ export default function EmBrevePage() {
           </p>
           <div className="flex flex-col gap-3 pt-2">
             <Link
-              href="/explorar/eventos"
+              href="/descobrir/eventos"
               className={`${CTA_PRIMARY} w-full justify-center px-5 py-2.5 text-sm`}
             >
               Voltar a explorar eventos

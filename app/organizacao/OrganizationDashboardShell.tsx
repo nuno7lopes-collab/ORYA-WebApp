@@ -105,7 +105,6 @@ export default function OrganizationDashboardShell({
   const emailGateActive = Boolean(emailVerification && !emailVerification.isVerified);
   const [emailGateDismissed, setEmailGateDismissed] = useState(false);
   const [emailGateToast, setEmailGateToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
-  const [emailResending, setEmailResending] = useState(false);
   const showEmailGate = emailGateActive && !emailGateDismissed && !isSettingsRoute;
   const syncInFlightRef = useRef(false);
   const lastSyncAttemptRef = useRef<{ id: number; at: number } | null>(null);
@@ -218,46 +217,20 @@ export default function OrganizationDashboardShell({
     router.replace(target);
   }, [activeOrg?.id, pathname, router, searchParams]);
 
-  const handleResendVerification = async () => {
+  const handleEmailVerificationInfo = () => {
     if (!activeOrg?.id) {
       setEmailGateToast({ tone: "error", message: "Seleciona uma organização primeiro." });
       return;
     }
     const email = emailVerification?.email?.trim() ?? "";
     if (!email) {
-      setEmailGateToast({ tone: "error", message: "Define um email oficial antes de reenviar." });
+      setEmailGateToast({ tone: "error", message: "Define um email oficial antes de continuar." });
       return;
     }
-    if (emailResending) return;
-    setEmailResending(true);
-    try {
-      const res = await fetch("/api/organizacao/organizations/settings/official-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: activeOrg.id, email }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Não foi possível reenviar o email.");
-      }
-      if (json?.status === "VERIFIED") {
-        setEmailGateDismissed(true);
-        setEmailGateToast({ tone: "success", message: "Email já verificado. Painel desbloqueado." });
-        router.refresh();
-        return;
-      }
-      setEmailGateToast({
-        tone: "success",
-        message: "Email de verificação reenviado. Confirma a caixa de entrada.",
-      });
-    } catch (err) {
-      setEmailGateToast({
-        tone: "error",
-        message: err instanceof Error ? err.message : "Não foi possível reenviar o email.",
-      });
-    } finally {
-      setEmailResending(false);
-    }
+    setEmailGateToast({
+      tone: "success",
+      message: "Confirma a caixa de entrada e o spam para desbloquear o painel.",
+    });
   };
   const settingsHref = appendOrganizationIdToHref("/organizacao/settings", activeOrg?.id ?? null);
 
@@ -334,15 +307,14 @@ export default function OrganizationDashboardShell({
                 >
                   Ir para definições
                 </Link>
-                <button
-                  type="button"
-                  onClick={handleResendVerification}
-                  disabled={!emailVerification?.email || emailResending}
-                  className="inline-flex items-center rounded-full border border-amber-200/40 bg-white/5 px-4 py-2 text-[12px] font-semibold text-amber-50/90 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {emailResending ? "A reenviar…" : "Reenviar verificação"}
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={handleEmailVerificationInfo}
+                className="mt-3 text-[12px] text-amber-100/80 hover:text-amber-100"
+              >
+                Precisas de ajuda? Confirma a caixa de entrada e o spam.
+              </button>
             </div>
           ) : (
             <div

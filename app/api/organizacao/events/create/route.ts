@@ -984,6 +984,10 @@ export async function POST(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
     }
+    const message = err instanceof Error ? err.message : "";
+    if (message === "INVITE_TOKEN_REQUIRES_EMAIL") {
+      return fail(400, "INVITE_TOKEN_REQUIRES_EMAIL");
+    }
     console.error("POST /api/organizacao/events/create error:", err);
     return fail(500, "Erro interno ao criar evento.");
   }

@@ -406,7 +406,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           style={({ pressed }) => [styles.rightPill, pressed && styles.tabPressed]}
           hitSlop={10}
           onPress={() => {
-            navigation.navigate(RIGHT_TAB.key, { search: "1" });
+            navigation.navigate(RIGHT_TAB.key);
           }}
         >
           <View style={styles.rightCircle}>

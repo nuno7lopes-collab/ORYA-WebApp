@@ -7,6 +7,8 @@ Keep secrets out of git. Use single-line base64 for Apple keys.
 - DATABASE_URL
 - DIRECT_URL (Prisma)
 - APP_ENV (prod|test; optional override, otherwise inferred from host)
+- FORCE_APP_ENV / APP_ENV_FORCE (override hard)
+- SINGLE_DB_MODE=1 (force app env to prod; useful when prod+dev share one DB)
 - QR_SECRET_KEY
 - SES_REGION
 - SES_IDENTITY_DOMAIN
@@ -50,6 +52,8 @@ Optional:
 - STRIPE_SECRET_KEY (fallback)
 - STRIPE_WEBHOOK_SECRET (fallback)
 - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY (fallback)
+- STRIPE_MODE / STRIPE_ENV (override only for Stripe: prod|test)
+- NEXT_PUBLIC_STRIPE_MODE / NEXT_PUBLIC_STRIPE_ENV (client override for Stripe: prod|test)
 - STRIPE_PAYOUTS_WEBHOOK_SECRET (Stripe Connect payouts webhook)
 - STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE
 - STRIPE_PAYOUTS_WEBHOOK_SECRET_TEST

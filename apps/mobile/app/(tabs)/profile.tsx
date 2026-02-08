@@ -95,7 +95,11 @@ export default function ProfileScreen() {
   const avatarPreview = avatarRemoved ? null : avatarLocalUri ?? profile?.avatarUrl ?? null;
   const coverPreview = coverRemoved ? null : coverLocalUri ?? profile?.coverUrl ?? null;
 
-  const usernameValidation = useMemo(() => validateUsername(username), [username]);
+  const allowReservedForEmail = session?.user?.email ?? null;
+  const usernameValidation = useMemo(
+    () => validateUsername(username, { allowReservedForEmail }),
+    [username, allowReservedForEmail],
+  );
   const normalizedUsername = usernameValidation.valid ? usernameValidation.normalized : sanitizeUsername(username);
 
   const isDirty = useMemo(() => {
@@ -190,9 +194,13 @@ export default function ProfileScreen() {
     setSaving(true);
     try {
       if (profile.username !== normalizedUsername) {
-        const available = await checkUsernameAvailability(normalizedUsername, accessToken ?? null);
-        if (!available) {
-          Alert.alert("Username indisponível", "Escolhe outro username.");
+        const availability = await checkUsernameAvailability(normalizedUsername, accessToken ?? null);
+        if (!availability.available) {
+          const message =
+            availability.reason === "reserved"
+              ? "Este username está reservado."
+              : "Escolhe outro username.";
+          Alert.alert("Username indisponível", message);
           setSaving(false);
           return;
         }

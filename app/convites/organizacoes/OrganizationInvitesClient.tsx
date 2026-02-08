@@ -251,10 +251,10 @@ export default function OrganizationInvitesClient({
                 )}
                 <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/10">
+                    <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-white/10">
                       {avatarUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={avatarUrl} alt={orgName} className="h-full w-full object-cover" />
+                        <img src={avatarUrl} alt={orgName} className="h-full w-full rounded-full object-cover" />
                       ) : (
                         <span className="text-xl font-semibold text-white/70">
                           {orgName.slice(0, 2).toUpperCase()}

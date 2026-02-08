@@ -834,7 +834,7 @@ export default async function EventPage({
         <section className="relative z-10 w-full pb-16 pt-20 md:pb-20 md:pt-28">
           <div className="orya-page-width flex items-center justify-between px-4 md:px-8">
             <Link
-              href="/explorar/eventos"
+              href="/descobrir/eventos"
               className="inline-flex items-center gap-2 text-xs font-medium text-white/75 transition hover:text-white"
             >
               <span className="text-lg leading-none">←</span>

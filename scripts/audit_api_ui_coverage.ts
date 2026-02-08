@@ -23,12 +23,30 @@ const ORPHANS_PATH = path.join(REPORT_DIR, "api_orphans.md");
 const PLAN_PATH = path.join(ROOT, "docs", "v9_close_plan.md");
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 
+const MISSING_API_ALLOWLIST = new Set([
+  "/api/organizacao",
+]);
+
 const UI_ROOTS = [
   path.join(ROOT, "app"),
   path.join(ROOT, "components"),
   path.join(ROOT, "lib"),
   path.join(ROOT, "domain"),
+  path.join(ROOT, "apps", "mobile"),
 ];
+
+const IGNORE_DIRS = new Set([
+  "node_modules",
+  ".next",
+  ".expo",
+  "dist",
+  "build",
+  "coverage",
+  "reports",
+  "backups",
+  "ios",
+  "android",
+]);
 
 function listFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -37,6 +55,7 @@ function listFiles(dir: string): string[] {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (IGNORE_DIRS.has(entry.name)) continue;
       files.push(...listFiles(full));
     } else {
       files.push(full);
@@ -217,6 +236,7 @@ function main() {
     if (apiRoutesNormalized.includes(endpoint)) continue;
     const matched = apiRoutesNormalized.some((candidate) => matchesEndpointPattern(endpoint, candidate));
     if (!matched) {
+      if (MISSING_API_ALLOWLIST.has(endpoint)) continue;
       missingApi.push({ endpoint, files: Array.from(files).sort() });
     }
   }

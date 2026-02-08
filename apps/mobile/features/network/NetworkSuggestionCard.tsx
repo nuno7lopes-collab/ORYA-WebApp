@@ -1,9 +1,8 @@
 import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
-import { Image } from "expo-image";
 import { tokens } from "@orya/shared";
-import { Ionicons } from "../../components/icons/Ionicons";
 import { GlassCard } from "../../components/liquid/GlassCard";
+import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { SocialSuggestion } from "./types";
 import { useRouter } from "expo-router";
 
@@ -44,29 +43,7 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
           }}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
-          <View
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 16,
-              overflow: "hidden",
-              backgroundColor: "rgba(255,255,255,0.08)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {item.avatarUrl ? (
-              <Image
-                source={{ uri: item.avatarUrl }}
-                style={{ width: 52, height: 52 }}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={120}
-              />
-            ) : (
-              <Ionicons name="person" size={22} color="rgba(255,255,255,0.7)" />
-            )}
-          </View>
+          <AvatarCircle size={52} uri={item.avatarUrl} iconName="person" />
 
           <View style={{ flex: 1 }}>
             <Text className="text-white text-base font-semibold" numberOfLines={1}>

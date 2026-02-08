@@ -7,6 +7,10 @@ export type ResolvedNotificationLink =
 
 type RouterLike = { push: (href: string) => void };
 
+const WEB_ALLOWED_PATHS = new Set<string>([]);
+
+const WEB_ALLOWED_PREFIXES: string[] = ["/organizacao"];
+
 const normalizeInput = (input?: string | null) => {
   if (!input) return null;
   const trimmed = input.trim();
@@ -41,7 +45,22 @@ export const resolveNotificationLink = (input?: string | null): ResolvedNotifica
   if (path.startsWith("/event/") || path.startsWith("/messages") || path.startsWith("/wallet/")) {
     return { kind: "native", path: `${path}${search}` };
   }
+  if (path === "/me") {
+    return { kind: "native", path: "/profile" };
+  }
+  if (path === "/profile") {
+    return { kind: "native", path: "/profile" };
+  }
+  if (path === "/network") {
+    return { kind: "native", path: `${path}${search}` };
+  }
   if (path === "/notifications" || path === "/tickets") {
+    return { kind: "native", path: `${path}${search}` };
+  }
+  if (path === "/me/bilhetes") {
+    return { kind: "native", path: "/tickets" };
+  }
+  if (path === "/convites/organizacoes") {
     return { kind: "native", path: `${path}${search}` };
   }
 
@@ -51,6 +70,37 @@ export const resolveNotificationLink = (input?: string | null): ResolvedNotifica
     if (slug) {
       return { kind: "native", path: `/event/${slug}${search}` };
     }
+  }
+  if (path === "/eventos") {
+    return { kind: "native", path: "/(tabs)/index" };
+  }
+
+  const topLevel = path.split("/").filter(Boolean);
+  const reserved = new Set([
+    "eventos",
+    "event",
+    "messages",
+    "wallet",
+    "me",
+    "profile",
+    "network",
+    "notifications",
+    "tickets",
+    "social",
+    "convites",
+    "organizacao",
+    "auth",
+    "map",
+    "search",
+    "agora",
+    "index",
+    "servicos",
+    "service",
+    "chat",
+    "api",
+  ]);
+  if (topLevel.length === 1 && !reserved.has(topLevel[0])) {
+    return { kind: "native", path: `/${topLevel[0]}` };
   }
 
   if (path === "/me/carteira" || path === "/me/inscricoes") {
@@ -78,6 +128,13 @@ export const resolveNotificationLink = (input?: string | null): ResolvedNotifica
       return { kind: "native", path: `/messages/${conversationId}` };
     }
     return { kind: "native", path: "/messages" };
+  }
+
+  const allowWeb =
+    WEB_ALLOWED_PATHS.has(path) || WEB_ALLOWED_PREFIXES.some((prefix) => path.startsWith(prefix));
+
+  if (!allowWeb) {
+    return { kind: "none" };
   }
 
   const fallbackUrl = url.toString();

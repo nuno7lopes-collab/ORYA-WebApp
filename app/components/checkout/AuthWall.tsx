@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import FormField from "./FormField";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
+import { isReservedUsernameAllowed } from "@/lib/reservedUsernames";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
 type AuthWallProps = {
@@ -20,9 +21,10 @@ function delay(ms: number) {
 async function checkUsernameAvailabilityRemote(
   value: string,
   onError: (message: string) => void,
+  allowReservedForEmail?: string | null,
 ) {
   const cleaned = sanitizeUsername(value);
-  const validation = validateUsername(cleaned);
+  const validation = validateUsername(cleaned, { allowReservedForEmail });
   if (!validation.valid) {
     onError(validation.error);
     return { ok: false, username: cleaned };
@@ -31,7 +33,12 @@ async function checkUsernameAvailabilityRemote(
     const res = await fetch(`/api/username/check?username=${encodeURIComponent(cleaned)}`);
     const json = await res.json().catch(() => null);
     if (!res.ok || json?.available === false) {
-      onError("Esse @ já está a ser usado.");
+      if (json?.reason === "reserved" && isReservedUsernameAllowed(cleaned, allowReservedForEmail)) {
+        return { ok: true, username: validation.normalized };
+      }
+      const message =
+        json?.reason === "reserved" ? "Este username está reservado." : "Esse @ já está a ser usado.";
+      onError(message);
       return { ok: false, username: cleaned };
     }
     return { ok: true, username: validation.normalized };
@@ -57,47 +64,8 @@ export default function AuthWall({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
-  const [authOtpCooldown, setAuthOtpCooldown] = useState(0);
-  const [authOtpResending, setAuthOtpResending] = useState(false);
   const isEmailLike = (value: string) => value.includes("@");
-
-  useEffect(() => {
-    if (authOtpCooldown <= 0) return;
-    const t = setInterval(() => {
-      setAuthOtpCooldown((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(t);
-  }, [authOtpCooldown]);
-
-  async function triggerResendOtp(email: string) {
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !isEmailLike(cleanEmail)) {
-      setError("Indica um email válido para reenviar o código.");
-      setAuthOtpCooldown(0);
-      return;
-    }
-    setError(null);
-    setAuthOtpResending(true);
-    setAuthOtpCooldown(60);
-    try {
-      const res = await fetch("/api/auth/resend-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setError(data?.error ?? "Não foi possível reenviar o código.");
-        setAuthOtpCooldown(0);
-      }
-    } catch (err) {
-      console.error("[AuthWall] resend OTP error:", err);
-      setError("Não foi possível reenviar o código.");
-      setAuthOtpCooldown(0);
-    } finally {
-      setAuthOtpResending(false);
-    }
-  }
+  const allowReservedForEmail = isEmailLike(identifier) ? identifier.trim().toLowerCase() : null;
 
   async function syncSessionWithServer() {
     try {
@@ -262,7 +230,7 @@ export default function AuthWall({
           setError("Nome é obrigatório para criar conta.");
           return;
         }
-        const usernameCheck = await checkUsernameAvailabilityRemote(username, setError);
+        const usernameCheck = await checkUsernameAvailabilityRemote(username, setError, allowReservedForEmail);
         if (!usernameCheck.ok) {
           setSubmitting(false);
           return;
@@ -452,18 +420,8 @@ export default function AuthWall({
                   inputMode: "numeric",
                 }}
               />
-              <div className="text-[11px] text-white/65 flex items-center justify-between">
-                <span>
-                  Não chegou? {authOtpCooldown > 0 ? `Reenvio em ${authOtpCooldown}s.` : "Reenvia."}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => identifier && triggerResendOtp(identifier)}
-                  disabled={authOtpCooldown > 0 || authOtpResending || !identifier || !isEmailLike(identifier)}
-                  className="text-[#6BFFFF] hover:text-white transition disabled:opacity-50"
-                >
-                  Reenviar código
-                </button>
+              <div className="text-[11px] text-white/65">
+                Se não recebeste o email, verifica a caixa de spam.
               </div>
             </>
           )}
@@ -472,10 +430,6 @@ export default function AuthWall({
         {error && (
           <p className="text-[11px] text-red-300 mt-1 leading-snug">{error}</p>
         )}
-        {authOtpCooldown > 0 && mode === "verify" && (
-          <p className="text-[11px] text-white/60">Reenvio em {authOtpCooldown}s.</p>
-        )}
-
         <button
           type="button"
           onClick={handleGoogle}

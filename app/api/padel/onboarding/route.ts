@@ -158,9 +158,18 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "INVALID_PHONE" }, { status: 400 });
     }
 
-    const usernameValidation = normalizeAndValidateUsername(usernameInput);
+    const usernameValidation = normalizeAndValidateUsername(usernameInput, {
+      allowReservedForEmail: user.email ?? null,
+    });
     if (!usernameValidation.ok) {
-      return jsonWrap({ ok: false, error: usernameValidation.error, code: "USERNAME_INVALID" }, { status: 400 });
+      return jsonWrap(
+        {
+          ok: false,
+          error: usernameValidation.error,
+          code: usernameValidation.code ?? "USERNAME_INVALID",
+        },
+        { status: 400 },
+      );
     }
 
     const usernameNormalized = usernameValidation.username;
@@ -206,6 +215,7 @@ async function _POST(req: NextRequest) {
           ownerType: "user",
           ownerId: user.id,
           tx,
+          allowReservedForEmail: user.email ?? null,
         });
       }
 

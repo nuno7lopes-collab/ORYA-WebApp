@@ -1,12 +1,12 @@
 import { memo } from "react";
-import { Image } from "expo-image";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
-import { Ionicons } from "../../components/icons/Ionicons";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassPill } from "../../components/liquid/GlassPill";
+import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { DiscoverEventCard } from "../discover/DiscoverEventCard";
 import { SocialFeedItem } from "./types";
+import { useRouter } from "expo-router";
 
 type Props = {
   item: SocialFeedItem;
@@ -40,38 +40,29 @@ export const SocialFeedCard = memo(function SocialFeedCard({
   userLat,
   userLon,
 }: Props) {
+  const router = useRouter();
   const orgName = item.organization.name || "Organização";
   const timeLabel = formatRelativeTime(item.createdAt);
+  const handleOrgPress = () => {
+    if (item.organization.username) {
+      router.push({ pathname: "/[username]", params: { username: item.organization.username } });
+    }
+  };
 
   return (
     <View className="mb-6">
       <GlassSurface intensity={44} padding={tokens.spacing.md} className="mb-3">
         <View className="flex-row items-center gap-3">
-          <View
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: 14,
-              overflow: "hidden",
-              backgroundColor: "rgba(255,255,255,0.12)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {item.organization.avatarUrl ? (
-              <Image
-                source={{ uri: item.organization.avatarUrl }}
-                style={{ width: 46, height: 46 }}
-                cachePolicy="memory-disk"
-                transition={120}
-                contentFit="cover"
-              />
-            ) : (
-              <Ionicons name="business" size={20} color="rgba(255,255,255,0.7)" />
-            )}
-          </View>
+          <Pressable onPress={handleOrgPress}>
+            <AvatarCircle
+              size={46}
+              uri={item.organization.avatarUrl}
+              iconName="business"
+              backgroundColor="rgba(255,255,255,0.12)"
+            />
+          </Pressable>
 
-          <View style={{ flex: 1 }}>
+          <Pressable onPress={handleOrgPress} style={{ flex: 1 }}>
             <Text className="text-white text-sm font-semibold" numberOfLines={1}>
               {orgName}
             </Text>
@@ -80,7 +71,7 @@ export const SocialFeedCard = memo(function SocialFeedCard({
                 @{item.organization.username}
               </Text>
             ) : null}
-          </View>
+          </Pressable>
 
           <View className="items-end">
             <GlassPill label="Evento" variant="muted" />

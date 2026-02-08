@@ -28,7 +28,7 @@ export async function evaluateEventAccess(input: AccessInput): Promise<AccessDec
       return { allowed: false, reasonCode: "INVITE_TOKEN_NOT_ALLOWED" };
     }
     if (policy.inviteIdentityMatch === "USERNAME") {
-      return { allowed: false, reasonCode: "INVITE_IDENTITY_MATCH_UNSUPPORTED" };
+      return { allowed: false, reasonCode: "INVITE_TOKEN_REQUIRES_EMAIL" };
     }
     if (policy.inviteTokenTtlSeconds == null) {
       return { allowed: false, reasonCode: "INVITE_TOKEN_TTL_REQUIRED" };

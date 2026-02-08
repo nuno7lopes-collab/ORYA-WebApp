@@ -5,11 +5,13 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { normalizeEmail } from "@/lib/utils/email";
 import { resolveUserIdentifier } from "@/lib/userResolver";
 import { validateUsername } from "@/lib/username";
+import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationModule } from "@prisma/client";
+import { NotificationType, OrganizationModule } from "@prisma/client";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { createNotification, shouldNotify } from "@/lib/notifications";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -27,7 +29,7 @@ function normalizeInviteIdentifier(raw: string) {
   const explicitUsername = value.startsWith("@") && !value.slice(1).includes("@");
   if (explicitUsername) {
     const withoutAt = value.slice(1);
-    const validation = validateUsername(withoutAt);
+    const validation = validateUsername(withoutAt, { skipReservedCheck: true });
     if (!validation.valid) {
       return { ok: false as const, error: validation.error };
     }
@@ -45,7 +47,7 @@ function normalizeInviteIdentifier(raw: string) {
     return { ok: true as const, normalized, type: "email" as const };
   }
 
-  const validation = validateUsername(value);
+  const validation = validateUsername(value, { skipReservedCheck: true });
   if (!validation.valid) {
     return { ok: false as const, error: validation.error };
   }
@@ -232,6 +234,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const scope = normalizeScope(body?.scope) ?? "PUBLIC";
 
+    const accessPolicy = await getLatestPolicyForEvent(eventId);
+    const inviteIdentityMatch = accessPolicy?.inviteIdentityMatch ?? "BOTH";
+    const allowEmail = inviteIdentityMatch === "EMAIL" || inviteIdentityMatch === "BOTH";
+    const allowUsername = inviteIdentityMatch === "USERNAME" || inviteIdentityMatch === "BOTH";
+
     const rawList = Array.isArray(body?.identifiers)
       ? body.identifiers
       : typeof body?.identifier === "string"
@@ -258,6 +265,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const normalized = normalizeInviteIdentifier(raw);
       if (!normalized.ok) {
         errors.push(normalized.error);
+        continue;
+      }
+      if (normalized.type === "email" && !allowEmail) {
+        errors.push("Convites por email não são permitidos para este evento.");
+        continue;
+      }
+      if (normalized.type === "username" && !allowUsername) {
+        errors.push("Convites por username não são permitidos para este evento.");
         continue;
       }
       const resolved = await resolveUserIdentifier(normalized.normalized).catch(() => null);
@@ -290,6 +305,51 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       })),
       skipDuplicates: true,
     });
+
+    const targetUserIds = Array.from(
+      new Set(
+        normalizedEntries
+          .map((entry) => entry.targetUserId)
+          .filter((value): value is string => Boolean(value && value !== user.id)),
+      ),
+    );
+
+    if (targetUserIds.length > 0) {
+      const [event, actorProfile] = await Promise.all([
+        prisma.event.findUnique({
+          where: { id: eventId },
+          select: { id: true, title: true, slug: true, organizationId: true },
+        }),
+        prisma.profile.findUnique({
+          where: { id: user.id },
+          select: { fullName: true, username: true },
+        }),
+      ]);
+
+      const actorName = actorProfile?.fullName || actorProfile?.username || "Alguém";
+      const eventTitle = event?.title || "evento";
+      const ctaUrl = event?.slug ? `/eventos/${event.slug}` : "/eventos";
+
+      await Promise.all(
+        targetUserIds.map(async (targetUserId) => {
+          if (!(await shouldNotify(targetUserId, NotificationType.EVENT_INVITE))) return;
+          await createNotification({
+            userId: targetUserId,
+            type: NotificationType.EVENT_INVITE,
+            title: actorName,
+            body: `convidou-te para o evento ${eventTitle}.`,
+            ctaUrl,
+            ctaLabel: "Ver evento",
+            fromUserId: user.id,
+            organizationId: event?.organizationId ?? null,
+            eventId: event?.id ?? null,
+            payload: {
+              eventTitle: eventTitle,
+            },
+          });
+        }),
+      );
+    }
 
     return respondOk(ctx, {});
   } catch (err) {

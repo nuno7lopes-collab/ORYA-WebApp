@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { enqueueNotification } from "@/domain/notifications/outbox";
-import { getNotificationPrefs, shouldNotify } from "@/domain/notifications/prefs";
+import { shouldNotify } from "@/domain/notifications/prefs";
+import { resolveNotificationContent, resolvePayloadKind, resolveRoleLabel, resolvePushPayload, validateNotificationInput } from "@/domain/notifications/registry";
 import { deliverApnsPush } from "@/lib/push/apns";
 import type { CreateNotificationInput } from "@/domain/notifications/types";
 import { NotificationType, NotificationPriority, type Prisma } from "@prisma/client";
@@ -127,15 +128,34 @@ export async function markAllNotificationsRead(params: { userId: string; organiz
   return { ok: true };
 }
 
-async function maybeSendPush(userId: string, payload: { title: string; body: string; deepLink?: string | null }) {
+async function maybeSendPush(
+  userId: string,
+  type: NotificationType,
+  payload: { title: string; body: string; deepLink?: string | null },
+  context?: { organizationId?: number | null; eventId?: number | null },
+) {
   const tokens = await prisma.pushDeviceToken.findMany({
     where: { userId, revokedAt: null, platform: "ios" },
     select: { token: true },
   });
   if (!tokens.length) return;
+  const should = await shouldNotify(userId, type).catch(() => true);
+  if (!should) return;
 
-  const pref = await getNotificationPrefs(userId).catch(() => null);
-  if (pref && !pref.allowSystemAnnouncements) return;
+  const muteOr: Array<{ organizationId?: number; eventId?: number }> = [];
+  if (Number.isFinite(context?.organizationId ?? NaN)) {
+    muteOr.push({ organizationId: Number(context?.organizationId) });
+  }
+  if (Number.isFinite(context?.eventId ?? NaN)) {
+    muteOr.push({ eventId: Number(context?.eventId) });
+  }
+  if (muteOr.length) {
+    const muted = await prisma.notificationMute.findFirst({
+      where: { userId, OR: muteOr },
+      select: { id: true },
+    });
+    if (muted) return;
+  }
 
   await Promise.all(
     tokens.map(async (token) => {
@@ -298,7 +318,12 @@ export async function deliverNotificationOutboxItem(item: {
       priority: "NORMAL",
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: "/me/carteira" });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: "/me/carteira" },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -319,7 +344,12 @@ export async function deliverNotificationOutboxItem(item: {
       priority: "NORMAL",
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: "/me/inscricoes" });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: "/me/inscricoes" },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -343,7 +373,12 @@ export async function deliverNotificationOutboxItem(item: {
       priority: "NORMAL",
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: orgHref });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: orgHref },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -425,7 +460,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: pairing?.event?.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? "Convite para dupla", body: notification.body ?? "", deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? "Convite para dupla", body: notification.body ?? "", deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -466,7 +506,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: eventId ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -488,7 +533,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: eventId ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -512,7 +562,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: eventId ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -536,7 +591,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: eventId ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -570,7 +630,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: eventId ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -602,7 +667,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: event?.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -656,7 +726,12 @@ export async function deliverNotificationOutboxItem(item: {
       organizationId: orgId,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -715,7 +790,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: match.event.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -760,7 +840,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: match.event.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -786,7 +871,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: match.event.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? "Próximo adversário definido", body: notification.body ?? "", deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? "Próximo adversário definido", body: notification.body ?? "", deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -822,7 +912,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: event.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -853,7 +948,12 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: event.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
@@ -889,47 +989,136 @@ export async function deliverNotificationOutboxItem(item: {
       eventId: event.id ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl });
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
   if (NOTIFICATION_TYPES.has(item.notificationType)) {
     const data = payload as Record<string, unknown>;
-    const title = typeof data.title === "string" ? data.title : "Notificação";
-    const body = typeof data.body === "string" ? data.body : "Tens uma nova notificação.";
+    const readString = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+    const readNumber = (value: unknown) => {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+      return null;
+    };
+
+    const type = item.notificationType as NotificationType;
+    const fromUserId = readString(data.fromUserId);
+    const organizationId = readNumber(data.organizationId);
+    const eventId = readNumber(data.eventId);
+    const inviteId = readString(data.inviteId);
+    const ticketId = readString(data.ticketId);
+    const priority = (data.priority as NotificationPriority) ?? "NORMAL";
+
+    const [actor, organization, event] = await Promise.all([
+      fromUserId
+        ? prisma.profile.findUnique({
+            where: { id: fromUserId },
+            select: { id: true, fullName: true, username: true, avatarUrl: true },
+          })
+        : Promise.resolve(null),
+      organizationId
+        ? prisma.organization.findUnique({
+            where: { id: organizationId },
+            select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true, brandingCoverUrl: true },
+          })
+        : Promise.resolve(null),
+      eventId
+        ? prisma.event.findUnique({
+            where: { id: eventId },
+            select: { id: true, title: true, slug: true, coverImageUrl: true, organizationId: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const actors = actor
+      ? [
+          {
+            id: actor.id,
+            name: actor.fullName || actor.username || "Utilizador",
+            avatarUrl: actor.avatarUrl ?? null,
+            username: actor.username ?? null,
+          },
+        ]
+      : [];
+
+    const registryInput = {
+      type,
+      title: readString(data.title),
+      body: readString(data.body),
+      ctaUrl: readString(data.ctaUrl),
+      ctaLabel: readString(data.ctaLabel),
+      priority,
+      fromUserId,
+      organizationId: organization?.id ?? organizationId ?? undefined,
+      eventId: event?.id ?? eventId ?? undefined,
+      ticketId: ticketId ?? undefined,
+      inviteId,
+      payload: data,
+      payloadKind: resolvePayloadKind(data),
+      roleLabel: resolveRoleLabel(data),
+      actors,
+      actorCount: actors.length,
+      event: event ? { id: event.id, title: event.title, slug: event.slug, coverImageUrl: event.coverImageUrl, organizationId: event.organizationId } : undefined,
+      organization: organization ? { id: organization.id, publicName: organization.publicName, businessName: organization.businessName, username: organization.username, brandingAvatarUrl: organization.brandingAvatarUrl, brandingCoverUrl: organization.brandingCoverUrl } : undefined,
+    };
+
+    const content = resolveNotificationContent(registryInput);
+    const missing = validateNotificationInput(registryInput);
+    if (missing.length) {
+      console.warn("[notifications][registry] missing_fields", { type, missing, userId: item.userId });
+    }
+
     const notification = await createNotificationRecord({
       userId: item.userId,
-      type: item.notificationType as NotificationType,
-      title,
-      body,
+      type,
+      title: content.title,
+      body: content.body ?? null,
       payload: payloadJson,
-      ctaUrl: typeof data.ctaUrl === "string" ? data.ctaUrl : "/social?tab=notifications",
-      ctaLabel: typeof data.ctaLabel === "string" ? data.ctaLabel : "Ver",
-      priority: (data.priority as NotificationPriority) ?? "NORMAL",
-      fromUserId: typeof data.fromUserId === "string" ? data.fromUserId : undefined,
-      organizationId: typeof data.organizationId === "number" ? data.organizationId : undefined,
-      eventId: typeof data.eventId === "number" ? data.eventId : undefined,
-      ticketId: typeof data.ticketId === "string" ? data.ticketId : undefined,
-      inviteId: typeof data.inviteId === "string" ? data.inviteId : undefined,
+      ctaUrl: content.ctaUrl ?? undefined,
+      ctaLabel: content.ctaLabel ?? undefined,
+      priority: content.priority ?? priority,
+      fromUserId: fromUserId ?? undefined,
+      organizationId: registryInput.organizationId ?? undefined,
+      eventId: registryInput.eventId ?? undefined,
+      ticketId: ticketId ?? undefined,
+      inviteId: inviteId ?? undefined,
       sourceEventId,
     });
-    await maybeSendPush(item.userId, { title: notification.title ?? title, body: notification.body ?? body, deepLink: notification.ctaUrl ?? null });
+
+    const pushPayload = resolvePushPayload(registryInput);
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: pushPayload.title, body: pushPayload.body, deepLink: pushPayload.deepLink },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
     return notification;
   }
 
   const notification = await createNotificationRecord({
     userId: item.userId,
     type: NotificationType.SYSTEM_ANNOUNCE,
-    title: "Notificação",
-    body: "Tens uma nova notificação.",
+    title: "Atualização do sistema",
+    body: "Tens uma atualização importante.",
     payload: payloadJson,
-    ctaUrl: "/social?tab=notifications",
-    ctaLabel: "Ver",
+    ctaUrl: "/me",
+    ctaLabel: "Ver detalhes",
     priority: "NORMAL",
     fromUserId: inviterUserId ?? undefined,
     sourceEventId,
   });
-  await maybeSendPush(item.userId, { title: notification.title ?? "Notificação", body: notification.body ?? "", deepLink: "/social?tab=notifications" });
+  await maybeSendPush(
+    item.userId,
+    notification.type,
+    { title: notification.title ?? "Atualização do sistema", body: notification.body ?? "", deepLink: notification.ctaUrl ?? "/me" },
+    { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+  );
   return notification;
 }
 

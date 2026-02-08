@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { SourceType } from "@prisma/client";
+import { buildAgendaOverlapFilter } from "@/domain/agendaReadModel/overlap";
 
 export async function listPublicAgenda(params: {
   organizationId: number;
@@ -8,14 +9,18 @@ export async function listPublicAgenda(params: {
   limit?: number;
   cursorId?: string | null;
   sourceTypes?: SourceType[];
+  padelClubId?: number | null;
+  courtId?: number | null;
 }) {
-  const { organizationId, from, to, limit = 200, cursorId, sourceTypes } = params;
+  const { organizationId, from, to, limit = 200, cursorId, sourceTypes, padelClubId, courtId } = params;
+  const rangeFilter = buildAgendaOverlapFilter({ from, to });
   return prisma.agendaItem.findMany({
     where: {
       organizationId,
       sourceType: sourceTypes?.length ? { in: sourceTypes } : undefined,
-      startsAt: from ? { gte: from } : undefined,
-      endsAt: to ? { lte: to } : undefined,
+      ...rangeFilter,
+      ...(padelClubId ? { padelClubId } : {}),
+      ...(courtId ? { courtId } : {}),
       status: { not: "DELETED" },
     },
     orderBy: { startsAt: "asc" },
@@ -32,6 +37,8 @@ export async function listPublicAgenda(params: {
       status: true,
       lastEventId: true,
       updatedAt: true,
+      padelClubId: true,
+      courtId: true,
     },
   });
 }

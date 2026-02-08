@@ -1,46 +1,178 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View, Platform, Linking } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
+import { useFocusEffect } from "@react-navigation/native";
+import { usePathname, useRouter } from "expo-router";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import * as Haptics from "expo-haptics";
+import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
-import { BlurView } from "expo-blur";
-import { tokens } from "@orya/shared";
-import { useRouter } from "expo-router";
+import { Ionicons } from "../../components/icons/Ionicons";
+import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { useAuth } from "../../lib/auth";
 import { useNotificationsFeed, notificationsKeys } from "../../features/notifications/hooks";
-import type { NotificationItem, NotificationsStatus, NotificationsPage } from "../../features/notifications/types";
-import { markAllNotificationsRead, markNotificationRead } from "../../features/notifications/api";
-import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { openNotificationLink } from "../../lib/notifications";
-import { getPushPermissionStatus, registerForPushToken, requestPushPermission } from "../../lib/push";
-import { api } from "../../lib/api";
-import { useFocusEffect } from "@react-navigation/native";
-
-const statusOptions: Array<{ key: NotificationsStatus; label: string }> = [
-  { key: "all", label: "Todas" },
-  { key: "unread", label: "Não lidas" },
-];
+import type {
+  AggregatedNotificationItem,
+  NotificationAction,
+  NotificationsPage,
+} from "../../features/notifications/types";
+import {
+  markAllNotificationsRead,
+  markNotificationRead,
+  muteNotificationTarget,
+  respondOrganizationInvite,
+} from "../../features/notifications/api";
+import { acceptFollowRequest, declineFollowRequest, followUser, unfollowUser } from "../../features/network/api";
+import { acceptInvite as acceptPairingInvite, declineInvite as declinePairingInvite } from "../../features/tournaments/api";
+import { openNotificationLink, resolveNotificationLink } from "../../lib/notifications";
 
 type ListItem =
   | { kind: "skeleton"; key: string }
-  | { kind: "notification"; item: NotificationItem };
+  | { kind: "section"; key: string; label: string }
+  | { kind: "notification"; item: AggregatedNotificationItem };
+
+type BucketKey = "today" | "yesterday" | "week" | "older";
+
+const BUCKET_ORDER: BucketKey[] = ["today", "yesterday", "week", "older"];
+
+const BUCKET_LABELS: Record<BucketKey, string> = {
+  today: "Hoje",
+  yesterday: "Ontem",
+  week: "Esta semana",
+  older: "Mais antiga",
+};
+
+const CATEGORY_LABELS: Record<AggregatedNotificationItem["category"], string> = {
+  network: "Rede",
+  events: "Eventos",
+  system: "Sistema",
+  marketing: "Marketing",
+};
+
+const CATEGORY_ICONS: Record<AggregatedNotificationItem["category"], string> = {
+  network: "people",
+  events: "calendar",
+  system: "notifications",
+  marketing: "sparkles",
+};
+
+const formatRelativeTime = (iso?: string | null): string => {
+  if (!iso) return "";
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp)) return "";
+  const diffSeconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (diffSeconds < 60) return "agora";
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `há ${diffMinutes} min`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `há ${diffHours} h`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `há ${diffDays} d`;
+  return new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "short" }).format(new Date(timestamp));
+};
+
+const getBucketKey = (iso?: string | null): BucketKey => {
+  if (!iso) return "older";
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "older";
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfDate) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return "today";
+  if (diffDays === 1) return "yesterday";
+  if (diffDays < 7) return "week";
+  return "older";
+};
+
+const buildKey = (itemId: string, action: NotificationAction) => `${itemId}:${action.type}`;
+
+const AvatarStack = ({
+  actors,
+  actorCount,
+  onPress,
+}: {
+  actors: AggregatedNotificationItem["actors"];
+  actorCount: number;
+  onPress?: () => void;
+}) => {
+  const size = 42;
+  const overlap = 14;
+  const ringColor = "rgba(10,14,24,0.95)";
+  const visible = actors.slice(0, 3);
+  const width = visible.length > 0 ? size + (visible.length - 1) * (size - overlap) : size;
+
+  const Wrapper: React.ElementType = onPress ? Pressable : View;
+
+  return (
+    <Wrapper
+      onPress={(event: any) => {
+        event?.stopPropagation?.();
+        onPress?.();
+      }}
+      style={[styles.avatarStack, { width, height: size }]}
+    >
+      {visible.length === 0 ? (
+        <AvatarCircle size={size} iconName="person" borderColor={ringColor} borderWidth={2} />
+      ) : null}
+      {visible.map((actor, index) => (
+        <AvatarCircle
+          key={`${actor.id}-${index}`}
+          size={size}
+          uri={actor.avatarUrl ?? null}
+          borderColor={ringColor}
+          borderWidth={2}
+          style={{
+            marginLeft: index === 0 ? 0 : -overlap,
+            zIndex: 10 - index,
+          }}
+        />
+      ))}
+    </Wrapper>
+  );
+};
+
+const NotificationThumbnail = ({ url, category }: { url?: string | null; category: AggregatedNotificationItem["category"] }) => {
+  if (url) {
+    return (
+      <View style={styles.thumbnail}>
+        <Image
+          source={{ uri: url }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={140}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.thumbnail, styles.thumbnailFallback]}>
+      <Ionicons name={CATEGORY_ICONS[category] as any} size={18} color="rgba(255,255,255,0.75)" />
+    </View>
+  );
+};
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const { session } = useAuth();
-  const accessToken = session?.access_token ?? null;
-  const topPadding = useTopHeaderPadding(24);
-  const bottomPadding = useTabBarPadding();
   const queryClient = useQueryClient();
+  const topPadding = useTopHeaderPadding(20);
+  const bottomPadding = useTabBarPadding();
 
-  const [status, setStatus] = useState<NotificationsStatus>("all");
-  const [pushStatus, setPushStatus] = useState<"granted" | "denied" | "undetermined" | "unavailable">("undetermined");
-  const [pushBusy, setPushBusy] = useState(false);
+  const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
+  const [followOverrides, setFollowOverrides] = useState<Record<string, boolean>>({});
+  const [notificationStatus, setNotificationStatus] = useState<Record<string, "Aceite" | "Recusado">>({});
+  const lastMarkedRef = useRef<number | null>(null);
 
-  const feed = useNotificationsFeed(status, Boolean(session?.user?.id));
+  const feed = useNotificationsFeed(Boolean(session?.user?.id));
 
   const items = useMemo(
     () => feed.data?.pages.flatMap((page) => page.items) ?? [],
@@ -49,166 +181,440 @@ export default function NotificationsScreen() {
 
   const showSkeleton = feed.isLoading && items.length === 0;
 
-  const listData: ListItem[] = useMemo(
-    () =>
-      showSkeleton
-        ? Array.from({ length: 4 }, (_, index) => ({
-            kind: "skeleton",
-            key: `notification-skeleton-${index}`,
-          }))
-        : items.map((item) => ({ kind: "notification", item })),
-    [items, showSkeleton],
-  );
-
-  const refreshPermissionStatus = useCallback(() => {
-    getPushPermissionStatus()
-      .then((result) => setPushStatus(result.status))
-      .catch(() => undefined);
-  }, []);
-
-  const handleEnablePush = useCallback(async () => {
-    if (!session?.user?.id) {
-      router.push("/auth");
-      return;
+  const listData: ListItem[] = useMemo(() => {
+    if (showSkeleton) {
+      return Array.from({ length: 4 }, (_, index) => ({
+        kind: "skeleton",
+        key: `notification-skeleton-${index}`,
+      }));
     }
-    setPushBusy(true);
-    try {
-      const result = await requestPushPermission();
-      setPushStatus(result.status);
-      if (result.granted && accessToken) {
-        const token = await registerForPushToken();
-        if (token) {
-          await api.requestWithAccessToken("/api/me/push-tokens", accessToken, {
-            method: "POST",
-            body: JSON.stringify({ token, platform: "ios" }),
-          });
-        }
-      }
-    } finally {
-      setPushBusy(false);
+
+    const bucketed: Record<BucketKey, AggregatedNotificationItem[]> = {
+      today: [],
+      yesterday: [],
+      week: [],
+      older: [],
+    };
+
+    for (const item of items) {
+      bucketed[getBucketKey(item.createdAt)].push(item);
     }
-  }, [accessToken, router, session?.user?.id]);
 
-  const handleOpenSettings = useCallback(() => {
-    Linking.openSettings().catch(() => undefined);
-  }, []);
+    const result: ListItem[] = [];
 
-  const markReadOptimistic = useCallback(
-    (notificationId: string) => {
-      const updateData = (
-        data: InfiniteData<NotificationsPage> | undefined,
-        removeFromUnread: boolean,
-      ) => {
+    for (const bucket of BUCKET_ORDER) {
+      const bucketItems = bucketed[bucket];
+      if (!bucketItems.length) continue;
+      result.push({ kind: "section", key: `section-${bucket}`, label: BUCKET_LABELS[bucket] });
+      bucketItems.forEach((item) => result.push({ kind: "notification", item }));
+    }
+
+    return result;
+  }, [items, showSkeleton]);
+
+  const updateCacheItems = useCallback(
+    (
+      updater: (item: AggregatedNotificationItem) => AggregatedNotificationItem,
+      shouldUpdate?: (item: AggregatedNotificationItem) => boolean,
+    ) => {
+      const update = (data: InfiniteData<NotificationsPage> | undefined) => {
         if (!data) return data;
         return {
           ...data,
           pages: data.pages.map((page) => ({
             ...page,
-            items: page.items
-              .filter((item) => !removeFromUnread || item.id !== notificationId)
-              .map((item) => (item.id === notificationId ? { ...item, isRead: true } : item)),
+            items: page.items.map((item) => (shouldUpdate && !shouldUpdate(item) ? item : updater(item))),
           })),
         } as InfiniteData<NotificationsPage>;
       };
 
-      queryClient.setQueriesData(
-        { queryKey: notificationsKeys.feed("all") },
-        (data) => updateData(data as InfiniteData<NotificationsPage> | undefined, false),
-      );
-      queryClient.setQueriesData(
-        { queryKey: notificationsKeys.feed("unread") },
-        (data) => updateData(data as InfiniteData<NotificationsPage> | undefined, true),
+      queryClient.setQueriesData({ queryKey: notificationsKeys.feed() }, (data) =>
+        update(data as InfiniteData<NotificationsPage> | undefined),
       );
     },
     [queryClient],
   );
 
-  const handlePressNotification = useCallback(
-    async (item: NotificationItem) => {
-      const link =
-        (typeof item.ctaUrl === "string" && item.ctaUrl) ||
-        (typeof item.payload?.ctaUrl === "string" && item.payload.ctaUrl) ||
-        null;
-      await openNotificationLink(router, link);
+  const filterCacheItems = useCallback(
+    (predicate: (item: AggregatedNotificationItem) => boolean) => {
+      const update = (data: InfiniteData<NotificationsPage> | undefined) => {
+        if (!data) return data;
+        return {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.filter(predicate),
+          })),
+        } as InfiniteData<NotificationsPage>;
+      };
 
-      if (!item.isRead && item.id) {
-        markReadOptimistic(item.id);
-        markNotificationRead(item.id)
-          .then(() => {
-            queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-          })
-          .catch(() => {
-            queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-          });
-      }
+      queryClient.setQueriesData({ queryKey: notificationsKeys.feed() }, (data) =>
+        update(data as InfiniteData<NotificationsPage> | undefined),
+      );
     },
-    [markReadOptimistic, queryClient, router],
+    [queryClient],
   );
 
-  const handleMarkAllRead = useCallback(async () => {
-    if (!session?.user?.id) return;
-    await markAllNotificationsRead();
-    queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-  }, [queryClient, session?.user?.id]);
+  const markTabReadOptimistic = useCallback(() => {
+    updateCacheItems((item) => ({ ...item, isRead: true }));
+  }, [updateCacheItems]);
 
-  const formatDate = useCallback((value?: string | null) => {
-    if (!value) return "";
-    try {
-      return new Intl.DateTimeFormat("pt-PT", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(value));
-    } catch {
-      return "";
-    }
+  const markItemReadOptimistic = useCallback(
+    (notificationId: string) => {
+      updateCacheItems((item) => (item.id === notificationId ? { ...item, isRead: true } : item));
+    },
+    [updateCacheItems],
+  );
+
+  const setFollowOverride = useCallback((userId: string, isFollowing: boolean) => {
+    setFollowOverrides((prev) => ({ ...prev, [userId]: isFollowing }));
   }, []);
 
-  const keyExtractor = useCallback((item: ListItem) => (item.kind === "skeleton" ? item.key : item.item.id), []);
+  const setNotificationStatusLabel = useCallback(
+    (item: AggregatedNotificationItem, statusLabel: "Aceite" | "Recusado") => {
+      setNotificationStatus((prev) => ({ ...prev, [item.id]: statusLabel }));
+      const statusBody =
+        item.type === "FOLLOW_REQUEST"
+          ? `Pedido ${statusLabel.toLowerCase()}.`
+          : `Convite ${statusLabel.toLowerCase()}.`;
+      updateCacheItems(
+        (current) =>
+          current.id === item.id
+            ? {
+                ...current,
+                body: statusBody,
+              }
+            : current,
+      );
+    },
+    [updateCacheItems],
+  );
+
+  const removeMutedFromCache = useCallback(
+    (params: { organizationId?: number | null; eventId?: number | null }) => {
+      filterCacheItems((item) => {
+        if (params.organizationId && item.organizationId === params.organizationId) return false;
+        if (params.eventId && item.eventId === params.eventId) return false;
+        return true;
+      });
+    },
+    [filterCacheItems],
+  );
+
+  const handleMarkTabRead = useCallback(async () => {
+    if (!session?.user?.id) return;
+    const now = Date.now();
+    if (lastMarkedRef.current && now - lastMarkedRef.current < 5000) {
+      return;
+    }
+    lastMarkedRef.current = now;
+
+    markTabReadOptimistic();
+    try {
+      await markAllNotificationsRead();
+    } catch {
+      // ignore
+    } finally {
+      queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+      queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+    }
+  }, [markTabReadOptimistic, queryClient, session?.user?.id]);
+
+  const handlePressNotification = useCallback(
+    async (item: AggregatedNotificationItem) => {
+      if (item.ctaUrl) {
+        const resolved = resolveNotificationLink(item.ctaUrl);
+        if (resolved.kind === "native") {
+          const targetPath = resolved.path.split("?")[0];
+          if (targetPath && targetPath !== pathname) {
+            router.push(resolved.path);
+          }
+        } else if (resolved.kind === "web") {
+          await openNotificationLink(router, item.ctaUrl);
+        }
+      }
+
+      if (!item.isRead) {
+        markItemReadOptimistic(item.id);
+        markNotificationRead(item.id).catch(() => {
+          queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+        });
+      }
+    },
+    [markItemReadOptimistic, pathname, queryClient, router],
+  );
+
+  const handleMute = useCallback(
+    (item: AggregatedNotificationItem) => {
+      if (!item.organizationId && !item.eventId) return;
+
+      const options = [] as Array<{ text: string; onPress?: () => void; style?: "destructive" | "cancel" }>;
+
+      if (item.organizationId) {
+        options.push({
+          text: "Silenciar organização",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await muteNotificationTarget({ organizationId: item.organizationId });
+              removeMutedFromCache({ organizationId: item.organizationId });
+              queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+              queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+              try {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } catch {
+                // ignore
+              }
+            } catch {
+              Alert.alert("Não foi possível", "Tenta novamente.");
+            }
+          },
+        });
+      }
+
+      if (item.eventId) {
+        options.push({
+          text: "Silenciar evento",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await muteNotificationTarget({ eventId: item.eventId });
+              removeMutedFromCache({ eventId: item.eventId });
+              queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+              queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+              try {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } catch {
+                // ignore
+              }
+            } catch {
+              Alert.alert("Não foi possível", "Tenta novamente.");
+            }
+          },
+        });
+      }
+
+      options.push({ text: "Cancelar", style: "cancel" });
+
+      Alert.alert("Silenciar notificações", "Não vais receber notificações deste contexto.", options);
+    },
+    [queryClient, removeMutedFromCache],
+  );
+
+  const handleAction = useCallback(
+    async (item: AggregatedNotificationItem, action: NotificationAction) => {
+      if (action.type === "status" || action.style === "status") {
+        return;
+      }
+      const key = buildKey(item.id, action);
+      if (pendingActionKey === key) return;
+      setPendingActionKey(key);
+
+      try {
+        if (action.type === "accept_follow") {
+          const requestId = Number(action.payload?.requestId);
+          if (Number.isFinite(requestId)) {
+            await acceptFollowRequest(requestId);
+            setNotificationStatusLabel(item, "Aceite");
+          }
+        } else if (action.type === "decline_follow") {
+          const requestId = Number(action.payload?.requestId);
+          if (Number.isFinite(requestId)) {
+            await declineFollowRequest(requestId);
+            setNotificationStatusLabel(item, "Recusado");
+          }
+        } else if (action.type === "follow_back") {
+          const userId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
+          if (userId) {
+            const isFollowing = followOverrides[userId] === true;
+            if (isFollowing) {
+              await unfollowUser(userId);
+              setFollowOverride(userId, false);
+            } else {
+              await followUser(userId);
+              setFollowOverride(userId, true);
+            }
+          }
+        } else if (action.type === "accept_org_invite") {
+          const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+          if (inviteId) {
+            await respondOrganizationInvite(inviteId, "ACCEPT");
+            setNotificationStatusLabel(item, "Aceite");
+          }
+        } else if (action.type === "decline_org_invite") {
+          const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+          if (inviteId) {
+            await respondOrganizationInvite(inviteId, "DECLINE");
+            setNotificationStatusLabel(item, "Recusado");
+          }
+        } else if (action.type === "accept_pairing_invite") {
+          const pairingId = Number(action.payload?.pairingId);
+          if (Number.isFinite(pairingId)) {
+            await acceptPairingInvite(pairingId);
+            setNotificationStatusLabel(item, "Aceite");
+          }
+        } else if (action.type === "decline_pairing_invite") {
+          const pairingId = Number(action.payload?.pairingId);
+          if (Number.isFinite(pairingId)) {
+            await declinePairingInvite(pairingId);
+            setNotificationStatusLabel(item, "Recusado");
+          }
+        } else if (action.type === "open") {
+          const url = typeof action.payload?.url === "string" ? action.payload.url : null;
+          if (url) {
+            const resolved = resolveNotificationLink(url);
+            if (resolved.kind === "native") {
+              const targetPath = resolved.path.split("?")[0];
+              if (targetPath && targetPath !== pathname) {
+                router.push(resolved.path);
+              }
+            } else if (resolved.kind === "web") {
+              await openNotificationLink(router, url);
+            }
+          }
+        }
+
+        markItemReadOptimistic(item.id);
+        queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+        queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+        try {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {
+          // ignore
+        }
+      } catch (err) {
+        Alert.alert("Não foi possível", "Tenta novamente.");
+      } finally {
+        setPendingActionKey(null);
+      }
+    },
+    [followOverrides, markItemReadOptimistic, pathname, pendingActionKey, queryClient, router, setFollowOverride, setNotificationStatusLabel],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      handleMarkTabRead();
+    }, [handleMarkTabRead]),
+  );
+
+  useEffect(() => {
+    handleMarkTabRead();
+  }, [handleMarkTabRead]);
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
       if (item.kind === "skeleton") {
-        return <GlassSkeleton className="mb-3" height={84} />;
+        return <GlassSkeleton className="mb-3" height={96} />;
       }
+      if (item.kind === "section") {
+        return (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>{item.label}</Text>
+          </View>
+        );
+      }
+
       const notification = item.item;
-      const title = notification.title || "Notificação";
-      const body = notification.body || "";
-      const isUnread = !notification.isRead;
+      const timeLabel = formatRelativeTime(notification.createdAt);
+      const categoryLabel = CATEGORY_LABELS[notification.category];
+      const metaLabel = [timeLabel, categoryLabel].filter(Boolean).join(" · ");
+      const showActions = Boolean(notification.actions && notification.actions.length > 0);
+      const primaryActor = notification.actors[0];
+      const handleAvatarPress = primaryActor?.username
+        ? () => {
+            router.push(`/${primaryActor.username}`);
+          }
+        : undefined;
+
       return (
         <Pressable
-          className="mb-3"
           onPress={() => handlePressNotification(notification)}
+          onLongPress={() => handleMute(notification)}
+          delayLongPress={240}
+          style={styles.cardPressable}
         >
-          <GlassCard intensity={58} padding={14} highlight={isUnread}>
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <View style={{ flex: 1, gap: 4 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  {isUnread ? <View style={styles.unreadDot} /> : null}
-                  <Text style={styles.title} numberOfLines={1}>
-                    {title}
-                  </Text>
-                </View>
-                {body ? (
-                  <Text style={styles.body} numberOfLines={2}>
-                    {body}
-                  </Text>
+          <GlassCard intensity={60} padding={14} highlight={!notification.isRead}>
+            <View style={styles.cardRow}>
+              <AvatarStack
+                actors={notification.actors}
+                actorCount={notification.actorCount}
+                onPress={handleAvatarPress}
+              />
+              <View style={styles.cardContent}>
+                <Text style={styles.message} numberOfLines={2}>
+                  <Text style={styles.messageActor}>{notification.title}</Text>
+                  {notification.body ? <Text style={styles.messageBody}> {notification.body}</Text> : null}
+                </Text>
+                {showActions ? (
+                  <View style={styles.actionsRow}>
+                    {notification.actions?.map((action) => {
+                      const key = buildKey(notification.id, action);
+                      const isPending = pendingActionKey === key;
+                      const statusLabel = notificationStatus[notification.id];
+                      if (statusLabel) {
+                        return (
+                          <View key={`${key}-status`} style={[styles.actionButton, styles.actionStatus]}>
+                            <Text style={[styles.actionText, styles.actionTextStatus]}>{statusLabel}</Text>
+                          </View>
+                        );
+                      }
+                      const isStatus = action.type === "status" || action.style === "status";
+                      const followUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
+                      const isFollowing = followUserId ? followOverrides[followUserId] === true : false;
+                      const isFollowAction = action.type === "follow_back" && Boolean(followUserId);
+                      const resolvedLabel = isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
+                      const isPrimary = !isStatus && (isFollowAction ? !isFollowing : action.style === "primary");
+                      return (
+                        <Pressable
+                          key={key}
+                          onPress={(event) => {
+                            event.stopPropagation?.();
+                            handleAction(notification, action);
+                          }}
+                          disabled={isPending || isStatus}
+                          style={({ pressed }) => [
+                            styles.actionButton,
+                            isStatus
+                              ? styles.actionStatus
+                              : isPrimary
+                                ? styles.actionPrimary
+                                : styles.actionSecondary,
+                            pressed && styles.actionPressed,
+                            isPending && styles.actionDisabled,
+                          ]}
+                        >
+                        <Text
+                          style={[
+                            styles.actionText,
+                            isStatus
+                              ? styles.actionTextStatus
+                              : isPrimary
+                                ? styles.actionTextPrimary
+                                : styles.actionTextSecondary,
+                          ]}
+                        >
+                          {resolvedLabel}
+                        </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 ) : null}
-                {notification.createdAt ? (
-                  <Text style={styles.timestamp}>{formatDate(notification.createdAt)}</Text>
-                ) : null}
+                {metaLabel ? <Text style={styles.metaText}>{metaLabel}</Text> : null}
               </View>
+              <NotificationThumbnail url={notification.thumbnailUrl} category={notification.category} />
+              {!notification.isRead ? <View style={styles.unreadDot} /> : null}
             </View>
           </GlassCard>
         </Pressable>
       );
     },
-    [formatDate, handlePressNotification],
+    [followOverrides, handleAction, handleMute, handlePressNotification, notificationStatus, pendingActionKey],
   );
 
   const emptyState = !session?.user?.id ? (
-    <GlassCard intensity={55}>
+    <GlassCard intensity={55} style={styles.emptyCard}>
+      <Ionicons name="person" size={22} color="rgba(255,255,255,0.85)" />
       <Text style={styles.emptyTitle}>Inicia sessão</Text>
       <Text style={styles.emptyText}>Entra na tua conta para veres as notificações.</Text>
       <Pressable
@@ -220,270 +626,266 @@ export default function NotificationsScreen() {
       </Pressable>
     </GlassCard>
   ) : feed.isError ? (
-    <GlassCard intensity={55}>
-      <Text style={styles.errorText}>Não foi possível carregar as notificações.</Text>
+    <GlassCard intensity={55} style={styles.emptyCard}>
+      <Ionicons name="alert-circle" size={22} color="rgba(255,160,160,0.9)" />
+      <Text style={styles.emptyTitle}>Não foi possível carregar</Text>
+      <Text style={styles.emptyText}>Verifica a ligação e tenta novamente.</Text>
       <Pressable
         onPress={() => feed.refetch()}
-        className="rounded-2xl bg-white/10 px-4 py-3"
+        className="mt-4 rounded-2xl bg-white/10 px-4 py-3"
         style={{ minHeight: tokens.layout.touchTarget }}
       >
         <Text style={styles.retryText}>Tentar novamente</Text>
       </Pressable>
     </GlassCard>
   ) : (
-    <GlassCard intensity={50}>
+    <GlassCard intensity={50} style={styles.emptyCard}>
+      <Ionicons name="checkmark-circle" size={22} color="rgba(148,214,255,0.9)" />
+      <Text style={styles.emptyTitle}>Tudo em dia</Text>
       <Text style={styles.emptyText}>Sem notificações para mostrar.</Text>
     </GlassCard>
   );
 
-  useEffect(() => {
-    refreshPermissionStatus();
-  }, [refreshPermissionStatus]);
-
-  useFocusEffect(
-    useCallback(() => {
-      refreshPermissionStatus();
-    }, [refreshPermissionStatus]),
-  );
-
-  const renderHeader = useMemo(() => (
-    <View style={{ paddingBottom: 16 }}>
-      <Text style={styles.screenTitle}>Notificações</Text>
-      <Text style={styles.screenSubtitle}>Atualizações importantes e alertas personalizados.</Text>
-      <View style={styles.segmentRow}>
-        {statusOptions.map((option) => {
-          const active = option.key === status;
-          return (
-            <Pressable
-              key={option.key}
-              onPress={() => setStatus(option.key)}
-              style={{ minHeight: tokens.layout.touchTarget }}
-              className="overflow-hidden rounded-full border border-white/10"
-            >
-              <BlurView
-                tint="dark"
-                intensity={active ? 80 : 35}
-                style={{
-                  paddingHorizontal: tokens.spacing.lg,
-                  justifyContent: "center",
-                  minHeight: tokens.layout.touchTarget,
-                  backgroundColor: active ? tokens.colors.glassStrong : tokens.colors.surface,
-                }}
-              >
-                <Text style={active ? styles.segmentLabelActive : styles.segmentLabel}>{option.label}</Text>
-              </BlurView>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.actionRow}>
-        <Pressable
-          onPress={handleMarkAllRead}
-          disabled={!session?.user?.id || items.length === 0}
-          style={({ pressed }) => [styles.markAllButton, pressed && styles.markAllPressed]}
-        >
-          <Text style={styles.markAllText}>Marcar tudo como lido</Text>
+  const header = (
+    <View style={{ paddingTop: topPadding, paddingBottom: 12 }}>
+      <View style={styles.headerRow}>
+        <Text style={styles.screenTitle}>Notificações</Text>
+        <Pressable onPress={() => router.push("/settings")} style={styles.settingsButton}>
+          <Text style={styles.settingsText}>Preferências</Text>
         </Pressable>
-        {pushStatus === "granted" ? (
-          <View style={styles.pushStatus}>
-            <Text style={styles.pushStatusText}>Push ativas</Text>
-          </View>
-        ) : pushStatus === "unavailable" ? (
-          <View style={styles.pushStatusMuted}>
-            <Text style={styles.pushStatusTextMuted}>Indisponível</Text>
-          </View>
-        ) : pushStatus === "denied" ? (
-          <Pressable
-            onPress={handleOpenSettings}
-            style={({ pressed }) => [styles.pushButton, pressed && styles.markAllPressed]}
-          >
-            <Text style={styles.pushButtonText}>Abrir definições</Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={handleEnablePush}
-            disabled={pushBusy}
-            style={({ pressed }) => [styles.pushButton, pressed && styles.markAllPressed]}
-          >
-            {pushBusy ? (
-              <ActivityIndicator color="rgba(255,255,255,0.8)" />
-            ) : (
-              <Text style={styles.pushButtonText}>Ativar push</Text>
-            )}
-          </Pressable>
-        )}
       </View>
     </View>
-  ), [handleEnablePush, handleMarkAllRead, handleOpenSettings, items.length, pushBusy, pushStatus, session?.user?.id, status]);
+  );
 
   return (
     <LiquidBackground>
       <TopAppHeader />
       <FlatList
-        contentContainerStyle={{
-          paddingTop: topPadding,
-          paddingBottom: bottomPadding,
-          paddingHorizontal: 20,
-        }}
         data={listData}
-        keyExtractor={keyExtractor}
+        keyExtractor={(item) =>
+          item.kind === "section" || item.kind === "skeleton"
+            ? item.key
+            : `${item.kind}-${item.item.id}`
+        }
         renderItem={renderItem}
-        onRefresh={() => {
-          if (session?.user?.id) feed.refetch();
-        }}
-        refreshing={feed.isFetching}
-        removeClippedSubviews={Platform.OS === "android"}
-        initialNumToRender={6}
-        maxToRenderPerBatch={6}
-        updateCellsBatchingPeriod={40}
-        windowSize={5}
-        ListHeaderComponent={renderHeader}
+        ListHeaderComponent={header}
         ListEmptyComponent={emptyState}
+        ListFooterComponent={
+          feed.isFetchingNextPage ? (
+            <View style={styles.footerLoading}>
+              <ActivityIndicator color="rgba(255,255,255,0.75)" />
+            </View>
+          ) : null
+        }
         onEndReached={() => {
-          if (!session?.user?.id) return;
           if (feed.hasNextPage && !feed.isFetchingNextPage) {
             feed.fetchNextPage();
           }
         }}
         onEndReachedThreshold={0.4}
+        refreshing={feed.isRefetching}
+        onRefresh={() => feed.refetch()}
+        contentContainerStyle={{
+          paddingHorizontal: tokens.spacing.lg,
+          paddingBottom: bottomPadding + 32,
+        }}
       />
     </LiquidBackground>
   );
 }
 
-const styles = {
-  screenTitle: {
-    color: "white",
-    fontSize: 20,
-    fontWeight: "700",
-  } as const,
-  screenSubtitle: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 13,
-    marginTop: 4,
-  } as const,
-  segmentRow: {
+const styles = StyleSheet.create({
+  headerRow: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
-  } as const,
-  segmentLabel: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 13,
-    fontWeight: "600",
-  } as const,
-  segmentLabelActive: {
-    color: "white",
-    fontSize: 13,
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  screenTitle: {
+    fontSize: 24,
     fontWeight: "700",
-  } as const,
-  actionRow: {
+    color: "rgba(245,250,255,0.98)",
+  },
+  settingsButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  settingsText: {
+    color: "rgba(220,235,255,0.9)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  sectionHeader: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  sectionLabel: {
+    color: "rgba(210,220,235,0.75)",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  cardPressable: {
+    marginBottom: 12,
+  },
+  cardRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  avatarStack: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  avatarShell: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  avatarMore: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    marginLeft: -12,
+    backgroundColor: "rgba(10,14,24,0.95)",
+    borderWidth: 2,
+    borderColor: "rgba(10,14,24,0.95)",
+  },
+  avatarMoreText: {
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  cardContent: {
+    flex: 1,
+    gap: 8,
+  },
+  message: {
+    color: "rgba(235,245,255,0.92)",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  messageActor: {
+    fontWeight: "700",
+    color: "rgba(245,250,255,0.98)",
+  },
+  messageBody: {
+    color: "rgba(215,225,240,0.8)",
+    fontWeight: "500",
+  },
+  metaText: {
+    color: "rgba(185,200,220,0.55)",
+    fontSize: 10,
+    alignSelf: "flex-end",
+    marginTop: 2,
+  },
+  actionsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-    marginTop: 16,
-    alignItems: "center",
-  } as const,
-  markAllButton: {
+    gap: 8,
+  },
+  actionButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 9,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    overflow: "hidden",
+    minHeight: 36,
+    justifyContent: "center",
+  },
+  actionPrimary: {
+    backgroundColor: "#3897F0",
+    borderColor: "#3897F0",
+    shadowColor: "#3897F0",
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  actionSecondary: {
     backgroundColor: "rgba(255,255,255,0.06)",
-  } as const,
-  markAllPressed: {
-    opacity: 0.8,
-  } as const,
-  markAllText: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 12,
-    fontWeight: "600",
-  } as const,
-  pushButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.24)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: "rgba(255,255,255,0.12)",
-  } as const,
-  pushButtonText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "700",
-  } as const,
-  pushStatus: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "rgba(76, 217, 100, 0.2)",
-    borderWidth: 1,
-    borderColor: "rgba(76, 217, 100, 0.5)",
-  } as const,
-  pushStatusText: {
-    color: "rgba(210,255,220,0.95)",
-    fontSize: 12,
-    fontWeight: "700",
-  } as const,
-  pushStatusMuted: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  actionStatus: {
     backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  } as const,
-  pushStatusTextMuted: {
-    color: "rgba(255,255,255,0.65)",
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  actionPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
+  },
+  actionDisabled: {
+    opacity: 0.6,
+  },
+  actionText: {
     fontSize: 12,
-    fontWeight: "700",
-  } as const,
-  title: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "700",
-  } as const,
-  body: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 12,
-  } as const,
-  timestamp: {
-    color: "rgba(255,255,255,0.45)",
-    fontSize: 11,
-    marginTop: 4,
-  } as const,
-  unreadDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#4cd964",
-  } as const,
-  emptyTitle: {
-    color: "white",
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 8,
-  } as const,
-  emptyText: {
-    color: "rgba(255,255,255,0.65)",
-    fontSize: 13,
-  } as const,
-  emptyCta: {
-    color: "#0b101a",
-    fontSize: 13,
-    fontWeight: "700",
-    textAlign: "center",
-  } as const,
-  errorText: {
-    color: "rgba(255,160,160,0.9)",
-    fontSize: 13,
-    marginBottom: 10,
-  } as const,
-  retryText: {
-    color: "white",
-    fontSize: 13,
     fontWeight: "600",
+  },
+  actionTextPrimary: {
+    color: "#ffffff",
+  },
+  actionTextSecondary: {
+    color: "rgba(235,245,255,0.9)",
+  },
+  actionTextStatus: {
+    color: "rgba(235,245,255,0.8)",
+  },
+  thumbnail: {
+    width: 62,
+    height: 62,
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  thumbnailFallback: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  unreadDot: {
+    position: "absolute",
+    right: 10,
+    top: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#6BFFFF",
+  },
+  emptyCard: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 18,
+  },
+  emptyTitle: {
+    color: "rgba(245,250,255,0.95)",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  emptyText: {
+    color: "rgba(210,220,235,0.7)",
+    fontSize: 12,
     textAlign: "center",
-  } as const,
-};
+  },
+  emptyCta: {
+    color: "rgba(10,12,18,0.9)",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  retryText: {
+    color: "rgba(245,250,255,0.9)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  footerLoading: {
+    paddingVertical: 24,
+    alignItems: "center",
+  },
+});

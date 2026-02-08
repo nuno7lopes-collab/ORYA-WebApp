@@ -83,6 +83,16 @@ async function _GET(req: NextRequest) {
     const url = new URL(req.url);
     const fromParam = url.searchParams.get("from");
     const toParam = url.searchParams.get("to");
+    const padelClubParam = url.searchParams.get("padelClubId");
+    const courtParam = url.searchParams.get("courtId");
+    const padelClubId = padelClubParam ? parsePositiveInt(padelClubParam) : null;
+    const courtId = courtParam ? parsePositiveInt(courtParam) : null;
+    if (padelClubParam && !padelClubId) {
+      return fail(ctx, 400, "INVALID_CLUB", "Clube inválido.");
+    }
+    if (courtParam && !courtId) {
+      return fail(ctx, 400, "INVALID_COURT", "Campo inválido.");
+    }
     const fromDate = fromParam ? new Date(fromParam) : null;
     const toDate = toParam ? new Date(toParam) : null;
     const rangeFilter =
@@ -119,6 +129,27 @@ async function _GET(req: NextRequest) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
+    let resolvedClubId: number | null = padelClubId;
+    let resolvedCourtId: number | null = courtId;
+    if (resolvedClubId) {
+      const club = await prisma.padelClub.findFirst({
+        where: { id: resolvedClubId, organizationId: organization.id, deletedAt: null },
+        select: { id: true },
+      });
+      if (!club) return fail(ctx, 404, "CLUB_NOT_FOUND", "Clube não encontrado.");
+    }
+    if (resolvedCourtId) {
+      const court = await prisma.padelClubCourt.findFirst({
+        where: { id: resolvedCourtId, club: { organizationId: organization.id, deletedAt: null } },
+        select: { id: true, padelClubId: true },
+      });
+      if (!court) return fail(ctx, 404, "COURT_NOT_FOUND", "Campo não encontrado.");
+      if (resolvedClubId && court.padelClubId !== resolvedClubId) {
+        return fail(ctx, 400, "COURT_CLUB_MISMATCH", "Campo não pertence ao clube selecionado.");
+      }
+      if (!resolvedClubId) resolvedClubId = court.padelClubId;
+    }
+
     const assignmentMode =
       (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ??
       "PROFESSIONAL";
@@ -139,6 +170,8 @@ async function _GET(req: NextRequest) {
         organizationId: organization.id,
         ...rangeFilter,
         ...(staffProfessionalIds ? { professionalId: { in: staffProfessionalIds } } : {}),
+        ...(resolvedClubId ? { court: { padelClubId: resolvedClubId } } : {}),
+        ...(resolvedCourtId ? { courtId: resolvedCourtId } : {}),
         status: {
           in: [
             "PENDING_CONFIRMATION",

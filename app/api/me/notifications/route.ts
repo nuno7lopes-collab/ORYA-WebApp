@@ -1,52 +1,47 @@
-import { prisma } from "@/lib/prisma";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
+import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { prisma } from "@/lib/prisma";
 
-async function _GET(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
+  const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
-
-    const status = (req.nextUrl.searchParams.get("status") ?? "all").toLowerCase();
-    const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 50);
-    const cursor = req.nextUrl.searchParams.get("cursor");
-    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
-
-    const where = {
-      userId: user.id,
-      ...(status === "unread" ? { isRead: false } : {}),
-    };
-
-    const notifications = await prisma.notification.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
-
-    const unreadCount = await prisma.notification.count({
-      where: { userId: user.id, isRead: false },
-    });
-
-    const nextCursor = notifications.length > 0 ? notifications[notifications.length - 1].id : null;
-
-    return jsonWrap({
-      ok: true,
-      unreadCount,
-      items: notifications,
-      nextCursor,
-    });
-  } catch (err) {
-    if (err instanceof AuthRequiredError) {
+    const body = await req.json().catch(() => ({}));
+    const { notificationId } = body as { notificationId?: string };
+    if (!notificationId) {
       return jsonWrap(
-        { ok: false, code: "UNAUTHENTICATED", message: "Sessão em falta" },
-        { status: err.status ?? 401 },
+        { ok: false, code: "INVALID_PAYLOAD", message: "notificationId é obrigatório" },
+        { status: 400 },
       );
     }
 
-    console.error("[me][notifications][GET] erro inesperado", err);
+    const result = await prisma.notification.deleteMany({
+      where: { id: notificationId, userId: user.id },
+    });
+
+    if (result.count === 0) {
+      return jsonWrap(
+        { ok: false, code: "NOT_FOUND", message: "Notificação não existe" },
+        { status: 404 },
+      );
+    }
+
+    return jsonWrap({ ok: true });
+  } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return jsonWrap({ ok: false, code: "UNAUTHENTICATED" }, { status: err.status ?? 401 });
+    }
+    console.error("[me][notifications][DELETE] erro inesperado", {
+      err,
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      orgId: ctx.orgId,
+    });
     return jsonWrap({ ok: false, code: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
-export const GET = withApiEnvelope(_GET);
+
+export const DELETE = withApiEnvelope(_DELETE);

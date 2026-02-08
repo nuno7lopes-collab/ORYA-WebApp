@@ -72,11 +72,7 @@ function ensureNodeModules() {
   if (process.env.DEV_ALL_SKIP_INSTALL === "1") return;
   const nodeModulesPath = path.join(repoRoot, "node_modules");
   const missingNodeModules = !fs.existsSync(nodeModulesPath);
-  const missingCostExplorer = !fs.existsSync(
-    path.join(repoRoot, "node_modules", "@aws-sdk", "client-cost-explorer"),
-  );
-
-  if (!missingNodeModules && !missingCostExplorer) return;
+  if (!missingNodeModules) return;
 
   console.log("[dev-all] Installing dependencies (npm install)...");
   try {

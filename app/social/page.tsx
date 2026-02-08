@@ -8,20 +8,23 @@ import { Avatar } from "@/components/ui/avatar";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
 import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { useSearchParams } from "next/navigation";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type NotificationItem = {
   id: string;
   type: string;
-  title: string | null;
-  body: string | null;
+  category: "network" | "events" | "system" | "marketing" | "chat";
+  title: string;
+  body?: string | null;
   ctaUrl?: string | null;
   ctaLabel?: string | null;
   createdAt: string;
   isRead?: boolean;
-  readAt?: string | null;
-  meta?: { isMutual?: boolean };
+  organizationId?: number | null;
+  eventId?: number | null;
+  actions?: Array<{ type: string; label: string; style?: string; payload?: Record<string, unknown> }>;
   payload?: Record<string, unknown> | null;
 };
 
@@ -73,23 +76,21 @@ type FollowRequestItem = {
 
 type HubTab = "social" | "notifications";
 
-type NotificationFilter = "all" | "sales" | "invites" | "marketing" | "system" | "social";
+type NotificationFilter = "all" | "invites" | "social";
 
 const SOCIAL_TYPES = new Set([
   "FOLLOWED_YOU",
   "FOLLOW_ACCEPT",
   "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION",
+  "FRIEND_GOING_TO_EVENT",
 ]);
 
-const REQUEST_TYPES = new Set(["ORGANIZATION_INVITE", "CLUB_INVITE", "PAIRING_INVITE"]);
+const REQUEST_TYPES = new Set(["ORGANIZATION_INVITE", "CLUB_INVITE", "PAIRING_INVITE", "EVENT_INVITE"]);
 
 const NOTIFICATION_FILTERS: Record<NotificationFilter, string[]> = {
   all: [],
-  sales: ["EVENT_SALE", "EVENT_PAYOUT_STATUS"],
-  invites: ["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER", "PAIRING_INVITE"],
-  marketing: ["MARKETING_PROMO_ALERT", "CRM_CAMPAIGN"],
-  system: ["STRIPE_STATUS", "SYSTEM_ANNOUNCE", "CHAT_OPEN", "CHAT_ANNOUNCEMENT", "CHAT_MESSAGE"],
-  social: ["FOLLOWED_YOU", "FOLLOW_REQUEST", "FOLLOW_ACCEPT"],
+  invites: ["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER", "PAIRING_INVITE", "EVENT_INVITE"],
+  social: ["FOLLOWED_YOU", "FOLLOW_REQUEST", "FOLLOW_ACCEPT", "FRIEND_GOING_TO_EVENT"],
 };
 
 const NOTIFICATION_LABELS: Record<string, string> = {
@@ -112,6 +113,8 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   CHAT_ANNOUNCEMENT: "Chat",
   CHAT_MESSAGE: "Mensagem de chat",
   FOLLOWED_YOU: "Segue-te",
+  FRIEND_GOING_TO_EVENT: "Amigo vai ao evento",
+  EVENT_INVITE: "Convite para evento",
   TICKET_TRANSFER_RECEIVED: "Transferencia",
   TICKET_TRANSFER_ACCEPTED: "Transferencia",
   TICKET_TRANSFER_DECLINED: "Transferencia",
@@ -130,9 +133,12 @@ function buildUserLabel(item: { fullName: string | null; username: string | null
 
 export default function SocialHubPage() {
   const { user, isLoggedIn } = useUser();
+  const searchParams = useSearchParams();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const orgFallbackHref = appendOrganizationIdToHref("/organizacao", getOrganizationIdFromBrowser());
-  const [activeTab, setActiveTab] = useState<HubTab>("social");
+  const [activeTab, setActiveTab] = useState<HubTab>(
+    searchParams?.get("tab") === "notifications" ? "notifications" : "social",
+  );
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [followPending, setFollowPending] = useState<Record<string, boolean>>({});
@@ -141,7 +147,7 @@ export default function SocialHubPage() {
   const [organizationResults, setOrganizationResults] = useState<SearchOrganization[]>([]);
 
   const { data: notificationsData, mutate: mutateNotifications } = useSWR(
-    isLoggedIn ? "/api/notifications?status=all&limit=100" : null,
+    isLoggedIn ? "/api/me/notifications/feed?limit=120" : null,
     fetcher,
   );
   const { data: followRequestsData, mutate: mutateFollowRequests } = useSWR(
@@ -165,6 +171,12 @@ export default function SocialHubPage() {
   const { data: orgsData } = useSWR<SearchResponse<SearchOrganization>>(searchOrganizationsUrl, fetcher);
 
   useEffect(() => {
+    if (searchParams?.get("tab") === "notifications") {
+      setActiveTab("notifications");
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (suggestionsData?.items) setSuggestions(suggestionsData.items);
   }, [suggestionsData?.items]);
 
@@ -176,7 +188,7 @@ export default function SocialHubPage() {
     if (orgsData?.results) setOrganizationResults(orgsData.results);
   }, [orgsData?.results]);
 
-  const notificationsRaw = notificationsData?.items ?? notificationsData?.notifications ?? [];
+  const notificationsRaw = notificationsData?.items ?? [];
   const notifications: NotificationItem[] = Array.isArray(notificationsRaw) ? notificationsRaw : [];
   const unreadCount = notificationsData?.unreadCount ?? 0;
   const followRequests: FollowRequestItem[] = followRequestsData?.items ?? [];
@@ -193,6 +205,9 @@ export default function SocialHubPage() {
 
   const filteredNotifications = useMemo(() => {
     const types = NOTIFICATION_FILTERS[notificationFilter];
+    if (notificationFilter === "social") {
+      return notifications.filter((item) => item.category === "network");
+    }
     if (types.length === 0) return notifications;
     return notifications.filter((item) => types.includes(item.type));
   }, [notifications, notificationFilter]);
@@ -343,12 +358,81 @@ export default function SocialHubPage() {
   };
 
   const deleteNotification = async (notificationId: string) => {
-    await fetch("/api/notifications", {
+    await fetch("/api/me/notifications", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ notificationId }),
     });
     mutateNotifications();
+  };
+
+  const [notificationActionPending, setNotificationActionPending] = useState<Record<string, boolean>>({});
+  const [notificationStatus, setNotificationStatus] = useState<Record<string, "Aceite" | "Recusado">>({});
+  const [followBackState, setFollowBackState] = useState<Record<string, boolean>>({});
+  const handleNotificationAction = async (
+    item: NotificationItem,
+    action: { type: string; label: string; payload?: Record<string, unknown> },
+  ) => {
+    const key = `${item.id}:${action.type}`;
+    if (notificationActionPending[key]) return;
+    setNotificationActionPending((prev) => ({ ...prev, [key]: true }));
+    try {
+      if (action.type === "accept_follow" || action.type === "decline_follow") {
+        const requestId = Number(action.payload?.requestId);
+        if (Number.isFinite(requestId)) {
+          await fetch(`/api/social/follow-requests/${action.type === "accept_follow" ? "accept" : "decline"}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requestId }),
+          });
+          setNotificationStatus((prev) => ({
+            ...prev,
+            [item.id]: action.type === "accept_follow" ? "Aceite" : "Recusado",
+          }));
+        }
+      } else if (action.type === "follow_back") {
+        const targetUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
+        if (targetUserId) {
+          const isFollowing = followBackState[targetUserId] === true;
+          await fetch(isFollowing ? "/api/social/unfollow" : "/api/social/follow", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ targetUserId }),
+          });
+          setFollowBackState((prev) => ({ ...prev, [targetUserId]: !isFollowing }));
+        }
+      } else if (action.type === "accept_org_invite" || action.type === "decline_org_invite") {
+        const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+        if (inviteId) {
+          await fetch("/api/organizacao/organizations/members/invites", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ inviteId, action: action.type === "accept_org_invite" ? "ACCEPT" : "DECLINE" }),
+          });
+          setNotificationStatus((prev) => ({
+            ...prev,
+            [item.id]: action.type === "accept_org_invite" ? "Aceite" : "Recusado",
+          }));
+        }
+      } else if (action.type === "open") {
+        const url = typeof action.payload?.url === "string" ? action.payload.url : item.ctaUrl;
+        if (url) {
+          markClick(item.id);
+          window.location.href = url;
+          return;
+        }
+      }
+      await markOneRead(item.id);
+    } catch (err) {
+      console.error("[social] notification action error", err);
+    } finally {
+      setNotificationActionPending((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      mutateNotifications();
+    }
   };
 
   const [requestActionPending, setRequestActionPending] = useState<Record<number, boolean>>({});
@@ -473,7 +557,7 @@ export default function SocialHubPage() {
                         type="button"
                         disabled={isLoading}
                         onClick={() => handleFollowRequestAction(request.id, "decline")}
-                        className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-white/70 hover:bg-white/10 disabled:opacity-60"
+                        className="rounded-full border border-white/25 bg-transparent px-4 py-2 text-[12px] font-semibold text-white/85 transition hover:bg-white/10 disabled:opacity-60"
                       >
                         Recusar
                       </button>
@@ -481,7 +565,7 @@ export default function SocialHubPage() {
                         type="button"
                         disabled={isLoading}
                         onClick={() => handleFollowRequestAction(request.id, "accept")}
-                        className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 font-semibold text-emerald-50 hover:bg-emerald-500/25 disabled:opacity-60"
+                        className="rounded-full border border-[#3797F0] bg-[#3797F0] px-4 py-2 text-[12px] font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
                       >
                         Aceitar
                       </button>
@@ -703,10 +787,7 @@ export default function SocialHubPage() {
           <div className="flex flex-wrap gap-2 text-[11px]">
             {([
               { key: "all", label: "Todas" },
-              { key: "sales", label: "Vendas" },
               { key: "invites", label: "Convites" },
-              { key: "marketing", label: "Marketing" },
-              { key: "system", label: "Sistema" },
               { key: "social", label: "Social" },
             ] as const).map((filter) => (
               <button
@@ -733,7 +814,7 @@ export default function SocialHubPage() {
               <div
                 key={item.id}
                 className={`rounded-2xl border px-4 py-3 text-sm ${
-                  item.readAt || item.isRead
+                  item.isRead
                     ? "border-white/10 bg-white/5"
                     : "border-emerald-400/30 bg-emerald-400/10"
                 }`}
@@ -741,15 +822,13 @@ export default function SocialHubPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
-                      {item.type === "FOLLOWED_YOU" && item.meta?.isMutual
-                        ? "Segue-te de volta"
-                        : NOTIFICATION_LABELS[item.type] ?? "Atualizacao"}
+                      {NOTIFICATION_LABELS[item.type] ?? "Atualizacao"}
                     </p>
-                    <p className="text-sm font-semibold text-white">{item.title || "Atualizacao"}</p>
+                    <p className="text-sm font-semibold text-white">{item.title}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] text-white/50">{formatTimeLabel(item.createdAt)}</span>
-                    {!item.isRead && !item.readAt && (
+                    {!item.isRead && (
                       <button
                         type="button"
                         onClick={() => markOneRead(item.id)}
@@ -780,8 +859,42 @@ export default function SocialHubPage() {
                   </div>
                 ) : (
                   <>
-                    {item.body && <p className="mt-1 text-[12px] text-white/70">{item.body}</p>}
-                    {item.ctaUrl && item.ctaLabel && (
+                    {item.body ? <p className="mt-1 text-[12px] text-white/70">{item.body}</p> : null}
+                    {item.actions && item.actions.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {notificationStatus[item.id] ? (
+                          <span className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/85">
+                            {notificationStatus[item.id]}
+                          </span>
+                        ) : (
+                          item.actions.map((action) => {
+                            const key = `${item.id}:${action.type}`;
+                            const isPending = notificationActionPending[key];
+                            const targetUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
+                            const isFollowAction = action.type === "follow_back" && Boolean(targetUserId);
+                            const isFollowing = targetUserId ? followBackState[targetUserId] === true : false;
+                            const resolvedLabel = isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
+                            const isPrimary = isFollowAction ? !isFollowing : action.style === "primary";
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => handleNotificationAction(item, action)}
+                                className={`rounded-full px-4 py-2 text-[12px] font-semibold transition ${
+                                  isPrimary
+                                    ? "border border-[#3797F0] bg-[#3797F0] text-white hover:brightness-110"
+                                    : "border border-white/25 bg-transparent text-white/85 hover:bg-white/10"
+                                } ${isPending ? "opacity-60" : ""}`}
+                              >
+                                {resolvedLabel}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    ) : null}
+                    {item.ctaUrl && item.ctaLabel ? (
                       <Link
                         href={item.ctaUrl}
                         className="mt-2 inline-flex text-[12px] text-[#6BFFFF] hover:underline"
@@ -789,7 +902,7 @@ export default function SocialHubPage() {
                       >
                         {item.ctaLabel}
                       </Link>
-                    )}
+                    ) : null}
                   </>
                 )}
               </div>
@@ -843,13 +956,13 @@ function NotificationRow({
   return (
     <div
       className={`rounded-2xl border px-4 py-3 text-sm ${
-        item.readAt || item.isRead
+        item.isRead
           ? "border-white/10 bg-white/5"
           : "border-emerald-400/30 bg-emerald-400/10"
       }`}
     >
       <div className="flex items-center justify-between gap-3">
-        <p className="text-white/90 font-semibold">{item.title || "Atualizacao"}</p>
+        <p className="text-white/90 font-semibold">{item.title}</p>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-white/50">{formatTimeLabel(item.createdAt)}</span>
           {onDelete && (

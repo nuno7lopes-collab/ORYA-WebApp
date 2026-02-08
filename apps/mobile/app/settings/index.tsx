@@ -80,13 +80,18 @@ export default function SettingsScreen() {
 
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({
     allowEmailNotifications: true,
+    allowSocialNotifications: true,
+    allowEventNotifications: true,
+    allowSystemNotifications: true,
+    allowMarketingNotifications: true,
+    allowSalesAlerts: true,
     allowEventReminders: true,
     allowFollowRequests: true,
     allowMarketingCampaigns: true,
     allowSystemAnnouncements: true,
   });
   const [savingNotifications, setSavingNotifications] = useState(false);
-  const [pushStatus, setPushStatus] = useState<\"granted\" | \"denied\" | \"undetermined\" | \"unavailable\">(\"undetermined\");
+  const [pushStatus, setPushStatus] = useState<"granted" | "denied" | "undetermined" | "unavailable">("undetermined");
   const [pushBusy, setPushBusy] = useState(false);
 
   const [consents, setConsents] = useState<ConsentItem[]>([]);
@@ -140,7 +145,7 @@ export default function SettingsScreen() {
 
   const handlePushPermission = async () => {
     if (pushBusy) return;
-    if (pushStatus === \"denied\") {
+    if (pushStatus === "denied") {
       RNLinking.openSettings().catch(() => undefined);
       return;
     }
@@ -151,9 +156,9 @@ export default function SettingsScreen() {
       if (result.granted && accessToken) {
         const token = await registerForPushToken();
         if (token) {
-          await api.requestWithAccessToken(\"/api/me/push-tokens\", accessToken, {
-            method: \"POST\",
-            body: JSON.stringify({ token, platform: \"ios\" }),
+          await api.requestWithAccessToken("/api/me/push-tokens", accessToken, {
+            method: "POST",
+            body: JSON.stringify({ token, platform: "ios" }),
           });
         }
       }
@@ -185,6 +190,11 @@ export default function SettingsScreen() {
     if (!baseline) return false;
     return (
       notificationPrefs.allowEmailNotifications !== baseline.allowEmailNotifications ||
+      notificationPrefs.allowSocialNotifications !== baseline.allowSocialNotifications ||
+      notificationPrefs.allowEventNotifications !== baseline.allowEventNotifications ||
+      notificationPrefs.allowSystemNotifications !== baseline.allowSystemNotifications ||
+      notificationPrefs.allowMarketingNotifications !== baseline.allowMarketingNotifications ||
+      notificationPrefs.allowSalesAlerts !== baseline.allowSalesAlerts ||
       notificationPrefs.allowEventReminders !== baseline.allowEventReminders ||
       notificationPrefs.allowFollowRequests !== baseline.allowFollowRequests ||
       notificationPrefs.allowMarketingCampaigns !== baseline.allowMarketingCampaigns ||
@@ -463,38 +473,61 @@ export default function SettingsScreen() {
           ) : (
             <View style={styles.stack}>
               <SettingsToggle
+                label="Alertas sociais"
+                value={notificationPrefs.allowSocialNotifications}
+                onValueChange={(next) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    allowSocialNotifications: next,
+                    allowFollowRequests: next,
+                  }))
+                }
+              />
+              <SettingsToggle
+                label="Eventos e lembretes"
+                value={notificationPrefs.allowEventNotifications}
+                onValueChange={(next) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    allowEventNotifications: next,
+                    allowEventReminders: next,
+                  }))
+                }
+              />
+              <SettingsToggle
+                label="Alertas do sistema"
+                value={notificationPrefs.allowSystemNotifications}
+                onValueChange={(next) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    allowSystemNotifications: next,
+                    allowSystemAnnouncements: next,
+                  }))
+                }
+              />
+              <SettingsToggle
+                label="Marketing e campanhas"
+                value={notificationPrefs.allowMarketingNotifications}
+                onValueChange={(next) =>
+                  setNotificationPrefs((prev) => ({
+                    ...prev,
+                    allowMarketingNotifications: next,
+                    allowMarketingCampaigns: next,
+                  }))
+                }
+              />
+              <SettingsToggle
+                label="Vendas e pagamentos"
+                value={notificationPrefs.allowSalesAlerts}
+                onValueChange={(next) =>
+                  setNotificationPrefs((prev) => ({ ...prev, allowSalesAlerts: next }))
+                }
+              />
+              <SettingsToggle
                 label="Email de novidades e segurança"
                 value={notificationPrefs.allowEmailNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({ ...prev, allowEmailNotifications: next }))
-                }
-              />
-              <SettingsToggle
-                label="Lembretes de eventos"
-                value={notificationPrefs.allowEventReminders}
-                onValueChange={(next) =>
-                  setNotificationPrefs((prev) => ({ ...prev, allowEventReminders: next }))
-                }
-              />
-              <SettingsToggle
-                label="Pedidos para seguir"
-                value={notificationPrefs.allowFollowRequests}
-                onValueChange={(next) =>
-                  setNotificationPrefs((prev) => ({ ...prev, allowFollowRequests: next }))
-                }
-              />
-              <SettingsToggle
-                label="Campanhas das organizações"
-                value={notificationPrefs.allowMarketingCampaigns}
-                onValueChange={(next) =>
-                  setNotificationPrefs((prev) => ({ ...prev, allowMarketingCampaigns: next }))
-                }
-              />
-              <SettingsToggle
-                label="Anúncios do sistema"
-                value={notificationPrefs.allowSystemAnnouncements}
-                onValueChange={(next) =>
-                  setNotificationPrefs((prev) => ({ ...prev, allowSystemAnnouncements: next }))
                 }
               />
             </View>
@@ -552,9 +585,18 @@ export default function SettingsScreen() {
                   item.organization.businessName ||
                   item.organization.username ||
                   "Organização";
+                const orgUsername = item.organization.username ?? null;
                 return (
                   <View key={item.organization.id} style={styles.consentCard}>
-                    <View style={styles.consentHeader}>
+                    <Pressable
+                      onPress={() => {
+                        if (orgUsername) {
+                          router.push({ pathname: "/[username]", params: { username: orgUsername } });
+                        }
+                      }}
+                      disabled={!orgUsername}
+                      style={styles.consentHeader}
+                    >
                       {item.organization.brandingAvatarUrl ? (
                         <Image source={{ uri: item.organization.brandingAvatarUrl }} style={styles.orgAvatar} />
                       ) : (
@@ -563,7 +605,7 @@ export default function SettingsScreen() {
                         </View>
                       )}
                       <Text style={styles.orgName}>{orgName}</Text>
-                    </View>
+                    </Pressable>
                     <View style={styles.stack}>
                       {(["MARKETING", "CONTACT_EMAIL", "CONTACT_SMS"] as const).map((type) => {
                         const savingKey = `${item.organization.id}:${type}`;

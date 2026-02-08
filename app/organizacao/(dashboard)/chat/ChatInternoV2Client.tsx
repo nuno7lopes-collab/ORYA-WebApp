@@ -2424,14 +2424,8 @@ export default function ChatInternoV2Client() {
                             ) : null}
 
                             {pending?.status === "FAILED" ? (
-                              <button
-                              type="button"
-                              className={cn(actionPill, "mt-2")}
-                              onClick={() => handleRetryPending(pending)}
-                            >
-                              Reenviar
-                            </button>
-                          ) : null}
+                              <p className="mt-2 text-[11px] text-amber-200/80">Falha ao enviar.</p>
+                            ) : null}
                           {pending?.status === "PENDING" || pending?.status === "QUEUED" ? (
                             <p className="mt-2 text-[11px] text-white/45">A enviar...</p>
                           ) : null}

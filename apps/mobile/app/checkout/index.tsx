@@ -7,8 +7,8 @@ import { useStripe, isPlatformPaySupported } from "@stripe/stripe-react-native";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
-import { useCheckoutStore } from "../../features/checkout/store";
-import { createCheckoutIntent, fetchCheckoutStatus } from "../../features/checkout/api";
+import { useCheckoutStore, buildCheckoutIdempotencyKey } from "../../features/checkout/store";
+import { createCheckoutIntent, createPairingCheckoutIntent, fetchCheckoutStatus } from "../../features/checkout/api";
 import { CheckoutMethod, CheckoutStatusResponse } from "../../features/checkout/types";
 import { useAuth } from "../../lib/auth";
 import { getMobileEnv } from "../../lib/env";
@@ -84,6 +84,8 @@ export default function CheckoutScreen() {
 
   const totalLabel = formatMoney(draft?.totalCents ?? 0, draft?.currency);
   const isFreeCheckout = Boolean(draft && draft.totalCents <= 0);
+  const isPadelRegistration = draft?.sourceType === "PADEL_REGISTRATION";
+  const itemLabel = isPadelRegistration ? draft?.ticketName ?? "Inscrição" : draft?.ticketName ?? "Bilhete";
   const showPaymentMethods = Boolean(draft) && !isFreeCheckout;
   const canPay = Boolean(draft && session?.user?.id && (stripeKey || isFreeCheckout));
   const handleBack = () => {
@@ -189,14 +191,29 @@ export default function CheckoutScreen() {
       let paymentIntentId = draft.paymentIntentId ?? null;
 
       if (needsNewIntent) {
-        const response = await createCheckoutIntent({
-          slug: draft.slug,
-          ticketTypeId: draft.ticketTypeId,
-          quantity: draft.quantity,
-          paymentMethod: resolvedMethod,
-          purchaseId: draft.purchaseId ?? undefined,
-          paymentScenario: draft.totalCents <= 0 ? "FREE_CHECKOUT" : "SINGLE",
-        });
+        const idempotencyKey = draft.idempotencyKey ?? buildCheckoutIdempotencyKey();
+        const response = isPadelRegistration
+          ? (() => {
+              if (!draft.pairingId) {
+                throw new Error("Dupla inválida.");
+              }
+              return createPairingCheckoutIntent({
+                pairingId: draft.pairingId,
+                ticketTypeId: draft.ticketTypeId,
+                inviteToken: draft.inviteToken ?? undefined,
+                idempotencyKey,
+              });
+            })()
+          : await createCheckoutIntent({
+              slug: draft.slug,
+              ticketTypeId: draft.ticketTypeId,
+              quantity: draft.quantity,
+              paymentMethod: resolvedMethod,
+              purchaseId: draft.purchaseId ?? undefined,
+              paymentScenario: draft.paymentScenario ?? (draft.totalCents <= 0 ? "FREE_CHECKOUT" : "SINGLE"),
+              idempotencyKey,
+              inviteToken: draft.inviteToken ?? undefined,
+            });
         clientSecret = response.clientSecret ?? null;
         purchaseId = response.purchaseId ?? null;
         paymentIntentId = response.paymentIntentId ?? null;
@@ -389,7 +406,7 @@ export default function CheckoutScreen() {
                     {draft.eventTitle ?? "Evento"}
                   </Text>
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-white/70 text-sm">{draft.ticketName ?? "Bilhete"}</Text>
+                    <Text className="text-white/70 text-sm">{itemLabel}</Text>
                     <GlassPill label={`${draft.quantity}x`} variant="muted" />
                   </View>
                   <View className="flex-row items-center justify-between">

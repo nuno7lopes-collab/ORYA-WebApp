@@ -2,52 +2,123 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FilterChip, SegmentedTabs } from "@/app/components/mobile/MobileFilters";
+import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import DoubleRange from "@/app/components/mobile/DoubleRange";
 import { cn } from "@/lib/utils";
+import { fetchGeoAutocomplete } from "@/lib/geo/client";
+import type { GeoAutocompleteItem } from "@/lib/geo/types";
+import type { DiscoverDateFilter, DiscoverWorld } from "@/app/descobrir/_lib/discoverFeed";
 
-type RangeValue = "today" | "week" | "near";
-type DiscoverTab = "eventos" | "torneios" | "reservas";
-
-type DiscoverFiltersProps = {
-  initialTab: DiscoverTab;
-  initialRange: RangeValue;
-  initialPriceMin: number;
-  initialPriceMax: number;
-};
-
-const TABS = [
-  { value: "eventos", label: "Eventos" },
-  { value: "torneios", label: "Torneios" },
-  { value: "reservas", label: "Reservas" },
+const WORLD_ORDER: DiscoverWorld[] = ["padel", "events", "services"];
+const WORLD_OPTIONS: Array<{ key: DiscoverWorld; label: string }> = [
+  { key: "padel", label: "Padel" },
+  { key: "events", label: "Eventos" },
+  { key: "services", label: "Serviços" },
 ];
 
+const DATE_OPTIONS: Array<{ key: DiscoverDateFilter; label: string }> = [
+  { key: "today", label: "Hoje" },
+  { key: "upcoming", label: "Próximos" },
+  { key: "weekend", label: "Fim de semana" },
+  { key: "day", label: "Dia" },
+  { key: "all", label: "Todas" },
+];
+
+type DiscoverFiltersProps = {
+  initialWorlds: DiscoverWorld[];
+  initialQuery: string;
+  initialCity: string;
+  initialDate: DiscoverDateFilter;
+  initialDay: string;
+  initialPriceMin: number;
+  initialPriceMax: number;
+  initialDistanceKm: number | null;
+};
+
+const toNumber = (value: string | null) => {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeWorlds = (values: string[]): DiscoverWorld[] => {
+  const unique = Array.from(new Set(values)) as DiscoverWorld[];
+  const filtered = unique.filter((value) => WORLD_ORDER.includes(value));
+  if (filtered.length === 0) return [...WORLD_ORDER];
+  return WORLD_ORDER.filter((value) => filtered.includes(value));
+};
+
+const parseWorldsParam = (worldsParam: string | null, tabParam: string | null): DiscoverWorld[] => {
+  if (worldsParam) {
+    return normalizeWorlds(
+      worldsParam
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    );
+  }
+  if (tabParam === "torneios") return ["padel"];
+  if (tabParam === "reservas") return ["services"];
+  if (tabParam === "eventos") return ["events"];
+  return [...WORLD_ORDER];
+};
+
+const parseDateParam = (value: string | null): DiscoverDateFilter => {
+  if (!value) return "all";
+  if (value === "today" || value === "upcoming" || value === "weekend" || value === "day") return value;
+  return "all";
+};
+
 export default function DiscoverFilters({
-  initialTab,
-  initialRange,
+  initialWorlds,
+  initialQuery,
+  initialCity,
+  initialDate,
+  initialDay,
   initialPriceMin,
   initialPriceMax,
+  initialDistanceKm,
 }: DiscoverFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<DiscoverTab>(initialTab);
-  const [range, setRange] = useState<RangeValue>(initialRange);
+  const [worlds, setWorlds] = useState<DiscoverWorld[]>(initialWorlds);
+  const [query, setQuery] = useState(initialQuery);
+  const [city, setCity] = useState(initialCity);
+  const [date, setDate] = useState<DiscoverDateFilter>(initialDate);
+  const [day, setDay] = useState(initialDay);
   const [priceMin, setPriceMin] = useState(initialPriceMin);
   const [priceMax, setPriceMax] = useState(initialPriceMax);
-  const [isPriceOpen, setIsPriceOpen] = useState(false);
+  const [distanceKm, setDistanceKm] = useState<number>(initialDistanceKm ?? 5);
+  const [distanceTouched, setDistanceTouched] = useState(false);
+  const [suggestions, setSuggestions] = useState<GeoAutocompleteItem[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [isPriceOpen, setIsPriceOpen] = useState(false);
   const priceRef = useRef<HTMLDivElement | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement | null>(null);
+  const typingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const distanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const latParam = searchParams.get("lat");
+  const lngParam = searchParams.get("lng");
+  const hasCoords = Number.isFinite(toNumber(latParam)) && Number.isFinite(toNumber(lngParam));
+  const currentQ = searchParams.get("q") ?? "";
+  const currentCity = searchParams.get("city") ?? "";
+  const currentDistance = toNumber(searchParams.get("distanceKm"));
 
   useEffect(() => {
-    setTab(initialTab);
-    setRange(initialRange);
-  }, [initialRange, initialTab]);
-
-  useEffect(() => {
-    setPriceMin(initialPriceMin);
-    setPriceMax(initialPriceMax);
-  }, [initialPriceMin, initialPriceMax]);
+    const parsedWorlds = parseWorldsParam(searchParams.get("worlds"), searchParams.get("tab"));
+    setWorlds(parsedWorlds);
+    setQuery(searchParams.get("q") ?? "");
+    setCity(searchParams.get("city") ?? "");
+    setDate(parseDateParam(searchParams.get("date")));
+    setDay(searchParams.get("day") ?? "");
+    setPriceMin(toNumber(searchParams.get("priceMin")) ?? 0);
+    setPriceMax(toNumber(searchParams.get("priceMax")) ?? 100);
+    const parsedDistance = toNumber(searchParams.get("distanceKm"));
+    if (parsedDistance !== null) setDistanceKm(parsedDistance);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isPriceOpen) return;
@@ -61,71 +132,69 @@ export default function DiscoverFilters({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [isPriceOpen]);
 
+  useEffect(() => {
+    if (!suggestionsOpen) return;
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (suggestionsRef.current && target && !suggestionsRef.current.contains(target)) {
+        setSuggestionsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [suggestionsOpen]);
+
   const updateParams = (updater: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());
     updater(params);
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    const queryString = params.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
   };
 
-  const handleTabChange = (nextTab: DiscoverTab) => {
-    setTab(nextTab);
+  const applyWorlds = (nextWorlds: DiscoverWorld[]) => {
+    const normalized = normalizeWorlds(nextWorlds);
+    setWorlds(normalized);
     updateParams((params) => {
-      if (nextTab === "eventos") {
-        params.delete("tab");
+      params.delete("tab");
+      if (normalized.length === WORLD_ORDER.length) {
+        params.delete("worlds");
       } else {
-        params.set("tab", nextTab);
+        params.set("worlds", normalized.join(","));
       }
     });
   };
 
-  const handleRangeChange = (nextRange: RangeValue) => {
-    if (nextRange === "near") {
-      setIsLocating(true);
-      if (typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            updateParams((params) => {
-              params.set("range", "near");
-              params.set("lat", pos.coords.latitude.toFixed(6));
-              params.set("lng", pos.coords.longitude.toFixed(6));
-            });
-            setRange("near");
-            setIsLocating(false);
-          },
-          () => {
-            updateParams((params) => {
-              params.delete("range");
-              params.delete("lat");
-              params.delete("lng");
-            });
-            setRange("week");
-            setIsLocating(false);
-          },
-          { enableHighAccuracy: true, timeout: 6000 },
-        );
-      } else {
-        updateParams((params) => {
-          params.delete("range");
-          params.delete("lat");
-          params.delete("lng");
-        });
-        setRange("week");
-        setIsLocating(false);
-      }
+  const toggleWorld = (value: DiscoverWorld) => {
+    if (worlds.includes(value)) {
+      applyWorlds(worlds.filter((world) => world !== value));
       return;
     }
+    applyWorlds([...worlds, value]);
+  };
 
+  const applyDate = (nextDate: DiscoverDateFilter) => {
+    setDate(nextDate);
     updateParams((params) => {
-      if (nextRange === "week") {
-        params.delete("range");
-      } else {
-        params.set("range", nextRange);
+      if (nextDate === "all") {
+        params.delete("date");
+        params.delete("day");
+        return;
       }
-      params.delete("lat");
-      params.delete("lng");
+      params.set("date", nextDate);
+      if (nextDate !== "day") params.delete("day");
     });
-    setRange(nextRange);
+  };
+
+  const handleDayChange = (value: string) => {
+    setDay(value);
+    updateParams((params) => {
+      params.set("date", "day");
+      if (value) {
+        params.set("day", value);
+      } else {
+        params.delete("day");
+      }
+    });
   };
 
   const handlePriceCommit = (min: number, max: number) => {
@@ -145,6 +214,33 @@ export default function DiscoverFilters({
     });
   };
 
+  const handleLocationToggle = () => {
+    if (hasCoords) {
+      updateParams((params) => {
+        params.delete("lat");
+        params.delete("lng");
+        params.delete("distanceKm");
+      });
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        updateParams((params) => {
+          params.set("lat", pos.coords.latitude.toFixed(6));
+          params.set("lng", pos.coords.longitude.toFixed(6));
+          if (!params.get("distanceKm")) params.set("distanceKm", String(distanceKm));
+        });
+        setIsLocating(false);
+      },
+      () => {
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 6000 },
+    );
+  };
+
   const priceLabel = useMemo(() => {
     if (priceMin === 0 && priceMax === 0) return "Gratuito";
     if (priceMin === 0 && priceMax >= 100) return "Preço";
@@ -152,33 +248,176 @@ export default function DiscoverFilters({
     return `${priceMin}-${maxLabel} EUR`;
   }, [priceMin, priceMax]);
 
-  const hasCoords = Boolean(searchParams.get("lat") && searchParams.get("lng"));
-  const nearLabel = isLocating ? "A localizar" : hasCoords ? "Perto de ti" : "Ativar localização";
+  useEffect(() => {
+    if (typingRef.current) clearTimeout(typingRef.current);
+    if (query.trim() === currentQ) return;
+    typingRef.current = setTimeout(() => {
+      updateParams((params) => {
+        const trimmed = query.trim();
+        if (trimmed) {
+          params.set("q", trimmed);
+        } else {
+          params.delete("q");
+        }
+      });
+    }, 350);
+    return () => {
+      if (typingRef.current) clearTimeout(typingRef.current);
+    };
+  }, [query]);
+
+  useEffect(() => {
+    if (!hasCoords || !distanceTouched) return;
+    if (currentDistance === distanceKm) return;
+    if (distanceRef.current) clearTimeout(distanceRef.current);
+    distanceRef.current = setTimeout(() => {
+      updateParams((params) => {
+        if (distanceKm) {
+          params.set("distanceKm", String(distanceKm));
+        } else {
+          params.delete("distanceKm");
+        }
+      });
+    }, 300);
+    return () => {
+      if (distanceRef.current) clearTimeout(distanceRef.current);
+    };
+  }, [distanceKm, hasCoords]);
+
+  useEffect(() => {
+    const trimmed = city.trim();
+    if (!trimmed || trimmed.length < 2) {
+      setSuggestions([]);
+      setSuggestionsOpen(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchGeoAutocomplete(trimmed)
+        .then((items) => {
+          setSuggestions(items);
+          setSuggestionsOpen(true);
+        })
+        .catch(() => {
+          setSuggestions([]);
+          setSuggestionsOpen(false);
+        });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [city]);
+
+  const applyCity = (nextCity: string) => {
+    setCity(nextCity);
+    updateParams((params) => {
+      const trimmed = nextCity.trim();
+      if (trimmed === currentCity.trim()) return;
+      if (trimmed) {
+        params.set("city", trimmed);
+      } else {
+        params.delete("city");
+      }
+    });
+  };
 
   return (
     <div className="space-y-4">
-      <SegmentedTabs
-        items={TABS}
-        value={tab}
-        onChange={(value) => handleTabChange(value as DiscoverTab)}
-      />
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="flex flex-col gap-2">
+          <label className="text-[11px] uppercase tracking-[0.2em] text-white/50">Pesquisa</label>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Procurar eventos, torneios ou serviços"
+            className="w-full rounded-2xl border border-white/12 bg-white/5 px-4 py-2 text-sm text-white outline-none focus:border-white/30"
+          />
+        </div>
+        <div className="relative" ref={suggestionsRef}>
+          <div className="flex flex-col gap-2">
+            <label className="text-[11px] uppercase tracking-[0.2em] text-white/50">Cidade</label>
+            <input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applyCity(city);
+              }}
+              placeholder="Lisboa, Porto..."
+              className="w-full rounded-2xl border border-white/12 bg-white/5 px-4 py-2 text-sm text-white outline-none focus:border-white/30"
+            />
+          </div>
+          {suggestionsOpen && suggestions.length > 0 && (
+            <div className="absolute z-40 mt-2 w-full rounded-2xl border border-white/10 bg-[#0b1224]/95 p-2 backdrop-blur-xl">
+              {suggestions.map((item) => (
+                <button
+                  key={item.providerId}
+                  type="button"
+                  className="flex w-full flex-col gap-1 rounded-xl px-3 py-2 text-left text-xs text-white/80 hover:bg-white/5"
+                  onClick={() => {
+                    const label = item.city || item.name || item.label;
+                    applyCity(label || "");
+                    setSuggestionsOpen(false);
+                  }}
+                >
+                  <span className="text-sm text-white">{item.label}</span>
+                  {item.city && <span className="text-[11px] text-white/50">{item.city}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="flex flex-wrap gap-2">
+        {WORLD_OPTIONS.map((option) => (
+          <FilterChip
+            key={option.key}
+            label={option.label}
+            active={worlds.includes(option.key)}
+            onClick={() => toggleWorld(option.key)}
+          />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {DATE_OPTIONS.map((option) => (
+          <FilterChip
+            key={option.key}
+            label={option.label}
+            active={date === option.key}
+            onClick={() => applyDate(option.key)}
+          />
+        ))}
+        {date === "day" && (
+          <input
+            type="date"
+            value={day}
+            onChange={(e) => handleDayChange(e.target.value)}
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/80"
+          />
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <FilterChip
-          label="Hoje"
-          active={range === "today"}
-          onClick={() => handleRangeChange("today")}
+          label={hasCoords ? "Localização ativa" : isLocating ? "A localizar" : "Ativar localização"}
+          active={hasCoords}
+          onClick={handleLocationToggle}
         />
-        <FilterChip
-          label={nearLabel}
-          active={range === "near" && hasCoords}
-          onClick={() => handleRangeChange("near")}
-        />
-        <FilterChip
-          label="Esta semana"
-          active={range === "week"}
-          onClick={() => handleRangeChange("week")}
-        />
+        {hasCoords && (
+          <div className="flex items-center gap-3 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/70">
+            <span>{distanceKm} km</span>
+            <input
+              type="range"
+              min={5}
+              max={50}
+              step={5}
+              value={distanceKm}
+              onChange={(e) => {
+                setDistanceTouched(true);
+                setDistanceKm(Number(e.target.value));
+              }}
+              className="h-1 w-28 cursor-pointer accent-white"
+            />
+          </div>
+        )}
         <div ref={priceRef} className="relative">
           <FilterChip
             label={priceLabel}

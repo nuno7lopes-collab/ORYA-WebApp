@@ -2,6 +2,7 @@ import type { NotificationType, Prisma } from "@prisma/client";
 import { enqueueNotification } from "@/domain/notifications/outbox";
 import { getNotificationPrefs, shouldNotify } from "@/domain/notifications/prefs";
 import type { CreateNotificationInput } from "@/domain/notifications/types";
+import { safeCtaUrl, validateNotificationInput } from "@/domain/notifications/registry";
 
 export type { CreateNotificationInput };
 
@@ -28,11 +29,12 @@ export async function createNotification(input: CreateNotificationInput) {
   } = input;
 
   const dedupeKey = buildDedupe([type, userId, organizationId, eventId, ticketId, inviteId, fromUserId]);
+  const sanitizedCta = safeCtaUrl(ctaUrl);
   const payloadJson: Prisma.InputJsonValue = {
     title: title ?? null,
     body: body ?? null,
-    ctaUrl: ctaUrl ?? null,
-    ctaLabel: ctaLabel ?? null,
+    ctaUrl: sanitizedCta ?? null,
+    ctaLabel: sanitizedCta ? ctaLabel ?? null : null,
     priority,
     senderVisibility,
     fromUserId,
@@ -42,6 +44,18 @@ export async function createNotification(input: CreateNotificationInput) {
     inviteId,
     payload: payload ?? null,
   } as Prisma.InputJsonValue;
+
+  const missing = validateNotificationInput({
+    type,
+    fromUserId,
+    organizationId,
+    eventId,
+    inviteId,
+    payload: payload ? (payload as Record<string, unknown>) : null,
+  });
+  if (missing.length) {
+    console.warn("[notifications][create] missing_fields", { type, userId, missing });
+  }
 
   return enqueueNotification({
     dedupeKey,

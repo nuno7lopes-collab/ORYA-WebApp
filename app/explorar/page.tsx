@@ -1,11 +1,5 @@
-import { Suspense } from "react";
-import ExplorarSkeleton from "./_components/ExplorarSkeleton";
-import { ExplorarContent } from "./_components/ExplorarContent";
+import { notFound } from "next/navigation";
 
-export default function ExplorarLandingPage() {
-  return (
-    <Suspense fallback={<ExplorarSkeleton initialWorld="EVENTOS" />}>
-      <ExplorarContent initialWorld="EVENTOS" />
-    </Suspense>
-  );
+export default function ExplorarRemovedPage() {
+  notFound();
 }

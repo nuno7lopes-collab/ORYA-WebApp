@@ -13,19 +13,22 @@ import { resolveLocale, t } from "@/lib/i18n";
 type NotificationDto = {
   id: string;
   type: string;
+  category: "network" | "events" | "system" | "marketing" | "chat";
   title: string;
-  body: string;
+  body?: string | null;
   ctaUrl?: string | null;
   ctaLabel?: string | null;
-  priority?: "LOW" | "NORMAL" | "HIGH";
-  readAt?: string | null;
-  isRead?: boolean;
   createdAt: string;
-  meta?: { isMutual?: boolean };
+  isRead?: boolean;
+  organizationId?: number | null;
+  eventId?: number | null;
+  actions?: Array<{ type: string; label: string; style?: string; payload?: Record<string, unknown> }>;
   payload?: Record<string, unknown> | null;
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+const INVITE_TYPES = new Set(["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER", "EVENT_INVITE", "PAIRING_INVITE"]);
 
 export function NotificationBell({ organizationId }: { organizationId?: number | null }) {
   const { user } = useUser();
@@ -33,27 +36,14 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
   const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
   const distanceLocale = locale === "en-US" ? enUS : locale === "es-ES" ? es : pt;
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<"all" | "sales" | "invites" | "marketing" | "system">("all");
+  const [filter, setFilter] = useState<"all" | "invites">("all");
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const queryTypes =
-    filter === "sales"
-      ? "EVENT_SALE,EVENT_PAYOUT_STATUS"
-      : filter === "invites"
-        ? "ORGANIZATION_INVITE,CLUB_INVITE,ORGANIZATION_TRANSFER"
-        : filter === "marketing"
-          ? "MARKETING_PROMO_ALERT,CRM_CAMPAIGN"
-        : filter === "system"
-          ? "STRIPE_STATUS,SYSTEM_ANNOUNCE,CHAT_OPEN,CHAT_ANNOUNCEMENT,CHAT_MESSAGE"
-          : undefined;
   const queryParams = useMemo(() => {
     if (!user) return null;
-    const params = new URLSearchParams({ status: "all" });
-    if (queryTypes) params.set("types", queryTypes);
-    if (Number.isFinite(organizationId ?? NaN) && organizationId) {
-      params.set("organizationId", String(organizationId));
-    }
-    return `/api/notifications?${params.toString()}`;
-  }, [organizationId, queryTypes, user]);
+    const params = new URLSearchParams();
+    params.set("limit", "60");
+    return `/api/me/notifications/feed?${params.toString()}`;
+  }, [user]);
   const query = user ? queryParams : null;
 
   const { data, mutate } = useSWR(
@@ -63,20 +53,38 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
   );
 
   const items: NotificationDto[] = useMemo(() => data?.items ?? [], [data]);
-  const unreadCount = useMemo(
-    () => items.filter((n) => n.isRead === false || (!n.isRead && !n.readAt)).length,
-    [items],
-  );
+  const unreadCount = useMemo(() => Number(data?.unreadCount ?? 0), [data?.unreadCount]);
+  const filteredItems = useMemo(() => {
+    let list = items;
+    if (Number.isFinite(organizationId ?? NaN) && organizationId) {
+      list = list.filter((item) => item.organizationId === organizationId);
+    }
+    if (filter === "invites") {
+      return list.filter((item) => INVITE_TYPES.has(item.type));
+    }
+    return list;
+  }, [filter, items, organizationId]);
   const typeLabels = useMemo(
     () => ({
       ORGANIZATION_INVITE: t("notificationsTypeOrganizationInvite", locale),
+      ORGANIZATION_TRANSFER: t("notificationsTypeOrganizationTransfer", locale),
+      CLUB_INVITE: t("notificationsTypeClubInvite", locale),
       PAIRING_INVITE: t("notificationsTypePairingInvite", locale),
       EVENT_SALE: t("notificationsTypeEventSale", locale),
+      EVENT_PAYOUT_STATUS: t("notificationsTypeEventPayout", locale),
       STRIPE_STATUS: t("notificationsTypeStripe", locale),
       EVENT_REMINDER: t("notificationsTypeReminder", locale),
       FOLLOW_REQUEST: t("notificationsTypeFollowRequest", locale),
       FOLLOW_ACCEPT: t("notificationsTypeFollowAccept", locale),
       FOLLOWED_YOU: t("notificationsTypeFollowedYou", locale),
+      FRIEND_GOING_TO_EVENT: t("notificationsTypeFriendGoingEvent", locale),
+      EVENT_INVITE: t("notificationsTypeEventInvite", locale),
+      NEW_EVENT_FROM_FOLLOWED_ORGANIZATION: t("notificationsTypeNewEvent", locale),
+      CHECKIN_READY: t("notificationsTypeCheckin", locale),
+      TICKET_SHARED: t("notificationsTypeTicket", locale),
+      TICKET_TRANSFER_RECEIVED: t("notificationsTypeTicketTransfer", locale),
+      TICKET_TRANSFER_ACCEPTED: t("notificationsTypeTicketTransfer", locale),
+      TICKET_TRANSFER_DECLINED: t("notificationsTypeTicketTransfer", locale),
       MARKETING_PROMO_ALERT: t("notificationsTypeMarketing", locale),
       CRM_CAMPAIGN: t("notificationsTypeCampaign", locale),
       SYSTEM_ANNOUNCE: t("notificationsTypeSystem", locale),
@@ -121,13 +129,13 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
 
   const grouped = useMemo(() => {
     const groups: Record<string, NotificationDto[]> = {};
-    for (const n of items) {
+    for (const n of filteredItems) {
       const date = new Date(n.createdAt);
       const key = date.toLocaleDateString(locale);
       groups[key] = groups[key] ? [...groups[key], n] : [n];
     }
     return groups;
-  }, [items]);
+  }, [filteredItems, locale]);
 
   return (
     <div className="relative">
@@ -166,10 +174,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
           <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
               {[
                 { key: "all", label: t("notificationsFilterAll", locale) },
-                { key: "sales", label: t("notificationsFilterSales", locale) },
                 { key: "invites", label: t("notificationsFilterInvites", locale) },
-                { key: "marketing", label: t("notificationsFilterMarketing", locale) },
-                { key: "system", label: t("notificationsFilterSystem", locale) },
               ].map((item) => (
               <button
                 key={item.key}
@@ -186,7 +191,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
             ))}
           </div>
 
-          {items.length === 0 && (
+          {filteredItems.length === 0 && (
             <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-3 text-xs text-white/60">
               {organizationId ? t("notificationsEmptyOrg", locale) : t("notificationsEmpty", locale)}
             </div>
@@ -200,23 +205,21 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                   <div
                     key={n.id}
                     className={`rounded-xl border px-3 py-2 text-xs ${
-                      n.readAt
+                      n.isRead
                         ? "border-white/10 bg-white/3"
                         : "border-sky-400/30 bg-sky-500/10"
                     }`}
                   >
                     {(() => {
                       const typeLabel =
-                        n.type === "FOLLOWED_YOU" && n.meta?.isMutual
-                          ? t("notificationsTypeFollowedBack", locale)
-                          : typeLabels[n.type as keyof typeof typeLabels] ?? t("notificationsTypeUpdateFallback", locale);
+                        typeLabels[n.type as keyof typeof typeLabels] ?? t("notificationsTypeUpdateFallback", locale);
                       return (
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-white/60">
                           {typeLabel}
                         </span>
-                        {(n.isRead === false || (!n.isRead && !n.readAt)) && (
+                    {!n.isRead && (
                           <span className="h-2 w-2 rounded-full bg-sky-400" />
                         )}
                       </div>
@@ -240,7 +243,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                       </div>
                     ) : (
                       <>
-                        <p className="text-white/70">{n.body}</p>
+                        {n.body ? <p className="text-white/70">{n.body}</p> : null}
                         {n.ctaUrl && n.ctaLabel && (
                           <Link
                             href={n.ctaUrl}

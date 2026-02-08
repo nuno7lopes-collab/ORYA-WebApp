@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
+import { isReservedUsernameAllowed } from "@/lib/reservedUsernames";
 import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 
 function OnboardingPerfilContent() {
@@ -66,14 +67,15 @@ function ProfileForm({
   const [username, setUsername] = useState(sanitizeUsername(initialUsername));
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<
-    "idle" | "checking" | "available" | "taken" | "error"
+    "idle" | "checking" | "available" | "taken" | "reserved" | "error"
   >("idle");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const allowReservedForEmail = user?.email ?? null;
 
   async function checkUsernameAvailability(
     currentUsername: string
-  ): Promise<"available" | "taken" | "error" | "invalid"> {
+  ): Promise<"available" | "taken" | "reserved" | "error" | "invalid"> {
     const trimmed = sanitizeUsername(currentUsername);
     if (!trimmed) {
       setUsernameHint(USERNAME_RULES_HINT);
@@ -81,7 +83,7 @@ function ProfileForm({
       return "invalid";
     }
 
-    const validation = validateUsername(trimmed);
+    const validation = validateUsername(trimmed, { allowReservedForEmail });
     if (!validation.valid) {
       setUsernameHint(validation.error);
       setUsernameStatus("error");
@@ -101,6 +103,16 @@ function ProfileForm({
 
       const data = (await res.json()) as { available: boolean };
       const available = data.available;
+      if (!available && (data as { reason?: string }).reason === "reserved") {
+        if (isReservedUsernameAllowed(trimmed, allowReservedForEmail)) {
+          setUsernameStatus("available");
+          setUsernameHint(null);
+          return "available";
+        }
+        setUsernameStatus("reserved");
+        setUsernameHint("Este username está reservado.");
+        return "reserved";
+      }
       setUsernameStatus(available ? "available" : "taken");
       return available ? "available" : "taken";
     } catch (e) {
@@ -117,7 +129,7 @@ function ProfileForm({
 
     const trimmedName = fullName.trim();
     const trimmedUsername = sanitizeUsername(username);
-    const validation = validateUsername(trimmedUsername);
+    const validation = validateUsername(trimmedUsername, { allowReservedForEmail });
 
     if (!trimmedName || !validation.valid) {
       setError(validation.valid ? "Preenche o nome e o username." : validation.error);
@@ -130,6 +142,11 @@ function ProfileForm({
     if (availability === "error") {
       setIsSubmitting(false);
       setError("Não foi possível verificar o username.");
+      return;
+    }
+    if (availability === "reserved") {
+      setIsSubmitting(false);
+      setError("Este username está reservado.");
       return;
     }
     if (availability === "taken") {
@@ -234,6 +251,9 @@ function ProfileForm({
             )}
             {usernameStatus === "taken" && (
               <p className="text-xs text-red-600">Este username já existe, escolhe outro.</p>
+            )}
+            {usernameStatus === "reserved" && (
+              <p className="text-xs text-red-600">Este username está reservado.</p>
             )}
             {usernameStatus === "error" && (
               <p className="text-xs text-red-600">Não foi possível verificar o username.</p>

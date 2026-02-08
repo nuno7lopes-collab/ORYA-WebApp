@@ -1261,8 +1261,16 @@ export default function PadelHubClient({
     fetcher,
     { revalidateOnFocus: false },
   );
+  const calendarKey = useMemo(() => {
+    if (!eventId) return null;
+    const params = new URLSearchParams({ eventId: String(eventId) });
+    if (calendarFilter === "club" && drawerClubId) {
+      params.set("padelClubId", String(drawerClubId));
+    }
+    return `/api/padel/calendar?${params.toString()}`;
+  }, [calendarFilter, drawerClubId, eventId]);
   const { data: calendarData, isLoading: isCalendarLoading, mutate: mutateCalendar } = useSWR<CalendarResponse>(
-    eventId ? `/api/padel/calendar?eventId=${eventId}` : null,
+    calendarKey,
     fetcher,
     { revalidateOnFocus: false },
   );

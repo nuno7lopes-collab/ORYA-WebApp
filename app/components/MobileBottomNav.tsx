@@ -2,6 +2,7 @@
 
 import { useMemo, type ComponentType, type SVGProps } from "react";
 import { useRouter } from "next/navigation";
+import { isReservedUsername } from "@/lib/reservedUsernames";
 
 type MobileBottomNavProps = {
   pathname: string;
@@ -10,36 +11,6 @@ type MobileBottomNavProps = {
 
 type IconProps = SVGProps<SVGSVGElement>;
 type IconComponent = ComponentType<IconProps>;
-
-const RESERVED_ROOT_ROUTES = new Set([
-  "admin",
-  "api",
-  "auth",
-  "atividade",
-  "agora",
-  "descobrir",
-  "em-breve",
-  "eventos",
-  "explorar",
-  "inscricoes",
-  "live",
-  "login",
-  "mapa",
-  "me",
-  "onboarding",
-  "organizacao",
-  "organização",
-  "perfil",
-  "procurar",
-  "padel",
-  "rede",
-  "resale",
-  "reset-password",
-  "servicos",
-  "signup",
-  "social",
-  "staff",
-]);
 
 const normalizePathname = (value: string) => {
   if (!value) return "/";
@@ -52,7 +23,7 @@ const isRootProfileHandle = (path: string) => {
   if (!path || path === "/") return false;
   const segment = path.startsWith("/") ? path.slice(1) : path;
   if (!segment || segment.includes("/")) return false;
-  return !RESERVED_ROOT_ROUTES.has(segment);
+  return !isReservedUsername(segment);
 };
 
 const isProfilePath = (path: string) => path.startsWith("/me") || isRootProfileHandle(path);
@@ -73,8 +44,8 @@ export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBo
     () => ({
       label: "Descobrir",
       icon: IconCompass,
-      path: "/explorar",
-      active: (p) => p.startsWith("/explorar") || p.startsWith("/procurar"),
+      path: "/descobrir",
+      active: (p) => p.startsWith("/descobrir") || p.startsWith("/procurar"),
     }),
     [],
   );
@@ -83,8 +54,8 @@ export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBo
     () => ({
       label: "Início",
       icon: IconHome,
-      path: "/descobrir",
-      active: (p) => p === "/descobrir" || p === "/",
+      path: "/",
+      active: (p) => p === "/",
     }),
     [],
   );

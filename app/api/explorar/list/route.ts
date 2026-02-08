@@ -5,6 +5,9 @@ import { getOrganizationFollowingSet } from "@/domain/social/follows";
 import { listPublicDiscoverIndex } from "@/domain/search/publicDiscover";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { logError } from "@/lib/observability/logger";
+import { Prisma } from "@prisma/client";
 import {
   PublicEventCard,
   PublicEventCardWithPrice,
@@ -30,7 +33,31 @@ function clampTake(value: number | null): number {
   return Math.min(Math.max(value, 1), 50);
 }
 
+const shouldExposeDetails = () => process.env.NODE_ENV !== "production";
+
+const toErrorDetails = (error: unknown) => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return {
+      kind: "prisma_known",
+      code: error.code,
+      meta: error.meta ?? null,
+      message: error.message,
+    };
+  }
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    return { kind: "prisma_validation", message: error.message };
+  }
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return { kind: "prisma_init", message: error.message };
+  }
+  if (error instanceof Error) {
+    return { kind: "error", name: error.name, message: error.message };
+  }
+  return { kind: "unknown", message: String(error ?? "") };
+};
+
 async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
   const { searchParams } = new URL(req.url);
 
   const typeParam = searchParams.get("type"); // event | all
@@ -42,7 +69,25 @@ async function _GET(req: NextRequest) {
   const priceMaxParam = searchParams.get("priceMax");
   const dateParam = searchParams.get("date"); // today | upcoming | all | day | weekend
   const dayParam = searchParams.get("day"); // YYYY-MM-DD opcional
+  const startDateParam = searchParams.get("startDate");
+  const endDateParam = searchParams.get("endDate");
+  const templateTypesParam = searchParams.get("templateTypes");
+  const northParam = searchParams.get("north");
+  const southParam = searchParams.get("south");
+  const eastParam = searchParams.get("east");
+  const westParam = searchParams.get("west");
   const cityParam = searchParams.get("city")?.trim() || null;
+
+  const parseCoord = (value: string | null) => {
+    if (!value) return null;
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const north = parseCoord(northParam);
+  const south = parseCoord(southParam);
+  const east = parseCoord(eastParam);
+  const west = parseCoord(westParam);
 
   const take = clampTake(limitParam ? parseInt(limitParam, 10) : DEFAULT_PAGE_SIZE);
   const cursorId = cursorParam ? cursorParam : null;
@@ -82,8 +127,15 @@ async function _GET(req: NextRequest) {
       searchParam,
       cityParam ?? "",
       categoryFilters.join(","),
+      templateTypesParam ?? "",
       dateParam ?? "",
       dayParam ?? "",
+      startDateParam ?? "",
+      endDateParam ?? "",
+      north ?? "",
+      south ?? "",
+      east ?? "",
+      west ?? "",
       typeParam ?? "",
       priceMinParam ?? "",
       priceMaxParam ?? "",
@@ -100,8 +152,15 @@ async function _GET(req: NextRequest) {
       q: searchParam,
       city: cityParam,
       categories: categoryFilters.join(",") || null,
+      templateTypes: templateTypesParam,
       date: dateParam,
       day: dayParam,
+      startDate: startDateParam,
+      endDate: endDateParam,
+      north,
+      south,
+      east,
+      west,
       type: typeParam,
       priceMin: priceMinParam,
       priceMax: priceMaxParam,
@@ -195,13 +254,38 @@ async function _GET(req: NextRequest) {
 
     return jsonWrap(payload);
   } catch (error) {
-    console.error("[api/explorar/list] erro:", error);
+    logError("api.explorar.list", error, {
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+      orgId: ctx.orgId,
+      viewerId: viewerId ?? null,
+      params: {
+        type: typeParam ?? null,
+        categories: categoriesParam ?? null,
+        q: searchParam ?? null,
+        cursor: cursorParam ?? null,
+        limit: take,
+        priceMin: priceMinParam ?? null,
+        priceMax: priceMaxParam ?? null,
+        date: dateParam ?? null,
+        day: dayParam ?? null,
+        startDate: startDateParam ?? null,
+        endDate: endDateParam ?? null,
+        north,
+        south,
+        east,
+        west,
+        templateTypes: templateTypesParam ?? null,
+        city: cityParam ?? null,
+      },
+    });
     // Em caso de erro, devolve lista vazia mas não rebenta o frontend
     return jsonWrap(
       {
         items: [],
         pagination: { nextCursor: null, hasMore: false },
         error: error instanceof Error ? error.message : "Erro desconhecido",
+        ...(shouldExposeDetails() ? { details: toErrorDetails(error) } : {}),
       },
       { status: 200 },
     );

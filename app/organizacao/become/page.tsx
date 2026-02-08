@@ -21,7 +21,7 @@ export default async function BecomeOrganizationPage() {
     <div className="min-h-screen px-4 pb-12 pt-16 text-white">
       <div className="mx-auto max-w-[1160px] space-y-10">
         <div className="flex items-center justify-start">
-          <BackLink hrefFallback="/explorar" label="Voltar" />
+          <BackLink hrefFallback="/descobrir" label="Voltar" />
         </div>
 
         <header className="space-y-2.5 text-center md:space-y-3">

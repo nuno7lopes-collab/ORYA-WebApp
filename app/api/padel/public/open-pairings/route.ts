@@ -26,11 +26,25 @@ async function _GET(req: NextRequest) {
 
     const params = req.nextUrl.searchParams;
     const q = params.get("q")?.trim() ?? "";
+    const eventIdParam = params.get("eventId");
+    const categoryIdParam = params.get("categoryId");
+    const eventId = eventIdParam ? Number(eventIdParam) : null;
+    const categoryId = categoryIdParam ? Number(categoryIdParam) : null;
+    if (eventIdParam && !Number.isFinite(eventId)) {
+      return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    }
+    if (categoryIdParam && !Number.isFinite(categoryId)) {
+      return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
+    }
     const limit = clampLimit(params.get("limit"));
     const now = new Date();
+    const eventFilter = Number.isFinite(eventId) ? { eventId } : {};
+    const categoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
 
     const pairingWhere: Prisma.PadelPairingWhereInput = {
       pairingStatus: { not: "CANCELLED" },
+      ...eventFilter,
+      ...categoryFilter,
       AND: [
         {
           OR: [

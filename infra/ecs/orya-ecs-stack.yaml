@@ -288,6 +288,7 @@ Resources:
           Value: !Ref EnvironmentName
       CapacityProviders:
         - FARGATE
+        - FARGATE_SPOT
       ClusterSettings:
         - Name: containerInsights
           Value: enabled
@@ -506,10 +507,14 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DATABASE_URL::"
             - Name: DIRECT_URL
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DIRECT_URL::"
+            - Name: APP_ENV
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:APP_ENV::"
             - Name: APP_BASE_URL
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:APP_BASE_URL::"
             - Name: NEXT_PUBLIC_BASE_URL
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXT_PUBLIC_BASE_URL::"
+            - Name: NEXT_PUBLIC_APP_ENV
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXT_PUBLIC_APP_ENV::"
             - Name: ORYA_CRON_SECRET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ORYA_CRON_SECRET::"
             - Name: QR_SECRET_KEY
@@ -564,8 +569,18 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_SECRET_KEY::"
             - Name: STRIPE_WEBHOOK_SECRET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_WEBHOOK_SECRET::"
+            - Name: STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE::"
             - Name: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY::"
+            - Name: APPLE_MAPS_TEAM_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_MAPS_TEAM_ID::"
+            - Name: APPLE_MAPS_KEY_ID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_MAPS_KEY_ID::"
+            - Name: APPLE_MAPS_PRIVATE_KEY_BASE64
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_MAPS_PRIVATE_KEY_BASE64::"
+            - Name: APPLE_MAPS_ORIGIN
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_MAPS_ORIGIN::"
             - Name: APPLE_SIGNIN_SERVICE_ID
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/apple:APPLE_SIGNIN_SERVICE_ID::"
             - Name: APPLE_SIGNIN_REDIRECT_URI
@@ -606,6 +621,8 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_REGION::"
             - Name: SES_IDENTITY_DOMAIN
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_IDENTITY_DOMAIN::"
+            - Name: EMAIL_FROM
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:EMAIL_FROM::"
             - Name: SES_SMTP_USERNAME
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:SES_SMTP_USERNAME::"
             - Name: SES_SMTP_PASSWORD
@@ -659,6 +676,8 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DATABASE_URL::"
             - Name: DIRECT_URL
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DIRECT_URL::"
+            - Name: APP_ENV
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:APP_ENV::"
             - Name: ORYA_CRON_SECRET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ORYA_CRON_SECRET::"
             - Name: SUPABASE_URL
@@ -669,6 +688,10 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_SECRET_KEY::"
             - Name: STRIPE_WEBHOOK_SECRET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_WEBHOOK_SECRET::"
+            - Name: STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/payments:STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE::"
+            - Name: EMAIL_FROM
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/email:EMAIL_FROM::"
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -678,8 +701,6 @@ Resources:
 
   WebServiceAlb:
     Type: AWS::ECS::Service
-    Condition: HasALB
-    DependsOn: Listener443
     Properties:
       ServiceName: !Sub "orya-${EnvironmentName}-web"
       Cluster: !Ref ECSCluster
@@ -692,34 +713,12 @@ Resources:
           Subnets: !Ref ServiceSubnets
           SecurityGroups:
             - !Ref ServiceSecurityGroup
-      LoadBalancers:
-        - ContainerName: orya-web
-          ContainerPort: 3000
-          TargetGroupArn: !Ref TargetGroup
-      DeploymentConfiguration:
-        MinimumHealthyPercent: 50
-        MaximumPercent: 200
-      Tags:
-        - Key: Project
-          Value: ORYA
-        - Key: Env
-          Value: !Ref EnvironmentName
-
-  WebServiceNoAlb:
-    Type: AWS::ECS::Service
-    Condition: NoALB
-    Properties:
-      ServiceName: !Sub "orya-${EnvironmentName}-web"
-      Cluster: !Ref ECSCluster
-      DesiredCount: !Ref WebDesiredCount
-      LaunchType: FARGATE
-      TaskDefinition: !Ref WebTaskDefinition
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: !Ref AssignPublicIp
-          Subnets: !Ref ServiceSubnets
-          SecurityGroups:
-            - !Ref ServiceSecurityGroup
+      LoadBalancers: !If
+        - HasALB
+        - - ContainerName: orya-web
+            ContainerPort: 3000
+            TargetGroupArn: !Ref TargetGroup
+        - !Ref AWS::NoValue
       DeploymentConfiguration:
         MinimumHealthyPercent: 50
         MaximumPercent: 200
@@ -804,7 +803,7 @@ Outputs:
   ClusterName:
     Value: !Ref ECSCluster
   WebServiceName:
-    Value: !If [HasALB, !Ref WebServiceAlb, !Ref WebServiceNoAlb]
+    Value: !Ref WebServiceAlb
   WorkerServiceName:
     Value: !If [UseWorker, !Ref WorkerService, ""]
   LoadBalancerDNS:

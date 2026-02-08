@@ -10,6 +10,7 @@ import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { useUser } from "@/app/hooks/useUser";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
+import { isReservedUsernameAllowed } from "@/lib/reservedUsernames";
 import { INTEREST_MAX_SELECTION, INTEREST_OPTIONS, normalizeInterestSelection, type InterestId } from "@/lib/interests";
 import InterestIcon from "@/app/components/interests/InterestIcon";
 
@@ -49,7 +50,7 @@ function AuthModalContent({
   showGoogle,
 }: AuthModalContentProps) {
   const router = useRouter();
-  const { profile } = useUser();
+  const { profile, user } = useUser();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -66,22 +67,23 @@ function AuthModalContent({
   const [username, setUsername] = useState("");
   const [onboardingInterests, setOnboardingInterests] = useState<InterestId[]>([]);
   const [signupCooldown, setSignupCooldown] = useState(0);
-  const [otpCooldown, setOtpCooldown] = useState(0);
-  const [otpResending, setOtpResending] = useState(false);
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<
-    "idle" | "checking" | "available" | "taken" | "error"
+    "idle" | "checking" | "available" | "taken" | "reserved" | "error"
   >("idle");
 
-  const RESEND_COOLDOWN = 30;
   const isSignupBlocked = signupCooldown > 0;
   const isOnboarding = mode === "onboarding";
   const isEmailLike = (value: string) => EMAIL_REGEX.test(value.trim().toLowerCase());
+  const allowReservedForEmail = isEmailLike(email ?? "")
+    ? email.trim().toLowerCase()
+    : isEmailLike(user?.email ?? "")
+      ? user?.email?.trim().toLowerCase() ?? null
+      : null;
 
   const modalRef = useRef<HTMLDivElement | null>(null);
 
   function clearPendingVerification() {
-    setOtpCooldown(0);
     setOtp("");
     setError(null);
     if (typeof window !== "undefined") {
@@ -105,7 +107,6 @@ function AuthModalContent({
     setLoginOtpSending(false);
     setResetPasswordSending(false);
     setResetEmailSent(false);
-    setOtpResending(false);
     setOnboardingInterests([]);
     setError(null);
     setMode("login");
@@ -151,13 +152,9 @@ function AuthModalContent({
     try {
       const pendingEmail = window.localStorage.getItem("orya_pending_email");
       const pendingStep = window.localStorage.getItem("orya_pending_step");
-      const lastOtp = Number(window.localStorage.getItem("orya_otp_last_sent_at") || "0");
-      const elapsed = lastOtp ? Math.floor((Date.now() - lastOtp) / 1000) : RESEND_COOLDOWN;
-      const remaining = Math.max(0, RESEND_COOLDOWN - elapsed);
       if (pendingEmail && !email) setEmail(pendingEmail);
       if (pendingStep === "verify") {
         setMode("verify");
-        if (remaining > 0) setOtpCooldown(remaining);
       }
     } catch {
       /* ignore */
@@ -172,7 +169,7 @@ function AuthModalContent({
     if (!username && profile.username) {
       const cleaned = sanitizeUsername(profile.username);
       setUsername(cleaned);
-      const validation = validateUsername(cleaned);
+      const validation = validateUsername(cleaned, { allowReservedForEmail });
       setUsernameHint(validation.valid ? null : validation.error);
       setUsernameStatus("idle");
     }
@@ -182,12 +179,6 @@ function AuthModalContent({
   // limpamos o estado pendente e fechamos o modal para não bloquear o fluxo.
   useEffect(() => {
     if (mode !== "verify") return;
-    if (otpCooldown === 0) {
-      setOtpCooldown(RESEND_COOLDOWN);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
-      }
-    }
     let cancelled = false;
     (async () => {
       try {
@@ -295,48 +286,6 @@ function AuthModalContent({
       setError("Não foi possível enviar recuperação de password.");
     } finally {
       setResetPasswordSending(false);
-    }
-  }
-
-  async function triggerResendOtp(emailToUse: string) {
-    const cleanEmail = emailToUse.trim().toLowerCase();
-    if (!cleanEmail || !isEmailLike(cleanEmail)) {
-      setError("Indica um email válido para reenviar o código.");
-      setOtpResending(false);
-      setOtpCooldown(0);
-      return;
-    }
-    setError(null);
-    setOtpResending(true);
-
-    try {
-      const res = await fetch("/api/auth/resend-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setError(data?.error ?? "Não foi possível reenviar o código.");
-        setOtpCooldown(0);
-      } else {
-        setLoginOtpSent(true);
-        setOtpCooldown(RESEND_COOLDOWN);
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
-          window.localStorage.setItem("orya_pending_email", cleanEmail);
-          window.localStorage.setItem("orya_pending_step", "verify");
-          if (data?.otpType === "magiclink" || data?.otpType === "signup") {
-            window.localStorage.setItem("orya_otp_type", data.otpType);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("triggerResendOtp error", err);
-      setError("Não foi possível reenviar o código.");
-      setOtpCooldown(0);
-    } finally {
-      setOtpResending(false);
     }
   }
 
@@ -462,14 +411,6 @@ function AuthModalContent({
     return () => clearInterval(t);
   }, [signupCooldown]);
 
-  useEffect(() => {
-    if (otpCooldown <= 0) return;
-    const t = setInterval(() => {
-      setOtpCooldown((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(t);
-  }, [otpCooldown]);
-
   async function handleSignup() {
     setError(null);
     setLoading(true);
@@ -519,13 +460,11 @@ function AuthModalContent({
       if (typeof window !== "undefined") {
         window.localStorage.setItem("orya_pending_email", emailToUse);
         window.localStorage.setItem("orya_pending_step", "verify");
-        window.localStorage.setItem("orya_otp_last_sent_at", String(Date.now()));
         window.localStorage.setItem(
           "orya_otp_type",
           json?.otpType === "magiclink" ? "magiclink" : "signup",
         );
       }
-      setOtpCooldown(RESEND_COOLDOWN);
       setEmail(emailToUse);
       setMode("verify");
     } catch (err) {
@@ -588,9 +527,8 @@ function AuthModalContent({
     }
 
     if (verifyError) {
-      const message = verifyError.message || "Código inválido ou expirado. Verifica o email ou pede novo código.";
+      const message = verifyError.message || "Código inválido ou expirado. Verifica o email e tenta novamente.";
       setError(message);
-      setOtpCooldown(0);
       setLoading(false);
       return;
     }
@@ -604,19 +542,21 @@ function AuthModalContent({
     setLoading(false);
   }
 
-  async function checkUsernameAvailability(currentUsername: string) {
+  async function checkUsernameAvailability(
+    currentUsername: string,
+  ): Promise<"available" | "taken" | "reserved" | "error" | "invalid"> {
     const trimmed = sanitizeUsername(currentUsername);
     if (!trimmed) {
       setUsernameHint(USERNAME_RULES_HINT);
       setUsernameStatus("idle");
-      return null;
+      return "invalid";
     }
 
-    const validation = validateUsername(trimmed);
+    const validation = validateUsername(trimmed, { allowReservedForEmail });
     if (!validation.valid) {
       setUsernameHint(validation.error);
       setUsernameStatus("error");
-      return null;
+      return "invalid";
     }
 
     setUsernameHint(null);
@@ -627,18 +567,28 @@ function AuthModalContent({
       if (!res.ok) {
         setUsernameStatus("error");
         setUsernameHint("Não foi possível verificar o username.");
-        return null;
+        return "error";
       }
 
-      const data = (await res.json()) as { available?: boolean };
+      const data = (await res.json()) as { available?: boolean; reason?: string };
       const available = Boolean(data?.available);
+      if (!available && data?.reason === "reserved") {
+        if (isReservedUsernameAllowed(trimmed, allowReservedForEmail)) {
+          setUsernameStatus("available");
+          setUsernameHint(null);
+          return "available";
+        }
+        setUsernameStatus("reserved");
+        setUsernameHint("Este username está reservado.");
+        return "reserved";
+      }
       setUsernameStatus(available ? "available" : "taken");
-      return available;
+      return available ? "available" : "taken";
     } catch (e) {
       console.error("Erro a verificar username:", e);
       setUsernameStatus("error");
       setUsernameHint("Não foi possível verificar o username.");
-      return null;
+      return "error";
     }
   }
 
@@ -650,7 +600,7 @@ function AuthModalContent({
       const interestSelection = normalizeInterestSelection(onboardingInterests);
       const trimmedName = fullName.trim();
       const usernameClean = sanitizeUsername(username);
-      const validation = validateUsername(usernameClean);
+      const validation = validateUsername(usernameClean, { allowReservedForEmail });
 
       if (!trimmedName || !validation.valid) {
         setError(validation.valid ? "Preenche o nome e o username." : validation.error);
@@ -658,14 +608,23 @@ function AuthModalContent({
         return;
       }
 
-      const available = await checkUsernameAvailability(usernameClean);
-      if (available === null) {
+      const availability = await checkUsernameAvailability(usernameClean);
+      if (availability === "error") {
         setError("Não foi possível verificar o username.");
         setLoading(false);
         return;
       }
-      if (!available) {
+      if (availability === "reserved") {
+        setError("Este username está reservado.");
+        setLoading(false);
+        return;
+      }
+      if (availability === "taken") {
         setError("Este @ já está a ser usado — escolhe outro.");
+        setLoading(false);
+        return;
+      }
+      if (availability !== "available") {
         setLoading(false);
         return;
       }
@@ -722,7 +681,7 @@ function AuthModalContent({
   const isSignup = mode === "signup";
   const isAuthEmailSending = loginOtpSending || resetPasswordSending;
   const onboardingUsername = sanitizeUsername(username);
-  const onboardingValidation = validateUsername(onboardingUsername);
+  const onboardingValidation = validateUsername(onboardingUsername, { allowReservedForEmail });
   const isOnboardingReady =
     Boolean(fullName.trim()) &&
     onboardingValidation.valid &&
@@ -1040,25 +999,8 @@ function AuthModalContent({
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="Código de 6 dígitos"
             />
-            <div className="mt-2 flex items-center justify-between text-[12px] text-white/65">
-              <span>
-                Não chegou?{" "}
-                {otpCooldown > 0 ? (
-                  <span className="text-white/75">Podes reenviar em {otpCooldown}s.</span>
-                    ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (email && isEmailLike(email)) triggerResendOtp(email);
-                    }}
-                    disabled={!email || !isEmailLike(email) || otpResending}
-                    className="text-[#6BFFFF] hover:text-white transition disabled:opacity-50"
-                  >
-                    Reenviar código
-                  </button>
-                )}
-              </span>
-              {otpResending && <span className="text-[11px] text-white/50">A enviar…</span>}
+            <div className="mt-2 text-[12px] text-white/65">
+              Se não recebeste o email, verifica a caixa de spam.
             </div>
             <div className="mt-2 flex items-center justify-between text-[12px] text-white/65">
               <button
@@ -1154,7 +1096,7 @@ function AuthModalContent({
                     const raw = e.target.value;
                     const cleaned = sanitizeUsername(raw);
                     setUsername(cleaned);
-                    const validation = validateUsername(cleaned);
+                    const validation = validateUsername(cleaned, { allowReservedForEmail });
                     setUsernameHint(validation.valid ? null : validation.error);
                     setUsernameStatus("idle");
                   }}
@@ -1174,6 +1116,9 @@ function AuthModalContent({
               )}
               {usernameStatus === "taken" && (
                 <p className="mt-1 text-[10px] text-red-300">Este username já existe, escolhe outro.</p>
+              )}
+              {usernameStatus === "reserved" && (
+                <p className="mt-1 text-[10px] text-red-300">Este username está reservado.</p>
               )}
               {usernameStatus === "error" && !usernameHint && (
                 <p className="mt-1 text-[10px] text-red-300">Não foi possível verificar o username.</p>

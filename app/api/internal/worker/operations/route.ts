@@ -32,7 +32,7 @@ import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBook
 import { fulfillBookingChargeIntent } from "@/lib/operations/fulfillBookingCharge";
 import { fulfillServiceCreditPurchaseIntent } from "@/lib/operations/fulfillServiceCredits";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { createNotification } from "@/lib/notifications";
+import { createNotification, shouldNotify } from "@/lib/notifications";
 import { processNotificationOutboxBatch } from "@/domain/notifications/outboxProcessor";
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
 import { normalizeEmail } from "@/lib/utils/email";
@@ -58,6 +58,7 @@ import { queuePairingRefund } from "@/domain/notifications/splitPayments";
 import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
 import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
+import { getCloseFriends } from "@/domain/social/closeFriends";
 import { releaseCronLock, tryAcquireCronLock } from "@/lib/cron/lock";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -1812,20 +1813,54 @@ async function processSendNotificationPurchase(op: OperationRecord) {
   if (!purchaseId || !userId) throw new Error("SEND_NOTIFICATION_PURCHASE missing purchaseId or userId");
 
   try {
-    const eventTemplate = eventId
-      ? await prisma.event.findUnique({ where: { id: eventId }, select: { templateType: true } })
+    const event = eventId
+      ? await prisma.event.findUnique({
+          where: { id: eventId },
+          select: { templateType: true, title: true, slug: true, organizationId: true },
+        })
       : null;
-    const ticketCtaLabel = eventTemplate?.templateType === "PADEL" ? "Ver inscrições" : "Ver bilhetes";
+    const ticketCtaLabel = event?.templateType === "PADEL" ? "Ver inscrições" : "Ver bilhetes";
+    const eventTitle = event?.title ?? "evento";
 
     await createNotification({
       userId,
       type: NotificationType.EVENT_SALE,
       title: "Compra confirmada",
-      body: eventId ? `A tua compra para o evento ${eventId} foi confirmada.` : "Compra confirmada.",
+      body: eventId ? `A tua compra para o evento ${eventTitle} foi confirmada.` : "Compra confirmada.",
       ctaUrl: absUrl("/me/carteira?section=wallet"),
       ctaLabel: ticketCtaLabel,
       payload: { purchaseId, eventId },
     });
+
+    if (event && eventId) {
+      const buyerProfile = await prisma.profile.findUnique({
+        where: { id: userId },
+        select: { fullName: true, username: true },
+      });
+      const actorName = buyerProfile?.fullName || buyerProfile?.username || "Um amigo";
+      const closeFriends = await getCloseFriends(userId);
+      const closeFriendIds = closeFriends.map((entry) => entry.friendUserId);
+
+      if (closeFriendIds.length > 0) {
+        await Promise.all(
+          closeFriendIds.map(async (targetUserId) => {
+            if (!(await shouldNotify(targetUserId, NotificationType.FRIEND_GOING_TO_EVENT))) return;
+            await createNotification({
+              userId: targetUserId,
+              type: NotificationType.FRIEND_GOING_TO_EVENT,
+              title: actorName,
+              body: `vai ao evento ${eventTitle}.`,
+              ctaUrl: event.slug ? `/eventos/${event.slug}` : "/eventos",
+              ctaLabel: "Ver evento",
+              fromUserId: userId,
+              organizationId: event.organizationId ?? null,
+              eventId: eventId,
+              payload: { eventTitle },
+            });
+          }),
+        );
+      }
+    }
   } catch (err) {
     logError("worker.send_notification_purchase_failed", err);
     throw err;

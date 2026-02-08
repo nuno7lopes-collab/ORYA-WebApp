@@ -492,8 +492,7 @@ separado, assumimos que no DB está armazenado normalizado, o que é o ideal
 Status: Feito – UI com avisos persistentes + CTA de verificação e textos amigáveis. 
 Instruções: No dashboard da organização, exibir um aviso persistente enquanto o email não
 estiver  verificado,  explicando  que  certas  ações  estão  bloqueadas
-.  Fornecer  um  botão
-“Reenviar  confirmação”  se  aplicável.  Garantir  que  mensagens  de  erro  vindas  do  backend
+.  Fornecer  instruções  claras  para  confirmação.  Garantir  que  mensagens  de  erro  vindas  do  backend
 (OFFICIAL_EMAIL_REQUIRED/NOT_VERIFIED)  sejam  exibidas  de  forma  amigável  ao  usuário
 (mapeadas para PT). 
 (P2) Email da Plataforma (Admin): Testar e finalizar a tela de configuração do email oficial da

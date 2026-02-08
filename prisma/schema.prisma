@@ -47,6 +47,7 @@ model Profile {
   organization_follows_organization_follows_follower_idToprofiles        organization_follows[]     @relation("organization_follows_follower_idToprofiles")
   notificationsSent                                                Notification[]          @relation("NotificationSender")
   notifications                                                    Notification[]
+  notificationMutes                                                NotificationMute[]
   notificationPreference                                           NotificationPreference?
   crmCustomers                                                     CrmCustomer[]
   crmInteractions                                                  CrmInteraction[]
@@ -222,6 +223,7 @@ model Organization {
   promoCodes              PromoCode[]
   payments                Payment[]
   notifications           Notification[]                  @relation("NotificationOrganization")
+  notificationMutes       NotificationMute[]
   memberInvites           OrganizationMemberInvite[]
   members                 OrganizationMember[]
   memberPermissions       OrganizationMemberPermission[]
@@ -1074,6 +1076,10 @@ model NotificationPreference {
   env                     String                         @default("prod")
   userId                   String   @id @map("userId") @db.Uuid
   allowEmailNotifications  Boolean  @default(true) @map("allow_email_notifications")
+  allowSocialNotifications Boolean  @default(true) @map("allow_social_notifications")
+  allowEventNotifications  Boolean  @default(true) @map("allow_event_notifications")
+  allowSystemNotifications Boolean  @default(true) @map("allow_system_notifications")
+  allowMarketingNotifications Boolean @default(true) @map("allow_marketing_notifications")
   allowEventReminders      Boolean  @default(true) @map("allow_event_reminders")
   allowFollowRequests      Boolean  @default(true) @map("allow_follow_requests")
   allowSalesAlerts         Boolean  @default(true) @map("allow_sales_alerts")
@@ -1084,6 +1090,25 @@ model NotificationPreference {
   user                     Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notification_preferences")
+  @@schema("app_v3")
+}
+
+model NotificationMute {
+  env            String        @default("prod")
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String        @map("user_id") @db.Uuid
+  organizationId Int?          @map("organization_id")
+  eventId        Int?          @map("event_id")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  user           Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event          Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId, eventId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([eventId])
+  @@map("notification_mutes")
   @@schema("app_v3")
 }
 
@@ -1657,6 +1682,7 @@ model Event {
   organization                         Organization?              @relation(fields: [organizationId], references: [id])
   addressRef                          Address?                   @relation(fields: [addressId], references: [id], onDelete: SetNull)
   notifications                     Notification[]          @relation("NotificationEvent")
+  notificationMutes                 NotificationMute[]
   eventMatchSlots                  EventMatchSlot[]
   padelPairings                     PadelPairing[]
   padelRankingEntries               PadelRankingEntry[]
@@ -2277,6 +2303,8 @@ model AgendaItem {
   organizationId Int              @map("organization_id")
   sourceType     SourceType       @map("source_type")
   sourceId       String           @map("source_id") @db.Text
+  padelClubId    Int?             @map("padel_club_id")
+  courtId        Int?             @map("court_id")
   title          String
   startsAt       DateTime         @map("starts_at") @db.Timestamptz(6)
   endsAt         DateTime         @map("ends_at") @db.Timestamptz(6)
@@ -2284,10 +2312,14 @@ model AgendaItem {
   lastEventId    String           @map("last_event_id") @db.Uuid
   updatedAt      DateTime         @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  padelClub    PadelClub?     @relation(fields: [padelClubId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  court        PadelClubCourt? @relation(fields: [courtId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([organizationId, sourceType, sourceId], map: "agenda_items_unique")
   @@index([organizationId, startsAt], map: "agenda_items_org_start_idx")
+  @@index([organizationId, padelClubId, startsAt], map: "agenda_items_org_club_start_idx")
+  @@index([organizationId, courtId, startsAt], map: "agenda_items_org_court_start_idx")
   @@map("agenda_items")
   @@schema("app_v3")
 }
@@ -2539,6 +2571,7 @@ model PadelClub {
   courts              PadelClubCourt[]
   staff               PadelClubStaff[]
   calendarBlocks      CalendarBlock[]
+  agendaItems         AgendaItem[]
   organization           Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   tournaments         PadelTournamentConfig[]
   teams               PadelTeam[]
@@ -2568,6 +2601,7 @@ model PadelClubCourt {
   eventMatchSlots EventMatchSlot[]     @relation("EventMatchSlotCourt")
   availabilities Availability[]
   bookings       Booking[]
+  agendaItems    AgendaItem[]
 
   @@index([padelClubId], map: "padel_club_courts_club_idx")
   @@map("padel_club_courts")
@@ -2865,6 +2899,7 @@ model PadelCommunityReaction {
 
   @@unique([postId, userId, reaction], map: "padel_community_reactions_post_user_uq")
   @@index([postId], map: "padel_community_reactions_post_idx")
+  @@index([userId, createdAt], map: "padel_community_reactions_user_time_idx")
   @@map("padel_community_reactions")
   @@schema("app_v3")
 }
@@ -2881,6 +2916,7 @@ model PadelCommunityComment {
   author      Profile?  @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
 
   @@index([postId], map: "padel_community_comments_post_idx")
+  @@index([authorUserId, createdAt], map: "padel_community_comments_author_time_idx")
   @@map("padel_community_comments")
   @@schema("app_v3")
 }
@@ -3315,6 +3351,25 @@ model follows {
   @@schema("app_v3")
 }
 
+model UserCloseFriend {
+  env          String   @default("prod")
+  userId       String   @map("user_id") @db.Uuid
+  friendUserId String   @map("friend_user_id") @db.Uuid
+  score        Int      @default(0)
+  rank         Int      @default(0)
+  computedAt   DateTime @map("computed_at") @db.Timestamptz(6)
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
+
+  user   Profile @relation("UserCloseFriendUser", fields: [userId], references: [id], onDelete: Cascade)
+  friend Profile @relation("UserCloseFriendFriend", fields: [friendUserId], references: [id], onDelete: Cascade)
+
+  @@id([userId, friendUserId])
+  @@index([userId, expiresAt], map: "user_close_friends_user_exp_idx")
+  @@index([friendUserId], map: "user_close_friends_friend_idx")
+  @@map("user_close_friends")
+  @@schema("app_v3")
+}
+
 model follow_requests {
   id                                 Int      @id @default(autoincrement())
   env                                String   @default("prod")
@@ -3456,6 +3511,7 @@ model Entitlement {
   @@unique([bookingId, lineItemIndex, ownerKey, type], map: "entitlements_booking_owner_line_idx")
   @@unique([storeOrderLineId, lineItemIndex, ownerKey, type], map: "entitlements_store_line_owner_idx")
   @@index([ownerKey, snapshotStartAt], map: "entitlements_owner_start_idx")
+  @@index([ownerUserId, snapshotStartAt], map: "entitlements_owner_user_start_idx")
   @@index([eventId], map: "entitlements_event_idx")
   @@index([tournamentId], map: "entitlements_tournament_idx")
   @@index([seasonId], map: "entitlements_season_idx")
@@ -4468,6 +4524,8 @@ enum NotificationType {
   FOLLOW_REQUEST
   FOLLOW_ACCEPT
   EVENT_REMINDER
+  EVENT_INVITE
+  FRIEND_GOING_TO_EVENT
   CHECKIN_READY
   TICKET_SHARED
   MARKETING_PROMO_ALERT

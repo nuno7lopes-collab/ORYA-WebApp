@@ -1,6 +1,6 @@
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "../icons/Ionicons";
+import { AvatarCircle } from "../avatar/AvatarCircle";
 import { GlassCard } from "../liquid/GlassCard";
 import { useRouter } from "expo-router";
 import { FollowListItem } from "../../features/network/types";
@@ -68,27 +68,13 @@ export function FollowListModal({
                     }}
                     className="flex-row items-center gap-3 py-2"
                   >
-                    <View
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 12,
-                        backgroundColor: "rgba(255,255,255,0.08)",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={{ width: 36, height: 36 }} />
-                      ) : (
-                        <Ionicons
-                          name={item.kind === "organization" ? "business" : "person"}
-                          size={18}
-                          color="rgba(255,255,255,0.8)"
-                        />
-                      )}
-                    </View>
+                    <AvatarCircle
+                      size={36}
+                      uri={item.avatarUrl}
+                      iconName={item.kind === "organization" ? "business" : "person"}
+                      iconColor="rgba(255,255,255,0.8)"
+                      borderColor="rgba(255,255,255,0.16)"
+                    />
                     <View style={{ flex: 1 }}>
                       <Text className="text-white text-sm font-semibold">{item.fullName ?? "Perfil"}</Text>
                       {item.username ? <Text className="text-white/60 text-xs">@{item.username}</Text> : null}

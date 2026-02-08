@@ -9,6 +9,11 @@ export const fetchNotificationPrefs = async (
   const prefs = payload?.prefs ?? (payload as Partial<NotificationPrefs>) ?? {};
   return {
     allowEmailNotifications: Boolean(prefs.allowEmailNotifications ?? true),
+    allowSocialNotifications: Boolean(prefs.allowSocialNotifications ?? true),
+    allowEventNotifications: Boolean(prefs.allowEventNotifications ?? true),
+    allowSystemNotifications: Boolean(prefs.allowSystemNotifications ?? true),
+    allowMarketingNotifications: Boolean(prefs.allowMarketingNotifications ?? true),
+    allowSalesAlerts: Boolean(prefs.allowSalesAlerts ?? true),
     allowEventReminders: Boolean(prefs.allowEventReminders ?? true),
     allowFollowRequests: Boolean(prefs.allowFollowRequests ?? true),
     allowMarketingCampaigns: Boolean(prefs.allowMarketingCampaigns ?? true),
@@ -21,6 +26,11 @@ export const updateSettings = async (
     visibility: Visibility;
     favouriteCategories: string[];
     allowEmailNotifications: boolean;
+    allowSocialNotifications: boolean;
+    allowEventNotifications: boolean;
+    allowSystemNotifications: boolean;
+    allowMarketingNotifications: boolean;
+    allowSalesAlerts: boolean;
     allowEventReminders: boolean;
     allowFollowRequests: boolean;
     allowMarketingCampaigns: boolean;

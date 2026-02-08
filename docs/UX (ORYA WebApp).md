@@ -346,7 +346,7 @@ No Step2:
 * Gate de verificação (ex.: email oficial):
 
   * explicar porquê
-  * CTA de “reenviar verificação”
+  * CTA com instruções de verificação
   * feedback imediato quando fica ok
 
 ---

@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   Animated,
@@ -11,6 +11,7 @@ import {
   Linking,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from "react-native";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
@@ -19,13 +20,15 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useEventDetail } from "../../features/events/hooks";
 import { tokens } from "@orya/shared";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { ApiError } from "../../lib/api";
+import { api, ApiError, unwrapApiResponse } from "../../lib/api";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { useAuth } from "../../lib/auth";
-import { useCheckoutStore } from "../../features/checkout/store";
-import { createCheckoutIntent } from "../../features/checkout/api";
+import { useCheckoutStore, buildCheckoutIdempotencyKey } from "../../features/checkout/store";
+import { createCheckoutIntent, createPairingCheckoutIntent } from "../../features/checkout/api";
+import { createPairing, joinOpenPairing, acceptInvite, declineInvite } from "../../features/tournaments/api";
+import { useMyPairings, useOpenPairings, usePadelMatches, usePadelStandings } from "../../features/tournaments/hooks";
 import { safeBack } from "../../lib/navigation";
 import { FavoriteToggle } from "../../components/events/FavoriteToggle";
 import { StickyCTA } from "../../components/events/StickyCTA";
@@ -33,6 +36,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
 import { useEventChatThread } from "../../features/chat/hooks";
+import { useProfileSummary } from "../../features/profile/hooks";
 
 const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   weekday: "short",
@@ -91,6 +95,69 @@ const resolveTicketStatusLabel = (status?: string | null, remaining?: number | n
   return "Disponível";
 };
 
+const resolveAccessBadge = (mode?: string | null) => {
+  const normalized = mode?.toUpperCase();
+  if (normalized === "PUBLIC") return { label: "PÚBLICO", variant: "accent" as const };
+  if (normalized === "INVITE_ONLY") return { label: "CONVITE", variant: "muted" as const };
+  return { label: "UNLISTED", variant: "muted" as const };
+};
+
+const resolvePadelRegistrationLabel = (status?: string | null) => {
+  const normalized = status?.toUpperCase();
+  if (normalized === "OPEN") return "Inscrições abertas";
+  if (normalized === "NOT_OPEN") return "Inscrições em breve";
+  if (normalized === "CLOSED") return "Inscrições encerradas";
+  if (normalized === "STARTED") return "Torneio em curso";
+  if (normalized === "UNPUBLISHED") return "Torneio não publicado";
+  return "Inscrições indisponíveis";
+};
+
+const resolvePadelPaymentModeLabel = (mode?: string | null) => {
+  const normalized = mode?.toUpperCase();
+  if (normalized === "SPLIT") return "Split";
+  if (normalized === "FULL") return "Pago completo";
+  return mode ?? "—";
+};
+
+const resolvePairingLabel = (pairing?: any) => {
+  const explicitLabel = typeof pairing?.label === "string" ? pairing.label.trim() : "";
+  if (explicitLabel) return explicitLabel;
+  if (Array.isArray(pairing?.players)) {
+    const names = pairing.players
+      .map((player: any) => player?.name || player?.username)
+      .filter(Boolean) as string[];
+    if (names.length) return names.join(" / ");
+  }
+  if (!pairing || !Array.isArray(pairing.slots)) {
+    return pairing?.id ? `Dupla ${pairing.id}` : "Dupla";
+  }
+  const names = pairing.slots
+    .map((slot: any) => slot?.playerProfile?.fullName || slot?.playerProfile?.username)
+    .filter(Boolean) as string[];
+  if (names.length === 0) return pairing?.id ? `Dupla ${pairing.id}` : "Dupla";
+  return names.join(" / ");
+};
+
+const normalizeEmailValue = (value?: string | null) => value?.trim().toLowerCase() ?? "";
+const normalizeUsernameValue = (value?: string | null) =>
+  value?.trim().replace(/^@+/, "").toLowerCase() ?? "";
+
+const mapInviteTokenReason = (reason?: string | null) => {
+  switch ((reason ?? "").toUpperCase()) {
+    case "INVITE_TOKEN_NOT_ALLOWED":
+      return "Este evento não aceita tokens de convite.";
+    case "INVITE_TOKEN_TTL_REQUIRED":
+      return "Convite expirado. Pede um novo convite.";
+    case "INVITE_TOKEN_REQUIRES_EMAIL":
+      return "Este evento só aceita convites por email.";
+    case "INVITE_TOKEN_INVALID":
+    case "INVITE_TOKEN_NOT_FOUND":
+      return "Token inválido ou expirado.";
+    default:
+      return null;
+  }
+};
+
 export default function EventDetail() {
   const params = useLocalSearchParams<{
     slug?: string | string[];
@@ -105,6 +172,8 @@ export default function EventDetail() {
     categoryLabel?: string;
     hostName?: string;
     imageTag?: string;
+    inviteToken?: string;
+    pairingId?: string;
   }>();
   const router = useRouter();
   const navigation = useNavigation();
@@ -161,24 +230,113 @@ export default function EventDetail() {
     const normalized = typeof raw === "string" ? raw.trim() : "";
     return normalized ? normalized : null;
   }, [params.imageTag]);
+  const inviteTokenParam = useMemo(() => {
+    const raw = params.inviteToken;
+    if (Array.isArray(raw)) return raw[0] ?? null;
+    return raw ?? null;
+  }, [params.inviteToken]);
+  const pairingIdParam = useMemo(() => {
+    const raw = params.pairingId;
+    if (Array.isArray(raw)) return raw[0] ?? null;
+    return raw ?? null;
+  }, [params.pairingId]);
   const { data, isLoading, isError, error, refetch } = useEventDetail(slugValue ?? "");
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
+  const profileSummaryQuery = useProfileSummary(Boolean(accessToken), accessToken, session?.user?.id ?? null);
+  const profileSummary = profileSummaryQuery.data ?? null;
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
   const insets = useSafeAreaInsets();
   const env = getMobileEnv();
   const transitionSource = params.source === "discover" ? "discover" : "direct";
-  const handleBack = () => {
-    safeBack(router, navigation);
-  };
-
   const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
   const translate = useRef(new Animated.Value(transitionSource === "discover" ? 20 : 10)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [ticketQuantity, setTicketQuantity] = useState(1);
   const [initiatingCheckout, setInitiatingCheckout] = useState(false);
+  const [inviteTokenInput, setInviteTokenInput] = useState("");
+  const [inviteState, setInviteState] = useState<{
+    status: "idle" | "checking" | "valid" | "invalid";
+    message?: string | null;
+    token?: string | null;
+    ticketTypeId?: number | null;
+  }>({ status: "idle" });
+  const [inviteIdentifierInput, setInviteIdentifierInput] = useState("");
+  const [inviteIdentifierState, setInviteIdentifierState] = useState<{
+    status: "idle" | "checking" | "invited" | "not_invited" | "invalid";
+    message?: string | null;
+    normalized?: string | null;
+    type?: "email" | "username" | null;
+  }>({ status: "idle" });
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [paymentMode, setPaymentMode] = useState<"FULL" | "SPLIT">("FULL");
+  const [joinMode, setJoinMode] = useState<"INVITE_PARTNER" | "LOOKING_FOR_PARTNER">("INVITE_PARTNER");
+  const [inviteContact, setInviteContact] = useState("");
+  const [pairingBusy, setPairingBusy] = useState(false);
+  const [pairingActionBusy, setPairingActionBusy] = useState(false);
+
+  const handleBack = () => {
+    safeBack(router, navigation);
+  };
+  const accessMode = data?.accessPolicy?.mode ?? null;
+  const accessBadge = resolveAccessBadge(accessMode);
+  const isInviteOnly = accessMode?.toUpperCase() === "INVITE_ONLY";
+  const inviteValid = inviteState.status === "valid";
+  const inviteToken = inviteState.token ?? null;
+  const inviteTicketTypeId = inviteState.ticketTypeId ?? null;
+  const normalizedInviteIdentifier = inviteIdentifierState.normalized ?? null;
+  const identifierMatchesAccount = useMemo(() => {
+    if (!normalizedInviteIdentifier) return false;
+    if (inviteIdentifierState.status !== "invited") return false;
+    const type = inviteIdentifierState.type ?? null;
+    if (type === "email") {
+      const email = normalizeEmailValue(profileSummary?.email ?? null);
+      return Boolean(email && email === normalizedInviteIdentifier);
+    }
+    if (type === "username") {
+      const username = normalizeUsernameValue(profileSummary?.username ?? null);
+      return Boolean(username && username === normalizedInviteIdentifier);
+    }
+    return false;
+  }, [
+    inviteIdentifierState.status,
+    inviteIdentifierState.type,
+    normalizedInviteIdentifier,
+    profileSummary?.email,
+    profileSummary?.username,
+  ]);
+  const inviteIdentifierValid =
+    inviteIdentifierState.status === "invited" &&
+    (!session?.user?.id || identifierMatchesAccount);
+  const canAccessInvite = !isInviteOnly || inviteValid || inviteIdentifierValid;
+  const gateLocked = isInviteOnly && !inviteValid && !inviteIdentifierValid;
+  const inviteIdentifierNeedsLogin = inviteIdentifierState.status === "invited" && !session?.user?.id;
+  const inviteIdentifierCheckingAccount =
+    inviteIdentifierState.status === "invited" && Boolean(session?.user?.id) && profileSummaryQuery.isLoading;
+  const inviteIdentifierMismatch =
+    inviteIdentifierState.status === "invited" &&
+    Boolean(session?.user?.id) &&
+    !identifierMatchesAccount &&
+    !profileSummaryQuery.isLoading;
+  const isPadelEvent =
+    typeof data?.templateType === "string" ? data.templateType.toUpperCase() === "PADEL" : Boolean(data?.padel);
+  const padelMeta = data?.padel ?? null;
+  const padelCategories = Array.isArray(padelMeta?.categories) ? padelMeta?.categories : [];
+  const visiblePadelCategories = padelCategories.filter((category) => !category.isHidden);
+  const registrationStatus = padelMeta?.registrationStatus ?? null;
+  const registrationMessage =
+    padelMeta?.registrationMessage ?? resolvePadelRegistrationLabel(registrationStatus);
+  const registrationOpen = registrationStatus === "OPEN";
+  const padelSnapshot = padelMeta?.snapshot ?? null;
+  const padelActionsDisabled = gateLocked || !registrationOpen || !padelMeta?.v2Enabled;
+  const selectedPadelCategory =
+    visiblePadelCategories.find((category) => category.id === selectedCategoryId) ??
+    visiblePadelCategories.find((category) => category.id === padelMeta?.defaultCategoryId) ??
+    visiblePadelCategories[0] ??
+    null;
+  const activeCategoryId = selectedPadelCategory?.id ?? null;
 
   useEffect(() => {
     Animated.parallel([
@@ -195,10 +353,129 @@ export default function EventDetail() {
     ]).start();
   }, [data?.id, fade, transitionSource, translate]);
 
+  const validateInviteToken = useCallback(
+    async (token: string) => {
+      const trimmed = token.trim();
+      if (!trimmed || !slugValue) {
+        setInviteState({ status: "invalid", message: "Token inválido." });
+        return;
+      }
+      setInviteState({ status: "checking" });
+      try {
+        const response = await api.request<unknown>(`/api/eventos/${encodeURIComponent(slugValue)}/invite-token`, {
+          method: "POST",
+          body: JSON.stringify({ token: trimmed }),
+        });
+        const result = unwrapApiResponse<{
+          allow?: boolean;
+          reason?: string;
+          ticketTypeId?: number | null;
+        }>(response);
+        if (!result.allow) {
+          const reasonMessage = mapInviteTokenReason(result.reason);
+          setInviteState({
+            status: "invalid",
+            message: reasonMessage ?? (result.reason ? `Convite inválido (${result.reason}).` : "Convite inválido."),
+          });
+          return;
+        }
+        setInviteState({
+          status: "valid",
+          token: trimmed,
+          ticketTypeId:
+            typeof result.ticketTypeId === "number" && Number.isFinite(result.ticketTypeId)
+              ? result.ticketTypeId
+              : null,
+        });
+      } catch (err: any) {
+        setInviteState({ status: "invalid", message: getUserFacingError(err, "Convite inválido.") });
+      }
+    },
+    [slugValue],
+  );
+
+  const handleInviteCheck = useCallback(() => {
+    validateInviteToken(inviteTokenInput);
+  }, [inviteTokenInput, validateInviteToken]);
+
+  const validateInviteIdentifier = useCallback(
+    async (identifier: string) => {
+      const trimmed = identifier.trim();
+      if (!trimmed || !slugValue) {
+        setInviteIdentifierState({ status: "invalid", message: "Identificador inválido." });
+        return;
+      }
+      setInviteIdentifierState({ status: "checking" });
+      try {
+        const response = await api.request<unknown>(`/api/eventos/${encodeURIComponent(slugValue)}/invites/check`, {
+          method: "POST",
+          body: JSON.stringify({ identifier: trimmed }),
+        });
+        const result = unwrapApiResponse<{
+          invited?: boolean;
+          type?: "email" | "username";
+          normalized?: string;
+          reason?: string;
+        }>(response);
+        if (!result.invited) {
+          const reasonCode = (result.reason ?? "").toUpperCase();
+          let message: string | null = null;
+          if (reasonCode === "INVITE_IDENTITY_MATCH_REQUIRED") {
+            message = trimmed.includes("@")
+              ? "Este evento só aceita convites por username."
+              : "Este evento só aceita convites por email.";
+          } else if (reasonCode === "USERNAME_NOT_FOUND") {
+            message = "Username não encontrado. Usa convite por email.";
+          }
+          setInviteIdentifierState({
+            status: "not_invited",
+            message: message ?? (result.reason ? `Convite não encontrado (${result.reason}).` : "Convite não encontrado."),
+          });
+          return;
+        }
+        const resolvedType =
+          result.type ?? (trimmed.includes("@") ? ("email" as const) : ("username" as const));
+        const normalizedRaw = result.normalized ?? trimmed;
+        const normalized =
+          resolvedType === "email"
+            ? normalizeEmailValue(normalizedRaw)
+            : normalizeUsernameValue(normalizedRaw);
+        setInviteIdentifierState({
+          status: "invited",
+          normalized,
+          type: resolvedType,
+        });
+      } catch (err: any) {
+        setInviteIdentifierState({
+          status: "invalid",
+          message: getUserFacingError(err, "Não foi possível validar o convite."),
+        });
+      }
+    },
+    [slugValue],
+  );
+
+  const handleInviteIdentifierCheck = useCallback(() => {
+    validateInviteIdentifier(inviteIdentifierInput);
+  }, [inviteIdentifierInput, validateInviteIdentifier]);
+
+  useEffect(() => {
+    if (!isInviteOnly) return;
+    if (!inviteTokenParam) return;
+    if (inviteState.status === "valid" && inviteState.token === inviteTokenParam) return;
+    if (inviteState.status === "checking") return;
+    setInviteTokenInput(inviteTokenParam);
+    validateInviteToken(inviteTokenParam);
+  }, [inviteTokenParam, inviteState.status, inviteState.token, isInviteOnly, validateInviteToken]);
+
   const ticketTypes = useMemo(() => {
     const list = data?.ticketTypes ?? [];
-    return [...list].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  }, [data?.ticketTypes]);
+    const filtered =
+      typeof inviteTicketTypeId === "number"
+        ? list.filter((ticket) => ticket.id === inviteTicketTypeId)
+        : list;
+    return [...filtered].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }, [data?.ticketTypes, inviteTicketTypeId]);
 
   const purchasableTickets = useMemo(() => {
     return ticketTypes.filter((ticket) => {
@@ -219,6 +496,17 @@ export default function EventDetail() {
     const firstAvailable = purchasableTickets[0] ?? ticketTypes[0];
     setSelectedTicketId(firstAvailable?.id ?? null);
   }, [purchasableTickets, selectedTicketId, ticketTypes]);
+
+  useEffect(() => {
+    if (!isPadelEvent) return;
+    if (selectedCategoryId !== null) return;
+    const fallbackId =
+      padelMeta?.defaultCategoryId ??
+      visiblePadelCategories.find((category) => category.isEnabled && !category.isHidden)?.id ??
+      visiblePadelCategories[0]?.id ??
+      null;
+    if (fallbackId) setSelectedCategoryId(fallbackId);
+  }, [isPadelEvent, padelMeta?.defaultCategoryId, selectedCategoryId, visiblePadelCategories]);
 
   const selectedTicket = useMemo(
     () => ticketTypes.find((ticket) => ticket.id === selectedTicketId) ?? null,
@@ -253,7 +541,12 @@ export default function EventDetail() {
 
   const totalCents = selectedTicket ? selectedTicket.price * ticketQuantity : 0;
   const canInitiateCheckout =
-    Boolean(selectedTicket) && hasPurchasableTickets && ticketStatusLabel === "Disponível" && !isLoading && !isError;
+    Boolean(selectedTicket) &&
+    hasPurchasableTickets &&
+    ticketStatusLabel === "Disponível" &&
+    !isLoading &&
+    !isError &&
+    canAccessInvite;
   const ctaLabel = isFreeTicket ? "Inscrever-me" : "Comprar";
 
   const cover = data?.coverImageUrl ?? null;
@@ -261,7 +554,11 @@ export default function EventDetail() {
   const date = formatDateRange(data?.startsAt, data?.endsAt);
   const location = data?.location?.formattedAddress || data?.location?.city || "Local a anunciar";
   const price =
-    data?.isGratis ? "Grátis" : typeof data?.priceFrom === "number" ? `Desde ${data.priceFrom.toFixed(0)}€` : "Preço em breve";
+    typeof data?.priceFrom === "number"
+      ? data.priceFrom <= 0
+        ? "Grátis"
+        : `Desde ${data.priceFrom.toFixed(0)}€`
+      : "Preço em breve";
   const description = data?.description ?? data?.shortDescription ?? null;
   const showPreview = isLoading && !data && (eventTitleValue || previewCoverValue || previewDescription);
   const previewDate = previewStartsAt ? formatDateRange(previewStartsAt, previewEndsAt ?? undefined) : date;
@@ -274,8 +571,14 @@ export default function EventDetail() {
     ? price
     : previewPrice ?? price;
   const displayHost = data?.hostName ?? previewHost ?? data?.hostUsername ?? "ORYA";
+  const hostUsername = data?.hostUsername ?? null;
+  const handleHostPress = () => {
+    if (hostUsername) {
+      router.push(`/${hostUsername}`);
+    }
+  };
   const displayImageTag = previewImageTag ?? (data?.slug ? `event-${data.slug}` : null);
-  const showStickyCTA = Boolean(data) && !isLoading && !isError;
+  const showStickyCTA = Boolean(data) && !isLoading && !isError && !isPadelEvent && canAccessInvite;
   const showFavoriteCTA = showStickyCTA && !hasPurchasableTickets;
   const scrollBottomPadding = showStickyCTA
     ? showFavoriteCTA
@@ -303,6 +606,14 @@ export default function EventDetail() {
     accessToken,
   );
 
+  const padelEventId = data?.id ?? null;
+  const padelEnabled = isPadelEvent && Boolean(padelEventId);
+  const openPairingsQuery = useOpenPairings(padelEventId, activeCategoryId, padelEnabled);
+  const myPairingsQuery = useMyPairings(padelEventId, padelEnabled && Boolean(session?.user?.id));
+  const liveEnabled = padelEnabled && padelMeta?.competitionState === "PUBLIC";
+  const standingsQuery = usePadelStandings(padelEventId, activeCategoryId, liveEnabled, liveEnabled);
+  const matchesQuery = usePadelMatches(padelEventId, activeCategoryId, liveEnabled, liveEnabled);
+
   const chatStatusLabel = useMemo(() => {
     const status = chatQuery.data?.thread.status;
     if (status === "OPEN") return "Chat aberto";
@@ -329,6 +640,179 @@ export default function EventDetail() {
       await Linking.openURL(mapUrl);
     } catch {
       // ignore
+    }
+  };
+
+  const handleCreatePairing = async () => {
+    if (!data || !padelMeta) return;
+    if (!session?.user?.id) {
+      router.push("/auth");
+      return;
+    }
+    if (!activeCategoryId) {
+      Alert.alert("Inscrição", "Seleciona uma categoria para continuar.");
+      return;
+    }
+    if (!registrationOpen) {
+      Alert.alert("Inscrição", registrationMessage);
+      return;
+    }
+    if (joinMode === "INVITE_PARTNER" && !inviteContact.trim()) {
+      Alert.alert("Inscrição", "Indica o parceiro para enviar o convite.");
+      return;
+    }
+    if (pairingBusy) return;
+    setPairingBusy(true);
+    try {
+      const result = await createPairing({
+        eventId: data.id,
+        categoryId: activeCategoryId,
+        paymentMode,
+        pairingJoinMode: joinMode,
+        invitedContact: joinMode === "INVITE_PARTNER" && inviteContact.trim() ? inviteContact.trim() : null,
+        isPublicOpen: joinMode === "LOOKING_FOR_PARTNER",
+      });
+      if (result.waitlist) {
+        Alert.alert("Lista de espera", "Entraste na lista de espera. Vamos avisar assim que houver vaga.");
+      } else {
+        Alert.alert("Dupla criada", "A tua inscrição foi criada com sucesso.");
+      }
+      await Promise.all([myPairingsQuery.refetch(), openPairingsQuery.refetch()]);
+    } catch (err: any) {
+      if (err?.message?.includes("PADEL_ONBOARDING_REQUIRED")) {
+        Alert.alert("Padel", "Completa o onboarding de Padel para continuar.");
+        router.push("/onboarding");
+        return;
+      }
+      Alert.alert("Erro", getUserFacingError(err, "Não foi possível criar a dupla."));
+    } finally {
+      setPairingBusy(false);
+    }
+  };
+
+  const handleJoinOpenPairing = async (pairingId: number) => {
+    if (!session?.user?.id) {
+      router.push("/auth");
+      return;
+    }
+    if (pairingBusy) return;
+    setPairingBusy(true);
+    try {
+      await joinOpenPairing(pairingId);
+      Alert.alert("Dupla", "Entraste na dupla com sucesso.");
+      await Promise.all([myPairingsQuery.refetch(), openPairingsQuery.refetch()]);
+    } catch (err: any) {
+      Alert.alert("Dupla", getUserFacingError(err, "Não foi possível juntar-te à dupla."));
+    } finally {
+      setPairingBusy(false);
+    }
+  };
+
+  const handleAcceptPairingInvite = async (pairingId: number) => {
+    if (pairingActionBusy) return;
+    setPairingActionBusy(true);
+    try {
+      await acceptInvite(pairingId);
+      await myPairingsQuery.refetch();
+    } catch (err: any) {
+      Alert.alert("Convite", getUserFacingError(err, "Não foi possível aceitar o convite."));
+    } finally {
+      setPairingActionBusy(false);
+    }
+  };
+
+  const handleDeclinePairingInvite = async (pairingId: number) => {
+    if (pairingActionBusy) return;
+    setPairingActionBusy(true);
+    try {
+      await declineInvite(pairingId);
+      await myPairingsQuery.refetch();
+    } catch (err: any) {
+      Alert.alert("Convite", getUserFacingError(err, "Não foi possível recusar o convite."));
+    } finally {
+      setPairingActionBusy(false);
+    }
+  };
+
+  const handleSharePairingInvite = async (token: string) => {
+    if (!token || !data?.slug || !env.apiBaseUrl) return;
+    const baseUrl = env.apiBaseUrl.replace(/\/$/, "");
+    const url = `${baseUrl}/eventos/${data.slug}?inviteToken=${encodeURIComponent(token)}`;
+    try {
+      await Share.share({ message: `${data.title}\n${url}`, url });
+    } catch {
+      // ignore
+    }
+  };
+
+  const handlePayPairing = async (pairing: { id: number; categoryId?: number | null }) => {
+    if (!data) return;
+    if (!session?.user?.id) {
+      router.push("/auth");
+      return;
+    }
+    const categoryLink =
+      padelCategories.find((category) => category.id === (pairing.categoryId ?? activeCategoryId)) ?? null;
+    if (!categoryLink?.linkId) {
+      Alert.alert("Inscrição", "Categoria inválida para pagamento.");
+      return;
+    }
+    const idempotencyKey = buildCheckoutIdempotencyKey();
+    setPairingActionBusy(true);
+    try {
+      const response = await createPairingCheckoutIntent({
+        pairingId: pairing.id,
+        ticketTypeId: categoryLink.linkId,
+        idempotencyKey,
+      });
+      const unitPrice = categoryLink.pricePerPlayerCents ?? 0;
+      const total = response.breakdown?.totalCents ?? unitPrice;
+      const currency = response.breakdown?.currency ?? categoryLink.currency ?? "EUR";
+      const isFree =
+        response.freeCheckout ||
+        response.isGratisCheckout ||
+        (response.amount ?? 0) <= 0 ||
+        total <= 0;
+      if (isFree) {
+        router.push({
+          pathname: "/checkout/success",
+          params: {
+            purchaseId: response.purchaseId ?? "",
+            paymentIntentId: response.paymentIntentId ?? "",
+            eventTitle: data.title ?? "Torneio",
+            slug: data.slug ?? "",
+          },
+        });
+        return;
+      }
+      setCheckoutDraft({
+        slug: data.slug,
+        eventId: data.id,
+        eventTitle: data.title,
+        ticketTypeId: categoryLink.linkId,
+        ticketName: categoryLink.label ?? "Inscrição",
+        quantity: 1,
+        unitPriceCents: unitPrice,
+        totalCents: total,
+        currency,
+        paymentMethod: "card",
+        sourceType: "PADEL_REGISTRATION",
+        paymentScenario: response.paymentScenario ?? undefined,
+        pairingId: pairing.id,
+        idempotencyKey,
+      });
+      setCheckoutIntent({
+        clientSecret: response.clientSecret ?? null,
+        paymentIntentId: response.paymentIntentId ?? null,
+        purchaseId: response.purchaseId ?? null,
+        breakdown: response.breakdown ?? null,
+        freeCheckout: response.freeCheckout ?? response.isGratisCheckout ?? false,
+      });
+      router.push("/checkout");
+    } catch (err: any) {
+      Alert.alert("Pagamento", getUserFacingError(err, "Não foi possível iniciar o pagamento."));
+    } finally {
+      setPairingActionBusy(false);
     }
   };
   const heroTranslate = scrollY.interpolate({
@@ -413,7 +897,10 @@ export default function EventDetail() {
                         style={StyleSheet.absoluteFill}
                       />
                       <View className="flex-row items-center justify-between px-4 pt-4">
-                        <GlassPill label={displayCategory} />
+                        <View className="flex-row items-center gap-2">
+                          <GlassPill label={displayCategory} />
+                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
+                        </View>
                       </View>
                       <View className="px-4 pb-4 gap-2">
                         <Text className="text-white text-2xl font-semibold">{displayTitle}</Text>
@@ -434,6 +921,7 @@ export default function EventDetail() {
                     >
                         <View className="flex-row items-center gap-2 self-start">
                           <GlassPill label={displayCategory} />
+                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
                         </View>
                     </View>
                   )}
@@ -451,10 +939,14 @@ export default function EventDetail() {
                         <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.6)" />
                         <Text className="text-white/65 text-sm">{displayLocation}</Text>
                       </View>
-                      <View className="flex-row items-center gap-2">
+                      <Pressable
+                        onPress={handleHostPress}
+                        disabled={!hostUsername}
+                        className="flex-row items-center gap-2"
+                      >
                         <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.6)" />
                         <Text className="text-white/70 text-sm">Organizador: {displayHost}</Text>
-                      </View>
+                      </Pressable>
                       <View className="flex-row items-center gap-2">
                         <Ionicons name="pricetag-outline" size={16} color="rgba(255,255,255,0.7)" />
                         <Text className="text-white text-sm font-semibold">{displayPrice}</Text>
@@ -514,10 +1006,11 @@ export default function EventDetail() {
                           style={StyleSheet.absoluteFill}
                         />
                         <View className="flex-row items-center justify-between px-4 pt-4">
-                          <View className="flex-row items-center gap-2">
-                            <GlassPill label={category} />
-                            {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
-                          </View>
+                        <View className="flex-row items-center gap-2">
+                          <GlassPill label={category} />
+                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
+                          {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
+                        </View>
                           <GlassPill label={resolveStatusLabel(data.status)} variant="muted" />
                         </View>
                         <View className="px-4 pb-4 gap-2">
@@ -539,6 +1032,7 @@ export default function EventDetail() {
                       >
                         <View className="flex-row items-center gap-2 self-start">
                           <GlassPill label={category} />
+                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
                           {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
                         </View>
                         <View className="gap-2">
@@ -577,10 +1071,14 @@ export default function EventDetail() {
                         </View>
                       </Pressable>
                     ) : null}
-                    <View className="flex-row items-center gap-2">
+                    <Pressable
+                      onPress={handleHostPress}
+                      disabled={!hostUsername}
+                      className="flex-row items-center gap-2"
+                    >
                       <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.6)" />
                       <Text className="text-white/70 text-sm">Organizador: {data.hostName ?? "ORYA"}</Text>
-                    </View>
+                    </Pressable>
                     <View className="flex-row items-center gap-2">
                       <Ionicons name="pricetag-outline" size={16} color="rgba(255,255,255,0.7)" />
                       <Text className="text-white text-sm font-semibold">{price}</Text>
@@ -648,119 +1146,566 @@ export default function EventDetail() {
                   </View>
                 </GlassCard>
 
-                <View className="gap-3">
-                  <Text className="text-white text-sm font-semibold">Bilhetes</Text>
-                  {ticketTypes.length === 0 ? (
-                    <GlassCard intensity={50}>
-                      <Text className="text-white/70 text-sm">
-                        Bilhetes a publicar brevemente. Ativa notificações para saber quando abrirem.
+                {isInviteOnly ? (
+                  <GlassCard intensity={52}>
+                    <View className="gap-3">
+                      <Text className="text-white text-sm font-semibold">Convite necessário</Text>
+                      <Text className="text-white/65 text-sm">
+                        Introduz o token ou o email/username do convite para desbloquear o checkout.
                       </Text>
-                    </GlassCard>
-                  ) : (
-                    ticketTypes.map((ticket) => {
-                      const remaining =
-                        ticket.totalQuantity != null
-                          ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0)
-                          : null;
-                      const statusLabel = resolveTicketStatusLabel(ticket.status ?? null, remaining);
-                      const isSelected = ticket.id === selectedTicketId;
-                      const disabled = statusLabel === "Esgotado" || statusLabel === "Fechado";
-                      const availability =
-                        remaining != null
-                          ? remaining <= 6
-                            ? `Últimos ${remaining}`
-                            : `${remaining} disponíveis`
-                          : null;
-
-                      return (
-                        <Pressable
-                          key={`ticket-${ticket.id}`}
-                          disabled={disabled}
-                          onPress={() => setSelectedTicketId(ticket.id)}
-                          className={isSelected ? "opacity-100" : "opacity-90"}
-                        >
-                          <GlassCard intensity={isSelected ? 68 : 52} highlight={isSelected}>
-                            <View className="gap-3">
-                              <View className="flex-row items-center justify-between">
-                                <View className="flex-1 pr-2">
-                                  <Text className="text-white text-base font-semibold" numberOfLines={1}>
-                                    {ticket.name}
-                                  </Text>
-                                  {ticket.description ? (
-                                    <Text className="text-white/65 text-xs mt-1" numberOfLines={2}>
-                                      {ticket.description}
-                                    </Text>
-                                  ) : null}
-                                </View>
-                                <GlassPill label={formatTicketPrice(ticket.price, ticket.currency)} variant="muted" />
-                              </View>
-                              <View className="flex-row items-center gap-2">
-                                <GlassPill label={statusLabel} variant={disabled ? "muted" : "accent"} />
-                                {availability ? (
-                                  <Text className="text-[11px] uppercase tracking-[0.12em] text-white/45">
-                                    {availability}
-                                  </Text>
-                                ) : null}
-                              </View>
-                            </View>
-                          </GlassCard>
-                        </Pressable>
-                      );
-                    })
-                  )}
-                </View>
-
-                {selectedTicket && hasPurchasableTickets ? (
-                  <GlassCard intensity={60} highlight>
-                    <View className="gap-4">
-                      <Text className="text-white text-sm font-semibold">Resumo da compra</Text>
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-white/70 text-sm">
-                          {selectedTicket.name}
+                      <TextInput
+                        value={inviteTokenInput}
+                        onChangeText={setInviteTokenInput}
+                        placeholder="Token de convite"
+                        placeholderTextColor="rgba(255,255,255,0.4)"
+                        autoCapitalize="none"
+                        className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
+                      />
+                      <Pressable
+                        onPress={handleInviteCheck}
+                        disabled={inviteState.status === "checking"}
+                        className="rounded-2xl bg-white/15 px-4 py-3"
+                        style={{ minHeight: tokens.layout.touchTarget }}
+                      >
+                        <Text className="text-white text-sm font-semibold text-center">
+                          {inviteState.status === "checking" ? "A validar..." : "Validar convite"}
                         </Text>
-                        <Text className="text-white text-sm font-semibold">
-                          {formatTicketPrice(selectedTicket.price, selectedTicket.currency)}
+                      </Pressable>
+                      {inviteState.status === "valid" ? (
+                        <GlassPill label="Convite confirmado" variant="accent" />
+                      ) : inviteState.status === "invalid" ? (
+                        <Text className="text-amber-200 text-xs">
+                          {inviteState.message ?? "Convite inválido."}
                         </Text>
-                      </View>
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-white/60 text-sm">Quantidade</Text>
-                        <View className="flex-row items-center gap-3">
+                      ) : null}
+                      <View className="h-px bg-white/10" />
+                      <TextInput
+                        value={inviteIdentifierInput}
+                        onChangeText={setInviteIdentifierInput}
+                        placeholder="Email ou @username"
+                        placeholderTextColor="rgba(255,255,255,0.4)"
+                        autoCapitalize="none"
+                        className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
+                      />
+                      <Pressable
+                        onPress={handleInviteIdentifierCheck}
+                        disabled={inviteIdentifierState.status === "checking"}
+                        className="rounded-2xl bg-white/15 px-4 py-3"
+                        style={{ minHeight: tokens.layout.touchTarget }}
+                      >
+                        <Text className="text-white text-sm font-semibold text-center">
+                          {inviteIdentifierState.status === "checking" ? "A validar..." : "Validar email/username"}
+                        </Text>
+                      </Pressable>
+                      {inviteIdentifierValid ? <GlassPill label="Convite confirmado" variant="accent" /> : null}
+                      {inviteIdentifierNeedsLogin ? (
+                        <View className="gap-2">
+                          <Text className="text-amber-200 text-xs">
+                            Convite encontrado. Inicia sessão para continuar.
+                          </Text>
                           <Pressable
-                            onPress={() => setTicketQuantity((prev) => Math.max(1, prev - 1))}
-                            disabled={maxQuantity <= 1}
-                            className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                            style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
+                            onPress={() => router.push("/auth")}
+                            className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                            style={{ minHeight: tokens.layout.touchTarget - 8 }}
                           >
-                            <Ionicons name="remove" size={16} color="rgba(255,255,255,0.75)" />
-                          </Pressable>
-                          <Text className="text-white text-base font-semibold">{ticketQuantity}</Text>
-                          <Pressable
-                            onPress={() => setTicketQuantity((prev) => Math.min(maxQuantity, prev + 1))}
-                            disabled={maxQuantity <= 1}
-                            className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                            style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
-                          >
-                            <Ionicons name="add" size={16} color="rgba(255,255,255,0.85)" />
+                            <Text className="text-white text-xs font-semibold">Entrar</Text>
                           </Pressable>
                         </View>
-                      </View>
-                      {isFreeTicket ? (
-                        <Text className="text-white/55 text-xs">Limite por pessoa: 1</Text>
                       ) : null}
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-white/60 text-sm">Total</Text>
-                        <Text className="text-white text-lg font-semibold">
-                          {formatTicketPrice(totalCents, selectedTicket.currency)}
+                      {inviteIdentifierCheckingAccount ? (
+                        <Text className="text-white/60 text-xs">A confirmar convite...</Text>
+                      ) : inviteIdentifierMismatch ? (
+                        <Text className="text-amber-200 text-xs">Convite não corresponde à tua conta.</Text>
+                      ) : inviteIdentifierState.status === "not_invited" ? (
+                        <Text className="text-amber-200 text-xs">
+                          {inviteIdentifierState.message ?? "Convite não encontrado."}
                         </Text>
-                      </View>
-                      {!session ? (
-                        <Text className="text-xs text-amber-200">
-                          Inicia sessão para finalizar a inscrição.
+                      ) : inviteIdentifierState.status === "invalid" ? (
+                        <Text className="text-amber-200 text-xs">
+                          {inviteIdentifierState.message ?? "Identificador inválido."}
                         </Text>
                       ) : null}
                     </View>
                   </GlassCard>
                 ) : null}
+
+                {isPadelEvent ? (
+                  <>
+                    {gateLocked ? (
+                      <GlassCard intensity={50}>
+                        <Text className="text-white/70 text-sm">
+                          Este torneio é por convite. Introduz o token ou email/username para desbloquear inscrições.
+                        </Text>
+                      </GlassCard>
+                    ) : null}
+
+                    <GlassCard intensity={56}>
+                      <View className="gap-3">
+                        <Text className="text-white text-sm font-semibold">Resumo do torneio</Text>
+                        <Text className="text-white/70 text-sm">{registrationMessage}</Text>
+                        <View className="flex-row items-center gap-2">
+                          <Ionicons name="trophy-outline" size={16} color="rgba(255,255,255,0.7)" />
+                          <Text className="text-white/70 text-sm">
+                            Estado: {padelMeta?.competitionState ?? "—"}
+                          </Text>
+                        </View>
+                        {padelSnapshot?.clubName ? (
+                          <View className="flex-row items-center gap-2">
+                            <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.6)" />
+                            <Text className="text-white/65 text-sm">
+                              {padelSnapshot.clubName}
+                              {padelSnapshot.clubCity ? ` · ${padelSnapshot.clubCity}` : ""}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </GlassCard>
+
+                    {padelSnapshot?.timeline?.length ? (
+                      <GlassCard intensity={52}>
+                        <View className="gap-3">
+                          <Text className="text-white text-sm font-semibold">Timeline</Text>
+                          {padelSnapshot.timeline.map((item) => (
+                            <View key={item.key} className="flex-row items-center justify-between">
+                              <Text className="text-white/80 text-sm">{item.label}</Text>
+                              <Text className="text-white/55 text-xs">
+                                {item.date ? formatDateRange(item.date) : "—"}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </GlassCard>
+                    ) : null}
+
+                    <GlassCard intensity={54}>
+                      <View className="gap-3">
+                        <Text className="text-white text-sm font-semibold">Categorias</Text>
+                        {visiblePadelCategories.length === 0 ? (
+                          <Text className="text-white/70 text-sm">Categorias a anunciar.</Text>
+                        ) : (
+                          visiblePadelCategories.map((category) => {
+                            const isSelected = category.id === activeCategoryId;
+                            const disabled = !category.isEnabled;
+                            return (
+                              <Pressable
+                                key={`padel-category-${category.linkId ?? category.id}`}
+                                onPress={() => setSelectedCategoryId(category.id)}
+                                disabled={disabled}
+                                className={
+                                  isSelected
+                                    ? "rounded-2xl border border-white/30 bg-white/15 px-4 py-3"
+                                    : "rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                                }
+                                style={{ minHeight: tokens.layout.touchTarget }}
+                              >
+                                <View className="flex-row items-center justify-between">
+                                  <View className="flex-1 pr-4">
+                                    <Text className="text-white text-sm font-semibold">
+                                      {category.label ?? "Categoria"}
+                                    </Text>
+                                    {category.format ? (
+                                      <Text className="text-white/60 text-xs mt-1">{category.format}</Text>
+                                    ) : null}
+                                  </View>
+                                  <GlassPill
+                                    label={`${formatTicketPrice(category.pricePerPlayerCents ?? 0, category.currency)} / jogador`}
+                                    variant="muted"
+                                  />
+                                </View>
+                                <View className="flex-row items-center justify-between pt-2">
+                                  <Text className="text-white/60 text-xs">
+                                    {category.capacityTeams ? `${category.capacityTeams} equipas` : "Sem limite"}
+                                  </Text>
+                                  {disabled ? <GlassPill label="Indisponível" variant="muted" /> : null}
+                                </View>
+                              </Pressable>
+                            );
+                          })
+                        )}
+                      </View>
+                    </GlassCard>
+
+                    <GlassCard intensity={56}>
+                      <View className="gap-3">
+                        <Text className="text-white text-sm font-semibold">Inscrição</Text>
+                        <View className="flex-row flex-wrap gap-2">
+                          {(["FULL", "SPLIT"] as const).map((mode) => {
+                            const active = paymentMode === mode;
+                            return (
+                              <Pressable
+                                key={`mode-${mode}`}
+                                onPress={() => setPaymentMode(mode)}
+                                className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
+                                style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                              >
+                                <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                                  {resolvePadelPaymentModeLabel(mode)}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        <View className="flex-row flex-wrap gap-2">
+                          {([
+                            { key: "INVITE_PARTNER", label: "Convidar parceiro" },
+                            { key: "LOOKING_FOR_PARTNER", label: "Dupla aberta" },
+                          ] as const).map((option) => {
+                            const active = joinMode === option.key;
+                            return (
+                              <Pressable
+                                key={option.key}
+                                onPress={() => setJoinMode(option.key)}
+                                className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
+                                style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                              >
+                                <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                                  {option.label}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        {joinMode === "INVITE_PARTNER" ? (
+                          <TextInput
+                            value={inviteContact}
+                            onChangeText={setInviteContact}
+                            placeholder="Email ou @username do parceiro"
+                            placeholderTextColor="rgba(255,255,255,0.4)"
+                            autoCapitalize="none"
+                            className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
+                          />
+                        ) : null}
+                        {!session?.user?.id ? (
+                          <Pressable
+                            onPress={() => router.push("/auth")}
+                            className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3"
+                            style={{ minHeight: tokens.layout.touchTarget }}
+                          >
+                            <Text className="text-white text-sm font-semibold text-center">Entrar para inscrever</Text>
+                          </Pressable>
+                        ) : (
+                          <Pressable
+                            onPress={handleCreatePairing}
+                            disabled={padelActionsDisabled || pairingBusy}
+                            className={
+                              padelActionsDisabled
+                                ? "rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                                : "rounded-2xl bg-white/90 px-4 py-3"
+                            }
+                            style={{ minHeight: tokens.layout.touchTarget }}
+                          >
+                            <Text
+                              className={`text-center text-sm font-semibold ${
+                                padelActionsDisabled ? "text-white/50" : ""
+                              }`}
+                              style={padelActionsDisabled ? undefined : { color: "#0b101a" }}
+                            >
+                              {pairingBusy ? "A criar dupla..." : "Criar dupla"}
+                            </Text>
+                          </Pressable>
+                        )}
+                        {!registrationOpen ? (
+                          <Text className="text-white/60 text-xs">{registrationMessage}</Text>
+                        ) : null}
+                      </View>
+                    </GlassCard>
+
+                    <GlassCard intensity={54}>
+                      <View className="gap-3">
+                        <Text className="text-white text-sm font-semibold">Duplas abertas</Text>
+                        {openPairingsQuery.isLoading ? (
+                          <Text className="text-white/60 text-sm">A carregar duplas abertas...</Text>
+                        ) : (openPairingsQuery.data ?? []).length === 0 ? (
+                          <Text className="text-white/60 text-sm">Sem duplas abertas neste momento.</Text>
+                        ) : (
+                          (openPairingsQuery.data ?? []).map((pairing) => (
+                            <View key={`open-${pairing.id}`} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                              <View className="flex-row items-center justify-between">
+                                <Text className="text-white text-sm font-semibold">
+                                  {pairing.category?.label ?? "Categoria aberta"}
+                                </Text>
+                                <Text className="text-white/60 text-xs">
+                                  {pairing.openSlots ?? 0} vaga(s)
+                                </Text>
+                              </View>
+                              <View className="flex-row items-center justify-between pt-2">
+                                <Text className="text-white/55 text-xs">
+                                  {pairing.deadlineAt ? `Deadline: ${formatDateRange(pairing.deadlineAt)}` : "Sem deadline"}
+                                </Text>
+                                <Pressable
+                                  onPress={() => handleJoinOpenPairing(pairing.id)}
+                                  disabled={padelActionsDisabled || pairingBusy}
+                                  className="rounded-full border border-white/15 bg-white/10 px-3 py-2"
+                                  style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                >
+                                  <Text className="text-white text-xs font-semibold">Juntar-me</Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          ))
+                        )}
+                      </View>
+                    </GlassCard>
+
+                    <GlassCard intensity={56}>
+                      <View className="gap-3">
+                        <Text className="text-white text-sm font-semibold">Minha dupla</Text>
+                        {!session?.user?.id ? (
+                          <Text className="text-white/65 text-sm">Inicia sessão para ver as tuas duplas.</Text>
+                        ) : myPairingsQuery.isLoading ? (
+                          <Text className="text-white/60 text-sm">A carregar a tua dupla...</Text>
+                        ) : (myPairingsQuery.data ?? []).length === 0 ? (
+                          <Text className="text-white/60 text-sm">Ainda não tens dupla neste torneio.</Text>
+                        ) : (
+                          (() => {
+                            const pairingIdValue = pairingIdParam ? Number(pairingIdParam) : null;
+                            const pairing =
+                              (Number.isFinite(pairingIdValue)
+                                ? (myPairingsQuery.data ?? []).find((p) => p.id === pairingIdValue)
+                                : null) ?? (myPairingsQuery.data ?? [])[0];
+                            const unpaidSlot = pairing.slots?.find((slot) => slot.paymentStatus !== "PAID");
+                            const canPay = Boolean(unpaidSlot);
+                            const invitePending = Boolean(pairing.inviteEligibility && !pairing.inviteEligibility.ok);
+                            return (
+                              <View className="gap-3">
+                                <Text className="text-white/70 text-sm">
+                                  {pairing.category?.label ?? "Categoria"} · {resolvePadelPaymentModeLabel(pairing.paymentMode)}
+                                </Text>
+                                {invitePending ? (
+                                  <Text className="text-amber-200 text-xs">
+                                    Completa os dados de Padel para aceitar o convite.
+                                  </Text>
+                                ) : null}
+                                <View className="flex-row flex-wrap gap-2">
+                                  {pairing.inviteEligibility ? (
+                                    <>
+                                      <Pressable
+                                        onPress={() => handleAcceptPairingInvite(pairing.id)}
+                                        disabled={pairingActionBusy}
+                                        className="rounded-full bg-white/15 px-4 py-2"
+                                        style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                      >
+                                        <Text className="text-white text-xs font-semibold">Aceitar convite</Text>
+                                      </Pressable>
+                                      <Pressable
+                                        onPress={() => handleDeclinePairingInvite(pairing.id)}
+                                        disabled={pairingActionBusy}
+                                        className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                                        style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                      >
+                                        <Text className="text-white/80 text-xs font-semibold">Recusar</Text>
+                                      </Pressable>
+                                    </>
+                                  ) : null}
+                                  {pairing.inviteToken ? (
+                                    <Pressable
+                                      onPress={() => handleSharePairingInvite(pairing.inviteToken ?? "")}
+                                      className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                                      style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                    >
+                                      <Text className="text-white/80 text-xs font-semibold">Partilhar convite</Text>
+                                    </Pressable>
+                                  ) : null}
+                                  {canPay ? (
+                                    <Pressable
+                                      onPress={() => handlePayPairing({ id: pairing.id, categoryId: pairing.categoryId ?? null })}
+                                      disabled={pairingActionBusy || padelActionsDisabled}
+                                      className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
+                                      style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                    >
+                                      <Text className="text-white text-xs font-semibold">Pagar inscrição</Text>
+                                    </Pressable>
+                                  ) : null}
+                                </View>
+                              </View>
+                            );
+                          })()
+                        )}
+                      </View>
+                    </GlassCard>
+
+                    {liveEnabled ? (
+                      <GlassCard intensity={54}>
+                        <View className="gap-3">
+                          <Text className="text-white text-sm font-semibold">Live</Text>
+                          {standingsQuery.isLoading ? (
+                            <Text className="text-white/60 text-sm">A carregar standings...</Text>
+                          ) : Object.keys(standingsQuery.data ?? {}).length === 0 ? (
+                            <Text className="text-white/60 text-sm">Sem standings disponíveis.</Text>
+                          ) : (
+                            Object.entries(standingsQuery.data ?? {}).map(([groupLabel, rows]) => (
+                              <View key={`standings-${groupLabel}`} className="gap-2">
+                                <Text className="text-white/70 text-xs uppercase tracking-[0.12em]">
+                                  Grupo {groupLabel}
+                                </Text>
+                                {(rows ?? []).map((row, idx) => {
+                                  const label =
+                                    row.label ||
+                                    (row.players || [])
+                                      .map((player) => player?.name || player?.username)
+                                      .filter(Boolean)
+                                      .join(" / ") ||
+                                    `Dupla ${row.pairingId}`;
+                                  return (
+                                    <View key={`row-${groupLabel}-${row.pairingId}`} className="flex-row items-center justify-between">
+                                      <Text className="text-white/80 text-sm">#{idx + 1} · {label}</Text>
+                                      <Text className="text-white/60 text-xs">
+                                        {row.points} pts · {row.wins}V-{row.losses}D
+                                      </Text>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            ))
+                          )}
+                          <View className="h-px bg-white/10" />
+                          {matchesQuery.isLoading ? (
+                            <Text className="text-white/60 text-sm">A carregar jogos...</Text>
+                          ) : (matchesQuery.data ?? []).length === 0 ? (
+                            <Text className="text-white/60 text-sm">Sem jogos disponíveis.</Text>
+                          ) : (
+                            (matchesQuery.data ?? []).slice(0, 6).map((match: any) => (
+                              <View key={`match-${match.id}`} className="gap-1">
+                                <Text className="text-white/70 text-xs">
+                                  {match.groupLabel ? `Grupo ${match.groupLabel}` : "Jogo"}
+                                </Text>
+                                <Text className="text-white/80 text-sm">
+                                  {resolvePairingLabel(match.pairingA)} vs {resolvePairingLabel(match.pairingB)}
+                                </Text>
+                              </View>
+                            ))
+                          )}
+                        </View>
+                      </GlassCard>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {gateLocked ? (
+                      <GlassCard intensity={50}>
+                        <Text className="text-white/70 text-sm">
+                          Evento por convite. Introduz o token ou email/username para ver os bilhetes.
+                        </Text>
+                      </GlassCard>
+                    ) : (
+                      <>
+                        <View className="gap-3">
+                          <Text className="text-white text-sm font-semibold">Bilhetes</Text>
+                          {ticketTypes.length === 0 ? (
+                            <GlassCard intensity={50}>
+                              <Text className="text-white/70 text-sm">
+                                Bilhetes a publicar brevemente. Ativa notificações para saber quando abrirem.
+                              </Text>
+                            </GlassCard>
+                          ) : (
+                            ticketTypes.map((ticket) => {
+                              const remaining =
+                                ticket.totalQuantity != null
+                                  ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0)
+                                  : null;
+                              const statusLabel = resolveTicketStatusLabel(ticket.status ?? null, remaining);
+                              const isSelected = ticket.id === selectedTicketId;
+                              const disabled = statusLabel === "Esgotado" || statusLabel === "Fechado";
+                              const availability =
+                                remaining != null
+                                  ? remaining <= 6
+                                    ? `Últimos ${remaining}`
+                                    : `${remaining} disponíveis`
+                                  : null;
+
+                              return (
+                                <Pressable
+                                  key={`ticket-${ticket.id}`}
+                                  disabled={disabled}
+                                  onPress={() => setSelectedTicketId(ticket.id)}
+                                  className={isSelected ? "opacity-100" : "opacity-90"}
+                                >
+                                  <GlassCard intensity={isSelected ? 68 : 52} highlight={isSelected}>
+                                    <View className="gap-3">
+                                      <View className="flex-row items-center justify-between">
+                                        <View className="flex-1 pr-2">
+                                          <Text className="text-white text-base font-semibold" numberOfLines={1}>
+                                            {ticket.name}
+                                          </Text>
+                                          {ticket.description ? (
+                                            <Text className="text-white/65 text-xs mt-1" numberOfLines={2}>
+                                              {ticket.description}
+                                            </Text>
+                                          ) : null}
+                                        </View>
+                                        <GlassPill label={formatTicketPrice(ticket.price, ticket.currency)} variant="muted" />
+                                      </View>
+                                      <View className="flex-row items-center gap-2">
+                                        <GlassPill label={statusLabel} variant={disabled ? "muted" : "accent"} />
+                                        {availability ? (
+                                          <Text className="text-[11px] uppercase tracking-[0.12em] text-white/45">
+                                            {availability}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                    </View>
+                                  </GlassCard>
+                                </Pressable>
+                              );
+                            })
+                          )}
+                        </View>
+
+                        {selectedTicket && hasPurchasableTickets ? (
+                          <GlassCard intensity={60} highlight>
+                            <View className="gap-4">
+                              <Text className="text-white text-sm font-semibold">Resumo da compra</Text>
+                              <View className="flex-row items-center justify-between">
+                                <Text className="text-white/70 text-sm">
+                                  {selectedTicket.name}
+                                </Text>
+                                <Text className="text-white text-sm font-semibold">
+                                  {formatTicketPrice(selectedTicket.price, selectedTicket.currency)}
+                                </Text>
+                              </View>
+                              <View className="flex-row items-center justify-between">
+                                <Text className="text-white/60 text-sm">Quantidade</Text>
+                                <View className="flex-row items-center gap-3">
+                                  <Pressable
+                                    onPress={() => setTicketQuantity((prev) => Math.max(1, prev - 1))}
+                                    disabled={maxQuantity <= 1}
+                                    className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
+                                    style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
+                                  >
+                                    <Ionicons name="remove" size={16} color="rgba(255,255,255,0.75)" />
+                                  </Pressable>
+                                  <Text className="text-white text-base font-semibold">{ticketQuantity}</Text>
+                                  <Pressable
+                                    onPress={() => setTicketQuantity((prev) => Math.min(maxQuantity, prev + 1))}
+                                    disabled={maxQuantity <= 1}
+                                    className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
+                                    style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
+                                  >
+                                    <Ionicons name="add" size={16} color="rgba(255,255,255,0.85)" />
+                                  </Pressable>
+                                </View>
+                              </View>
+                              {isFreeTicket ? (
+                                <Text className="text-white/55 text-xs">Limite por pessoa: 1</Text>
+                              ) : null}
+                              <View className="flex-row items-center justify-between">
+                                <Text className="text-white/60 text-sm">Total</Text>
+                                <Text className="text-white text-lg font-semibold">
+                                  {formatTicketPrice(totalCents, selectedTicket.currency)}
+                                </Text>
+                              </View>
+                              {!session ? (
+                                <Text className="text-xs text-amber-200">
+                                  Inicia sessão para finalizar a inscrição.
+                                </Text>
+                              ) : null}
+                            </View>
+                          </GlassCard>
+                        ) : null}
+                      </>
+                    )}
+                  </>
+                )}
 
               </View>
             </Animated.View>
@@ -789,6 +1734,7 @@ export default function EventDetail() {
                     router.push("/auth");
                     return;
                   }
+                  const idempotencyKey = buildCheckoutIdempotencyKey();
                   if (selectedTicket.price <= 0) {
                     setInitiatingCheckout(true);
                     try {
@@ -798,6 +1744,8 @@ export default function EventDetail() {
                         quantity: ticketQuantity,
                         paymentMethod: "card",
                         paymentScenario: "FREE_CHECKOUT",
+                        idempotencyKey,
+                        inviteToken: inviteToken ?? undefined,
                       });
                       const isFree =
                         response.freeCheckout ||
@@ -819,6 +1767,7 @@ export default function EventDetail() {
                         slug: data!.slug,
                         eventId: data!.id,
                         eventTitle: data!.title,
+                        sourceType: "EVENT_TICKET",
                         ticketTypeId: selectedTicket.id,
                         ticketName: selectedTicket.name,
                         quantity: ticketQuantity,
@@ -826,6 +1775,9 @@ export default function EventDetail() {
                         totalCents: response.breakdown?.totalCents ?? totalCents,
                         currency: response.currency ?? selectedTicket.currency ?? "EUR",
                         paymentMethod: "card",
+                        paymentScenario: "FREE_CHECKOUT",
+                        inviteToken: inviteToken ?? null,
+                        idempotencyKey,
                       });
                       setCheckoutIntent({
                         clientSecret: response.clientSecret ?? null,
@@ -846,6 +1798,7 @@ export default function EventDetail() {
                     slug: data!.slug,
                     eventId: data!.id,
                     eventTitle: data!.title,
+                    sourceType: "EVENT_TICKET",
                     ticketTypeId: selectedTicket.id,
                     ticketName: selectedTicket.name,
                     quantity: ticketQuantity,
@@ -853,6 +1806,9 @@ export default function EventDetail() {
                     totalCents,
                     currency: selectedTicket.currency ?? "EUR",
                     paymentMethod: "card",
+                    paymentScenario: "SINGLE",
+                    inviteToken: inviteToken ?? null,
+                    idempotencyKey,
                   });
                   router.push("/checkout");
                 }}

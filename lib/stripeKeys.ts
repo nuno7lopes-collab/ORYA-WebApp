@@ -1,6 +1,6 @@
 import "server-only";
 import { getAppEnv } from "@/lib/appEnv";
-import { type AppEnv } from "@/lib/appEnvShared";
+import { normalizeAppEnv, type AppEnv } from "@/lib/appEnvShared";
 
 function requireValue(value: string | undefined, label: string): string {
   if (value && value.trim().length > 0) return value.trim();
@@ -16,6 +16,12 @@ function ensureStripeKeyMatchesEnv(key: string, env: "prod" | "test", label: str
   }
 }
 
+export function getStripeEnv(): AppEnv {
+  const override = normalizeAppEnv(process.env.STRIPE_MODE ?? process.env.STRIPE_ENV ?? null);
+  if (override) return override;
+  return getAppEnv();
+}
+
 export function getStripeSecretKeyForEnv(env: AppEnv) {
   const live = process.env.STRIPE_SECRET_KEY_LIVE || process.env.STRIPE_SECRET_KEY;
   const test = process.env.STRIPE_SECRET_KEY_TEST || process.env.STRIPE_SECRET_KEY;
@@ -25,11 +31,11 @@ export function getStripeSecretKeyForEnv(env: AppEnv) {
 }
 
 export function getStripeSecretKey() {
-  return getStripeSecretKeyForEnv(getAppEnv());
+  return getStripeSecretKeyForEnv(getStripeEnv());
 }
 
 export function getStripeWebhookSecret() {
-  const env = getAppEnv();
+  const env = getStripeEnv();
   const live = process.env.STRIPE_WEBHOOK_SECRET_LIVE || process.env.STRIPE_WEBHOOK_SECRET;
   const test = process.env.STRIPE_WEBHOOK_SECRET_TEST || process.env.STRIPE_WEBHOOK_SECRET;
   const value = env === "test" ? requireValue(test, "STRIPE_WEBHOOK_SECRET_TEST") : requireValue(live, "STRIPE_WEBHOOK_SECRET_LIVE");
@@ -37,7 +43,7 @@ export function getStripeWebhookSecret() {
 }
 
 export function getStripePayoutsWebhookSecret() {
-  const env = getAppEnv();
+  const env = getStripeEnv();
   const live = process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE || process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
   const test = process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET_TEST || process.env.STRIPE_PAYOUTS_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
   const value = env === "test" ? requireValue(test, "STRIPE_PAYOUTS_WEBHOOK_SECRET_TEST") : requireValue(live, "STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE");

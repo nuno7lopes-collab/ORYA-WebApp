@@ -35,7 +35,7 @@ import {
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule";
+import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule.ts";
 
 const loadEnvFile = (file: string) => {
   if (!fs.existsSync(file)) return;
@@ -264,6 +264,14 @@ const ensureCourts = async ({
   return courts.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
 };
 
+const resolveGenderRestriction = (label: string) => {
+  const normalized = label.trim().toUpperCase();
+  if (normalized.startsWith("F")) return "FEMALE";
+  if (normalized.startsWith("M")) return "MALE";
+  if (normalized.startsWith("MX") || normalized.startsWith("MIX")) return "MIXED";
+  return "ALL";
+};
+
 const ensureCategory = async ({
   organizationId,
   label,
@@ -308,34 +316,44 @@ const seedPlayers = async ({
   totalPlayers,
   levels,
   clubNames,
+  userIds,
 }: {
   organizationId: number;
   totalPlayers: number;
   levels: string[];
   clubNames: string[];
+  userIds?: string[];
 }) => {
+  const genderCounters = new Map<string, number>();
   const playersData = Array.from({ length: totalPlayers }).map((_, idx) => {
     const num = idx + 1;
     const numLabel = String(num).padStart(3, "0");
     const level = levels[idx % levels.length];
+    const genderRestriction = resolveGenderRestriction(level);
+    const levelCount = genderCounters.get(level) ?? 0;
+    genderCounters.set(level, levelCount + 1);
     const preferredSide =
       idx % 3 === 0
         ? PadelPreferredSide.ESQUERDA
         : idx % 3 === 1
           ? PadelPreferredSide.DIREITA
           : PadelPreferredSide.QUALQUER;
+    const gender =
+      genderRestriction === "MIXED" ? (levelCount % 2 === 0 ? "MALE" : "FEMALE") : genderRestriction;
     const birthYear = 1982 + (idx % 18);
+    const userId = userIds && userIds.length > 0 ? userIds[idx % userIds.length] : null;
     return {
       fullName: `Jogador ${numLabel}`,
       displayName: `J${numLabel}`,
       email: `padel.org${organizationId}.player${numLabel}@example.com`,
       phone: `+3519${String(10000000 + idx).slice(-8)}`,
-      gender: "MALE",
+      gender,
       level,
       preferredSide,
       clubName: clubNames[idx % clubNames.length],
       birthDate: new Date(birthYear, idx % 12, (idx % 28) + 1),
       notes: `Seed org ${organizationId} - ${level}`,
+      userId,
     };
   });
   const players = [] as Awaited<ReturnType<typeof prisma.padelPlayerProfile.create>>[];
@@ -356,6 +374,7 @@ const seedPlayers = async ({
           clubName: player.clubName,
           birthDate: player.birthDate,
           notes: player.notes,
+          userId: player.userId ?? existing.userId ?? null,
         },
       });
       players.push(updated);
@@ -363,6 +382,7 @@ const seedPlayers = async ({
       const created = await prisma.padelPlayerProfile.create({
         data: {
           organizationId,
+          userId: player.userId ?? null,
           fullName: player.fullName,
           email: player.email,
           level: player.level,
@@ -425,20 +445,18 @@ const createPairings = async ({
   eventId,
   organizationId,
   categoryId,
+  genderRestriction,
   players,
   createdByUserId,
 }: {
   eventId: number;
   organizationId: number;
   categoryId: number;
+  genderRestriction?: string | null;
   players: Awaited<ReturnType<typeof prisma.padelPlayerProfile.findMany>>;
   createdByUserId: string;
 }) => {
-  const pairings = [] as Array<{ id: number; categoryId: number }>;
-  for (let i = 0; i < players.length; i += 2) {
-    const playerA = players[i];
-    const playerB = players[i + 1];
-    if (!playerA || !playerB) continue;
+  const buildPairing = async (playerA: typeof players[number], playerB: typeof players[number]) => {
     const pairing = await prisma.padelPairing.create({
       data: {
         eventId,
@@ -466,6 +484,48 @@ const createPairings = async ({
         },
       },
     });
+    return pairing;
+  };
+
+  if ((genderRestriction ?? "").toUpperCase() === "MIXED") {
+    const male = players.filter((p) => (p.gender ?? "").toUpperCase() === "MALE");
+    const female = players.filter((p) => (p.gender ?? "").toUpperCase() === "FEMALE");
+    const pairings = [] as Array<{ id: number; categoryId: number }>;
+    while (male.length > 0 && female.length > 0) {
+      const playerA = male.shift();
+      const playerB = female.shift();
+      if (!playerA || !playerB) break;
+      const pairing = await buildPairing(playerA, playerB);
+      pairings.push({ id: pairing.id, categoryId });
+    }
+    if (male.length > 0 || female.length > 0) {
+      console.warn(
+        `[seed-padel] Categoria MIXED com jogadores sobrantes (male=${male.length}, female=${female.length}).`,
+      );
+    }
+    return pairings;
+  }
+
+  const left = players.filter((p) => p.preferredSide === PadelPreferredSide.ESQUERDA);
+  const right = players.filter((p) => p.preferredSide === PadelPreferredSide.DIREITA);
+  const any = players.filter(
+    (p) => p.preferredSide !== PadelPreferredSide.ESQUERDA && p.preferredSide !== PadelPreferredSide.DIREITA,
+  );
+  const nextFrom = (arr: typeof players) => (arr.length > 0 ? arr.shift() : null);
+  const pairings = [] as Array<{ id: number; categoryId: number }>;
+  while (left.length + right.length + any.length >= 2) {
+    const playerA = nextFrom(left) ?? nextFrom(right) ?? nextFrom(any);
+    if (!playerA) break;
+    let playerB = null;
+    if (playerA.preferredSide === PadelPreferredSide.ESQUERDA) {
+      playerB = nextFrom(right) ?? nextFrom(any) ?? nextFrom(left);
+    } else if (playerA.preferredSide === PadelPreferredSide.DIREITA) {
+      playerB = nextFrom(left) ?? nextFrom(any) ?? nextFrom(right);
+    } else {
+      playerB = nextFrom(left) ?? nextFrom(right) ?? nextFrom(any);
+    }
+    if (!playerB) break;
+    const pairing = await buildPairing(playerA, playerB);
     pairings.push({ id: pairing.id, categoryId });
   }
   return pairings;
@@ -485,6 +545,15 @@ async function main() {
 
   const seedAddressId = await resolveSeedAddressId(prisma);
 
+  const userPrefix = process.env.PADEL_USER_PREFIX?.trim();
+  const seedUsers = userPrefix
+    ? await prisma.profile.findMany({
+        where: { username: { startsWith: userPrefix } },
+        select: { id: true },
+      })
+    : [];
+  const seedUserIds = seedUsers.map((user) => user.id);
+
   let organization: Awaited<ReturnType<typeof prisma.organization.findUnique>>;
   if (ORG_ID) {
     organization = await prisma.organization.findUnique({ where: { id: ORG_ID } });
@@ -495,21 +564,21 @@ async function main() {
     organization = existingOrganization
       ? await prisma.organization.update({
           where: { id: existingOrganization.id },
-        data: {
-          publicName: ORGANIZATION_PUBLIC_NAME,
-          businessName: ORGANIZATION_PUBLIC_NAME,
-          addressId: seedAddressId,
-          entityType: "CLUBE",
-          status: OrganizationStatus.ACTIVE,
-          primaryModule: OrganizationModule.TORNEIOS,
-        },
-      })
+          data: {
+            publicName: ORGANIZATION_PUBLIC_NAME,
+            businessName: ORGANIZATION_PUBLIC_NAME,
+            addressRef: { connect: { id: seedAddressId } },
+            entityType: "CLUBE",
+            status: OrganizationStatus.ACTIVE,
+            primaryModule: OrganizationModule.TORNEIOS,
+          },
+        })
       : await prisma.organization.create({
         data: {
           username: ORGANIZATION_USERNAME,
           publicName: ORGANIZATION_PUBLIC_NAME,
           businessName: ORGANIZATION_PUBLIC_NAME,
-          addressId: seedAddressId,
+          addressRef: { connect: { id: seedAddressId } },
           entityType: "CLUBE",
           status: OrganizationStatus.ACTIVE,
           primaryModule: OrganizationModule.TORNEIOS,
@@ -597,7 +666,7 @@ async function main() {
       label: level,
       minLevel: level,
       maxLevel: level,
-      genderRestriction: "MALE",
+      genderRestriction: resolveGenderRestriction(level),
     });
     categories.push(category);
   }
@@ -722,6 +791,7 @@ async function main() {
     totalPlayers: TOTAL_PLAYERS,
     levels: CATEGORY_LEVELS,
     clubNames: [MAIN_CLUB_NAME, PARTNER_CLUB_NAME],
+    userIds: seedUserIds.length > 0 ? seedUserIds : undefined,
   });
   await seedRankingEntries({
     organizationId: organization.id,
@@ -750,6 +820,7 @@ async function main() {
       eventId: event.id,
       organizationId: organization.id,
       categoryId: category.id,
+      genderRestriction: category.genderRestriction,
       players: levelPlayers,
       createdByUserId: userId,
     });

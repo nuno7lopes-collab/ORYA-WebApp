@@ -134,7 +134,13 @@ async function _GET(req: NextRequest) {
         status: event.status,
         templateType: event.templateType ?? null,
         ownerUserId: event.ownerUserId ?? null,
-        organization: event.organization ? { publicName: event.organization.publicName } : null,
+        organization: event.organization
+          ? {
+              publicName: event.organization.publicName,
+              businessName: event.organization.businessName,
+              username: event.organization.username,
+            }
+          : null,
         addressId: event.addressId ?? null,
         addressRef: event.addressRef ?? null,
         coverImageUrl: event.coverImageUrl ?? null,

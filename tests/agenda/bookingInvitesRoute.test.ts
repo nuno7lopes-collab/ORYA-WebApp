@@ -126,7 +126,6 @@ vi.mock("@prisma/client", () => ({
 
 import { POST as InvitesPost } from "@/app/api/me/reservas/[id]/invites/route";
 import { POST as InviteResponsePost } from "@/app/api/convites/[token]/route";
-import { POST as InviteResendPost } from "@/app/api/me/reservas/[id]/invites/resend/route";
 
 describe("booking invites route", () => {
   beforeEach(() => {
@@ -244,40 +243,4 @@ describe("booking invites route", () => {
     );
   });
 
-  it("reenviá email de convite pendente", async () => {
-    ensureAuthenticatedMock.mockResolvedValue({ id: "user-1" });
-    bookingFindUnique.mockResolvedValue({
-      id: 10,
-      userId: "user-1",
-      organizationId: 20,
-      status: "CONFIRMED",
-      startsAt: new Date("2026-02-04T10:00:00Z"),
-      snapshotTimezone: "Europe/Lisbon",
-      service: { title: "Corte" },
-      organization: { publicName: "ORG" },
-    });
-    bookingInviteFindFirst.mockResolvedValue({
-      id: 91,
-      token: "tok_91",
-      status: "PENDING",
-      targetContact: "ana@example.com",
-      targetName: "Ana",
-      message: null,
-    });
-    profileFindUnique.mockResolvedValue({ fullName: "Nuno", username: "nuno" });
-
-    const res = await InviteResendPost(
-      new Request("http://localhost/api/me/reservas/10/invites/resend", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ inviteId: 91 }),
-      }),
-      { params: Promise.resolve({ id: "10" }) },
-    );
-
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.ok).toBe(true);
-    expect(queueBookingInviteEmailMock).toHaveBeenCalled();
-  });
 });

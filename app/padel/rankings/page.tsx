@@ -32,7 +32,7 @@ export default async function PadelGlobalRankingsPage() {
                   {t("openPairsLabel", locale)}
                 </Link>
                 <Link
-                  href="/descobrir?tab=torneios"
+                  href="/?tab=torneios"
                   className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
                 >
                   {t("discoverTournamentsLabel", locale)}

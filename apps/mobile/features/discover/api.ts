@@ -14,6 +14,15 @@ type DiscoverParams = {
   kind?: DiscoverKind;
   date?: DiscoverDateFilter;
   city?: string;
+  startDate?: string;
+  endDate?: string;
+  templateTypes?: string;
+  priceMin?: number | null;
+  priceMax?: number | null;
+  north?: number;
+  south?: number;
+  east?: number;
+  west?: number;
   cursor?: string | null;
   limit?: number;
 };
@@ -44,8 +53,21 @@ const toEventQueryString = (params: DiscoverParams): string => {
   if (params.q) query.set("q", params.q);
   if (params.city) query.set("city", params.city);
   if (params.kind === "padel") query.set("categories", "PADEL");
-  if (params.type === "free") query.set("priceMax", "0");
-  if (params.type === "paid") query.set("priceMin", "0.01");
+  if (typeof params.priceMin === "number") query.set("priceMin", String(params.priceMin));
+  if (typeof params.priceMax === "number") query.set("priceMax", String(params.priceMax));
+  if (params.startDate) query.set("startDate", params.startDate);
+  if (params.endDate) query.set("endDate", params.endDate);
+  if (params.templateTypes) query.set("templateTypes", params.templateTypes);
+  if (typeof params.north === "number") query.set("north", String(params.north));
+  if (typeof params.south === "number") query.set("south", String(params.south));
+  if (typeof params.east === "number") query.set("east", String(params.east));
+  if (typeof params.west === "number") query.set("west", String(params.west));
+  if (params.type === "free" && typeof params.priceMin !== "number" && typeof params.priceMax !== "number") {
+    query.set("priceMax", "0");
+  }
+  if (params.type === "paid" && typeof params.priceMin !== "number" && typeof params.priceMax !== "number") {
+    query.set("priceMin", "0.01");
+  }
   if (params.date && params.date !== "all") query.set("date", params.date);
   if (params.cursor) query.set("cursor", params.cursor);
   query.set("limit", String(params.limit ?? DEFAULT_LIMIT));
@@ -122,9 +144,28 @@ const getOfferSortDate = (item: DiscoverOfferCard): number => {
 
 const fetchEvents = async (params: DiscoverParams): Promise<{ items: DiscoverOfferCard[]; nextCursor: string | null; hasMore: boolean }> => {
   const response = await api.request<unknown>(`/api/explorar/list?${toEventQueryString(params)}`);
+  const meta = response && typeof response === "object"
+    ? {
+        requestId: (response as any).requestId ?? null,
+        correlationId: (response as any).correlationId ?? null,
+      }
+    : { requestId: null, correlationId: null };
   const unwrapped = unwrapApiResponse<unknown>(response);
   const parsed = DiscoverResponseSchema.safeParse(unwrapped);
   if (!parsed.success) {
+    const rawItems = (unwrapped as any)?.items;
+    const sample = Array.isArray(rawItems) && rawItems.length > 0
+      ? {
+          firstItemKeys: Object.keys(rawItems[0] ?? {}),
+          firstItem: rawItems[0],
+        }
+      : { firstItemKeys: null, firstItem: null };
+    console.warn("[discover][events] schema_mismatch", {
+      ...meta,
+      issues: parsed.error.issues,
+      responseKeys: unwrapped && typeof unwrapped === "object" ? Object.keys(unwrapped as any) : null,
+      ...sample,
+    });
     throw new ApiError(500, "Formato invalido na resposta de descobrir.");
   }
   return {

@@ -13,17 +13,15 @@ const pickHeader = (req: NextRequest, names: string[]) => {
 async function _GET(req: NextRequest) {
   try {
     const city =
-      pickHeader(req, ["x-vercel-ip-city", "cf-ipcity", "x-geo-city", "x-country-city"]) ?? null;
+      pickHeader(req, ["cf-ipcity", "x-geo-city", "x-country-city"]) ?? null;
     const region =
       pickHeader(req, [
-        "x-vercel-ip-country-region",
-        "x-vercel-ip-region",
         "cf-region",
         "x-geo-region",
         "x-country-region",
       ]) ?? null;
     const country =
-      pickHeader(req, ["x-vercel-ip-country", "cf-ipcountry", "cloudfront-viewer-country", "x-geo-country"]) ??
+      pickHeader(req, ["cf-ipcountry", "cloudfront-viewer-country", "x-geo-country"]) ??
       null;
 
     const hasAny = Boolean(city || region || country);

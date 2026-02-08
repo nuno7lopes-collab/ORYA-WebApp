@@ -48,6 +48,8 @@ export const useAgoraFeed = (enabled = true) => {
     soonItems,
     upcomingItems,
     personalizedItems,
+    timelineError: timeline.error ?? null,
+    personalizedError: personalized.error ?? null,
     refetch: async () => {
       await Promise.all([timeline.refetch(), personalized.refetch()]);
     },

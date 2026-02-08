@@ -88,14 +88,22 @@ async function _POST(req: NextRequest) {
     }
     let usernameNormalized: string | null = null;
     if (rawUsername) {
-      const usernameValidation = normalizeAndValidateUsername(rawUsername);
+      const usernameValidation = normalizeAndValidateUsername(rawUsername, {
+        allowReservedForEmail: rawEmail ?? null,
+      });
       if (!usernameValidation.ok) {
         return jsonWrap(
-          { ok: false, error: usernameValidation.error, code: "USERNAME_INVALID" },
+          {
+            ok: false,
+            error: usernameValidation.error,
+            code: usernameValidation.code ?? "USERNAME_INVALID",
+          },
           { status: 400 },
         );
       }
-      const availability = await checkUsernameAvailability(usernameValidation.username);
+      const availability = await checkUsernameAvailability(usernameValidation.username, undefined, {
+        allowReservedForEmail: rawEmail ?? null,
+      });
       if (availability.ok && availability.available === false) {
         return jsonWrap(
           { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },

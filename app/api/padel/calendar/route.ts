@@ -237,6 +237,42 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
 
+  const padelClubParam = req.nextUrl.searchParams.get("padelClubId");
+  const courtParam = req.nextUrl.searchParams.get("courtId");
+  const padelClubId = padelClubParam ? Number(padelClubParam) : null;
+  const courtId = courtParam ? Number(courtParam) : null;
+  if (padelClubParam && !Number.isFinite(padelClubId)) {
+    return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  }
+  if (courtParam && !Number.isFinite(courtId)) {
+    return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+  }
+
+  let resolvedClubId: number | null = padelClubId && Number.isFinite(padelClubId) ? padelClubId : null;
+  let resolvedCourtId: number | null = courtId && Number.isFinite(courtId) ? courtId : null;
+  if (resolvedClubId) {
+    const club = await prisma.padelClub.findFirst({
+      where: { id: resolvedClubId, organizationId: organization.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!club) {
+      return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
+    }
+  }
+  if (resolvedCourtId) {
+    const court = await prisma.padelClubCourt.findFirst({
+      where: { id: resolvedCourtId, club: { organizationId: organization.id, deletedAt: null } },
+      select: { id: true, padelClubId: true },
+    });
+    if (!court) {
+      return jsonWrap({ ok: false, error: "COURT_NOT_FOUND" }, { status: 404 });
+    }
+    if (resolvedClubId && court.padelClubId !== resolvedClubId) {
+      return jsonWrap({ ok: false, error: "COURT_CLUB_MISMATCH" }, { status: 400 });
+    }
+    if (!resolvedClubId) resolvedClubId = court.padelClubId;
+  }
+
   const event = await prisma.event.findFirst({
     where: { id: eventId, organizationId: organization.id },
     select: { id: true, timezone: true, startsAt: true, endsAt: true },
@@ -247,7 +283,12 @@ async function _GET(req: NextRequest) {
 
   const [blocks, availabilities, matches] = await Promise.all([
     prisma.calendarBlock.findMany({
-      where: { organizationId: organization.id, eventId },
+      where: {
+        organizationId: organization.id,
+        eventId,
+        ...(resolvedClubId ? { padelClubId: resolvedClubId } : {}),
+        ...(resolvedCourtId ? { courtId: resolvedCourtId } : {}),
+      },
       orderBy: [{ startAt: "asc" }],
       select: {
         id: true,
@@ -282,6 +323,8 @@ async function _GET(req: NextRequest) {
     prisma.eventMatchSlot.findMany({
       where: {
         eventId,
+        ...(resolvedCourtId ? { courtId: resolvedCourtId } : {}),
+        ...(resolvedClubId && !resolvedCourtId ? { court: { padelClubId: resolvedClubId } } : {}),
         OR: [{ startTime: { not: null } }, { plannedStartAt: { not: null } }],
       },
       select: {

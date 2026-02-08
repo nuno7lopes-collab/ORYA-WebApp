@@ -1,0 +1,130 @@
+section_path,line_no,kind,text
+ORYA — Padel (TO-BE) — Plano de Excelência,4068,heading,ORYA — Padel (TO-BE) — Plano de Excelência
+ORYA — Padel (TO-BE) — Plano de Excelência,4070,paragraph,**Estrutura obrigatoria:** Ferramenta A (Padel Clube) / Ferramenta B (Padel Torneios) / Integracoes (contratos). Nao colocar infra de Reservas/Financas/CRM dentro de Padel.
+ORYA — Padel (TO-BE) — Plano de Excelência,4073,paragraph,"**Regra de hierarquia (obrigatória):** este anexo é subordinado ao **ORYA — Blueprint Final v9 (SSOT)**. Em caso de conflito, vence o **v9**. O Padel define apenas domínio/UX; owners e contratos permanecem os do v9."
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4080,heading,0) Objetivo e Princípios
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4082,paragraph,"**Objetivo:** elevar o ecossistema ORYA de Padel ao nível das melhores plataformas globais (Padel Manager, Playtomic Manager, Tournament Software, PadelTeams), criando **duas ferramentas distintas e integradas**:"
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4083,bullet,**Gestão de Clube de Padel**
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4084,bullet,**Gestão de Torneios de Padel**
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4086,paragraph,**Princípios (TO-BE):**
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4087,bullet,"**Simples e automático:** defaults fortes, pouco atrito."
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4088,bullet,"**Operacional e robusto:** tudo funciona em tempo real, com logs e controlo."
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4089,bullet,**Experiência premium:** organizadores e jogadores com UX limpa e previsível.
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4090,bullet,"**Integração total:** clube, torneio, CRM, perfis e estatísticas em sintonia."
+ORYA — Padel (TO-BE) — Plano de Excelência > 0) Objetivo e Princípios,4091,bullet,**SSOT v9:** Financas/Reservas/Check-in/CRM/RBAC/Address seguem o v9; Padel nunca duplica logica.
+ORYA — Padel (TO-BE) — Plano de Excelência > 1) Base AS-IS (resumo),4095,heading,1) Base AS-IS (resumo)
+ORYA — Padel (TO-BE) — Plano de Excelência > 1) Base AS-IS (resumo),4098,paragraph,**Estado atual relevante (resumo):**
+ORYA — Padel (TO-BE) — Plano de Excelência > 1) Base AS-IS (resumo),4099,bullet,"Padel existe como preset de torneio, com Wizard e Hub Padel."
+ORYA — Padel (TO-BE) — Plano de Excelência > 1) Base AS-IS (resumo),4100,bullet,"Há clubes, courts, staff, categorias, regras, matches, standings e live via SSE."
+ORYA — Padel (TO-BE) — Plano de Excelência > 1) Base AS-IS (resumo),4101,bullet,Páginas públicas + widgets + exports existem.
+ORYA — Padel (TO-BE) — Plano de Excelência > 1) Base AS-IS (resumo),4102,bullet,"Algumas areas-chave estão **parciais** (ex.: cancelamentos, check-in, acessibilidade)."
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE),4106,heading,2) Ferramenta A — Gestão de Clube de Padel (TO-BE)
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.1 Reservas e Agenda Inteligente,4108,heading,2.1 Reservas e Agenda Inteligente
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.1 Reservas e Agenda Inteligente,4109,bullet,"**SSOT em Reservas (v9):** Padel consome a Agenda Engine via contrato, nao cria agenda propria."
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.1 Reservas e Agenda Inteligente,4110,bullet,**Pagamentos via Financas:** reservas chamam `createCheckout` (Financas); nenhum modulo cria intents Stripe.
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.1 Reservas e Agenda Inteligente,4111,bullet,Multi-clube e multi-court com agendas independentes.
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.1 Reservas e Agenda Inteligente,4112,bullet,"Otimização de ocupação (open matches, listas de espera) conforme regras de Reservas (Fase 2)."
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.1 Reservas e Agenda Inteligente,4113,bullet,Integração com torneios via **MatchSlot hard-block** e CalendarBlock (D3/D3.1).
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.1 Reservas e Agenda Inteligente,4114,bullet,"Agenda com visões dia/semana e drag & drop (UI), respeitando prioridades: HardBlock > MatchSlot > Booking > SoftBlock."
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.2 Sócios, Jogadores e Comunicação",4116,heading,"2.2 Sócios, Jogadores e Comunicação"
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.2 Sócios, Jogadores e Comunicação",4117,bullet,**CRM e Perfil unificado (owner: CRM/Perfil publico)** com tags/segmentos de Padel.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.2 Sócios, Jogadores e Comunicação",4118,bullet,"**Credits/loyalty** apenas via Servicos/Financas/CRM (Fase 2), sem carteira paralela em Padel."
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.2 Sócios, Jogadores e Comunicação",4119,bullet,Planos e passes (assinaturas/pacotes) via Stripe Billing (Fase 2).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.2 Sócios, Jogadores e Comunicação",4120,bullet,"Comunicação via Notificações/Chat interno (owners core), com triggers a partir do EventLog."
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.2 Sócios, Jogadores e Comunicação",4121,bullet,Matchmaking e comunidade (dominio Padel).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.3 Aulas, Treinos e Academia",4123,heading,"2.3 Aulas, Treinos e Academia"
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.3 Aulas, Treinos e Academia",4124,bullet,**Owner: Servicos/Reservas.** Padel nao duplica logica de aulas.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.3 Aulas, Treinos e Academia",4125,bullet,Gestão de treinadores com perfis públicos (via Servicos).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.3 Aulas, Treinos e Academia",4126,bullet,Agenda de aulas (particulares e cursos) em Reservas.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.3 Aulas, Treinos e Academia",4127,bullet,Pagamentos via Financas (createCheckout).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.3 Aulas, Treinos e Academia",4128,bullet,Histórico e feedback via Servicos/CRM.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.3 Aulas, Treinos e Academia",4129,bullet,Atalho direto ao módulo existente de serviços/aulas (UI).
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.4 Eventos Sociais e Ligas Internas,4131,heading,2.4 Eventos Sociais e Ligas Internas
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.4 Eventos Sociais e Ligas Internas,4132,bullet,Mix rápidos (Americano/Mexicano) — Fase 2.
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.4 Eventos Sociais e Ligas Internas,4133,bullet,"Ligas internas, ladders e rankings internos."
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.4 Eventos Sociais e Ligas Internas,4134,bullet,Eventos personalizados e formatos flexíveis.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.5 Pagamentos, Faturação e Relatórios",4136,heading,"2.5 Pagamentos, Faturação e Relatórios"
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.5 Pagamentos, Faturação e Relatórios",4137,bullet,**Checkout unificado via Financas** (gateway unico; D4).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.5 Pagamentos, Faturação e Relatórios",4138,bullet,Ledger/fees/payouts/refunds como SSOT (Financas); Padel apenas consulta.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.5 Pagamentos, Faturação e Relatórios",4139,bullet,Faturacao **nao obrigatoria** dentro da ORYA (D9.1); exports e trilho contabilistico sao obrigatorios.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.5 Pagamentos, Faturação e Relatórios",4140,bullet,Dashboard financeiro com KPIs (derivado de Ledger + EventLog).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.5 Pagamentos, Faturação e Relatórios",4141,bullet,Exportacoes (CSV/PDF) e integracoes contabilisticas (Fase 2).
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.6 Staff e Permissões,4143,heading,2.6 Staff e Permissões
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.6 Staff e Permissões,4144,bullet,"RBAC centralizado (v9) com **Role Packs**: CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE."
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.6 Staff e Permissões,4145,bullet,Agenda de staff/treinadores via Reservas.
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.6 Staff e Permissões,4146,bullet,Escalas e comunicação interna via Equipa/Chat interno.
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.7 Experiência do Jogador (Clube),4148,heading,2.7 Experiência do Jogador (Clube)
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.7 Experiência do Jogador (Clube),4149,bullet,Portal/app do jogador.
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.7 Experiência do Jogador (Clube),4150,bullet,Perfil unificado com estatísticas e reservas.
+ORYA — Padel (TO-BE) — Plano de Excelência > 2) Ferramenta A — Gestão de Clube de Padel (TO-BE) > 2.7 Experiência do Jogador (Clube),4151,bullet,Gamificação local (badges/objetivos).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE),4155,heading,3) Ferramenta B — Gestão de Torneios de Padel (TO-BE)
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4157,heading,3.1 Criação de Torneios (Wizard)
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4158,bullet,Wizard dedicado a Padel (separado do wizard geral).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4159,bullet,Presets e templates de torneio (clonar e reutilizar).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4160,bullet,"**MVP (v9):** eliminacao simples, grupos+eliminacao, round-robin."
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4161,bullet,"**Fase 2+:** Americano/Mexicano, ligas por equipas, double elimination."
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4162,bullet,Circuitos e etapas com ranking cumulativo (Fase 2/3).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4163,bullet,Validações inteligentes e sugestões operacionais.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.1 Criação de Torneios (Wizard),4164,paragraph,**Regra D1 (v9):** todo torneio Padel tem **eventId obrigatorio** (Eventos e owner da base).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.2 Inscrições, Convites e Pagamentos",4166,heading,"3.2 Inscrições, Convites e Pagamentos"
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.2 Inscrições, Convites e Pagamentos",4167,bullet,Onboarding competitivo obrigatório.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.2 Inscrições, Convites e Pagamentos",4168,bullet,Convite de parceiro simplificado + status claro (alinhado com **EventAccessPolicy**).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.2 Inscrições, Convites e Pagamentos",4169,bullet,Pagamento full/split **via Financas** com regra 48/24 (D12): confirmacao so com ambos pagos.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.2 Inscrições, Convites e Pagamentos",4170,bullet,Waitlist com promocao automatica (Fase 2).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.2 Inscrições, Convites e Pagamentos",4171,bullet,Comunicacao pre-torneio via Notificacoes/Chat interno (owners core).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.2 Inscrições, Convites e Pagamentos",4172,bullet,Multilinguagem nas paginas publicas (Fase 2).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4174,heading,"3.3 Formatos, Chaves e Geração de Jogos"
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4175,bullet,Geração automática + ajustes manuais.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4176,bullet,"Suporte robusto aos formatos **MVP** (KO, grupos+KO, round-robin)."
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4177,bullet,"Formatos adicionais (A/B, consolacoes, double elimination, Americano/Mexicano) em Fase 2+."
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4178,bullet,Seeding explícito + regras de desempate visíveis e aplicadas.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4179,bullet,Calendarização premium com drag & drop.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4180,bullet,Respeito de bloqueios e disponibilidades.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.3 Formatos, Chaves e Geração de Jogos",4181,bullet,Gestão de atrasos com impacto no cronograma.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4183,heading,3.4 Operação Live
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4184,bullet,Check-in de equipas/duplas via **Entitlement + Check-in Policy** (owner: Check-in).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4185,bullet,Manual no painel; self check-in apenas Fase 2 (com guardrails).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4186,bullet,Interface de árbitro/mobile para score.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4187,bullet,Live score robusto com status/tempo.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4188,bullet,Streaming integrado (por court/jogo).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4189,bullet,Monitor/TV com dashboards ricos.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4190,bullet,Notificações de chamada de jogo e progresso.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.4 Operação Live,4191,bullet,"WO, disputa e logs visíveis."
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.5 Páginas Públicas e Widgets,4193,heading,3.5 Páginas Públicas e Widgets
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.5 Páginas Públicas e Widgets,4194,bullet,"Páginas ricas (Calendário, Chaves, Resultados, Classificações)."
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.5 Páginas Públicas e Widgets,4195,bullet,Widgets embedáveis adicionais (placar live por jogo) — Fase 2.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.5 Páginas Públicas e Widgets,4196,bullet,Partilha/SEO e URLs por jogo.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.5 Páginas Públicas e Widgets,4197,bullet,Galeria e multimédia (Fase 2).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.6 Rankings, Histórico e Perfis",4199,heading,"3.6 Rankings, Histórico e Perfis"
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.6 Rankings, Histórico e Perfis",4200,bullet,Rankings internos e por circuito.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.6 Rankings, Histórico e Perfis",4201,bullet,Integração opcional com federações.
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.6 Rankings, Histórico e Perfis",4202,bullet,Perfis competitivos avançados (stats + conquistas).
+"ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.6 Rankings, Histórico e Perfis",4203,bullet,Relatórios pós-evento para organizadores.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.7 Governança e Qualidade,4205,heading,3.7 Governança e Qualidade
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.7 Governança e Qualidade,4206,bullet,Logs e auditoria centralizados.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.7 Governança e Qualidade,4207,bullet,Permissões multi-admin (árbitros/co-organizadores).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.7 Governança e Qualidade,4208,bullet,Plano de contingência (exports PDF/backup).
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.7 Governança e Qualidade,4209,bullet,Ajuda in-app e suporte rápido.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.7 Governança e Qualidade,4210,bullet,Políticas de cancelamento/reembolso claras.
+ORYA — Padel (TO-BE) — Plano de Excelência > 3) Ferramenta B — Gestão de Torneios de Padel (TO-BE) > 3.7 Governança e Qualidade,4211,bullet,Acessibilidade e UX premium.
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4293,heading,6) Gap Analysis (AS-IS vs TO-BE)
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4295,paragraph,**Definições de prioridade:**
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4296,bullet,**Obrigatório:** entra no MVP/Fase 1.
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4297,bullet,"**Ideal:** fase de escala, não bloqueia MVP."
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4299,table,| Área | AS-IS | TO-BE | Notas |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4300,table,|---|---|---|---|
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4301,table,| Reservas de courts | **DONE (F1)** | F1 (Obrigatório) | Owner: Reservas/Agenda. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4302,table,| Agenda com drag & drop | Parcial | F1-C (Premium) | UI; respeitar prioridades D3. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4303,table,| Pagamentos em reservas | **DONE (F1)** | F1 (Obrigatório) | Via Financas; sem Stripe direto. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4304,table,| CRM de sócios | Parcial | F2 | Owner: CRM. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4305,table,| Aulas integradas | Parcial | F1 (atalho) / F2 (integração) | Owner: Servicos. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4306,table,| Mix rápidos (Americano/Mexicano) | Parcial | F2 | Formatos adicionais. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4307,table,| Wizard dedicado Padel | Parcial | F1-B/C | Padel separado do wizard geral. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4308,table,| Formatos Americano/Mexicano | **Backlog F2** | F2 | Não bloqueia F1. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4309,table,| Circuitos/etapas | **Backlog F2/3** | F2/3 | Requer maturidade operacional. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4310,table,"| Waitlist auto-promoção | Parcial | F2 | Em v9, waitlist é Fase 2. |"
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4311,table,| Check-in | **DONE (F1)** | F1 (Obrigatório) | Via Check-in + Entitlements. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4312,table,| Streaming integrado | **Backlog F3** | F3 | Link/iframe no MVP. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4313,table,| Monitor/TV enriquecido | Parcial | F2 | Monitor existe; elevar UX. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4314,table,| Exports premium (poster/PDF) | Parcial | F1 | Qualidade a elevar. |
+ORYA — Padel (TO-BE) — Plano de Excelência > 6) Gap Analysis (AS-IS vs TO-BE),4315,table,| Acessibilidade formal | **DONE baseline (F1-C)** | F1-C | UX premium obrigatória; melhoria contínua pós go-live. |

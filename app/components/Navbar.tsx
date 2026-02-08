@@ -11,6 +11,7 @@ import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { isReservedUsername } from "@/lib/reservedUsernames";
 import MobileBottomNav from "./MobileBottomNav";
 import useSWR from "swr";
 
@@ -48,41 +49,11 @@ type SearchTab = "all" | "events" | "organizations" | "users";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const RESERVED_ROOT_ROUTES = new Set([
-  "admin",
-  "api",
-  "auth",
-  "atividade",
-  "agora",
-  "descobrir",
-  "em-breve",
-  "eventos",
-  "explorar",
-  "inscricoes",
-  "live",
-  "login",
-  "mapa",
-  "me",
-  "onboarding",
-  "organizacao",
-  "organização",
-  "perfil",
-  "procurar",
-  "padel",
-  "rede",
-  "resale",
-  "reset-password",
-  "servicos",
-  "signup",
-  "social",
-  "staff",
-]);
-
 const isRootProfileHandle = (path?: string | null) => {
   if (!path || path === "/") return false;
   const segment = path.startsWith("/") ? path.slice(1) : path;
   if (!segment || segment.includes("/")) return false;
-  return !RESERVED_ROOT_ROUTES.has(segment);
+  return !isReservedUsername(segment);
 };
 
 function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
@@ -91,7 +62,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const { user, profile, isLoading } = useUser();
   const isAuthenticated = !!user;
   const { data: notificationsData } = useSWR(
-    isAuthenticated ? "/api/notifications?status=unread&limit=1" : null,
+    isAuthenticated ? "/api/me/notifications/feed?limit=1" : null,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -120,17 +91,17 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const shouldHide =
     rawPathname?.startsWith("/organizacao") || rawPathname?.startsWith("/landing");
   const isMobileHubRoute =
+    rawPathname === "/" ||
     rawPathname?.startsWith("/descobrir") ||
     rawPathname?.startsWith("/rede") ||
     rawPathname?.startsWith("/agora") ||
     rawPathname?.startsWith("/procurar") ||
-    rawPathname?.startsWith("/explorar") ||
     rawPathname?.startsWith("/perfil") ||
     isRootProfileHandle(rawPathname);
   const Logo = () => (
     <button
       type="button"
-      onClick={() => router.push("/descobrir")}
+      onClick={() => router.push("/")}
       className="group flex items-center gap-2 transition hover:opacity-90 sm:gap-3"
       aria-label="Voltar à homepage ORYA"
     >
@@ -287,7 +258,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
     if (!query) return;
 
     setIsSearchOpen(false);
-    router.push(`/explorar?query=${encodeURIComponent(query)}`);
+    router.push(`/descobrir?query=${encodeURIComponent(query)}`);
   };
 
   const handleLogout = async () => {
@@ -558,14 +529,14 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const mainNavItems = [
     {
       label: "Início",
-      href: "/descobrir",
-      active: (path: string) => path === "/descobrir" || path === "/",
+      href: "/",
+      active: (path: string) => path === "/",
     },
     {
       label: "Descobrir",
-      href: "/explorar",
+      href: "/descobrir",
       active: (path: string) =>
-        path.startsWith("/explorar") || path.startsWith("/procurar"),
+        path.startsWith("/descobrir") || path.startsWith("/procurar"),
     },
   ];
 

@@ -11,6 +11,10 @@ type Body = {
   visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   favouriteCategories?: string[];
   allowEmailNotifications?: boolean;
+  allowSocialNotifications?: boolean;
+  allowEventNotifications?: boolean;
+  allowSystemNotifications?: boolean;
+  allowMarketingNotifications?: boolean;
   allowEventReminders?: boolean;
   allowFollowRequests?: boolean;
   allowSalesAlerts?: boolean;
@@ -109,6 +113,10 @@ async function _PATCH(req: NextRequest) {
       if (typeof body[key] === "boolean") notificationPrefsUpdate[target] = body[key] as boolean;
     };
     assign("allowEmailNotifications", "allowEmailNotifications");
+    assign("allowSocialNotifications", "allowSocialNotifications");
+    assign("allowEventNotifications", "allowEventNotifications");
+    assign("allowSystemNotifications", "allowSystemNotifications");
+    assign("allowMarketingNotifications", "allowMarketingNotifications");
     assign("allowEventReminders", "allowEventReminders");
     assign("allowFollowRequests", "allowFollowRequests");
     assign("allowSalesAlerts", "allowSalesAlerts");
@@ -130,6 +138,10 @@ async function _PATCH(req: NextRequest) {
         visibility: profile.visibility,
         favouriteCategories: profile.favouriteCategories,
         allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
+        allowSocialNotifications: (notificationPrefs as any)?.allowSocialNotifications ?? true,
+        allowEventNotifications: (notificationPrefs as any)?.allowEventNotifications ?? true,
+        allowSystemNotifications: (notificationPrefs as any)?.allowSystemNotifications ?? true,
+        allowMarketingNotifications: (notificationPrefs as any)?.allowMarketingNotifications ?? true,
         allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
         allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
         allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,

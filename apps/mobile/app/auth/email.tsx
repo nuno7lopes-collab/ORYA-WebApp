@@ -77,7 +77,6 @@ export default function AuthEmailScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
-  const [showResend, setShowResend] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [emailExists, setEmailExists] = useState<boolean | null>(null);
   const [checkedEmail, setCheckedEmail] = useState("");
@@ -119,7 +118,6 @@ export default function AuthEmailScreen() {
     setLoading(true);
     setFormError(null);
     setInfoMessage(null);
-    setShowResend(false);
     try {
       const normalizedEmail = normalizeEmail(email);
       if (!isValidEmail(normalizedEmail)) {
@@ -179,7 +177,6 @@ export default function AuthEmailScreen() {
         }
         trackEvent("auth_success_email", { mode: "signup_pending" });
         setInfoMessage("Link enviado. Confirma o email e entra com a tua password.");
-        setShowResend(true);
         setIsSignUp(false);
         Alert.alert("Confirma o email", "Enviámos um link de confirmação para o teu email.");
         return;
@@ -234,26 +231,10 @@ export default function AuthEmailScreen() {
 
       if (parsed.kind === "email_not_confirmed") {
         setFormError("Confirma o email para continuar.");
-        setShowResend(true);
         return;
       }
 
       setFormError(parsed.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResend = async () => {
-    if (loading) return;
-    setLoading(true);
-    setFormError(null);
-    try {
-      await supabase.auth.resend({ type: "signup", email: normalizeEmail(email) });
-      setInfoMessage("Link reenviado. Verifica o email.");
-      setShowResend(false);
-    } catch {
-      setFormError("Não foi possível reenviar o email.");
     } finally {
       setLoading(false);
     }
@@ -394,11 +375,7 @@ export default function AuthEmailScreen() {
 
                 {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
                 {infoMessage ? <Text style={styles.infoText}>{infoMessage}</Text> : null}
-                {showResend ? (
-                  <Pressable onPress={handleResend} disabled={loading} style={styles.resendLink}>
-                    <Text style={styles.resendText}>Reenviar email de confirmação</Text>
-                  </Pressable>
-                ) : null}
+                <Text style={styles.helperText}>Confirma o email e verifica o spam se necessário.</Text>
 
                 <Pressable
                   onPress={handleEmailAuth}
@@ -532,18 +509,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  resendLink: {
+  helperText: {
     marginTop: 6,
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  resendText: {
+    color: "rgba(255,255,255,0.65)",
     fontSize: 12,
-    color: "rgba(148, 214, 255, 0.9)",
-    fontWeight: "600",
+    fontWeight: "500",
   },
   label: {
     fontSize: 12,

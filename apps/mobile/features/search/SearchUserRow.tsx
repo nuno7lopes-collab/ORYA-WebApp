@@ -1,9 +1,8 @@
 import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
-import { Image } from "expo-image";
-import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
+import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { SearchUser } from "./types";
 import { useRouter } from "expo-router";
 
@@ -39,29 +38,7 @@ export const SearchUserRow = memo(function SearchUserRow({
           }}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              overflow: "hidden",
-              backgroundColor: "rgba(255,255,255,0.08)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {item.avatarUrl ? (
-              <Image
-                source={{ uri: item.avatarUrl }}
-                style={{ width: 44, height: 44 }}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={120}
-              />
-            ) : (
-              <Ionicons name="person" size={20} color="rgba(255,255,255,0.7)" />
-            )}
-          </View>
+          <AvatarCircle size={44} uri={item.avatarUrl} iconName="person" />
           <View style={{ flex: 1 }}>
             <Text className="text-white text-sm font-semibold" numberOfLines={1}>
               {displayName}

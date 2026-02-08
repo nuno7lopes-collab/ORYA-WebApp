@@ -1,10 +1,12 @@
 import { CrmDeliveryStatus } from "@prisma/client";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
-import { markAllNotificationsRead, markNotificationRead } from "@/domain/notifications/consumer";
+import { markNotificationRead } from "@/domain/notifications/consumer";
 import { prisma } from "@/lib/prisma";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logInfo } from "@/lib/observability/logger";
+import { NOTIFICATION_TYPES_BY_CATEGORY } from "@/domain/notifications/registry";
 
 async function _POST(req: NextRequest) {
   try {
@@ -24,12 +26,22 @@ async function _POST(req: NextRequest) {
       } as {
         userId: string;
         isRead: boolean;
+        type?: { in?: string[]; notIn?: string[] };
         AND?: Array<{ OR: Array<{ organizationId?: number; event?: { organizationId: number } }> }>;
       };
+      where.type = { notIn: NOTIFICATION_TYPES_BY_CATEGORY.chat };
       if (orgId) {
         where.AND = [{ OR: [{ organizationId: orgId }, { event: { organizationId: orgId } }] }];
       }
-      await markAllNotificationsRead({ userId: user.id, organizationId: orgId });
+      await prisma.notification.updateMany({
+        where,
+        data: { isRead: true, readAt: new Date() },
+      });
+      logInfo("notifications.mark_read", {
+        userId: user.id,
+        mode: "all",
+        organizationId: orgId ?? undefined,
+      });
       return jsonWrap({ ok: true, updated: "all" });
     }
 
@@ -51,6 +63,12 @@ async function _POST(req: NextRequest) {
     }
 
     await markNotificationRead({ userId: user.id, notificationId });
+    logInfo("notifications.mark_read", {
+      userId: user.id,
+      mode: "single",
+      notificationId,
+      type: notif.type,
+    });
 
     if (notif.type === "CRM_CAMPAIGN") {
       const delivery = await prisma.crmCampaignDelivery.findFirst({

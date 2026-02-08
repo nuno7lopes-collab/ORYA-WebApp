@@ -111,7 +111,9 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const validatedUsername = normalizeAndValidateUsername(username);
+    const validatedUsername = normalizeAndValidateUsername(username, {
+      allowReservedForEmail: user.email ?? null,
+    });
 
     if (!fullName || !validatedUsername.ok) {
       return jsonWrap(
@@ -139,6 +141,7 @@ async function _POST(req: NextRequest) {
         ownerType: "user",
         ownerId: userId,
         tx,
+        allowReservedForEmail: user.email ?? null,
       });
 
       const profile = await tx.profile.upsert({

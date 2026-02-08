@@ -36,7 +36,7 @@ Data: 27 Jan 2026
 
 ## Observabilidade
 - `requestId` e `correlationId` obrigatorios em payload + headers (`x-orya-request-id`, `x-orya-correlation-id`).
-- `correlationId` presente em mutações com side-effects (request/confirm/resend/verify).
+- `correlationId` presente em mutações com side-effects (request/confirm/verify).
 
 ## Notas de cache/UI
 - Após pedir verificação ou confirmar email, UI deve `mutate()`/`router.refresh()`.

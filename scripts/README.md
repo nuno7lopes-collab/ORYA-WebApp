@@ -43,6 +43,21 @@ Exemplo (estrutura do output JSON):
 }
 ```
 
+## audit_event_access_policy.ts
+
+Auditoria read-only para convites/policies:
+- Policies inválidas (`inviteTokenAllowed=true` + `inviteIdentityMatch=USERNAME`)
+- Convites por username inexistente
+- Convites com identidade não permitida pela policy
+
+Uso:
+
+```bash
+node -r ./scripts/load-env.js -r ts-node/register scripts/audit_event_access_policy.ts
+node -r ./scripts/load-env.js -r ts-node/register scripts/audit_event_access_policy.ts --format=json --out /tmp/audit_access_policy.json
+node -r ./scripts/load-env.js -r ts-node/register scripts/audit_event_access_policy.ts --format=md --out /tmp/audit_access_policy.md --limit=200
+```
+
 ## Infra helpers (prod/dev)
 
 ### Secrets (prod + dev)
@@ -70,6 +85,13 @@ AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/deploy-cf.sh --pause
 AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/deploy-cf.sh --resume
 ```
 
+### Pause/Start (ALB + ECS + IPv4)
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/pause-prod.sh
+AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/start-prod.sh
+```
+Estado guardado em `scripts/aws/state/orya-prod-pause.json` (ver `docs/aws_pause_resume.md`).
+
 ### Dev serverless (SAM)
 ```bash
 AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
@@ -93,4 +115,11 @@ Para usar `admin.localhost:3000`, `app.localhost:3000` e `test.localhost:3000` n
 ```bash
 DRY_RUN=true scripts/setup-localhost-aliases.sh
 sudo scripts/setup-localhost-aliases.sh
+```
+
+## Executar scripts TypeScript (node)
+Quando um script `.ts` não arranca com `node -r ts-node/register`, usa:
+
+```bash
+node scripts/run-ts.cjs scripts/nome-do-script.ts
 ```

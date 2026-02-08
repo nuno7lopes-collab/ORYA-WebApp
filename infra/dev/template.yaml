@@ -46,6 +46,8 @@ Resources:
       Environment:
         Variables:
           NODE_ENV: development
+          APP_ENV: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:APP_ENV}}"
+          NEXT_PUBLIC_APP_ENV: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:NEXT_PUBLIC_APP_ENV}}"
           DATABASE_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:DATABASE_URL}}"
           DIRECT_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:DIRECT_URL}}"
           APP_BASE_URL: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/app:SecretString:APP_BASE_URL}}"
@@ -64,6 +66,10 @@ Resources:
           STRIPE_SECRET_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/payments:SecretString:STRIPE_SECRET_KEY}}"
           STRIPE_WEBHOOK_SECRET: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/payments:SecretString:STRIPE_WEBHOOK_SECRET}}"
           NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/payments:SecretString:NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}}"
+          APPLE_MAPS_TEAM_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_MAPS_TEAM_ID}}"
+          APPLE_MAPS_KEY_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_MAPS_KEY_ID}}"
+          APPLE_MAPS_PRIVATE_KEY_BASE64: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_MAPS_PRIVATE_KEY_BASE64}}"
+          APPLE_MAPS_ORIGIN: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_MAPS_ORIGIN}}"
           APPLE_SIGNIN_SERVICE_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_SERVICE_ID}}"
           APPLE_SIGNIN_REDIRECT_URI: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_REDIRECT_URI}}"
           APPLE_SIGNIN_TEAM_ID: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APPLE_SIGNIN_TEAM_ID}}"
@@ -75,6 +81,7 @@ Resources:
           APNS_TOPIC: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/apple:SecretString:APNS_TOPIC}}"
           SES_REGION: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_REGION}}"
           SES_IDENTITY_DOMAIN: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_IDENTITY_DOMAIN}}"
+          EMAIL_FROM: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:EMAIL_FROM}}"
           SES_SMTP_USERNAME: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_SMTP_USERNAME}}"
           SES_SMTP_PASSWORD: !Sub "{{resolve:secretsmanager:${SecretsPrefix}/email:SecretString:SES_SMTP_PASSWORD}}"
       Events:

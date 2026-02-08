@@ -36,4 +36,17 @@ describe("agenda query", () => {
     );
     expect(res).toHaveLength(1);
   });
+
+  it("filtra por clube e court quando fornecidos", async () => {
+    const from = new Date("2025-02-01T00:00:00Z");
+    const to = new Date("2025-02-28T23:59:59Z");
+    mocks.findMany.mockResolvedValue([]);
+
+    await getAgendaItemsForOrganization({ organizationId: 9, from, to, padelClubId: 3, courtId: 7 });
+    expect(mocks.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ organizationId: 9, padelClubId: 3, courtId: 7 }),
+      }),
+    );
+  });
 });

@@ -10,6 +10,7 @@ export type PublicEventCard = {
   shortDescription: string | null;
   startsAt: string;
   endsAt: string;
+  templateType?: string | null;
   location: {
     city: string | null;
     addressId: string | null;
@@ -42,6 +43,8 @@ export type PublicEventTicketType = {
   totalQuantity: number | null;
   soldQuantity: number | null;
   sortOrder: number | null;
+  padelEventCategoryLinkId?: number | null;
+  padelCategoryLabel?: string | null;
 };
 
 type PublicEventCardInput = {
@@ -54,7 +57,7 @@ type PublicEventCardInput = {
   status: string;
   templateType: string | null;
   ownerUserId: string | null;
-  organization?: { publicName: string | null } | null;
+  organization?: { publicName: string | null; businessName?: string | null; username?: string | null } | null;
   addressId: string | null;
   addressRef?: {
     formattedAddress?: string | null;
@@ -66,18 +69,20 @@ type PublicEventCardInput = {
   pricingMode: string | null;
   ticketTypes?:
     | Array<{
-        id: number;
-        name: string;
-        description: string | null;
-        price: number;
-        currency: string | null;
-        status: string | null;
-        startsAt: Date | string | null;
-        endsAt: Date | string | null;
-        totalQuantity: number | null;
-        soldQuantity: number | null;
-        sortOrder: number | null;
-      }>
+      id: number;
+      name: string;
+      description: string | null;
+      price: number;
+      currency: string | null;
+      status: string | null;
+      startsAt: Date | string | null;
+      endsAt: Date | string | null;
+      totalQuantity: number | null;
+      soldQuantity: number | null;
+      sortOrder: number | null;
+      padelEventCategoryLinkId?: number | null;
+      padelEventCategoryLink?: { category?: { label?: string | null } | null } | null;
+    }>
     | null;
 };
 
@@ -157,8 +162,12 @@ export function toPublicEventCardWithPrice(params: {
     isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
   const priceFrom = priceFromCents !== null ? priceFromCents / 100 : null;
 
-  const hostName = event.organization?.publicName ?? ownerProfile?.fullName ?? null;
-  const hostUsername = ownerProfile?.username ?? null;
+  const hostName =
+    event.organization?.publicName ??
+    event.organization?.businessName ??
+    ownerProfile?.fullName ??
+    null;
+  const hostUsername = event.organization?.username ?? ownerProfile?.username ?? null;
 
   const categories = resolveEventCategories(event.templateType);
   const isHighlighted = resolveIsHighlighted({
@@ -187,6 +196,8 @@ export function toPublicEventCardWithPrice(params: {
         totalQuantity: ticket.totalQuantity ?? null,
         soldQuantity: ticket.soldQuantity ?? null,
         sortOrder: ticket.sortOrder ?? null,
+        padelEventCategoryLinkId: ticket.padelEventCategoryLinkId ?? null,
+        padelCategoryLabel: ticket.padelEventCategoryLink?.category?.label ?? null,
       }))
     : undefined;
 
@@ -199,6 +210,7 @@ export function toPublicEventCardWithPrice(params: {
     shortDescription: event.description?.slice(0, 200) ?? null,
     startsAt: event.startsAt ? new Date(event.startsAt).toISOString() : "",
     endsAt: event.endsAt ? new Date(event.endsAt).toISOString() : "",
+    templateType: event.templateType ?? null,
     location: {
       city,
       addressId: event.addressId ?? null,

@@ -12,8 +12,15 @@ type DiscoverParams = {
   q?: string | null;
   city?: string | null;
   categories?: string | null;
+  templateTypes?: string | null;
   date?: string | null;
   day?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  north?: number | null;
+  south?: number | null;
+  east?: number | null;
+  west?: number | null;
   type?: string | null;
   priceMin?: string | null;
   priceMax?: string | null;
@@ -82,6 +89,127 @@ function applyDateFilter(
   }
 }
 
+function applyDateRangeFilter(
+  where: Prisma.SearchIndexItemWhereInput,
+  startDateParam: string | null,
+  endDateParam: string | null,
+): boolean {
+  if (!startDateParam && !endDateParam) return false;
+  const start = startDateParam ? new Date(startDateParam) : null;
+  const end = endDateParam ? new Date(endDateParam) : null;
+  if (start && !Number.isNaN(start.getTime())) {
+    start.setHours(0, 0, 0, 0);
+  }
+  if (end && !Number.isNaN(end.getTime())) {
+    end.setHours(23, 59, 59, 999);
+  }
+  if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+    where.startsAt = { gte: start, lte: end };
+    return true;
+  }
+  if (start && !Number.isNaN(start.getTime())) {
+    where.startsAt = { gte: start };
+    return true;
+  }
+  if (end && !Number.isNaN(end.getTime())) {
+    where.startsAt = { lte: end };
+    return true;
+  }
+  return false;
+}
+
+function applyTemplateTypeFilter(
+  where: Prisma.SearchIndexItemWhereInput,
+  templateTypesParam: string | null,
+) {
+  const raw = (templateTypesParam || "")
+    .split(",")
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+  if (raw.length === 0) return;
+  const allowed = new Set(Object.values(EventTemplateType));
+  const filtered = raw.filter((item) => allowed.has(item as EventTemplateType));
+  if (filtered.length === 0) return;
+  const typeFilter: Prisma.SearchIndexItemWhereInput = {
+    templateType: { in: filtered as EventTemplateType[] },
+  };
+  if (Array.isArray(where.AND)) {
+    where.AND.push(typeFilter);
+  } else if (where.AND) {
+    where.AND = [where.AND, typeFilter];
+  } else {
+    where.AND = [typeFilter];
+  }
+}
+
+function applyBoundsFilter(
+  where: Prisma.SearchIndexItemWhereInput,
+  bounds: {
+    north?: number | null;
+    south?: number | null;
+    east?: number | null;
+    west?: number | null;
+  },
+) {
+  if (
+    bounds.north == null ||
+    bounds.south == null ||
+    bounds.east == null ||
+    bounds.west == null
+  ) {
+    return;
+  }
+
+  let north = bounds.north;
+  let south = bounds.south;
+  let east = bounds.east;
+  let west = bounds.west;
+
+  if (![north, south, east, west].every((value) => Number.isFinite(value))) return;
+
+  if (north < south) {
+    [north, south] = [south, north];
+  }
+
+  const clampLat = (value: number) => Math.min(90, Math.max(-90, value));
+  const wrapLng = (value: number) => {
+    let v = value;
+    while (v > 180) v -= 360;
+    while (v < -180) v += 360;
+    return v;
+  };
+
+  north = clampLat(north);
+  south = clampLat(south);
+  east = wrapLng(east);
+  west = wrapLng(west);
+
+  const latitudeFilter = { latitude: { gte: south, lte: north } };
+  const longitudeFilter =
+    west <= east
+      ? { longitude: { gte: west, lte: east } }
+      : {
+          OR: [{ longitude: { gte: west } }, { longitude: { lte: east } }],
+        };
+
+  const boundsFilter: Prisma.SearchIndexItemWhereInput = {
+    addressRef: {
+      is: {
+        ...latitudeFilter,
+        ...longitudeFilter,
+      },
+    },
+  };
+
+  if (Array.isArray(where.AND)) {
+    where.AND.push(boundsFilter);
+  } else if (where.AND) {
+    where.AND = [where.AND, boundsFilter];
+  } else {
+    where.AND = [boundsFilter];
+  }
+}
+
 function applyCategoryFilter(
   where: Prisma.SearchIndexItemWhereInput,
   categoriesParam: string | null,
@@ -145,8 +273,18 @@ function buildDiscoverWhere(params: DiscoverParams): Prisma.SearchIndexItemWhere
     }
   }
 
+  applyBoundsFilter(where, {
+    north: params.north ?? null,
+    south: params.south ?? null,
+    east: params.east ?? null,
+    west: params.west ?? null,
+  });
   applyCategoryFilter(where, params.categories ?? null);
-  applyDateFilter(where, params.date ?? null, params.day ?? null);
+  applyTemplateTypeFilter(where, params.templateTypes ?? null);
+  const rangeApplied = applyDateRangeFilter(where, params.startDate ?? null, params.endDate ?? null);
+  if (!rangeApplied) {
+    applyDateFilter(where, params.date ?? null, params.day ?? null);
+  }
   return where;
 }
 

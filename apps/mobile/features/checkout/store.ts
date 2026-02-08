@@ -4,6 +4,8 @@ import { safeAsyncStorage } from "../../lib/storage";
 import { CheckoutBreakdown, CheckoutDraft, CheckoutMethod } from "./types";
 
 const RESUME_WINDOW_MS = 10 * 60 * 1000;
+export const buildCheckoutIdempotencyKey = () =>
+  `mob_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
 type CheckoutState = {
   draft: CheckoutDraft | null;
@@ -33,9 +35,11 @@ export const useCheckoutStore = create<CheckoutState>()(
       draft: null,
       setDraft: (payload) => {
         const dates = buildDates();
+        const idempotencyKey = payload.idempotencyKey ?? buildCheckoutIdempotencyKey();
         set({
           draft: {
             ...payload,
+            idempotencyKey,
             paymentMethod: payload.paymentMethod ?? "card",
             createdAt: dates.createdAt,
             expiresAt: dates.expiresAt,

@@ -331,6 +331,21 @@ type ResourceItem = {
   priority: number;
 };
 
+type PadelClubSummary = {
+  id: number;
+  name: string;
+  shortName?: string | null;
+  isActive?: boolean;
+  isDefault?: boolean;
+  kind?: string | null;
+};
+
+type PadelCourtSummary = {
+  id: number;
+  name: string;
+  isActive?: boolean;
+};
+
 type ClientItem = {
   id: string;
   fullName: string | null;
@@ -472,6 +487,8 @@ export default function ReservasDashboardPage() {
     organizationId && Number.isFinite(organizationId)
       ? `/api/organizacao/me?organizationId=${organizationId}`
       : null;
+  const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
+  const [selectedPadelCourtId, setSelectedPadelCourtId] = useState<number | null>(null);
   const [calendarView, setCalendarView] = useState<CalendarView>("week");
   const [calendarTab, setCalendarTab] = useState<CalendarTab>("agenda");
   const [hourHeight, setHourHeight] = useState(() => normalizeHourHeight(DEFAULT_HOUR_HEIGHT));
@@ -566,6 +583,43 @@ export default function ReservasDashboardPage() {
     };
     membershipRole?: string | null;
   }>(orgMeUrl, fetcher);
+  const padelClubsKey =
+    organizationId && Number.isFinite(organizationId)
+      ? `/api/padel/clubs?organizationId=${organizationId}&includeInactive=0`
+      : null;
+  const { data: padelClubsData } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
+    padelClubsKey,
+    fetcher,
+  );
+  const padelClubs = padelClubsData?.items ?? [];
+  const hasPadelClubs = padelClubs.length > 0;
+  const padelCourtsKey =
+    selectedPadelClubId && Number.isFinite(selectedPadelClubId)
+      ? `/api/padel/clubs/${selectedPadelClubId}/courts`
+      : null;
+  const { data: padelCourtsData } = useSWR<{ ok: boolean; items?: PadelCourtSummary[] }>(
+    padelCourtsKey,
+    fetcher,
+  );
+  const padelCourts = padelCourtsData?.items ?? [];
+
+  useEffect(() => {
+    if (!hasPadelClubs) {
+      if (selectedPadelClubId !== null) setSelectedPadelClubId(null);
+      return;
+    }
+    if (selectedPadelClubId && padelClubs.some((club) => club.id === selectedPadelClubId)) return;
+    const preferred =
+      padelClubs.find((club) => club.isDefault) ??
+      (padelClubs.length === 1 ? padelClubs[0] : null);
+    if (preferred) {
+      setSelectedPadelClubId(preferred.id);
+    }
+  }, [hasPadelClubs, padelClubs, selectedPadelClubId]);
+
+  useEffect(() => {
+    setSelectedPadelCourtId(null);
+  }, [selectedPadelClubId]);
 
   const services = servicesData?.items ?? [];
   const activeServices = services.filter((service) => service.isActive);
@@ -1012,9 +1066,20 @@ export default function ReservasDashboardPage() {
     return buildZonedDate(endParts, timezone, 0, 0).toISOString();
   }, [calendarStart, calendarView, timezone]);
 
+  const requiresPadelClubSelection = hasPadelClubs && !selectedPadelClubId;
+  const padelClubQuery = selectedPadelClubId ? `&padelClubId=${selectedPadelClubId}` : "";
+  const padelCourtQuery = selectedPadelCourtId ? `&courtId=${selectedPadelCourtId}` : "";
+
   const { data: bookingsData, isLoading: bookingsLoading, mutate: mutateBookings } = useSWR<
     { ok: boolean; items: BookingItem[] }
-  >(`/api/organizacao/reservas?from=${encodeURIComponent(rangeStartIso)}&to=${encodeURIComponent(rangeEndIso)}`, fetcher);
+  >(
+    !requiresPadelClubSelection
+      ? `/api/organizacao/reservas?from=${encodeURIComponent(rangeStartIso)}&to=${encodeURIComponent(
+          rangeEndIso,
+        )}${padelClubQuery}${padelCourtQuery}`
+      : null,
+    fetcher,
+  );
 
   const upcomingRange = useMemo(() => {
     const todayParts = getDateParts(new Date(), timezone);
@@ -1026,9 +1091,11 @@ export default function ReservasDashboardPage() {
     ok: boolean;
     items: BookingItem[];
   }>(
-    `/api/organizacao/reservas?from=${encodeURIComponent(upcomingRange.start.toISOString())}&to=${encodeURIComponent(
-      upcomingRange.end.toISOString(),
-    )}`,
+    !requiresPadelClubSelection
+      ? `/api/organizacao/reservas?from=${encodeURIComponent(
+          upcomingRange.start.toISOString(),
+        )}&to=${encodeURIComponent(upcomingRange.end.toISOString())}${padelClubQuery}${padelCourtQuery}`
+      : null,
     fetcher,
   );
 
@@ -2100,6 +2167,57 @@ export default function ReservasDashboardPage() {
                   </button>
                 ))
               ))}
+          </div>
+        )}
+
+        {hasPadelClubs && (
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
+            <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Clube</span>
+            {padelClubs.map((club) => (
+              <button
+                key={club.id}
+                type="button"
+                onClick={() => setSelectedPadelClubId(club.id)}
+                className={cn(
+                  CHIP_BASE,
+                  selectedPadelClubId === club.id && CHIP_ACTIVE,
+                )}
+              >
+                {club.shortName || club.name}
+              </button>
+            ))}
+            {selectedPadelClubId && (
+              <>
+                <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Campo</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPadelCourtId(null)}
+                  className={cn(CHIP_BASE, !selectedPadelCourtId && CHIP_ACTIVE)}
+                >
+                  Todos
+                </button>
+                {padelCourts.length === 0 ? (
+                  <span className="text-white/40">Sem campos ativos.</span>
+                ) : (
+                  padelCourts.map((court) => (
+                    <button
+                      key={court.id}
+                      type="button"
+                      onClick={() => setSelectedPadelCourtId(court.id)}
+                      className={cn(
+                        CHIP_BASE,
+                        selectedPadelCourtId === court.id && CHIP_ACTIVE,
+                      )}
+                    >
+                      {court.name}
+                    </button>
+                  ))
+                )}
+              </>
+            )}
+            {requiresPadelClubSelection && (
+              <span className="text-white/40">Seleciona um clube para carregar a agenda.</span>
+            )}
           </div>
         )}
       </header>

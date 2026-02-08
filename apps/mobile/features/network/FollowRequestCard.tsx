@@ -1,10 +1,10 @@
 import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
-import { Image } from "expo-image";
 import { tokens } from "@orya/shared";
-import { Ionicons } from "../../components/icons/Ionicons";
 import { GlassCard } from "../../components/liquid/GlassCard";
+import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { FollowRequest } from "./types";
+import { useRouter } from "expo-router";
 
 type Props = {
   item: FollowRequest;
@@ -38,44 +38,34 @@ export const FollowRequestCard = memo(function FollowRequestCard({
   onAccept,
   onDecline,
 }: Props) {
+  const router = useRouter();
   const displayName = item.fullName || item.username || "Utilizador";
   const handle = item.username ? `@${item.username}` : "";
   const timeLabel = formatRelativeTime(item.createdAt);
+  const canOpenProfile = Boolean(item.username);
+  const openProfile = () => {
+    if (!item.username) return;
+    router.push({ pathname: "/[username]", params: { username: item.username } });
+  };
 
   return (
     <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.sm }}>
-      <View className="flex-row items-center gap-3">
-        <View
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 16,
-            overflow: "hidden",
-            backgroundColor: "rgba(255,255,255,0.08)",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
+      <View className="flex-row items-center">
+        <Pressable
+          onPress={openProfile}
+          disabled={!canOpenProfile}
+          style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
-          {item.avatarUrl ? (
-            <Image
-              source={{ uri: item.avatarUrl }}
-              style={{ width: 48, height: 48 }}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={120}
-            />
-          ) : (
-            <Ionicons name="person" size={20} color="rgba(255,255,255,0.7)" />
-          )}
-        </View>
+          <AvatarCircle size={48} uri={item.avatarUrl} iconName="person" />
 
-        <View style={{ flex: 1 }}>
-          <Text className="text-white text-sm font-semibold" numberOfLines={1}>
-            {displayName}
-          </Text>
-          {handle ? <Text className="text-white/60 text-xs">{handle}</Text> : null}
-          <Text className="text-white/45 text-[10px] mt-1">{timeLabel}</Text>
-        </View>
+          <View style={{ flex: 1 }}>
+            <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+              {displayName}
+            </Text>
+            {handle ? <Text className="text-white/60 text-xs">{handle}</Text> : null}
+            <Text className="text-white/45 text-[10px] mt-1">{timeLabel}</Text>
+          </View>
+        </Pressable>
       </View>
 
       <View className="flex-row gap-2 mt-3">

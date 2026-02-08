@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { resolveUserIdentifier } from "@/lib/userResolver";
 import { createNotification } from "@/lib/notifications";
 import { NotificationType } from "@prisma/client";
 import { canManageMembers, isOrgOwner as hasOrgOwnerAccess } from "@/lib/organizationPermissions";
@@ -544,6 +543,10 @@ export async function PATCH(req: NextRequest) {
       return fail(400, "NEED_INVITE_ID_OR_TOKEN");
     }
 
+    if (!["CANCEL", "ACCEPT", "DECLINE"].includes(action)) {
+      return fail(400, "UNKNOWN_ACTION");
+    }
+
     if (!organizationId && action !== "ACCEPT" && action !== "DECLINE") {
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
@@ -619,8 +622,6 @@ export async function PATCH(req: NextRequest) {
 
     const isOwnerManager = membership?.role === "OWNER";
 
-    const resolvedTarget = action === "RESEND" ? await resolveUserIdentifier(invite.targetIdentifier) : null;
-
     const updated = await prisma.$transaction(async (tx) => {
       if (action === "CANCEL") {
         if (!isManager) {
@@ -632,24 +633,6 @@ export async function PATCH(req: NextRequest) {
         await tx.organizationMemberInvite.update({
           where: { id: invite.id },
           data: { cancelledAt: new Date() },
-        });
-      } else if (action === "RESEND") {
-        if (!isManager) {
-          throw new Error("FORBIDDEN");
-        }
-        if (invite.role === "OWNER" && !isOwnerManager) {
-          throw new Error("ONLY_OWNER_CAN_SET_OWNER");
-        }
-        await tx.organizationMemberInvite.update({
-          where: { id: invite.id },
-          data: {
-            cancelledAt: null,
-            declinedAt: null,
-            acceptedAt: null,
-            targetUserId: resolvedTarget?.userId ?? invite.targetUserId,
-            token: crypto.randomUUID(),
-            expiresAt: new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
-          },
         });
       } else if (action === "ACCEPT") {
         if (!isPending) {
@@ -808,11 +791,9 @@ export async function PATCH(req: NextRequest) {
       const auditAction =
         action === "CANCEL"
           ? "INVITE_CANCELLED"
-          : action === "RESEND"
-            ? "INVITE_RESENT"
-            : action === "ACCEPT"
-              ? "INVITE_ACCEPTED"
-              : "INVITE_DECLINED";
+          : action === "ACCEPT"
+            ? "INVITE_ACCEPTED"
+            : "INVITE_DECLINED";
 
       await recordOrganizationAudit(tx, {
         organizationId,
@@ -869,7 +850,7 @@ export async function PATCH(req: NextRequest) {
       if (err instanceof Error && err.message === "FORBIDDEN") {
         throw err;
       }
-      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_SET_OWNER", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE"].includes(err.message)) {
+      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE"].includes(err.message)) {
         throw err;
       }
       throw err;
@@ -884,19 +865,6 @@ export async function PATCH(req: NextRequest) {
     }
 
     const viewer = { id: user.id, username: viewerUsername, email: viewerEmail };
-
-    if (action === "RESEND") {
-      await sendInviteEmail(
-        {
-          id: updated.id,
-          organizationId,
-          targetIdentifier: updated.targetIdentifier,
-          role: updated.role,
-          token: updated.token,
-          organization: updated.organization,
-        },
-      );
-    }
 
     return respondOk(ctx, { invite: serializeInvite(updated, viewer) }, { status: 200 });
   } catch (err: unknown) {

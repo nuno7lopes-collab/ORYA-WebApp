@@ -103,6 +103,7 @@ async function _GET() {
             ownerType: "user",
             ownerId: userId,
             tx,
+            allowReservedForEmail: user.email ?? null,
           });
           await tx.profile.update({
             where: { id: userId },

@@ -1239,9 +1239,14 @@ async function _POST(req: NextRequest) {
       const identifiers: string[] = [];
       const userEmail = normalizeEmail(userData?.user?.email ?? null);
       const username = profile?.username ? sanitizeUsername(profile.username) : null;
+      const identityMatch = accessPolicy?.inviteIdentityMatch ?? "BOTH";
 
-      if (userEmail) identifiers.push(userEmail);
-      if (username) identifiers.push(username);
+      if ((identityMatch === "EMAIL" || identityMatch === "BOTH") && userEmail) {
+        identifiers.push(userEmail);
+      }
+      if ((identityMatch === "USERNAME" || identityMatch === "BOTH") && username) {
+        identifiers.push(username);
+      }
 
       if (identifiers.length === 0) {
         return intentError("INVITE_REQUIRED", "Este bilhete é apenas por convite.", {

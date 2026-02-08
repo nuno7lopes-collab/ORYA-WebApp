@@ -259,6 +259,9 @@ export async function createEventAccessPolicyVersion(
   input: EventAccessPolicyInput,
   client: PolicyLockClient = prisma,
 ) {
+  if (input.inviteTokenAllowed && input.inviteIdentityMatch === InviteIdentityMatch.USERNAME) {
+    throw new Error("INVITE_TOKEN_REQUIRES_EMAIL");
+  }
   if (input.inviteTokenAllowed && input.inviteTokenTtlSeconds == null) {
     throw new Error("INVITE_TOKEN_TTL_REQUIRED");
   }

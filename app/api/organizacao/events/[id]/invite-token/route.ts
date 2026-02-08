@@ -177,8 +177,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (message === "INVITE_TOKEN_TTL_REQUIRED") {
       return fail(400, "INVITE_TOKEN_TTL_REQUIRED");
     }
-    if (message === "INVITE_IDENTITY_MATCH_UNSUPPORTED") {
-      return fail(409, "INVITE_IDENTITY_MATCH_UNSUPPORTED");
+    if (message === "INVITE_TOKEN_REQUIRES_EMAIL") {
+      return fail(409, "INVITE_TOKEN_REQUIRES_EMAIL");
     }
     console.error("[organizacao/eventos/invite-token][POST]", err);
     return fail(500, "UNKNOWN_ERROR");

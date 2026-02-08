@@ -795,6 +795,9 @@ export async function POST(req: NextRequest) {
     if (message === "UNAUTHENTICATED") {
       return fail(401, "Não autenticado.");
     }
+    if (message === "INVITE_TOKEN_REQUIRES_EMAIL") {
+      return fail(400, "INVITE_TOKEN_REQUIRES_EMAIL");
+    }
     if (message === "INVALID_PADEL_CATEGORY_LINK") {
       return fail(400, "Categoria Padel inválida para este evento.");
     }

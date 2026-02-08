@@ -20,6 +20,89 @@ export const PublicEventTicketTypeSchema = z.object({
   totalQuantity: z.number().nullable().optional(),
   soldQuantity: z.number().nullable().optional(),
   sortOrder: z.number().nullable().optional(),
+  padelEventCategoryLinkId: z.number().nullable().optional(),
+  padelCategoryLabel: z.string().nullable().optional(),
+});
+
+const PublicEventAccessPolicySchema = z.object({
+  mode: z.enum(["PUBLIC", "UNLISTED", "INVITE_ONLY"]).optional(),
+  guestCheckoutAllowed: z.boolean().optional(),
+  inviteTokenAllowed: z.boolean().optional(),
+  inviteIdentityMatch: z.enum(["EMAIL", "USERNAME", "BOTH"]).optional(),
+  inviteTokenTtlSeconds: z.number().nullable().optional(),
+  requiresEntitlementForEntry: z.boolean().optional(),
+  checkinMethods: z.array(z.string()).optional(),
+  policyVersion: z.number().optional(),
+});
+
+const PublicPadelCategorySchema = z.object({
+  id: z.number(),
+  linkId: z.number(),
+  label: z.string().nullable().optional(),
+  pricePerPlayerCents: z.number().optional(),
+  currency: z.string().optional(),
+  capacityTeams: z.number().nullable().optional(),
+  capacityPlayers: z.number().nullable().optional(),
+  format: z.string().nullable().optional(),
+  isEnabled: z.boolean().optional(),
+  isHidden: z.boolean().optional(),
+});
+
+const PublicPadelSnapshotSchema = z.object({
+  eventId: z.number(),
+  title: z.string(),
+  status: z.string(),
+  competitionState: z.string(),
+  startsAt: z.string().nullable().optional(),
+  endsAt: z.string().nullable().optional(),
+  clubName: z.string().nullable().optional(),
+  clubCity: z.string().nullable().optional(),
+  partnerClubs: z
+    .array(
+      z.object({
+        id: z.number(),
+        name: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
+  courts: z
+    .array(
+      z.object({
+        name: z.string(),
+        clubName: z.string().nullable().optional(),
+        indoor: z.boolean().nullable().optional(),
+      }),
+    )
+    .optional(),
+  timeline: z
+    .array(
+      z.object({
+        key: z.string(),
+        label: z.string(),
+        state: z.enum(["done", "active", "pending"]),
+        cancelled: z.boolean().optional(),
+        date: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
+});
+
+const PublicPadelMetaSchema = z.object({
+  v2Enabled: z.boolean().optional(),
+  competitionState: z.string().nullable().optional(),
+  registrationStartsAt: z.string().nullable().optional(),
+  registrationEndsAt: z.string().nullable().optional(),
+  registrationStatus: z.string().nullable().optional(),
+  registrationMessage: z.string().nullable().optional(),
+  defaultCategoryId: z.number().nullable().optional(),
+  categories: z.array(PublicPadelCategorySchema).optional(),
+  snapshot: PublicPadelSnapshotSchema.nullable().optional(),
+});
+
+const PublicTournamentMetaSchema = z.object({
+  id: z.number(),
+  format: z.string().nullable().optional(),
 });
 
 export const PublicEventCardSchema = z.object({
@@ -41,6 +124,10 @@ export const PublicEventCardSchema = z.object({
   isHighlighted: z.boolean().optional(),
   location: PublicEventLocationSchema.optional(),
   ticketTypes: z.array(PublicEventTicketTypeSchema).optional(),
+  templateType: z.string().nullable().optional(),
+  accessPolicy: PublicEventAccessPolicySchema.optional(),
+  tournament: PublicTournamentMetaSchema.nullable().optional(),
+  padel: PublicPadelMetaSchema.nullable().optional(),
 });
 
 export type PublicEventCard = z.infer<typeof PublicEventCardSchema>;

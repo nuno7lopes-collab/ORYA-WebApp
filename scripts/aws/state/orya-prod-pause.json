@@ -1,0 +1,38 @@
+{
+  "ecs": {
+    "cluster": "orya-prod",
+    "web_desired": 1,
+    "web_service": "arn:aws:ecs:eu-west-1:495219734037:service/orya-prod/orya-prod-web",
+    "worker_desired": 0,
+    "worker_service": ""
+  },
+  "generated_at": "2026-02-08T14:45:07.131342Z",
+  "profile": "codex",
+  "region": "eu-west-1",
+  "stack_name": "orya-prod",
+  "stack_parameters": {
+    "AlbCertificateArn": "arn:aws:acm:eu-west-1:495219734037:certificate/ad0e6d9f-cbb2-41a4-a2f7-6f8c27e0885e",
+    "AssignPublicIp": "ENABLED",
+    "BudgetNotificationEmail": "",
+    "CreateALB": "true",
+    "CreateEcrRepos": "false",
+    "EnableOutboxSchedule": "false",
+    "EnableWorker": "false",
+    "EnvironmentName": "prod",
+    "HealthCheckPath": "/api/internal/ops/health",
+    "LogIngestThresholdBytes": "50000000",
+    "LogsRetentionDays": "30",
+    "OutboxSchedule": "rate(1 minute)",
+    "PrivateSubnets": "subnet-0febbb37d114cdf1d,subnet-040edfb7592af78d3",
+    "PublicSubnets": "subnet-0febbb37d114cdf1d,subnet-040edfb7592af78d3",
+    "SecretsPrefix": "orya/prod",
+    "ServiceSubnets": "subnet-0febbb37d114cdf1d,subnet-040edfb7592af78d3",
+    "TaskCpu": "512",
+    "TaskMemory": "1024",
+    "VpcId": "vpc-034a95d2f825f22dd",
+    "WebDesiredCount": "1",
+    "WebImage": "495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-web:latest",
+    "WorkerDesiredCount": "1",
+    "WorkerImage": "495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-worker:latest"
+  }
+}

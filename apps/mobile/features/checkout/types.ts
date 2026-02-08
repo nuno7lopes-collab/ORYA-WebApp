@@ -25,6 +25,12 @@ export type CheckoutDraft = {
   slug: string;
   eventId?: number;
   eventTitle?: string;
+  sourceType?: string;
+  paymentScenario?: string | null;
+  pairingId?: number | null;
+  pairingSlotId?: number | null;
+  inviteToken?: string | null;
+  idempotencyKey?: string | null;
   ticketTypeId: number;
   ticketName?: string;
   quantity: number;

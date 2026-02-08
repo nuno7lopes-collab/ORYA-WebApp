@@ -58,7 +58,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
   const activeAddressProviderRef = useRef<string | null>(null);
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
-  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken" | "error">("idle");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken" | "reserved" | "error">("idle");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -159,14 +159,21 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     setUsernameStatus("checking");
     setCheckingUsername(true);
     try {
-      const res = await fetch(`/api/username/check?username=${encodeURIComponent(cleaned)}`);
+      const res = await fetch(
+        `/api/username/check?username=${encodeURIComponent(cleaned)}&ownerType=organization`,
+      );
       if (!res.ok) {
         setUsernameHint("Não foi possível verificar o @ agora.");
         setUsernameStatus("error");
         return false;
       }
-      const data = (await res.json().catch(() => null)) as { available?: boolean } | null;
+      const data = (await res.json().catch(() => null)) as { available?: boolean; reason?: string } | null;
       const available = Boolean(data?.available);
+      if (!available && data?.reason === "reserved") {
+        setUsernameHint("Este username está reservado.");
+        setUsernameStatus("reserved");
+        return false;
+      }
       if (!available) setUsernameHint("Este @ já está a ser usado — escolhe outro.");
       setUsernameStatus(available ? "available" : "taken");
       return available;
@@ -599,6 +606,9 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                   {checkingUsername && <p className="text-[11px] text-white/60">A verificar disponibilidade…</p>}
                   {usernameStatus === "taken" && !checkingUsername && (
                     <p className="text-[11px] text-red-300">Este @ já está a ser usado.</p>
+                  )}
+                  {usernameStatus === "reserved" && !checkingUsername && (
+                    <p className="text-[11px] text-red-300">Este username está reservado.</p>
                   )}
                   {usernameStatus === "available" && !checkingUsername && (
                     <p className="text-[11px] text-emerald-300">Disponível ✔</p>

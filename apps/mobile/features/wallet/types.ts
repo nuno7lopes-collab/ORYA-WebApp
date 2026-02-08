@@ -1,7 +1,20 @@
 export type WalletEntitlement = {
   entitlementId: string;
-  type: "TICKET" | "REGISTRATION" | "BOOKING" | string;
+  type:
+    | "EVENT_TICKET"
+    | "PADEL_ENTRY"
+    | "SERVICE_BOOKING"
+    | "TICKET"
+    | "REGISTRATION"
+    | "BOOKING"
+    | string;
   status: string;
+  consumedAt?: string | null;
+  scope?: {
+    eventId?: number | null;
+    tournamentId?: number | null;
+    seasonId?: number | null;
+  };
   snapshot: {
     title: string | null;
     coverUrl: string | null;
@@ -26,6 +39,7 @@ export type WalletDetail = {
   entitlementId: string;
   type: string;
   status: string;
+  consumedAt?: string | null;
   snapshot: WalletEntitlement["snapshot"];
   actions?: {
     canShowQr?: boolean;

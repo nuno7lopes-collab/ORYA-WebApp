@@ -1,23 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
-  FlatList,
-  PanResponder,
+  ActivityIndicator,
+  Linking,
   Platform,
   Pressable,
+  StyleSheet,
   Text,
   View,
   useWindowDimensions,
-  InteractionManager,
-  Linking,
 } from "react-native";
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from "react-native-maps";
+import BottomSheet, { BottomSheetFlatList, type BottomSheetHandleProps } from "@gorhom/bottom-sheet";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { tokens } from "@orya/shared";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { Extrapolate, interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
+import { BlurView } from "expo-blur";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSurface } from "../../components/glass/GlassSurface";
@@ -28,10 +30,10 @@ import { useDiscoverStore } from "../../features/discover/store";
 import { useDebouncedValue, useDiscoverMapEvents } from "../../features/discover/hooks";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { resolveCityToAddress } from "../../features/discover/location";
-import { getDistanceKm, formatDistanceKm } from "../../lib/geo";
-import { FiltersBottomSheet } from "../../components/discover/FiltersBottomSheet";
+import { formatDistanceKm, getDistanceKm } from "../../lib/geo";
 import { safeBack } from "../../lib/navigation";
 import type { PublicEventCard } from "@orya/shared";
+import { MapFiltersBar, type MapTemplateFilter } from "../../components/discover/MapFiltersBar";
 
 const DEFAULT_REGION: Region = {
   latitude: 38.7223,
@@ -46,6 +48,13 @@ const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+const RANGE_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  day: "2-digit",
+  month: "short",
+});
+
+const SHEET_HANDLE_HEIGHT = 20;
 
 const formatEventDate = (startsAt?: string | null, endsAt?: string | null) => {
   if (!startsAt) return "Data por anunciar";
@@ -68,8 +77,6 @@ const formatPrice = (event: PublicEventCard) => {
   return "Preço em breve";
 };
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
 type MapListItem =
   | { type: "skeleton"; key: string }
   | { type: "event"; event: PublicEventCard };
@@ -82,29 +89,28 @@ export default function MapScreen() {
   const { height } = useWindowDimensions();
 
   const [dataReady, setDataReady] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState<Location.PermissionStatus | null>(null);
   const [deviceCoords, setDeviceCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapRegion, setMapRegion] = useState<Region | null>(null);
+  const [priceMin, setPriceMin] = useState(0);
+  const [priceMax, setPriceMax] = useState<number | null>(null);
+  const [templateType, setTemplateType] = useState<MapTemplateFilter>("all");
+  const [rangeStart, setRangeStart] = useState<Date | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
 
   const mapRef = useRef<MapView | null>(null);
+  const centerModeRef = useRef<"none" | "ip" | "device">("none");
 
-  const priceFilter = useDiscoverStore((state) => state.priceFilter);
-  const dateFilter = useDiscoverStore((state) => state.dateFilter);
   const city = useDiscoverStore((state) => state.city);
   const locationAddressId = useDiscoverStore((state) => state.locationAddressId);
   const locationLat = useDiscoverStore((state) => state.locationLat);
   const locationLng = useDiscoverStore((state) => state.locationLng);
   const locationSource = useDiscoverStore((state) => state.locationSource);
-  const distanceKm = useDiscoverStore((state) => state.distanceKm);
-  const setPriceFilter = useDiscoverStore((state) => state.setPriceFilter);
-  const setDateFilter = useDiscoverStore((state) => state.setDateFilter);
   const setLocation = useDiscoverStore((state) => state.setLocation);
-  const setDistanceKm = useDiscoverStore((state) => state.setDistanceKm);
-  const resetFilters = useDiscoverStore((state) => state.resetFilters);
 
-  const debouncedCity = useDebouncedValue(city, 320);
   const shouldFetchLocation = dataReady && locationSource === "NONE";
   const { data: ipLocation } = useIpLocation(shouldFetchLocation);
   const ipLat = ipLocation?.approxLatLon?.lat ?? null;
@@ -114,15 +120,74 @@ export default function MapScreen() {
   const distanceLng = deviceCoords?.lng ?? locationLng ?? ipLng;
   const locationResolveRef = useRef(false);
 
+  const formatDateParam = (value: Date | null) => {
+    if (!value) return null;
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const startDateParam = formatDateParam(rangeStart);
+  const endDateParam = formatDateParam(rangeEnd);
+  const templateTypesParam = templateType === "all" ? null : templateType;
+  const priceMinParam = priceMin > 0 ? priceMin : null;
+  const priceMaxParam = priceMax != null ? priceMax : null;
+  const debouncedRegion = useDebouncedValue(mapRegion, 700);
+
+  const bounds = useMemo(() => {
+    if (!debouncedRegion) return null;
+    const { latitude, longitude, latitudeDelta, longitudeDelta } = debouncedRegion;
+    const clampLat = (value: number) => Math.min(90, Math.max(-90, value));
+    const wrapLng = (value: number) => {
+      let v = value;
+      while (v > 180) v -= 360;
+      while (v < -180) v += 360;
+      return v;
+    };
+    const north = clampLat(latitude + latitudeDelta / 2);
+    const south = clampLat(latitude - latitudeDelta / 2);
+    const east = wrapLng(longitude + longitudeDelta / 2);
+    const west = wrapLng(longitude - longitudeDelta / 2);
+    return { north, south, east, west };
+  }, [debouncedRegion]);
+
+  const shouldUpdateRegion = useCallback(
+    (next: Region) => {
+      if (!mapRegion) return true;
+      const centerDistance = getDistanceKm(
+        mapRegion.latitude,
+        mapRegion.longitude,
+        next.latitude,
+        next.longitude,
+      );
+      const deltaChange =
+        Math.abs(mapRegion.latitudeDelta - next.latitudeDelta) +
+        Math.abs(mapRegion.longitudeDelta - next.longitudeDelta);
+      return (centerDistance != null && centerDistance > 0.15) || deltaChange > 0.02;
+    },
+    [mapRegion],
+  );
+
+  const queryEnabled = dataReady && bounds != null;
   const discoverQuery = useDiscoverMapEvents(
     {
       q: "",
-      type: priceFilter,
-      date: dateFilter,
-      city: debouncedCity,
+      type: "all",
+      date: "all",
+      city: "",
       limit: 60,
+      startDate: startDateParam ?? undefined,
+      endDate: endDateParam ?? undefined,
+      templateTypes: templateTypesParam ?? undefined,
+      priceMin: priceMinParam,
+      priceMax: priceMaxParam,
+      north: bounds?.north ?? undefined,
+      south: bounds?.south ?? undefined,
+      east: bounds?.east ?? undefined,
+      west: bounds?.west ?? undefined,
     },
-    dataReady,
+    queryEnabled,
   );
 
   const events = useMemo(() => {
@@ -133,15 +198,55 @@ export default function MapScreen() {
       .filter((item): item is PublicEventCard => Boolean(item));
   }, [discoverQuery.data?.items]);
 
-  const filteredEvents = useMemo(() => {
-    if (distanceKm <= 0) return events;
-    if (distanceLat == null || distanceLng == null) return events;
+  const eventsInBounds = useMemo(() => {
+    if (!bounds) return events;
+    const { north, south, east, west } = bounds;
     return events.filter((event) => {
-      const distance = getDistanceKm(event.location?.lat, event.location?.lng, distanceLat, distanceLng);
-      if (distance == null) return false;
-      return distance <= distanceKm;
+      const lat = event.location?.lat;
+      const lng = event.location?.lng;
+      if (lat == null || lng == null) return false;
+      if (lat < south || lat > north) return false;
+      if (west <= east) {
+        return lng >= west && lng <= east;
+      }
+      return lng >= west || lng <= east;
     });
-  }, [distanceKm, distanceLat, distanceLng, events]);
+  }, [bounds, events]);
+
+  const distanceOrigin = useMemo(() => {
+    const region = debouncedRegion ?? mapRegion;
+    if (region?.latitude != null && region?.longitude != null) {
+      if (distanceLat != null && distanceLng != null) {
+        const distanceFromUser = getDistanceKm(
+          region.latitude,
+          region.longitude,
+          distanceLat,
+          distanceLng,
+        );
+        if (distanceFromUser != null && distanceFromUser > 2) {
+          return { lat: region.latitude, lng: region.longitude };
+        }
+        return { lat: distanceLat, lng: distanceLng };
+      }
+      return { lat: region.latitude, lng: region.longitude };
+    }
+    if (distanceLat != null && distanceLng != null) return { lat: distanceLat, lng: distanceLng };
+    return null;
+  }, [debouncedRegion, distanceLat, distanceLng, mapRegion]);
+
+  const filteredEvents = useMemo(() => {
+    const base = eventsInBounds;
+    if (!distanceOrigin) return base;
+    const { lat, lng } = distanceOrigin;
+    return [...base].sort((a, b) => {
+      const distA = getDistanceKm(a.location?.lat, a.location?.lng, lat, lng);
+      const distB = getDistanceKm(b.location?.lat, b.location?.lng, lat, lng);
+      if (distA == null && distB == null) return 0;
+      if (distA == null) return 1;
+      if (distB == null) return -1;
+      return distA - distB;
+    });
+  }, [distanceOrigin, eventsInBounds]);
 
   const markerEvents = useMemo(
     () => filteredEvents.filter((event) => event.location?.lat != null && event.location?.lng != null),
@@ -197,13 +302,8 @@ export default function MapScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      const task = InteractionManager.runAfterInteractions(() => {
-        if (active) setDataReady(true);
-      });
+      setDataReady(true);
       return () => {
-        active = false;
-        task.cancel();
         setDataReady(false);
       };
     }, []),
@@ -268,9 +368,22 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
-    if (!selectedEvent?.location?.lat || !selectedEvent.location.lng) return;
-    animateToRegion(selectedEvent.location.lat, selectedEvent.location.lng);
-  }, [animateToRegion, selectedEvent?.location?.lat, selectedEvent?.location?.lng]);
+    if (!mapReady) return;
+    if (deviceCoords && centerModeRef.current !== "device") {
+      animateToRegion(deviceCoords.lat, deviceCoords.lng, 0.08);
+      centerModeRef.current = "device";
+      return;
+    }
+    if (!deviceCoords && ipLat != null && ipLng != null && centerModeRef.current === "none") {
+      animateToRegion(ipLat, ipLng, 0.12);
+      centerModeRef.current = "ip";
+    }
+  }, [animateToRegion, deviceCoords, ipLat, ipLng, mapReady]);
+
+  useEffect(() => {
+    if (!mapReady || mapRegion) return;
+    setMapRegion(initialRegion);
+  }, [initialRegion, mapReady, mapRegion]);
 
   const handleRecenter = useCallback(() => {
     if (deviceCoords) {
@@ -284,71 +397,143 @@ export default function MapScreen() {
     animateToRegion(DEFAULT_REGION.latitude, DEFAULT_REGION.longitude, DEFAULT_REGION.latitudeDelta);
   }, [animateToRegion, deviceCoords, ipLat, ipLng]);
 
-  const sheetHeight = Math.min(Math.max(height * 0.62, 320), height - 120);
-  const collapsedHeight = 150;
-  const maxTranslate = Math.max(0, sheetHeight - collapsedHeight);
-  const translateY = useRef(new Animated.Value(maxTranslate)).current;
-  const translateYRef = useRef(maxTranslate);
-  const panStartRef = useRef(0);
-  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const sheetRef = useRef<BottomSheet>(null);
+  const bottomInset = Platform.OS === "ios" ? Math.max(insets.bottom + 14, 24) : 0;
+  const sheetMaxHeight = Math.min(Math.max(height * 0.82, 360), height - 120);
+  const sheetMidHeight = Math.min(Math.max(height * 0.34, 220), sheetMaxHeight - 80);
+  const sheetMinHeight = Math.max(84, bottomInset + SHEET_HANDLE_HEIGHT + 16);
+  const sheetSnapPoints = useMemo(
+    () => [sheetMinHeight, sheetMidHeight, sheetMaxHeight],
+    [sheetMaxHeight, sheetMidHeight, sheetMinHeight],
+  );
+  const openSheet = useCallback(() => {
+    sheetRef.current?.snapToIndex(1);
+  }, []);
+  const animatedIndex = useSharedValue(0);
+  const lastSnapRef = useRef(0);
 
-  useEffect(() => {
-    translateY.setValue(maxTranslate);
-    translateYRef.current = maxTranslate;
-    setSheetExpanded(false);
-  }, [maxTranslate, translateY]);
-
-  useEffect(() => {
-    const id = translateY.addListener(({ value }) => {
-      translateYRef.current = value;
-    });
-    return () => translateY.removeListener(id);
-  }, [translateY]);
-
-  const snapSheet = useCallback(
-    (expanded: boolean) => {
-      Animated.spring(translateY, {
-        toValue: expanded ? 0 : maxTranslate,
-        useNativeDriver: true,
-        friction: 8,
-      }).start();
-      setSheetExpanded(expanded);
-    },
-    [maxTranslate, translateY],
+  const renderSheetHandle = useCallback(
+    ({
+      accessibilityRole,
+      accessibilityLabel,
+      accessibilityHint,
+      accessible,
+    }: BottomSheetHandleProps) => (
+      <View
+        style={styles.sheetHandleContainer}
+        accessible={accessible ?? undefined}
+        accessibilityRole={accessibilityRole ?? undefined}
+        accessibilityLabel={accessibilityLabel ?? undefined}
+        accessibilityHint={accessibilityHint ?? undefined}
+      >
+        <View style={styles.sheetHandleIndicator} />
+      </View>
+    ),
+    [],
   );
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          Math.abs(gesture.dy) > 6 && Math.abs(gesture.dx) < 16,
-        onPanResponderGrant: () => {
-          panStartRef.current = translateYRef.current;
-        },
-        onPanResponderMove: (_, gesture) => {
-          const next = clamp(panStartRef.current + gesture.dy, 0, maxTranslate);
-          translateY.setValue(next);
-        },
-        onPanResponderRelease: (_, gesture) => {
-          const endValue = clamp(panStartRef.current + gesture.dy, 0, maxTranslate);
-          const shouldExpand = gesture.vy < -0.25 || endValue < maxTranslate * 0.5;
-          snapSheet(shouldExpand);
-        },
-      }),
-    [maxTranslate, snapSheet, translateY],
+  const sheetAnimatedStyle = useAnimatedStyle(() => {
+    const progress = interpolate(animatedIndex.value, [-1, 0, 1], [0, 0.25, 1], Extrapolate.CLAMP);
+    const opacity = interpolate(progress, [0, 1], [0.08, 0.55]);
+    const radius = interpolate(progress, [0, 1], [6, 16]);
+    const offset = interpolate(progress, [0, 1], [4, 12]);
+    return {
+      shadowOpacity: opacity,
+      shadowRadius: radius,
+      shadowOffset: { width: 0, height: offset },
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+    };
+  });
+
+  const blurAnimatedStyle = useAnimatedStyle(() => {
+    const progress = interpolate(animatedIndex.value, [-1, 0, 1], [0, 0.25, 1], Extrapolate.CLAMP);
+    return {
+      opacity: interpolate(progress, [0, 1], [0, 0.9]),
+    };
+  });
+
+  const mapTitle = "Eventos no mapa";
+
+  const rangeLabel = useMemo(() => {
+    const format = (value: Date) => RANGE_DATE_FORMATTER.format(value);
+    if (rangeStart && rangeEnd) return `${format(rangeStart)}–${format(rangeEnd)}`;
+    if (rangeStart) return `Desde ${format(rangeStart)}`;
+    if (rangeEnd) return `Até ${format(rangeEnd)}`;
+    return "Qualquer data";
+  }, [rangeEnd, rangeStart]);
+
+  const clearMapFilters = useCallback(() => {
+    setPriceMin(0);
+    setPriceMax(null);
+    setTemplateType("all");
+    setRangeStart(null);
+    setRangeEnd(null);
+  }, []);
+
+  const sheetHeader = useMemo(
+    () => (
+      <View>
+        <View style={styles.sheetHeader}>
+          <View style={{ gap: 4 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={styles.sheetTitle}>{mapTitle}</Text>
+              <View style={styles.brandBadge}>
+                <Text style={styles.brandBadgeText}>ORYA</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={styles.sheetSubtitle}>
+                {filteredEvents.length} eventos · {rangeLabel}
+              </Text>
+              {discoverQuery.isFetching ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
+                  <Text style={styles.sheetSubtitle}>A carregar…</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+          <Pressable
+            onPress={clearMapFilters}
+            style={({ pressed }) => [styles.resetButton, pressed ? styles.controlPressed : null]}
+          >
+            <Text style={styles.resetLabel}>Limpar</Text>
+          </Pressable>
+        </View>
+
+        {discoverQuery.isError ? (
+          <GlassCard intensity={52} style={{ marginHorizontal: 20, marginBottom: 12 }}>
+            <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o mapa.</Text>
+            <Pressable
+              onPress={() => discoverQuery.refetch()}
+              className="rounded-xl bg-white/10 px-4 py-3"
+              style={{ minHeight: tokens.layout.touchTarget }}
+            >
+              <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+            </Pressable>
+          </GlassCard>
+        ) : null}
+      </View>
+    ),
+    [
+      clearMapFilters,
+      discoverQuery.isError,
+      discoverQuery.isFetching,
+      discoverQuery.refetch,
+      filteredEvents.length,
+      mapTitle,
+      rangeLabel,
+    ],
   );
 
-  const mapTitle = useMemo(() => {
-    if (city.trim()) return `Eventos em ${city.trim()}`;
-    return "Eventos perto de ti";
-  }, [city]);
 
   const listData: MapListItem[] = useMemo(() => {
-    if (discoverQuery.isLoading) {
+    if (!queryEnabled || discoverQuery.isLoading) {
       return Array.from({ length: 4 }, (_, index) => ({ type: "skeleton" as const, key: `skeleton-${index}` }));
     }
     return filteredEvents.map((event) => ({ type: "event" as const, event }));
-  }, [discoverQuery.isLoading, filteredEvents]);
+  }, [discoverQuery.isLoading, filteredEvents, queryEnabled]);
 
   const handleSelectEvent = useCallback(
     (event: PublicEventCard) => {
@@ -356,9 +541,9 @@ export default function MapScreen() {
       if (event.location?.lat != null && event.location?.lng != null) {
         animateToRegion(event.location.lat, event.location.lng, 0.06);
       }
-      snapSheet(true);
+      openSheet();
     },
-    [animateToRegion, snapSheet],
+    [animateToRegion, openSheet],
   );
 
   const handleOpenEvent = useCallback(
@@ -389,7 +574,12 @@ export default function MapScreen() {
       }
       const event = item.event;
       const isSelected = event.id === selectedEventId;
-      const distanceLabel = formatDistanceKm(event.location?.lat, event.location?.lng, distanceLat, distanceLng);
+      const distanceLabel = formatDistanceKm(
+        event.location?.lat,
+        event.location?.lng,
+        distanceOrigin?.lat,
+        distanceOrigin?.lng,
+      );
       return (
         <Pressable
           onPress={() => handleOpenEvent(event)}
@@ -486,6 +676,12 @@ export default function MapScreen() {
           style={{ flex: 1 }}
           showsUserLocation={locationStatus === "granted"}
           showsMyLocationButton={false}
+          onMapReady={() => setMapReady(true)}
+          onRegionChangeComplete={(region) => {
+            if (shouldUpdateRegion(region)) {
+              setMapRegion(region);
+            }
+          }}
         >
           {markerEvents.map((event) => (
             <Marker
@@ -513,7 +709,7 @@ export default function MapScreen() {
         </MapView>
 
         <View style={{ position: "absolute", top: topPadding, left: 20, right: 20 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Pressable
               onPress={() => safeBack(router, navigation)}
               style={({ pressed }) => [
@@ -524,20 +720,32 @@ export default function MapScreen() {
               <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.95)" />
               <Text style={styles.controlLabel}>Voltar</Text>
             </Pressable>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <Pressable
-                onPress={() => setFiltersOpen(true)}
-                style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
-              >
-                <Ionicons name="options-outline" size={18} color="rgba(255,255,255,0.9)" />
-              </Pressable>
-              <Pressable
-                onPress={handleRecenter}
-                style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
-              >
-                <Ionicons name="locate-outline" size={18} color="rgba(255,255,255,0.9)" />
-              </Pressable>
+            <View style={{ flex: 1 }}>
+              <MapFiltersBar
+                priceMin={priceMin}
+                priceMax={priceMax}
+                onPriceChange={(min, max) => {
+                  setPriceMin(min);
+                  setPriceMax(max);
+                }}
+                templateType={templateType}
+                onTemplateTypeChange={setTemplateType}
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                onRangeChange={(start, end) => {
+                  setRangeStart(start);
+                  setRangeEnd(end);
+                }}
+                onClear={clearMapFilters}
+                compact
+              />
             </View>
+            <Pressable
+              onPress={handleRecenter}
+              style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
+            >
+              <Ionicons name="locate-outline" size={18} color="rgba(255,255,255,0.9)" />
+            </Pressable>
           </View>
 
           {locationStatus !== "granted" ? (
@@ -555,99 +763,75 @@ export default function MapScreen() {
               <Text className="text-red-300 text-sm">{locationError}</Text>
             </GlassCard>
           ) : null}
+
+          <View style={{ marginTop: 8 }} />
         </View>
 
-        <Animated.View
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: sheetHeight,
-            transform: [{ translateY }],
+        <BottomSheet
+          ref={sheetRef}
+          index={0}
+          snapPoints={sheetSnapPoints}
+          style={styles.sheetWrapper}
+          backgroundStyle={styles.sheetBackground}
+          handleComponent={renderSheetHandle}
+          detached={bottomInset > 0}
+          bottomInset={bottomInset}
+          enableOverDrag
+          enablePanDownToClose={false}
+          animateOnMount
+          enableHandlePanningGesture
+          enableContentPanningGesture
+          activeOffsetY={[-8, 8]}
+          failOffsetX={[-12, 12]}
+          animatedIndex={animatedIndex}
+          onChange={(index) => {
+            if (index === lastSnapRef.current) return;
+            lastSnapRef.current = index;
+            if (index >= 0) {
+              const feedback =
+                index === 0
+                  ? Haptics.ImpactFeedbackStyle.Light
+                  : index === 1
+                    ? Haptics.ImpactFeedbackStyle.Medium
+                    : Haptics.ImpactFeedbackStyle.Heavy;
+              Haptics.impactAsync(feedback).catch(() => undefined);
+            }
           }}
         >
-          <View style={styles.sheetContainer}>
-            <View
-              {...panResponder.panHandlers}
-              style={{ alignItems: "center", paddingTop: 8, paddingBottom: 6 }}
-            >
-              <Pressable onPress={() => snapSheet(!sheetExpanded)}>
-                <View style={styles.sheetHandle} />
-              </Pressable>
-            </View>
-            <View style={styles.sheetHeader}>
-              <View style={{ gap: 4 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text style={styles.sheetTitle}>{mapTitle}</Text>
-                  <View style={styles.brandBadge}>
-                    <Text style={styles.brandBadgeText}>ORYA</Text>
-                  </View>
-                </View>
-                <Text style={styles.sheetSubtitle}>
-                  {filteredEvents.length} eventos · {dateFilter === "all" ? "Qualquer data" : "Com filtros"}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => resetFilters()}
-                style={({ pressed }) => [styles.resetButton, pressed ? styles.controlPressed : null]}
-              >
-                <Text style={styles.resetLabel}>Limpar</Text>
-              </Pressable>
-            </View>
-
-            {discoverQuery.isError ? (
-              <GlassCard intensity={52} style={{ marginHorizontal: 20, marginBottom: 12 }}>
-                <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o mapa.</Text>
-                <Pressable
-                  onPress={() => discoverQuery.refetch()}
-                  className="rounded-xl bg-white/10 px-4 py-3"
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                >
-                  <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-                </Pressable>
-              </GlassCard>
-            ) : null}
-
-            <FlatList
+          <Animated.View style={sheetAnimatedStyle}>
+            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, blurAnimatedStyle]}>
+              <BlurView tint="dark" intensity={30} style={StyleSheet.absoluteFillObject} />
+            </Animated.View>
+            <BottomSheetFlatList
               data={listData}
               keyExtractor={keyExtractor}
               renderItem={renderItem}
               contentContainerStyle={{
                 paddingHorizontal: 20,
-                paddingBottom: insets.bottom + 16,
+                paddingBottom: bottomInset > 0 ? 20 : insets.bottom + 16,
+                paddingTop: 4,
               }}
-              scrollEnabled={sheetExpanded}
               showsVerticalScrollIndicator={false}
+              ListHeaderComponent={sheetHeader}
+              stickyHeaderIndices={[0]}
               ListEmptyComponent={
-                !discoverQuery.isLoading && !discoverQuery.isError ? (
+                queryEnabled && !discoverQuery.isLoading && !discoverQuery.isError ? (
                   <GlassSurface intensity={48} style={{ padding: 16 }}>
-                    <Text className="text-white/70 text-sm">Sem eventos para estes filtros.</Text>
+                    <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
                     <Pressable
-                      onPress={() => setFiltersOpen(true)}
+                      onPress={clearMapFilters}
                       className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                       style={{ minHeight: tokens.layout.touchTarget }}
                     >
-                      <Text className="text-white text-sm font-semibold text-center">Ajustar filtros</Text>
+                      <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
                     </Pressable>
                   </GlassSurface>
                 ) : null
               }
             />
-          </View>
-        </Animated.View>
+          </Animated.View>
+        </BottomSheet>
       </View>
-
-      <FiltersBottomSheet
-        visible={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        distanceKm={distanceKm}
-        onDistanceChange={setDistanceKm}
-        date={dateFilter}
-        onDateChange={setDateFilter}
-        price={priceFilter}
-        onPriceChange={setPriceFilter}
-      />
     </LiquidBackground>
   );
 }
@@ -657,27 +841,27 @@ const styles = {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(8,12,20,0.7)",
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(10,14,24,0.65)",
   },
   controlLabel: {
     color: "rgba(255,255,255,0.9)",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600" as const,
   },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(8,12,20,0.7)",
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(10,14,24,0.65)",
   },
   controlPressed: {
     opacity: 0.8,
@@ -701,14 +885,19 @@ const styles = {
     fontSize: 12,
     fontWeight: "600" as const,
   },
-  sheetContainer: {
-    flex: 1,
+  sheetBackground: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
     backgroundColor: "rgba(10,14,24,0.92)",
     overflow: "hidden" as const,
+  },
+  sheetWrapper: {
+    position: "absolute" as const,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   markerShell: {
     width: 34,
@@ -729,11 +918,20 @@ const styles = {
     borderColor: "rgba(255,255,255,0.95)",
     shadowOpacity: 0.45,
   },
-  sheetHandle: {
-    width: 42,
-    height: 4,
+  sheetHandleContainer: {
+    height: SHEET_HANDLE_HEIGHT,
+    paddingTop: 0,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
+    alignItems: "center" as const,
+    justifyContent: "flex-start" as const,
+  },
+  sheetHandleIndicator: {
+    width: 32,
+    height: 3,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.35)",
+    marginTop: 0,
   },
   brandBadge: {
     paddingHorizontal: 8,

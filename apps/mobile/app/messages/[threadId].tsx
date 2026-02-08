@@ -20,6 +20,7 @@ import { tokens } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Image } from "expo-image";
+import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { fetchChatMessages, sendChatMessage } from "../../features/chat/api";
@@ -77,6 +78,13 @@ export default function ChatThreadScreen() {
   );
   const eventIdRaw = Array.isArray(params.eventId) ? params.eventId[0] : params.eventId;
   const eventId = eventIdRaw ? Number(eventIdRaw) : null;
+  const openSenderProfile = useCallback(
+    (username?: string | null) => {
+      if (!username) return;
+      router.push({ pathname: "/[username]", params: { username } });
+    },
+    [router],
+  );
 
   const threadQuery = useEventChatThread(eventId, Boolean(eventId && accessToken), accessToken);
 
@@ -343,24 +351,18 @@ export default function ChatThreadScreen() {
                     }}
                   >
                     {!isMine ? (
-                      <View
-                        style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: 14,
-                          overflow: "hidden",
-                          backgroundColor: "rgba(255,255,255,0.08)",
-                          marginRight: 8,
-                        }}
+                      <Pressable
+                        onPress={() => openSenderProfile(message.sender?.username)}
+                        disabled={!message.sender?.username}
+                        style={{ marginRight: 8 }}
                       >
-                        {message.sender?.avatarUrl ? (
-                          <Image source={{ uri: message.sender.avatarUrl }} style={{ width: "100%", height: "100%" }} />
-                        ) : (
-                          <View className="flex-1 items-center justify-center">
-                            <Ionicons name="person" size={14} color="rgba(255,255,255,0.6)" />
-                          </View>
-                        )}
-                      </View>
+                        <AvatarCircle
+                          size={28}
+                          uri={message.sender?.avatarUrl ?? null}
+                          iconName="person"
+                          iconColor="rgba(255,255,255,0.6)"
+                        />
+                      </Pressable>
                     ) : null}
                     <View
                       style={{
@@ -372,7 +374,13 @@ export default function ChatThreadScreen() {
                       }}
                     >
                       {!isMine && message.sender?.fullName ? (
-                        <Text className="text-white/70 text-[11px] mb-1">{message.sender.fullName}</Text>
+                        <Pressable
+                          onPress={() => openSenderProfile(message.sender?.username)}
+                          disabled={!message.sender?.username}
+                          style={{ alignSelf: "flex-start" }}
+                        >
+                          <Text className="text-white/70 text-[11px] mb-1">{message.sender.fullName}</Text>
+                        </Pressable>
                       ) : null}
                       <Text className="text-white text-sm">{message.body}</Text>
                       <Text className="text-white/45 text-[10px] mt-1 text-right">
