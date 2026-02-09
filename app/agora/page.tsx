@@ -29,9 +29,9 @@ function parseDate(value?: string | null) {
 }
 
 function formatDayLabel(value?: string | null) {
-  if (!value) return "Data a anunciar";
+  if (!value) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
+  if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
 }
 
@@ -204,9 +204,11 @@ function AgendaCard({
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] uppercase tracking-[0.22em] text-white/60">
-              {formatDayLabel(item.startAt)}
-            </span>
+            {formatDayLabel(item.startAt) ? (
+              <span className="text-[10px] uppercase tracking-[0.22em] text-white/60">
+                {formatDayLabel(item.startAt)}
+              </span>
+            ) : null}
             {highlightLabel && (
               <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/85">
                 {highlightLabel}
@@ -214,7 +216,9 @@ function AgendaCard({
             )}
           </div>
           <p className="text-[13px] font-semibold text-white line-clamp-1">{item.title}</p>
-          <p className="text-[11px] text-white/65 line-clamp-1">{item.label ?? "Evento"}</p>
+          {item.label ? (
+            <p className="text-[11px] text-white/65 line-clamp-1">{item.label}</p>
+          ) : null}
           <div className="mt-2 flex items-center gap-2">
             {detailHref && (
               <Link

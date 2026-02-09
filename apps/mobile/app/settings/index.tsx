@@ -50,7 +50,8 @@ export default function SettingsScreen() {
   const baseUrl = env.apiBaseUrl.replace(/\/+$/, "");
   const termsUrl = `${baseUrl}/termos`;
   const privacyUrl = `${baseUrl}/privacidade`;
-  const version = Constants.expoConfig?.version ?? Constants.manifest?.version ?? "1.0.0";
+  const manifest = (Constants as any)?.manifest as { version?: string } | undefined;
+  const version = Constants.expoConfig?.version ?? manifest?.version ?? "1.0.0";
 
   const profileQuery = useProfileSummary(true, accessToken, userId);
   const profile = profileQuery.data ?? null;
@@ -324,7 +325,7 @@ export default function SettingsScreen() {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      router.replace("/auth");
+      router.replace({ pathname: "/auth", params: { next: "/settings" } });
     } catch {
       Alert.alert("Erro", "Não foi possível terminar sessão.");
     }
@@ -336,7 +337,7 @@ export default function SettingsScreen() {
     try {
       await api.requestWithAccessToken("/api/me/settings/delete", accessToken, { method: "POST" });
       await supabase.auth.signOut();
-      router.replace("/auth");
+      router.replace({ pathname: "/auth", params: { next: "/settings" } });
     } catch {
       Alert.alert("Erro", "Não foi possível marcar a conta para eliminação.");
     } finally {
@@ -355,8 +356,11 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Pressable
-          onPress={() => safeBack(router, navigation)}
+          onPress={() => safeBack(router, navigation, "/(tabs)/profile")}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
           style={styles.backButton}
+          hitSlop={10}
         >
           <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
           <Text style={styles.backText}>Voltar</Text>
@@ -373,6 +377,7 @@ export default function SettingsScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               style={styles.input}
+              accessibilityLabel="Email"
             />
           </View>
           {emailMessage ? <Text style={styles.helperText}>{emailMessage}</Text> : null}
@@ -410,6 +415,9 @@ export default function SettingsScreen() {
                 <Pressable
                   key={option.key}
                   onPress={() => setVisibility(option.key)}
+                  accessibilityRole="button"
+                  accessibilityLabel={option.label}
+                  accessibilityState={{ selected: active }}
                   style={[
                     styles.radioOption,
                     active ? styles.radioOptionActive : null,
@@ -441,6 +449,9 @@ export default function SettingsScreen() {
                 <Pressable
                   key={interest.id}
                   onPress={() => toggleInterest(interest.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Interesse ${interest.label}`}
+                  accessibilityState={{ selected: active }}
                   style={[
                     styles.interestChip,
                     active ? styles.interestChipActive : styles.interestChipIdle,
@@ -596,6 +607,9 @@ export default function SettingsScreen() {
                       }}
                       disabled={!orgUsername}
                       style={styles.consentHeader}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Abrir organização ${orgName}`}
+                      accessibilityState={{ disabled: !orgUsername }}
                     >
                       {item.organization.brandingAvatarUrl ? (
                         <Image source={{ uri: item.organization.brandingAvatarUrl }} style={styles.orgAvatar} />
@@ -644,11 +658,21 @@ export default function SettingsScreen() {
 
         <SettingsSection title="Legal e app" subtitle="Informação legal e versão.">
           <View style={styles.stack}>
-            <Pressable style={styles.linkRow} onPress={() => Linking.openURL(termsUrl)}>
+            <Pressable
+              style={styles.linkRow}
+              onPress={() => Linking.openURL(termsUrl)}
+              accessibilityRole="link"
+              accessibilityLabel="Abrir termos"
+            >
               <Text style={styles.linkLabel}>Termos</Text>
               <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
             </Pressable>
-            <Pressable style={styles.linkRow} onPress={() => Linking.openURL(privacyUrl)}>
+            <Pressable
+              style={styles.linkRow}
+              onPress={() => Linking.openURL(privacyUrl)}
+              accessibilityRole="link"
+              accessibilityLabel="Abrir política de privacidade"
+            >
               <Text style={styles.linkLabel}>Política de Privacidade</Text>
               <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
             </Pressable>

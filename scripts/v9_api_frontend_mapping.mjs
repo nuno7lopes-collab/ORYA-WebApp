@@ -3,10 +3,10 @@ import path from "path";
 
 const ROOT = process.cwd();
 const API_ROOT = path.join(ROOT, "app", "api");
-const USAGE_PATH = path.join(ROOT, "docs", "v9_inventory_frontend_api_usage.md");
-const PLAN_PATH = path.join(ROOT, "docs", "v9_close_plan.md");
-const OUT_CSV = path.join(ROOT, "docs", "v9_api_frontend_mapping.csv");
-const OUT_REPORT = path.join(ROOT, "docs", "v9_api_frontend_mapping_report.md");
+const USAGE_PATH = path.join(ROOT, "reports", "v9_inventory_frontend_api_usage.md");
+const PLAN_PATH = path.join(ROOT, "docs", "ssot_registry.md");
+const OUT_CSV = path.join(ROOT, "reports", "v9_api_frontend_mapping.csv");
+const OUT_REPORT = path.join(ROOT, "reports", "v9_api_frontend_mapping_report.md");
 
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 
@@ -54,10 +54,20 @@ function parseFrontendUsage(mdText) {
 }
 
 function parsePlanRoutes(planText) {
-  const matches = planText.matchAll(/app\/api\/[^\s`]+\/route\.ts/g);
+  const lines = planText.split(/\r?\n/);
   const paths = new Set();
-  for (const match of matches) {
-    paths.add(match[0]);
+  let inSection = false;
+  for (const line of lines) {
+    if (/^##\s+P0 endpoints/i.test(line) || line.includes("P0 endpoints")) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && /^##\s+/.test(line)) break;
+    if (!inSection) continue;
+    const matches = line.matchAll(/app\/api\/[^\s`]+\/route\.ts/g);
+    for (const match of matches) {
+      paths.add(match[0]);
+    }
   }
   return Array.from(paths.values());
 }
@@ -154,7 +164,7 @@ const reportLines = [
   "## External/Webhook endpoints (no UI required)",
   ...(externalOnly.length ? externalOnly.map((route) => `- ${route}`) : ["- none"]),
   "",
-  "## Endpoints referenced in v9_close_plan without frontend usage",
+  "## Endpoints referenced in ssot_registry (P0 list) without frontend usage",
   "- Nota: lista calculada por strings `/api/...` no frontend; endpoints aqui podem ser mobile/server-only.",
   ...(missingUi.length ? missingUi.map((route) => `- ${route}`) : ["- none"]),
   "",

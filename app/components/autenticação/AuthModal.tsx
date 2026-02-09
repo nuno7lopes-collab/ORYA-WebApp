@@ -112,6 +112,50 @@ function AuthModalContent({
     setMode("login");
   }
 
+  async function triggerResendOtp(emailValue: string) {
+    if (!emailValue || !isEmailLike(emailValue)) {
+      setError("Indica um email válido para reenviar o código.");
+      return;
+    }
+    setLoginOtpSending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailValue }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        if (res.status === 429 || json?.error === "RATE_LIMITED") {
+          const retryAfterHeader = res.headers.get("Retry-After");
+          const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+          const cooldownSeconds =
+            Number.isFinite(retryAfter) && retryAfter > 0 ? Math.round(retryAfter) : 60;
+          setSignupCooldown(cooldownSeconds);
+          setError("Muitas tentativas. Tenta novamente dentro de alguns minutos.");
+        } else {
+          setError(mapAuthErrorMessage(json?.error) ?? "Não foi possível reenviar o código.");
+        }
+        return;
+      }
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("orya_pending_email", emailValue);
+        window.localStorage.setItem("orya_pending_step", "verify");
+        window.localStorage.setItem(
+          "orya_otp_type",
+          json?.otpType === "magiclink" ? "magiclink" : "signup",
+        );
+      }
+      setLoginOtpSent(true);
+    } catch (err) {
+      console.error("[AuthModal] resend OTP error:", err);
+      setError("Não foi possível reenviar o código.");
+    } finally {
+      setLoginOtpSending(false);
+    }
+  }
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (

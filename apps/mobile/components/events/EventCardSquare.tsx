@@ -18,6 +18,7 @@ type EventCardSquareProps = {
   userLon?: number | null;
   statusTag?: string | null;
   showFavorite?: boolean;
+  source?: string;
 };
 
 type PriceState = {
@@ -35,8 +36,8 @@ const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   minute: "2-digit",
 });
 
-const formatDate = (startsAt?: string, endsAt?: string) => {
-  if (!startsAt) return "Data por anunciar";
+const formatDate = (startsAt?: string, endsAt?: string): string | null => {
+  if (!startsAt) return null;
   try {
     const start = new Date(startsAt);
     const end = endsAt ? new Date(endsAt) : null;
@@ -46,11 +47,11 @@ const formatDate = (startsAt?: string, endsAt?: string) => {
     const endTime = EVENT_TIME_FORMATTER.format(end);
     return `${date} · ${time}-${endTime}`;
   } catch {
-    return "Data por anunciar";
+    return null;
   }
 };
 
-const resolvePriceState = (event: PublicEventCard): PriceState => {
+const resolvePriceState = (event: PublicEventCard): PriceState | null => {
   if (event.isGratis) return { label: "Grátis", isSoon: false };
   if (typeof event.priceFrom === "number") return { label: `Desde ${event.priceFrom.toFixed(0)}€`, isSoon: false };
   const ticketTypes = event.ticketTypes ?? [];
@@ -58,7 +59,7 @@ const resolvePriceState = (event: PublicEventCard): PriceState => {
   const hasTickets = ticketTypes.length > 0;
   if (hasUpcoming) return { label: "Bilhetes em breve", isSoon: true };
   if (hasTickets) return { label: "Bilhetes em breve", isSoon: true };
-  return { label: "Preço em breve", isSoon: true };
+  return null;
 };
 
 const withAlpha = (color: string, alpha: number) => {
@@ -88,6 +89,7 @@ export const EventCardSquare = memo(function EventCardSquare({
   userLon,
   statusTag,
   showFavorite,
+  source,
 }: EventCardSquareProps) {
   const router = useRouter();
   const scale = useRef(new Animated.Value(1)).current;
@@ -111,10 +113,10 @@ export const EventCardSquare = memo(function EventCardSquare({
     event.location?.formattedAddress ??
     event.location?.city ??
     event.location?.name ??
-    "Local a anunciar";
+    null;
   const date = formatDate(event.startsAt, event.endsAt);
   const priceState = resolvePriceState(event);
-  const secondaryTag = statusTag ?? priceState.label;
+  const secondaryTag = statusTag ?? priceState?.label ?? null;
   const showHeart = showFavorite ?? true;
   const distanceLabel = formatDistanceKm(
     event.location?.lat ?? null,
@@ -129,20 +131,20 @@ export const EventCardSquare = memo(function EventCardSquare({
       pathname: "/event/[slug]" as const,
       params: {
         slug: event.slug ?? "",
-        source: "discover",
+        source: source ?? "discover",
         eventTitle: event.title,
         coverImageUrl: event.coverImageUrl ?? "",
         shortDescription: event.shortDescription ?? "",
         startsAt: event.startsAt ?? "",
         endsAt: event.endsAt ?? "",
-        locationLabel: location,
-        priceLabel: priceState.label,
+        locationLabel: location ?? "",
+        priceLabel: priceState?.label ?? "",
         categoryLabel: category,
         hostName: event.hostName ?? event.hostUsername ?? "ORYA",
         imageTag: event.slug ? `event-${event.slug}` : undefined,
       },
     }),
-    [category, event, location, priceState.label],
+    [category, event, location, priceState.label, source],
   );
 
   useEffect(() => {
@@ -198,6 +200,8 @@ export const EventCardSquare = memo(function EventCardSquare({
           Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
         }}
         onPress={() => router.prefetch?.(linkHref)}
+        accessibilityRole="button"
+        accessibilityLabel={`Abrir evento ${event.title}`}
       >
         <Animated.View
           style={{
@@ -214,7 +218,6 @@ export const EventCardSquare = memo(function EventCardSquare({
                   contentFit="cover"
                   transition={220}
                   cachePolicy="memory-disk"
-                  sharedTransitionTag={event.slug ? `event-${event.slug}` : undefined}
                 />
               ) : (
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(255,255,255,0.06)" }]} />
@@ -242,13 +245,15 @@ export const EventCardSquare = memo(function EventCardSquare({
                 end={{ x: 0, y: 1 }}
                 style={[styles.bottomGradient, { height: overlayHeight }]}
               />
-              <View style={styles.tagsRow}>
+                <View style={styles.tagsRow}>
                 <View style={styles.tag}>
                   <Text style={styles.tagText}>{category}</Text>
                 </View>
-                <View style={[styles.tag, priceState.isSoon ? styles.tagSoon : null]}>
-                  <Text style={styles.tagText}>{secondaryTag}</Text>
-                </View>
+                {secondaryTag ? (
+                  <View style={[styles.tag, priceState?.isSoon ? styles.tagSoon : null]}>
+                    <Text style={styles.tagText}>{secondaryTag}</Text>
+                  </View>
+                ) : null}
               </View>
               {showHeart ? (
                 <View style={styles.heart}>
@@ -260,17 +265,23 @@ export const EventCardSquare = memo(function EventCardSquare({
                   {event.title}
                 </Text>
                 <View style={styles.overlayRow}>
-                  <Text style={styles.overlayMeta} numberOfLines={1}>
-                    {date}
-                  </Text>
-                  <Text style={styles.overlayMetaMuted} numberOfLines={1}>
-                    · {priceState.label}
-                  </Text>
+                  {date ? (
+                    <Text style={styles.overlayMeta} numberOfLines={1}>
+                      {date}
+                    </Text>
+                  ) : null}
+                  {priceState?.label ? (
+                    <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                      {date ? `· ${priceState.label}` : priceState.label}
+                    </Text>
+                  ) : null}
                 </View>
-                <Text style={styles.overlayMetaMuted} numberOfLines={1}>
-                  {location}
-                  {distanceLabel ? ` · ${distanceLabel}` : ""}
-                </Text>
+                {location ? (
+                  <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                    {location}
+                    {distanceLabel ? ` · ${distanceLabel}` : ""}
+                  </Text>
+                ) : null}
               </View>
             </View>
           </View>

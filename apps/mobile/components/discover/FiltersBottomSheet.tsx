@@ -45,7 +45,6 @@ const DATE_OPTIONS: Array<{ key: DiscoverDateFilter; label: string }> = [
 const PRICE_OPTIONS: Array<{ key: DiscoverPriceFilter; label: string }> = [
   { key: "free", label: "Grátis" },
   { key: "paid", label: "Pagos" },
-  { key: "soon", label: "Preço em breve" },
   { key: "all", label: "Todos" },
 ];
 
@@ -209,6 +208,9 @@ export function FiltersBottomSheet({
         active ? styles.optionActive : null,
         pressed ? styles.optionPressed : null,
       ]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
     >
       <Text style={active ? styles.optionTextActive : styles.optionText}>{label}</Text>
     </Pressable>
@@ -219,7 +221,12 @@ export function FiltersBottomSheet({
 
   return (
     <Modal transparent visible={visible} animationType="fade">
-      <Pressable style={styles.overlay} onPress={onClose}>
+      <Pressable
+        style={styles.overlay}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Fechar filtros"
+      >
         <Animated.View style={[styles.overlayDim, { opacity }]} />
       </Pressable>
       <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
@@ -227,7 +234,13 @@ export function FiltersBottomSheet({
         <View style={styles.sheetHandle} />
         <View style={styles.header}>
           <Text style={styles.title}>Filtros</Text>
-          <Pressable onPress={onClose} style={styles.close} hitSlop={10}>
+          <Pressable
+            onPress={onClose}
+            style={styles.close}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Fechar filtros"
+          >
             <Ionicons name="close" size={18} color="#ffffff" />
           </Pressable>
         </View>
@@ -272,6 +285,7 @@ export function FiltersBottomSheet({
               style={styles.input}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
+              accessibilityLabel="Localização"
             />
             {locationQuery ? (
               <Pressable
@@ -282,6 +296,8 @@ export function FiltersBottomSheet({
                   clearLocation();
                 }}
                 style={styles.clear}
+                accessibilityRole="button"
+                accessibilityLabel="Limpar localização"
               >
                 <Ionicons name="close" size={12} color="rgba(255,255,255,0.7)" />
               </Pressable>
@@ -307,11 +323,13 @@ export function FiltersBottomSheet({
                     key={item.providerId}
                     onPress={() => handleSelectSuggestion(item)}
                     style={styles.suggestionItem}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Selecionar ${item.label}`}
                   >
                     <Text style={styles.suggestionTitle}>{item.label}</Text>
-                    <Text style={styles.suggestionSubtitle}>
-                      {item.city || "—"}
-                    </Text>
+                    {item.city ? (
+                      <Text style={styles.suggestionSubtitle}>{item.city}</Text>
+                    ) : null}
                   </Pressable>
                 ))
               )}

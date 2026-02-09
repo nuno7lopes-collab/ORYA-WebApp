@@ -132,6 +132,8 @@ export default function Index() {
         <View style={{ height: 16 }} />
         <Pressable
           onPress={() => profileQuery.refetch()}
+          accessibilityRole="button"
+          accessibilityLabel="Tentar novamente"
           style={{
             borderRadius: 16,
             paddingHorizontal: 16,

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma, SearchIndexVisibility } from "@prisma/client";
-import { toPublicEventCardFromIndex, PublicEventCard } from "@/domain/events/publicEventCard";
+import { toPublicEventCardFromIndex, PublicEventCard, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
 
 const DEFAULT_PAGE_SIZE = 12;
 
@@ -191,8 +191,9 @@ export async function searchPublicEvents(
     return true;
   });
 
-  const items = filtered.map((event) =>
-    toPublicEventCardFromIndex({
+  const items = filtered
+    .map((event) =>
+      toPublicEventCardFromIndex({
       sourceId: event.sourceId,
       slug: event.slug,
       title: event.title,
@@ -210,7 +211,8 @@ export async function searchPublicEvents(
       addressId: event.addressId ?? null,
       addressRef: event.addressRef ?? null,
     }),
-  );
+  )
+    .filter((event) => isPublicEventCardComplete(event));
 
   return { items, nextCursor };
 }

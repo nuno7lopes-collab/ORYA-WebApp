@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationModule } from "@prisma/client";
+import { OrganizationModule, Prisma } from "@prisma/client";
 import { ACTIVE_PAIRING_REGISTRATION_WHERE } from "@/domain/padelRegistration";
 import { notFound, redirect } from "next/navigation";
 import PadelTournamentTabs from "./PadelTournamentTabs";
@@ -36,7 +36,7 @@ type EventWithTickets = {
   addressId: string | null;
   addressRef?: {
     formattedAddress: string | null;
-    canonical: Record<string, unknown> | null;
+    canonical: Prisma.JsonValue | null;
   } | null;
   status: string;
   liveHubVisibility: "PUBLIC" | "PRIVATE" | "DISABLED";
@@ -67,7 +67,7 @@ type EventWithTickets = {
     numberOfCourts: number;
     club?: {
       name: string;
-      addressRef?: { formattedAddress: string | null; canonical?: Record<string, unknown> | null } | null;
+      addressRef?: { formattedAddress: string | null; canonical?: Prisma.JsonValue | null } | null;
     } | null;
     partnerClubIds?: number[];
     advancedSettings?: Record<string, unknown> | null;
@@ -76,18 +76,19 @@ type EventWithTickets = {
 };
 
 const pickCanonicalField = (
-  canonical: Record<string, unknown> | null | undefined,
+  canonical: Prisma.JsonValue | null | undefined,
   keys: string[],
 ) => {
-  if (!canonical) return null;
+  if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) return null;
+  const record = canonical as Record<string, unknown>;
   for (const key of keys) {
-    const value = canonical[key];
+    const value = record[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
 };
 
-const resolveCanonicalCity = (canonical?: Record<string, unknown> | null) =>
+const resolveCanonicalCity = (canonical?: Prisma.JsonValue | null) =>
   pickCanonicalField(canonical, ["city", "addressLine2", "locality"]);
 
 export default async function OrganizationEventDetailPage({ params }: PageProps) {

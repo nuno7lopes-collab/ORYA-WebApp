@@ -1,6 +1,16 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-07
+Atualizado: 2026-02-08
+
+**Index**
+- Regra de hierarquia
+- P0 endpoints (guardrails)
+- Contratos SSOT (C‑G5, Auth, Payments, Outbox, Access, Entitlements, Padel, Invoices, Address, Identity, Search)
+- Official Email (SSOT)
+- Runtime Validation Checklist
+- Runtime Validation Results
+- API ↔ UI Coverage
+- Observações finais
 
 ## Regra de hierarquia (obrigatória)
 1) `docs/ssot_registry.md` (este documento) é a fonte normativa final dos contratos SSOT.
@@ -15,12 +25,56 @@ Atualizado: 2026-02-07
 ## Escopo da verificação
 Esta verificação é **estática** (código e documentação). Para 100% real, é necessário
 revalidar em staging/prod com smoke tests e observabilidade ativa.
-Checklist: `docs/runtime_validation_checklist.md`.
+Checklist: ver secção "Runtime Validation Checklist" neste documento.
+
+## P0 endpoints (guardrails)
+Lista canónica de rotas P0 usada pelos gates de envelope/erro. Atualizar apenas quando uma rota P0
+for adicionada/removida (manter este bloco como fonte única).
+
+- `app/api/payments/intent/route.ts`
+- `app/api/checkout/status/route.ts`
+- `app/api/store/checkout/route.ts`
+- `app/api/store/checkout/prefill/route.ts`
+- `app/api/servicos/[id]/checkout/route.ts`
+- `app/api/servicos/[id]/creditos/checkout/route.ts`
+- `app/api/organizacao/reservas/[id]/checkout/route.ts`
+- `app/api/padel/pairings/[id]/checkout/route.ts`
+- `app/api/admin/payments/refund/route.ts`
+- `app/api/admin/payments/dispute/route.ts`
+- `app/api/admin/payments/reprocess/route.ts`
+- `app/api/admin/refunds/list/route.ts`
+- `app/api/admin/refunds/retry/route.ts`
+- `app/api/organizacao/refunds/list/route.ts`
+- `app/api/organizacao/payouts/status/route.ts`
+- `app/api/organizacao/payouts/list/route.ts`
+- `app/api/organizacao/payouts/summary/route.ts`
+- `app/api/organizacao/payouts/settings/route.ts`
+- `app/api/organizacao/payouts/connect/route.ts`
+- `app/api/organizacao/payouts/webhook/route.ts`
+- `app/api/admin/payouts/list/route.ts`
+- `app/api/admin/payouts/[id]/route.ts`
+- `app/api/admin/payouts/[id]/block/route.ts`
+- `app/api/admin/payouts/[id]/unblock/route.ts`
+- `app/api/admin/payouts/[id]/cancel/route.ts`
+- `app/api/admin/payouts/[id]/force-release/route.ts`
+- `app/api/internal/reconcile/route.ts`
+- `app/api/internal/outbox/dlq/route.ts`
+- `app/api/internal/outbox/replay/route.ts`
+- `app/api/internal/worker/operations/route.ts`
+- `app/api/internal/reprocess/purchase/route.ts`
+- `app/api/internal/reprocess/payment-intent/route.ts`
+- `app/api/internal/reprocess/stripe-event/route.ts`
+- `app/api/internal/checkout/timeline/route.ts`
+- `app/api/internal/checkin/consume/route.ts`
+- `app/api/cron/operations/route.ts`
+- `app/api/cron/payouts/release/route.ts`
+- `app/api/stripe/webhook/route.ts`
+- `app/api/webhooks/stripe/route.ts`
 
 ---
 
 ## C-G5 — Envelope de Resposta + IDs de Correlação
-**Fonte:** `docs/blueprint.md` + `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md`
+**Fonte:** `docs/blueprint.md`
 
 **Contrato SSOT**
 - Todas as rotas críticas devem responder com envelope canónico.
@@ -34,7 +88,7 @@ Varredura local encontrou **0** rotas em `app/api/**/route.ts` sem helper de env
 ---
 
 ## Auth + Fail-Closed + Org Context
-**Fonte:** `docs/blueprint.md`, `docs/Plano_Tecnico_v10_Auditoria_Final_e_Acao_para_ORYA_RAW.md`
+**Fonte:** `docs/blueprint.md`
 
 **Contrato SSOT**
 - Rotas internas e cron exigem segredo interno.
@@ -57,7 +111,7 @@ Varredura local encontrou **0** rotas internas/cron sem segredo.
 **Evidência:** `domain/finance/paymentIntent.ts`, `domain/finance/checkout.ts`,
 `app/api/payments/intent/route.ts`, `app/api/checkout/status/route.ts`.
 
-**Nota:** validação runtime depende de credenciais externas; checklist em `docs/runtime_validation_checklist.md`.
+**Nota:** validação runtime depende de credenciais externas; ver secção "Runtime Validation Checklist" neste documento.
 **Nota:** Stripe Connect Standard usa destination charges com `application_fee_amount` + `transfer_data.destination`.
 Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (Standard).
 
@@ -74,9 +128,9 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 **Evidência:** `domain/outbox/*`, `app/api/internal/worker/operations/route.ts`,
 `app/api/internal/outbox/dlq/route.ts`, `app/api/internal/outbox/replay/route.ts`.
 
-**Runtime local:** `docs/runtime_validation_results_local_2026-02-07.md`
+**Runtime local:** ver secção "Runtime Validation Results — Local" neste documento.
 
-**Nota:** em prod há DLQ pendente (3 itens). Ver `docs/runtime_validation_results_prod_2026-02-07.md`.
+**Nota:** em prod há DLQ pendente (3 itens). Ver secção "Runtime Validation Results — Prod" neste documento.
 
 ---
 
@@ -153,7 +207,7 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 **Estado:** VERIFIED (static)
 **Evidência:** `lib/address/service.ts`, `app/api/address/*`, `lib/geo/client.ts`, `lib/geo/provider.ts`.
 
-**Nota:** validação runtime em prod **bloqueada** (Apple Maps indisponível). Ver `docs/runtime_validation_results_prod_2026-02-07.md`.
+**Nota:** validação runtime em prod **pendente** — configurar `APPLE_MAPS_*` em Secrets Manager e revalidar. Ver secção "Runtime Validation Results — Prod" neste documento.
 
 ---
 
@@ -195,10 +249,242 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 
 ---
 
+---
+
+## Official Email — Política Canónica (SSOT, NORMATIVE)
+Data: 27 Jan 2026
+
+### Normalização (canónica)
+- `trim()` + `NFKC` + `lowercase`.
+- Guardado em `Organization.officialEmail` **já normalizado** (não existe `officialEmailNormalized`).
+- Não aplicamos punycode/IDN nesta iteração; se surgirem domínios unicode reais, adicionar conversão para ASCII antes de guardar.
+
+### Verificação
+- Email está verificado se **`officialEmail` normalizado** existe **e** `officialEmailVerifiedAt` != null.
+- Alterar `officialEmail` limpa automaticamente `officialEmailVerifiedAt`.
+- Método atual: **EMAIL_TOKEN** (link com token).
+- Audit log guarda apenas **email mascarado** e `verifiedDomain` (sem payload sensível).
+- Se já verificado, endpoints devem responder `200 ok` com `status:"VERIFIED"` (sem erro legacy).
+
+### Gates (regra única)
+- Se ação exige email verificado:
+  - Sem `officialEmail` → `OFFICIAL_EMAIL_REQUIRED`.
+  - Com `officialEmail` mas sem `officialEmailVerifiedAt` → `OFFICIAL_EMAIL_NOT_VERIFIED`.
+
+#### Payload canónico (erro)
+```json
+{
+  "ok": false,
+  "requestId": "<uuid>",
+  "correlationId": "<uuid>",
+  "error": "OFFICIAL_EMAIL_NOT_VERIFIED",
+  "message": "Email oficial por verificar para esta ação.",
+  "email": "foo@bar.com",
+  "verifyUrl": "/organizacao/settings?tab=official-email",
+  "nextStepUrl": "/organizacao/settings?tab=official-email",
+  "reasonCode": "CREATE_SERVICE"
+}
+```
+
+### Observabilidade
+- `requestId` e `correlationId` obrigatorios em payload + headers (`x-orya-request-id`, `x-orya-correlation-id`).
+- `correlationId` presente em mutações com side-effects (request/confirm/verify).
+
+### Notas de cache/UI
+- Após pedir verificação ou confirmar email, UI deve `mutate()`/`router.refresh()`.
+- Shell do dashboard usa `/api/organizacao/me` para revalidar estado.
+
+---
+
+## Runtime Validation Checklist (staging/prod, OPERACIONAL)
+Objetivo: transformar **PARTIAL → VERIFIED** no `docs/ssot_registry.md`.
+
+### 1) Ops / Saúde (P0)
+- `GET /api/internal/ops/health` com `X-ORYA-CRON-SECRET`
+- `GET /api/internal/ops/dashboard` com `X-ORYA-CRON-SECRET`
+- `GET /api/internal/ops/slo` com `X-ORYA-CRON-SECRET`
+- DLQ: `GET /api/internal/outbox/dlq?limit=50` (sem crescimento)
+
+### 2) Payments + Checkout (P0)
+- Criar checkout via `/api/payments/intent` e concluir pagamento real (Stripe test/prod)
+- Validar `Payment` + `LedgerEntry` criados corretamente
+- Validar `/api/checkout/status` retorna sucesso e estado consistente
+
+### 3) Webhooks + Reconciliação (P0)
+- Forçar webhook `payment_intent.succeeded`
+- Executar reconciliação (endpoint interno se aplicável)
+- Confirmar que `PaymentEvent` e ledger estão consistentes
+
+### 4) Outbox + Worker (P0)
+- Confirmar worker ativo (ECS, logs e operações processadas)
+- Forçar evento de outbox e validar processamento + dedupe
+
+### 5) Address Service (P1)
+- Autocomplete `/api/address/autocomplete` (cache + provider)
+- Details `/api/address/details` (normalização + addressId)
+- Reverse `/api/address/reverse` (normalização + addressId)
+
+### 6) Auth (P1)
+- Login + refresh token
+- Revogação/sessão expirada
+
+### 7) Perfil / Localização (P1)
+- `POST /api/me/location/consent` grava consent
+- `/api/me` devolve perfil básico (sem cidade)
+
+### Done Criteria
+- Todos os passos acima **OK** em staging/prod.
+- Atualizar `docs/ssot_registry.md` para **VERIFIED** nos blocos correspondentes.
+
+---
+
+## Runtime Validation Results (snapshots, NON‑NORMATIVE)
+### Local — 2026-02-07
+Base URL: `http://localhost:3000`
+
+### Ops / Saúde (P0)
+- `GET /api/internal/ops/health` → **200 OK**
+- `GET /api/internal/ops/dashboard` → **200 OK**
+- `GET /api/internal/ops/slo` → **200 OK**
+- `GET /api/internal/outbox/dlq?limit=5` → **200 OK** (vazio)
+
+### Outbox / Worker (P0)
+- Smoke automático (script: `scripts/runtime_outbox_smoke.js`)
+  - Evento criado: `diagnostic.runtime_smoke` (`eventId=3500b85f-8f33-43df-862e-2e74dc837abd`)
+  - `POST /api/internal/worker/operations` (1) → **200 OK** (processed=0, backlog=0)
+  - `POST /api/internal/worker/operations` (2) → **200 OK** (processed=0, backlog=0)
+  - Estado após publish: `claimedAt` preenchido, **sem** `operation` criada, `publishedAt=null`
+  - Fallback: inserção manual de `operationType=OUTBOX_EVENT` + novo worker
+  - `POST /api/internal/worker/operations` (fallback) → **500**; `operation` ficou **RUNNING**, `publishedAt` continua `null`
+  - `GET /api/internal/ops/outbox/summary` → pendingCountCapped=12, oldestPendingCreatedAt=2026-02-01
+  - Re-run (após aumentar timeout de transação do outbox publisher para 60s)
+    - Evento criado: `diagnostic.runtime_smoke` (`eventId=27d6130f-4da1-4e79-975f-cb69e64c8d2b`)
+    - `POST /api/internal/worker/operations` (1) → **200 OK** (duration ~60s, processed=0)
+    - `POST /api/internal/worker/operations` (2) → **200 OK** (processed=0)
+    - Fallback → **500**, `operation` ficou **RUNNING**, `publishedAt` continua `null`
+  - Diagnóstico direto (TS runner): `publishOutboxBatch()` falha com
+    - `Transaction API error: ... commit cannot be executed on an expired transaction` (timeout 60s)
+  - Ações locais executadas:
+    - Stop temporário de `scripts/operations-loop.js` + `scripts/cron-loop.js`
+    - Reset de `claimed_at/processing_token` em `app_v3.outbox_events` (pending=15)
+    - Reconcile `RUNNING` → `FAILED` via `POST /api/internal/reconcile`
+    - Loops **não** reiniciados: `operations-loop`/`cron-loop` apontavam para `https://orya.pt` via env (evitado em local).
+
+#### Outbox end‑to‑end (local, final)
+- Ajuste de runtime:
+  - Fallback sem transação para claim (pooler `:6543`) + guardas de erro por evento.
+  - Flags suportadas: `OUTBOX_PUBLISH_SKIP_TX`, `OPERATIONS_SKIP_TX`,
+    `OUTBOX_PUBLISH_TX_TIMEOUT_MS`, `OPERATIONS_TX_TIMEOUT_MS`.
+  - Worker passou a processar em local sem timeout de transação.
+- Execução (runner local com `OPERATIONS_SKIP_TX=1`, `OUTBOX_PUBLISH_SKIP_TX=1`):
+  - Outbox total: **15**
+  - Published: **12**
+  - Dead‑lettered: **3** (`LOCAL_MISSING_DEP`)
+  - Pending: **0**
+- Operações:
+  - SUCCEEDED: **12**
+  - DEAD_LETTER: **5** (3 outbox + 2 legacy com `LOCAL_MISSING_DEP`)
+
+**Motivos de DLQ local**
+- `payment.created` / `payment.free_checkout.requested`: falta de dependências Stripe + FK `payment_snapshots_payment_fk`.
+- `search.index.upsert.requested`: DB local sem coluna esperada (schema desatualizado).
+
+**Conclusão:** pipeline outbox/worker **funciona end‑to‑end em local**, com DLQ controlado para eventos que dependem de Stripe/DB íntegros.
+
+### Location (coarse + ip)
+- `GET /api/location/ip` → **200 OK** (`UNAVAILABLE` em local, esperado sem headers edge)
+
+### Address Service
+- `GET /api/address/reverse` → **PENDING** (aguarda Apple Maps)
+- `GET /api/address/autocomplete` → **PENDING** (aguarda Apple Maps)
+
+**Nota:** o resolver atual é **Apple‑only** por decisão de produto; sem credenciais locais do Apple Maps, falha.
+Para validar localmente: configurar Apple Maps no `.env.local`.
+
+### Itens não validados (faltam credenciais/fluxo)
+- Pagamentos/Stripe (`/api/payments/intent`, `/api/checkout/status`)
+- Webhooks e reconciliação
+- `POST /api/me/location/consent` (requer auth)
+
+**Nota:** o pipeline outbox/worker foi validado em local com fallback sem transação, mas o sucesso total
+depende de Stripe e de um schema DB atualizado (casos que geraram DLQ acima).
+
+---
+
+Resumo: Infra local responde, DLQ ok; Address Service pendente de credenciais Apple Maps.
+
+### Prod — 2026-02-07
+Base URL: `https://orya.pt`
+
+### Ops / Saúde (P0)
+- `GET /api/internal/ops/health` → **200 OK**
+- `GET /api/internal/ops/dashboard` → **200 OK**
+- `GET /api/internal/ops/slo` → **200 OK**
+
+**Observação:** outbox DLQ com **3** itens (types: `payment.created`, `payment.free_checkout.requested`, `search.index.upsert.requested`).
+
+### Payments / Checkout (P0)
+- `/api/payments/intent` (paid + free) → **500** `Erro ao criar PaymentIntent.`
+- Causa confirmada: **Stripe key expirada** (`api_key_expired`).
+
+**Bloqueio:** substituir `STRIPE_SECRET_KEY` em `orya/prod/payments`.
+
+### Address Service (P1)
+- `/api/address/autocomplete` → **PENDING** (aguarda credenciais Apple Maps)
+- `/api/address/reverse` → **PENDING** (aguarda credenciais Apple Maps)
+
+**Ação:** configurar `APPLE_MAPS_*` em Secrets Manager, validar endpoints e atualizar este registo.
+
+### DB / Schema
+Aplicados ajustes para alinhar schema DB com o Prisma:
+- `app_v3.organizations.address_id` (ADD column + index)
+- `app_v3.events.location_name` (drop NOT NULL)
+
+### E2E Report
+Relatório completo removido (histórico).
+
+---
+
+Resumo: P0 **bloqueado** por Stripe key expirada. Address Service **pendente** (Apple Maps). Outbox DLQ com 3 itens pendentes. Sem estes fixes não é possível marcar **VERIFIED** em prod.
+
+---
+
+## Analytics / Tracking (Mobile)
+**Fonte:** `docs/blueprint.md`, `docs/blueprint.md` (UX/UI & Mobile)
+
+**Contrato SSOT**
+- Mobile **não** usa provider externo de tracking neste momento.
+- A integração atual é **stub** (`trackEvent` apenas loga).
+- Decisão: tracking será **nativo ORYA** no futuro (ingestão própria + storage/relatórios), não agora.
+- Até existir implementação nativa, eventos **não** devem ser enviados para terceiros.
+
+**Estado:** TODO
+**Evidência:** `apps/mobile/lib/analytics.ts`, `docs/blueprint.md` (UX/UI & Mobile).
+
+---
+
+## API ↔ UI Coverage (snapshot, NON‑NORMATIVE)
+Fonte: `reports/api_ui_coverage.csv`
+
+### Resumo
+- Total rotas: 513
+- Covered: 326
+- Orphan: 143
+- Exempt: 44
+- UI endpoints missing API: 0
+
+### Detalhe
+- Lista completa de orphans e endpoints missing API: `reports/api_orphans.md`
+- CSV completo: `reports/api_ui_coverage.csv`
+
+### Nota
+- Este report inclui varredura **web + mobile** (app + apps/mobile).
+
+
 ## Observações finais
 - Este registry deve ser atualizado sempre que houver novas decisões de produto/contratos.
 - Qualquer novo endpoint crítico deve usar o envelope canónico e os gates de segurança.
-- Cobertura UI↔API: ver `docs/api_ui_coverage.md` (alguns orphans são mobile/admin).
+- Cobertura UI↔API: ver secção "API ↔ UI Coverage" neste documento (alguns orphans são mobile/admin).
 
 ---
 

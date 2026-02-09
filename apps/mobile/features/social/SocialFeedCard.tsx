@@ -53,7 +53,11 @@ export const SocialFeedCard = memo(function SocialFeedCard({
     <View className="mb-6">
       <GlassSurface intensity={44} padding={tokens.spacing.md} className="mb-3">
         <View className="flex-row items-center gap-3">
-          <Pressable onPress={handleOrgPress}>
+          <Pressable
+            onPress={handleOrgPress}
+            accessibilityRole="button"
+            accessibilityLabel={`Abrir organização ${orgName}`}
+          >
             <AvatarCircle
               size={46}
               uri={item.organization.avatarUrl}
@@ -62,7 +66,12 @@ export const SocialFeedCard = memo(function SocialFeedCard({
             />
           </Pressable>
 
-          <Pressable onPress={handleOrgPress} style={{ flex: 1 }}>
+          <Pressable
+            onPress={handleOrgPress}
+            style={{ flex: 1 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Abrir organização ${orgName}`}
+          >
             <Text className="text-white text-sm font-semibold" numberOfLines={1}>
               {orgName}
             </Text>
@@ -87,6 +96,7 @@ export const SocialFeedCard = memo(function SocialFeedCard({
         index={index}
         userLat={userLat}
         userLon={userLon}
+        source="network"
       />
     </View>
   );

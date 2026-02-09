@@ -16,10 +16,10 @@ export type QROptions = {
 };
 
 export async function generateQR(
-  payload: QRPayload,
+  payload: QRPayload | string,
   options: QROptions = {}
 ): Promise<string> {
-  const json = JSON.stringify(payload);
+  const json = typeof payload === "string" ? payload : JSON.stringify(payload);
 
   const theme =
     options.theme === "dark"

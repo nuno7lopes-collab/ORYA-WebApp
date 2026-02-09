@@ -18,7 +18,7 @@ type InvoiceOrder = {
   createdAt: Date;
   store: {
     id: number;
-    organizationId?: number | null;
+    ownerOrganizationId?: number | null;
     supportEmail: string | null;
     supportPhone: string | null;
     organization: { username: string | null; publicName: string | null; businessName: string | null } | null;
@@ -88,12 +88,12 @@ export async function ensureStoreInvoiceRecord(params: {
     totalCents: number;
     createdAt: Date;
     purchaseId?: string | null;
-    store: { organizationId?: number | null };
+    store: { ownerOrganizationId?: number | null };
   };
   customerIdentityId?: string | null;
 }) {
   const { order, customerIdentityId } = params;
-  const organizationId = order.store.organizationId;
+  const organizationId = order.store.ownerOrganizationId;
   if (!organizationId) return null;
 
   const sourceId = String(order.id);

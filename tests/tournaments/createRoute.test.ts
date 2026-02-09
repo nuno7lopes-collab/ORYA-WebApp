@@ -44,12 +44,20 @@ describe("tournament create route", () => {
   });
 
   it("bloqueia sem acesso", async () => {
-    prisma.event.findUnique.mockResolvedValue({
-      id: 1,
-      organizationId: 1,
-      tournament: null,
-      organization: { officialEmail: "x@org.tld", officialEmailVerifiedAt: new Date() },
-    });
+    prisma.event.findUnique
+      .mockResolvedValueOnce({
+        id: 1,
+        title: "Evento",
+        startsAt: new Date("2026-02-01T10:00:00Z"),
+        addressRef: { formattedAddress: "Rua X, Lisboa", canonical: { city: "Lisboa" } },
+        organizationId: 1,
+        tournament: null,
+      })
+      .mockResolvedValueOnce({
+        id: 1,
+        organizationId: 1,
+        organization: { officialEmail: "x@org.tld", officialEmailVerifiedAt: new Date() },
+      });
     prisma.profile.findUnique.mockResolvedValue({ onboardingDone: true, fullName: "A", username: "a" });
     getActiveOrganizationForUser.mockResolvedValue({ membership: null });
 
@@ -62,12 +70,20 @@ describe("tournament create route", () => {
   });
 
   it("cria via comando canónico", async () => {
-    prisma.event.findUnique.mockResolvedValue({
-      id: 1,
-      organizationId: 1,
-      tournament: null,
-      organization: { officialEmail: "x@org.tld", officialEmailVerifiedAt: new Date() },
-    });
+    prisma.event.findUnique
+      .mockResolvedValueOnce({
+        id: 1,
+        title: "Evento",
+        startsAt: new Date("2026-02-01T10:00:00Z"),
+        addressRef: { formattedAddress: "Rua X, Lisboa", canonical: { city: "Lisboa" } },
+        organizationId: 1,
+        tournament: null,
+      })
+      .mockResolvedValueOnce({
+        id: 1,
+        organizationId: 1,
+        organization: { officialEmail: "x@org.tld", officialEmailVerifiedAt: new Date() },
+      });
     prisma.profile.findUnique.mockResolvedValue({ onboardingDone: true, fullName: "A", username: "a" });
     getActiveOrganizationForUser.mockResolvedValue({ membership: { role: "ADMIN", rolePack: null } });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });

@@ -36,6 +36,9 @@ export const SearchUserRow = memo(function SearchUserRow({
               router.push({ pathname: "/[username]", params: { username: item.username } });
             }
           }}
+          accessibilityRole="button"
+          accessibilityLabel={`Abrir perfil de ${displayName}`}
+          accessibilityHint={handle ? `Ver perfil ${handle}` : undefined}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
           <AvatarCircle size={44} uri={item.avatarUrl} iconName="person" />
@@ -50,6 +53,9 @@ export const SearchUserRow = memo(function SearchUserRow({
           <Pressable
             onPress={() => (isActive ? onUnfollow(item.id) : onFollow(item.id))}
             disabled={pending}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ disabled: pending, selected: isActive }}
             className={
               isActive
                 ? "rounded-xl border border-white/15 bg-white/5 px-3 py-2"

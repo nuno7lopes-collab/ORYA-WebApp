@@ -12,12 +12,12 @@ const toDate = (value: string | null | undefined) => {
 };
 
 export function formatLocationLabel(event: PublicEventCard) {
-  return event.location?.formattedAddress || event.location?.city || "Local a anunciar";
+  return event.location?.formattedAddress || event.location?.city || null;
 }
 
 export function formatPriceLabel(event: PublicEventCard) {
   if (event.isGratis) return "Gratuito";
-  if (event.priceFrom == null) return "Valor a anunciar";
+  if (event.priceFrom == null) return null;
   const formatted = event.priceFrom.toLocaleString("pt-PT", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -27,7 +27,7 @@ export function formatPriceLabel(event: PublicEventCard) {
 
 export function formatEventDayLabel(event: PublicEventCard) {
   const start = toDate(event.startsAt);
-  if (!start) return "Data a anunciar";
+  if (!start) return null;
   return start.toLocaleDateString("pt-PT", {
     weekday: "short",
     day: "2-digit",

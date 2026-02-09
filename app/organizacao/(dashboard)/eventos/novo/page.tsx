@@ -18,6 +18,7 @@ import {
 } from "@/lib/eventCover";
 import { resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
@@ -51,9 +52,11 @@ type PadelClubSummary = {
   id: number;
   name: string;
   addressId?: string | null;
+  city?: string | null;
+  address?: string | null;
   addressRef?: {
     formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
     sourceProvider?: string | null;
@@ -125,31 +128,36 @@ const formatTimeLabel = (value: string) => {
   });
 };
 
-const pickCanonicalField = (canonical: Record<string, unknown> | null | undefined, keys: string[]) => {
-  if (!canonical) return null;
+const pickCanonicalField = (canonical: Prisma.JsonValue | null | undefined, keys: string[]) => {
+  if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) return null;
+  const record = canonical as Record<string, unknown>;
   for (const key of keys) {
-    const value = canonical[key];
+    const value = record[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
 };
 
-const resolvePadelClubLocation = (club: PadelClubSummary | null) => {
-  if (!club) return { formatted: "" };
-  const canonical = club.addressRef?.canonical ?? null;
-  const city = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]);
+const resolvePadelClubLocation = (club: PadelClubSummary | PadelPublicClub | null) => {
+  if (!club) return { formatted: "", city: "" };
+  const addressRef = "addressRef" in club ? club.addressRef : null;
+  const canonical = addressRef?.canonical ?? null;
+  const cityFromCanonical = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]);
   const addressLine1 = pickCanonicalField(canonical, ["addressLine1", "street", "road"]);
+  const city = cityFromCanonical ?? club.city ?? "";
   const formatted =
-    club.addressRef?.formattedAddress ||
+    addressRef?.formattedAddress ||
+    club.address ||
     [addressLine1, city].filter(Boolean).join(", ");
   return { formatted, city: city || "" };
 };
 
-const formatPadelClubLocationLabel = (club: PadelClubSummary | null) => {
+const formatPadelClubLocationLabel = (club: PadelClubSummary | PadelPublicClub | null) => {
   if (!club) return "";
-  const canonical = club.addressRef?.canonical ?? null;
-  const city = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]);
-  const formatted = club.addressRef?.formattedAddress ?? "";
+  const addressRef = "addressRef" in club ? club.addressRef : null;
+  const canonical = addressRef?.canonical ?? null;
+  const city = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]) ?? club.city;
+  const formatted = addressRef?.formattedAddress ?? club.address ?? "";
   return [city, formatted].filter(Boolean).join(" · ");
 };
 
@@ -394,6 +402,7 @@ export function NewOrganizationEventPage({
   const endDateInputRef = useRef<HTMLDivElement | null>(null);
   const endTimeInputRef = useRef<HTMLDivElement | null>(null);
   const locationModalRef = useRef<HTMLDivElement | null>(null);
+  const locationSearchRef = useRef<HTMLInputElement | null>(null);
   const descriptionModalRef = useRef<HTMLDivElement | null>(null);
   const coverModalRef = useRef<HTMLDivElement | null>(null);
   const ticketsModalRef = useRef<HTMLDivElement | null>(null);
@@ -1356,7 +1365,7 @@ export function NewOrganizationEventPage({
                     .filter((c) => c.isActive)
                     .map((club) => (
                       <option key={club.id} value={club.id}>
-                        {club.name} {club.city ? `— ${club.city}` : ""}
+                        {club.name} {resolvePadelClubLocation(club).city ? `— ${resolvePadelClubLocation(club).city}` : ""}
                       </option>
                     ))}
                 </select>
@@ -3089,6 +3098,7 @@ export function NewOrganizationEventPage({
             <div className="relative overflow-visible">
                 <input
                   type="text"
+                  ref={locationSearchRef}
                   value={locationQuery}
                   onChange={(e) => {
                     const next = e.target.value;
@@ -3103,7 +3113,6 @@ export function NewOrganizationEventPage({
                       setLocationValidationStatus(null);
                       activeProviderRef.current = null;
                       setLocationFormattedAddress(null);
-                      setLocationComponents(null);
                       setLocationLat(null);
                       setLocationLng(null);
                       setLocationConfirmed(false);

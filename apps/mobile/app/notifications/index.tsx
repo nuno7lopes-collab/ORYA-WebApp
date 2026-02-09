@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { usePathname, useRouter } from "expo-router";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -15,6 +15,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { useAuth } from "../../lib/auth";
+import { safeBack } from "../../lib/navigation";
 import { useNotificationsFeed, notificationsKeys } from "../../features/notifications/hooks";
 import type {
   AggregatedNotificationItem,
@@ -30,6 +31,7 @@ import {
 import { acceptFollowRequest, declineFollowRequest, followUser, unfollowUser } from "../../features/network/api";
 import { acceptInvite as acceptPairingInvite, declineInvite as declinePairingInvite } from "../../features/tournaments/api";
 import { openNotificationLink, resolveNotificationLink } from "../../lib/notifications";
+import { Swipeable } from "react-native-gesture-handler";
 
 type ListItem =
   | { kind: "skeleton"; key: string }
@@ -161,6 +163,7 @@ const NotificationThumbnail = ({ url, category }: { url?: string | null; categor
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const pathname = usePathname();
   const { session } = useAuth();
   const queryClient = useQueryClient();
@@ -344,6 +347,17 @@ export default function NotificationsScreen() {
     [markItemReadOptimistic, pathname, queryClient, router],
   );
 
+  const handleMarkRead = useCallback(
+    (item: AggregatedNotificationItem) => {
+      if (item.isRead) return;
+      markItemReadOptimistic(item.id);
+      markNotificationRead(item.id).catch(() => {
+        queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+      });
+    },
+    [markItemReadOptimistic, queryClient],
+  );
+
   const handleMute = useCallback(
     (item: AggregatedNotificationItem) => {
       if (!item.organizationId && !item.eventId) return;
@@ -483,7 +497,10 @@ export default function NotificationsScreen() {
           // ignore
         }
       } catch (err) {
-        Alert.alert("Não foi possível", "Tenta novamente.");
+        Alert.alert("Não foi possível", "Queres tentar novamente?", [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Tentar", onPress: () => handleAction(item, action) },
+        ]);
       } finally {
         setPendingActionKey(null);
       }
@@ -526,90 +543,137 @@ export default function NotificationsScreen() {
           }
         : undefined;
 
+      const showMute = Boolean(notification.organizationId || notification.eventId);
+
       return (
-        <Pressable
-          onPress={() => handlePressNotification(notification)}
-          onLongPress={() => handleMute(notification)}
-          delayLongPress={240}
-          style={styles.cardPressable}
-        >
-          <GlassCard intensity={60} padding={14} highlight={!notification.isRead}>
-            <View style={styles.cardRow}>
-              <AvatarStack
-                actors={notification.actors}
-                actorCount={notification.actorCount}
-                onPress={handleAvatarPress}
-              />
-              <View style={styles.cardContent}>
-                <Text style={styles.message} numberOfLines={2}>
-                  <Text style={styles.messageActor}>{notification.title}</Text>
-                  {notification.body ? <Text style={styles.messageBody}> {notification.body}</Text> : null}
-                </Text>
-                {showActions ? (
-                  <View style={styles.actionsRow}>
-                    {notification.actions?.map((action) => {
-                      const key = buildKey(notification.id, action);
-                      const isPending = pendingActionKey === key;
-                      const statusLabel = notificationStatus[notification.id];
-                      if (statusLabel) {
-                        return (
-                          <View key={`${key}-status`} style={[styles.actionButton, styles.actionStatus]}>
-                            <Text style={[styles.actionText, styles.actionTextStatus]}>{statusLabel}</Text>
-                          </View>
-                        );
-                      }
-                      const isStatus = action.type === "status" || action.style === "status";
-                      const followUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
-                      const isFollowing = followUserId ? followOverrides[followUserId] === true : false;
-                      const isFollowAction = action.type === "follow_back" && Boolean(followUserId);
-                      const resolvedLabel = isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
-                      const isPrimary = !isStatus && (isFollowAction ? !isFollowing : action.style === "primary");
-                      return (
-                        <Pressable
-                          key={key}
-                          onPress={(event) => {
-                            event.stopPropagation?.();
-                            handleAction(notification, action);
-                          }}
-                          disabled={isPending || isStatus}
-                          style={({ pressed }) => [
-                            styles.actionButton,
-                            isStatus
-                              ? styles.actionStatus
-                              : isPrimary
-                                ? styles.actionPrimary
-                                : styles.actionSecondary,
-                            pressed && styles.actionPressed,
-                            isPending && styles.actionDisabled,
-                          ]}
-                        >
-                        <Text
-                          style={[
-                            styles.actionText,
-                            isStatus
-                              ? styles.actionTextStatus
-                              : isPrimary
-                                ? styles.actionTextPrimary
-                                : styles.actionTextSecondary,
-                          ]}
-                        >
-                          {resolvedLabel}
-                        </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ) : null}
-                {metaLabel ? <Text style={styles.metaText}>{metaLabel}</Text> : null}
-              </View>
-              <NotificationThumbnail url={notification.thumbnailUrl} category={notification.category} />
-              {!notification.isRead ? <View style={styles.unreadDot} /> : null}
+        <Swipeable
+          renderRightActions={() => (
+            <View style={styles.swipeActions}>
+              {!notification.isRead ? (
+                <Pressable
+                  onPress={() => handleMarkRead(notification)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Marcar como lida"
+                  style={({ pressed }) => [
+                    styles.swipeButton,
+                    styles.swipePrimary,
+                    pressed ? styles.swipePressed : null,
+                  ]}
+                >
+                  <Ionicons name="checkmark-done" size={16} color="#0b101a" />
+                  <Text style={styles.swipePrimaryText}>Lida</Text>
+                </Pressable>
+              ) : null}
+              {showMute ? (
+                <Pressable
+                  onPress={() => handleMute(notification)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Silenciar notificações"
+                  style={({ pressed }) => [
+                    styles.swipeButton,
+                    styles.swipeSecondary,
+                    pressed ? styles.swipePressed : null,
+                  ]}
+                >
+                  <Ionicons name="volume-mute" size={16} color="white" />
+                  <Text style={styles.swipeSecondaryText}>Silenciar</Text>
+                </Pressable>
+              ) : null}
             </View>
-          </GlassCard>
-        </Pressable>
+          )}
+          rightThreshold={36}
+          friction={2}
+          overshootRight={false}
+        >
+          <Pressable
+            onPress={() => handlePressNotification(notification)}
+            onLongPress={() => handleMute(notification)}
+            delayLongPress={240}
+            style={styles.cardPressable}
+            accessibilityRole="button"
+            accessibilityLabel={`Abrir notificação ${notification.title}`}
+          >
+            <GlassCard intensity={60} padding={14} highlight={!notification.isRead}>
+              <View style={styles.cardRow}>
+                <AvatarStack
+                  actors={notification.actors}
+                  actorCount={notification.actorCount}
+                  onPress={handleAvatarPress}
+                />
+                <View style={styles.cardContent}>
+                  <Text style={styles.message} numberOfLines={2}>
+                    <Text style={styles.messageActor}>{notification.title}</Text>
+                    {notification.body ? <Text style={styles.messageBody}> {notification.body}</Text> : null}
+                  </Text>
+                  {showActions ? (
+                    <View style={styles.actionsRow}>
+                      {notification.actions?.map((action) => {
+                        const key = buildKey(notification.id, action);
+                        const isPending = pendingActionKey === key;
+                        const statusLabel = notificationStatus[notification.id];
+                        if (statusLabel) {
+                          return (
+                            <View key={`${key}-status`} style={[styles.actionButton, styles.actionStatus]}>
+                              <Text style={[styles.actionText, styles.actionTextStatus]}>{statusLabel}</Text>
+                            </View>
+                          );
+                        }
+                        const isStatus = action.type === "status" || action.style === "status";
+                        const followUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
+                        const isFollowing = followUserId ? followOverrides[followUserId] === true : false;
+                        const isFollowAction = action.type === "follow_back" && Boolean(followUserId);
+                        const resolvedLabel = isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
+                        const isPrimary = !isStatus && (isFollowAction ? !isFollowing : action.style === "primary");
+                        return (
+                          <Pressable
+                            key={key}
+                            onPress={(event) => {
+                              event.stopPropagation?.();
+                              handleAction(notification, action);
+                            }}
+                            disabled={isPending || isStatus}
+                            accessibilityRole="button"
+                            accessibilityLabel={resolvedLabel}
+                            accessibilityState={{ disabled: isPending || isStatus }}
+                            style={({ pressed }) => [
+                              styles.actionButton,
+                              isStatus
+                                ? styles.actionStatus
+                                : isPrimary
+                                  ? styles.actionPrimary
+                                  : styles.actionSecondary,
+                              pressed && styles.actionPressed,
+                              isPending && styles.actionDisabled,
+                            ]}
+                          >
+                          <Text
+                            style={[
+                              styles.actionText,
+                              isStatus
+                                ? styles.actionTextStatus
+                                : isPrimary
+                                  ? styles.actionTextPrimary
+                                  : styles.actionTextSecondary,
+                            ]}
+                          >
+                            {resolvedLabel}
+                          </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                  {metaLabel ? <Text style={styles.metaText}>{metaLabel}</Text> : null}
+                </View>
+                <NotificationThumbnail url={notification.thumbnailUrl} category={notification.category} />
+                {!notification.isRead ? <View style={styles.unreadDot} /> : null}
+              </View>
+            </GlassCard>
+          </Pressable>
+        </Swipeable>
       );
     },
-    [followOverrides, handleAction, handleMute, handlePressNotification, notificationStatus, pendingActionKey],
+    [followOverrides, handleAction, handleMarkRead, handleMute, handlePressNotification, notificationStatus, pendingActionKey],
   );
 
   const emptyState = !session?.user?.id ? (
@@ -618,9 +682,11 @@ export default function NotificationsScreen() {
       <Text style={styles.emptyTitle}>Inicia sessão</Text>
       <Text style={styles.emptyText}>Entra na tua conta para veres as notificações.</Text>
       <Pressable
-        onPress={() => router.push("/auth")}
+        onPress={() => router.push({ pathname: "/auth", params: { next: "/notifications" } })}
         className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
         style={{ minHeight: tokens.layout.touchTarget }}
+        accessibilityRole="button"
+        accessibilityLabel="Entrar"
       >
         <Text style={styles.emptyCta}>Entrar</Text>
       </Pressable>
@@ -634,6 +700,8 @@ export default function NotificationsScreen() {
         onPress={() => feed.refetch()}
         className="mt-4 rounded-2xl bg-white/10 px-4 py-3"
         style={{ minHeight: tokens.layout.touchTarget }}
+        accessibilityRole="button"
+        accessibilityLabel="Tentar novamente"
       >
         <Text style={styles.retryText}>Tentar novamente</Text>
       </Pressable>
@@ -648,9 +716,26 @@ export default function NotificationsScreen() {
 
   const header = (
     <View style={{ paddingTop: topPadding, paddingBottom: 12 }}>
+      <Pressable
+        onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+        accessibilityRole="button"
+        accessibilityLabel="Voltar"
+        style={({ pressed }) => [
+          styles.backButton,
+          pressed ? styles.backPressed : null,
+        ]}
+      >
+        <Ionicons name="chevron-back" size={18} color="rgba(255,255,255,0.9)" />
+        <Text style={styles.backText}>Voltar</Text>
+      </Pressable>
       <View style={styles.headerRow}>
         <Text style={styles.screenTitle}>Notificações</Text>
-        <Pressable onPress={() => router.push("/settings")} style={styles.settingsButton}>
+        <Pressable
+          onPress={() => router.push("/settings")}
+          style={styles.settingsButton}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir preferências"
+        >
           <Text style={styles.settingsText}>Preferências</Text>
         </Pressable>
       </View>
@@ -695,6 +780,58 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
+  swipeActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingRight: 8,
+  },
+  swipeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+    minWidth: 86,
+    justifyContent: "center",
+  },
+  swipePrimary: {
+    backgroundColor: "#ffffff",
+  },
+  swipePrimaryText: {
+    color: "#0b101a",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  swipeSecondary: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  swipeSecondaryText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  swipePressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  backPressed: {
+    opacity: 0.8,
+  },
+  backText: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",

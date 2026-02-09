@@ -38,8 +38,14 @@ async function _GET(req: NextRequest) {
     }
     const limit = clampLimit(params.get("limit"));
     const now = new Date();
-    const eventFilter = Number.isFinite(eventId) ? { eventId } : {};
-    const categoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
+    const eventFilter: Prisma.PadelPairingWhereInput = {};
+    if (typeof eventId === "number" && Number.isFinite(eventId)) {
+      eventFilter.eventId = eventId;
+    }
+    const categoryFilter: Prisma.PadelPairingWhereInput = {};
+    if (typeof categoryId === "number" && Number.isFinite(categoryId)) {
+      categoryFilter.categoryId = categoryId;
+    }
 
     const pairingWhere: Prisma.PadelPairingWhereInput = {
       pairingStatus: { not: "CANCELLED" },

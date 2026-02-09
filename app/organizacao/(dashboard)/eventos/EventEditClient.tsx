@@ -11,6 +11,7 @@ import { getEventCoverSuggestionIds, getEventCoverUrl, parseEventCoverToken } fr
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
+import type { Prisma } from "@prisma/client";
 
 const TicketTypeStatus = {
   ON_SALE: "ON_SALE",
@@ -99,10 +100,11 @@ type EventEditClientProps = {
     description: string | null;
     startsAt: string;
     endsAt: string;
+    address?: string | null;
     addressId?: string | null;
     addressRef?: {
       formattedAddress: string;
-      canonical: Record<string, unknown> | null;
+      canonical: Prisma.JsonValue | null;
       latitude: number;
       longitude: number;
       sourceProvider: string | null;

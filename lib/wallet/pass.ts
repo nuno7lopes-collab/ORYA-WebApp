@@ -22,7 +22,7 @@ export const isWalletPassEnabled = () => {
 };
 
 const formatPassDate = (value?: string | null) => {
-  if (!value) return "A anunciar";
+  if (!value) return null;
   try {
     return new Date(value).toLocaleString("pt-PT", {
       weekday: "short",
@@ -32,7 +32,7 @@ const formatPassDate = (value?: string | null) => {
       minute: "2-digit",
     });
   } catch {
-    return "A anunciar";
+    return null;
   }
 };
 
@@ -69,7 +69,10 @@ export const buildWalletPass = async (payload: PassPayload): Promise<Buffer> => 
 
   pass.type = "eventTicket";
   pass.primaryFields.push({ key: "event", label: "Evento", value: payload.title });
-  pass.secondaryFields.push({ key: "date", label: "Data", value: formatPassDate(payload.startAt) });
+  const formattedDate = formatPassDate(payload.startAt);
+  if (formattedDate) {
+    pass.secondaryFields.push({ key: "date", label: "Data", value: formattedDate });
+  }
   if (payload.venue) {
     pass.auxiliaryFields.push({ key: "venue", label: "Local", value: payload.venue });
   }

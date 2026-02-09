@@ -26,6 +26,7 @@ export function SettingsToggle({
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}
+        accessibilityLabel={label}
         trackColor={{
           false: "rgba(255,255,255,0.18)",
           true: "rgba(107,255,255,0.45)",

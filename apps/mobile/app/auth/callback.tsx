@@ -47,6 +47,19 @@ export default function AuthCallbackScreen() {
   const router = useRouter();
   const { loading: authLoading, session } = useAuth();
   const searchParams = useLocalSearchParams();
+  const nextRoute = useMemo(() => {
+    const raw = (searchParams as Record<string, string | string[] | undefined>)?.next;
+    const normalize = (value: string) => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
+    if (Array.isArray(raw)) return raw[0] ? normalize(raw[0]) : null;
+    if (typeof raw === "string" && raw.trim().length > 0) return normalize(raw);
+    return null;
+  }, [searchParams]);
   const [status, setStatus] = useState<"loading" | "error">("loading");
   const [message, setMessage] = useState("A confirmar o teu e-mail...");
   const handledRef = useRef(false);
@@ -94,7 +107,7 @@ export default function AuthCallbackScreen() {
         }
 
         trackEvent("auth_success_email", { mode: "confirm" });
-        router.replace("/");
+        router.replace(nextRoute ?? "/");
       } catch (err: any) {
         trackEvent("auth_fail_email", { reason: "callback_error" });
         if (!active) return;
@@ -121,7 +134,7 @@ export default function AuthCallbackScreen() {
   }, [fallbackUrl, router]);
 
   if (!authLoading && session) {
-    return <Redirect href="/" />;
+    return <Redirect href={nextRoute ?? "/"} />;
   }
 
   return (
@@ -136,8 +149,11 @@ export default function AuthCallbackScreen() {
           <>
             <Text style={styles.message}>{message}</Text>
             <Pressable
-              onPress={() => router.replace("/auth")}
+              onPress={() =>
+                router.replace({ pathname: "/auth", params: nextRoute ? { next: nextRoute } : {} })
+              }
               accessibilityRole="button"
+              accessibilityLabel="Voltar ao login"
               style={({ pressed }) => [styles.button, pressed ? styles.buttonPressed : null]}
             >
               <Text style={styles.buttonText}>Voltar ao login</Text>

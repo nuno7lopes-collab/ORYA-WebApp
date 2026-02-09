@@ -11,6 +11,7 @@ import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { normalizeEmail } from "@/lib/utils/email";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildWalletPass, isWalletPassEnabled } from "@/lib/wallet/pass";
+import { signTicketToORYA2 } from "@/lib/qr";
 
 type Params = { entitlementId: string };
 
@@ -122,19 +123,33 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   await prisma.entitlementQrToken.deleteMany({ where: { entitlementId: ent.id } });
   const token = crypto.randomUUID();
   const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60);
+  const expiresAt = checkinWindow?.end ?? new Date(Date.now() + 1000 * 60 * 60);
   await prisma.entitlementQrToken.create({
     data: { tokenHash, entitlementId: ent.id, expiresAt },
   });
 
   try {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expSec = Math.floor(expiresAt.getTime() / 1000);
+    const barcodeMessage =
+      typeof ent.eventId === "number"
+        ? signTicketToORYA2({
+            qrToken: token,
+            ticketId: ent.id,
+            eventId: ent.eventId,
+            userId: ent.ownerUserId ?? null,
+            issuedAtSec: nowSec,
+            expSec,
+          })
+        : token;
+
     const passBuffer = await buildWalletPass({
       serialNumber: ent.id,
       title: ent.snapshotTitle ?? "Bilhete ORYA",
       subtitle: ent.snapshotVenueName ?? null,
       venue: ent.snapshotVenueName ?? null,
       startAt: ent.snapshotStartAt ? ent.snapshotStartAt.toISOString() : null,
-      barcodeMessage: token,
+      barcodeMessage,
     });
 
     // Copy into a non-shared ArrayBuffer (BodyInit doesn't accept SharedArrayBuffer).

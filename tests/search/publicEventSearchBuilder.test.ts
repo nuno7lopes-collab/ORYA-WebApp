@@ -37,8 +37,14 @@ const baseItem = (overrides: Partial<any> = {}) => ({
   address: null,
   latitude: null,
   longitude: null,
-  locationFormattedAddress: null,
-  locationSource: null,
+  locationFormattedAddress: "Rua Teste 1, Lisboa",
+  locationSource: "APPLE_MAPS",
+  addressRef: {
+    formattedAddress: "Rua Teste 1, Lisboa",
+    canonical: { city: "Lisboa" },
+    latitude: 38.7223,
+    longitude: -9.1393,
+  },
   visibility: "PUBLIC",
   ...overrides,
 });

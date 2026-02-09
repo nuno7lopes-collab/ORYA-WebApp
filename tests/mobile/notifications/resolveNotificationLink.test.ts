@@ -32,9 +32,12 @@ describe("resolveNotificationLink", () => {
   });
 
   it("maps eventos slug to mobile event route", () => {
-    expectNative("/eventos/campeonato", "/event/campeonato");
-    expectNative("/eventos/campeonato/live", "/event/campeonato");
-    expectNative("https://www.orya.pt/eventos/campeonato", "/event/campeonato");
+    expectNative("/eventos/campeonato", "/event/campeonato?source=notifications");
+    expectNative("/eventos/campeonato/live", "/event/campeonato?source=notifications");
+    expectNative(
+      "https://www.orya.pt/eventos/campeonato",
+      "/event/campeonato?source=notifications",
+    );
   });
 
   it("maps wallet and tickets shortcuts", () => {
@@ -54,12 +57,15 @@ describe("resolveNotificationLink", () => {
   });
 
   it("keeps already mobile paths", () => {
-    expectNative("/event/xyz", "/event/xyz");
+    expectNative("/event/xyz", "/event/xyz?source=notifications");
     expectNative("/notifications", "/notifications");
   });
 
-  it("falls back to web for unknown paths", () => {
-    expectWeb("/foo/bar", "https://www.orya.pt/foo/bar");
-    expectWeb("https://www.orya.pt/unknown", "https://www.orya.pt/unknown");
+  it("falls back to none for unknown paths", () => {
+    expect(resolveNotificationLink("/foo/bar")).toEqual({ kind: "none" });
+    expect(resolveNotificationLink("https://www.orya.pt/unknown")).toEqual({
+      kind: "native",
+      path: "/unknown",
+    });
   });
 });

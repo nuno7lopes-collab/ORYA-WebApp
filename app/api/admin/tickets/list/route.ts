@@ -85,7 +85,8 @@ async function _GET(req: NextRequest) {
       });
     }
     if (andFilters.length > 0) {
-      where.AND = [...(where.AND ?? []), ...andFilters];
+      const existingAnd = Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : [];
+      where.AND = [...existingAnd, ...andFilters];
     }
 
     const [total, tickets] = await prisma.$transaction([

@@ -130,7 +130,7 @@ async function _GET(req: NextRequest) {
     }
 
     let resolvedClubId: number | null = padelClubId;
-    let resolvedCourtId: number | null = courtId;
+    const resolvedCourtId: number | null = courtId;
     if (resolvedClubId) {
       const club = await prisma.padelClub.findFirst({
         where: { id: resolvedClubId, organizationId: organization.id, deletedAt: null },
@@ -378,6 +378,7 @@ async function _POST(req: NextRequest) {
       select: {
         id: true,
         organizationId: true,
+        title: true,
         kind: true,
         durationMinutes: true,
         unitPriceCents: true,
@@ -398,6 +399,13 @@ async function _POST(req: NextRequest) {
 
     if (!service) {
       return fail(ctx, 404, "SERVICE_NOT_FOUND", "Serviço não encontrado.");
+    }
+    const serviceTitle = typeof service.title === "string" ? service.title.trim() : "";
+    if (!serviceTitle) {
+      return fail(ctx, 400, "SERVICE_TITLE_REQUIRED", "Serviço sem título.");
+    }
+    if (!Number.isFinite(service.durationMinutes) || service.durationMinutes <= 0) {
+      return fail(ctx, 400, "SERVICE_DURATION_REQUIRED", "Duração do serviço inválida.");
     }
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";
@@ -697,7 +705,7 @@ async function _POST(req: NextRequest) {
       service.locationMode === "CHOOSE_AT_BOOKING"
         ? addressIdInput || null
         : service.addressId ?? service.organization?.addressId ?? null;
-    if (service.locationMode === "CHOOSE_AT_BOOKING" && !resolvedAddressId) {
+    if (!resolvedAddressId) {
       return fail(ctx, 400, "LOCATION_REQUIRED", "Morada obrigatória para esta marcação.");
     }
     if (resolvedAddressId) {

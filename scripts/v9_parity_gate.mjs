@@ -2,10 +2,10 @@ import fs from "fs";
 import path from "path";
 
 const ROOT = process.cwd();
-const reportPath = path.join(ROOT, "docs", "v9_parity_report.md");
+const reportPath = path.join(ROOT, "reports", "v9_parity_report.md");
 
 if (!fs.existsSync(reportPath)) {
-  console.error("V9 parity gate: missing docs/v9_parity_report.md");
+  console.error("V9 parity gate: missing reports/v9_parity_report.md");
   process.exit(1);
 }
 

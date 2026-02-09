@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { trackEvent } from "@/lib/analytics";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { computeMatchSlots, estimateMaxTeamsForSlots } from "@/lib/padel/capacityRecommendation";
+import type { Prisma } from "@prisma/client";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -14,6 +15,7 @@ type PadelClub = {
   id: number;
   name: string;
   isActive: boolean;
+  addressId?: string | null;
   locationSource?: "APPLE_MAPS" | null;
   locationProviderId?: string | null;
   locationFormattedAddress?: string | null;
@@ -21,7 +23,7 @@ type PadelClub = {
   longitude?: number | null;
   addressRef?: {
     formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
     sourceProvider?: string | null;

@@ -25,7 +25,7 @@ export function WalletCard({ item, compact = false }: Props) {
         hour: "2-digit",
         minute: "2-digit",
       })
-    : "Data a anunciar";
+    : null;
   const coverSrc = getEventCoverUrl(item.snapshot.coverUrl, {
     seed: item.snapshot.title ?? item.entitlementId,
     width: compact ? 500 : 700,
@@ -60,8 +60,10 @@ export function WalletCard({ item, compact = false }: Props) {
           <span className="text-[10px] uppercase tracking-[0.16em] text-white/70">{item.type}</span>
         </div>
         <h3 className="text-sm font-semibold leading-snug line-clamp-2">{item.snapshot.title}</h3>
-        <p className="text-[11px] text-white/80">{dateLabel}</p>
-        <p className="text-[10px] text-white/65 mt-1">{item.snapshot.venueName ?? "Local a anunciar"}</p>
+        {dateLabel ? <p className="text-[11px] text-white/80">{dateLabel}</p> : null}
+        {item.snapshot.venueName ? (
+          <p className="text-[10px] text-white/65 mt-1">{item.snapshot.venueName}</p>
+        ) : null}
 
         <div className="mt-3 flex items-center justify-between gap-2">
           <Link

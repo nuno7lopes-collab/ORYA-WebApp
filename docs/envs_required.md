@@ -1,4 +1,16 @@
-# Envs Required (production + CI)
+# Envs Required (NORMATIVE — production + CI)
+
+**Index**
+- Core runtime
+- Supabase
+- Stripe
+- Apple Sign‑In / APNS / Maps
+- AWS (Secrets/Deploy)
+- Local dev / CI
+- SOT Snapshot
+- Mobile Local Dev
+- AWS Pause/Start
+
 
 This doc lists the required env vars for core services and where to store them.
 Keep secrets out of git. Use single-line base64 for Apple keys.
@@ -110,11 +122,6 @@ Current groups (documented as configured in PROD/DEV):
 - `orya/prod/app`, `orya/prod/supabase`, `orya/prod/payments`, `orya/prod/apple`, `orya/prod/email`, `orya/prod/admin`
 - `orya/dev/app`, `orya/dev/supabase`, `orya/dev/payments`, `orya/dev/apple`, `orya/dev/email`, `orya/dev/admin`
 
-Infra evidence:
-- `reports/p_infra_2026-01-30.md`
-- `reports/p_email_2026-01-31.md`
-- `reports/test_env_isolation_2026-01-31.md`
-
 ## AWS deploy
 - Store env vars in AWS Secrets Manager/SSM.
 - Attach them to App Runner/ECS task definitions by environment.
@@ -127,3 +134,147 @@ Infra evidence:
 
 ## Client (optional)
 - NEXT_PUBLIC_APP_ENV (prod|test override for client)
+
+---
+
+## SOT Snapshot (Prod + Local) — NON-NORMATIVE
+Este snapshot substitui o snapshot anterior e serve apenas como fotografia do estado atual.
+Os requisitos normativos de envs permanecem nas secções acima.
+
+Gerado: 2026-02-08 20:40:07
+
+### PROD (AWS Secrets Manager)
+Fonte: AWS Secrets Manager (live)
+
+#### app
+- existe (32): ADMIN_ACTION_IP_ALLOWLIST, ADMIN_BREAK_GLASS_TOKEN, ADMIN_MFA_REQUIRED, ADMIN_TOTP_ENCRYPTION_KEY, ADMIN_USER_IDS, ALERTS_SNS_TOPIC_ARN, APP_BASE_URL, APP_ENV, CLOUDWATCH_LOG_GROUP, CLOUDWATCH_LOG_RETENTION_DAYS, CLOUDWATCH_METRICS_NAMESPACE, DATABASE_URL, DIRECT_URL, ICS_SECRET_KEY, INFRA_READ_ONLY, INTERNAL_SECRET_HEADER, LOG_FORMAT, LOG_LEVEL, MAPKIT_JS_KEY_ID, MAPKIT_JS_ORIGIN, MAPKIT_JS_PRIVATE_KEY_BASE64, MAP_PROVIDER, NEXTAUTH_SECRET, NEXTAUTH_URL, NEXT_PUBLIC_APP_ENV, NEXT_PUBLIC_BASE_URL, ORYA_CRON_SECRET, PWA_MANIFEST_URL, QR_SECRET_KEY, S3_SECRETS_BUCKET, XRAY_DAEMON_ADDRESS, XRAY_ENABLED
+
+#### apple
+- existe (16): APNS_KEY_ID, APNS_PRIVATE_KEY_BASE64, APNS_TEAM_ID, APNS_TOPIC, APPLE_MAPS_KEY_ID, APPLE_MAPS_ORIGIN, APPLE_MAPS_PRIVATE_KEY_BASE64, APPLE_MAPS_TEAM_ID, APPLE_PAY_CERTIFICATE_BASE64, APPLE_PAY_DOMAIN_VERIFICATION_FILE, APPLE_PAY_MERCHANT_ID, APPLE_SIGNIN_KEY_ID, APPLE_SIGNIN_PRIVATE_KEY_BASE64, APPLE_SIGNIN_REDIRECT_URI, APPLE_SIGNIN_SERVICE_ID, APPLE_SIGNIN_TEAM_ID
+
+#### email
+- existe (5): EMAIL_FROM, SES_IDENTITY_DOMAIN, SES_REGION, SES_SMTP_PASSWORD, SES_SMTP_USERNAME
+
+#### payments
+- existe (9): NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST, STRIPE_SECRET_KEY, STRIPE_SECRET_KEY_LIVE, STRIPE_SECRET_KEY_TEST, STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_LIVE, STRIPE_PAYOUTS_WEBHOOK_SECRET_LIVE
+
+#### supabase
+- existe (5): NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE, SUPABASE_URL
+
+#### admin/infra extras
+- existe (6): DEVICE_FARM_KEY, DEVICE_FARM_PROVIDER, DEVICE_FARM_USER, STAGING_ADMIN_EMAIL, STAGING_ADMIN_PASSWORD, STAGING_ADMIN_SESSION
+
+### Notas de consistência
+- Este snapshot é informativo; requisitos normativos ficam nas secções acima.
+- Apple Maps: o runtime usa `APPLE_MAPS_*`; `MAPKIT_JS_*` é fallback legacy.
+- Stripe: quando `*_LIVE/*_TEST` não existem, o runtime usa os fallbacks `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+- DB única: quando `SINGLE_DB_MODE=1`, o runtime força `APP_ENV=prod`.
+- Stripe local: `STRIPE_MODE`/`NEXT_PUBLIC_STRIPE_MODE` pode forçar chaves de teste sem alterar o ambiente da DB.
+- `NEXTAUTH_*` e `MAP_PROVIDER` existem no snapshot mas não são referenciados no runtime atual.
+
+### LOCAL (.env.local)
+Fonte: `/Users/nuno/orya/ORYA-WebApp/.env.local`
+
+#### app
+- existe (33): ADMIN_ACTION_IP_ALLOWLIST, ADMIN_BREAK_GLASS_TOKEN, ADMIN_MFA_REQUIRED, ADMIN_TOTP_ENCRYPTION_KEY, ADMIN_USER_IDS, ALERTS_SNS_TOPIC_ARN, APP_BASE_URL, APP_ENV, CLOUDWATCH_LOG_GROUP, CLOUDWATCH_LOG_RETENTION_DAYS, CLOUDWATCH_METRICS_NAMESPACE, DATABASE_URL, DIRECT_URL, ICS_SECRET_KEY, INFRA_READ_ONLY, INTERNAL_SECRET_HEADER, LOG_FORMAT, LOG_LEVEL, MAPKIT_JS_KEY_ID, MAPKIT_JS_ORIGIN, MAPKIT_JS_PRIVATE_KEY_BASE64, MAP_PROVIDER, NEXTAUTH_SECRET, NEXTAUTH_URL, NEXT_PUBLIC_APP_ENV, NEXT_PUBLIC_BASE_URL, ORYA_CRON_SECRET, PWA_MANIFEST_URL, QR_SECRET_KEY, S3_SECRETS_BUCKET, SINGLE_DB_MODE, XRAY_DAEMON_ADDRESS, XRAY_ENABLED
+
+#### apple
+- existe (16): APNS_KEY_ID, APNS_PRIVATE_KEY_BASE64, APNS_TEAM_ID, APNS_TOPIC, APPLE_MAPS_KEY_ID, APPLE_MAPS_ORIGIN, APPLE_MAPS_PRIVATE_KEY_BASE64, APPLE_MAPS_TEAM_ID, APPLE_PAY_CERTIFICATE_BASE64, APPLE_PAY_DOMAIN_VERIFICATION_FILE, APPLE_PAY_MERCHANT_ID, APPLE_SIGNIN_KEY_ID, APPLE_SIGNIN_PRIVATE_KEY_BASE64, APPLE_SIGNIN_REDIRECT_URI, APPLE_SIGNIN_SERVICE_ID, APPLE_SIGNIN_TEAM_ID
+
+#### email
+- existe (5): EMAIL_FROM, SES_IDENTITY_DOMAIN, SES_REGION, SES_SMTP_PASSWORD, SES_SMTP_USERNAME
+
+#### payments
+- existe (9): NEXT_PUBLIC_STRIPE_MODE, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST, STRIPE_MODE, STRIPE_PAYOUTS_WEBHOOK_SECRET_TEST, STRIPE_SECRET_KEY, STRIPE_SECRET_KEY_TEST, STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_TEST
+- falta (3): NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE, STRIPE_SECRET_KEY_LIVE, STRIPE_WEBHOOK_SECRET_LIVE
+
+#### supabase
+- existe (5): NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE, SUPABASE_URL
+
+#### admin/infra extras
+- existe (6): DEVICE_FARM_KEY, DEVICE_FARM_PROVIDER, DEVICE_FARM_USER, STAGING_ADMIN_EMAIL, STAGING_ADMIN_PASSWORD, STAGING_ADMIN_SESSION
+
+---
+
+## Mobile Local Dev (Expo Go) — quick steps
+### 1) Start backend (local)
+```bash
+npm run dev:all
+```
+`dev:all` now binds to `0.0.0.0` and auto-detects your LAN IP for public URLs.  
+If it picks the wrong IP, override:
+```bash
+DEV_ALL_PUBLIC_HOST=192.168.1.98 npm run dev:all
+```
+
+### 2) Start mobile (Expo Go)
+```bash
+npm run mobile:dev
+```
+
+### 3) Mobile env (LAN base URL)
+You can keep `apps/mobile/.env` with:
+```
+EXPO_PUBLIC_API_BASE_URL=http://localhost:3000
+```
+The mobile app now auto-resolves the correct LAN IP at runtime.
+
+### 4) Quick connectivity check (iPhone Safari)
+```
+http://192.168.1.98:3000
+```
+If this doesn’t open: check same Wi‑Fi, VPN/Private Relay off, macOS Firewall.
+
+---
+
+## AWS Pause/Start (Prod) — cost control runbook
+Este runbook cria um "pause" controlado para reduzir custos de:
+- Amazon Elastic Load Balancing (ALB)
+- Amazon ECS (Fargate)
+- Amazon VPC (custos de IPv4 publico associados ao ALB)
+
+### O que o pause faz
+- Remove o ALB do stack (via CloudFormation), eliminando custo de Load Balancer e IPs publicos associados.
+- Faz scale do ECS para 0 (Fargate para).
+- Guarda estado (parametros do stack + desired counts) num ficheiro local.
+
+Impacto: **downtime total** enquanto estiver pausado.
+
+### O que o start faz
+- Recria o ALB se estava ativo antes do pause.
+- Restaura parametros do stack e desired counts anteriores.
+- Faz scale do ECS para os valores originais.
+
+### Requisitos
+- AWS CLI configurado
+- Profile com acesso a CloudFormation/ECS/ELB
+- `AWS_PROFILE` e `AWS_REGION` definidos (ou defaults `codex` e `eu-west-1`)
+- Stack CloudFormation em estado estavel (`UPDATE_COMPLETE` ou `UPDATE_ROLLBACK_COMPLETE`)
+
+### Uso
+
+Pause:
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/pause-prod.sh
+```
+
+Start:
+```bash
+AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/start-prod.sh
+```
+
+Opcional (dry-run):
+```bash
+DRY_RUN=true scripts/aws/pause-prod.sh
+DRY_RUN=true scripts/aws/start-prod.sh
+```
+
+Estado:
+- Fica em `scripts/aws/state/orya-prod-pause.json` (podes definir `STATE_FILE`).
+
+### Notas importantes
+- O pause remove o ALB e pode apagar registos DNS (se existirem no stack).
+- O VPC nao e apagado; apenas deixam de existir custos de IPv4 publico associados ao ALB.
+- Se precisares de manter DNS ativo, nao uses este pause.
+- Se precisas de Free Tier no CloudWatch, desativa `Container Insights` no ECS.
+- Para pausar novamente, remove o ficheiro de estado ou define `STATE_FILE` para um novo caminho.

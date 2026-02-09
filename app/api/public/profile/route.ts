@@ -138,7 +138,7 @@ async function _GET(req: NextRequest) {
         bio: organization.publicDescription,
         city:
           pickCanonicalField(
-            (organization.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+            organization.addressRef?.canonical ?? null,
             "city",
             "locality",
             "addressLine2",

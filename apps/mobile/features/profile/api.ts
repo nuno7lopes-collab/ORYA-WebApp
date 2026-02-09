@@ -120,27 +120,31 @@ export const updateProfile = async (payload: {
     }),
   });
 
-  const data = unwrapApiResponse<{ profile?: Record<string, unknown> }>(response);
-  const profile = (data as { profile?: Record<string, unknown> }).profile ?? data;
+  const data = unwrapApiResponse<unknown>(response);
+  const profile =
+    data && typeof data === "object" && "profile" in data
+      ? ((data as { profile?: Record<string, unknown> }).profile ?? null)
+      : (data as Record<string, unknown> | null);
+  const profileData = (profile ?? {}) as Record<string, unknown>;
 
   return {
-    id: String(profile?.id ?? ""),
-    email: (profile?.email as string | null | undefined) ?? null,
-    fullName: (profile?.fullName as string | null | undefined) ?? null,
-    username: (profile?.username as string | null | undefined) ?? null,
-    avatarUrl: (profile?.avatarUrl as string | null | undefined) ?? null,
-    coverUrl: (profile?.coverUrl as string | null | undefined) ?? null,
-    bio: (profile?.bio as string | null | undefined) ?? null,
-    padelLevel: (profile?.padelLevel as string | null | undefined) ?? null,
-    favouriteCategories: (profile?.favouriteCategories as string[] | undefined) ?? undefined,
-    visibility: (profile?.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | undefined) ?? undefined,
+    id: String(profileData.id ?? ""),
+    email: (profileData.email as string | null | undefined) ?? null,
+    fullName: (profileData.fullName as string | null | undefined) ?? null,
+    username: (profileData.username as string | null | undefined) ?? null,
+    avatarUrl: (profileData.avatarUrl as string | null | undefined) ?? null,
+    coverUrl: (profileData.coverUrl as string | null | undefined) ?? null,
+    bio: (profileData.bio as string | null | undefined) ?? null,
+    padelLevel: (profileData.padelLevel as string | null | undefined) ?? null,
+    favouriteCategories: (profileData.favouriteCategories as string[] | undefined) ?? undefined,
+    visibility: (profileData.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | undefined) ?? undefined,
     allowEmailNotifications:
-      (profile?.allowEmailNotifications as boolean | undefined) ?? undefined,
+      (profileData.allowEmailNotifications as boolean | undefined) ?? undefined,
     allowEventReminders:
-      (profile?.allowEventReminders as boolean | undefined) ?? undefined,
+      (profileData.allowEventReminders as boolean | undefined) ?? undefined,
     allowFollowRequests:
-      (profile?.allowFollowRequests as boolean | undefined) ?? undefined,
-    onboardingDone: Boolean(profile?.onboardingDone ?? true),
+      (profileData.allowFollowRequests as boolean | undefined) ?? undefined,
+    onboardingDone: Boolean(profileData.onboardingDone ?? true),
   };
 };
 

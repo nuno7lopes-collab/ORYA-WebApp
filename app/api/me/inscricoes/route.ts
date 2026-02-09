@@ -34,7 +34,6 @@ async function _GET() {
               id: true,
               profileId: true,
               slot_role: true,
-              ticket: { select: { id: true, status: true } },
             },
           },
         },

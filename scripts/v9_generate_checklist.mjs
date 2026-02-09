@@ -1,9 +1,9 @@
 import fs from "node:fs";
 
 const sources = [
-  { path: "docs/v9_close_plan.md", label: "v9_close_plan" },
   { path: "docs/ssot_registry.md", label: "ssot_registry" },
   { path: "docs/blueprint.md", label: "blueprint" },
+  { path: "docs/envs_required.md", label: "envs_required" },
 ];
 
 function detectStatus(line) {
@@ -27,7 +27,7 @@ function detectStatus(line) {
 }
 
 const now = new Date().toISOString().slice(0, 10);
-let output = "# V9 Close Checklist (Generated)\n\n";
+let output = "# Canonical Docs Checklist (Generated)\n\n";
 output += `Generated: ${now}\n`;
 output += "Regenerate with: `node scripts/v9_generate_checklist.mjs`\n\n";
 
@@ -45,5 +45,6 @@ for (const source of sources) {
   output += "\n";
 }
 
-fs.writeFileSync("docs/v9_close_checklist.md", output);
-console.log("Generated docs/v9_close_checklist.md");
+const outPath = `reports/canonical_docs_checklist_${now}.md`;
+fs.writeFileSync(outPath, output);
+console.log(`Generated ${outPath}`);

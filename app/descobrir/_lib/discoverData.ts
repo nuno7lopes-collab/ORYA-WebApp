@@ -161,14 +161,12 @@ function filterByPrice(events: DiscoverEvent[], min: number | null, max: number 
 }
 
 export function formatLocationLabel(event: DiscoverEvent) {
-  return (
-    event.locationFormattedAddress || "Local a anunciar"
-  );
+  return event.locationFormattedAddress || null;
 }
 
 export function formatPriceLabel(event: DiscoverEvent) {
   if (event.isGratis) return "Gratuito";
-  if (event.priceFrom == null) return "Valor a anunciar";
+  if (event.priceFrom == null) return null;
   const formatted = event.priceFrom.toLocaleString("pt-PT", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -177,7 +175,7 @@ export function formatPriceLabel(event: DiscoverEvent) {
 }
 
 export function formatEventDayLabel(event: DiscoverEvent) {
-  if (!event.startsAt) return "Data a anunciar";
+  if (!event.startsAt) return null;
   return event.startsAt.toLocaleDateString("pt-PT", {
     weekday: "short",
     day: "2-digit",

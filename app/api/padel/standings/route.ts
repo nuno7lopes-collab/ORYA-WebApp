@@ -106,7 +106,7 @@ async function _GET(req: NextRequest) {
             slots: {
               select: {
                 slot_role: true,
-                playerProfile: { select: { fullName: true, username: true } },
+                playerProfile: { select: { fullName: true, displayName: true } },
               },
             },
           },
@@ -126,8 +126,8 @@ async function _GET(req: NextRequest) {
         return 0;
       });
       const players = sortedSlots.map((slot) => ({
-        name: slot.playerProfile?.fullName ?? null,
-        username: slot.playerProfile?.username ?? null,
+        name: slot.playerProfile?.fullName ?? slot.playerProfile?.displayName ?? null,
+        username: slot.playerProfile?.displayName ?? null,
       }));
       const names = players
         .map((p) => p.name || p.username)

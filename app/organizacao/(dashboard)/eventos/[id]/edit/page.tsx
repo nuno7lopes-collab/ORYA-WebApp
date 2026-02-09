@@ -147,7 +147,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           addressRef: event.addressRef
             ? {
                 formattedAddress: event.addressRef.formattedAddress,
-                canonical: event.addressRef.canonical as Record<string, unknown> | null,
+                canonical: event.addressRef.canonical,
                 latitude: event.addressRef.latitude,
                 longitude: event.addressRef.longitude,
                 sourceProvider: event.addressRef.sourceProvider,

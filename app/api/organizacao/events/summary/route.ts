@@ -104,7 +104,7 @@ async function _GET(req: NextRequest) {
     const now = new Date();
     const activeFilter: Prisma.EventWhereInput = {
       ...baseWhere,
-      status: { not: "ARCHIVED" },
+      status: { not: "CANCELLED" },
     };
 
     const [total, upcoming, ongoing, finished, nextEvent] = await prisma.$transaction([

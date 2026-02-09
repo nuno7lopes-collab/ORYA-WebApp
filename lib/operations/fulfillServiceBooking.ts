@@ -638,6 +638,7 @@ export async function fulfillServiceBookingIntent(
             availability: true,
             policyRef: { select: { policyId: true } },
             service: { select: { title: true, coverImageUrl: true, addressRef: { select: { formattedAddress: true } } } },
+            addressRef: { select: { formattedAddress: true } },
           },
         });
       }

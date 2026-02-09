@@ -178,11 +178,11 @@ async function _PATCH(req: NextRequest) {
       return fail(400, "Dados invalidos.");
     }
 
-    let supportEmail = null;
-    let supportPhone = null;
-    let returnPolicy = null;
-    let privacyPolicy = null;
-    let termsUrl = null;
+    let supportEmail: string | null = null;
+    let supportPhone: string | null = null;
+    let returnPolicy: string | null = null;
+    let privacyPolicy: string | null = null;
+    let termsUrl: string | null = null;
 
     try {
       supportEmail = normalizeText(parsed.data.supportEmail, MAX_SUPPORT_CHARS, "SUPPORT_EMAIL");

@@ -51,11 +51,7 @@ async function _GET(req: NextRequest) {
 
     type PairingWithSlots = Prisma.PadelPairingGetPayload<{
       include: {
-        slots: {
-          include: {
-            ticket: { select: { id: true; status: true; stripePaymentIntentId: true } };
-          };
-        };
+        slots: true;
         event: { select: { id: true; title: true; slug: true; organizationId: true; templateType: true } };
         category: { select: { label: true } };
       };
@@ -92,13 +88,7 @@ async function _GET(req: NextRequest) {
         ],
       },
       include: {
-        slots: {
-          include: {
-            ticket: {
-              select: { id: true, status: true, stripePaymentIntentId: true },
-            },
-          },
-        },
+        slots: true,
         event: {
           select: { id: true, title: true, slug: true, organizationId: true, templateType: true },
         },

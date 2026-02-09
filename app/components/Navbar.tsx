@@ -396,7 +396,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
           hour: "2-digit",
           minute: "2-digit",
         })
-      : "Data a anunciar";
+      : null;
 
   const hasResults =
     eventResults.length > 0 || organizationResults.length > 0 || userResults.length > 0;
@@ -877,21 +877,23 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                     <p className="text-[12px] font-semibold text-white line-clamp-1">
                                       {item.title}
                                     </p>
-                                    <p className="text-[10px] text-white/80 line-clamp-1">
-                                      {item.locationFormattedAddress || "Local a anunciar"}
-                                    </p>
-                                    <p className="text-[10px] text-white/70">
-                                      {formatEventDate(item.startsAt)}
-                                    </p>
+                                    {item.locationFormattedAddress ? (
+                                      <p className="text-[10px] text-white/80 line-clamp-1">
+                                        {item.locationFormattedAddress}
+                                      </p>
+                                    ) : null}
+                                    {formatEventDate(item.startsAt) ? (
+                                      <p className="text-[10px] text-white/70">
+                                        {formatEventDate(item.startsAt)}
+                                      </p>
+                                    ) : null}
                                   </div>
                                   <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
-                                    <span>
-                                      {item.isGratis
-                                        ? "Grátis"
-                                        : item.priceFrom !== null
-                                          ? `Desde ${item.priceFrom.toFixed(2)} €`
-                                          : "Preço a anunciar"}
-                                    </span>
+                                    {item.isGratis ? (
+                                      <span>Grátis</span>
+                                    ) : item.priceFrom !== null ? (
+                                      <span>Desde {item.priceFrom.toFixed(2)} €</span>
+                                    ) : null}
                                     <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
                                       Ver
                                     </span>
@@ -1082,21 +1084,23 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                 <p className="text-[12px] font-semibold text-white line-clamp-1">
                                   {item.title}
                                 </p>
-                                <p className="text-[10px] text-white/80 line-clamp-1">
-                                  {item.locationFormattedAddress || "Local a anunciar"}
-                                </p>
-                                <p className="text-[10px] text-white/70">
-                                  {formatEventDate(item.startsAt)}
-                                </p>
+                                {item.locationFormattedAddress ? (
+                                  <p className="text-[10px] text-white/80 line-clamp-1">
+                                    {item.locationFormattedAddress}
+                                  </p>
+                                ) : null}
+                                {formatEventDate(item.startsAt) ? (
+                                  <p className="text-[10px] text-white/70">
+                                    {formatEventDate(item.startsAt)}
+                                  </p>
+                                ) : null}
                               </div>
                               <div className="flex flex-col items-end gap-1 text-[10px] text-white/70">
-                                <span>
-                                  {item.isGratis
-                                    ? "Grátis"
-                                    : item.priceFrom !== null
-                                      ? `Desde ${item.priceFrom.toFixed(2)} €`
-                                      : "Preço a anunciar"}
-                                </span>
+                                {item.isGratis ? (
+                                  <span>Grátis</span>
+                                ) : item.priceFrom !== null ? (
+                                  <span>Desde {item.priceFrom.toFixed(2)} €</span>
+                                ) : null}
                                 <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
                                   Ver
                                 </span>

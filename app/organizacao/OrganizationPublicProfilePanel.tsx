@@ -41,6 +41,7 @@ import {
 } from "@/lib/publicProfileLayout";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { pickCanonicalField } from "@/lib/location/eventLocation";
+import type { Prisma } from "@prisma/client";
 
 const BIO_LIMIT = 280;
 const MODULE_LABELS: Record<
@@ -97,7 +98,7 @@ function formatDate(date?: Date | null) {
 }
 
 function formatEventDateRange(start: Date | null, end: Date | null, timezone?: string | null) {
-  if (!start) return "Data a definir";
+  if (!start) return null;
   const safeTimezone = timezone || "Europe/Lisbon";
   const optsDay: Intl.DateTimeFormatOptions = {
     weekday: "short",
@@ -183,22 +184,25 @@ function buildAgendaGroups(
 
   for (const event of events) {
     const timezone = event.timezone || "Europe/Lisbon";
-    const hasDate = Boolean(event.startsAt);
-    const key = hasDate
-      ? new Intl.DateTimeFormat("pt-PT", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          timeZone: timezone,
-        }).format(event.startsAt as Date)
-      : "data-a-definir";
-    const label = hasDate ? formatDayLabel(event.startsAt as Date, timezone) : "Data a definir";
-    const locationLabel = event.locationFormattedAddress || "Local a anunciar";
+    if (!event.startsAt) {
+      continue;
+    }
+    const key = new Intl.DateTimeFormat("pt-PT", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: timezone,
+    }).format(event.startsAt as Date);
+    const label = formatDayLabel(event.startsAt as Date, timezone);
+    const locationLabel = event.locationFormattedAddress || "";
+    if (!locationLabel) {
+      continue;
+    }
     const item = {
       id: event.id,
       slug: event.slug,
       title: event.title,
-      timeLabel: hasDate ? formatTimeLabel(event.startsAt as Date, timezone) : "—",
+      timeLabel: formatTimeLabel(event.startsAt as Date, timezone),
       locationLabel,
       isPast: pastEventIds?.has(event.id) ?? false,
       isGratis: event.isGratis,
@@ -239,7 +243,7 @@ type OrganizationProfileInfo = {
   stripePayoutsEnabled?: boolean | null;
   orgType?: string | null;
   addressId?: string | null;
-  addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
+  addressRef?: { formattedAddress?: string | null; canonical?: Prisma.JsonValue | null } | null;
   showAddressPublicly?: boolean | null;
   timezone?: string | null;
   reservationAssignmentMode?: "PROFESSIONAL" | "RESOURCE" | string | null;
@@ -428,12 +432,16 @@ function EventSpotlightCard({
       <div className="relative z-10 max-w-xl space-y-2">
         <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{label}</p>
         <h3 className="text-2xl font-semibold text-white">{event.title}</h3>
-        <p className="text-[12px] text-white/75">
-          {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
-        </p>
-        <p className="text-[12px] text-white/65">
-        {event.locationFormattedAddress || "Local a anunciar"}
-        </p>
+        {formatEventDateRange(event.startsAt, event.endsAt, event.timezone) ? (
+          <p className="text-[12px] text-white/75">
+            {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
+          </p>
+        ) : null}
+        {event.locationFormattedAddress ? (
+          <p className="text-[12px] text-white/65">
+            {event.locationFormattedAddress}
+          </p>
+        ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {ctaHref && (
             <Link
@@ -1050,7 +1058,7 @@ export default function OrganizationPublicProfilePanel({
   const displayUsername = username.trim() || organization?.username?.trim() || null;
   const displayBio = bio.trim() || organization?.publicDescription?.trim() || "";
   const organizationCanonical =
-    (organization?.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+    organization?.addressRef?.canonical ?? null;
   const displayCity =
     pickCanonicalField(
       organizationCanonical,

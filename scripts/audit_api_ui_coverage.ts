@@ -20,7 +20,7 @@ const API_ROOT = path.join(ROOT, "app", "api");
 const REPORT_DIR = path.join(ROOT, "reports");
 const CSV_PATH = path.join(REPORT_DIR, "api_ui_coverage.csv");
 const ORPHANS_PATH = path.join(REPORT_DIR, "api_orphans.md");
-const PLAN_PATH = path.join(ROOT, "docs", "v9_close_plan.md");
+const PLAN_PATH = path.join(ROOT, "docs", "ssot_registry.md");
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 
 const MISSING_API_ALLOWLIST = new Set([
@@ -193,11 +193,11 @@ function extractP0Routes(planText: string) {
   let inSection = false;
 
   for (const line of lines) {
-    if (line.includes("P0 endpoints")) {
+    if (/^##\\s+P0 endpoints/i.test(line) || line.includes("P0 endpoints")) {
       inSection = true;
       continue;
     }
-    if (inSection && line.startsWith("**Jobs/cron/internal**")) break;
+    if (inSection && /^##\\s+/.test(line)) break;
     if (!inSection) continue;
     const matches = line.matchAll(/app\/api\/[^\s`]+\/route\.ts/g);
     for (const match of matches) {
@@ -319,7 +319,7 @@ function main() {
       (entry) => entry.exists && !entry.exempt && entry.uiFiles.length === 0,
     );
 
-    reportLines.push("## P0 endpoints coverage (docs/v9_close_plan.md)");
+    reportLines.push("## P0 endpoints coverage (docs/ssot_registry.md)");
     reportLines.push(`- Total: ${p0Entries.length}`);
     reportLines.push("");
     reportLines.push("### P0 missing files");

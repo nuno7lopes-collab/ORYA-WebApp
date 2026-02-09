@@ -89,7 +89,7 @@ const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
 const NETWORK_TIMEOUT_MS = 10_000;
 const LOCATION_TIMEOUT_MS = 8_000;
 
-const withTimeout = async <T>(promise: Promise<T>, ms: number, label = "timeout") => {
+const withTimeout = async <T,>(promise: Promise<T>, ms: number, label = "timeout") => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   try {
     return await new Promise<T>((resolve, reject) => {
@@ -337,20 +337,21 @@ export default function OnboardingScreen() {
     await resetOnboardingDone();
     await clearOnboardingDraft();
     await supabase.auth.signOut();
-    router.replace("/auth");
+    router.replace({ pathname: "/auth", params: { next: "/onboarding" } });
   };
 
   const handleExitOnboarding = async () => {
     await resetOnboardingDone();
     await clearOnboardingDraft();
     await supabase.auth.signOut();
-    router.replace("/auth");
+    router.replace({ pathname: "/auth", params: { next: "/onboarding" } });
   };
 
   const ensureUsernameAvailable = async () => {
     if (!usernameValidation.valid) {
       setUsernameStatus("invalid");
-      Alert.alert("Username inválido", usernameValidation.error || USERNAME_RULES_HINT);
+      const message = "error" in usernameValidation ? usernameValidation.error : null;
+      Alert.alert("Username inválido", message || USERNAME_RULES_HINT);
       return false;
     }
     if (usernameStatus === "available") return true;
@@ -672,7 +673,7 @@ export default function OnboardingScreen() {
             : usernameStatus === "taken"
               ? "Indisponível"
               : usernameStatus === "invalid"
-                ? usernameValidation.error || "Username inválido."
+                ? ("error" in usernameValidation ? usernameValidation.error : null) || "Username inválido."
                 : usernameStatus === "error"
                   ? "Não foi possível verificar agora."
                   : "";
@@ -727,6 +728,7 @@ export default function OnboardingScreen() {
           blurOnSubmit={false}
           onSubmitEditing={() => usernameInputRef.current?.focus()}
           style={styles.input}
+          accessibilityLabel="Nome completo"
         />
       </View>
 
@@ -747,6 +749,7 @@ export default function OnboardingScreen() {
           autoComplete="username"
           returnKeyType="done"
           style={styles.input}
+          accessibilityLabel="Username"
         />
         {renderUsernameStatus()}
       </View>
@@ -773,6 +776,9 @@ export default function OnboardingScreen() {
                 pressed ? styles.interestChipPressed : null,
                 idx === 0 ? styles.interestChipFirst : null,
               ]}
+              accessibilityRole="button"
+              accessibilityLabel={interest.label}
+              accessibilityState={{ selected: active }}
             >
               {active ? (
                 <View style={styles.interestCheck}>
@@ -803,7 +809,12 @@ export default function OnboardingScreen() {
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
       <View style={styles.cardHeaderRow}>
         <Text style={styles.cardTitle}>Padel</Text>
-        <Pressable onPress={handlePadelSkip} style={styles.skipLink} accessibilityLabel="Saltar padel">
+        <Pressable
+          onPress={handlePadelSkip}
+          style={styles.skipLink}
+          accessibilityRole="button"
+          accessibilityLabel="Saltar padel"
+        >
           <Text style={styles.skipText}>Saltar</Text>
         </Pressable>
       </View>
@@ -823,6 +834,9 @@ export default function OnboardingScreen() {
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={gender.label}
+                accessibilityState={{ selected: active }}
               >
                 <View style={styles.optionContent}>
                   {active ? (
@@ -853,6 +867,9 @@ export default function OnboardingScreen() {
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={side.label}
+                accessibilityState={{ selected: active }}
               >
                 <View style={styles.optionContent}>
                   {active ? (
@@ -883,6 +900,9 @@ export default function OnboardingScreen() {
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Nível ${level}`}
+                accessibilityState={{ selected: active }}
               >
                 <View style={styles.optionContent}>
                   {active ? (
@@ -973,7 +993,12 @@ export default function OnboardingScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.topBar}>
-              <Pressable onPress={handleBack} style={styles.backButton} accessibilityLabel="Voltar">
+              <Pressable
+                onPress={handleBack}
+                style={styles.backButton}
+                accessibilityRole="button"
+                accessibilityLabel="Voltar"
+              >
                 <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
                 <Text style={styles.backLabel}>Voltar</Text>
               </Pressable>

@@ -106,6 +106,14 @@ export default function RootLayout() {
                   }}
                 />
                 <Stack.Screen
+                  name="service/[id]/booking"
+                  options={{
+                    animation: "slide_from_right",
+                    animationDuration: 380,
+                    gestureEnabled: true,
+                  }}
+                />
+                <Stack.Screen
                   name="checkout/index"
                   options={{
                     animation: "slide_from_right",

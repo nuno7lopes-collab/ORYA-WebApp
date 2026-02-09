@@ -166,7 +166,7 @@ const fetchEvents = async (params: DiscoverParams): Promise<{ items: DiscoverOff
       responseKeys: unwrapped && typeof unwrapped === "object" ? Object.keys(unwrapped as any) : null,
       ...sample,
     });
-    throw new ApiError(500, "Formato invalido na resposta de descobrir.");
+    throw new ApiError(500, "Formato inválido na resposta de descobrir.");
   }
   return {
     items: mapEventOffers(parsed.data.items),

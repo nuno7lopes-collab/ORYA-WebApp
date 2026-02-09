@@ -8,6 +8,9 @@ import { tokens } from "@orya/shared";
 import { fetchCheckoutStatus } from "../../features/checkout/api";
 import { CheckoutStatusResponse } from "../../features/checkout/types";
 import { getUserFacingError } from "../../lib/errors";
+import { useNavigation } from "@react-navigation/native";
+import { safeBack } from "../../lib/navigation";
+import { trackEvent } from "../../lib/analytics";
 
 const resolveStatusCopy = (status?: string | null) => {
   if (status === "PAID") {
@@ -30,6 +33,7 @@ const resolveStatusCopy = (status?: string | null) => {
 
 export default function CheckoutSuccessScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const params = useLocalSearchParams<{
     purchaseId?: string | string[];
     paymentIntentId?: string | string[];
@@ -95,6 +99,21 @@ export default function CheckoutSuccessScreen() {
     return () => clearTimeout(timer);
   }, [runStatusCheck, status]);
 
+  useEffect(() => {
+    if (!status) return;
+    if (status.status === "PAID") {
+      trackEvent("checkout_payment_succeeded", {
+        purchaseId: status.purchaseId ?? null,
+        paymentIntentId: status.paymentIntentId ?? null,
+      });
+    } else if (status.status === "FAILED") {
+      trackEvent("checkout_payment_failed", {
+        purchaseId: status.purchaseId ?? null,
+        paymentIntentId: status.paymentIntentId ?? null,
+      });
+    }
+  }, [status]);
+
   const copy = resolveStatusCopy(status?.status ?? null);
   const isPaid = status?.status === "PAID";
 
@@ -104,7 +123,13 @@ export default function CheckoutSuccessScreen() {
       <LiquidBackground variant="solid">
         <View className="px-5 pt-12 pb-6">
           <Pressable
-            onPress={() => (slug ? router.replace({ pathname: "/event/[slug]", params: { slug } }) : router.back())}
+            onPress={() =>
+              slug
+                ? router.replace({ pathname: "/event/[slug]", params: { slug } })
+                : safeBack(router, navigation, "/(tabs)/tickets")
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
             className="flex-row items-center gap-2"
             style={{ minHeight: tokens.layout.touchTarget }}
           >
@@ -139,6 +164,9 @@ export default function CheckoutSuccessScreen() {
             className="rounded-2xl bg-white/15 px-4 py-4"
             style={{ minHeight: tokens.layout.touchTarget, alignItems: "center", justifyContent: "center" }}
             disabled={checking}
+            accessibilityRole="button"
+            accessibilityLabel="Ver bilhetes"
+            accessibilityState={{ disabled: checking }}
           >
             <Text className="text-center text-white text-sm font-semibold">Ver bilhetes</Text>
           </Pressable>

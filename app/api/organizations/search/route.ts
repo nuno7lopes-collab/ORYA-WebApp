@@ -69,7 +69,7 @@ async function _GET(req: NextRequest) {
       primaryModule: r.primaryModule,
       city:
         pickCanonicalField(
-          (r.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+          r.addressRef?.canonical ?? null,
           "city",
           "locality",
           "addressLine2",

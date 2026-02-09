@@ -35,7 +35,7 @@ import {
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule.ts";
+import { computeAutoSchedulePlan } from "../domain/padel/autoSchedule";
 
 const loadEnvFile = (file: string) => {
   if (!fs.existsSync(file)) return;
@@ -511,12 +511,12 @@ const createPairings = async ({
   const any = players.filter(
     (p) => p.preferredSide !== PadelPreferredSide.ESQUERDA && p.preferredSide !== PadelPreferredSide.DIREITA,
   );
-  const nextFrom = (arr: typeof players) => (arr.length > 0 ? arr.shift() : null);
+  const nextFrom = (arr: typeof players) => (arr.length > 0 ? arr.shift() ?? null : null);
   const pairings = [] as Array<{ id: number; categoryId: number }>;
   while (left.length + right.length + any.length >= 2) {
     const playerA = nextFrom(left) ?? nextFrom(right) ?? nextFrom(any);
     if (!playerA) break;
-    let playerB = null;
+    let playerB: (typeof players)[number] | null = null;
     if (playerA.preferredSide === PadelPreferredSide.ESQUERDA) {
       playerB = nextFrom(right) ?? nextFrom(any) ?? nextFrom(left);
     } else if (playerA.preferredSide === PadelPreferredSide.DIREITA) {

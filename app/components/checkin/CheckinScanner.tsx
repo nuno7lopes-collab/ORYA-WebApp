@@ -77,9 +77,9 @@ const STATUS_META: Record<
 };
 
 const formatDateTime = (value?: string | null) => {
-  if (!value) return "A definir";
+  if (!value) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "A definir";
+  if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toLocaleString("pt-PT", {
     day: "2-digit",
     month: "short",
@@ -302,13 +302,20 @@ export function CheckinScanner({
               </select>
               {eventsLoading && <p className="text-[11px] text-white/60">A carregar eventos…</p>}
               {eventsError && <p className="text-[11px] text-red-300">{eventsError}</p>}
-              {selectedEventId && (
-                <p className="text-[11px] text-white/60">
-                  {formatDateTime(events.find((ev) => ev.id === selectedEventId)?.startsAt ?? null)} ·{" "}
-                  {events.find((ev) => ev.id === selectedEventId)?.locationFormattedAddress ??
-                    "Local a anunciar"}
-                </p>
-              )}
+              {selectedEventId &&
+                (() => {
+                  const ev = events.find((item) => item.id === selectedEventId);
+                  const dateLabel = formatDateTime(ev?.startsAt ?? null);
+                  const locationLabel = ev?.locationFormattedAddress ?? null;
+                  if (!dateLabel && !locationLabel) return null;
+                  return (
+                    <p className="text-[11px] text-white/60">
+                      {dateLabel}
+                      {dateLabel && locationLabel ? " · " : ""}
+                      {locationLabel}
+                    </p>
+                  );
+                })()}
             </div>
           </div>
         )}
@@ -354,13 +361,19 @@ export function CheckinScanner({
                   <div className="mt-3 space-y-1 text-[12px] text-white/85">
                     <p className="font-semibold">{preview.entitlement.snapshotTitle}</p>
                     <p>{preview.entitlement.holderKey}</p>
-                    <p>{preview.entitlement.snapshotVenue ?? "Local a anunciar"}</p>
-                    <p>{formatDateTime(preview.entitlement.snapshotStartAt)}</p>
+                    {preview.entitlement.snapshotVenue ? (
+                      <p>{preview.entitlement.snapshotVenue}</p>
+                    ) : null}
+                    {formatDateTime(preview.entitlement.snapshotStartAt) ? (
+                      <p>{formatDateTime(preview.entitlement.snapshotStartAt)}</p>
+                    ) : null}
                   </div>
                 )}
                 {preview?.checkedInAt && (
                   <p className="mt-2 text-[12px] opacity-80">
-                    Check-in feito em {formatDateTime(preview.checkedInAt)}
+                    {formatDateTime(preview.checkedInAt)
+                      ? `Check-in feito em ${formatDateTime(preview.checkedInAt)}`
+                      : "Check-in confirmado"}
                   </p>
                 )}
               </div>

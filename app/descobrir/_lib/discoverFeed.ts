@@ -1,6 +1,7 @@
 import type { PublicEventCard } from "@/domain/events/publicEventCard";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { headers } from "next/headers";
+import type { Prisma } from "@prisma/client";
 
 export type DiscoverWorld = "padel" | "events" | "services";
 export type DiscoverDateFilter = "all" | "today" | "upcoming" | "weekend" | "day";
@@ -16,7 +17,7 @@ export type DiscoverServiceCard = {
   categoryTag?: string | null;
   nextAvailability?: string | null;
   addressId?: string | null;
-  addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
+  addressRef?: { formattedAddress?: string | null; canonical?: Prisma.JsonValue | null } | null;
   organization: {
     id: number;
     publicName?: string | null;
@@ -24,7 +25,7 @@ export type DiscoverServiceCard = {
     username?: string | null;
     brandingAvatarUrl?: string | null;
     addressId?: string | null;
-    addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
+    addressRef?: { formattedAddress?: string | null; canonical?: Prisma.JsonValue | null } | null;
   };
   instructor?: {
     id: number;
@@ -217,12 +218,8 @@ const mapOffers = (events: PublicEventCard[], services: DiscoverServiceCard[]): 
 
 const fetchJson = async <T,>(path: string): Promise<T | null> => {
   const baseUrl = getAppBaseUrl();
-  const hdrs = headers();
-  const resolvedHeaders =
-    hdrs && typeof (hdrs as { then?: unknown }).then === "function"
-      ? await (hdrs as Promise<Headers>)
-      : (hdrs as Headers);
-  const cookie = resolvedHeaders?.get?.("cookie") ?? null;
+  const hdrs = await headers();
+  const cookie = hdrs.get("cookie") ?? null;
   const res = await fetch(`${baseUrl}${path}`, {
     cache: "no-store",
     headers: cookie ? { cookie } : undefined,
@@ -233,7 +230,8 @@ const fetchJson = async <T,>(path: string): Promise<T | null> => {
 };
 
 export async function fetchDiscoverFeed(params: DiscoverFeedParams): Promise<DiscoverFeedResult> {
-  const worlds = params.worlds.length > 0 ? params.worlds : ["padel", "events", "services"];
+  const worlds: DiscoverWorld[] =
+    params.worlds.length > 0 ? params.worlds : ["padel", "events", "services"];
   const includesEventWorld = worlds.includes("events") || worlds.includes("padel");
   const includesServiceWorld = worlds.includes("services") || worlds.includes("padel");
 

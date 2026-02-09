@@ -121,7 +121,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
 
     const token = crypto.randomUUID();
     const tokenHash = hashToken(token);
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60);
+    const expiresAt = checkinWindow?.end ?? new Date(Date.now() + 1000 * 60 * 60);
     await prisma.entitlementQrToken.create({
       data: { tokenHash, entitlementId: ent.id, expiresAt },
     });

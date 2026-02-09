@@ -17,6 +17,7 @@ import {
   resolveCheckinMethodForEntitlement,
   resolvePolicyForCheckin,
 } from "@/lib/checkin/accessPolicy";
+import { parseQrToken } from "@/lib/qr";
 
 type Body = { qrToken?: string; eventId?: number };
 
@@ -96,10 +97,10 @@ export async function POST(req: NextRequest) {
   const userId = data.user.id;
 
   const body = (await req.json().catch(() => null)) as Body | null;
-  const qrToken = typeof body?.qrToken === "string" ? body.qrToken.trim() : "";
+  const qrTokenRaw = typeof body?.qrToken === "string" ? body.qrToken.trim() : "";
   const eventId = Number(body?.eventId);
 
-  if (!qrToken || !Number.isFinite(eventId)) {
+  if (!qrTokenRaw || !Number.isFinite(eventId)) {
     return fail(400, "INVALID_INPUT");
   }
 
@@ -118,6 +119,18 @@ export async function POST(req: NextRequest) {
       );
     }
     return fail(access.reason === "EVENT_NOT_FOUND" ? 404 : 403, access.reason);
+  }
+
+  let qrToken = qrTokenRaw;
+  const parsed = qrTokenRaw.startsWith("ORYA2:") ? parseQrToken(qrTokenRaw) : null;
+  if (parsed && !parsed.ok) {
+    return respondOk(ctx, { code: CheckinResultCode.INVALID }, { status: 200 });
+  }
+  if (parsed && parsed.ok) {
+    qrToken = parsed.payload.tok;
+    if (typeof parsed.payload.eid === "number" && parsed.payload.eid !== eventId) {
+      return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+    }
   }
 
   const tokenHash = hashToken(qrToken);

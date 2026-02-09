@@ -5,8 +5,9 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { EventStatus } from "@prisma/client";
 import { getUserFollowStatus } from "@/domain/social/follows";
-import { toPublicEventCard } from "@/domain/events/publicEventCard";
+import { toPublicEventCard, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
 
 const normalizeUsername = (raw: string) => raw.trim().replace(/^@/, "");
 const MAX_LIMIT = 12;
@@ -108,10 +109,11 @@ async function _GET(req: NextRequest) {
       fullName: profile.fullName ?? null,
       username: profile.username ?? null,
     };
+    const publicStatuses: EventStatus[] = ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"];
     const baseWhere = {
       ownerUserId: profile.id,
       isDeleted: false,
-      status: { in: ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"] as const },
+      status: { in: publicStatuses },
     };
 
     const [upcoming, past] = await Promise.all([
@@ -137,8 +139,12 @@ async function _GET(req: NextRequest) {
 
     return jsonWrap({
       type: "user",
-      upcoming: upcoming.map((event) => toPublicEventCard({ event, ownerProfile })),
-      past: past.map((event) => toPublicEventCard({ event, ownerProfile })),
+      upcoming: upcoming
+        .map((event) => toPublicEventCard({ event, ownerProfile }))
+        .filter((event) => isPublicEventCardComplete(event)),
+      past: past
+        .map((event) => toPublicEventCard({ event, ownerProfile }))
+        .filter((event) => isPublicEventCardComplete(event)),
     });
   }
 
@@ -162,10 +168,11 @@ async function _GET(req: NextRequest) {
   }
 
   const now = new Date();
+  const publicStatuses: EventStatus[] = ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"];
   const baseWhere = {
     organizationId: organization.id,
     isDeleted: false,
-    status: { in: ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"] as const },
+    status: { in: publicStatuses },
   };
 
   const [upcoming, past] = await Promise.all([
@@ -196,8 +203,12 @@ async function _GET(req: NextRequest) {
 
   return jsonWrap({
     type: "organization",
-    upcoming: upcoming.map((event) => toPublicEventCard({ event, ownerProfile })),
-    past: past.map((event) => toPublicEventCard({ event, ownerProfile })),
+    upcoming: upcoming
+      .map((event) => toPublicEventCard({ event, ownerProfile }))
+      .filter((event) => isPublicEventCardComplete(event)),
+    past: past
+      .map((event) => toPublicEventCard({ event, ownerProfile }))
+      .filter((event) => isPublicEventCardComplete(event)),
   });
 }
 

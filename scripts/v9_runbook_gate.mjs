@@ -1,8 +1,7 @@
 import { execSync } from "child_process";
 
 const WATCH_DIRS = ["domain/outbox/", "app/api/internal/"];
-const RUNBOOK_DIR = "docs/runbooks/";
-const FALLBACK_RUNBOOKS = ["docs/runbook.md", "docs/runbooks.md"];
+const REQUIRED_DOCS = ["docs/blueprint.md", "docs/ssot_registry.md"];
 
 function runGit(cmd) {
   return execSync(cmd, { encoding: "utf8" }).trim();
@@ -78,17 +77,15 @@ if (changedFiles.length === 0) {
 const touchesWatched = changedFiles.some((file) =>
   WATCH_DIRS.some((dir) => file.startsWith(dir)),
 );
-const touchesRunbook = changedFiles.some(
-  (file) => file.startsWith(RUNBOOK_DIR) || FALLBACK_RUNBOOKS.includes(file),
+const touchesRequiredDocs = changedFiles.some((file) =>
+  REQUIRED_DOCS.includes(file),
 );
 
-if (touchesWatched && !touchesRunbook) {
+if (touchesWatched && !touchesRequiredDocs) {
   console.error(
-    "\n[RUNBOOK REQUIRED] Changes detected in domain/outbox or app/api/internal without runbook updates.",
+    "\n[DOC UPDATE REQUIRED] Changes detected in domain/outbox or app/api/internal without canonical doc updates.",
   );
-  console.error(
-    `- Update or add runbooks under ${RUNBOOK_DIR} (or ${FALLBACK_RUNBOOKS.join(", ")})`,
-  );
+  console.error(`- Update ${REQUIRED_DOCS.join(" or ")}`);
   console.error("\nChanged files:");
   changedFiles.forEach((file) => console.error(`- ${file}`));
   process.exit(1);

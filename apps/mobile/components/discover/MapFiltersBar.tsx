@@ -232,9 +232,14 @@ const FilterModal = ({
   onClose: () => void;
   children: ReactNode;
 }) => (
-  <Modal transparent visible={visible} animationType="fade">
+  <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
     <View style={styles.modalRoot}>
-      <Pressable style={styles.modalOverlay} onPress={onClose} />
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Fechar filtros"
+      />
       <View style={styles.modalCard}>
         <BlurView tint="dark" intensity={80} style={StyleSheet.absoluteFill} />
         {children}
@@ -336,21 +341,26 @@ export function MapFiltersBar({
   const handlePriceChange = (minValue: number, maxValue: number) => {
     setDraftMin(minValue);
     setDraftMax(maxValue);
-    if (maxValue >= PRICE_MAX) {
-      setMaxUnlimited(true);
-      return;
-    }
     if (maxUnlimited && maxValue < PRICE_MAX) {
       setMaxUnlimited(false);
     }
   };
 
+  const toggleMaxUnlimited = () => {
+    setMaxUnlimited((prev) => {
+      const next = !prev;
+      if (next) {
+        setDraftMax(PRICE_MAX);
+      }
+      return next;
+    });
+  };
+
   const applyPrice = () => {
     const normalizedMin = clamp(roundToStep(draftMin, PRICE_STEP), PRICE_MIN, PRICE_MAX);
-    const normalizedMax =
-      maxUnlimited || draftMax >= PRICE_MAX
-        ? null
-        : clamp(roundToStep(draftMax, PRICE_STEP), PRICE_MIN, PRICE_MAX);
+    const normalizedMax = maxUnlimited
+      ? null
+      : clamp(roundToStep(draftMax, PRICE_STEP), PRICE_MIN, PRICE_MAX);
     onPriceChange(normalizedMin, normalizedMax);
     setPriceOpen(false);
   };
@@ -400,28 +410,48 @@ export function MapFiltersBar({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={barScrollStyle}
         >
-          <Pressable onPress={() => setPriceOpen(true)} style={chipStyle}>
+          <Pressable
+            onPress={() => setPriceOpen(true)}
+            style={chipStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrar preço"
+          >
             <Text style={chipLabelStyle}>Preço</Text>
             <Text style={chipValueStyle} numberOfLines={2}>
               {priceLabel}
             </Text>
           </Pressable>
 
-          <Pressable onPress={() => setTypeOpen(true)} style={chipStyle}>
+          <Pressable
+            onPress={() => setTypeOpen(true)}
+            style={chipStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrar tipo"
+          >
             <Text style={chipLabelStyle}>Tipo</Text>
             <Text style={chipValueStyle} numberOfLines={2}>
               {typeLabel}
             </Text>
           </Pressable>
 
-          <Pressable onPress={() => setDateOpen(true)} style={chipStyle}>
+          <Pressable
+            onPress={() => setDateOpen(true)}
+            style={chipStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrar data"
+          >
             <Text style={chipLabelStyle}>Data</Text>
             <Text style={chipValueStyle} numberOfLines={2}>
               {dateLabel}
             </Text>
           </Pressable>
 
-          <Pressable onPress={onClear} style={clearChipStyle}>
+          <Pressable
+            onPress={onClear}
+            style={clearChipStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Limpar filtros"
+          >
             <Ionicons name="refresh" size={14} color="rgba(255,255,255,0.85)" />
             <Text style={styles.clearChipText}>Limpar</Text>
           </Pressable>
@@ -443,11 +473,33 @@ export function MapFiltersBar({
             valueMax={draftMax}
             onChange={handlePriceChange}
           />
+          <Pressable
+            onPress={toggleMaxUnlimited}
+            style={styles.unlimitedToggle}
+            accessibilityRole="button"
+            accessibilityLabel="Sem limite no máximo"
+            accessibilityState={{ selected: maxUnlimited }}
+          >
+            <View style={[styles.unlimitedPill, maxUnlimited ? styles.unlimitedPillActive : null]}>
+              {maxUnlimited ? <Ionicons name="checkmark" size={12} color="#0b101a" /> : null}
+            </View>
+            <Text style={styles.unlimitedLabel}>Sem limite no máximo</Text>
+          </Pressable>
           <View style={styles.modalFooter}>
-            <Pressable onPress={() => setPriceOpen(false)} style={styles.secondaryButton}>
+            <Pressable
+              onPress={() => setPriceOpen(false)}
+              style={styles.secondaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar"
+            >
               <Text style={styles.secondaryButtonLabel}>Cancelar</Text>
             </Pressable>
-            <Pressable onPress={applyPrice} style={styles.primaryButton}>
+            <Pressable
+              onPress={applyPrice}
+              style={styles.primaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Aplicar"
+            >
               <Text style={styles.primaryButtonLabel}>Aplicar</Text>
             </Pressable>
           </View>
@@ -466,6 +518,9 @@ export function MapFiltersBar({
                   setTypeOpen(false);
                 }}
                 style={[styles.typeRow, templateType === option.key ? styles.typeRowActive : null]}
+                accessibilityRole="button"
+                accessibilityLabel={option.label}
+                accessibilityState={{ selected: templateType === option.key }}
               >
                 <Text style={templateType === option.key ? styles.typeRowTextActive : styles.typeRowText}>
                   {option.label}
@@ -486,6 +541,8 @@ export function MapFiltersBar({
             <Pressable
               onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
               style={styles.calendarNav}
+              accessibilityRole="button"
+              accessibilityLabel="Mês anterior"
             >
               <Ionicons name="chevron-back" size={18} color="rgba(255,255,255,0.8)" />
             </Pressable>
@@ -493,6 +550,8 @@ export function MapFiltersBar({
             <Pressable
               onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
               style={styles.calendarNav}
+              accessibilityRole="button"
+              accessibilityLabel="Mês seguinte"
             >
               <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
             </Pressable>
@@ -513,6 +572,7 @@ export function MapFiltersBar({
               const isEnd = isSameDay(cell, draftEnd);
               const inRange = isBetween(cell, draftStart, draftEnd);
               const isPast = isPastDay(cell);
+              const dayLabel = RANGE_DATE_FORMATTER.format(cell);
               return (
                 <Pressable
                   key={cell.toISOString()}
@@ -524,6 +584,9 @@ export function MapFiltersBar({
                     inRange ? styles.dayCellInRange : null,
                     isPast ? styles.dayCellDisabled : null,
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Selecionar dia ${dayLabel}`}
+                  accessibilityState={{ disabled: isPast, selected: isStart || isEnd }}
                 >
                   <Text
                     style={
@@ -543,10 +606,20 @@ export function MapFiltersBar({
             })}
           </View>
           <View style={styles.modalFooter}>
-            <Pressable onPress={clearDateRange} style={styles.secondaryButton}>
+            <Pressable
+              onPress={clearDateRange}
+              style={styles.secondaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Limpar datas"
+            >
               <Text style={styles.secondaryButtonLabel}>Limpar</Text>
             </Pressable>
-            <Pressable onPress={applyDateRange} style={styles.primaryButton}>
+            <Pressable
+              onPress={applyDateRange}
+              style={styles.primaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Aplicar datas"
+            >
               <Text style={styles.primaryButtonLabel}>Aplicar</Text>
             </Pressable>
           </View>
@@ -683,6 +756,31 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     backgroundColor: "rgba(11,16,26,0.9)",
+  },
+  unlimitedToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+  },
+  unlimitedPill: {
+    width: 18,
+    height: 18,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  unlimitedPillActive: {
+    backgroundColor: "rgba(110, 210, 255, 0.9)",
+    borderColor: "rgba(110, 210, 255, 0.9)",
+  },
+  unlimitedLabel: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 12,
+    fontWeight: "600",
   },
   modalFooter: {
     flexDirection: "row",

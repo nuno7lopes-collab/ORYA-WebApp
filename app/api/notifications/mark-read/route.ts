@@ -1,4 +1,4 @@
-import { CrmDeliveryStatus } from "@prisma/client";
+import { CrmDeliveryStatus, Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
@@ -20,16 +20,11 @@ async function _POST(req: NextRequest) {
 
     if (markAll) {
       const orgId = Number.isFinite(organizationId ?? NaN) ? Number(organizationId) : null;
-      const where = {
+      const where: Prisma.NotificationWhereInput = {
         userId: user.id,
         isRead: false,
-      } as {
-        userId: string;
-        isRead: boolean;
-        type?: { in?: string[]; notIn?: string[] };
-        AND?: Array<{ OR: Array<{ organizationId?: number; event?: { organizationId: number } }> }>;
+        type: { notIn: NOTIFICATION_TYPES_BY_CATEGORY.chat },
       };
-      where.type = { notIn: NOTIFICATION_TYPES_BY_CATEGORY.chat };
       if (orgId) {
         where.AND = [{ OR: [{ organizationId: orgId }, { event: { organizationId: orgId } }] }];
       }

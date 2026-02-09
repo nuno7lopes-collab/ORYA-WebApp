@@ -6,11 +6,11 @@ const API_ROOT = path.join(ROOT, "app", "api");
 const APP_ROOT = path.join(ROOT, "app");
 
 const OUTPUTS = {
-  api: path.join(ROOT, "docs", "v9_inventory_api.md"),
-  pages: path.join(ROOT, "docs", "v9_inventory_pages.md"),
-  features: path.join(ROOT, "docs", "v9_inventory_features.md"),
-  frontendApi: path.join(ROOT, "docs", "v9_inventory_frontend_api_usage.md"),
-  parity: path.join(ROOT, "docs", "v9_parity_report.md"),
+  api: path.join(ROOT, "reports", "v9_inventory_api.md"),
+  pages: path.join(ROOT, "reports", "v9_inventory_pages.md"),
+  features: path.join(ROOT, "reports", "v9_inventory_features.md"),
+  frontendApi: path.join(ROOT, "reports", "v9_inventory_frontend_api_usage.md"),
+  parity: path.join(ROOT, "reports", "v9_parity_report.md"),
 };
 
 const API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];

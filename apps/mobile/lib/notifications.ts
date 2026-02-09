@@ -32,6 +32,14 @@ const stripTrailingSlash = (value: string) => {
   return stripped || "/";
 };
 
+const appendSourceParam = (path: string, search: string, source: string) => {
+  if (search) {
+    if (search.includes("source=")) return `${path}${search}`;
+    return `${path}${search}&source=${encodeURIComponent(source)}`;
+  }
+  return `${path}?source=${encodeURIComponent(source)}`;
+};
+
 export const resolveNotificationLink = (input?: string | null): ResolvedNotificationLink => {
   const value = normalizeInput(input);
   if (!value) return { kind: "none" };
@@ -42,8 +50,14 @@ export const resolveNotificationLink = (input?: string | null): ResolvedNotifica
   const path = stripTrailingSlash(url.pathname || "/");
   const search = url.search || "";
 
-  if (path.startsWith("/event/") || path.startsWith("/messages") || path.startsWith("/wallet/")) {
-    return { kind: "native", path: `${path}${search}` };
+  if (path.startsWith("/event/")) {
+    return { kind: "native", path: appendSourceParam(path, search, "notifications") };
+  }
+  if (path.startsWith("/messages")) {
+    return { kind: "native", path: appendSourceParam(path, search, "notifications") };
+  }
+  if (path.startsWith("/wallet/")) {
+    return { kind: "native", path: appendSourceParam(path, search, "notifications") };
   }
   if (path === "/me") {
     return { kind: "native", path: "/profile" };
@@ -61,14 +75,15 @@ export const resolveNotificationLink = (input?: string | null): ResolvedNotifica
     return { kind: "native", path: "/tickets" };
   }
   if (path === "/convites/organizacoes") {
-    return { kind: "native", path: `${path}${search}` };
+    return { kind: "native", path: appendSourceParam(path, search, "notifications") };
   }
 
   if (path.startsWith("/eventos/")) {
     const parts = path.split("/").filter(Boolean);
     const slug = parts[1];
     if (slug) {
-      return { kind: "native", path: `/event/${slug}${search}` };
+      const eventPath = `/event/${slug}`;
+      return { kind: "native", path: appendSourceParam(eventPath, search, "notifications") };
     }
   }
   if (path === "/eventos") {

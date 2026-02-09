@@ -270,9 +270,9 @@ function formatServiceAvailability(value: string | null) {
 }
 
 function formatPadelDate(start: string | null, end: string | null) {
-  if (!start) return "Data a anunciar";
+  if (!start) return null;
   const startDate = new Date(start);
-  if (Number.isNaN(startDate.getTime())) return "Data a anunciar";
+  if (Number.isNaN(startDate.getTime())) return null;
   if (end) {
     const endDate = new Date(end);
     if (!Number.isNaN(endDate.getTime())) {
@@ -289,7 +289,7 @@ function formatPadelDate(start: string | null, end: string | null) {
 }
 
 function formatPadelFormat(value: string | null) {
-  if (!value) return "Formato a definir";
+  if (!value) return null;
   return PADEL_FORMAT_OPTIONS.find((opt) => opt.value === value)?.label ?? value;
 }
 
@@ -1932,31 +1932,21 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
               </div>
             ) : isReservasWorld ? (
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-                {[...serviceItems.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - serviceItems.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
-                  (entry, idx) =>
-                    entry.item ? (
-                      <ServiceCard key={`service-${entry.item.id}`} item={entry.item} imagePriority={idx < 2} />
-                    ) : (
-                      <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
-                    ),
-                )}
+                {serviceItems.map((item, idx) => (
+                  <ServiceCard key={`service-${item.id}`} item={item} imagePriority={idx < 2} />
+                ))}
               </div>
             ) : (
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-                {[...items.map((item) => ({ item })), ...Array.from({ length: Math.max(0, 3 - items.length) }).map((_, idx) => ({ item: null, key: `placeholder-${idx}` }))].map(
-                  (entry, idx) =>
-                    entry.item ? (
-                      <EventCard
-                        key={`${entry.item.type}-${entry.item.id}`}
-                        item={entry.item}
-                        onLike={toggleLike}
-                        liked={likedItems.includes(entry.item.id)}
-                        imagePriority={idx < 2}
-                      />
-                    ) : (
-                      <PlaceholderCard key={entry.key ?? `placeholder-${idx}`} />
-                    ),
-                )}
+                {items.map((item, idx) => (
+                  <EventCard
+                    key={`${item.type}-${item.id}`}
+                    item={item}
+                    onLike={toggleLike}
+                    liked={likedItems.includes(item.id)}
+                    imagePriority={idx < 2}
+                  />
+                ))}
               </div>
             )}
 
@@ -2014,9 +2004,21 @@ type PadelOpenPairingCardProps = {
 };
 
 function PriceBadge({ item }: { item: ExploreItem }) {
-  if (item.isGratis) return <span className="text-emerald-200">Grátis</span>;
-  if (item.priceFrom !== null) return <span>Desde {item.priceFrom.toFixed(2)} €</span>;
-  return <span>Preço a anunciar</span>;
+  if (item.isGratis) {
+    return (
+      <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10 text-emerald-200">
+        Grátis
+      </span>
+    );
+  }
+  if (item.priceFrom !== null) {
+    return (
+      <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
+        Desde {item.priceFrom.toFixed(2)} €
+      </span>
+    );
+  }
+  return null;
 }
 
 type DoubleRangeProps = {
@@ -2240,8 +2242,9 @@ function BaseCard({
         longitude: item.location.lng ?? null,
       },
     },
-    "Local a anunciar",
+    "",
   );
+  const hasVenue = Boolean(venueLabel && venueLabel.trim());
   const isEvent = badge === "Evento";
   const badgeGrad = isEvent
     ? "from-white/12 via-white/9 to-white/6"
@@ -2322,9 +2325,7 @@ function BaseCard({
           ) : (
             <span className="truncate">{item.hostName || "Organização ORYA"}</span>
           )}
-          <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
-            <PriceBadge item={item} />
-          </span>
+          <PriceBadge item={item} />
         </div>
 
         <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
@@ -2332,7 +2333,7 @@ function BaseCard({
         </h2>
 
         <p className="text-[11px] text-white/80 line-clamp-2">{dateLabel}</p>
-        <p className="text-[11px] text-white/70">{venueLabel}</p>
+        {hasVenue ? <p className="text-[11px] text-white/70">{venueLabel}</p> : null}
 
         <div className="flex flex-wrap gap-1.5 mt-2">
           {item.categories.map((c) => {
@@ -2412,20 +2413,22 @@ function ServiceCard({ item, imagePriority }: ServiceCardProps) {
       <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/4 via-transparent to-white/2">
         <div className="flex items-center justify-between text-[11px] text-white/75">
           <span className="truncate">{organizationName}</span>
-          <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
-            {item.addressRef?.formattedAddress ||
-              item.organization.addressRef?.formattedAddress ||
-              "Local"}
-          </span>
+          {item.addressRef?.formattedAddress || item.organization.addressRef?.formattedAddress ? (
+            <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
+              {item.addressRef?.formattedAddress || item.organization.addressRef?.formattedAddress}
+            </span>
+          ) : null}
         </div>
 
         <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
           {item.title}
         </h2>
 
-        <p className="text-[11px] text-white/80 line-clamp-2">
-          {item.description || "Serviço pronto a reservar na ORYA."}
-        </p>
+        {item.description ? (
+          <p className="text-[11px] text-white/80 line-clamp-2">
+            {item.description}
+          </p>
+        ) : null}
 
         <div className="mt-2 flex items-center justify-between text-[11px]">
           <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
@@ -2440,9 +2443,9 @@ function ServiceCard({ item, imagePriority }: ServiceCardProps) {
 
 function PadelTournamentCard({ item, imagePriority }: PadelTournamentCardProps) {
   const dateLabel = formatPadelDate(item.startsAt, item.endsAt);
-  const locationLabel = item.locationFormattedAddress || "Local a anunciar";
+  const locationLabel = item.locationFormattedAddress || null;
   const priceLabel =
-    item.priceFrom == null ? "Preço a anunciar" : item.priceFrom === 0 ? "Grátis" : `Desde ${item.priceFrom.toFixed(2)} €`;
+    item.priceFrom == null ? null : item.priceFrom === 0 ? "Grátis" : `Desde ${item.priceFrom.toFixed(2)} €`;
   const formatLabel = formatPadelFormat(item.format);
   const eligibilityLabel = formatPadelEligibility(item.eligibility);
 
@@ -2478,20 +2481,24 @@ function PadelTournamentCard({ item, imagePriority }: PadelTournamentCardProps) 
       <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/4 via-transparent to-white/2">
         <div className="flex items-center justify-between text-[11px] text-white/75">
           <span className="truncate">{item.organizationName || "Clube ORYA"}</span>
-          <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">{priceLabel}</span>
+          {priceLabel ? (
+            <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">{priceLabel}</span>
+          ) : null}
         </div>
 
         <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
           {item.title}
         </h2>
 
-        <p className="text-[11px] text-white/80">{dateLabel}</p>
-        <p className="text-[11px] text-white/70">{locationLabel}</p>
+        {dateLabel ? <p className="text-[11px] text-white/80">{dateLabel}</p> : null}
+        {locationLabel ? <p className="text-[11px] text-white/70">{locationLabel}</p> : null}
 
         <div className="flex flex-wrap gap-1.5 mt-2 text-[10px] text-white/75">
-          <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
-            {formatLabel}
-          </span>
+          {formatLabel ? (
+            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+              {formatLabel}
+            </span>
+          ) : null}
           <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
             {eligibilityLabel}
           </span>
@@ -2586,7 +2593,7 @@ function PadelOpenPairingCard({
   imagePriority,
 }: PadelOpenPairingCardProps) {
   const dateLabel = formatPadelDate(item.event.startsAt, item.event.startsAt);
-  const locationLabel = item.event.locationFormattedAddress || "Local a anunciar";
+  const locationLabel = item.event.locationFormattedAddress || null;
   const deadlineLabel = item.isExpired ? "Expirado" : formatPadelDeadline(item.deadlineAt);
   const paymentLabel = formatPadelPaymentMode(item.paymentMode);
   const slotsLabel = item.openSlots === 1 ? "1 vaga" : `${item.openSlots} vagas`;
@@ -2613,8 +2620,8 @@ function PadelOpenPairingCard({
           <Link href={`/eventos/${item.event.slug}`} className="text-base font-semibold text-white hover:text-white/90">
             {item.event.title}
           </Link>
-          <p className="text-[11px] text-white/65">{dateLabel}</p>
-          <p className="text-[11px] text-white/55">{locationLabel}</p>
+          {dateLabel ? <p className="text-[11px] text-white/65">{dateLabel}</p> : null}
+          {locationLabel ? <p className="text-[11px] text-white/55">{locationLabel}</p> : null}
           <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-white/75">
             <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
               {item.category?.label || "Nível aberto"}
@@ -2639,40 +2646,6 @@ function PadelOpenPairingCard({
         >
           {isLoading ? "A entrar..." : joinLabel}
         </button>
-      </div>
-    </div>
-  );
-}
-
-function PlaceholderCard() {
-  return (
-    <div className="group w-full rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
-      <div className="relative aspect-square w-full overflow-hidden">
-        <Image
-          src={resolveCover(null, "explorar-placeholder", 720)}
-          alt="Em breve na ORYA"
-          fill
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-          className="object-cover"
-          placeholder="blur"
-          blurDataURL={defaultBlurDataURL}
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/70" />
-        <div className="absolute top-3 left-3 rounded-full border border-white/16 bg-black/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/75">
-          Em breve
-        </div>
-      </div>
-      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/2 via-transparent to-white/2">
-        <h2 className="text-[14px] md:text-[15px] font-semibold text-white">Novos eventos a caminho</h2>
-        <p className="text-[11px] text-white/75">
-          Fica atento — mais eventos vão surgir aqui com o look glassy premium.
-        </p>
-        <div className="mt-2 flex items-center justify-between text-[11px]">
-          <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
-            Brevemente
-          </span>
-          <span className="text-white/60">ORYA</span>
-        </div>
       </div>
     </div>
   );

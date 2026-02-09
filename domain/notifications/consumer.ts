@@ -242,30 +242,16 @@ export async function deliverNotificationOutboxItem(item: {
     const eventTitle = pairing?.event?.title ?? null;
     const eventSlug = pairing?.event?.slug ?? null;
     let entitlementId: string | null = null;
-    if (Number.isFinite(pairingId)) {
-      const ticket = await prisma.ticket.findFirst({
+    if (pairing?.event?.id) {
+      const entitlement = await prisma.entitlement.findFirst({
         where: {
-          pairingId: pairingId as number,
-          OR: [{ userId }, { ownerUserId: userId }],
+          eventId: pairing.event.id,
+          ownerUserId: userId,
+          type: "PADEL_ENTRY",
         },
-        select: {
-          purchaseId: true,
-          saleSummary: { select: { purchaseId: true, paymentIntentId: true } },
-        },
+        select: { id: true },
       });
-      const purchaseId =
-        ticket?.purchaseId ?? ticket?.saleSummary?.purchaseId ?? ticket?.saleSummary?.paymentIntentId ?? null;
-      if (purchaseId) {
-        const entitlement = await prisma.entitlement.findFirst({
-          where: {
-            purchaseId,
-            ownerUserId: userId,
-            type: "PADEL_ENTRY",
-          },
-          select: { id: true },
-        });
-        entitlementId = entitlement?.id ?? null;
-      }
+      entitlementId = entitlement?.id ?? null;
     }
     const resolvedToken =
       typeof token === "string" && token.trim().length > 0 ? token.trim() : pairing?.partnerInviteToken ?? null;
@@ -401,30 +387,16 @@ export async function deliverNotificationOutboxItem(item: {
         : pairing?.partnerInviteToken ?? null;
     const viewerRole = payload.viewerRole === "CAPTAIN" ? "CAPTAIN" : "INVITED";
     let entitlementId: string | null = null;
-    if (Number.isFinite(pairingId)) {
-      const ticket = await prisma.ticket.findFirst({
+    if (pairing?.event?.id) {
+      const entitlement = await prisma.entitlement.findFirst({
         where: {
-          pairingId,
-          OR: [{ userId: item.userId }, { ownerUserId: item.userId }],
+          eventId: pairing.event.id,
+          ownerUserId: item.userId,
+          type: "PADEL_ENTRY",
         },
-        select: {
-          purchaseId: true,
-          saleSummary: { select: { purchaseId: true, paymentIntentId: true } },
-        },
+        select: { id: true },
       });
-      const purchaseId =
-        ticket?.purchaseId ?? ticket?.saleSummary?.purchaseId ?? ticket?.saleSummary?.paymentIntentId ?? null;
-      if (purchaseId) {
-        const entitlement = await prisma.entitlement.findFirst({
-          where: {
-            purchaseId,
-            ownerUserId: item.userId,
-            type: "PADEL_ENTRY",
-          },
-          select: { id: true },
-        });
-        entitlementId = entitlement?.id ?? null;
-      }
+      entitlementId = entitlement?.id ?? null;
     }
     const ctaUrl = entitlementId
       ? `/me/bilhetes/${entitlementId}`

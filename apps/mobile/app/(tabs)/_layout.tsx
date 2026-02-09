@@ -106,6 +106,8 @@ export default function TabsLayout() {
         <View style={{ height: 16 }} />
         <Pressable
           onPress={() => profileQuery.refetch()}
+          accessibilityRole="button"
+          accessibilityLabel="Recarregar"
           style={{
             backgroundColor: "rgba(255,255,255,0.12)",
             borderRadius: 16,
@@ -127,6 +129,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,

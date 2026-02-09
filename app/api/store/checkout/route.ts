@@ -721,24 +721,26 @@ async function _POST(req: NextRequest) {
           notes: payload.notes ?? null,
           purchaseId: providedPurchaseId ?? null,
           addresses: {
-            create: [
-              shippingAddress
-                ? {
-                    addressType: StoreAddressType.SHIPPING,
-                    addressId: shippingAddress.addressId,
-                    fullName: shippingAddress.fullName,
-                    nif: shippingAddress.nif ?? null,
-                  }
-                : null,
-              billingAddress
-                ? {
-                    addressType: StoreAddressType.BILLING,
-                    addressId: billingAddress.addressId,
-                    fullName: billingAddress.fullName,
-                    nif: billingAddress.nif ?? null,
-                  }
-                : null,
-            ].filter(Boolean) as Prisma.StoreOrderAddressCreateWithoutOrderInput[],
+            create: (() => {
+              const items: Prisma.StoreOrderAddressCreateWithoutOrderInput[] = [];
+              if (shippingAddress) {
+                items.push({
+                  addressType: StoreAddressType.SHIPPING,
+                  addressRef: { connect: { id: shippingAddress.addressId } },
+                  fullName: shippingAddress.fullName,
+                  nif: shippingAddress.nif ?? null,
+                });
+              }
+              if (billingAddress) {
+                items.push({
+                  addressType: StoreAddressType.BILLING,
+                  addressRef: { connect: { id: billingAddress.addressId } },
+                  fullName: billingAddress.fullName,
+                  nif: billingAddress.nif ?? null,
+                });
+              }
+              return items;
+            })(),
           },
         },
         select: { id: true, orderNumber: true },

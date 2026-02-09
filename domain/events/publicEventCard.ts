@@ -1,4 +1,5 @@
 import { EventPricingMode } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 
 export type PublicEventCard = {
@@ -61,7 +62,7 @@ type PublicEventCardInput = {
   addressId: string | null;
   addressRef?: {
     formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
   } | null;
@@ -104,7 +105,7 @@ type PublicEventCardIndexInput = {
   addressId: string | null;
   addressRef?: {
     formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
   } | null;
@@ -115,14 +116,37 @@ type PublicEventOwnerProfile = {
   username: string | null;
 };
 
-const pickCanonicalField = (canonical: Record<string, unknown> | null, ...keys: string[]) => {
-  if (!canonical) return null;
+const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
+  if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) return null;
+  const record = canonical as Record<string, unknown>;
   for (const key of keys) {
-    const value = canonical[key];
+    const value = record[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
 };
+
+export function isPublicEventCardComplete(input: {
+  title?: string | null;
+  startsAt?: string | Date | null;
+  location?: { formattedAddress?: string | null; city?: string | null } | null;
+}): boolean {
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  if (!title) return false;
+  const start =
+    input.startsAt instanceof Date
+      ? input.startsAt
+      : input.startsAt
+        ? new Date(input.startsAt)
+        : null;
+  if (!start || Number.isNaN(start.getTime())) return false;
+  const location = input.location ?? null;
+  const locationLabel =
+    (typeof location?.formattedAddress === "string" ? location?.formattedAddress.trim() : "") ||
+    (typeof location?.city === "string" ? location?.city.trim() : "");
+  if (!locationLabel) return false;
+  return true;
+}
 
 export function resolvePublicEventStatus(event: {
   status: string;
@@ -176,7 +200,7 @@ export function toPublicEventCardWithPrice(params: {
     endsAt: event.endsAt,
     coverImageUrl: event.coverImageUrl,
   });
-  const canonical = (event.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const canonical = event.addressRef?.canonical ?? null;
   const city =
     pickCanonicalField(canonical, "city", "locality", "addressLine2", "region", "state") ?? null;
   const formattedAddress = event.addressRef?.formattedAddress ?? null;
@@ -252,7 +276,7 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     endsAt: input.endsAt,
     coverImageUrl: input.coverImageUrl,
   });
-  const canonical = (input.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const canonical = input.addressRef?.canonical ?? null;
   const city =
     pickCanonicalField(canonical, "city", "locality", "addressLine2", "region", "state") ?? null;
   const formattedAddress = input.addressRef?.formattedAddress ?? null;

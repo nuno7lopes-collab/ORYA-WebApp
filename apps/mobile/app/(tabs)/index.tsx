@@ -29,6 +29,8 @@ import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -77,6 +79,20 @@ export default function DiscoverScreen() {
   const topPadding = useTopHeaderPadding(12);
   const locationResolveRef = useRef(false);
 
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-12, 12])
+        .onEnd((event) => {
+          const shouldGo = event.translationX > 70 && Math.abs(event.velocityX) > 300;
+          if (shouldGo) {
+            runOnJS(router.push)("/(tabs)/agora");
+          }
+        }),
+    [router],
+  );
+
   const isAllWorlds = worlds.length === 0 || worlds.length === WORLD_OPTIONS.length;
   const resolvedKind: DiscoverKind = isAllWorlds
     ? "all"
@@ -119,17 +135,6 @@ export default function DiscoverScreen() {
         }
       }
 
-      if (priceFilter === "soon" && item.type === "event") {
-        const hasTickets = (item.event.ticketTypes?.length ?? 0) > 0;
-        const hasUpcoming = item.event.ticketTypes?.some((ticket) => ticket.status === "UPCOMING") ?? false;
-        const hasPrice = typeof item.event.priceFrom === "number" || Boolean(item.event.isGratis);
-        if (hasPrice) return false;
-        if (!hasTickets && !hasUpcoming) return true;
-        return true;
-      }
-      if (priceFilter === "soon" && item.type === "service") {
-        return false;
-      }
       if (distanceKm > 0 && item.type === "event") {
         if (userLat == null || userLon == null) return true;
         const distance = getDistanceKm(
@@ -276,6 +281,7 @@ export default function DiscoverScreen() {
             index={index}
             userLat={userLat}
             userLon={userLon}
+            source="discover"
           />
         );
       }
@@ -298,9 +304,10 @@ export default function DiscoverScreen() {
   );
 
   return (
-    <LiquidBackground>
-      <TopAppHeader />
-      <FlatList
+    <GestureDetector gesture={panGesture}>
+      <LiquidBackground>
+        <TopAppHeader />
+        <FlatList
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding, paddingTop: topPadding }}
         data={listData}
         keyExtractor={keyExtractor}
@@ -338,6 +345,8 @@ export default function DiscoverScreen() {
                     onChangeText={setSearchQuery}
                     placeholder="Pesquisar eventos, pessoas ou organizações"
                     placeholderTextColor="rgba(235, 244, 255, 0.45)"
+                    accessibilityLabel="Pesquisar"
+                    accessibilityHint="Escreve para procurar eventos, pessoas ou organizações"
                     returnKeyType="search"
                     onSubmitEditing={handleSubmitSearch}
                     style={{ flex: 1, color: "white", fontSize: 14 }}
@@ -345,6 +354,8 @@ export default function DiscoverScreen() {
                   <Pressable
                     onPress={handleCloseSearch}
                     hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Fechar pesquisa"
                     style={({ pressed }) => [
                       {
                         width: 28,
@@ -376,6 +387,9 @@ export default function DiscoverScreen() {
                     <Pressable
                       key={world.key}
                       onPress={() => toggleWorld(world.key)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Filtrar por ${world.label}`}
+                      accessibilityState={{ selected: active }}
                       style={({ pressed }) => [
                         {
                           flexDirection: "row",
@@ -407,6 +421,8 @@ export default function DiscoverScreen() {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <Pressable
                   onPress={() => setFiltersOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Abrir filtros"
                   style={({ pressed }) => [
                     {
                       flexDirection: "row",
@@ -430,6 +446,8 @@ export default function DiscoverScreen() {
                 </Pressable>
                 <Pressable
                   onPress={() => router.push("/map")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Abrir mapa"
                   style={({ pressed }) => [
                     {
                       flexDirection: "row",
@@ -460,6 +478,8 @@ export default function DiscoverScreen() {
                   onPress={() => resetFilters()}
                   className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
                   style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Limpar filtros"
                 >
                   <Text className="text-white/75 text-xs font-semibold">Limpar filtros</Text>
                 </Pressable>
@@ -477,11 +497,13 @@ export default function DiscoverScreen() {
             <View className="pt-2">
               {isError ? (
                 <GlassSurface intensity={50}>
-                  <Text className="text-red-300 text-sm mb-3">Nao foi possivel carregar o feed.</Text>
+                  <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o feed.</Text>
                   <Pressable
                     onPress={() => refetch()}
                     className="rounded-xl bg-white/10 px-4 py-3"
                     style={{ minHeight: tokens.layout.touchTarget }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t.retry}
                   >
                     <Text className="text-white text-sm font-semibold text-center">{t.retry}</Text>
                   </Pressable>
@@ -495,10 +517,21 @@ export default function DiscoverScreen() {
                       onPress={() => resetFilters()}
                       className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                       style={{ minHeight: tokens.layout.touchTarget }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Limpar filtros"
                     >
                       <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
                     </Pressable>
                   ) : null}
+                  <Pressable
+                    onPress={() => router.push("/map")}
+                    className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                    style={{ minHeight: tokens.layout.touchTarget }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ver no mapa"
+                  >
+                    <Text className="text-white text-sm font-semibold text-center">Ver no mapa</Text>
+                  </Pressable>
                 </GlassSurface>
               ) : null}
               {isFetchingNextPage ? (
@@ -509,6 +542,8 @@ export default function DiscoverScreen() {
                   onPress={() => fetchNextPage()}
                   className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   style={{ minHeight: tokens.layout.touchTarget }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.loadMore}
                 >
                   <Text className="text-white text-sm font-semibold text-center">{t.loadMore}</Text>
                 </Pressable>
@@ -519,17 +554,18 @@ export default function DiscoverScreen() {
             </View>
           ) : null
         }
-      />
-      <FiltersBottomSheet
-        visible={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        distanceKm={distanceKm}
-        onDistanceChange={setDistanceKm}
-        date={dateFilter as DiscoverDateFilter}
-        onDateChange={setDateFilter}
-        price={priceFilter}
-        onPriceChange={setPriceFilter}
-      />
-    </LiquidBackground>
+        />
+        <FiltersBottomSheet
+          visible={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
+          distanceKm={distanceKm}
+          onDistanceChange={setDistanceKm}
+          date={dateFilter as DiscoverDateFilter}
+          onDateChange={setDateFilter}
+          price={priceFilter}
+          onPriceChange={setPriceFilter}
+        />
+      </LiquidBackground>
+    </GestureDetector>
   );
 }

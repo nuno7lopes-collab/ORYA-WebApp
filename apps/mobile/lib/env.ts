@@ -9,16 +9,21 @@ type MobileEnv = {
   appleMerchantId?: string;
 };
 
-const getExtra = () =>
-  Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
+const getExtra = () => {
+  const expoConfig = Constants?.expoConfig as { extra?: Record<string, unknown> } | undefined;
+  const manifest = (Constants as any)?.manifest as { extra?: Record<string, unknown> } | undefined;
+  return expoConfig?.extra ?? manifest?.extra ?? {};
+};
 
 const resolveHostFromExpo = () => {
+  const expoConfig = (Constants as any)?.expoConfig as { hostUri?: string } | undefined;
+  const manifest = (Constants as any)?.manifest as { hostUri?: string; debuggerHost?: string } | undefined;
   const hostUri =
-    Constants?.expoConfig?.hostUri ??
-    (Constants as any)?.manifest?.hostUri ??
-    (Constants as any)?.manifest?.debuggerHost ??
-    (Constants as any)?.manifest?.hostUri ??
-    (Constants as any)?.expoConfig?.hostUri;
+    expoConfig?.hostUri ??
+    manifest?.hostUri ??
+    manifest?.debuggerHost ??
+    manifest?.hostUri ??
+    expoConfig?.hostUri;
   if (!hostUri || typeof hostUri !== "string") return null;
   const [host] = hostUri.split(":");
   return host ?? null;

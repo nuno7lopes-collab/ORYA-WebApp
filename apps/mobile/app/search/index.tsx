@@ -80,7 +80,7 @@ export default function SearchScreen() {
   const [activeTab, setActiveTab] = useState<SearchTabKey>("all");
   const debounced = useDebouncedValue(query, 280);
   const handleBack = useCallback(() => {
-    safeBack(router, navigation);
+    safeBack(router, navigation, "/(tabs)/index");
   }, [navigation, router]);
 
   const {
@@ -139,11 +139,11 @@ export default function SearchScreen() {
       return true;
     });
 
-    const built = [
+    const built: SearchSection[] = [
       {
         key: "offers",
         title: "Ofertas",
-        subtitle: "Eventos, servicos e experiencias",
+        subtitle: "Eventos, serviços e experiências",
         data: showOffers
           ? showSkeleton
             ? buildSkeletons("offers", 2)
@@ -184,13 +184,13 @@ export default function SearchScreen() {
           return <EventCardSquareSkeleton />;
         }
         const height = item.variant === "users" ? 72 : 72;
-        const spacingClass = item.variant === "offers" ? "mb-4" : "mb-3";
+        const spacingClass = "mb-3";
         return <GlassSkeleton className={spacingClass} height={height} />;
       }
 
       if (item.type === "offer") {
         return item.offer.type === "event" ? (
-          <EventCardSquare event={item.offer.event} index={index} userLat={userLat} userLon={userLon} />
+          <EventCardSquare event={item.offer.event} index={index} userLat={userLat} userLon={userLon} source="search" />
         ) : (
           <DiscoverEventCard
             item={item.offer.service}
@@ -198,6 +198,7 @@ export default function SearchScreen() {
             index={index}
             userLat={userLat}
             userLon={userLon}
+            source="search"
           />
         );
       }
@@ -257,10 +258,10 @@ export default function SearchScreen() {
             : orgsQuery.refetch;
       const message =
         section.key === "offers"
-          ? "Nao foi possivel carregar as ofertas."
+            ? "Não foi possível carregar as ofertas."
           : section.key === "users"
-            ? "Nao foi possivel carregar utilizadores."
-            : "Nao foi possivel carregar organizacoes.";
+            ? "Não foi possível carregar utilizadores."
+            : "Não foi possível carregar organizações.";
 
       return (
         <View className="pb-2">
@@ -270,6 +271,8 @@ export default function SearchScreen() {
               onPress={() => onRetry()}
               className="rounded-xl bg-white/10 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Tentar novamente"
             >
               <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
             </Pressable>
@@ -289,6 +292,9 @@ export default function SearchScreen() {
             onPress={handleBack}
             className="rounded-full border border-white/10 px-3 py-2"
             style={{ minHeight: tokens.layout.touchTarget }}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
+            hitSlop={10}
           >
             <Ionicons name="chevron-back" size={18} color={tokens.colors.text} />
           </Pressable>
@@ -306,10 +312,17 @@ export default function SearchScreen() {
                 placeholder="Eventos, clubes, amigos..."
                 placeholderTextColor={tokens.colors.textMuted}
                 className="text-white text-base flex-1"
+                accessibilityLabel="Pesquisar"
+                accessibilityHint="Escreve para procurar eventos, pessoas ou organizações"
                 returnKeyType="search"
               />
               {query.length > 0 ? (
-                <Pressable onPress={() => setQuery("")} className="rounded-full bg-white/10 px-2 py-1">
+                <Pressable
+                  onPress={() => setQuery("")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Limpar pesquisa"
+                  className="rounded-full bg-white/10 px-2 py-1"
+                >
                   <Ionicons name="close" size={14} color={tokens.colors.textMuted} />
                 </Pressable>
               ) : null}
@@ -321,6 +334,26 @@ export default function SearchScreen() {
           <View className="pt-5">
             <GlassSurface intensity={50}>
               <Text className="text-white/70 text-sm">{emptyMessage}</Text>
+              {enabled && !isLoading && !allErrored && !hasResults ? (
+                <Pressable
+                  onPress={() => setQuery("")}
+                  className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                  style={{ minHeight: tokens.layout.touchTarget }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Limpar pesquisa"
+                >
+                  <Text className="text-white text-sm font-semibold text-center">Limpar pesquisa</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                onPress={() => router.push("/(tabs)/index")}
+                className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Ir para Descobrir"
+              >
+                <Text className="text-white text-sm font-semibold text-center">Ir para Descobrir</Text>
+              </Pressable>
             </GlassSurface>
           </View>
         ) : null}
@@ -333,6 +366,9 @@ export default function SearchScreen() {
                 <Pressable
                   key={tab.key}
                   onPress={() => setActiveTab(tab.key)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Filtrar por ${tab.label}`}
+                  accessibilityState={{ selected: active }}
                   style={({ pressed }) => [
                     {
                       paddingHorizontal: 16,
@@ -356,7 +392,7 @@ export default function SearchScreen() {
         </View>
       </View>
     ),
-    [activeTab, emptyMessage, handleBack, insets.top, query],
+    [activeTab, allErrored, emptyMessage, enabled, handleBack, hasResults, insets.top, isLoading, query, router],
   );
 
   const listFooter = useMemo(() => {
@@ -364,7 +400,7 @@ export default function SearchScreen() {
     return (
       <View className="pt-6">
         <GlassSurface intensity={45}>
-          <Text className="text-red-300 text-sm mb-3">Nao foi possivel carregar os resultados.</Text>
+          <Text className="text-red-300 text-sm mb-3">Não foi possível carregar os resultados.</Text>
           <Pressable
             onPress={() => {
               offersQuery.refetch();
@@ -373,6 +409,8 @@ export default function SearchScreen() {
             }}
             className="rounded-xl bg-white/10 px-4 py-3"
             style={{ minHeight: tokens.layout.touchTarget }}
+            accessibilityRole="button"
+            accessibilityLabel="Tentar novamente"
           >
             <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
           </Pressable>

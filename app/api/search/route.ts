@@ -94,7 +94,7 @@ async function _GET(req: NextRequest) {
       username: org.username,
       city:
         pickCanonicalField(
-          (org.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+          org.addressRef?.canonical ?? null,
           "city",
           "locality",
           "addressLine2",
@@ -113,7 +113,7 @@ async function _GET(req: NextRequest) {
       coverImageUrl: event.coverImageUrl,
       city:
         pickCanonicalField(
-          (event.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+          event.addressRef?.canonical ?? null,
           "city",
           "locality",
           "addressLine2",

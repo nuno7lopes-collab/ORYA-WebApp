@@ -17,6 +17,7 @@ import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import {
   EntitlementStatus,
   EntitlementType,
+  EventPricingMode,
   PadelPairingSlotRole,
   PadelPaymentMode,
   PadelPairingPaymentStatus,
@@ -1216,8 +1217,13 @@ async function _POST(req: NextRequest) {
     }
 
     const ticketPrices = ticketTypes.map((t) => Number(t.price ?? 0)).filter((n) => Number.isFinite(n));
+    const pricingMode =
+      typeof event.pricing_mode === "string" &&
+      (Object.values(EventPricingMode) as string[]).includes(event.pricing_mode)
+        ? (event.pricing_mode as EventPricingMode)
+        : undefined;
     const isFreeOnlyEvent = deriveIsFreeEvent({
-      pricingMode: typeof event.pricing_mode === "string" ? event.pricing_mode : undefined,
+      pricingMode,
       ticketPrices,
     });
     const hasExistingFreeEntry =
@@ -1745,7 +1751,6 @@ async function _POST(req: NextRequest) {
           slots: Array<{
             id: number;
             profileId: string | null;
-            ticketId: string | null;
             slotStatus: string;
             paymentStatus: string;
             invitedContact: string | null;
@@ -1788,7 +1793,6 @@ async function _POST(req: NextRequest) {
             select: {
               id: true,
               profileId: true,
-              ticketId: true,
               slotStatus: true,
               paymentStatus: true,
               invitedContact: true,

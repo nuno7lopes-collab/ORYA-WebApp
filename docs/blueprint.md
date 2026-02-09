@@ -8,11 +8,21 @@ ORYA — Blueprint Final v9 (SSOT)
 
 ## Estado de Implementação (NÃO-NORMATIVO)
 
-O estado real de execução (slices + gates) é rastreado em `docs/v10_execution_checklist.md` e no registo `docs/ssot_registry.md`.  
+O estado real de execução (slices + gates) é rastreado no `docs/ssot_registry.md` (secções de validação runtime) e em relatórios sob `reports/`.  
 Este blueprint é normativo/arquitetural; não é fonte de status de execução.
 Fechado = decisões finais; implementação ainda em curso — ver status.
 
 Migrations: ver `docs/ssot_registry.md` e `prisma/migrations/`.
+
+**Index**
+- Executive Summary
+- System Invariants & Non-Negotiables
+- Domínios e Contratos SSOT
+- Payments/Ledger
+- Entitlements/Check‑in
+- Address Service
+- Operação & Release Gates
+- Appendix — Operação, Runbooks, Infra e UX
 
 ## Executive Summary (NÃO-NORMATIVO)
 - A ORYA é uma plataforma integrada de descoberta + operações com módulos verticais (Eventos/Reservas/Padel/Loja/Serviços) sobre serviços horizontais canónicos.
@@ -4933,3 +4943,51 @@ expected execution order.
 5. Entitlement re-bound without mutation
 
 ---
+
+---
+
+## Appendix — Operação, Runbooks, Infra e UX (CANONICAL)
+Este apêndice é o resumo operacional canónico. Conteúdo detalhado histórico foi removido para manter apenas o resumo canónico.
+
+### Operação & Runbooks (OPERACIONAL)
+- Endpoints internos de saúde/SLO: `/api/internal/ops/health`, `/api/internal/ops/slo`, `/api/internal/ops/dashboard` (com `X-ORYA-CRON-SECRET`).
+- Outbox/DLQ: monitorar `/api/internal/outbox/dlq`; replay via `/api/internal/outbox/replay`.
+- Worker/reconcile: usar `/api/internal/worker/operations` e `/api/internal/reconcile` (nunca editar ledger/outbox manualmente).
+- Cron: validar cobertura em `/api/internal/cron/coverage`; recuperar jobs via `/api/cron/operations`.
+- Incidentes de pagamento: triagem por `requestId`/`correlationId`; ledger é SSOT.
+- Check‑in: sempre validar `EventAccessPolicy` + `Entitlement` (fail‑closed).
+- Reservas/Serviços: estados canónicos e janelas operacionais T‑48/T‑24.
+- DSAR: purge via endpoints admin com auditoria.
+- Rollback: usar plano de rollback infra + app (ECS/CloudFormation).
+- Secrets: rotação em AWS Secrets Manager exige redeploy.
+- Device Farm: smoke/regressões mobile.
+- Cost control: pause/start AWS (ver `docs/envs_required.md`).
+- Incident Playbook: severidade, freeze writes, comunicação e timeline.
+
+### Observabilidade & SLO/SLI (OPERACIONAL)
+- Métricas mínimas: backlog outbox, DLQ 24h, latência DB, falhas de ops, erro de pagamentos.
+- SLOs devem ser avaliados antes de go‑live; falhas bloqueiam release.
+
+### Infra & Deploy / Release (OPERACIONAL)
+- CI/CD com build + migrations + deploy.
+- Segredos por ambiente em AWS Secrets Manager; base64 single‑line.
+- App Store checklist obrigatório antes de release mobile.
+
+### UX/UI & Mobile (NÃO‑NORMATIVO)
+- UX focada em estados canónicos e fluxos fail‑closed.
+- Mobile é B2C com login obrigatório; guest checkout só WebApp/site.
+- Padel: UX centrada em matchmaking, estados de dupla e operação do clube.
+
+### Planos Operacionais (OPERACIONAL)
+- Padel: split payments + confirmação; PENDING não conta para lotação.
+- Reservas/Serviços: snapshots de confirmação como SSOT operacional.
+
+### Handshake / Verificações (OPERACIONAL)
+- Chat V2 usa `organizationId` do contexto server; sem fallback a `/api/organizacao/me`.
+
+### Auditoria v10 (Resumo)
+- Envelope canónico aplicado em rotas críticas.
+- Payments: checkout idempotente converge em `/api/payments/intent`.
+- Outbox + DLQ + replay como execução assíncrona canónica.
+- EventAccessPolicy versionada define regras de check‑in.
+- Official email verificado como gate de ações sensíveis.

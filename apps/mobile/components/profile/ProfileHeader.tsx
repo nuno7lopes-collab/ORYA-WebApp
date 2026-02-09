@@ -54,6 +54,9 @@ export function ProfileHeader({
         <Pressable
           onPress={onCoverPress}
           disabled={!onCoverPress}
+          accessibilityRole={onCoverPress ? "button" : "image"}
+          accessibilityLabel={onCoverPress ? "Alterar capa do perfil" : "Capa do perfil"}
+          accessibilityState={{ disabled: !onCoverPress }}
           style={{
             height: T.coverHeight,
             borderRadius: T.coverRadius,
@@ -97,6 +100,9 @@ export function ProfileHeader({
           <Pressable
             onPress={onAvatarPress}
             disabled={!onAvatarPress}
+            accessibilityRole={onAvatarPress ? "button" : "image"}
+            accessibilityLabel={onAvatarPress ? "Alterar foto de perfil" : "Foto de perfil"}
+            accessibilityState={{ disabled: !onAvatarPress }}
             style={{
               width: T.avatarSize,
               height: T.avatarSize,
@@ -141,11 +147,25 @@ export function ProfileHeader({
       </View>
 
       <View className="flex-row justify-center gap-8">
-        <Pressable onPress={onFollowersPress} disabled={!onFollowersPress} className="items-center">
+        <Pressable
+          onPress={onFollowersPress}
+          disabled={!onFollowersPress}
+          accessibilityRole={onFollowersPress ? "button" : "text"}
+          accessibilityLabel="Ver seguidores"
+          accessibilityState={{ disabled: !onFollowersPress }}
+          className="items-center"
+        >
           <Text className="text-white text-base font-semibold">{counts.followers}</Text>
           <Text className="text-white/60 text-xs">Seguidores</Text>
         </Pressable>
-        <Pressable onPress={onFollowingPress} disabled={!onFollowingPress} className="items-center">
+        <Pressable
+          onPress={onFollowingPress}
+          disabled={!onFollowingPress}
+          accessibilityRole={onFollowingPress ? "button" : "text"}
+          accessibilityLabel="Ver a seguir"
+          accessibilityState={{ disabled: !onFollowingPress }}
+          className="items-center"
+        >
           <Text className="text-white text-base font-semibold">{counts.following}</Text>
           <Text className="text-white/60 text-xs">A seguir</Text>
         </Pressable>

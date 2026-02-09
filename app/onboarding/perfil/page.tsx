@@ -36,6 +36,7 @@ function OnboardingPerfilContent() {
     <ProfileForm
       initialFullName={profile.fullName ?? ""}
       initialUsername={profile.username ?? ""}
+      allowReservedForEmail={user.email ?? null}
       onSaved={async () => {
         await refetch();
         router.push(redirectTo || "/");
@@ -55,12 +56,14 @@ export default function OnboardingPerfilPage() {
 type ProfileFormProps = {
   initialFullName: string;
   initialUsername: string;
+  allowReservedForEmail: string | null;
   onSaved: () => Promise<void>;
 };
 
 function ProfileForm({
   initialFullName,
   initialUsername,
+  allowReservedForEmail,
   onSaved,
 }: ProfileFormProps) {
   const [fullName, setFullName] = useState(initialFullName);
@@ -71,8 +74,6 @@ function ProfileForm({
   >("idle");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const allowReservedForEmail = user?.email ?? null;
-
   async function checkUsernameAvailability(
     currentUsername: string
   ): Promise<"available" | "taken" | "reserved" | "error" | "invalid"> {

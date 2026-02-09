@@ -145,8 +145,9 @@ export async function _GET(req: NextRequest) {
     };
 
     if (cursor) {
+      const existingAnd = Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : [];
       where.AND = [
-        ...(where.AND ?? []),
+        ...existingAnd,
         {
           OR: [
             { createdAt: { lt: cursor.createdAt } },
@@ -156,8 +157,22 @@ export async function _GET(req: NextRequest) {
       ];
     }
 
-    type NotificationRow = Awaited<ReturnType<typeof prisma.notification.findMany>>[number];
-    let rawNotifications: NotificationRow[] = [];
+    let rawNotifications: Prisma.NotificationGetPayload<{
+      include: {
+        fromUser: { select: { id: true; username: true; fullName: true; avatarUrl: true } };
+        organization: {
+          select: {
+            id: true;
+            username: true;
+            publicName: true;
+            businessName: true;
+            brandingAvatarUrl: true;
+            brandingCoverUrl: true;
+          };
+        };
+        event: { select: { id: true; title: true; slug: true; coverImageUrl: true; organizationId: true } };
+      };
+    }>[] = [];
     try {
       rawNotifications = await prisma.notification.findMany({
         where,

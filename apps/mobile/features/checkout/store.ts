@@ -18,6 +18,8 @@ type CheckoutState = {
     purchaseId?: string | null;
     breakdown?: CheckoutBreakdown | null;
     freeCheckout?: boolean;
+    amountCents?: number | null;
+    currency?: string | null;
   }) => void;
   resetIntent: () => void;
   isExpired: () => boolean;
@@ -50,14 +52,33 @@ export const useCheckoutStore = create<CheckoutState>()(
       setPaymentMethod: (method) => {
         const draft = get().draft;
         if (!draft) return;
-        set({ draft: { ...draft, paymentMethod: method } });
+        if (draft.paymentMethod === method) return;
+        const dates = buildDates();
+        const idempotencyKey = buildCheckoutIdempotencyKey();
+        set({
+          draft: {
+            ...draft,
+            paymentMethod: method,
+            idempotencyKey,
+            clientSecret: null,
+            paymentIntentId: null,
+            purchaseId: null,
+            breakdown: null,
+            freeCheckout: false,
+            createdAt: dates.createdAt,
+            expiresAt: dates.expiresAt,
+          },
+        });
       },
-      setIntent: ({ clientSecret, paymentIntentId, purchaseId, breakdown, freeCheckout }) => {
+      setIntent: ({ clientSecret, paymentIntentId, purchaseId, breakdown, freeCheckout, amountCents, currency }) => {
         const draft = get().draft;
         if (!draft) return;
         const dates = buildDates();
-        const nextTotal = breakdown?.totalCents ?? draft.totalCents;
-        const nextCurrency = breakdown?.currency ?? draft.currency;
+        const nextTotal =
+          typeof amountCents === "number"
+            ? amountCents
+            : breakdown?.totalCents ?? draft.totalCents;
+        const nextCurrency = currency ?? breakdown?.currency ?? draft.currency;
         set({
           draft: {
             ...draft,

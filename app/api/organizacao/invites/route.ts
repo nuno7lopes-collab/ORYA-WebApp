@@ -72,7 +72,7 @@ const serializeInvite = (
       entityType: string | null;
       brandingAvatarUrl: string | null;
       brandingCoverUrl: string | null;
-      addressRef?: { formattedAddress: string | null; canonical: Record<string, unknown> | null } | null;
+      addressRef?: { formattedAddress: string | null; canonical: Prisma.JsonValue | null } | null;
     } | null;
   },
   viewer: { id: string; username?: string | null; email?: string | null },

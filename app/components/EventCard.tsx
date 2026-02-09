@@ -1,7 +1,8 @@
 // app/components/EventCard.tsx
 import Link from 'next/link';
 import { getEventCoverFallback } from '@/lib/eventCover';
-import { getEventLocationDisplay } from '@/lib/location/eventLocation';
+import { resolveEventLocation } from '@/lib/location/eventLocation';
+import type { Prisma } from '@prisma/client';
 
 type EventTicket = { price: number };
 
@@ -13,7 +14,7 @@ type EventForCard = {
   timezone: string;
   addressRef?: {
     formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
   } | null;
@@ -30,9 +31,9 @@ type Props = {
 function formatPrice(tickets: EventTicket[] | undefined, isGratis: boolean) {
   if (isGratis) return 'Grátis';
 
-  const list = tickets || []; // <— Evita undefined
+  const list = tickets || [];
 
-  if (!list.length) return 'Preço a definir';
+  if (!list.length) return null;
 
   const min = Math.min(...list.map(t => t.price));
   const max = Math.max(...list.map(t => t.price));
@@ -69,12 +70,8 @@ export default function EventCard({ event }: Props) {
   const priceLabel = formatPrice(event.tickets, event.isGratis);
   const dateLabel = formatDateRange(event.startDate, event.endDate, event.timezone);
   const coverUrl = getEventCoverFallback(event.slug);
-  const locationDisplay = getEventLocationDisplay(
-    {
-      addressRef: event.addressRef ?? null,
-    },
-    'Local a anunciar'
-  );
+  const location = resolveEventLocation({ addressRef: event.addressRef ?? null });
+  const locationLine = location.displayAddress || location.city || null;
 
   return (
     <Link
@@ -100,16 +97,21 @@ export default function EventCard({ event }: Props) {
           <h3 className="text-[15px] font-semibold leading-snug mb-1">
             {event.title}
           </h3>
-          <p className="text-[12px] text-white/60 line-clamp-2">
-            {locationDisplay.primary}
-            {locationDisplay.secondary ? ` · ${locationDisplay.secondary}` : ""}
-          </p>
+          {locationLine ? (
+            <p className="text-[12px] text-white/60 line-clamp-2">
+              {locationLine}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[12px]">
-          <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-[#6BFFFF]">
-            {priceLabel}
-          </span>
+          {priceLabel ? (
+            <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-[#6BFFFF]">
+              {priceLabel}
+            </span>
+          ) : (
+            <span />
+          )}
 
           <div className="flex items-center gap-3 text-white/50 text-[12px]">
             <span className="inline-flex items-center gap-1">

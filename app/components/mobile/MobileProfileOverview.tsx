@@ -41,9 +41,9 @@ type MobileProfileOverviewProps = {
 };
 
 function formatDateLabel(value?: string | null) {
-  if (!value) return "Data a anunciar";
+  if (!value) return undefined;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
+  if (Number.isNaN(parsed.getTime())) return undefined;
   return parsed.toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
 }
 
@@ -268,7 +268,7 @@ export default function MobileProfileOverview({
                   href={href}
                   imageUrl={cover}
                   title={event.title}
-                  subtitle={event.venueName}
+                  subtitle={event.venueName ?? undefined}
                   dateLabel={formatDateLabel(event.startAt)}
                 />
               );
@@ -303,7 +303,7 @@ export default function MobileProfileOverview({
                   href={href}
                   imageUrl={cover}
                   title={event.title}
-                  subtitle={event.venueName}
+                  subtitle={event.venueName ?? undefined}
                   dateLabel={formatDateLabel(event.startAt)}
                 />
               );

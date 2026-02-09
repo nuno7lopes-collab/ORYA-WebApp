@@ -5,7 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { StoreOrderStatus } from "@prisma/client";
+import { Prisma, StoreOrderStatus, StoreProductOptionType } from "@prisma/client";
 import { buildStoreInvoicePdf, ensureStoreInvoiceRecord } from "@/lib/store/invoice";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -28,58 +28,60 @@ async function _POST(req: NextRequest) {
     }
 
     const payload = parsed.data;
+    const orderSelect = {
+      id: true,
+      orderNumber: true,
+      status: true,
+      purchaseId: true,
+      subtotalCents: true,
+      discountCents: true,
+      shippingCents: true,
+      totalCents: true,
+      currency: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      createdAt: true,
+      store: {
+        select: {
+          id: true,
+          ownerOrganizationId: true,
+          supportEmail: true,
+          supportPhone: true,
+          organization: { select: { username: true, publicName: true, businessName: true } },
+          ownerUser: { select: { username: true, fullName: true } },
+        },
+      },
+      addresses: {
+        select: {
+          addressType: true,
+          addressId: true,
+          fullName: true,
+          nif: true,
+          addressRef: { select: { formattedAddress: true } },
+        },
+      },
+      lines: {
+        select: {
+          productId: true,
+          nameSnapshot: true,
+          quantity: true,
+          unitPriceCents: true,
+          totalCents: true,
+          personalization: true,
+          product: { select: { name: true } },
+          variant: { select: { label: true } },
+        },
+      },
+    } as const;
+
     const order = await prisma.storeOrder.findFirst({
       where: {
         orderNumber: payload.orderNumber.trim(),
         customerEmail: payload.email.trim(),
         status: { in: [StoreOrderStatus.PAID, StoreOrderStatus.FULFILLED, StoreOrderStatus.REFUNDED, StoreOrderStatus.PARTIAL_REFUND] },
       },
-      select: {
-        id: true,
-        orderNumber: true,
-        status: true,
-        purchaseId: true,
-        subtotalCents: true,
-        discountCents: true,
-        shippingCents: true,
-        totalCents: true,
-        currency: true,
-        customerName: true,
-        customerEmail: true,
-        customerPhone: true,
-        createdAt: true,
-        store: {
-          select: {
-            id: true,
-            organizationId: true,
-            supportEmail: true,
-            supportPhone: true,
-            organization: { select: { username: true, publicName: true, businessName: true } },
-            ownerUser: { select: { username: true, fullName: true } },
-          },
-        },
-        addresses: {
-          select: {
-            addressType: true,
-            addressId: true,
-            fullName: true,
-            nif: true,
-            addressRef: { select: { formattedAddress: true } },
-          },
-        },
-        lines: {
-          select: {
-            productId: true,
-            nameSnapshot: true,
-            quantity: true,
-            unitPriceCents: true,
-            totalCents: true,
-            personalization: true,
-            product: { select: { name: true } },
-            variant: { select: { label: true } },
-          },
-        },
-      },
+      select: orderSelect,
     });
 
     if (!order) {
@@ -100,14 +102,16 @@ async function _POST(req: NextRequest) {
     const productIds = Array.from(
       new Set(order.lines.map((line) => line.productId).filter((id): id is number => Boolean(id))),
     );
-    const options = productIds.length
+    const options: Array<{ id: number; productId: number; optionType: StoreProductOptionType; label: string }> =
+      productIds.length
       ? await prisma.storeProductOption.findMany({
           where: { productId: { in: productIds } },
           select: { id: true, productId: true, optionType: true, label: true },
         })
       : [];
     const optionIds = options.map((option) => option.id);
-    const values = optionIds.length
+    const values: Array<{ id: number; optionId: number; value: string; label: string | null; priceDeltaCents: number }> =
+      optionIds.length
       ? await prisma.storeProductOptionValue.findMany({
           where: { optionId: { in: optionIds } },
           select: { id: true, optionId: true, value: true, label: true, priceDeltaCents: true },

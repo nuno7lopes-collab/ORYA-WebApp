@@ -4,6 +4,7 @@ import {
   toPublicEventCardWithPriceFromIndex,
   PublicEventCard,
   PublicEventCardWithPrice,
+  isPublicEventCardComplete,
 } from "@/domain/events/publicEventCard";
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -319,9 +320,17 @@ function filterDiscoverByPrice(
   });
 }
 
+type SearchIndexItemWithAddress = Prisma.SearchIndexItemGetPayload<{
+  include: {
+    addressRef: {
+      select: { formattedAddress: true; canonical: true; latitude: true; longitude: true };
+    };
+  };
+}>;
+
 function mapSearchItemToPublicEventCardWithPrice(
   event: Pick<
-    SearchIndexItem,
+    SearchIndexItemWithAddress,
     | "sourceId"
     | "slug"
     | "title"
@@ -338,7 +347,7 @@ function mapSearchItemToPublicEventCardWithPrice(
     | "hostUsername"
     | "addressId"
   >,
-  addressRef?: SearchIndexItem["addressRef"] | null,
+  addressRef?: SearchIndexItemWithAddress["addressRef"] | null,
 ): PublicEventCardWithPrice {
   return toPublicEventCardWithPriceFromIndex({
     sourceId: event.sourceId,
@@ -362,7 +371,7 @@ function mapSearchItemToPublicEventCardWithPrice(
 
 export async function listPublicDiscoverIndex(
   params: DiscoverParams,
-): Promise<{ items: SearchIndexItem[]; nextCursor: string | null }> {
+): Promise<{ items: SearchIndexItemWithAddress[]; nextCursor: string | null }> {
   const cursorId = params.cursor ?? null;
   const take = clampTake(params.limit ?? DEFAULT_PAGE_SIZE);
 
@@ -405,7 +414,9 @@ export async function listPublicDiscover(
     mapSearchItemToPublicEventCardWithPrice(item, item.addressRef),
   );
 
-  const filtered = filterDiscoverByPrice(computed, priceMinCents, priceMaxCents);
+  const filtered = filterDiscoverByPrice(computed, priceMinCents, priceMaxCents).filter((item) =>
+    isPublicEventCardComplete(item),
+  );
   const publicItems: PublicEventCard[] = filtered.map(({ _priceFromCents, ...rest }) => rest);
 
   return { items: publicItems, nextCursor };
@@ -429,5 +440,5 @@ export async function getPublicDiscoverBySlug(slug: string): Promise<PublicEvent
   }
 
   const { _priceFromCents, ...event } = mapSearchItemToPublicEventCardWithPrice(item, item.addressRef);
-  return event;
+  return isPublicEventCardComplete(event) ? event : null;
 }

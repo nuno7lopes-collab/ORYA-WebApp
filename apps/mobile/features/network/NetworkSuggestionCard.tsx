@@ -41,6 +41,8 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
               router.push({ pathname: "/[username]", params: { username: item.username } });
             }
           }}
+          accessibilityRole="button"
+          accessibilityLabel={`Abrir perfil de ${fullName}`}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
           <AvatarCircle size={52} uri={item.avatarUrl} iconName="person" />
@@ -59,6 +61,8 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
         <Pressable
           onPress={() => (isActive ? onUnfollow(item.id) : onFollow(item.id))}
           disabled={pending}
+          accessibilityRole="button"
+          accessibilityLabel={isActive ? `Deixar de seguir ${fullName}` : `Seguir ${fullName}`}
           className={
             isActive
               ? "rounded-xl border border-white/15 bg-white/5 px-4 py-2"

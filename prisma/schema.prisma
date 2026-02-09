@@ -44,6 +44,8 @@ model Profile {
   follows_follows_following_idToprofiles                           follows[]               @relation("follows_following_idToprofiles")
   followRequestsSent                                               follow_requests[]       @relation("follow_requests_requester")
   followRequestsReceived                                           follow_requests[]       @relation("follow_requests_target")
+  userCloseFriends                                                 UserCloseFriend[]       @relation("UserCloseFriendUser")
+  userCloseFriendOf                                                UserCloseFriend[]       @relation("UserCloseFriendFriend")
   organization_follows_organization_follows_follower_idToprofiles        organization_follows[]     @relation("organization_follows_follower_idToprofiles")
   notificationsSent                                                Notification[]          @relation("NotificationSender")
   notifications                                                    Notification[]

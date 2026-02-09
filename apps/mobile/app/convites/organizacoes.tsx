@@ -11,7 +11,10 @@ import { Ionicons } from "../../components/icons/Ionicons";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { fetchOrganizationInvites, respondOrganizationInvite } from "../../features/notifications/api";
 import type { OrganizationInvite } from "../../features/notifications/types";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
+import { safeBack } from "../../lib/navigation";
+import { tokens } from "@orya/shared";
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "owner",
@@ -51,7 +54,16 @@ export default function OrganizationInvitesScreen() {
   const tabBarPadding = useTabBarPadding();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<{ source?: string }>();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const source = useMemo(() => {
+    const raw = params.source;
+    if (Array.isArray(raw)) return raw[0] ?? null;
+    if (typeof raw === "string" && raw.trim().length > 0) return raw;
+    return null;
+  }, [params.source]);
+  const fallbackRoute = source === "notifications" ? "/notifications" : "/(tabs)";
 
   const invitesQuery = useQuery({
     queryKey: ["org-invites"],
@@ -111,6 +123,9 @@ export default function OrganizationInvitesScreen() {
               }}
               disabled={!orgUsername}
               style={{ marginTop: -22 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Abrir organização ${orgName}`}
+              accessibilityState={{ disabled: !orgUsername }}
             >
               <AvatarCircle
                 size={52}
@@ -129,6 +144,9 @@ export default function OrganizationInvitesScreen() {
                 }}
                 disabled={!orgUsername}
                 style={{ alignSelf: "flex-start" }}
+                accessibilityRole="button"
+                accessibilityLabel={`Abrir organização ${orgName}`}
+                accessibilityState={{ disabled: !orgUsername }}
               >
                 <Text className="text-white text-sm font-semibold">{orgName}</Text>
               </Pressable>
@@ -149,6 +167,9 @@ export default function OrganizationInvitesScreen() {
                       pressed && styles.actionPressed,
                       pendingId === item.id && styles.actionDisabled,
                     ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Recusar convite"
+                    accessibilityState={{ disabled: pendingId === item.id }}
                   >
                     <Text style={[styles.actionText, styles.actionTextSecondary]}>Recusar</Text>
                   </Pressable>
@@ -161,6 +182,9 @@ export default function OrganizationInvitesScreen() {
                       pressed && styles.actionPressed,
                       pendingId === item.id && styles.actionDisabled,
                     ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Aceitar convite"
+                    accessibilityState={{ disabled: pendingId === item.id }}
                   >
                     <Text style={[styles.actionText, styles.actionTextPrimary]}>Aceitar</Text>
                   </Pressable>
@@ -182,6 +206,16 @@ export default function OrganizationInvitesScreen() {
     <LiquidBackground variant="solid">
       <TopAppHeader />
       <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: tabBarPadding }}>
+        <Pressable
+          onPress={() => safeBack(router, navigation, fallbackRoute)}
+          className="flex-row items-center gap-2 mb-3"
+          style={{ minHeight: tokens.layout.touchTarget }}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
+        >
+          <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+          <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
+        </Pressable>
         <View style={{ marginBottom: 14 }}>
           <Text className="text-white text-2xl font-semibold">Convites de organização</Text>
           <Text className="text-white/60 text-sm">Aceita ou recusa convites pendentes.</Text>
@@ -194,6 +228,8 @@ export default function OrganizationInvitesScreen() {
             <Pressable
               onPress={() => invitesQuery.refetch()}
               className="mt-3 rounded-2xl bg-white/10 px-4 py-3"
+              accessibilityRole="button"
+              accessibilityLabel="Tentar novamente"
             >
               <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
             </Pressable>
@@ -281,7 +317,7 @@ const styles = {
   },
   cover: {
     height: 110,
-    width: "100%",
+    width: "100%" as const,
     backgroundColor: "rgba(255,255,255,0.06)",
   },
   coverFallback: {

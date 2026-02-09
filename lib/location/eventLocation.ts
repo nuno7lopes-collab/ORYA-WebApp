@@ -1,7 +1,9 @@
+import type { Prisma } from "@prisma/client";
+
 export type EventLocationInput = {
   addressRef?: {
     formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
   } | null;
@@ -21,17 +23,18 @@ export type EventLocationResolved = {
 const pickString = (value: unknown) => (typeof value === "string" ? value.trim() || null : null);
 const normalizeToken = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
 
-export const pickCanonicalField = (canonical: Record<string, unknown> | null, ...keys: string[]) => {
-  if (!canonical) return null;
+export const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
+  if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) return null;
+  const record = canonical as Record<string, unknown>;
   for (const key of keys) {
-    const value = pickString(canonical[key]);
+    const value = pickString(record[key]);
     if (value) return value;
   }
   return null;
 };
 
 export function resolveEventLocation(input: EventLocationInput): EventLocationResolved {
-  const canonical = (input.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const canonical = input.addressRef?.canonical ?? null;
   const formattedAddress = pickString(input.addressRef?.formattedAddress) || null;
   const resolvedCity =
     pickCanonicalField(canonical, "city", "locality", "addressLine2", "region", "state") || null;

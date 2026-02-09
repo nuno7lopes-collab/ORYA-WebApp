@@ -73,7 +73,7 @@ async function _GET(req: NextRequest) {
   }
 
   let resolvedClubId: number | null = padelClubId && Number.isFinite(padelClubId) ? padelClubId : null;
-  let resolvedCourtId: number | null = courtId && Number.isFinite(courtId) ? courtId : null;
+  const resolvedCourtId: number | null = courtId && Number.isFinite(courtId) ? courtId : null;
   if (resolvedClubId) {
     const club = await prisma.padelClub.findFirst({
       where: { id: resolvedClubId, organizationId: organization.id, deletedAt: null },

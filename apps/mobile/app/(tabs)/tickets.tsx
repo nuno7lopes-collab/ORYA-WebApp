@@ -13,12 +13,16 @@ import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import { Swipeable } from "react-native-gesture-handler";
+import { Ionicons } from "../../components/icons/Ionicons";
 
 type WalletListItem =
   | { kind: "skeleton"; key: string }
   | { kind: "entitlement"; entitlement: WalletEntitlement };
 
 export default function TicketsScreen() {
+  const router = useRouter();
   const t = i18n.pt.tickets;
   const [mode, setMode] = useState<"upcoming" | "history">("upcoming");
   const [dataReady, setDataReady] = useState(false);
@@ -50,13 +54,51 @@ export default function TicketsScreen() {
   }, [feed]);
 
   const renderItem = useCallback(
-    ({ item }: { item: WalletListItem }) =>
-      item.kind === "skeleton" ? (
-        <GlassSkeleton className="mb-4" height={198} />
-      ) : (
-        <WalletEntitlementCard item={item.entitlement} />
-      ),
-    [],
+    ({ item }: { item: WalletListItem }) => {
+      if (item.kind === "skeleton") {
+        return <GlassSkeleton className="mb-4" height={198} />;
+      }
+      const entitlementId = item.entitlement.entitlementId;
+      const openEntitlement = () => {
+        router.push({ pathname: "/wallet/[entitlementId]", params: { entitlementId } });
+      };
+      return (
+        <Swipeable
+          renderRightActions={() => (
+            <View style={{ flexDirection: "row", gap: 8, paddingRight: 8, alignItems: "center" }}>
+              <Pressable
+                onPress={openEntitlement}
+                accessibilityRole="button"
+                accessibilityLabel="Ver bilhete"
+                style={({ pressed }) => [
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    borderRadius: 16,
+                    backgroundColor: "#ffffff",
+                    minWidth: 86,
+                    justifyContent: "center",
+                  },
+                  pressed ? { opacity: 0.85, transform: [{ scale: 0.98 }] } : null,
+                ]}
+              >
+                <Ionicons name="qr-code" size={16} color="#0b101a" />
+                <Text style={{ color: "#0b101a", fontSize: 12, fontWeight: "700" }}>Ver</Text>
+              </Pressable>
+            </View>
+          )}
+          rightThreshold={36}
+          friction={2}
+          overshootRight={false}
+        >
+          <WalletEntitlementCard item={item.entitlement} />
+        </Swipeable>
+      );
+    },
+    [router],
   );
 
   useFocusEffect(
@@ -106,6 +148,9 @@ export default function TicketsScreen() {
                     onPress={() => setMode(option.key as "upcoming" | "history")}
                     style={{ minHeight: tokens.layout.touchTarget }}
                     className="overflow-hidden rounded-full border border-white/10"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ver ${option.label.toLowerCase()}`}
+                    accessibilityState={{ selected: active }}
                   >
                     <BlurView
                       tint="dark"
@@ -138,6 +183,8 @@ export default function TicketsScreen() {
                   className="rounded-xl bg-white/10 px-4 py-3"
                   onPress={() => feed.refetch()}
                   style={{ minHeight: tokens.layout.touchTarget }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Tentar novamente"
                 >
                   <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
                 </Pressable>
@@ -151,6 +198,20 @@ export default function TicketsScreen() {
             {!showSkeleton && !feed.isError && items.length === 0 ? (
               <GlassSurface intensity={45} padding={16}>
                 <Text className="text-white/65 text-sm">{emptyLabel}</Text>
+                {mode === "upcoming" ? (
+                  <Pressable
+                    className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                    onPress={() => {
+                      // Jump to Discover to get tickets.
+                      router.push("/(tabs)/index");
+                    }}
+                    style={{ minHeight: tokens.layout.touchTarget }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Explorar eventos"
+                  >
+                    <Text className="text-white text-sm font-semibold text-center">Explorar eventos</Text>
+                  </Pressable>
+                ) : null}
               </GlassSurface>
             ) : null}
             {feed.hasNextPage ? (
@@ -159,6 +220,9 @@ export default function TicketsScreen() {
                 onPress={() => feed.fetchNextPage()}
                 disabled={feed.isFetchingNextPage}
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Carregar mais"
+                accessibilityState={{ disabled: feed.isFetchingNextPage }}
               >
                 <Text className="text-white text-sm font-semibold text-center">
                   {feed.isFetchingNextPage ? "A carregar…" : "Carregar mais"}

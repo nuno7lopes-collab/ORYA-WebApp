@@ -177,7 +177,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         },
       },
       checkins: {
-        select: { checkedInAt: true },
+        select: { checkedInAt: true, resultCode: true },
         orderBy: { checkedInAt: "desc" },
         take: 1,
       },

@@ -1725,7 +1725,6 @@ export default function ReservasDashboardPage() {
     setCreateProfessionalId(null);
     setCreateResourceId(null);
     setCreatePartySize("");
-    setCreateLocationText("");
     setCreateError(null);
     setCreateLoading(false);
     setCheckout(null);

@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
@@ -62,8 +62,8 @@ const isCancelError = (err: any) => err?.code === "ERR_CANCELED" || err?.code ==
 
 export default function AuthGatewayScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ next?: string }>();
   const { loading, session } = useAuth();
-  const redirectTo = useMemo(() => Linking.createURL("auth/callback"), []);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [busyMethod, setBusyMethod] = useState<AuthMethod | null>(null);
   const [helpVisible, setHelpVisible] = useState(false);
@@ -75,6 +75,23 @@ export default function AuthGatewayScreen() {
   const baseUrl = env.apiBaseUrl.replace(/\/+$/, "");
   const termsUrl = `${baseUrl}/termos`;
   const privacyUrl = `${baseUrl}/privacidade`;
+  const nextRoute = useMemo(() => {
+    const raw = params.next;
+    const normalize = (value: string) => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
+    if (Array.isArray(raw)) return raw[0] ? normalize(raw[0]) : null;
+    if (typeof raw === "string" && raw.trim().length > 0) return normalize(raw);
+    return null;
+  }, [params.next]);
+  const redirectTo = useMemo(() => {
+    const base = Linking.createURL("auth/callback");
+    return nextRoute ? `${base}?next=${encodeURIComponent(nextRoute)}` : base;
+  }, [nextRoute]);
 
   useEffect(() => {
     AppleAuthentication.isAvailableAsync()
@@ -168,7 +185,7 @@ export default function AuthGatewayScreen() {
       }
 
       trackEvent("auth_success_apple");
-      router.replace("/");
+      router.replace(nextRoute ?? "/");
     } catch (err: any) {
       if (isCancelError(err)) {
         trackEvent("auth_cancel_apple");
@@ -219,7 +236,7 @@ export default function AuthGatewayScreen() {
         }
 
         trackEvent("auth_success_google");
-        router.replace("/");
+        router.replace(nextRoute ?? "/");
         return;
       }
 
@@ -237,7 +254,7 @@ export default function AuthGatewayScreen() {
     await triggerHaptic();
     trackEvent("auth_tap_email");
     setLastMethod("email").catch(() => undefined);
-    router.push("/auth/email");
+    router.push({ pathname: "/auth/email", params: nextRoute ? { next: nextRoute } : {} });
     if (emailTimeoutRef.current) {
       clearTimeout(emailTimeoutRef.current);
     }
@@ -248,7 +265,7 @@ export default function AuthGatewayScreen() {
 
   const handleLinkContinue = () => {
     setLinkModalVisible(false);
-    router.push("/auth/email");
+    router.push({ pathname: "/auth/email", params: nextRoute ? { next: nextRoute } : {} });
   };
 
   if (loading) {
@@ -262,7 +279,7 @@ export default function AuthGatewayScreen() {
   }
 
   if (!loading && session) {
-    return <Redirect href="/" />;
+    return <Redirect href={nextRoute ?? "/"} />;
   }
 
   return (

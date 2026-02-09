@@ -6,7 +6,7 @@ const ROOT = process.cwd();
 const REPORT_DIR = path.join(ROOT, "reports");
 const INVENTORY_CSV = path.join(REPORT_DIR, "blueprint_to_be_inventory.csv");
 const OUT_REPORT = path.join(REPORT_DIR, "blueprint_to_be_gap.md");
-const OUT_DOC = path.join(ROOT, "docs", "blueprint_to_be_gap.md");
+const OUT_DOC = path.join(ROOT, "reports", "blueprint_to_be_gap_doc.md");
 
 const SEARCH_GLOBS = [
   "app/**",
@@ -31,9 +31,14 @@ const IGNORE_GLOBS = [
   "!ios/**",
   "!android/**",
   "!docs/blueprint.md",
-  "!docs/orya_blueprint_v9_final.md",
-  "!docs/blueprint_to_be_gap.md",
+  "!reports/blueprint_to_be_gap.md",
 ];
+
+const CANONICAL_DOCS = new Set([
+  "docs/blueprint.md",
+  "docs/ssot_registry.md",
+  "docs/envs_required.md",
+]);
 
 const STOPWORDS = new Set([
   "para",
@@ -171,14 +176,6 @@ function csvParseLine(line) {
   return result;
 }
 
-function csvEscape(value) {
-  const str = String(value ?? "");
-  if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
-    return `"${str.replace(/\"/g, '""')}"`;
-  }
-  return str;
-}
-
 function shQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
@@ -242,12 +239,7 @@ function rgFiles(term) {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean)
-      .filter(
-        (file) =>
-          file !== "docs/blueprint.md" &&
-          file !== "docs/orya_blueprint_v9_final.md" &&
-          file !== "docs/blueprint_to_be_gap.md",
-      );
+      .filter((file) => !CANONICAL_DOCS.has(file));
   } catch {
     return [];
   }

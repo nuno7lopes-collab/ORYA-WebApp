@@ -30,7 +30,7 @@ import {
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type User } from "@supabase/supabase-js";
 
 const loadEnvFile = (file: string) => {
   if (!fs.existsSync(file)) return;
@@ -223,15 +223,7 @@ const pick = <T>(list: T[], index: number) => list[index % list.length];
 const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 async function resolveAuthUser(email: string) {
-  let user = null;
-  try {
-    if (typeof supabaseAdmin.auth.admin.getUserByEmail === "function") {
-      const { data } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-      user = data?.user ?? null;
-    }
-  } catch {
-    // ignore
-  }
+  let user: User | null = null;
 
   if (!user) {
     const { data } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
@@ -374,11 +366,11 @@ async function main() {
 
     const existing = await prisma.organization.findFirst({
       where: { username: { equals: username, mode: "insensitive" } },
-      include: { members: true },
+      select: { id: true, username: true },
     });
 
-    let organization = existing;
-    if (!organization) {
+    let organization: { id: number; username: string | null } | null = existing;
+    if (!existing) {
       const group = await prisma.organizationGroup.create({ data: { env: seedEnv } });
       organization = await prisma.organization.create({
         data: {
@@ -410,6 +402,9 @@ async function main() {
           brandingCoverUrl: cover,
         },
       });
+    }
+    if (!organization) {
+      throw new Error("Nao foi possivel criar/atualizar organizacao.");
     }
 
     const owner = users[i % users.length];

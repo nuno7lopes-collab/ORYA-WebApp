@@ -90,7 +90,7 @@ AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/deploy-cf.sh --resume
 AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/pause-prod.sh
 AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/start-prod.sh
 ```
-Estado guardado em `scripts/aws/state/orya-prod-pause.json` (ver `docs/aws_pause_resume.md`).
+Estado guardado em `scripts/aws/state/orya-prod-pause.json` (ver `docs/envs_required.md`).
 
 ### Dev serverless (SAM)
 ```bash

@@ -37,6 +37,8 @@ async function _GET(
         locationMode: true,
         addressId: true,
         addressRef: { select: { formattedAddress: true, canonical: true } },
+        professionalLinks: { select: { professionalId: true } },
+        resourceLinks: { select: { resourceId: true } },
         policy: {
           select: {
             id: true,
@@ -146,11 +148,50 @@ async function _GET(
       ...publicOrganization
     } = service.organization;
 
+    const [professionals, resources] = await Promise.all([
+      prisma.reservationProfessional.findMany({
+        where: { organizationId: service.organization.id, isActive: true },
+        orderBy: [{ priority: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          roleTitle: true,
+          user: {
+            select: { avatarUrl: true, username: true, fullName: true },
+          },
+        },
+      }),
+      prisma.reservationResource.findMany({
+        where: { organizationId: service.organization.id, isActive: true },
+        orderBy: [{ priority: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          label: true,
+          capacity: true,
+          priority: true,
+        },
+      }),
+    ]);
+
     return jsonWrap({
       ok: true,
       service: {
         ...service,
         organization: publicOrganization,
+        professionals: professionals.map((professional) => ({
+          id: professional.id,
+          name: professional.name,
+          roleTitle: professional.roleTitle,
+          avatarUrl: professional.user?.avatarUrl ?? null,
+          username: professional.user?.username ?? null,
+          fullName: professional.user?.fullName ?? null,
+        })),
+        resources: resources.map((resource) => ({
+          id: resource.id,
+          label: resource.label,
+          capacity: resource.capacity,
+          priority: resource.priority,
+        })),
         packs: await prisma.servicePack.findMany({
           where: { serviceId: service.id, isActive: true },
           orderBy: [{ recommended: "desc" }, { quantity: "asc" }],

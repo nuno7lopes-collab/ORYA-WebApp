@@ -64,8 +64,17 @@ export default function AuthWall({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
+  const [authOtpCooldown, setAuthOtpCooldown] = useState(0);
   const isEmailLike = (value: string) => value.includes("@");
   const allowReservedForEmail = isEmailLike(identifier) ? identifier.trim().toLowerCase() : null;
+
+  useEffect(() => {
+    if (authOtpCooldown <= 0) return;
+    const timer = setTimeout(() => {
+      setAuthOtpCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [authOtpCooldown]);
 
   async function syncSessionWithServer() {
     try {
@@ -81,6 +90,43 @@ export default function AuthWall({
       });
     } catch (err) {
       console.warn("[AuthWall] syncSessionWithServer falhou", err);
+    }
+  }
+
+  async function triggerResendOtp(emailValue: string) {
+    if (!emailValue || !isEmailLike(emailValue)) {
+      setError("Indica um email válido para reenviar o código.");
+      return;
+    }
+    if (authOtpCooldown > 0) {
+      setError("Aguarda antes de pedir um novo código.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailValue }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok === false) {
+        if (res.status === 429 || data?.error === "RATE_LIMITED") {
+          const retryAfterHeader = res.headers.get("Retry-After");
+          const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+          const cooldownSeconds =
+            Number.isFinite(retryAfter) && retryAfter > 0 ? Math.round(retryAfter) : 60;
+          setAuthOtpCooldown(cooldownSeconds);
+          setError("Muitas tentativas. Tenta novamente dentro de alguns minutos.");
+          return;
+        }
+        setError(data?.error ?? "Não foi possível reenviar o código.");
+        return;
+      }
+      setAuthOtpCooldown(60);
+      setError("Enviámos um novo código de verificação.");
+    } catch (err) {
+      console.error("[AuthWall] resend OTP error:", err);
+      setError("Não foi possível reenviar o código.");
     }
   }
 

@@ -13,6 +13,7 @@ import ChatThread from "@/components/chat/ChatThread";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { resolveLocale, t } from "@/lib/i18n";
+import type { Prisma } from "@prisma/client";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const DEFAULT_TIMEZONE = "Europe/Lisbon";
@@ -38,7 +39,7 @@ type EventPayload = {
   addressId?: string | null;
   addressRef?: {
     formattedAddress: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
   } | null;

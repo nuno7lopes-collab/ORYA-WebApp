@@ -28,9 +28,9 @@ type PlansTab = "EVENTOS" | "RESERVAS";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 function formatAgendaDate(value?: string | null) {
-  if (!value) return "Data a anunciar";
+  if (!value) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
+  if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toLocaleString("pt-PT", {
     day: "2-digit",
     month: "short",
@@ -40,9 +40,9 @@ function formatAgendaDate(value?: string | null) {
 }
 
 function formatCountdown(value?: string | null) {
-  if (!value) return "Hora a anunciar";
+  if (!value) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Hora a anunciar";
+  if (Number.isNaN(parsed.getTime())) return null;
   const diffMs = parsed.getTime() - Date.now();
   if (diffMs <= 0) return "A acontecer";
   const diffMin = Math.ceil(diffMs / 60000);
@@ -147,11 +147,16 @@ export default function HomePersonalized() {
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-white line-clamp-1">{nextEvent.title}</p>
-                  <p className="text-[11px] text-white/60">
-                    {formatAgendaDate(nextEvent.startAt)} · {nextEvent.label ?? "Evento"}
-                  </p>
+                  {(() => {
+                    const dateLabel = formatAgendaDate(nextEvent.startAt);
+                    const parts = [dateLabel, nextEvent.label].filter(Boolean);
+                    if (parts.length === 0) return null;
+                    return <p className="text-[11px] text-white/60">{parts.join(" · ")}</p>;
+                  })()}
                 </div>
-                <p className="text-[10px] text-white/70">{formatCountdown(nextEvent.startAt)}</p>
+                {formatCountdown(nextEvent.startAt) ? (
+                  <p className="text-[10px] text-white/70">{formatCountdown(nextEvent.startAt)}</p>
+                ) : null}
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <p className="text-[10px] text-white/50">Presenças a confirmar.</p>
@@ -181,11 +186,16 @@ export default function HomePersonalized() {
               />
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-white line-clamp-1">{nextBooking.title}</p>
-                <p className="text-[11px] text-white/60">
-                  {formatAgendaDate(nextBooking.startAt)} · {nextBooking.label ?? "Reserva"}
-                </p>
+                {(() => {
+                  const dateLabel = formatAgendaDate(nextBooking.startAt);
+                  const parts = [dateLabel, nextBooking.label].filter(Boolean);
+                  if (parts.length === 0) return null;
+                  return <p className="text-[11px] text-white/60">{parts.join(" · ")}</p>;
+                })()}
               </div>
-              <p className="text-[10px] text-white/70">{formatCountdown(nextBooking.startAt)}</p>
+              {formatCountdown(nextBooking.startAt) ? (
+                <p className="text-[10px] text-white/70">{formatCountdown(nextBooking.startAt)}</p>
+              ) : null}
             </div>
             <div className="mt-3 flex items-center justify-between">
               <p className="text-[10px] text-white/50">Detalhes da reserva.</p>

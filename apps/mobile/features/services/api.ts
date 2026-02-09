@@ -6,7 +6,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const parseServiceDetail = (payload: unknown): ServiceDetail => {
   if (!isRecord(payload) || !isRecord(payload.service)) {
-    throw new ApiError(500, "Formato invalido do servico.");
+    throw new ApiError(500, "Formato inválido do serviço.");
   }
 
   return payload.service as ServiceDetail;
@@ -14,7 +14,7 @@ const parseServiceDetail = (payload: unknown): ServiceDetail => {
 
 export const fetchServiceDetail = async (id: string): Promise<ServiceDetail> => {
   if (!id) {
-    throw new ApiError(400, "Servico invalido.");
+    throw new ApiError(400, "Serviço inválido.");
   }
 
   try {
@@ -23,7 +23,7 @@ export const fetchServiceDetail = async (id: string): Promise<ServiceDetail> => 
     return parseServiceDetail(unwrapped);
   } catch (error) {
     if (error instanceof Error && error.message.includes("API 404")) {
-      throw new ApiError(404, "Servico nao encontrado.");
+      throw new ApiError(404, "Serviço não encontrado.");
     }
     throw error;
   }

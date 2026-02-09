@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
+  FlatList,
   Linking,
   Platform,
   Pressable,
@@ -10,14 +12,23 @@ import {
   useWindowDimensions,
 } from "react-native";
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from "react-native-maps";
-import BottomSheet, { BottomSheetFlatList, type BottomSheetHandleProps } from "@gorhom/bottom-sheet";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { tokens } from "@orya/shared";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { Extrapolate, interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  Extrapolate,
+  interpolate,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
@@ -54,27 +65,35 @@ const RANGE_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   month: "short",
 });
 
-const SHEET_HANDLE_HEIGHT = 20;
+const SHEET_HANDLE_HEIGHT = 16;
+const SCROLL_ENABLE_OFFSET = 36;
 
 const formatEventDate = (startsAt?: string | null, endsAt?: string | null) => {
-  if (!startsAt) return "Data por anunciar";
+  if (!startsAt) return null;
   try {
     const start = new Date(startsAt);
-    if (Number.isNaN(start.getTime())) return "Data por anunciar";
+    if (Number.isNaN(start.getTime())) return null;
     const startLabel = EVENT_DATE_FORMATTER.format(start);
     if (!endsAt) return startLabel;
     const end = new Date(endsAt);
     if (Number.isNaN(end.getTime())) return startLabel;
     return `${startLabel}–${EVENT_DATE_FORMATTER.format(end)}`;
   } catch {
-    return "Data por anunciar";
+    return null;
   }
 };
 
 const formatPrice = (event: PublicEventCard) => {
   if (event.isGratis) return "Grátis";
   if (typeof event.priceFrom === "number") return `Desde ${event.priceFrom.toFixed(0)}€`;
-  return "Preço em breve";
+  return null;
+};
+
+const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const clampWorklet = (value: number, min: number, max: number) => {
+  "worklet";
+  return Math.min(Math.max(value, min), max);
 };
 
 type MapListItem =
@@ -87,6 +106,7 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const topPadding = useTopHeaderPadding(18);
   const { height } = useWindowDimensions();
+  const bottomPadding = Math.max(insets.bottom + 24, 24);
 
   const [dataReady, setDataReady] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
@@ -100,6 +120,7 @@ export default function MapScreen() {
   const [templateType, setTemplateType] = useState<MapTemplateFilter>("all");
   const [rangeStart, setRangeStart] = useState<Date | null>(null);
   const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
+  const [listScrollEnabled, setListScrollEnabled] = useState(false);
 
   const mapRef = useRef<MapView | null>(null);
   const centerModeRef = useRef<"none" | "ip" | "device">("none");
@@ -248,6 +269,9 @@ export default function MapScreen() {
     });
   }, [distanceOrigin, eventsInBounds]);
 
+  const isEmpty =
+    queryEnabled && !discoverQuery.isLoading && !discoverQuery.isError && filteredEvents.length === 0;
+
   const markerEvents = useMemo(
     () => filteredEvents.filter((event) => event.location?.lat != null && event.location?.lng != null),
     [filteredEvents],
@@ -300,20 +324,11 @@ export default function MapScreen() {
       });
   }, [city, ipLocation?.city, locationAddressId, locationSource, setLocation]);
 
-  useFocusEffect(
-    useCallback(() => {
-      setDataReady(true);
-      return () => {
-        setDataReady(false);
-      };
-    }, []),
-  );
-
   const requestDeviceLocation = useCallback(async () => {
     try {
       const current = await Location.getForegroundPermissionsAsync();
       let status = current.status;
-      if (status !== "granted") {
+      if (status === "undetermined") {
         const request = await Location.requestForegroundPermissionsAsync();
         status = request.status;
       }
@@ -336,9 +351,30 @@ export default function MapScreen() {
     }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      setDataReady(true);
+      requestDeviceLocation();
+      return () => {
+        setDataReady(false);
+      };
+    }, [requestDeviceLocation]),
+  );
+
   useEffect(() => {
-    requestDeviceLocation();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        requestDeviceLocation();
+      }
+    });
+    return () => subscription.remove();
   }, [requestDeviceLocation]);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") {
+      setMapReady(true);
+    }
+  }, []);
 
   const handleOpenSettings = useCallback(() => {
     Linking.openSettings().catch(() => undefined);
@@ -355,16 +391,40 @@ export default function MapScreen() {
     };
   }, [deviceCoords?.lat, deviceCoords?.lng, ipLat, ipLng]);
 
+  const handleOpenExternalMap = useCallback(() => {
+    const cityLabel = city?.trim() || ipLocation?.city || "Eventos ORYA";
+    const lat = distanceOrigin?.lat ?? initialRegion.latitude;
+    const lng = distanceOrigin?.lng ?? initialRegion.longitude;
+    let url: string | null = null;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      const label = encodeURIComponent(cityLabel);
+      if (Platform.OS === "android") {
+        url = `geo:${lat},${lng}?q=${lat},${lng}(${label})`;
+      } else {
+        url = `http://maps.apple.com/?ll=${lat},${lng}&q=${label}`;
+      }
+    } else if (cityLabel) {
+      if (Platform.OS === "android") {
+        url = `geo:0,0?q=${encodeURIComponent(cityLabel)}`;
+      } else {
+        url = `http://maps.apple.com/?q=${encodeURIComponent(cityLabel)}`;
+      }
+    }
+    if (!url) return;
+    Linking.openURL(url).catch(() => undefined);
+  }, [city, distanceOrigin?.lat, distanceOrigin?.lng, initialRegion.latitude, initialRegion.longitude, ipLocation?.city]);
+
   const animateToRegion = useCallback((lat: number, lng: number, delta = 0.08) => {
-    mapRef.current?.animateToRegion(
-      {
-        latitude: lat,
-        longitude: lng,
-        latitudeDelta: delta,
-        longitudeDelta: delta,
-      },
-      350,
-    );
+    const nextRegion = {
+      latitude: lat,
+      longitude: lng,
+      latitudeDelta: delta,
+      longitudeDelta: delta,
+    };
+    if (Platform.OS === "ios") {
+      mapRef.current?.animateToRegion(nextRegion, 350);
+    }
+    setMapRegion(nextRegion);
   }, []);
 
   useEffect(() => {
@@ -397,43 +457,94 @@ export default function MapScreen() {
     animateToRegion(DEFAULT_REGION.latitude, DEFAULT_REGION.longitude, DEFAULT_REGION.latitudeDelta);
   }, [animateToRegion, deviceCoords, ipLat, ipLng]);
 
-  const sheetRef = useRef<BottomSheet>(null);
   const bottomInset = Platform.OS === "ios" ? Math.max(insets.bottom + 14, 24) : 0;
   const sheetMaxHeight = Math.min(Math.max(height * 0.82, 360), height - 120);
   const sheetMidHeight = Math.min(Math.max(height * 0.34, 220), sheetMaxHeight - 80);
   const sheetMinHeight = Math.max(84, bottomInset + SHEET_HANDLE_HEIGHT + 16);
-  const sheetSnapPoints = useMemo(
-    () => [sheetMinHeight, sheetMidHeight, sheetMaxHeight],
-    [sheetMaxHeight, sheetMidHeight, sheetMinHeight],
-  );
-  const openSheet = useCallback(() => {
-    sheetRef.current?.snapToIndex(1);
-  }, []);
-  const animatedIndex = useSharedValue(0);
+  const effectiveMaxHeight = isEmpty ? sheetMidHeight : sheetMaxHeight;
+  const sheetHeight = useSharedValue(sheetMinHeight);
+  const minHeight = useSharedValue(sheetMinHeight);
+  const midHeight = useSharedValue(sheetMidHeight);
+  const maxHeight = useSharedValue(effectiveMaxHeight);
   const lastSnapRef = useRef(0);
+  const lastSnapIndex = useSharedValue(0);
+  const gestureStart = useSharedValue(sheetMinHeight);
 
-  const renderSheetHandle = useCallback(
-    ({
-      accessibilityRole,
-      accessibilityLabel,
-      accessibilityHint,
-      accessible,
-    }: BottomSheetHandleProps) => (
-      <View
-        style={styles.sheetHandleContainer}
-        accessible={accessible ?? undefined}
-        accessibilityRole={accessibilityRole ?? undefined}
-        accessibilityLabel={accessibilityLabel ?? undefined}
-        accessibilityHint={accessibilityHint ?? undefined}
-      >
-        <View style={styles.sheetHandleIndicator} />
-      </View>
-    ),
-    [],
+  useEffect(() => {
+    minHeight.value = sheetMinHeight;
+    midHeight.value = sheetMidHeight;
+    maxHeight.value = effectiveMaxHeight;
+    sheetHeight.value = clampValue(sheetHeight.value, sheetMinHeight, effectiveMaxHeight);
+    if (isEmpty && lastSnapRef.current === 2) {
+      lastSnapRef.current = 1;
+      lastSnapIndex.value = 1;
+    }
+  }, [
+    effectiveMaxHeight,
+    isEmpty,
+    maxHeight,
+    midHeight,
+    minHeight,
+    sheetHeight,
+    sheetMaxHeight,
+    sheetMidHeight,
+    sheetMinHeight,
+    lastSnapIndex,
+  ]);
+
+  useAnimatedReaction(
+    () => sheetHeight.value > minHeight.value + SCROLL_ENABLE_OFFSET,
+    (enabled, prev) => {
+      if (enabled !== prev) {
+        runOnJS(setListScrollEnabled)(enabled);
+      }
+    },
+    [minHeight],
   );
+
+  const triggerHaptic = useCallback((index: number) => {
+    const feedback =
+      index === 0
+        ? Haptics.ImpactFeedbackStyle.Light
+        : index === 1
+          ? Haptics.ImpactFeedbackStyle.Medium
+          : Haptics.ImpactFeedbackStyle.Heavy;
+    Haptics.impactAsync(feedback).catch(() => undefined);
+  }, []);
+
+  const setLastSnap = useCallback((index: number) => {
+    lastSnapRef.current = index;
+  }, []);
+
+  const snapToIndex = useCallback(
+    (index: number) => {
+      const resolvedIndex = isEmpty && index === 2 ? 1 : index;
+      const dest =
+        resolvedIndex === 2 ? sheetMaxHeight : resolvedIndex === 1 ? sheetMidHeight : sheetMinHeight;
+      if (lastSnapRef.current !== resolvedIndex) {
+        lastSnapRef.current = resolvedIndex;
+        lastSnapIndex.value = resolvedIndex;
+        triggerHaptic(resolvedIndex);
+      }
+      sheetHeight.value = withSpring(dest, { damping: 26, stiffness: 320 });
+    },
+    [isEmpty, lastSnapIndex, sheetHeight, sheetMaxHeight, sheetMidHeight, sheetMinHeight, triggerHaptic],
+  );
+
+  const openSheet = useCallback(() => {
+    if (Platform.OS === "ios") {
+      snapToIndex(1);
+    }
+  }, [snapToIndex]);
+
+
+  const sheetProgress = useDerivedValue(() => {
+    const range = Math.max(maxHeight.value - minHeight.value, 1);
+    return (sheetHeight.value - minHeight.value) / range;
+  });
 
   const sheetAnimatedStyle = useAnimatedStyle(() => {
-    const progress = interpolate(animatedIndex.value, [-1, 0, 1], [0, 0.25, 1], Extrapolate.CLAMP);
+    const progress = interpolate(sheetProgress.value, [0, 1], [0.2, 1], Extrapolate.CLAMP);
     const opacity = interpolate(progress, [0, 1], [0.08, 0.55]);
     const radius = interpolate(progress, [0, 1], [6, 16]);
     const offset = interpolate(progress, [0, 1], [4, 12]);
@@ -447,11 +558,72 @@ export default function MapScreen() {
   });
 
   const blurAnimatedStyle = useAnimatedStyle(() => {
-    const progress = interpolate(animatedIndex.value, [-1, 0, 1], [0, 0.25, 1], Extrapolate.CLAMP);
     return {
-      opacity: interpolate(progress, [0, 1], [0, 0.9]),
+      opacity: interpolate(sheetProgress.value, [0, 1], [0, 0.9], Extrapolate.CLAMP),
     };
   });
+
+  const sheetPositionStyle = useAnimatedStyle(() => ({
+    height: sheetHeight.value,
+  }));
+
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .onStart(() => {
+          gestureStart.value = sheetHeight.value;
+        })
+        .onUpdate((event) => {
+          const next = clampWorklet(
+            gestureStart.value - event.translationY,
+            minHeight.value,
+            maxHeight.value,
+          );
+          sheetHeight.value = next;
+        })
+        .onEnd((event) => {
+          const projected = clampWorklet(
+            sheetHeight.value - event.velocityY * 0.2,
+            minHeight.value,
+            maxHeight.value,
+          );
+          let dest = minHeight.value;
+          let nextIndex = 0;
+          let smallest = Math.abs(projected - dest);
+          const midDistance = Math.abs(projected - midHeight.value);
+          if (midDistance < smallest) {
+            smallest = midDistance;
+            dest = midHeight.value;
+            nextIndex = 1;
+          }
+          const maxDistance = Math.abs(projected - maxHeight.value);
+          if (maxDistance < smallest) {
+            dest = maxHeight.value;
+            nextIndex = 2;
+          }
+          if (isEmpty) {
+            dest = midHeight.value;
+            nextIndex = 1;
+          }
+          sheetHeight.value = withSpring(dest, { damping: 26, stiffness: 320 });
+          if (lastSnapIndex.value !== nextIndex) {
+            lastSnapIndex.value = nextIndex;
+            runOnJS(setLastSnap)(nextIndex);
+            runOnJS(triggerHaptic)(nextIndex);
+          }
+        }),
+    [
+      gestureStart,
+      sheetHeight,
+      minHeight,
+      midHeight,
+      maxHeight,
+      isEmpty,
+      triggerHaptic,
+      setLastSnap,
+      lastSnapIndex,
+    ],
+  );
 
   const mapTitle = "Eventos no mapa";
 
@@ -475,19 +647,21 @@ export default function MapScreen() {
     () => (
       <View>
         <View style={styles.sheetHeader}>
-          <View style={{ gap: 4 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={styles.sheetTitle}>{mapTitle}</Text>
+          <View style={styles.sheetHeaderInfo}>
+            <View style={styles.sheetHeaderTitleRow}>
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {mapTitle}
+              </Text>
               <View style={styles.brandBadge}>
                 <Text style={styles.brandBadgeText}>ORYA</Text>
               </View>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={styles.sheetSubtitle}>
+            <View style={styles.sheetHeaderSubtitleRow}>
+              <Text style={styles.sheetSubtitle} numberOfLines={1}>
                 {filteredEvents.length} eventos · {rangeLabel}
               </Text>
               {discoverQuery.isFetching ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={styles.sheetHeaderLoading}>
                   <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
                   <Text style={styles.sheetSubtitle}>A carregar…</Text>
                 </View>
@@ -497,6 +671,8 @@ export default function MapScreen() {
           <Pressable
             onPress={clearMapFilters}
             style={({ pressed }) => [styles.resetButton, pressed ? styles.controlPressed : null]}
+            accessibilityRole="button"
+            accessibilityLabel="Limpar filtros"
           >
             <Text style={styles.resetLabel}>Limpar</Text>
           </Pressable>
@@ -509,6 +685,8 @@ export default function MapScreen() {
               onPress={() => discoverQuery.refetch()}
               className="rounded-xl bg-white/10 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Tentar novamente"
             >
               <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
             </Pressable>
@@ -535,6 +713,8 @@ export default function MapScreen() {
     return filteredEvents.map((event) => ({ type: "event" as const, event }));
   }, [discoverQuery.isLoading, filteredEvents, queryEnabled]);
 
+  const allowListScroll = listScrollEnabled && !isEmpty;
+
   const handleSelectEvent = useCallback(
     (event: PublicEventCard) => {
       setSelectedEventId(event.id);
@@ -553,13 +733,14 @@ export default function MapScreen() {
         pathname: "/event/[slug]",
         params: {
           slug: event.slug,
+          source: "map",
           eventTitle: event.title,
           coverImageUrl: event.coverImageUrl ?? "",
           shortDescription: event.shortDescription ?? event.description ?? "",
           startsAt: event.startsAt ?? "",
           endsAt: event.endsAt ?? "",
           locationLabel: event.location?.formattedAddress ?? event.location?.city ?? "",
-          priceLabel: formatPrice(event),
+          priceLabel: formatPrice(event) ?? "",
           categoryLabel: event.categories?.[0] ?? "EVENTO",
         },
       });
@@ -580,9 +761,14 @@ export default function MapScreen() {
         distanceOrigin?.lat,
         distanceOrigin?.lng,
       );
+      const dateLabel = formatEventDate(event.startsAt ?? null, event.endsAt ?? null);
+      const locationLabel = event.location?.formattedAddress || event.location?.city || null;
+      const priceLabel = formatPrice(event);
       return (
         <Pressable
           onPress={() => handleOpenEvent(event)}
+          accessibilityRole="button"
+          accessibilityLabel={`Abrir evento ${event.title}`}
           style={({ pressed }) => [
             { marginBottom: 12 },
             pressed ? { opacity: 0.85, transform: [{ scale: 0.99 }] } : null,
@@ -611,18 +797,26 @@ export default function MapScreen() {
                 <Text className="text-white text-sm font-semibold" numberOfLines={2}>
                   {event.title}
                 </Text>
-                <Text className="text-white/60 text-xs" numberOfLines={1}>
-                  {formatEventDate(event.startsAt ?? null, event.endsAt ?? null)}
-                </Text>
-                <Text className="text-white/55 text-xs" numberOfLines={1}>
-                  {event.location?.formattedAddress || event.location?.city || "Local a anunciar"}
-                </Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text className="text-white/80 text-xs font-semibold">{formatPrice(event)}</Text>
-                  {distanceLabel ? (
-                    <Text className="text-white/45 text-[11px]">· {distanceLabel}</Text>
-                  ) : null}
-                </View>
+                {dateLabel ? (
+                  <Text className="text-white/60 text-xs" numberOfLines={1}>
+                    {dateLabel}
+                  </Text>
+                ) : null}
+                {locationLabel ? (
+                  <Text className="text-white/55 text-xs" numberOfLines={1}>
+                    {locationLabel}
+                  </Text>
+                ) : null}
+                {(priceLabel || distanceLabel) ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    {priceLabel ? (
+                      <Text className="text-white/80 text-xs font-semibold">{priceLabel}</Text>
+                    ) : null}
+                    {distanceLabel ? (
+                      <Text className="text-white/45 text-[11px]">· {distanceLabel}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
               <View style={{ alignItems: "center", justifyContent: "center" }}>
                 <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
@@ -632,7 +826,7 @@ export default function MapScreen() {
         </Pressable>
       );
     },
-    [distanceLat, distanceLng, handleOpenEvent, handleSelectEvent, selectedEventId],
+    [distanceOrigin, handleOpenEvent, selectedEventId],
   );
 
   const keyExtractor = useCallback((item: MapListItem, index: number) => {
@@ -644,22 +838,115 @@ export default function MapScreen() {
     return (
       <LiquidBackground>
         <TopAppHeader />
-        <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20 }}>
-          <Pressable
-            onPress={() => safeBack(router, navigation)}
-            className="flex-row items-center gap-2 mb-4"
-            style={{ minHeight: tokens.layout.touchTarget }}
-          >
-            <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-            <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
-          </Pressable>
-          <GlassCard intensity={55}>
-            <Text className="text-white text-sm font-semibold mb-2">Mapa disponível no iOS</Text>
-            <Text className="text-white/65 text-sm">
-              Esta experiência usa MapKit. No Android mostramos o mapa externo.
-            </Text>
-          </GlassCard>
-        </View>
+        <FlatList
+          data={listData}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: topPadding, paddingBottom: bottomPadding }}
+          ListHeaderComponent={
+            <View>
+              <Pressable
+                onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+                accessibilityRole="button"
+                accessibilityLabel="Voltar"
+                className="flex-row items-center gap-2"
+                style={{ minHeight: tokens.layout.touchTarget }}
+              >
+                <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+                <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
+              </Pressable>
+              <View style={{ marginTop: 10, marginBottom: 12 }}>
+                <Text style={{ color: "#ffffff", fontSize: 20, fontWeight: "700" }}>Mapa</Text>
+                <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
+                  No Android mostramos uma lista geográfica. Abre o mapa externo se quiseres ver no mapa.
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <MapFiltersBar
+                    priceMin={priceMin}
+                    priceMax={priceMax}
+                    onPriceChange={(min, max) => {
+                      setPriceMin(min);
+                      setPriceMax(max);
+                    }}
+                    templateType={templateType}
+                    onTemplateTypeChange={setTemplateType}
+                    rangeStart={rangeStart}
+                    rangeEnd={rangeEnd}
+                    onRangeChange={(start, end) => {
+                      setRangeStart(start);
+                      setRangeEnd(end);
+                    }}
+                    onClear={clearMapFilters}
+                    compact
+                  />
+                </View>
+                <Pressable
+                  onPress={handleRecenter}
+                  accessibilityRole="button"
+                  accessibilityLabel="Recentrar mapa"
+                  style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
+                >
+                  <Ionicons name="locate-outline" size={18} color="rgba(255,255,255,0.9)" />
+                </Pressable>
+              </View>
+
+              <Pressable
+                onPress={handleOpenExternalMap}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir mapa externo"
+                style={({ pressed }) => [
+                  styles.locationPrompt,
+                  { alignSelf: "flex-start", marginTop: 10 },
+                  pressed ? styles.controlPressed : null,
+                ]}
+              >
+                <Ionicons name="map-outline" size={16} color="rgba(255,255,255,0.9)" />
+                <Text style={styles.locationPromptLabel}>Abrir mapa externo</Text>
+              </Pressable>
+
+              {locationStatus !== "granted" ? (
+                <Pressable
+                  onPress={handleOpenSettings}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ativar localização"
+                  style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
+                >
+                  <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.9)" />
+                  <Text style={styles.locationPromptLabel}>Ativar localização</Text>
+                </Pressable>
+              ) : null}
+
+              {locationError ? (
+                <GlassCard intensity={50} style={{ marginTop: 10 }}>
+                  <Text className="text-red-300 text-sm">{locationError}</Text>
+                </GlassCard>
+              ) : null}
+
+              <View style={{ marginTop: 10 }}>{sheetHeader}</View>
+            </View>
+          }
+          ListEmptyComponent={
+            queryEnabled && !discoverQuery.isLoading && !discoverQuery.isError ? (
+              <GlassSurface intensity={48} style={{ padding: 16, marginTop: 12 }}>
+                <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
+                <Pressable
+                  onPress={clearMapFilters}
+                  className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                  style={{ minHeight: tokens.layout.touchTarget }}
+                >
+                  <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
+                </Pressable>
+              </GlassSurface>
+            ) : null
+          }
+          refreshing={discoverQuery.isFetching}
+          onRefresh={() => discoverQuery.refetch()}
+          removeClippedSubviews={Platform.OS === "android"}
+          showsVerticalScrollIndicator={false}
+        />
       </LiquidBackground>
     );
   }
@@ -711,7 +998,9 @@ export default function MapScreen() {
         <View style={{ position: "absolute", top: topPadding, left: 20, right: 20 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Pressable
-              onPress={() => safeBack(router, navigation)}
+              onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar"
               style={({ pressed }) => [
                 styles.controlButton,
                 pressed ? styles.controlPressed : null,
@@ -742,6 +1031,8 @@ export default function MapScreen() {
             </View>
             <Pressable
               onPress={handleRecenter}
+              accessibilityRole="button"
+              accessibilityLabel="Recentrar mapa"
               style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
             >
               <Ionicons name="locate-outline" size={18} color="rgba(255,255,255,0.9)" />
@@ -751,6 +1042,8 @@ export default function MapScreen() {
           {locationStatus !== "granted" ? (
             <Pressable
               onPress={handleOpenSettings}
+              accessibilityRole="button"
+              accessibilityLabel="Ativar localização"
               style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
             >
               <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.9)" />
@@ -767,55 +1060,42 @@ export default function MapScreen() {
           <View style={{ marginTop: 8 }} />
         </View>
 
-        <BottomSheet
-          ref={sheetRef}
-          index={0}
-          snapPoints={sheetSnapPoints}
-          style={styles.sheetWrapper}
-          backgroundStyle={styles.sheetBackground}
-          handleComponent={renderSheetHandle}
-          detached={bottomInset > 0}
-          bottomInset={bottomInset}
-          enableOverDrag
-          enablePanDownToClose={false}
-          animateOnMount
-          enableHandlePanningGesture
-          enableContentPanningGesture
-          activeOffsetY={[-8, 8]}
-          failOffsetX={[-12, 12]}
-          animatedIndex={animatedIndex}
-          onChange={(index) => {
-            if (index === lastSnapRef.current) return;
-            lastSnapRef.current = index;
-            if (index >= 0) {
-              const feedback =
-                index === 0
-                  ? Haptics.ImpactFeedbackStyle.Light
-                  : index === 1
-                    ? Haptics.ImpactFeedbackStyle.Medium
-                    : Haptics.ImpactFeedbackStyle.Heavy;
-              Haptics.impactAsync(feedback).catch(() => undefined);
-            }
-          }}
+        <Animated.View
+          style={[
+            styles.sheetWrapper,
+            { bottom: bottomInset },
+            sheetPositionStyle,
+          ]}
         >
-          <Animated.View style={sheetAnimatedStyle}>
+          <Animated.View style={[styles.sheetBackground, sheetAnimatedStyle]}>
+            <GestureDetector gesture={panGesture}>
+              <View style={styles.sheetHandleContainer}>
+                <View style={styles.sheetHandleIndicator} />
+              </View>
+            </GestureDetector>
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, blurAnimatedStyle]}>
               <BlurView tint="dark" intensity={30} style={StyleSheet.absoluteFillObject} />
             </Animated.View>
-            <BottomSheetFlatList
+            <FlatList
               data={listData}
               keyExtractor={keyExtractor}
               renderItem={renderItem}
+              style={{ flex: 1 }}
+              scrollEnabled={allowListScroll}
+              bounces={allowListScroll}
+              alwaysBounceVertical={false}
               contentContainerStyle={{
                 paddingHorizontal: 20,
                 paddingBottom: bottomInset > 0 ? 20 : insets.bottom + 16,
-                paddingTop: 4,
+                paddingTop: 0,
+                flexGrow: 1,
+                justifyContent: isEmpty ? "center" : "flex-start",
               }}
               showsVerticalScrollIndicator={false}
               ListHeaderComponent={sheetHeader}
               stickyHeaderIndices={[0]}
               ListEmptyComponent={
-                queryEnabled && !discoverQuery.isLoading && !discoverQuery.isError ? (
+                isEmpty ? (
                   <GlassSurface intensity={48} style={{ padding: 16 }}>
                     <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
                     <Pressable
@@ -830,7 +1110,7 @@ export default function MapScreen() {
               }
             />
           </Animated.View>
-        </BottomSheet>
+        </Animated.View>
       </View>
     </LiquidBackground>
   );
@@ -892,6 +1172,7 @@ const styles = {
     borderColor: "rgba(255,255,255,0.08)",
     backgroundColor: "rgba(10,14,24,0.92)",
     overflow: "hidden" as const,
+    flex: 1,
   },
   sheetWrapper: {
     position: "absolute" as const,
@@ -920,18 +1201,17 @@ const styles = {
   },
   sheetHandleContainer: {
     height: SHEET_HANDLE_HEIGHT,
-    paddingTop: 0,
+    paddingTop: 6,
     paddingBottom: 0,
     paddingHorizontal: 0,
     alignItems: "center" as const,
     justifyContent: "flex-start" as const,
   },
   sheetHandleIndicator: {
-    width: 32,
+    width: 40,
     height: 3,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.35)",
-    marginTop: 0,
   },
   brandBadge: {
     paddingHorizontal: 8,
@@ -954,15 +1234,38 @@ const styles = {
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
   },
+  sheetHeaderInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  sheetHeaderTitleRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  sheetHeaderSubtitleRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    flexWrap: "wrap" as const,
+  },
+  sheetHeaderLoading: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+  },
   sheetTitle: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "700" as const,
+    flexShrink: 1,
   },
   sheetSubtitle: {
     color: "rgba(255,255,255,0.6)",
     fontSize: 12,
     marginTop: 2,
+    flexShrink: 1,
   },
   resetButton: {
     paddingHorizontal: 12,

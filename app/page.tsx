@@ -198,7 +198,7 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                           location={formatLocationLabel(event)}
                           tagLabel={tag.label}
                           tagTone={tag.tone}
-                          meta={[{ label: formatPriceLabel(event) }]}
+                          meta={[{ label: formatPriceLabel(event) ?? "—" }]}
                           imagePriority={index < 4}
                         />
                       );
@@ -241,7 +241,7 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                           location={formatLocationLabel(event)}
                           tagLabel={tag.label}
                           tagTone={tag.tone}
-                          meta={[{ label: formatPriceLabel(event) }]}
+                          meta={[{ label: formatPriceLabel(event) ?? "—" }]}
                           imagePriority={index < 4}
                         />
                       );
@@ -287,9 +287,9 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                           href={`/eventos/${event.slug}`}
                           imageUrl={cover}
                           title={event.title}
-                          subtitle={formatLocationLabel(event)}
-                          dateLabel={formatEventDayLabel(event)}
-                          meta={[{ label: formatPriceLabel(event) }]}
+                          subtitle={formatLocationLabel(event) ?? undefined}
+                          dateLabel={formatEventDayLabel(event) ?? undefined}
+                          meta={[{ label: formatPriceLabel(event) ?? "—" }]}
                           className="w-full"
                           imagePriority={index === 0}
                         />
@@ -327,9 +327,9 @@ export default async function DescobrirPage({ searchParams }: PageProps) {
                           square: true,
                         })}
                         title={offer.event.title}
-                        subtitle={formatLocationLabel(offer.event)}
-                        dateLabel={formatEventDayLabel(offer.event)}
-                        meta={[{ label: formatPriceLabel(offer.event) }]}
+                        subtitle={formatLocationLabel(offer.event) ?? undefined}
+                        dateLabel={formatEventDayLabel(offer.event) ?? undefined}
+                        meta={[{ label: formatPriceLabel(offer.event) ?? "—" }]}
                         className="w-full"
                       />
                     ) : (

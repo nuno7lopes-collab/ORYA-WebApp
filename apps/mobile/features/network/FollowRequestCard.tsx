@@ -54,6 +54,8 @@ export const FollowRequestCard = memo(function FollowRequestCard({
         <Pressable
           onPress={openProfile}
           disabled={!canOpenProfile}
+          accessibilityRole="button"
+          accessibilityLabel={canOpenProfile ? `Abrir perfil de ${displayName}` : "Perfil indisponível"}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
         >
           <AvatarCircle size={48} uri={item.avatarUrl} iconName="person" />
@@ -72,6 +74,8 @@ export const FollowRequestCard = memo(function FollowRequestCard({
         <Pressable
           onPress={() => onDecline(item.id)}
           disabled={pending}
+          accessibilityRole="button"
+          accessibilityLabel={`Recusar pedido de ${displayName}`}
           className="flex-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2"
           style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
         >
@@ -82,6 +86,8 @@ export const FollowRequestCard = memo(function FollowRequestCard({
         <Pressable
           onPress={() => onAccept(item.id)}
           disabled={pending}
+          accessibilityRole="button"
+          accessibilityLabel={`Aceitar pedido de ${displayName}`}
           className="flex-1 rounded-xl border border-sky-300/45 bg-sky-400/20 px-3 py-2"
           style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
         >

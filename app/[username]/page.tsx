@@ -23,7 +23,7 @@ import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interest
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { OrganizationFormStatus } from "@prisma/client";
+import { OrganizationFormStatus, type Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
 import { ensurePublicProfileLayout, type PublicProfileModuleType } from "@/lib/publicProfileLayout";
@@ -170,7 +170,7 @@ type OrganizationEvent = {
   addressId?: string | null;
   addressRef?: {
     formattedAddress: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
     latitude?: number | null;
     longitude?: number | null;
   } | null;
@@ -241,7 +241,7 @@ const OPERATION_TEMPLATE: Record<OperationModule, "PADEL" | null> = {
 };
 
 function formatEventDateRange(start: Date | null, end: Date | null, timezone?: string | null) {
-  if (!start) return "Data a definir";
+  if (!start) return null;
   const safeTimezone = timezone || "Europe/Lisbon";
   const optsDay: Intl.DateTimeFormatOptions = {
     weekday: "short",
@@ -266,25 +266,28 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
 
   for (const event of events) {
     const timezone = event.timezone || "Europe/Lisbon";
-    const hasDate = Boolean(event.startsAt);
-    const key = hasDate
-      ? new Intl.DateTimeFormat("pt-PT", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          timeZone: timezone,
-        }).format(event.startsAt as Date)
-      : "data-a-definir";
-    const label = hasDate ? formatDayLabel(event.startsAt as Date, timezone) : "Data a definir";
-      const locationLabel = formatEventLocationLabel(
-        { addressRef: event.addressRef ?? null },
-        "Local a anunciar",
-      );
+    if (!event.startsAt) {
+      continue;
+    }
+    const key = new Intl.DateTimeFormat("pt-PT", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: timezone,
+    }).format(event.startsAt as Date);
+    const label = formatDayLabel(event.startsAt as Date, timezone);
+    const locationLabel = formatEventLocationLabel(
+      { addressRef: event.addressRef ?? null },
+      "",
+    ).trim();
+    if (!locationLabel) {
+      continue;
+    }
     const item: AgendaItem = {
       id: event.id,
       slug: event.slug,
       title: event.title,
-      timeLabel: hasDate ? formatTimeLabel(event.startsAt as Date, timezone) : "—",
+      timeLabel: formatTimeLabel(event.startsAt as Date, timezone),
       locationLabel,
       isPast: pastEventIds?.has(event.id) ?? false,
       isGratis: event.isGratis,
@@ -384,7 +387,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   const organizationProfile = organizationProfileRaw;
   const organizationCity = organizationProfile
     ? pickCanonicalField(
-        (organizationProfile.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+        organizationProfile.addressRef?.canonical ?? null,
         "city",
         "locality",
         "addressLine2",
@@ -583,7 +586,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             coverImageUrl: string | null;
             locationMode: string | null;
             addressId: string | null;
-            addressRef?: { formattedAddress: string | null; canonical?: Record<string, unknown> | null } | null;
+            addressRef?: {
+              formattedAddress: string | null;
+              canonical?: Prisma.JsonValue | null;
+            } | null;
             addons?: Array<{
               id: number;
               label: string;
@@ -1848,15 +1854,16 @@ function EventSpotlightCard({
       <div className="relative z-10 max-w-xl space-y-2">
         <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{label}</p>
         <h3 className="text-2xl font-semibold text-white">{event.title}</h3>
-        <p className="text-[12px] text-white/75">
-          {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
-        </p>
-        <p className="text-[12px] text-white/65">
-          {formatEventLocationLabel(
-            { addressRef: event.addressRef ?? null },
-            "Local a anunciar",
-          )}
-        </p>
+        {formatEventDateRange(event.startsAt, event.endsAt, event.timezone) ? (
+          <p className="text-[12px] text-white/75">
+            {formatEventDateRange(event.startsAt, event.endsAt, event.timezone)}
+          </p>
+        ) : null}
+        {formatEventLocationLabel({ addressRef: event.addressRef ?? null }, "") ? (
+          <p className="text-[12px] text-white/65">
+            {formatEventLocationLabel({ addressRef: event.addressRef ?? null }, "")}
+          </p>
+        ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {ctaHref && (
             <Link
@@ -1935,7 +1942,9 @@ function RecentCard({
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold text-white line-clamp-2">{item.title}</p>
-          <p className="text-[11px] text-white/70 line-clamp-1">{item.venueName || "Local a anunciar"}</p>
+          {item.venueName ? (
+            <p className="text-[11px] text-white/70 line-clamp-1">{item.venueName}</p>
+          ) : null}
           <p className="text-[11px] text-white/60">{formatDate(item.startAt)}</p>
         </div>
       </div>

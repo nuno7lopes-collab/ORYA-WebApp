@@ -22,6 +22,9 @@ import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import { Swipeable } from "react-native-gesture-handler";
+import { Ionicons } from "../../components/icons/Ionicons";
 
 const SECTION_SPACING = 24;
 
@@ -50,6 +53,7 @@ const buildSkeletons = (variant: NetworkSectionKey, count: number): NetworkSecti
   }));
 
 export default function NetworkScreen() {
+  const router = useRouter();
   const [dataReady, setDataReady] = useState(false);
   const suggestions = useNetworkSuggestions(dataReady);
   const actions = useNetworkActions();
@@ -156,24 +160,120 @@ export default function NetworkScreen() {
       }
 
       if (item.type === "suggestion") {
+        const isActive = item.suggestion.isFollowing || item.suggestion.isRequested;
         return (
-          <NetworkSuggestionCard
-            item={item.suggestion}
-            pending={actions.pendingUserId === item.suggestion.id}
-            onFollow={actions.follow}
-            onUnfollow={actions.unfollow}
-          />
+          <Swipeable
+            renderRightActions={() => (
+              <View style={{ flexDirection: "row", gap: 8, paddingRight: 8, alignItems: "center" }}>
+                <Pressable
+                  onPress={() => (isActive ? actions.unfollow(item.suggestion.id) : actions.follow(item.suggestion.id))}
+                  accessibilityRole="button"
+                  accessibilityLabel={isActive ? "Remover" : "Seguir"}
+                  accessibilityState={{ disabled: actions.pendingUserId === item.suggestion.id }}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      borderRadius: 16,
+                      backgroundColor: isActive ? "rgba(255,255,255,0.16)" : "#ffffff",
+                      borderWidth: isActive ? 1 : 0,
+                      borderColor: isActive ? "rgba(255,255,255,0.2)" : "transparent",
+                      minWidth: 96,
+                      justifyContent: "center",
+                    },
+                    pressed ? { opacity: 0.85, transform: [{ scale: 0.98 }] } : null,
+                  ]}
+                >
+                  <Ionicons name={isActive ? "person-remove" : "person-add"} size={16} color={isActive ? "white" : "#0b101a"} />
+                  <Text style={{ color: isActive ? "white" : "#0b101a", fontSize: 12, fontWeight: "700" }}>
+                    {isActive ? "Remover" : "Seguir"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+            rightThreshold={36}
+            friction={2}
+            overshootRight={false}
+          >
+            <NetworkSuggestionCard
+              item={item.suggestion}
+              pending={actions.pendingUserId === item.suggestion.id}
+              onFollow={actions.follow}
+              onUnfollow={actions.unfollow}
+            />
+          </Swipeable>
         );
       }
 
       if (item.type === "request") {
         return (
-          <FollowRequestCard
-            item={item.request}
-            pending={followRequestActions.pendingRequestId === item.request.id}
-            onAccept={followRequestActions.accept}
-            onDecline={followRequestActions.decline}
-          />
+          <Swipeable
+            renderRightActions={() => (
+              <View style={{ flexDirection: "row", gap: 8, paddingRight: 8, alignItems: "center" }}>
+                <Pressable
+                  onPress={() => followRequestActions.accept(item.request.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Aceitar pedido"
+                  accessibilityState={{ disabled: followRequestActions.pendingRequestId === item.request.id }}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      borderRadius: 16,
+                      backgroundColor: "#ffffff",
+                      minWidth: 96,
+                      justifyContent: "center",
+                    },
+                    pressed ? { opacity: 0.85, transform: [{ scale: 0.98 }] } : null,
+                  ]}
+                >
+                  <Ionicons name="checkmark" size={16} color="#0b101a" />
+                  <Text style={{ color: "#0b101a", fontSize: 12, fontWeight: "700" }}>Aceitar</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => followRequestActions.decline(item.request.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Recusar pedido"
+                  accessibilityState={{ disabled: followRequestActions.pendingRequestId === item.request.id }}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      borderRadius: 16,
+                      backgroundColor: "rgba(255,255,255,0.16)",
+                      borderWidth: 1,
+                      borderColor: "rgba(255,255,255,0.2)",
+                      minWidth: 96,
+                      justifyContent: "center",
+                    },
+                    pressed ? { opacity: 0.85, transform: [{ scale: 0.98 }] } : null,
+                  ]}
+                >
+                  <Ionicons name="close" size={16} color="white" />
+                  <Text style={{ color: "white", fontSize: 12, fontWeight: "700" }}>Recusar</Text>
+                </Pressable>
+              </View>
+            )}
+            rightThreshold={36}
+            friction={2}
+            overshootRight={false}
+          >
+            <FollowRequestCard
+              item={item.request}
+              pending={followRequestActions.pendingRequestId === item.request.id}
+              onAccept={followRequestActions.accept}
+              onDecline={followRequestActions.decline}
+            />
+          </Swipeable>
         );
       }
 
@@ -231,6 +331,8 @@ export default function NetworkScreen() {
               className="rounded-xl bg-white/10 px-4 py-3"
               onPress={() => onRetry()}
               style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Tentar novamente"
             >
               <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
             </Pressable>
@@ -248,6 +350,17 @@ export default function NetworkScreen() {
         return (
           <GlassCard intensity={48} className="mb-4">
             <Text className="text-white/70 text-sm">{message}</Text>
+            {section.key === "feed" || section.key === "suggestions" ? (
+              <Pressable
+                onPress={() => router.push("/search")}
+                className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Pesquisar pessoas"
+              >
+                <Text className="text-white text-sm font-semibold text-center">Pesquisar pessoas</Text>
+              </Pressable>
+            ) : null}
           </GlassCard>
         );
       }
@@ -259,6 +372,9 @@ export default function NetworkScreen() {
             disabled={socialFeed.isFetchingNextPage}
             className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 mb-6"
             style={{ minHeight: tokens.layout.touchTarget }}
+            accessibilityRole="button"
+            accessibilityLabel="Carregar mais"
+            accessibilityState={{ disabled: socialFeed.isFetchingNextPage }}
           >
             <Text className="text-white text-sm font-semibold text-center">
               {socialFeed.isFetchingNextPage ? "A carregar..." : "Carregar mais"}
@@ -269,7 +385,7 @@ export default function NetworkScreen() {
 
       return null;
     },
-    [followRequests.refetch, socialFeed, suggestions.refetch],
+    [followRequests.refetch, router, socialFeed, suggestions.refetch],
   );
 
   return (

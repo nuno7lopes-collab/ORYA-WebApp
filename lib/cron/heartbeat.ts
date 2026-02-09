@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { logWarn } from "@/lib/observability/logger";
 
-export type CronHeartbeatStatus = "SUCCESS" | "ERROR";
+export type CronHeartbeatStatus = "SUCCESS" | "ERROR" | "DISABLED";
 
 type CronHeartbeatInput = {
   status: CronHeartbeatStatus;
@@ -25,7 +25,8 @@ export async function recordCronHeartbeat(jobKey: string, input: CronHeartbeatIn
   const now = new Date();
   const durationMs = input.startedAt ? Math.max(0, now.getTime() - input.startedAt.getTime()) : null;
   const isSuccess = input.status === "SUCCESS";
-  const errorMessage = isSuccess ? null : stringifyError(input.error);
+  const isError = input.status === "ERROR";
+  const errorMessage = isError ? stringifyError(input.error) : null;
 
   try {
     await prisma.cronHeartbeat.upsert({
@@ -34,21 +35,21 @@ export async function recordCronHeartbeat(jobKey: string, input: CronHeartbeatIn
         jobKey,
         lastRunAt: now,
         lastSuccessAt: isSuccess ? now : null,
-        lastErrorAt: isSuccess ? null : now,
-        lastError: errorMessage,
+        lastErrorAt: isError ? now : null,
+        lastError: isError ? errorMessage : null,
         runCount: 1,
         successCount: isSuccess ? 1 : 0,
-        errorCount: isSuccess ? 0 : 1,
+        errorCount: isError ? 1 : 0,
         lastDurationMs: durationMs ?? undefined,
       },
       update: {
         lastRunAt: now,
         lastSuccessAt: isSuccess ? now : undefined,
-        lastErrorAt: isSuccess ? undefined : now,
-        lastError: isSuccess ? null : errorMessage,
+        lastErrorAt: isError ? now : undefined,
+        lastError: isError ? errorMessage : null,
         runCount: { increment: 1 },
         successCount: isSuccess ? { increment: 1 } : undefined,
-        errorCount: isSuccess ? undefined : { increment: 1 },
+        errorCount: isError ? { increment: 1 } : undefined,
         lastDurationMs: durationMs ?? undefined,
       },
     });

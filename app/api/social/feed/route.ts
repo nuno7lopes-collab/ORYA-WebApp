@@ -5,7 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { toPublicEventCardWithPrice } from "@/domain/events/publicEventCard";
+import { toPublicEventCardWithPrice, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
 
 type FeedItem = {
   id: string;
@@ -122,50 +122,52 @@ async function _GET(req: NextRequest) {
     nextCursor = next?.id ?? null;
   }
 
-  const items: FeedItem[] = events.map((event) => {
-    const card = toPublicEventCardWithPrice({
-      event: {
-        id: event.id,
-        slug: event.slug,
-        title: event.title,
-        description: event.description ?? null,
-        startsAt: event.startsAt,
-        endsAt: event.endsAt,
-        status: event.status,
-        templateType: event.templateType ?? null,
-        ownerUserId: event.ownerUserId ?? null,
-        organization: event.organization
-          ? {
-              publicName: event.organization.publicName,
-              businessName: event.organization.businessName,
-              username: event.organization.username,
-            }
-          : null,
-        addressId: event.addressId ?? null,
-        addressRef: event.addressRef ?? null,
-        coverImageUrl: event.coverImageUrl ?? null,
-        pricingMode: event.pricingMode ?? null,
-        ticketTypes: event.ticketTypes ?? [],
-      },
-    });
-    const { _priceFromCents, ...publicCard } = card;
-    const orgName =
-      event.organization?.publicName ??
-      event.organization?.businessName ??
-      "Organização ORYA";
-    return {
-      id: `event_${event.id}`,
-      kind: "event",
-      createdAt: event.createdAt.toISOString(),
-      organization: {
-        id: event.organization?.id ?? 0,
-        name: orgName,
-        username: event.organization?.username ?? null,
-        avatarUrl: event.organization?.brandingAvatarUrl ?? null,
-      },
-      event: publicCard,
-    };
-  });
+  const items: FeedItem[] = events
+    .map((event): FeedItem => {
+      const card = toPublicEventCardWithPrice({
+        event: {
+          id: event.id,
+          slug: event.slug,
+          title: event.title,
+          description: event.description ?? null,
+          startsAt: event.startsAt,
+          endsAt: event.endsAt,
+          status: event.status,
+          templateType: event.templateType ?? null,
+          ownerUserId: event.ownerUserId ?? null,
+          organization: event.organization
+            ? {
+                publicName: event.organization.publicName,
+                businessName: event.organization.businessName,
+                username: event.organization.username,
+              }
+            : null,
+          addressId: event.addressId ?? null,
+          addressRef: event.addressRef ?? null,
+          coverImageUrl: event.coverImageUrl ?? null,
+          pricingMode: event.pricingMode ?? null,
+          ticketTypes: event.ticketTypes ?? [],
+        },
+      });
+      const { _priceFromCents, ...publicCard } = card;
+      const orgName =
+        event.organization?.publicName ??
+        event.organization?.businessName ??
+        "Organização ORYA";
+      return {
+        id: `event_${event.id}`,
+        kind: "event",
+        createdAt: event.createdAt.toISOString(),
+        organization: {
+          id: event.organization?.id ?? 0,
+          name: orgName,
+          username: event.organization?.username ?? null,
+          avatarUrl: event.organization?.brandingAvatarUrl ?? null,
+        },
+        event: publicCard,
+      };
+    })
+    .filter((item) => isPublicEventCardComplete(item.event));
 
   return jsonWrap(
     {

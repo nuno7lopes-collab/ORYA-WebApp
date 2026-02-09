@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   tournamentFindUnique: vi.fn(),
   bookingFindUnique: vi.fn(),
   softBlockFindUnique: vi.fn(),
+  calendarBlockFindUnique: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -23,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
     tournament: { findUnique: mocks.tournamentFindUnique },
     booking: { findUnique: mocks.bookingFindUnique },
     softBlock: { findUnique: mocks.softBlockFindUnique },
+    calendarBlock: { findUnique: mocks.calendarBlockFindUnique },
   },
 }));
 

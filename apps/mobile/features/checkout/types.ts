@@ -1,7 +1,7 @@
 export type CheckoutMethod = "card" | "mbway" | "apple_pay";
 
 export type CheckoutLine = {
-  ticketTypeId: number;
+  ticketTypeId?: number;
   name: string;
   quantity: number;
   unitPriceCents: number;
@@ -22,16 +22,22 @@ export type CheckoutBreakdown = {
 };
 
 export type CheckoutDraft = {
-  slug: string;
+  slug?: string;
   eventId?: number;
   eventTitle?: string;
+  serviceId?: number | null;
+  serviceTitle?: string | null;
+  bookingId?: number | null;
+  bookingStartsAt?: string | null;
+  pendingExpiresAt?: string | null;
+  bookingExpiresAt?: string | null;
   sourceType?: string;
   paymentScenario?: string | null;
   pairingId?: number | null;
   pairingSlotId?: number | null;
   inviteToken?: string | null;
   idempotencyKey?: string | null;
-  ticketTypeId: number;
+  ticketTypeId?: number;
   ticketName?: string;
   quantity: number;
   unitPriceCents: number;

@@ -111,7 +111,9 @@ export default function PublicProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Pressable
-          onPress={() => safeBack(router, navigation)}
+          onPress={() => safeBack(router, navigation, "/(tabs)/network")}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
           className="flex-row items-center gap-2"
           style={{ minHeight: tokens.layout.touchTarget }}
         >
@@ -130,6 +132,8 @@ export default function PublicProfileScreen() {
             <Pressable
               onPress={() => profileQuery.refetch()}
               className="rounded-xl bg-white/10 px-4 py-3"
+              accessibilityRole="button"
+              accessibilityLabel="Tentar novamente"
             >
               <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
             </Pressable>
@@ -160,6 +164,9 @@ export default function PublicProfileScreen() {
                     ? "rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
                     : "rounded-2xl border border-sky-300/45 bg-sky-400/20 px-4 py-3"
                 }
+                accessibilityRole="button"
+                accessibilityLabel={followLabel}
+                accessibilityState={{ selected: Boolean(data?.viewer?.isFollowing || data?.viewer?.isRequested) }}
               >
                 <Text
                   className={
@@ -192,7 +199,7 @@ export default function PublicProfileScreen() {
                     <View>
                       <Text className="text-white/70 text-xs mb-2">Próximos</Text>
                       {(eventsQuery.data?.upcoming ?? []).map((event, index) => (
-                        <EventCardSquare key={`upcoming-${event.id}`} event={event} index={index} />
+                        <EventCardSquare key={`upcoming-${event.id}`} event={event} index={index} source="profile" />
                       ))}
                     </View>
                   ) : (
@@ -205,7 +212,7 @@ export default function PublicProfileScreen() {
                     <View className="pt-2">
                       <Text className="text-white/70 text-xs mb-2">Anteriores</Text>
                       {(eventsQuery.data?.past ?? []).map((event, index) => (
-                        <EventCardSquare key={`past-${event.id}`} event={event} index={index} />
+                        <EventCardSquare key={`past-${event.id}`} event={event} index={index} source="profile" />
                       ))}
                     </View>
                   ) : null}

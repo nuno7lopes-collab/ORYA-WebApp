@@ -175,7 +175,7 @@ const absUrl = (path: string) => (/^https?:\/\//i.test(path) ? path : `${BASE_UR
 
 const buildLocationPayload = (addressRef?: {
   formattedAddress?: string | null;
-  canonical?: Record<string, unknown> | null;
+  canonical?: Prisma.JsonValue | null;
 } | null) => {
   return {
     addressRef: addressRef ?? null,
@@ -454,13 +454,13 @@ async function processSendEmailOutbox(op: OperationRecord) {
       case "PURCHASE_CONFIRMED_GUEST": {
         const addressRef =
           tpl?.addressRef && typeof tpl.addressRef === "object"
-            ? (tpl.addressRef as { formattedAddress?: string | null; canonical?: Record<string, unknown> | null })
+            ? (tpl.addressRef as { formattedAddress?: string | null; canonical?: Prisma.JsonValue | null })
             : tpl?.locationFormattedAddress
               ? {
                   formattedAddress: String(tpl.locationFormattedAddress),
                   canonical:
                     tpl.locationComponents && typeof tpl.locationComponents === "object"
-                      ? (tpl.locationComponents as Record<string, unknown>)
+                      ? (tpl.locationComponents as Prisma.JsonValue)
                       : null,
                 }
               : null;

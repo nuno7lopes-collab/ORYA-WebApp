@@ -24,7 +24,7 @@ type EventCard = {
   addressId: string | null;
   addressRef: {
     formattedAddress: string | null;
-    canonical: Record<string, unknown> | null;
+    canonical: Prisma.JsonValue | null;
     latitude: number | null;
     longitude: number | null;
   } | null;
@@ -110,7 +110,7 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       addressRef: ev.addressRef
         ? {
             formattedAddress: ev.addressRef.formattedAddress ?? null,
-            canonical: (ev.addressRef.canonical as Record<string, unknown> | null) ?? null,
+            canonical: ev.addressRef.canonical ?? null,
             latitude: ev.addressRef.latitude ?? null,
             longitude: ev.addressRef.longitude ?? null,
           }

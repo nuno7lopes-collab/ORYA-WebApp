@@ -170,7 +170,7 @@ async function purgeUsers(users: UserRecord[]) {
     }
 
     try {
-      await clearUsernameForOwner({ ownerType: "user", ownerId: user.id });
+      await clearUsernameForOwner("user", user.id);
     } catch (err) {
       console.warn(`[purge] clear username failed for ${user.id}`, err);
     }
@@ -187,7 +187,7 @@ async function purgeOrganizations(orgs: OrgRecord[]) {
     }
 
     try {
-      await clearUsernameForOwner({ ownerType: "organization", ownerId: org.id });
+      await clearUsernameForOwner("organization", org.id);
     } catch (err) {
       console.warn(`[purge] clear username failed for org ${org.id}`, err);
     }

@@ -78,6 +78,10 @@ export default function ChatThreadScreen() {
   );
   const eventIdRaw = Array.isArray(params.eventId) ? params.eventId[0] : params.eventId;
   const eventId = eventIdRaw ? Number(eventIdRaw) : null;
+  const nextRoute = useMemo(() => (threadId ? `/messages/${threadId}` : "/messages"), [threadId]);
+  const openAuth = useCallback(() => {
+    router.push({ pathname: "/auth", params: { next: nextRoute } });
+  }, [nextRoute, router]);
   const openSenderProfile = useCallback(
     (username?: string | null) => {
       if (!username) return;
@@ -207,7 +211,9 @@ export default function ChatThreadScreen() {
         <TopAppHeader />
         <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: insets.bottom + 24 }}>
           <Pressable
-            onPress={() => safeBack(router, navigation)}
+            onPress={() => safeBack(router, navigation, "/messages")}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
             className="flex-row items-center gap-2"
             style={{ minHeight: tokens.layout.touchTarget }}
           >
@@ -218,9 +224,11 @@ export default function ChatThreadScreen() {
             <Text className="text-white text-sm font-semibold mb-2">Inicia sessão</Text>
             <Text className="text-white/65 text-sm">Entra para aceder ao chat do evento.</Text>
             <Pressable
-              onPress={() => router.push("/auth")}
+              onPress={openAuth}
               className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Entrar"
             >
               <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
                 Entrar
@@ -242,7 +250,9 @@ export default function ChatThreadScreen() {
       >
         <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: insets.bottom + 12 }}>
           <Pressable
-            onPress={() => safeBack(router, navigation)}
+            onPress={() => safeBack(router, navigation, "/messages")}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
             className="flex-row items-center gap-2"
             style={{ minHeight: tokens.layout.touchTarget }}
           >
@@ -278,15 +288,29 @@ export default function ChatThreadScreen() {
               {threadQuery.data?.event.slug ? (
                 <Pressable
                   onPress={() =>
-                    router.push({ pathname: "/event/[slug]", params: { slug: threadQuery.data?.event.slug ?? "" } })
+                    router.push({
+                      pathname: "/event/[slug]",
+                      params: { slug: threadQuery.data?.event.slug ?? "", source: "messages" },
+                    })
                   }
                   className="rounded-full border border-white/15 px-3 py-1"
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver evento"
                 >
                   <Text className="text-white/70 text-[11px]">Ver evento</Text>
                 </Pressable>
               ) : null}
             </View>
           </GlassCard>
+
+          {!canPost ? (
+            <GlassCard intensity={48} className="mt-4">
+              <Text className="text-white text-sm font-semibold mb-1">Chat em modo leitura</Text>
+              <Text className="text-white/65 text-sm">
+                Apenas administradores podem enviar mensagens neste momento.
+              </Text>
+            </GlassCard>
+          ) : null}
 
           {loading ? (
             <View className="mt-5 gap-3">
@@ -300,6 +324,8 @@ export default function ChatThreadScreen() {
                 onPress={loadInitial}
                 className="rounded-2xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Tentar novamente"
               >
                 <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
               </Pressable>
@@ -317,6 +343,9 @@ export default function ChatThreadScreen() {
                   onPress={loadMore}
                   disabled={loadingMore}
                   className="self-center rounded-full border border-white/15 px-4 py-2"
+                  accessibilityRole="button"
+                  accessibilityLabel="Carregar mensagens antigas"
+                  accessibilityState={{ disabled: loadingMore }}
                 >
                   <Text className="text-white/70 text-xs">
                     {loadingMore ? "A carregar..." : "Carregar mensagens antigas"}
@@ -355,6 +384,9 @@ export default function ChatThreadScreen() {
                         onPress={() => openSenderProfile(message.sender?.username)}
                         disabled={!message.sender?.username}
                         style={{ marginRight: 8 }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Abrir perfil"
+                        accessibilityState={{ disabled: !message.sender?.username }}
                       >
                         <AvatarCircle
                           size={28}
@@ -378,6 +410,9 @@ export default function ChatThreadScreen() {
                           onPress={() => openSenderProfile(message.sender?.username)}
                           disabled={!message.sender?.username}
                           style={{ alignSelf: "flex-start" }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Abrir perfil"
+                          accessibilityState={{ disabled: !message.sender?.username }}
                         >
                           <Text className="text-white/70 text-[11px] mb-1">{message.sender.fullName}</Text>
                         </Pressable>
@@ -415,12 +450,16 @@ export default function ChatThreadScreen() {
                 className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
                 multiline
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityLabel="Mensagem"
               />
               <Pressable
                 onPress={handleSend}
                 disabled={sending || !input.trim()}
                 className="rounded-2xl bg-white/90 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Enviar mensagem"
+                accessibilityState={{ disabled: sending || !input.trim() }}
               >
                 {sending ? (
                   <ActivityIndicator color="#0b101a" />

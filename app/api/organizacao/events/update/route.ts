@@ -483,7 +483,13 @@ export async function POST(req: NextRequest) {
       dataUpdate.isDeleted = true;
       dataUpdate.deletedAt = new Date();
     }
-    if (body.title !== undefined) dataUpdate.title = body.title?.trim() ?? "";
+    if (body.title !== undefined) {
+      const nextTitle = body.title?.trim() ?? "";
+      if (!nextTitle) {
+        return fail(400, "Título é obrigatório.");
+      }
+      dataUpdate.title = nextTitle;
+    }
     const slugSource =
       body.slug !== undefined
         ? body.slug
@@ -516,7 +522,7 @@ export async function POST(req: NextRequest) {
       dataUpdate.endsAt = d;
     }
     if (addressIdInput !== undefined) {
-      dataUpdate.addressId = addressRecord.id;
+      dataUpdate.addressId = addressRecord?.id ?? null;
     }
     if (body.templateType) {
       const tpl = body.templateType.toUpperCase();

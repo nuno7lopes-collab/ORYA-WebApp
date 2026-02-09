@@ -12,6 +12,7 @@ import {
   PublicEventCard,
   PublicEventCardWithPrice,
   toPublicEventCardWithPriceFromIndex,
+  isPublicEventCardComplete,
 } from "@/domain/events/publicEventCard";
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -215,7 +216,9 @@ async function _GET(req: NextRequest) {
       }),
     );
 
-    const filtered = computed.filter((item) => {
+    const filtered = computed
+      .filter((item) => isPublicEventCardComplete(item))
+      .filter((item) => {
       if (priceMinCents > 0 && priceMaxCents !== null) {
         return (
           !item.isGratis &&

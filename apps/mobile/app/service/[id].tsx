@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef } from "react";
-import { Animated, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../components/icons/Ionicons";
@@ -15,7 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { safeBack } from "../../lib/navigation";
 
 const formatPrice = (amountCents: number, currency: string): string => {
-  if (amountCents <= 0) return "Gratis";
+  if (amountCents <= 0) return "Grátis";
   const amount = amountCents / 100;
   const normalizedCurrency = currency?.toUpperCase() || "EUR";
   return `${amount.toFixed(0)} ${normalizedCurrency}`;
@@ -35,7 +35,7 @@ const kindLabel = (kind: string): string => {
     case "CLASS":
       return "AULA";
     default:
-      return "SERVICO";
+      return "SERVIÇO";
   }
 };
 
@@ -67,9 +67,13 @@ export default function ServiceDetailScreen() {
   }>();
   const router = useRouter();
   const navigation = useNavigation();
+  const sourceValue = useMemo(
+    () => (Array.isArray(source) ? source[0] : source) ?? null,
+    [source],
+  );
   const idValue = useMemo(() => (Array.isArray(id) ? id[0] : id) ?? "", [id]);
   const previewTitle = useMemo(
-    () => (Array.isArray(serviceTitle) ? serviceTitle[0] : serviceTitle) ?? "Servico",
+    () => (Array.isArray(serviceTitle) ? serviceTitle[0] : serviceTitle) ?? "Serviço",
     [serviceTitle],
   );
   const previewPrice = useMemo(() => {
@@ -108,8 +112,22 @@ export default function ServiceDetailScreen() {
 
   const { data, isLoading, isError, error, refetch } = useServiceDetail(idValue);
   const transitionSource = source === "discover" ? "discover" : "direct";
+  const fallbackRoute = useMemo(() => {
+    switch (sourceValue) {
+      case "map":
+        return "/map";
+      case "search":
+        return "/search";
+      case "discover":
+        return "/(tabs)/index";
+      case "agora":
+        return "/(tabs)/agora";
+      default:
+        return "/(tabs)";
+    }
+  }, [sourceValue]);
   const handleBack = () => {
-    safeBack(router, navigation);
+    safeBack(router, navigation, fallbackRoute);
   };
 
   const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
@@ -147,6 +165,9 @@ export default function ServiceDetailScreen() {
 
   const mapUrl = useMemo(() => {
     if (!resolvedAddress) return null;
+    if (Platform.OS === "android") {
+      return `geo:0,0?q=${encodeURIComponent(resolvedAddress)}`;
+    }
     return `http://maps.apple.com/?q=${encodeURIComponent(resolvedAddress)}`;
   }, [resolvedAddress]);
 
@@ -166,6 +187,8 @@ export default function ServiceDetailScreen() {
         <View className="px-5 pt-12 pb-4">
           <Pressable
             onPress={handleBack}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
             className="flex-row items-center gap-2"
             style={{ minHeight: tokens.layout.touchTarget }}
           >
@@ -188,7 +211,6 @@ export default function ServiceDetailScreen() {
                       style={StyleSheet.absoluteFill}
                       contentFit="cover"
                       transition={220}
-                      sharedTransitionTag={displayImageTag ?? undefined}
                       cachePolicy="memory-disk"
                       priority="high"
                     />
@@ -259,13 +281,15 @@ export default function ServiceDetailScreen() {
             <GlassCard intensity={52}>
               <Text className="text-red-300 text-sm mb-3">
                 {error instanceof ApiError && error.status === 404
-                  ? "Servico nao encontrado."
-                  : "Nao foi possivel carregar o servico."}
+                  ? "Serviço não encontrado."
+                  : "Não foi possível carregar o serviço."}
               </Text>
               <Pressable
                 onPress={() => refetch()}
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Tentar novamente"
               >
                 <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
               </Pressable>
@@ -284,7 +308,6 @@ export default function ServiceDetailScreen() {
                     style={StyleSheet.absoluteFill}
                     contentFit="cover"
                     transition={240}
-                    sharedTransitionTag={displayImageTag ?? undefined}
                     cachePolicy="memory-disk"
                     priority="high"
                   />
@@ -345,6 +368,8 @@ export default function ServiceDetailScreen() {
                     onPress={handleOpenMap}
                     className="self-start flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2"
                     style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Abrir no mapa"
                   >
                     <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
                     <Text className="text-white/80 text-xs font-semibold">Abrir no mapa</Text>
@@ -397,11 +422,16 @@ export default function ServiceDetailScreen() {
 
             <View className="pt-5">
               <Pressable
-                disabled
-                className="rounded-2xl border border-white/15 bg-white/10 px-4 py-4"
+                onPress={() => {
+                  if (!data?.id) return;
+                  router.push({ pathname: "/service/[id]/booking", params: { id: String(data.id) } });
+                }}
+                className="rounded-2xl bg-white/15 px-4 py-4"
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Reservar agora"
               >
-                <Text className="text-center text-white text-sm font-semibold">Reservar agora (em breve)</Text>
+                <Text className="text-center text-white text-sm font-semibold">Reservar agora</Text>
               </Pressable>
             </View>
           </Animated.ScrollView>

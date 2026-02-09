@@ -28,6 +28,13 @@ const LEFT_TABS: Array<{
 ];
 
 const RIGHT_TAB = { key: "index", icon: "search" as keyof typeof Ionicons.glyphMap };
+const TAB_LABELS: Record<string, string> = {
+  agora: "Agora",
+  tickets: "Bilhetes",
+  network: "Rede",
+  profile: "Perfil",
+  index: "Descobrir",
+};
 
 export const TAB_BAR_HEIGHT = 60;
 const RIGHT_PILL_SIZE = 56;
@@ -363,7 +370,9 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                     return (
                       <Pressable
                         key={tab.key}
-                        accessibilityRole="button"
+                        accessibilityRole="tab"
+                        accessibilityLabel={TAB_LABELS[tab.key] ?? tab.key}
+                        accessibilityHint={`Abrir ${TAB_LABELS[tab.key] ?? tab.key}`}
                         accessibilityState={isActive ? { selected: true } : {}}
                         hitSlop={10}
                         onLayout={(event) => handleSlotLayout(index, event)}
@@ -401,7 +410,9 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
         </View>
 
         <Pressable
-          accessibilityRole="button"
+          accessibilityRole="tab"
+          accessibilityLabel={TAB_LABELS[RIGHT_TAB.key]}
+          accessibilityHint={`Abrir ${TAB_LABELS[RIGHT_TAB.key]}`}
           accessibilityState={rightActive ? { selected: true } : {}}
           style={({ pressed }) => [styles.rightPill, pressed && styles.tabPressed]}
           hitSlop={10}

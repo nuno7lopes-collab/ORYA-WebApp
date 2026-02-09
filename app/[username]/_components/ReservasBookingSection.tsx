@@ -62,6 +62,8 @@ type ReservasBookingSectionProps = {
     id: number;
     publicName: string | null;
     businessName: string | null;
+    city?: string | null;
+    address?: string | null;
     username: string | null;
     timezone: string | null;
     addressId?: string | null;

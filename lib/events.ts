@@ -1,6 +1,7 @@
 // lib/events.ts
 import type { Event, TicketType } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import type { Prisma } from "@prisma/client";
 
 type EventLike = {
   startsAt: Date | string;
@@ -87,7 +88,7 @@ export function mapEventToCardDTO(
   event:
     | (Partial<Event> & {
         ticketTypes?: (Partial<TicketType> | null)[] | null;
-        addressRef?: { canonical?: Record<string, unknown> | null } | null;
+        addressRef?: { formattedAddress?: string | null; canonical?: Prisma.JsonValue | null } | null;
       })
     | null
 ): EventCardDTO | null {
@@ -118,7 +119,11 @@ export function mapEventToCardDTO(
       ticketPrices,
     });
 
-  const canonical = (event.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const canonicalRaw = event.addressRef?.canonical ?? null;
+  const canonical =
+    canonicalRaw && typeof canonicalRaw === "object" && !Array.isArray(canonicalRaw)
+      ? (canonicalRaw as Record<string, unknown>)
+      : null;
   const locationFormattedAddress =
     event.addressRef?.formattedAddress ??
     (canonical && typeof canonical.formattedAddress === "string" && canonical.formattedAddress.trim()

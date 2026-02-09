@@ -22,14 +22,15 @@ type Props = {
   index?: number;
   userLat?: number | null;
   userLon?: number | null;
+  source?: string;
 };
 
 const isServiceCard = (item: PublicEventCard | DiscoverServiceCard): item is DiscoverServiceCard => {
   return "durationMinutes" in item;
 };
 
-const formatEventPrice = (item: PublicEventCard): string => {
-  if (item.isGratis) return "Gratis";
+const formatEventPrice = (item: PublicEventCard): string | null => {
+  if (item.isGratis) return "Grátis";
   if (typeof item.priceFrom === "number") return `Desde ${item.priceFrom.toFixed(0)} EUR`;
   const ticketPrices = item.ticketTypes
     ? item.ticketTypes
@@ -42,11 +43,11 @@ const formatEventPrice = (item: PublicEventCard): string => {
     if (min === max) return `${min.toFixed(0)} EUR`;
     return `Desde ${min.toFixed(0)} EUR`;
   }
-  return "Preco em breve";
+  return null;
 };
 
 const formatServicePrice = (item: DiscoverServiceCard): string => {
-  if (item.unitPriceCents <= 0) return "Gratis";
+  if (item.unitPriceCents <= 0) return "Grátis";
   const amount = item.unitPriceCents / 100;
   const currency = item.currency?.toUpperCase() || "EUR";
   return `${amount.toFixed(0)} ${currency}`;
@@ -63,8 +64,8 @@ const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   minute: "2-digit",
 });
 
-const formatDateRange = (startsAt?: string, endsAt?: string): string => {
-  if (!startsAt) return "Data por anunciar";
+const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
+  if (!startsAt) return null;
   try {
     const start = new Date(startsAt);
     const end = endsAt ? new Date(endsAt) : null;
@@ -78,7 +79,7 @@ const formatDateRange = (startsAt?: string, endsAt?: string): string => {
 
     return `${date} · ${startTime}-${endTime}`;
   } catch {
-    return "Data por anunciar";
+    return null;
   }
 };
 
@@ -96,9 +97,9 @@ const formatRelativeStart = (startsAt?: string): string | null => {
     const diffDays = Math.round((startDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
 
     if (diffDays === 0) return "Hoje";
-    if (diffDays === 1) return "Amanha";
+    if (diffDays === 1) return "Amanhã";
     if (diffDays > 1 && diffDays <= 6) return `Em ${diffDays} dias`;
-    if (diffDays < 0) return "Ja passou";
+    if (diffDays < 0) return "Já passou";
     return null;
   } catch {
     return null;
@@ -113,7 +114,7 @@ const formatServiceRelativeStart = (nextAvailability?: string | null): string | 
 
     const now = new Date();
     const diffMs = next.getTime() - now.getTime();
-    if (diffMs <= 0) return "Disponivel";
+    if (diffMs <= 0) return "Disponível";
 
     const diffHours = Math.floor(diffMs / (60 * 60 * 1000));
     if (diffHours < 1) return "Hoje";
@@ -144,12 +145,12 @@ const resolveServiceKind = (kind: DiscoverServiceCard["kind"]): string => {
     case "CLASS":
       return "AULA";
     default:
-      return "SERVICO";
+      return "SERVIÇO";
   }
 };
 
-const formatServiceNextAvailability = (nextAvailability?: string | null): string => {
-  if (!nextAvailability) return "Sem horarios proximos";
+const formatServiceNextAvailability = (nextAvailability?: string | null): string | null => {
+  if (!nextAvailability) return null;
   return formatDateRange(nextAvailability);
 };
 
@@ -276,6 +277,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   index = 0,
   userLat,
   userLon,
+  source,
 }: Props) {
   const isFeatured = variant === "featured";
   const isService = itemType ? itemType === "service" : isServiceCard(item);
@@ -289,17 +291,17 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
     return event?.categories?.[0] ?? "EVENTO";
   }, [event, service]);
 
-  const title = service ? service.title : event?.title ?? "Oferta";
+  const title = service ? service.title : event?.title ?? null;
   const serviceAddress =
     service?.addressRef?.formattedAddress ??
     service?.organization?.addressRef?.formattedAddress ??
     null;
   const location = service
-    ? serviceAddress || "Local a anunciar"
+    ? serviceAddress || null
     : event?.location?.formattedAddress ??
         event?.location?.city ??
         event?.location?.name ??
-        "Local a anunciar";
+        null;
   const date = service
     ? formatServiceNextAvailability(service.nextAvailability)
     : formatDateRange(event?.startsAt, event?.endsAt);
@@ -319,7 +321,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   const serviceCover = service?.organization?.brandingAvatarUrl || service?.instructor?.avatarUrl || null;
   const coverImage = isService ? serviceCover : event?.coverImageUrl ?? null;
   const tintSeed = useMemo(
-    () => coverImage ?? event?.slug ?? service?.id ?? title ?? "orya",
+    () => String(coverImage ?? event?.slug ?? service?.id ?? title ?? "orya"),
     [coverImage, event?.slug, service?.id, title],
   );
   const fallbackTint = useMemo(() => getFallbackTint(tintSeed), [tintSeed]);
@@ -345,14 +347,14 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
       isService
         ? service
           ? formatServicePrice(service)
-          : "Preco em breve"
+          : null
         : event
           ? formatEventPrice(event)
-          : "Preco em breve",
+          : null,
     [event, isService, service],
   );
   const statusLabel = useMemo(
-    () => (isService ? "Disponivel" : resolveStatusLabel(event?.status)),
+    () => (isService ? "Disponível" : resolveStatusLabel(event?.status)),
     [event?.status, isService],
   );
   const distanceLabel = useMemo(() => {
@@ -382,20 +384,20 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
       event
         ? {
             slug: event.slug ?? "",
-            source: "discover",
+            source: source ?? "discover",
             eventTitle: title,
             coverImageUrl: event.coverImageUrl ?? "",
             shortDescription: event.shortDescription ?? "",
             startsAt: event.startsAt ?? "",
             endsAt: event.endsAt ?? "",
-            locationLabel: location,
-            priceLabel: cardPrice,
+            locationLabel: location ?? "",
+            priceLabel: cardPrice ?? "",
             categoryLabel: category,
             hostName: host,
             ...(transitionTag ? { imageTag: transitionTag } : {}),
           }
         : undefined,
-    [event, title, location, cardPrice, category, host, transitionTag],
+    [event, title, location, cardPrice, category, host, source, transitionTag],
   );
 
   const servicePreviewParams = useMemo(
@@ -403,9 +405,9 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
       service
         ? {
             id: String(service.id ?? ""),
-            source: "discover",
+            source: source ?? "discover",
             serviceTitle: title,
-            servicePriceLabel: cardPrice,
+            servicePriceLabel: cardPrice ?? "",
             serviceDuration: durationLabel ?? "",
             serviceKind: resolveServiceKind(service.kind),
             serviceOrg: host,
@@ -415,7 +417,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             ...(transitionTag ? { imageTag: transitionTag } : {}),
           }
         : undefined,
-    [service, title, cardPrice, durationLabel, host, instructorLabel, serviceCover, serviceAddress, transitionTag],
+    [service, title, cardPrice, durationLabel, host, instructorLabel, serviceCover, serviceAddress, source, transitionTag],
   );
 
   const linkHref = useMemo(
@@ -503,7 +505,13 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
 
   return (
     <Link href={linkHref} asChild push>
-      <Pressable onPressIn={onPressIn} onPressOut={onPressOut} android_ripple={{ color: "rgba(255,255,255,0.08)" }}>
+      <Pressable
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        android_ripple={{ color: "rgba(255,255,255,0.08)" }}
+        accessibilityRole="button"
+        accessibilityLabel={isService ? `Abrir serviço ${title}` : `Abrir evento ${title}`}
+      >
         <Animated.View
           style={{
             opacity: revealOpacity,
@@ -526,7 +534,6 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                       style={StyleSheet.absoluteFill}
                       contentFit="cover"
                       transition={220}
-                      sharedTransitionTag={transitionTag ?? undefined}
                       cachePolicy="memory-disk"
                       priority={isFeatured ? "high" : "normal"}
                     />
@@ -566,31 +573,39 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                       </View>
                     </View>
                     <View style={[styles.overlay, { height: overlayHeight }]}>
-                      <Text style={styles.overlayTitle} numberOfLines={2}>
-                        {title}
-                      </Text>
-                      <View style={styles.overlayRow}>
-                        <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.75)" />
-                        <Text style={styles.overlayMeta} numberOfLines={1}>
-                          {date}
+                      {title ? (
+                        <Text style={styles.overlayTitle} numberOfLines={2}>
+                          {title}
                         </Text>
-                      </View>
-                      <View style={styles.overlayRow}>
-                        <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.7)" />
-                        <Text style={styles.overlayMetaMuted} numberOfLines={1}>
-                          {location}
-                          {distanceLabel ? ` · ${distanceLabel}` : ""}
-                        </Text>
-                      </View>
+                      ) : null}
+                      {date ? (
+                        <View style={styles.overlayRow}>
+                          <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.75)" />
+                          <Text style={styles.overlayMeta} numberOfLines={1}>
+                            {date}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {location ? (
+                        <View style={styles.overlayRow}>
+                          <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.7)" />
+                          <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                            {location}
+                            {distanceLabel ? ` · ${distanceLabel}` : ""}
+                          </Text>
+                        </View>
+                      ) : null}
                       <View style={styles.overlayFooter}>
                         <View style={styles.overlayPills}>
                           {statusLabel !== "Ativo" ? (
                             <GlassPill label={statusLabel} variant="muted" />
                           ) : null}
-                          <GlassPill
-                            label={cardPrice}
-                            variant={cardPrice === "Gratis" ? "accent" : "muted"}
-                          />
+                          {cardPrice ? (
+                            <GlassPill
+                              label={cardPrice}
+                              variant={cardPrice === "Grátis" ? "accent" : "muted"}
+                            />
+                          ) : null}
                           {!isService && availabilityLabel ? (
                             <GlassPill label={availabilityLabel} variant="muted" />
                           ) : null}

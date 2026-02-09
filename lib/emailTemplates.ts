@@ -1,4 +1,5 @@
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+import type { Prisma } from "@prisma/client";
 
 type PurchaseEmailPayload = {
   eventTitle: string;
@@ -7,7 +8,7 @@ type PurchaseEmailPayload = {
   endsAt?: string | null;
   addressRef?: {
     formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
+    canonical?: Prisma.JsonValue | null;
   } | null;
   ticketsCount: number;
   ticketUrl: string;

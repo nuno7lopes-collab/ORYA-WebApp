@@ -132,7 +132,7 @@ export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEve
     name: club.name,
     city:
       pickCanonicalField(
-        (club.addressRef?.canonical as Record<string, unknown> | null) ?? null,
+        club.addressRef?.canonical ?? null,
         "city",
         "locality",
         "addressLine2",
@@ -158,8 +158,8 @@ export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEve
           indoor: null,
         }));
 
-  const clubCanonical = (config?.club?.addressRef?.canonical as Record<string, unknown> | null) ?? null;
-  const eventCanonical = (event.addressRef?.canonical as Record<string, unknown> | null) ?? null;
+  const clubCanonical = config?.club?.addressRef?.canonical ?? null;
+  const eventCanonical = event.addressRef?.canonical ?? null;
   const clubCity =
     pickCanonicalField(clubCanonical, "city", "locality", "addressLine2", "region", "state") ??
     pickCanonicalField(eventCanonical, "city", "locality", "addressLine2", "region", "state") ??

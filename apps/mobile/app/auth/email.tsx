@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import { LinearGradient } from "expo-linear-gradient";
@@ -25,6 +25,8 @@ import { useAuth } from "../../lib/auth";
 import { trackEvent } from "../../lib/analytics";
 import { setLastAuthMethod } from "../../lib/authMethod";
 import { api, unwrapApiResponse } from "../../lib/api";
+import { useNavigation } from "@react-navigation/native";
+import { safeBack } from "../../lib/navigation";
 
 const isValidEmail = (value: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
@@ -69,6 +71,8 @@ const checkEmailExists = async (email: string): Promise<boolean> => {
 
 export default function AuthEmailScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<{ next?: string }>();
   const { loading: authLoading, session } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -87,6 +91,23 @@ export default function AuthEmailScreen() {
   const passwordValid = isSignUp ? password.length >= 6 : password.length > 0;
   const canSubmit = emailValid && passwordValid;
   const isSubmitDisabled = loading || !canSubmit;
+  const nextRoute = useMemo(() => {
+    const raw = params.next;
+    const normalize = (value: string) => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
+    if (Array.isArray(raw)) return raw[0] ? normalize(raw[0]) : null;
+    if (typeof raw === "string" && raw.trim().length > 0) return normalize(raw);
+    return null;
+  }, [params.next]);
+  const redirectTo = useMemo(() => {
+    const base = Linking.createURL("auth/callback");
+    return nextRoute ? `${base}?next=${encodeURIComponent(nextRoute)}` : base;
+  }, [nextRoute]);
 
   useEffect(() => {
     setLastAuthMethod("email").catch(() => undefined);
@@ -162,7 +183,7 @@ export default function AuthEmailScreen() {
           email: normalizedEmail,
           password,
           options: {
-            emailRedirectTo: Linking.createURL("auth/callback"),
+            emailRedirectTo: redirectTo,
           },
         });
         if (error) throw error;
@@ -172,7 +193,7 @@ export default function AuthEmailScreen() {
             refresh_token: data.session.refresh_token,
           });
           trackEvent("auth_success_email", { mode: "signup" });
-          router.replace("/");
+          router.replace(nextRoute ?? "/");
           return;
         }
         trackEvent("auth_success_email", { mode: "signup_pending" });
@@ -193,7 +214,7 @@ export default function AuthEmailScreen() {
         refresh_token: data.session.refresh_token,
       });
       trackEvent("auth_success_email", { mode: "password" });
-      router.replace("/");
+      router.replace(nextRoute ?? "/");
     } catch (err: any) {
       const parsed = parseAuthError(err);
       trackEvent("auth_fail_email", { reason: parsed.kind });
@@ -263,7 +284,7 @@ export default function AuthEmailScreen() {
   };
 
   if (!authLoading && session) {
-    return <Redirect href="/" />;
+    return <Redirect href={nextRoute ?? "/"} />;
   }
 
   if (authLoading) {
@@ -310,7 +331,12 @@ export default function AuthEmailScreen() {
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
-            <Pressable onPress={() => router.back()} accessibilityRole="button" style={styles.backButton}>
+            <Pressable
+              onPress={() => safeBack(router, navigation, "/auth")}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar"
+              style={styles.backButton}
+            >
               <Text style={styles.backText}>Voltar</Text>
             </Pressable>
 

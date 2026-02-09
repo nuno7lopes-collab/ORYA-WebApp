@@ -19,12 +19,12 @@ const ENTITLEMENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   minute: "2-digit",
 });
 
-const formatDate = (value: string | null | undefined) => {
-  if (!value) return "Data por anunciar";
+const formatDate = (value: string | null | undefined): string | null => {
+  if (!value) return null;
   try {
     return ENTITLEMENT_DATE_FORMATTER.format(new Date(value));
   } catch {
-    return "Data por anunciar";
+    return null;
   }
 };
 
@@ -52,15 +52,19 @@ const typeLabel = (value: string) => {
 
 export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item }: Props) {
   const coverUrl = item.snapshot.coverUrl;
-  const title = item.snapshot.title ?? "Entitlement";
-  const venue = item.snapshot.venueName ?? "Local a anunciar";
+  const title = item.snapshot.title ?? typeLabel(item.type);
+  const venue = item.snapshot.venueName ?? null;
   const dateLabel = formatDate(item.snapshot.startAt);
   const canShowQr = Boolean(item.actions?.canShowQr && item.qrToken && !item.consumedAt);
   const passAvailable = Platform.OS === "ios" && Boolean(item.passAvailable);
 
   return (
     <Link href={{ pathname: "/wallet/[entitlementId]", params: { entitlementId: item.entitlementId } }} asChild push>
-      <Pressable android_ripple={{ color: "rgba(255,255,255,0.08)" }}>
+      <Pressable
+        android_ripple={{ color: "rgba(255,255,255,0.08)" }}
+        accessibilityRole="button"
+        accessibilityLabel={`Abrir bilhete ${title}`}
+      >
         <GlassCard className="mb-4" intensity={58} padding={tokens.spacing.md} highlight={canShowQr}>
           <View className="gap-3">
             <View className="overflow-hidden rounded-2xl border border-white/10">
@@ -104,14 +108,18 @@ export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item 
             </View>
 
             <View className="gap-2">
-              <View className="flex-row items-center gap-2">
-                <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.65)" />
-                <Text className="text-white/70 text-xs">{dateLabel}</Text>
-              </View>
-              <View className="flex-row items-center gap-2">
-                <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.6)" />
-                <Text className="text-white/65 text-xs">{venue}</Text>
-              </View>
+              {dateLabel ? (
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.65)" />
+                  <Text className="text-white/70 text-xs">{dateLabel}</Text>
+                </View>
+              ) : null}
+              {venue ? (
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.6)" />
+                  <Text className="text-white/65 text-xs">{venue}</Text>
+                </View>
+              ) : null}
               <View className="flex-row items-center justify-between pt-1">
                 {canShowQr ? (
                   <View className="flex-row items-center gap-2">
@@ -119,9 +127,7 @@ export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item 
                     {passAvailable ? <GlassPill label="Wallet" variant="muted" /> : null}
                   </View>
                 ) : (
-                  <Text className="text-[11px] uppercase tracking-[0.14em] text-white/45">
-                    Sem QR
-                  </Text>
+                  <View />
                 )}
                 <Ionicons name="arrow-forward" size={14} color="rgba(255,255,255,0.45)" />
               </View>

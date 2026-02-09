@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -50,21 +50,21 @@ const WALLET_RELATIVE_FALLBACK_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   month: "short",
 });
 
-const formatDate = (value: string | null | undefined) => {
-  if (!value) return "Data por anunciar";
+const formatDate = (value: string | null | undefined): string | null => {
+  if (!value) return null;
   try {
     return WALLET_DATE_TIME_FORMATTER.format(new Date(value));
   } catch {
-    return "Data por anunciar";
+    return null;
   }
 };
 
-const formatShortDate = (value: string | null | undefined) => {
-  if (!value) return "—";
+const formatShortDate = (value: string | null | undefined): string | null => {
+  if (!value) return null;
   try {
     return WALLET_SHORT_DATE_FORMATTER.format(new Date(value));
   } catch {
-    return "—";
+    return null;
   }
 };
 
@@ -83,8 +83,8 @@ const formatRelativeTime = (value: string | null | undefined) => {
   return WALLET_RELATIVE_FALLBACK_FORMATTER.format(new Date(timestamp));
 };
 
-const formatMoney = (cents: number | null | undefined, currency?: string | null) => {
-  if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
+const formatMoney = (cents: number | null | undefined, currency?: string | null): string | null => {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return null;
   if (cents <= 0) return "Grátis";
   const amount = cents / 100;
   return `${amount.toFixed(0)} ${currency?.toUpperCase() || "EUR"}`;
@@ -112,8 +112,8 @@ const typeLabel = (value: string) => {
   return value;
 };
 
-const paymentStatusLabel = (value?: string | null) => {
-  if (!value) return "—";
+const paymentStatusLabel = (value?: string | null): string | null => {
+  if (!value) return null;
   const normalized = value.toUpperCase();
   if (normalized === "PAID") return "Pago";
   if (normalized === "PROCESSING") return "Em processamento";
@@ -123,8 +123,8 @@ const paymentStatusLabel = (value?: string | null) => {
   return value;
 };
 
-const paymentMethodLabel = (value?: string | null) => {
-  if (!value) return "—";
+const paymentMethodLabel = (value?: string | null): string | null => {
+  if (!value) return null;
   const normalized = value.toLowerCase();
   if (normalized === "mbway") return "MBWay";
   if (normalized === "card") return "Cartão";
@@ -132,14 +132,14 @@ const paymentMethodLabel = (value?: string | null) => {
   return value;
 };
 
-const pairingPaymentLabel = (value?: string | null) => {
+const pairingPaymentLabel = (value?: string | null): string | null => {
   const normalized = value?.toUpperCase();
   if (normalized === "FULL") return "Pago completo";
   if (normalized === "SPLIT") return "Split";
-  return value ?? "—";
+  return value ?? null;
 };
 
-const pairingLifecycleLabel = (value?: string | null) => {
+const pairingLifecycleLabel = (value?: string | null): string | null => {
   const normalized = value?.toUpperCase();
   if (normalized === "CONFIRMED_BOTH_PAID" || normalized === "CONFIRMED_CAPTAIN_FULL") {
     return "Confirmado";
@@ -147,7 +147,7 @@ const pairingLifecycleLabel = (value?: string | null) => {
   if (normalized === "PENDING_PARTNER_PAYMENT") return "Pagamento pendente";
   if (normalized === "PENDING_ONE_PAID") return "Aguardando parceiro";
   if (normalized === "CANCELLED_INCOMPLETE") return "Cancelado";
-  return value ?? "—";
+  return value ?? null;
 };
 
 export default function WalletDetailScreen() {
@@ -159,6 +159,10 @@ export default function WalletDetailScreen() {
     () => (Array.isArray(params.entitlementId) ? params.entitlementId[0] : params.entitlementId) ?? null,
     [params.entitlementId],
   );
+  const nextRoute = useMemo(() => (entitlementId ? `/wallet/${entitlementId}` : "/(tabs)/tickets"), [entitlementId]);
+  const openAuth = useCallback(() => {
+    router.push({ pathname: "/auth", params: { next: nextRoute } });
+  }, [nextRoute, router]);
   const { data, isLoading, isFetching, isError, error, refetch } = useWalletDetail(entitlementId);
   const fade = useRef(new Animated.Value(0)).current;
   const translate = useRef(new Animated.Value(12)).current;
@@ -189,6 +193,20 @@ export default function WalletDetailScreen() {
   const shareUrl = data?.event?.slug ? `${baseUrl}/eventos/${data.event.slug}` : null;
   const updatedLabel = formatRelativeTime(data?.audit?.updatedAt);
   const consumedAtLabel = formatShortDate(data?.consumedAt);
+  const title = data?.snapshot.title ?? (data ? typeLabel(data.type) : "");
+  const venueLabel = data?.snapshot.venueName ?? data?.event?.organizationName ?? null;
+  const dateLabel = formatDate(data?.snapshot.startAt);
+  const qrFallbackLabel = (() => {
+    if (!data) return null;
+    if (data.consumedAt) return "Bilhete já foi usado.";
+    if (data.actions?.canShowQr) return null;
+    if (!data.snapshot.startAt) return null;
+    const start = new Date(data.snapshot.startAt);
+    if (Number.isNaN(start.getTime())) return null;
+    const windowStart = new Date(start.getTime() - 6 * 60 * 60 * 1000);
+    const windowLabel = formatShortDate(windowStart.toISOString());
+    return windowLabel ? `QR disponível a partir de ${windowLabel}` : null;
+  })();
   const handleBack = () => {
     safeBack(router, navigation, "/(tabs)/tickets");
   };
@@ -207,7 +225,7 @@ export default function WalletDetailScreen() {
     if (!passUrl) return;
     if (!session?.access_token) {
       Alert.alert("Sessão expirada", "Entra novamente para adicionar à Wallet.");
-      router.push("/auth");
+      openAuth();
       return;
     }
     if (downloadingPass) return;
@@ -217,7 +235,7 @@ export default function WalletDetailScreen() {
     }
     setDownloadingPass(true);
     try {
-      const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      const baseDir = FileSystem.Paths.cache?.uri ?? FileSystem.Paths.document?.uri ?? null;
       if (!baseDir) {
         Alert.alert("Wallet", "Não foi possível preparar o ficheiro da Wallet.");
         return;
@@ -291,6 +309,8 @@ export default function WalletDetailScreen() {
           <View className="pt-12 pb-4">
             <Pressable
               onPress={handleBack}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar à carteira"
               className="flex-row items-center gap-2"
               style={{ minHeight: tokens.layout.touchTarget }}
             >
@@ -316,6 +336,8 @@ export default function WalletDetailScreen() {
                 onPress={() => refetch()}
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Tentar novamente"
               >
                 <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
               </Pressable>
@@ -343,17 +365,23 @@ export default function WalletDetailScreen() {
                       Atualizado {updatedLabel}
                     </Text>
                   ) : null}
-                  <Text className="text-white text-xl font-semibold">
-                    {data.snapshot.title ?? "Entitlement"}
-                  </Text>
-                  <View className="flex-row items-center gap-2">
-                    <Ionicons name="calendar-outline" size={15} color="rgba(255,255,255,0.65)" />
-                    <Text className="text-white/70 text-sm">{formatDate(data.snapshot.startAt)}</Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <Ionicons name="location-outline" size={15} color="rgba(255,255,255,0.6)" />
-                    <Text className="text-white/65 text-sm">{data.snapshot.venueName ?? "Local a anunciar"}</Text>
-                  </View>
+                  {title ? (
+                    <Text className="text-white text-xl font-semibold">
+                      {title}
+                    </Text>
+                  ) : null}
+                  {dateLabel ? (
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="calendar-outline" size={15} color="rgba(255,255,255,0.65)" />
+                      <Text className="text-white/70 text-sm">{dateLabel}</Text>
+                    </View>
+                  ) : null}
+                  {venueLabel ? (
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="location-outline" size={15} color="rgba(255,255,255,0.6)" />
+                      <Text className="text-white/65 text-sm">{venueLabel}</Text>
+                    </View>
+                  ) : null}
                 </View>
               </GlassCard>
 
@@ -378,6 +406,9 @@ export default function WalletDetailScreen() {
                       disabled={isFetching}
                       className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
                       style={{ minHeight: tokens.layout.touchTarget }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Atualizar QR"
+                      accessibilityState={{ disabled: isFetching }}
                     >
                       <Text className="text-white text-xs font-semibold">
                         {isFetching ? "A atualizar..." : "Atualizar QR"}
@@ -385,21 +416,21 @@ export default function WalletDetailScreen() {
                     </Pressable>
                   </View>
                 </GlassCard>
-              ) : (
+              ) : qrFallbackLabel ? (
                 <GlassCard intensity={50} className="mb-4">
                   <Text className="text-white/70 text-sm">
-                    {data?.consumedAt
-                      ? "Este bilhete já foi usado."
-                      : "Este entitlement não tem QR disponível neste momento."}
+                    {qrFallbackLabel}
                   </Text>
                 </GlassCard>
-              )}
+              ) : null}
 
               {data.event?.slug ? (
                 <Pressable
                   onPress={() => router.push({ pathname: "/event/[slug]", params: { slug: data.event?.slug } })}
                   className="rounded-2xl border border-white/15 bg-white/10 px-4 py-4 mb-4"
                   style={{ minHeight: tokens.layout.touchTarget }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Abrir evento"
                 >
                   <Text className="text-white text-sm font-semibold text-center">Abrir evento</Text>
                 </Pressable>
@@ -410,11 +441,15 @@ export default function WalletDetailScreen() {
                   <View className="gap-3">
                     <View className="flex-row items-center justify-between">
                       <Text className="text-white text-sm font-semibold">Dupla</Text>
-                      <GlassPill label={pairingPaymentLabel(data.pairing.paymentMode)} variant="muted" />
+                      {pairingPaymentLabel(data.pairing.paymentMode) ? (
+                        <GlassPill label={pairingPaymentLabel(data.pairing.paymentMode) as string} variant="muted" />
+                      ) : null}
                     </View>
-                    <Text className="text-white/70 text-sm">
-                      {pairingLifecycleLabel(data.pairing.lifecycleStatus)}
-                    </Text>
+                    {pairingLifecycleLabel(data.pairing.lifecycleStatus) ? (
+                      <Text className="text-white/70 text-sm">
+                        {pairingLifecycleLabel(data.pairing.lifecycleStatus)}
+                      </Text>
+                    ) : null}
                     <View className="flex-row flex-wrap gap-2">
                       {data.pairingActions?.canAccept ? (
                         <Pressable
@@ -422,6 +457,9 @@ export default function WalletDetailScreen() {
                           disabled={pairingAction !== null}
                           className="rounded-full bg-white/15 px-4 py-2"
                           style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Aceitar convite"
+                          accessibilityState={{ disabled: pairingAction !== null }}
                         >
                           <Text className="text-white text-xs font-semibold">
                             {pairingAction === "accept" ? "A aceitar..." : "Aceitar convite"}
@@ -434,6 +472,9 @@ export default function WalletDetailScreen() {
                           disabled={pairingAction !== null}
                           className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
                           style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Recusar convite"
+                          accessibilityState={{ disabled: pairingAction !== null }}
                         >
                           <Text className="text-white/80 text-xs font-semibold">
                             {pairingAction === "decline" ? "A recusar..." : "Recusar"}
@@ -446,6 +487,9 @@ export default function WalletDetailScreen() {
                           disabled={pairingAction !== null}
                           className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
                           style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Pagar inscrição"
+                          accessibilityState={{ disabled: pairingAction !== null }}
                         >
                           <Text className="text-white text-xs font-semibold">
                             Pagar inscrição
@@ -461,6 +505,8 @@ export default function WalletDetailScreen() {
                 onPress={handleShare}
                 className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 mb-4"
                 style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Partilhar"
               >
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
                   <Ionicons name="share-outline" size={16} color="rgba(255,255,255,0.9)" />
@@ -468,63 +514,66 @@ export default function WalletDetailScreen() {
                 </View>
               </Pressable>
 
-              <GlassCard intensity={46}>
-                <Text className="text-white/70 text-sm mb-2">Apple Wallet</Text>
-                {Platform.OS !== "ios" ? (
-                  <Text className="text-white/55 text-xs">
-                    Disponível apenas no iPhone.
+              {Platform.OS === "ios" && passUrl ? (
+                <GlassCard intensity={46}>
+                  <Text className="text-white/70 text-sm mb-2">Apple Wallet</Text>
+                  <Text className="text-white/55 text-xs mb-3">
+                    Guarda o bilhete na Apple Wallet e apresenta no check-in.
                   </Text>
-                ) : passUrl ? (
-                  <>
-                    <Text className="text-white/55 text-xs mb-3">
-                      Guarda o bilhete na Apple Wallet e apresenta no check-in.
-                    </Text>
-                    <Pressable
-                      onPress={handleOpenWallet}
-                      disabled={downloadingPass}
-                      className="rounded-xl bg-white/10 px-4 py-3"
-                      style={{ minHeight: tokens.layout.touchTarget }}
-                    >
-                      {downloadingPass ? (
-                        <View className="flex-row items-center justify-center gap-2">
-                          <ActivityIndicator color="white" />
-                          <Text className="text-white text-sm font-semibold">A preparar…</Text>
-                        </View>
-                      ) : (
-                        <Text className="text-white text-sm font-semibold text-center">Adicionar à Wallet</Text>
-                      )}
-                    </Pressable>
-                  </>
-                ) : (
-                  <Text className="text-white/55 text-xs">
-                    Disponível quando a Wallet estiver ativa para este bilhete.
-                  </Text>
-                )}
-              </GlassCard>
+                  <Pressable
+                    onPress={handleOpenWallet}
+                    disabled={downloadingPass}
+                    className="rounded-xl bg-white/10 px-4 py-3"
+                    style={{ minHeight: tokens.layout.touchTarget }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Adicionar à Wallet"
+                    accessibilityState={{ disabled: downloadingPass }}
+                  >
+                    {downloadingPass ? (
+                      <View className="flex-row items-center justify-center gap-2">
+                        <ActivityIndicator color="white" />
+                        <Text className="text-white text-sm font-semibold">A preparar…</Text>
+                      </View>
+                    ) : (
+                      <Text className="text-white text-sm font-semibold text-center">Adicionar à Wallet</Text>
+                    )}
+                  </Pressable>
+                </GlassCard>
+              ) : null}
 
               {data.payment ? (
                 <GlassCard intensity={46} className="mt-4">
                   <Text className="text-white/70 text-sm mb-3">Pagamento</Text>
                   <View className="gap-2">
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-white/60 text-xs">Total pago</Text>
-                      <Text className="text-white text-sm font-semibold">
-                        {formatMoney(data.payment.totalPaidCents, data.payment.currency)}
-                      </Text>
-                    </View>
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-white/60 text-xs">Método</Text>
-                      <Text className="text-white/80 text-xs">{paymentMethodLabel(data.payment.paymentMethod)}</Text>
-                    </View>
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-white/60 text-xs">Estado</Text>
-                      <Text className="text-white/80 text-xs">{paymentStatusLabel(data.payment.status)}</Text>
-                    </View>
+                    {formatMoney(data.payment.totalPaidCents, data.payment.currency) ? (
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-white/60 text-xs">Total pago</Text>
+                        <Text className="text-white text-sm font-semibold">
+                          {formatMoney(data.payment.totalPaidCents, data.payment.currency)}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {paymentMethodLabel(data.payment.paymentMethod) ? (
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-white/60 text-xs">Método</Text>
+                        <Text className="text-white/80 text-xs">
+                          {paymentMethodLabel(data.payment.paymentMethod)}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {paymentStatusLabel(data.payment.status) ? (
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-white/60 text-xs">Estado</Text>
+                        <Text className="text-white/80 text-xs">
+                          {paymentStatusLabel(data.payment.status)}
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
                 </GlassCard>
               ) : null}
 
-              {data.refund ? (
+              {data.refund && formatMoney(data.refund.baseAmountCents, data.payment?.currency) ? (
                 <GlassCard intensity={46} className="mt-4">
                   <Text className="text-white/70 text-sm mb-3">Reembolso</Text>
                   <View className="gap-2">
@@ -534,10 +583,14 @@ export default function WalletDetailScreen() {
                         {formatMoney(data.refund.baseAmountCents, data.payment?.currency)}
                       </Text>
                     </View>
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-white/60 text-xs">Data</Text>
-                      <Text className="text-white/80 text-xs">{formatShortDate(data.refund.refundedAt)}</Text>
-                    </View>
+                    {formatShortDate(data.refund.refundedAt) ? (
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-white/60 text-xs">Data</Text>
+                        <Text className="text-white/80 text-xs">
+                          {formatShortDate(data.refund.refundedAt)}
+                        </Text>
+                      </View>
+                    ) : null}
                     {data.refund.reason ? (
                       <Text className="text-white/55 text-xs">Motivo: {data.refund.reason}</Text>
                     ) : null}

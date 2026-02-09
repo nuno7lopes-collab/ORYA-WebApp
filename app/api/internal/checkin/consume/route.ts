@@ -15,6 +15,7 @@ import {
   resolveCheckinMethodForEntitlement,
   resolvePolicyForCheckin,
 } from "@/lib/checkin/accessPolicy";
+import { parseQrToken } from "@/lib/qr";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
     respondOk(ctx, data, { status });
 
   const body = (await req.json().catch(() => null)) as Body | null;
-  const qrPayload = typeof body?.qrPayload === "string" ? body.qrPayload.trim() : "";
+  const qrPayloadRaw = typeof body?.qrPayload === "string" ? body.qrPayload.trim() : "";
   const eventId = Number(body?.eventId);
   const deviceId = typeof body?.deviceId === "string" ? body.deviceId.trim() : null;
   const idempotencyKey =
@@ -71,8 +72,20 @@ export async function POST(req: NextRequest) {
       ? body.correlationId.trim()
       : null;
 
-  if (!qrPayload || !Number.isFinite(eventId)) {
+  if (!qrPayloadRaw || !Number.isFinite(eventId)) {
     return allow({ allow: false, reasonCode: "INVALID" });
+  }
+
+  let qrPayload = qrPayloadRaw;
+  const parsed = qrPayloadRaw.startsWith("ORYA2:") ? parseQrToken(qrPayloadRaw) : null;
+  if (parsed && !parsed.ok) {
+    return allow({ allow: false, reasonCode: "INVALID" });
+  }
+  if (parsed && parsed.ok) {
+    qrPayload = parsed.payload.tok;
+    if (typeof parsed.payload.eid === "number" && parsed.payload.eid !== eventId) {
+      return allow({ allow: false, reasonCode: "NOT_ALLOWED" });
+    }
   }
 
   const tokenHash = hashToken(qrPayload);

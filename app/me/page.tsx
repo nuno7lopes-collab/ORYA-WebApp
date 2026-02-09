@@ -21,9 +21,9 @@ function parseDate(value?: string | null): Date | null {
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 function formatAgendaDate(value?: string | null) {
-  if (!value) return "Data a anunciar";
+  if (!value) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Data a anunciar";
+  if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
 }
 
@@ -339,9 +339,12 @@ export default function MePage() {
                   className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{item.title}</p>
-                  <p className="text-[12px] text-white/60">
-                    {formatAgendaDate(item.startAt)} · {item.label ?? "Evento"}
-                  </p>
+                  {(() => {
+                    const dateLabel = formatAgendaDate(item.startAt);
+                    const parts = [dateLabel, item.label].filter(Boolean);
+                    if (parts.length === 0) return null;
+                    return <p className="text-[12px] text-white/60">{parts.join(" · ")}</p>;
+                  })()}
                 </Link>
               ))}
             </div>
@@ -357,9 +360,12 @@ export default function MePage() {
                   className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{item.title}</p>
-                  <p className="text-[12px] text-white/60">
-                    {formatAgendaDate(item.startAt)} · {item.label ?? "Reserva"}
-                  </p>
+                  {(() => {
+                    const dateLabel = formatAgendaDate(item.startAt);
+                    const parts = [dateLabel, item.label].filter(Boolean);
+                    if (parts.length === 0) return null;
+                    return <p className="text-[12px] text-white/60">{parts.join(" · ")}</p>;
+                  })()}
                 </Link>
               ))}
             </div>
@@ -375,9 +381,12 @@ export default function MePage() {
                   className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{item.title}</p>
-                  <p className="text-[12px] text-white/60">
-                    {formatAgendaDate(item.startAt)} · {item.label ?? "Padel"}
-                  </p>
+                  {(() => {
+                    const dateLabel = formatAgendaDate(item.startAt);
+                    const parts = [dateLabel, item.label].filter(Boolean);
+                    if (parts.length === 0) return null;
+                    return <p className="text-[12px] text-white/60">{parts.join(" · ")}</p>;
+                  })()}
                 </Link>
               ))}
             </div>

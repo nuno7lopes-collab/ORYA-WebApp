@@ -802,9 +802,11 @@ export default async function PadelProfilePage({ params }: PageProps) {
                       <p className="text-sm text-white/90">
                         {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
                       </p>
-                      <p className="text-[11px] text-white/60">
-                        {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt) || "Data a anunciar"}
-                      </p>
+                      {formatDate(match.startAt) ? (
+                        <p className="text-[11px] text-white/60">
+                          {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt)}
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -827,9 +829,11 @@ export default async function PadelProfilePage({ params }: PageProps) {
                         <p className="text-sm text-white/90">
                           {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
                         </p>
-                        <p className="text-[11px] text-white/60">
-                          {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt) || "Data a anunciar"}
-                        </p>
+                        {formatDate(match.startAt) ? (
+                          <p className="text-[11px] text-white/60">
+                            {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt)}
+                          </p>
+                        ) : null}
                         <p className="text-[11px] text-white/70">Resultado: {formatScoreSummary(match)}</p>
                         {isOwner && match.status === "DONE" && (
                           <PadelDisputeButton

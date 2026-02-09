@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { toPublicEventCardWithPrice } from "@/domain/events/publicEventCard";
+import { toPublicEventCardWithPrice, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
 import { getPublicDiscoverBySlug } from "@/domain/search/publicDiscover";
 import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
@@ -103,6 +103,9 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
   });
 
   const { _priceFromCents, ...item } = card;
+  if (!isPublicEventCardComplete(item)) {
+    return jsonWrap({ errorCode: "NOT_FOUND", message: "Evento não encontrado." }, { status: 404 });
+  }
 
   const latestPolicy = event.accessPolicies?.[0] ?? null;
   const resolvedPolicy = resolveEventAccessPolicyInput({

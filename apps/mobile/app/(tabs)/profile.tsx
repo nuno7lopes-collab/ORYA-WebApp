@@ -286,6 +286,9 @@ export default function ProfileScreen() {
                   <Pressable
                     onPress={() => router.push("/settings")}
                     className="rounded-full border border-white/15 bg-white/10 p-2"
+                    accessibilityRole="button"
+                    accessibilityLabel="Abrir definições"
+                    hitSlop={10}
                   >
                     <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
                   </Pressable>
@@ -298,6 +301,9 @@ export default function ProfileScreen() {
                         : "rounded-full border border-white/15 bg-white/10 px-3 py-2"
                     }
                     style={editMode && !canSave ? { opacity: 0.5 } : undefined}
+                    accessibilityRole="button"
+                    accessibilityLabel={editMode ? (saving ? "A guardar" : "Guardar") : "Editar"}
+                    accessibilityState={{ disabled: editMode && !canSave }}
                   >
                     <Text className={editMode ? "text-black text-xs font-semibold" : "text-white text-xs font-semibold"}>
                       {editMode ? (saving ? "A guardar..." : "Guardar") : "Editar"}
@@ -312,6 +318,7 @@ export default function ProfileScreen() {
                     onChangeText={setFullName}
                     placeholder="Nome completo"
                     placeholderTextColor="rgba(255,255,255,0.4)"
+                    accessibilityLabel="Nome completo"
                     style={{
                       color: "#ffffff",
                       fontSize: 20,
@@ -334,6 +341,7 @@ export default function ProfileScreen() {
                     placeholderTextColor="rgba(255,255,255,0.4)"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    accessibilityLabel="Username"
                     style={{
                       color: "rgba(255,255,255,0.7)",
                       fontSize: 13,
@@ -351,6 +359,7 @@ export default function ProfileScreen() {
                     placeholder="Escreve uma bio curta"
                     placeholderTextColor="rgba(255,255,255,0.35)"
                     multiline
+                    accessibilityLabel="Bio"
                     style={{
                       color: "rgba(255,255,255,0.8)",
                       fontSize: 13,
@@ -366,6 +375,9 @@ export default function ProfileScreen() {
               <Pressable
                 onPress={() => setShowPadel((prev) => !prev)}
                 className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                accessibilityRole="button"
+                accessibilityLabel={showPadel ? "Ver perfil base" : "Ver perfil Padel"}
+                accessibilityState={{ selected: showPadel }}
               >
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="tennisball" size={14} color="rgba(255,255,255,0.85)" />
@@ -384,15 +396,17 @@ export default function ProfileScreen() {
                 ) : (
                   <Text className="text-white/60 text-sm">Completa o teu perfil Padel para apareceres nos rankings.</Text>
                 )}
-                {!profile?.padelLevel ? (
-                  <Pressable
-                    onPress={() => setShowPadel(true)}
-                    className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
-                  >
-                    <Text className="text-white text-sm font-semibold text-center">Completar perfil Padel</Text>
-                  </Pressable>
-                ) : null}
-              </GlassCard>
+                  {!profile?.padelLevel ? (
+                    <Pressable
+                      onPress={() => setShowPadel(true)}
+                      className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                      accessibilityRole="button"
+                      accessibilityLabel="Completar perfil Padel"
+                    >
+                      <Text className="text-white text-sm font-semibold text-center">Completar perfil Padel</Text>
+                    </Pressable>
+                  ) : null}
+                </GlassCard>
             ) : (
               <GlassCard intensity={52}>
                 <View className="gap-3">
@@ -409,6 +423,9 @@ export default function ProfileScreen() {
                                 ? "rounded-full border border-white/25 bg-white/15 px-3 py-2"
                                 : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
                             }
+                            accessibilityRole="button"
+                            accessibilityLabel={`Interesse ${interest.label}`}
+                            accessibilityState={{ selected: active }}
                           >
                             <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
                               {interest.label}
@@ -466,6 +483,26 @@ export default function ProfileScreen() {
                 ) : null}
               </View>
             )}
+
+            <View style={{ marginTop: 10 }}>
+              <Pressable
+                onPress={editMode ? handleSave : handleToggleEdit}
+                disabled={editMode && !canSave}
+                className={
+                  editMode
+                    ? "rounded-2xl bg-white/90 px-4 py-4"
+                    : "rounded-2xl border border-white/15 bg-white/10 px-4 py-4"
+                }
+                style={editMode && !canSave ? { opacity: 0.5 } : undefined}
+                accessibilityRole="button"
+                accessibilityLabel={editMode ? (saving ? "A guardar alterações" : "Guardar alterações") : "Editar perfil"}
+                accessibilityState={{ disabled: editMode && !canSave }}
+              >
+                <Text className={editMode ? "text-black text-sm font-semibold text-center" : "text-white text-sm font-semibold text-center"}>
+                  {editMode ? (saving ? "A guardar..." : "Guardar alterações") : "Editar perfil"}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         )}
       </ScrollView>

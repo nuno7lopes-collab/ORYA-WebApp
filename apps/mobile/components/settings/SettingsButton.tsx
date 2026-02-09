@@ -81,6 +81,9 @@ export function SettingsButton({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={loading ? loadingLabel ?? label : label}
+      accessibilityState={{ disabled: isDisabled }}
       style={({ pressed }) => [
         styles.base,
         {
