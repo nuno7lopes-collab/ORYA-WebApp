@@ -46,17 +46,18 @@ export function ProfileHeader({
   bioNode,
 }: Props) {
   const coverHasImage = Boolean(coverUrl);
-  const avatarHasImage = Boolean(avatarUrl);
+  const coverEditable = Boolean(onCoverPress);
+  const avatarEditable = Boolean(onAvatarPress);
 
   return (
     <View className="gap-5">
       <View style={{ position: "relative" }}>
         <Pressable
           onPress={onCoverPress}
-          disabled={!onCoverPress}
-          accessibilityRole={onCoverPress ? "button" : "image"}
-          accessibilityLabel={onCoverPress ? "Alterar capa do perfil" : "Capa do perfil"}
-          accessibilityState={{ disabled: !onCoverPress }}
+          disabled={!coverEditable}
+          accessibilityRole={coverEditable ? "button" : "image"}
+          accessibilityLabel={coverEditable ? "Alterar capa do perfil" : "Capa do perfil"}
+          accessibilityState={{ disabled: !coverEditable }}
           style={{
             height: T.coverHeight,
             borderRadius: T.coverRadius,
@@ -74,6 +75,26 @@ export function ProfileHeader({
               transition={160}
             />
           ) : null}
+          {coverEditable ? (
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                right: 12,
+                bottom: 12,
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                backgroundColor: "rgba(8,12,20,0.5)",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.2)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="camera" size={14} color="rgba(255,255,255,0.95)" />
+            </View>
+          ) : null}
         </Pressable>
 
         <View
@@ -85,30 +106,18 @@ export function ProfileHeader({
             alignItems: "center",
           }}
         >
-          {coverHasImage ? (
-            <View
-              style={{
-                position: "absolute",
-                width: T.ringSize,
-                height: T.ringSize,
-                borderRadius: T.ringRadius,
-                borderWidth: T.ringBorderWidth,
-                borderColor: T.ringBorderColor,
-              }}
-            />
-          ) : null}
           <Pressable
             onPress={onAvatarPress}
-            disabled={!onAvatarPress}
-            accessibilityRole={onAvatarPress ? "button" : "image"}
-            accessibilityLabel={onAvatarPress ? "Alterar foto de perfil" : "Foto de perfil"}
-            accessibilityState={{ disabled: !onAvatarPress }}
+            disabled={!avatarEditable}
+            accessibilityRole={avatarEditable ? "button" : "image"}
+            accessibilityLabel={avatarEditable ? "Alterar foto de perfil" : "Foto de perfil"}
+            accessibilityState={{ disabled: !avatarEditable }}
             style={{
               width: T.avatarSize,
               height: T.avatarSize,
               borderRadius: T.avatarRadius,
-              borderWidth: T.avatarBorderWidth,
-              borderColor: T.avatarBorderColor,
+              borderWidth: 0,
+              borderColor: "transparent",
               backgroundColor: T.avatarFallbackColor,
               alignItems: "center",
               justifyContent: "center",
@@ -120,6 +129,26 @@ export function ProfileHeader({
             ) : (
               <Ionicons name={isUser ? "person" : "business"} size={28} color="rgba(255,255,255,0.8)" />
             )}
+            {avatarEditable ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  right: 4,
+                  bottom: 4,
+                  width: 22,
+                  height: 22,
+                  borderRadius: 11,
+                  backgroundColor: "rgba(8,12,20,0.55)",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.25)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="camera" size={12} color="rgba(255,255,255,0.95)" />
+              </View>
+            ) : null}
           </Pressable>
         </View>
 

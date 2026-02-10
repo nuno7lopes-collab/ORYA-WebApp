@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { usePathname, useRouter } from "expo-router";
@@ -9,6 +9,7 @@ import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
+import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
@@ -23,6 +24,7 @@ import type {
   NotificationsPage,
 } from "../../features/notifications/types";
 import {
+  deleteNotification,
   markAllNotificationsRead,
   markNotificationRead,
   muteNotificationTarget,
@@ -169,13 +171,18 @@ export default function NotificationsScreen() {
   const queryClient = useQueryClient();
   const topPadding = useTopHeaderPadding(20);
   const bottomPadding = useTabBarPadding();
+  const topBar = useTopBarScroll({ hideOnScroll: false });
 
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [followOverrides, setFollowOverrides] = useState<Record<string, boolean>>({});
   const [notificationStatus, setNotificationStatus] = useState<Record<string, "Aceite" | "Recusado">>({});
   const lastMarkedRef = useRef<number | null>(null);
+  const cardPressRef = useRef({ x: 0, y: 0, moved: false });
 
-  const feed = useNotificationsFeed(Boolean(session?.user?.id));
+  const feed = useNotificationsFeed(
+    session?.access_token ?? null,
+    session?.user?.id ?? null,
+  );
 
   const items = useMemo(
     () => feed.data?.pages.flatMap((page) => page.items) ?? [],
@@ -183,6 +190,38 @@ export default function NotificationsScreen() {
   );
 
   const showSkeleton = feed.isLoading && items.length === 0;
+  const backButton = (
+    <Pressable
+      onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+      accessibilityRole="button"
+      accessibilityLabel="Voltar"
+      style={({ pressed }) => [
+        {
+          width: tokens.layout.touchTarget,
+          height: tokens.layout.touchTarget,
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: tokens.layout.touchTarget,
+        },
+        pressed ? { opacity: 0.8 } : null,
+      ]}
+    >
+      <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+    </Pressable>
+  );
+  const topBarRight = (
+    <Pressable
+      onPress={() => router.push("/settings")}
+      style={({ pressed }) => [
+        styles.settingsButton,
+        pressed ? { opacity: 0.85, transform: [{ scale: 0.98 }] } : null,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel="Abrir preferências"
+    >
+      <Text style={styles.settingsText}>Preferências</Text>
+    </Pressable>
+  );
 
   const listData: ListItem[] = useMemo(() => {
     if (showSkeleton) {
@@ -304,6 +343,14 @@ export default function NotificationsScreen() {
     [filterCacheItems],
   );
 
+  const removeNotificationFromCache = useCallback(
+    (notificationId: string) => {
+      if (!notificationId) return;
+      filterCacheItems((item) => item.id !== notificationId);
+    },
+    [filterCacheItems],
+  );
+
   const handleMarkTabRead = useCallback(async () => {
     if (!session?.user?.id) return;
     const now = Date.now();
@@ -314,14 +361,14 @@ export default function NotificationsScreen() {
 
     markTabReadOptimistic();
     try {
-      await markAllNotificationsRead();
+      await markAllNotificationsRead(session?.access_token ?? null);
     } catch {
       // ignore
     } finally {
       queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
       queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
     }
-  }, [markTabReadOptimistic, queryClient, session?.user?.id]);
+  }, [markTabReadOptimistic, queryClient, session?.access_token, session?.user?.id]);
 
   const handlePressNotification = useCallback(
     async (item: AggregatedNotificationItem) => {
@@ -339,23 +386,12 @@ export default function NotificationsScreen() {
 
       if (!item.isRead) {
         markItemReadOptimistic(item.id);
-        markNotificationRead(item.id).catch(() => {
+        markNotificationRead(item.id, session?.access_token ?? null).catch(() => {
           queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
         });
       }
     },
-    [markItemReadOptimistic, pathname, queryClient, router],
-  );
-
-  const handleMarkRead = useCallback(
-    (item: AggregatedNotificationItem) => {
-      if (item.isRead) return;
-      markItemReadOptimistic(item.id);
-      markNotificationRead(item.id).catch(() => {
-        queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-      });
-    },
-    [markItemReadOptimistic, queryClient],
+    [markItemReadOptimistic, pathname, queryClient, router, session?.access_token],
   );
 
   const handleMute = useCallback(
@@ -370,7 +406,10 @@ export default function NotificationsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await muteNotificationTarget({ organizationId: item.organizationId });
+              await muteNotificationTarget(
+                { organizationId: item.organizationId },
+                session?.access_token ?? null,
+              );
               removeMutedFromCache({ organizationId: item.organizationId });
               queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
               queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
@@ -392,7 +431,10 @@ export default function NotificationsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await muteNotificationTarget({ eventId: item.eventId });
+              await muteNotificationTarget(
+                { eventId: item.eventId },
+                session?.access_token ?? null,
+              );
               removeMutedFromCache({ eventId: item.eventId });
               queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
               queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
@@ -412,7 +454,97 @@ export default function NotificationsScreen() {
 
       Alert.alert("Silenciar notificações", "Não vais receber notificações deste contexto.", options);
     },
-    [queryClient, removeMutedFromCache],
+    [queryClient, removeMutedFromCache, session?.access_token],
+  );
+
+  const handleDelete = useCallback(
+    (item: AggregatedNotificationItem) => {
+      if (!item?.id) return;
+      removeNotificationFromCache(item.id);
+      queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+      deleteNotification(item.id, session?.access_token ?? null).catch(() => {
+        queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+        Alert.alert("Não foi possível", "Tenta novamente.");
+      });
+    },
+    [queryClient, removeNotificationFromCache, session?.access_token],
+  );
+
+  const resolveActionLabel = useCallback(
+    (action: NotificationAction) => {
+      const followUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
+      const isFollowing = followUserId ? followOverrides[followUserId] === true : false;
+      const isFollowAction = action.type === "follow_back" && Boolean(followUserId);
+      return isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
+    },
+    [followOverrides],
+  );
+
+  const buildMenuActions = useCallback(
+    (notification: AggregatedNotificationItem) => {
+      const items: Array<{ label: string; onPress: () => void; destructive?: boolean }> = [];
+
+      (notification.actions ?? []).forEach((action) => {
+        if (action.type === "status" || action.style === "status") return;
+        const key = buildKey(notification.id, action);
+        if (pendingActionKey === key) return;
+        items.push({
+          label: resolveActionLabel(action),
+          onPress: () => handleAction(notification, action),
+        });
+      });
+
+      if (notification.organizationId || notification.eventId) {
+        items.push({
+          label: "Silenciar",
+          destructive: true,
+          onPress: () => handleMute(notification),
+        });
+      }
+
+      return items;
+    },
+    [handleAction, handleMute, pendingActionKey, resolveActionLabel],
+  );
+
+  const openNotificationMenu = useCallback(
+    (notification: AggregatedNotificationItem) => {
+      const actions = buildMenuActions(notification);
+      if (actions.length === 0) return;
+
+      if (Platform.OS === "ios") {
+        const options = [...actions.map((item) => item.label), "Cancelar"];
+        const cancelButtonIndex = options.length - 1;
+        const destructiveButtonIndex = actions.findIndex((item) => item.destructive);
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            options,
+            cancelButtonIndex,
+            destructiveButtonIndex: destructiveButtonIndex >= 0 ? destructiveButtonIndex : undefined,
+            userInterfaceStyle: "dark",
+          },
+          (index) => {
+            if (index == null || index < 0 || index >= actions.length) return;
+            actions[index].onPress();
+          },
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Ações",
+        undefined,
+        [
+          ...actions.map((item) => ({
+            text: item.label,
+            onPress: item.onPress,
+            style: item.destructive ? "destructive" : "default",
+          })),
+          { text: "Cancelar", style: "cancel" },
+        ],
+      );
+    },
+    [buildMenuActions],
   );
 
   const handleAction = useCallback(
@@ -452,13 +584,13 @@ export default function NotificationsScreen() {
         } else if (action.type === "accept_org_invite") {
           const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
           if (inviteId) {
-            await respondOrganizationInvite(inviteId, "ACCEPT");
+            await respondOrganizationInvite(inviteId, "ACCEPT", session?.access_token ?? null);
             setNotificationStatusLabel(item, "Aceite");
           }
         } else if (action.type === "decline_org_invite") {
           const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
           if (inviteId) {
-            await respondOrganizationInvite(inviteId, "DECLINE");
+            await respondOrganizationInvite(inviteId, "DECLINE", session?.access_token ?? null);
             setNotificationStatusLabel(item, "Recusado");
           }
         } else if (action.type === "accept_pairing_invite") {
@@ -505,7 +637,17 @@ export default function NotificationsScreen() {
         setPendingActionKey(null);
       }
     },
-    [followOverrides, markItemReadOptimistic, pathname, pendingActionKey, queryClient, router, setFollowOverride, setNotificationStatusLabel],
+    [
+      followOverrides,
+      markItemReadOptimistic,
+      pathname,
+      pendingActionKey,
+      queryClient,
+      router,
+      setFollowOverride,
+      setNotificationStatusLabel,
+      session?.access_token,
+    ],
   );
 
   useFocusEffect(
@@ -543,52 +685,67 @@ export default function NotificationsScreen() {
           }
         : undefined;
 
-      const showMute = Boolean(notification.organizationId || notification.eventId);
+      const menuActions = buildMenuActions(notification);
+      const hasMenu = menuActions.length > 0;
 
       return (
         <Swipeable
           renderRightActions={() => (
             <View style={styles.swipeActions}>
-              {!notification.isRead ? (
-                <Pressable
-                  onPress={() => handleMarkRead(notification)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Marcar como lida"
-                  style={({ pressed }) => [
-                    styles.swipeButton,
-                    styles.swipePrimary,
-                    pressed ? styles.swipePressed : null,
-                  ]}
-                >
-                  <Ionicons name="checkmark-done" size={16} color="#0b101a" />
-                  <Text style={styles.swipePrimaryText}>Lida</Text>
-                </Pressable>
-              ) : null}
-              {showMute ? (
-                <Pressable
-                  onPress={() => handleMute(notification)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Silenciar notificações"
-                  style={({ pressed }) => [
-                    styles.swipeButton,
-                    styles.swipeSecondary,
-                    pressed ? styles.swipePressed : null,
-                  ]}
-                >
-                  <Ionicons name="volume-mute" size={16} color="white" />
-                  <Text style={styles.swipeSecondaryText}>Silenciar</Text>
-                </Pressable>
-              ) : null}
+              <Pressable
+                onPress={() => openNotificationMenu(notification)}
+                disabled={!hasMenu}
+                accessibilityRole="button"
+                accessibilityLabel="Mais ações"
+                accessibilityState={{ disabled: !hasMenu }}
+                style={({ pressed }) => [
+                  styles.swipeButton,
+                  styles.swipeMenuButton,
+                  pressed && styles.swipePressed,
+                  !hasMenu && styles.swipeDisabled,
+                ]}
+              >
+                <Ionicons name="ellipsis-horizontal" size={16} color="rgba(235,245,255,0.9)" />
+              </Pressable>
+              <Pressable
+                onPress={() => handleDelete(notification)}
+                accessibilityRole="button"
+                accessibilityLabel="Apagar notificação"
+                style={({ pressed }) => [
+                  styles.swipeButton,
+                  styles.swipeDeleteButton,
+                  pressed && styles.swipePressed,
+                ]}
+              >
+                <Ionicons name="trash-outline" size={16} color="#ffffff" />
+              </Pressable>
             </View>
           )}
-          rightThreshold={36}
+          rightThreshold={32}
           friction={2}
           overshootRight={false}
+          onSwipeableWillOpen={() => {
+            cardPressRef.current.moved = true;
+          }}
         >
           <Pressable
-            onPress={() => handlePressNotification(notification)}
-            onLongPress={() => handleMute(notification)}
-            delayLongPress={240}
+            onPressIn={(event) => {
+              const { pageX, pageY } = event.nativeEvent;
+              cardPressRef.current = { x: pageX, y: pageY, moved: false };
+            }}
+            onTouchMove={(event) => {
+              if (cardPressRef.current.moved) return;
+              const { pageX, pageY } = event.nativeEvent;
+              const dx = Math.abs(pageX - cardPressRef.current.x);
+              const dy = Math.abs(pageY - cardPressRef.current.y);
+              if (dx > 6 || dy > 6) {
+                cardPressRef.current.moved = true;
+              }
+            }}
+            onPress={() => {
+              if (cardPressRef.current.moved) return;
+              handlePressNotification(notification);
+            }}
             style={styles.cardPressable}
             accessibilityRole="button"
             accessibilityLabel={`Abrir notificação ${notification.title}`}
@@ -673,7 +830,17 @@ export default function NotificationsScreen() {
         </Swipeable>
       );
     },
-    [followOverrides, handleAction, handleMarkRead, handleMute, handlePressNotification, notificationStatus, pendingActionKey],
+    [
+      buildMenuActions,
+      followOverrides,
+      handleAction,
+      handleDelete,
+      handleMute,
+      handlePressNotification,
+      notificationStatus,
+      openNotificationMenu,
+      pendingActionKey,
+    ],
   );
 
   const emptyState = !session?.user?.id ? (
@@ -714,37 +881,9 @@ export default function NotificationsScreen() {
     </GlassCard>
   );
 
-  const header = (
-    <View style={{ paddingTop: topPadding, paddingBottom: 12 }}>
-      <Pressable
-        onPress={() => safeBack(router, navigation, "/(tabs)/index")}
-        accessibilityRole="button"
-        accessibilityLabel="Voltar"
-        style={({ pressed }) => [
-          styles.backButton,
-          pressed ? styles.backPressed : null,
-        ]}
-      >
-        <Ionicons name="chevron-back" size={18} color="rgba(255,255,255,0.9)" />
-        <Text style={styles.backText}>Voltar</Text>
-      </Pressable>
-      <View style={styles.headerRow}>
-        <Text style={styles.screenTitle}>Notificações</Text>
-        <Pressable
-          onPress={() => router.push("/settings")}
-          style={styles.settingsButton}
-          accessibilityRole="button"
-          accessibilityLabel="Abrir preferências"
-        >
-          <Text style={styles.settingsText}>Preferências</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-
   return (
     <LiquidBackground>
-      <TopAppHeader />
+      <TopAppHeader scrollState={topBar} variant="title" title="Notificações" leftSlot={backButton} rightSlot={topBarRight} />
       <FlatList
         data={listData}
         keyExtractor={(item) =>
@@ -753,7 +892,10 @@ export default function NotificationsScreen() {
             : `${item.kind}-${item.item.id}`
         }
         renderItem={renderItem}
-        ListHeaderComponent={header}
+        onScroll={topBar.onScroll}
+        onScrollEndDrag={topBar.onScrollEndDrag}
+        onMomentumScrollEnd={topBar.onMomentumScrollEnd}
+        scrollEventThrottle={16}
         ListEmptyComponent={emptyState}
         ListFooterComponent={
           feed.isFetchingNextPage ? (
@@ -772,6 +914,7 @@ export default function NotificationsScreen() {
         onRefresh={() => feed.refetch()}
         contentContainerStyle={{
           paddingHorizontal: tokens.spacing.lg,
+          paddingTop: topPadding,
           paddingBottom: bottomPadding + 32,
         }}
       />
@@ -780,44 +923,6 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  swipeActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingRight: 8,
-  },
-  swipeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
-    minWidth: 86,
-    justifyContent: "center",
-  },
-  swipePrimary: {
-    backgroundColor: "#ffffff",
-  },
-  swipePrimaryText: {
-    color: "#0b101a",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  swipeSecondary: {
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-  swipeSecondaryText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  swipePressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -929,12 +1034,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
     borderRadius: 999,
     borderWidth: 1,
     overflow: "hidden",
-    minHeight: 36,
+    minHeight: 40,
     justifyContent: "center",
   },
   actionPrimary: {
@@ -947,12 +1052,12 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   actionSecondary: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255,255,255,0.28)",
   },
   actionStatus: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderColor: "rgba(255,255,255,0.3)",
   },
   actionPressed: {
     transform: [{ scale: 0.98 }],
@@ -962,7 +1067,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   actionText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
   },
   actionTextPrimary: {
@@ -973,6 +1078,34 @@ const styles = StyleSheet.create({
   },
   actionTextStatus: {
     color: "rgba(235,245,255,0.8)",
+  },
+  swipeActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingRight: 12,
+  },
+  swipeButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  swipeMenuButton: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+  },
+  swipeDeleteButton: {
+    backgroundColor: "#FF4D5A",
+  },
+  swipePressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  swipeDisabled: {
+    opacity: 0.4,
   },
   thumbnail: {
     width: 62,

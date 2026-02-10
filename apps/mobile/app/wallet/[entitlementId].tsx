@@ -27,6 +27,9 @@ import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { getUserFacingError } from "../../lib/errors";
 import { acceptInvite, declineInvite } from "../../features/tournaments/api";
+import { useMessageInvites } from "../../features/messages/hooks";
+import { acceptMessageInvite } from "../../features/messages/api";
+import { useEventChatThread } from "../../features/chat/hooks";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
@@ -154,12 +157,13 @@ export default function WalletDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { session } = useAuth();
+  const accessToken = session?.access_token ?? null;
   const params = useLocalSearchParams<{ entitlementId?: string | string[] }>();
   const entitlementId = useMemo(
     () => (Array.isArray(params.entitlementId) ? params.entitlementId[0] : params.entitlementId) ?? null,
     [params.entitlementId],
   );
-  const nextRoute = useMemo(() => (entitlementId ? `/wallet/${entitlementId}` : "/(tabs)/tickets"), [entitlementId]);
+  const nextRoute = useMemo(() => (entitlementId ? `/wallet/${entitlementId}` : "/tickets"), [entitlementId]);
   const openAuth = useCallback(() => {
     router.push({ pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
@@ -191,6 +195,11 @@ export default function WalletDetailScreen() {
       : null;
   const passUrl = data?.passUrl ?? null;
   const shareUrl = data?.event?.slug ? `${baseUrl}/eventos/${data.event.slug}` : null;
+  const eventId = data?.event?.id ?? null;
+  const canOpenEventChat = Boolean(eventId && data?.consumedAt && session?.user?.id);
+  const inviteQuery = useMessageInvites(eventId, canOpenEventChat, accessToken);
+  const eventChatQuery = useEventChatThread(eventId, canOpenEventChat, accessToken);
+  const pendingInvite = inviteQuery.data?.items?.[0] ?? null;
   const updatedLabel = formatRelativeTime(data?.audit?.updatedAt);
   const consumedAtLabel = formatShortDate(data?.consumedAt);
   const title = data?.snapshot.title ?? (data ? typeLabel(data.type) : "");
@@ -208,7 +217,7 @@ export default function WalletDetailScreen() {
     return windowLabel ? `QR disponível a partir de ${windowLabel}` : null;
   })();
   const handleBack = () => {
-    safeBack(router, navigation, "/(tabs)/tickets");
+    safeBack(router, navigation, "/tickets");
   };
   const handleShare = async () => {
     if (!data) return;
@@ -218,6 +227,28 @@ export default function WalletDetailScreen() {
       await Share.share({ message, url: shareUrl ?? undefined });
     } catch {
       // ignore share errors
+    }
+  };
+
+  const handleAcceptChatInvite = async () => {
+    if (!pendingInvite || !accessToken || !eventId) return;
+    try {
+      const result = await acceptMessageInvite(pendingInvite.id, accessToken);
+      await Promise.all([inviteQuery.refetch(), eventChatQuery.refetch()]);
+      if (result?.threadId) {
+        router.push({
+          pathname: "/messages/[threadId]",
+          params: {
+            threadId: result.threadId,
+            eventId: String(eventId),
+            title: data?.snapshot?.title ?? "",
+            coverImageUrl: data?.snapshot?.coverUrl ?? "",
+            source: "event",
+          },
+        });
+      }
+    } catch (err) {
+      Alert.alert("Chat", getUserFacingError(err, "Não foi possível aceitar o convite."));
     }
   };
 
@@ -311,11 +342,14 @@ export default function WalletDetailScreen() {
               onPress={handleBack}
               accessibilityRole="button"
               accessibilityLabel="Voltar à carteira"
-              className="flex-row items-center gap-2"
-              style={{ minHeight: tokens.layout.touchTarget }}
+              style={{
+                width: tokens.layout.touchTarget,
+                height: tokens.layout.touchTarget,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
               <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-              <Text className="text-white text-sm font-semibold">Voltar à carteira</Text>
             </Pressable>
           </View>
 
@@ -434,6 +468,51 @@ export default function WalletDetailScreen() {
                 >
                   <Text className="text-white text-sm font-semibold text-center">Abrir evento</Text>
                 </Pressable>
+              ) : null}
+
+              {canOpenEventChat ? (
+                pendingInvite ? (
+                  <GlassCard intensity={54} className="mb-4">
+                    <View className="gap-3">
+                      <Text className="text-white text-sm font-semibold">Chat do evento</Text>
+                      <Text className="text-white/65 text-sm">
+                        O chat está disponível após o check-in. Entra para falar com os participantes.
+                      </Text>
+                      <Pressable
+                        onPress={handleAcceptChatInvite}
+                        className="rounded-2xl bg-white/90 px-4 py-3"
+                        style={{ minHeight: tokens.layout.touchTarget }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Entrar no chat"
+                      >
+                        <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                          Entrar no chat
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </GlassCard>
+                ) : eventChatQuery.data?.thread?.id ? (
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: "/messages/[threadId]",
+                        params: {
+                          threadId: eventChatQuery.data.thread.id,
+                          eventId: String(eventId ?? ""),
+                          title: data?.snapshot?.title ?? "",
+                          coverImageUrl: data?.snapshot?.coverUrl ?? "",
+                          source: "event",
+                        },
+                      })
+                    }
+                    className="rounded-2xl border border-white/15 bg-white/10 px-4 py-4 mb-4"
+                    style={{ minHeight: tokens.layout.touchTarget }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Abrir chat"
+                  >
+                    <Text className="text-white text-sm font-semibold text-center">Abrir chat</Text>
+                  </Pressable>
+                ) : null
               ) : null}
 
               {data.pairing ? (

@@ -9,6 +9,7 @@ import { OrganizationModule } from "@prisma/client";
 import crypto from "crypto";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const resolveOrganizationId = (req: NextRequest) => {
   const organizationId = resolveOrganizationIdFromRequest(req);
@@ -107,7 +108,7 @@ async function requireOrganization(req: NextRequest) {
   return { organization, profile, membership };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const orgCtx = await requireOrganization(req);
@@ -304,7 +305,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const orgCtx = await requireOrganization(req);
@@ -483,7 +484,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const orgCtx = await requireOrganization(req);
@@ -659,7 +660,7 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const orgCtx = await requireOrganization(req);
@@ -712,3 +713,7 @@ export async function DELETE(req: NextRequest) {
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

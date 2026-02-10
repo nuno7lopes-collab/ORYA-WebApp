@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { PublicApiScope } from "@prisma/client";
 import { findPublicApiKeyByHash, hashApiKey, isKeyRevoked, touchPublicApiKeyUsage } from "@/domain/publicApi/keys";
+import { isPublicApiEnabled } from "@/lib/featureFlags";
 
 export class PublicApiAuthError extends Error {
   status: number;
@@ -32,6 +33,9 @@ export async function requirePublicApiKey(
   req: NextRequest,
   requiredScope: PublicApiScope
 ): Promise<PublicApiContext> {
+  if (!isPublicApiEnabled()) {
+    throw new PublicApiAuthError("Public API desativada", 403, "PUBLIC_API_DISABLED");
+  }
   const raw = extractApiKey(req);
   if (!raw) {
     throw new PublicApiAuthError("API key em falta");

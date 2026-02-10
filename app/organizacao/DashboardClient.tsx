@@ -2031,7 +2031,7 @@ function OrganizacaoPageInner({
         moduleKey: "MENSAGENS",
         title: "Chat interno",
         summary: "Canal privado entre membros da organização.",
-        bullets: ["Conversas rápidas da equipa", "Canais internos simples", "Histórico básico (v1)"],
+        bullets: ["Conversas rápidas da equipa", "Canais internos simples", "Histórico completo"],
         status: canUseChatInterno
           ? isMensagensActive
             ? "active"

@@ -1,7 +1,10 @@
 import { buildResponseHeaders, getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { setRequestAuthHeader } from "@/lib/http/authContext";
+import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
+import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { isAuthUnavailableError } from "@/lib/security";
 
 const JSON_CONTENT_TYPE = "application/json";
 const DOWNLOAD_CONTENT_TYPES = [
@@ -14,6 +17,38 @@ const DOWNLOAD_CONTENT_TYPES = [
   "text/calendar",
 ];
 
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function hasAuthorizationHeader(req: Request) {
+  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
+  return Boolean(auth && auth.trim().length > 0);
+}
+
+function isCrossSiteRequest(req: Request) {
+  const secFetchSite = req.headers.get("sec-fetch-site")?.toLowerCase() ?? null;
+  if (secFetchSite) {
+    if (secFetchSite === "same-origin" || secFetchSite === "same-site" || secFetchSite === "none") {
+      return false;
+    }
+    return true;
+  }
+  const origin = req.headers.get("origin") || req.headers.get("referer");
+  if (!origin) return false;
+  try {
+    return !isSameOrigin(req as any, { allowMissing: false });
+  } catch {
+    return true;
+  }
+}
+
+function shouldBlockCsrf(req: Request) {
+  if (!MUTATING_METHODS.has(req.method)) return false;
+  if (hasAuthorizationHeader(req)) return false;
+  if (isAppRequest(req as any)) return false;
+  if (requireInternalSecret(req.headers)) return false;
+  return isCrossSiteRequest(req);
+}
+
 const CANONICAL_ERROR_CODE_BY_STATUS: Record<number, string> = {
   400: "BAD_REQUEST",
   401: "UNAUTHENTICATED",
@@ -25,6 +60,7 @@ const CANONICAL_ERROR_CODE_BY_STATUS: Record<number, string> = {
   422: "VALIDATION_FAILED",
   429: "THROTTLED",
   500: "INTERNAL_ERROR",
+  503: "SERVICE_UNAVAILABLE",
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -248,6 +284,17 @@ export function withApiEnvelope<Req extends Request, Args extends any[]>(
   return async (req: Req, ...args: Args) => {
     setRequestAuthHeader(req?.headers ?? null);
     const ctx = getRequestContext(req);
+    if (shouldBlockCsrf(req)) {
+      return respondError(
+        ctx,
+        {
+          errorCode: "CSRF_BLOCKED",
+          message: "Pedido bloqueado por seguranca.",
+          retryable: false,
+        },
+        { status: 403 },
+      );
+    }
     try {
       const result = await handler(req, ...args);
       if (result instanceof Response) {
@@ -281,6 +328,28 @@ export function withApiEnvelope<Req extends Request, Args extends any[]>(
       }
       return respondOk(ctx, result as unknown);
     } catch (err) {
+      if (isAuthUnavailableError(err)) {
+        logError(
+          "auth.unavailable",
+          err,
+          {
+            requestId: ctx.requestId,
+            correlationId: ctx.correlationId,
+            path: "url" in req ? (req as Request).url : undefined,
+            method: (req as Request).method,
+          },
+          { fallbackToRequestContext: false },
+        );
+        return respondError(
+          ctx,
+          {
+            errorCode: "AUTH_UNAVAILABLE",
+            message: "Autenticacao indisponivel.",
+            retryable: true,
+          },
+          { status: 503 },
+        );
+      }
       logError(
         "api",
         err,

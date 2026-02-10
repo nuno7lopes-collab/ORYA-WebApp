@@ -1,361 +1,219 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import MobileTopBar from "@/app/components/mobile/MobileTopBar";
-import DiscoverFilters from "@/app/descobrir/_components/DiscoverFilters";
-import ServiceCard from "@/app/descobrir/_components/ServiceCard";
-import { EventListCard, EventSquareCard } from "@/app/components/mobile/MobileCards.server";
-import InvitePeopleCard from "@/app/components/mobile/InvitePeopleCard";
-import { getEventCoverUrl } from "@/lib/eventCover";
-import {
-  fetchDiscoverFeed,
-  splitDiscoverEvents,
-  type DiscoverDateFilter,
-  type DiscoverWorld,
-} from "@/app/descobrir/_lib/discoverFeed";
+import HomeHeroMedia from "@/app/components/home/HomeHeroMedia";
+import HomeCityPicker from "@/app/components/home/HomeCityPicker";
+import HomePopularCarousel from "@/app/components/home/HomePopularCarousel";
+import HomeFooter from "@/app/components/home/HomeFooter";
+import { fetchDiscoverFeed } from "@/app/descobrir/_lib/discoverFeed";
 import {
   buildTimingTag,
-  formatEventDayLabel,
   formatLocationLabel,
   formatPriceLabel,
 } from "@/app/descobrir/_lib/discoverFormat";
+import { getEventCoverUrl } from "@/lib/eventCover";
+import type { PublicEventCard } from "@/domain/events/publicEventCard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type SearchParams = {
-  worlds?: string;
-  q?: string;
-  city?: string;
-  date?: string;
-  day?: string;
-  priceMin?: string;
-  priceMax?: string;
-  distanceKm?: string;
-  lat?: string;
-  lng?: string;
-  tab?: string;
+type CarouselItem = {
+  key: string;
+  href: string;
+  imageUrl: string;
+  title: string;
+  location?: string | null;
+  tagLabel?: string;
+  metaLabel?: string | null;
 };
 
-type PageProps = {
-  searchParams?: SearchParams | Promise<SearchParams>;
+type HeaderSource = {
+  get(name: string): string | null;
 };
 
-const WORLD_ORDER: DiscoverWorld[] = ["padel", "events", "services"];
-
-const toNumber = (value: string | undefined) => {
-  if (!value) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+type IpLocation = {
+  city: string | null;
+  region: string | null;
+  country: string | null;
 };
 
-const parseWorlds = (worldsParam?: string, tabParam?: string): DiscoverWorld[] => {
-  if (worldsParam) {
-    const raw = worldsParam
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean) as DiscoverWorld[];
-    const unique = Array.from(new Set(raw)).filter((value) => WORLD_ORDER.includes(value));
-    return unique.length ? WORLD_ORDER.filter((value) => unique.includes(value)) : [...WORLD_ORDER];
+const pickHeader = (hdrs: HeaderSource, names: string[]) => {
+  for (const name of names) {
+    const value = hdrs.get(name);
+    if (value && value.trim()) return value.trim();
   }
-  if (tabParam === "torneios") return ["padel"];
-  if (tabParam === "reservas") return ["services"];
-  if (tabParam === "eventos") return ["events"];
-  return [...WORLD_ORDER];
+  return null;
 };
 
-const parseDate = (value?: string): DiscoverDateFilter => {
-  if (!value) return "all";
-  if (value === "today" || value === "upcoming" || value === "weekend" || value === "day") return value;
-  return "all";
+const resolveIpLocation = async (): Promise<IpLocation> => {
+  const hdrs = await headers();
+  const city =
+    pickHeader(hdrs, ["cf-ipcity", "x-geo-city", "x-country-city"]) ?? null;
+  const region =
+    pickHeader(hdrs, ["cf-region", "x-geo-region", "x-country-region"]) ?? null;
+  const country =
+    pickHeader(hdrs, ["cf-ipcountry", "cloudfront-viewer-country", "x-geo-country"]) ??
+    null;
+  return { city, region, country };
 };
 
-export default async function DescobrirPage({ searchParams }: PageProps) {
-  const resolvedParams = (await searchParams) ?? {};
-  const worlds = parseWorlds(resolvedParams.worlds, resolvedParams.tab);
-  const q = resolvedParams.q ?? "";
-  const city = resolvedParams.city ?? "";
-  const date = parseDate(resolvedParams.date);
-  const day = resolvedParams.day ?? "";
-  const priceMin = toNumber(resolvedParams.priceMin) ?? 0;
-  const priceMax = toNumber(resolvedParams.priceMax) ?? 100;
-  const lat = toNumber(resolvedParams.lat);
-  const lng = toNumber(resolvedParams.lng);
-  const distanceParam = toNumber(resolvedParams.distanceKm);
-  const hasCoords = typeof lat === "number" && typeof lng === "number";
-  const distanceKm = hasCoords ? distanceParam ?? 5 : null;
+const normalizeCity = (value?: string | null) => {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length >= 2 ? trimmed : null;
+};
 
-  const priceMinFilter = priceMin > 0 ? priceMin : null;
-  const priceMaxFilter = priceMax < 100 ? priceMax : null;
+const isUpcomingEvent = (event: PublicEventCard, now: Date) => {
+  const end = event.endsAt ? new Date(event.endsAt) : null;
+  if (end && !Number.isNaN(end.getTime())) {
+    return end.getTime() >= now.getTime();
+  }
+  const start = event.startsAt ? new Date(event.startsAt) : null;
+  if (start && !Number.isNaN(start.getTime())) {
+    return start.getTime() >= now.getTime();
+  }
+  return false;
+};
+
+const sortPopularEvents = (a: PublicEventCard, b: PublicEventCard) => {
+  const highlight = Number(b.isHighlighted) - Number(a.isHighlighted);
+  if (highlight !== 0) return highlight;
+  const aStart = new Date(a.startsAt).getTime();
+  const bStart = new Date(b.startsAt).getTime();
+  const aValue = Number.isNaN(aStart) ? Number.MAX_SAFE_INTEGER : aStart;
+  const bValue = Number.isNaN(bStart) ? Number.MAX_SAFE_INTEGER : bStart;
+  return aValue - bValue;
+};
+
+export default async function HomePage() {
+  const location = await resolveIpLocation();
+  const city = normalizeCity(location.city);
+  const now = new Date();
 
   const feed = await fetchDiscoverFeed({
-    worlds,
-    q,
-    city,
-    date,
-    day,
-    priceMin: priceMinFilter,
-    priceMax: priceMaxFilter,
-    lat,
-    lng,
-    distanceKm,
-    eventLimit: 50,
-    serviceLimit: 20,
+    worlds: ["events"],
+    city: city ?? undefined,
+    eventLimit: 36,
   });
 
-  const now = new Date();
-  const { liveEvents, soonEvents, cityEvents } = splitDiscoverEvents(feed.events, {
-    now,
-    soonHours: 72,
-    city,
-    lat,
-    lng,
-    distanceKm,
+  const buildPopularEvents = (events: PublicEventCard[]) =>
+    events
+      .filter((event) => event.status === "ACTIVE" && isUpcomingEvent(event, now))
+      .sort(sortPopularEvents);
+
+  const basePopular = buildPopularEvents(feed.events);
+  let popularEvents = basePopular.slice(0, 12);
+  let isCityScoped = Boolean(city && basePopular.length > 0);
+
+  if (city && basePopular.length < 6) {
+    const fallbackFeed = await fetchDiscoverFeed({
+      worlds: ["events"],
+      eventLimit: 36,
+    });
+    const fallbackPopular = buildPopularEvents(fallbackFeed.events);
+    if (basePopular.length === 0) {
+      isCityScoped = false;
+      popularEvents = fallbackPopular.slice(0, 12);
+    } else {
+      const seen = new Set(basePopular.map((event) => event.id));
+      const merged = [...basePopular];
+      fallbackPopular.forEach((event) => {
+        if (!seen.has(event.id)) merged.push(event);
+      });
+      popularEvents = merged.slice(0, 12);
+    }
+  }
+
+  const carouselItems: CarouselItem[] = popularEvents.map((event) => {
+    const cover = getEventCoverUrl(event.coverImageUrl, {
+      seed: event.slug ?? event.id,
+      width: 512,
+      quality: 62,
+      format: "webp",
+      square: true,
+    });
+    const tag = buildTimingTag(event, now);
+    const priceLabel = formatPriceLabel(event);
+    return {
+      key: `${event.id}-${event.slug}`,
+      href: `/eventos/${event.slug}`,
+      imageUrl: cover,
+      title: event.title,
+      location: formatLocationLabel(event),
+      tagLabel: tag.label,
+      metaLabel: priceLabel,
+    };
   });
 
-  const usedEventIds = new Set([...liveEvents, ...soonEvents, ...cityEvents].map((event) => event.id));
-  const exploreOffers = feed.offers.filter((offer) =>
-    offer.type === "event" ? !usedEventIds.has(offer.event.id) : true,
-  );
-
-  const showEvents = worlds.includes("events") || worlds.includes("padel");
-  const showServices = worlds.includes("services") || worlds.includes("padel");
-
-  const heroTitle = showServices && !showEvents
-    ? "Reservas e serviços"
-    : showEvents && !showServices
-      ? "Eventos e planos"
-      : "Descobrir agora";
-  const heroSubtitle = showServices && !showEvents
-    ? "Reservas e experiências prontas a marcar."
-    : showEvents && !showServices
-      ? "Encontra o que acontece agora e planeia a tua semana."
-      : "Eventos, padel e serviços com curadoria para ti.";
-
-  const hasActiveFilters =
-    q.trim() ||
-    city.trim() ||
-    date !== "all" ||
-    priceMin > 0 ||
-    priceMax < 100 ||
-    worlds.length !== WORLD_ORDER.length ||
-    hasCoords;
+  const locationLabel = isCityScoped && city ? city : "perto de ti";
+  const discoverHref =
+    isCityScoped && city ? `/descobrir?city=${encodeURIComponent(city)}` : "/descobrir";
+  const showCityPicker = !isCityScoped;
+  const primaryCtaClass =
+    "inline-flex items-center justify-center rounded-full border border-white/60 bg-white px-6 py-3 text-[13px] font-semibold !text-black shadow-[0_18px_40px_rgba(0,0,0,0.45)] transition hover:-translate-y-[1px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.5)]";
+  const ghostCtaClass =
+    "inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-6 py-3 text-[13px] text-white/85 hover:border-white/35 hover:bg-white/10 transition";
+  const heroVideoSrc = "/videos/app-hero.mp4";
 
   return (
-    <main className="min-h-screen text-white pb-24">
+    <main className="min-h-0 bg-[#0b1014] text-white flex flex-col">
       <MobileTopBar />
-      <section className="orya-page-width px-4 md:px-8 pt-10 pb-8 md:pt-12">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-          <div className="space-y-8">
-            <div className="rounded-3xl border border-white/12 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-              <div className="space-y-3">
-                <p className="orya-mobile-kicker">Descobrir</p>
-                <h1 className="text-2xl font-semibold text-white md:text-3xl">{heroTitle}</h1>
-                <p className="text-sm text-white/60">{heroSubtitle}</p>
-              </div>
-              <div className="mt-5">
-                <DiscoverFilters
-                  initialWorlds={worlds}
-                  initialQuery={q}
-                  initialCity={city}
-                  initialDate={date}
-                  initialDay={day}
-                  initialPriceMin={priceMin}
-                  initialPriceMax={priceMax}
-                  initialDistanceKm={distanceKm}
-                />
-              </div>
+
+      <section className="orya-page-width px-4 md:px-8 pt-24 pb-12 lg:pt-24">
+        <div className="grid gap-20 md:grid-cols-2 md:items-stretch lg:gap-12">
+          <div className="flex min-h-[460px] flex-col justify-center rounded-[32px] bg-[#0f141a] p-8 text-white md:min-h-[560px] md:p-10 lg:min-h-[600px] lg:p-12">
+            <h1 className="text-4xl font-semibold leading-[0.98] tracking-[-0.02em] text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] md:text-5xl lg:text-[60px]">
+              Leva a ORYA no bolso e descobre o que acontece agora.
+            </h1>
+            <p className="mt-5 max-w-[520px] text-sm text-white/90 drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)] md:text-base leading-relaxed">
+              Eventos, padel e experiências num só lugar. Segue a tua rede, guarda planos e compra bilhetes em
+              segundos.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <Link href="/signup" className={primaryCtaClass}>
+                Quero a app
+              </Link>
+              <Link href={discoverHref} className={ghostCtaClass}>
+                Ver eventos
+              </Link>
             </div>
-
-            {showEvents && (
-              <section className="space-y-4">
-                <div className="flex items-end justify-between">
-                  <div className="space-y-1">
-                    <p className="text-[16px] font-semibold text-white">A acontecer</p>
-                    <p className="text-[11px] text-white/60">Eventos a decorrer agora.</p>
-                  </div>
-                </div>
-
-                {liveEvents.length === 0 ? (
-                  <div className="orya-mobile-surface-soft p-4 text-[12px] text-white/60">
-                    Sem eventos a acontecer agora.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 2xl:grid-cols-5">
-                    {liveEvents.slice(0, 8).map((event, index) => {
-                      const cover = getEventCoverUrl(event.coverImageUrl, {
-                        seed: event.slug ?? event.id,
-                        width: 512,
-                        quality: 62,
-                        format: "webp",
-                        square: true,
-                      });
-                      const tag = buildTimingTag(event, now);
-                      return (
-                        <EventSquareCard
-                          key={event.id}
-                          href={`/eventos/${event.slug}`}
-                          imageUrl={cover}
-                          title={event.title}
-                          location={formatLocationLabel(event)}
-                          tagLabel={tag.label}
-                          tagTone={tag.tone}
-                          meta={[{ label: formatPriceLabel(event) ?? "—" }]}
-                          imagePriority={index < 4}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
-
-            {showEvents && (
-              <section className="space-y-4">
-                <div className="flex items-end justify-between">
-                  <div className="space-y-1">
-                    <p className="text-[16px] font-semibold text-white">A seguir</p>
-                    <p className="text-[11px] text-white/60">Próximas 24-72h.</p>
-                  </div>
-                </div>
-
-                {soonEvents.length === 0 ? (
-                  <div className="orya-mobile-surface-soft p-4 text-[12px] text-white/60">
-                    Sem eventos a seguir nas próximas horas.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 2xl:grid-cols-5">
-                    {soonEvents.slice(0, 8).map((event, index) => {
-                      const cover = getEventCoverUrl(event.coverImageUrl, {
-                        seed: event.slug ?? event.id,
-                        width: 512,
-                        quality: 62,
-                        format: "webp",
-                        square: true,
-                      });
-                      const tag = buildTimingTag(event, now);
-                      return (
-                        <EventSquareCard
-                          key={event.id}
-                          href={`/eventos/${event.slug}`}
-                          imageUrl={cover}
-                          title={event.title}
-                          location={formatLocationLabel(event)}
-                          tagLabel={tag.label}
-                          tagTone={tag.tone}
-                          meta={[{ label: formatPriceLabel(event) ?? "—" }]}
-                          imagePriority={index < 4}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
-
-            {showEvents && (
-              <section className="space-y-4">
-                <div className="flex items-end justify-between">
-                  <div className="space-y-1">
-                    <p className="text-[16px] font-semibold text-white">Na tua cidade</p>
-                    <p className="text-[11px] text-white/60">Curadoria perto de ti.</p>
-                  </div>
-                </div>
-
-                {cityEvents.length === 0 ? (
-                  <div className="orya-mobile-surface-soft p-4 text-[12px] text-white/60">
-                    Sem eventos próximos para mostrar.
-                    {hasActiveFilters && (
-                      <div className="mt-3">
-                        <Link href="/" className="btn-orya inline-flex text-[11px] font-semibold">
-                          Limpar filtros
-                        </Link>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-start gap-3">
-                    {cityEvents.slice(0, 6).map((event, index) => {
-                      const cover = getEventCoverUrl(event.coverImageUrl, {
-                        seed: event.slug ?? event.id,
-                        width: 192,
-                        quality: 58,
-                        format: "webp",
-                        square: true,
-                      });
-                      return (
-                        <EventListCard
-                          key={event.id}
-                          href={`/eventos/${event.slug}`}
-                          imageUrl={cover}
-                          title={event.title}
-                          subtitle={formatLocationLabel(event) ?? undefined}
-                          dateLabel={formatEventDayLabel(event) ?? undefined}
-                          meta={[{ label: formatPriceLabel(event) ?? "—" }]}
-                          className="w-full"
-                          imagePriority={index === 0}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
-
-            <section className="space-y-4">
-              <div className="flex items-end justify-between">
-                <div className="space-y-1">
-                  <p className="text-[16px] font-semibold text-white">Explorar</p>
-                  <p className="text-[11px] text-white/60">Mais sugestões para ti.</p>
-                </div>
-              </div>
-
-              {exploreOffers.length === 0 ? (
-                <div className="orya-mobile-surface-soft p-4 text-[12px] text-white/60">
-                  Sem sugestões adicionais por agora.
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {exploreOffers.slice(0, 10).map((offer) =>
-                    offer.type === "event" ? (
-                      <EventListCard
-                        key={offer.key}
-                        href={`/eventos/${offer.event.slug}`}
-                        imageUrl={getEventCoverUrl(offer.event.coverImageUrl, {
-                          seed: offer.event.slug ?? offer.event.id,
-                          width: 192,
-                          quality: 58,
-                          format: "webp",
-                          square: true,
-                        })}
-                        title={offer.event.title}
-                        subtitle={formatLocationLabel(offer.event) ?? undefined}
-                        dateLabel={formatEventDayLabel(offer.event) ?? undefined}
-                        meta={[{ label: formatPriceLabel(offer.event) ?? "—" }]}
-                        className="w-full"
-                      />
-                    ) : (
-                      <ServiceCard key={offer.key} service={offer.service} />
-                    ),
-                  )}
-                </div>
-              )}
-            </section>
           </div>
 
-          <aside className="space-y-4">
-            <section className="space-y-3">
-              <div className="space-y-1">
-                <p className="text-[16px] font-semibold text-white">Eventos de quem segues</p>
-                <p className="text-[11px] text-white/60">Descobre onde a tua rede vai estar.</p>
-              </div>
-              <InvitePeopleCard
-                title="Convida pessoas para ORYA"
-                description="Partilha o teu link para juntares a tua rede aos eventos."
-                ctaLabel="Convidar pessoas"
-              />
-            </section>
-          </aside>
+          <div className="min-h-[460px] rounded-[32px] border border-black/5 bg-white p-6 shadow-[0_28px_60px_rgba(0,0,0,0.18)] md:min-h-[560px] md:p-10 lg:min-h-[600px] lg:p-12">
+            <HomeHeroMedia videoSrc={heroVideoSrc} />
+          </div>
         </div>
       </section>
+
+      <section className="orya-page-width px-4 md:px-8 pb-8 md:pb-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-[16px] font-semibold text-white">
+                Eventos populares {locationLabel}
+              </p>
+              {showCityPicker ? <HomeCityPicker baseHref="/descobrir" /> : null}
+            </div>
+            <p className="text-[11px] text-white/60">
+              Curadoria com base na tua localização aproximada.
+            </p>
+          </div>
+          <Link href={discoverHref} className="text-[11px] text-white/70 hover:text-white/90 transition">
+            Descobrir mais
+          </Link>
+        </div>
+
+        {carouselItems.length === 0 ? (
+          <div className="orya-mobile-surface-soft mt-5 p-4 text-[12px] text-white/60">
+            Ainda não temos eventos populares para mostrar.
+          </div>
+        ) : (
+          <div className="mt-6">
+            <HomePopularCarousel items={carouselItems} />
+          </div>
+        )}
+      </section>
+
+      <HomeFooter />
     </main>
   );
 }

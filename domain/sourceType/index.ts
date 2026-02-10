@@ -18,6 +18,7 @@ const AGENDA_SOURCE_TYPES = [
   SourceType.EVENT,
   SourceType.TOURNAMENT,
   SourceType.MATCH,
+  SourceType.CLASS_SESSION,
   SourceType.SOFT_BLOCK,
   SourceType.HARD_BLOCK,
 ] as const;

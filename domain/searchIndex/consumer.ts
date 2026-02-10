@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { SearchIndexVisibility, SourceType } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { normalizeAgendaSourceType } from "@/domain/sourceType";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 const ALLOWLIST = new Set([
   "event.created",
@@ -20,7 +21,7 @@ function resolveVisibility(input: {
   orgStatus: string | null;
   orgId: number | null;
 }): SearchIndexVisibility {
-  const isPublicStatus = input.status === "PUBLISHED" || input.status === "DATE_CHANGED";
+  const isPublicStatus = PUBLIC_EVENT_DISCOVER_STATUSES.includes(input.status as never);
   if (!input.orgId) return SearchIndexVisibility.HIDDEN;
   if (!isPublicStatus) return SearchIndexVisibility.HIDDEN;
   if (input.isDeleted) return SearchIndexVisibility.HIDDEN;
@@ -45,6 +46,7 @@ async function upsertFromEvent(params: {
       endsAt: true,
       status: true,
       templateType: true,
+      interestTags: true,
       pricingMode: true,
       isDeleted: true,
       coverImageUrl: true,
@@ -127,6 +129,7 @@ async function upsertFromEvent(params: {
       startsAt: event.startsAt,
       endsAt: event.endsAt ?? event.startsAt,
       templateType: event.templateType,
+      interestTags: event.interestTags ?? [],
       pricingMode: event.pricingMode,
       isGratis,
       priceFromCents,
@@ -149,6 +152,7 @@ async function upsertFromEvent(params: {
       startsAt: event.startsAt,
       endsAt: event.endsAt ?? event.startsAt,
       templateType: event.templateType,
+      interestTags: event.interestTags ?? [],
       pricingMode: event.pricingMode,
       isGratis,
       priceFromCents,

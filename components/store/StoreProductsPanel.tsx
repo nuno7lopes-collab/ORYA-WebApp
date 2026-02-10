@@ -47,6 +47,7 @@ type StoreProductsPanelProps = {
   categoriesEndpoint: string;
   storeLocked: boolean;
   storeEnabled: boolean;
+  organizationId?: number | null;
 };
 
 type ProductFormState = {
@@ -181,6 +182,7 @@ export default function StoreProductsPanel({
   categoriesEndpoint,
   storeLocked,
   storeEnabled,
+  organizationId = null,
 }: StoreProductsPanelProps) {
   const draftKey = useMemo(() => `orya_store_product_draft_${endpointBase}`, [endpointBase]);
   const [items, setItems] = useState<ProductItem[]>([]);
@@ -567,7 +569,10 @@ export default function StoreProductsPanel({
     if (!imageFile) return;
     const formData = new FormData();
     formData.append("file", imageFile);
-    const uploadRes = await fetch("/api/upload?scope=store-product", {
+    const uploadEndpoint = organizationId
+      ? `/api/upload?scope=store-product&organizationId=${organizationId}`
+      : "/api/upload?scope=store-product";
+    const uploadRes = await fetch(uploadEndpoint, {
       method: "POST",
       body: formData,
     });

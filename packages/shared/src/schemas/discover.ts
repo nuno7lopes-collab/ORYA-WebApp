@@ -117,8 +117,8 @@ export const PublicEventCardSchema = z.object({
   title: z.string(),
   description: z.string().nullable().optional(),
   shortDescription: z.string().nullable().optional(),
-  startsAt: z.string().optional(),
-  endsAt: z.string().optional(),
+  startsAt: z.string(),
+  endsAt: z.string(),
   coverImageUrl: z.string().nullable().optional(),
   isGratis: z.boolean().optional(),
   priceFrom: z.number().nullable().optional(),
@@ -130,6 +130,19 @@ export const PublicEventCardSchema = z.object({
   location: PublicEventLocationSchema.optional(),
   ticketTypes: z.array(PublicEventTicketTypeSchema).optional(),
   templateType: z.string().nullable().optional(),
+  interestTags: z.array(z.string()).optional(),
+  rank: z
+    .object({
+      score: z.number(),
+      reasons: z.array(
+        z.object({
+          code: z.string(),
+          label: z.string().nullable().optional(),
+          weight: z.number().nullable().optional(),
+        }),
+      ),
+    })
+    .optional(),
   accessPolicy: PublicEventAccessPolicySchema.optional(),
   tournament: PublicTournamentMetaSchema.nullable().optional(),
   padel: PublicPadelMetaSchema.nullable().optional(),

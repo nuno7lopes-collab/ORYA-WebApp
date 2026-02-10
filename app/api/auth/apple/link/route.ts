@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -28,7 +28,10 @@ async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
-    return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    return jsonWrap(
+      { ok: false, errorCode: "UNAUTHENTICATED", message: "Sessao invalida." },
+      { status: 401 }
+    );
   }
 
   const body = (await req.json().catch(() => null)) as AppleLinkBody | null;
@@ -47,14 +50,28 @@ async function _POST(req: NextRequest) {
       ? extractAppleIdentityFromSupabaseUser(adminUser.data.user)
       : null;
     if (!appleIdentity) {
-      return jsonWrap({ ok: false, error: "APPLE_IDENTITY_MISSING" }, { status: 400 });
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: "APPLE_IDENTITY_MISSING",
+          message: "Identidade Apple nao encontrada.",
+        },
+        { status: 400 }
+      );
     }
     providerUserId = appleIdentity.providerUserId;
     email = appleIdentity.email;
   }
 
   if (!providerUserId) {
-    return jsonWrap({ ok: false, error: "APPLE_IDENTITY_INVALID" }, { status: 400 });
+    return jsonWrap(
+      {
+        ok: false,
+        errorCode: "APPLE_IDENTITY_INVALID",
+        message: "Identidade Apple invalida.",
+      },
+      { status: 400 }
+    );
   }
 
   const orgId = await getActiveOrganizationIdForUser(data.user.id);
@@ -70,10 +87,20 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: true, identityId: identity.id });
   } catch (err) {
     if (err instanceof Error && err.message === "APPLE_IDENTITY_ALREADY_LINKED") {
-      return jsonWrap({ ok: false, error: "ALREADY_LINKED" }, { status: 409 });
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: "ALREADY_LINKED",
+          message: "Identidade Apple ja associada a outra conta.",
+        },
+        { status: 409 }
+      );
     }
     console.error("[auth/apple/link] error:", err);
-    return jsonWrap({ ok: false, error: "SERVER_ERROR" }, { status: 500 });
+    return jsonWrap(
+      { ok: false, errorCode: "SERVER_ERROR", message: "Erro inesperado no servidor." },
+      { status: 500 }
+    );
   }
 }
 export const POST = withApiEnvelope(_POST);

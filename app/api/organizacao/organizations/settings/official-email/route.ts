@@ -14,6 +14,7 @@ import {
 } from "@/lib/organizationOfficialEmailUtils";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24; // 24h
 const STATUS_PENDING = "PENDING";
@@ -29,7 +30,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -171,3 +172,4 @@ export async function POST(req: NextRequest) {
     return fail(500, "INTERNAL_ERROR");
   }
 }
+export const POST = withApiEnvelope(_POST);

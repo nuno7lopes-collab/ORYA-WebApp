@@ -12,9 +12,10 @@ import {
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
+import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import { useRouter } from "expo-router";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
@@ -22,6 +23,7 @@ import { SettingsSection } from "../../components/settings/SettingsSection";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
 import { SettingsButton } from "../../components/settings/SettingsButton";
 import { SettingsModal } from "../../components/settings/SettingsModal";
+import { SettingsRow } from "../../components/settings/SettingsRow";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
 import { useMemo, useEffect, useState, useCallback } from "react";
@@ -36,12 +38,16 @@ import { INTEREST_OPTIONS, InterestId } from "../../features/onboarding/types";
 import { Image } from "expo-image";
 import { api } from "../../lib/api";
 import { getPushPermissionStatus, registerForPushToken, requestPushPermission } from "../../lib/push";
+import { useI18n, type Locale } from "../../lib/i18n";
 
 export default function SettingsScreen() {
+  const { t } = useTranslation();
+  const { locale, setLocale } = useI18n();
   const router = useRouter();
   const navigation = useNavigation();
   const topPadding = useTopHeaderPadding(24);
   const bottomPadding = useTabBarPadding();
+  const topBar = useTopBarScroll({ hideOnScroll: false });
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
@@ -52,6 +58,33 @@ export default function SettingsScreen() {
   const privacyUrl = `${baseUrl}/privacidade`;
   const manifest = (Constants as any)?.manifest as { version?: string } | undefined;
   const version = Constants.expoConfig?.version ?? manifest?.version ?? "1.0.0";
+  const deletePhrase = t("settings.session.deletePhrase");
+  const deletePhraseUpper = deletePhrase.toUpperCase();
+  const languageOptions: { value: Locale; label: string }[] = [
+    { value: "pt-PT", label: t("settings.language.pt-PT") },
+    { value: "en-US", label: t("settings.language.en-US") },
+    { value: "es-ES", label: t("settings.language.es-ES") },
+  ];
+  const backButton = (
+    <Pressable
+      onPress={() => safeBack(router, navigation, "/(tabs)/profile")}
+      accessibilityRole="button"
+      accessibilityLabel={t("common.actions.back")}
+      style={({ pressed }) => [
+        {
+          width: tokens.layout.touchTarget,
+          height: tokens.layout.touchTarget,
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: tokens.layout.touchTarget,
+        },
+        pressed ? { opacity: 0.8 } : null,
+      ]}
+      hitSlop={10}
+    >
+      <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+    </Pressable>
+  );
 
   const profileQuery = useProfileSummary(true, accessToken, userId);
   const profile = profileQuery.data ?? null;
@@ -206,7 +239,7 @@ export default function SettingsScreen() {
   const handleEmailSave = async () => {
     const normalized = email.trim().toLowerCase();
     if (!normalized || !normalized.includes("@")) {
-      setEmailMessage("Indica um email válido.");
+      setEmailMessage(t("settings.messages.invalidEmail"));
       return;
     }
     setEmailSaving(true);
@@ -214,10 +247,10 @@ export default function SettingsScreen() {
     try {
       const nextEmail = await updateEmail(normalized, accessToken);
       setEmail(nextEmail);
-      setEmailMessage("Email atualizado. Pode ser necessária confirmação.");
+      setEmailMessage(t("settings.messages.emailUpdated"));
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
     } catch {
-      setEmailMessage("Não foi possível atualizar o email.");
+      setEmailMessage(t("settings.messages.emailUpdateFailed"));
     } finally {
       setEmailSaving(false);
     }
@@ -227,7 +260,7 @@ export default function SettingsScreen() {
     if (resetting) return;
     const normalized = email.trim().toLowerCase();
     if (!normalized || !normalized.includes("@")) {
-      setEmailMessage("Indica um email válido para recuperar a password.");
+      setEmailMessage(t("settings.messages.resetInvalidEmail"));
       return;
     }
     setResetting(true);
@@ -236,9 +269,9 @@ export default function SettingsScreen() {
       await supabase.auth.resetPasswordForEmail(normalized, {
         redirectTo: Linking.createURL("auth/callback"),
       });
-      setEmailMessage("Enviámos um link para recuperar a password.");
+      setEmailMessage(t("settings.messages.resetSent"));
     } catch {
-      setEmailMessage("Não foi possível enviar o link de recuperação.");
+      setEmailMessage(t("settings.messages.resetFailed"));
     } finally {
       setResetting(false);
     }
@@ -251,7 +284,7 @@ export default function SettingsScreen() {
       await updateSettings({ visibility }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
     } catch {
-      Alert.alert("Erro", "Não foi possível guardar a privacidade.");
+      Alert.alert(t("common.labels.error"), t("settings.messages.privacySaveFailed"));
     } finally {
       setSavingVisibility(false);
     }
@@ -264,7 +297,7 @@ export default function SettingsScreen() {
       await updateSettings({ favouriteCategories: interests }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
     } catch {
-      Alert.alert("Erro", "Não foi possível guardar os interesses.");
+      Alert.alert(t("common.labels.error"), t("settings.messages.interestsSaveFailed"));
     } finally {
       setSavingInterests(false);
     }
@@ -282,7 +315,7 @@ export default function SettingsScreen() {
       });
       prefsQuery.refetch();
     } catch {
-      Alert.alert("Erro", "Não foi possível guardar as notificações.");
+      Alert.alert(t("common.labels.error"), t("settings.messages.notificationsSaveFailed"));
     } finally {
       setSavingNotifications(false);
     }
@@ -316,7 +349,7 @@ export default function SettingsScreen() {
       await updateConsent(organizationId, type, granted, accessToken);
     } catch {
       setConsents(previous);
-      setConsentError("Não foi possível guardar o consentimento.");
+      setConsentError(t("settings.messages.consentSaveFailed"));
     } finally {
       setConsentSaving((prev) => ({ ...prev, [key]: false }));
     }
@@ -327,19 +360,19 @@ export default function SettingsScreen() {
       await supabase.auth.signOut();
       router.replace({ pathname: "/auth", params: { next: "/settings" } });
     } catch {
-      Alert.alert("Erro", "Não foi possível terminar sessão.");
+      Alert.alert(t("common.labels.error"), t("settings.messages.logoutFailed"));
     }
   };
 
   const handleDeleteAccount = async () => {
-    if (deleteConfirm.trim().toUpperCase() !== "APAGAR CONTA") return;
+    if (deleteConfirm.trim().toUpperCase() !== deletePhraseUpper) return;
     setDeleting(true);
     try {
       await api.requestWithAccessToken("/api/me/settings/delete", accessToken, { method: "POST" });
       await supabase.auth.signOut();
       router.replace({ pathname: "/auth", params: { next: "/settings" } });
     } catch {
-      Alert.alert("Erro", "Não foi possível marcar a conta para eliminação.");
+      Alert.alert(t("common.labels.error"), t("settings.messages.deleteFailed"));
     } finally {
       setDeleting(false);
     }
@@ -347,68 +380,67 @@ export default function SettingsScreen() {
 
   return (
     <LiquidBackground>
-      <TopAppHeader />
+      <TopAppHeader scrollState={topBar} variant="title" title={t("settings.title")} leftSlot={backButton} />
       <ScrollView
         contentContainerStyle={[
           styles.container,
           { paddingTop: topPadding, paddingBottom: bottomPadding + 24 },
         ]}
+        onScroll={topBar.onScroll}
+        onScrollEndDrag={topBar.onScrollEndDrag}
+        onMomentumScrollEnd={topBar.onMomentumScrollEnd}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable
-          onPress={() => safeBack(router, navigation, "/(tabs)/profile")}
-          accessibilityRole="button"
-          accessibilityLabel="Voltar"
-          style={styles.backButton}
-          hitSlop={10}
+        <SettingsSection
+          title={t("settings.sections.account.title")}
+          subtitle={t("settings.sections.account.subtitle")}
         >
-          <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-          <Text style={styles.backText}>Voltar</Text>
-        </Pressable>
-
-        <SettingsSection title="Conta" subtitle="Email e recuperação.">
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Email</Text>
+            <Text style={styles.fieldLabel}>{t("settings.fields.email")}</Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="email@exemplo.pt"
+              placeholder={t("settings.fields.emailPlaceholder")}
               placeholderTextColor="rgba(255,255,255,0.4)"
               keyboardType="email-address"
               autoCapitalize="none"
               style={styles.input}
-              accessibilityLabel="Email"
+              accessibilityLabel={t("settings.fields.email")}
             />
           </View>
           {emailMessage ? <Text style={styles.helperText}>{emailMessage}</Text> : null}
           <View style={styles.rowButtons}>
             <SettingsButton
-              label="Atualizar email"
+              label={t("settings.account.updateEmail")}
               onPress={handleEmailSave}
               disabled={!emailDirty || emailSaving}
               loading={emailSaving}
-              loadingLabel="A atualizar..."
+              loadingLabel={t("settings.account.updating")}
               variant="primary"
               style={{ flex: 1 }}
             />
             <SettingsButton
-              label={resetting ? "A enviar..." : "Recuperar password"}
+              label={resetting ? t("settings.account.sending") : t("settings.account.resetPassword")}
               onPress={handlePasswordReset}
               disabled={resetting}
               loading={resetting}
-              loadingLabel="A enviar..."
+              loadingLabel={t("settings.account.sending")}
               variant="secondary"
               style={{ flex: 1 }}
             />
           </View>
         </SettingsSection>
 
-        <SettingsSection title="Privacidade" subtitle="Controla quem pode ver o teu perfil.">
+        <SettingsSection
+          title={t("settings.sections.privacy.title")}
+          subtitle={t("settings.sections.privacy.subtitle")}
+        >
           <View style={styles.optionRow}>
             {([
-              { key: "PUBLIC", label: "Perfil público" },
-              { key: "FOLLOWERS", label: "Só seguidores" },
-              { key: "PRIVATE", label: "Privado" },
+              { key: "PUBLIC", label: t("settings.privacy.public") },
+              { key: "FOLLOWERS", label: t("settings.privacy.followers") },
+              { key: "PRIVATE", label: t("settings.privacy.private") },
             ] as { key: Visibility; label: string }[]).map((option) => {
               const active = visibility === option.key;
               return (
@@ -432,7 +464,7 @@ export default function SettingsScreen() {
             })}
           </View>
           <SettingsButton
-            label="Guardar privacidade"
+            label={t("settings.privacy.save")}
             onPress={handleSaveVisibility}
             disabled={!visibilityDirty || savingVisibility}
             loading={savingVisibility}
@@ -441,16 +473,20 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Interesses" subtitle="Escolhe até 6 interesses.">
+        <SettingsSection
+          title={t("settings.sections.interests.title")}
+          subtitle={t("settings.sections.interests.subtitle")}
+        >
           <View style={styles.interestGrid}>
             {INTEREST_OPTIONS.map((interest) => {
               const active = interests.includes(interest.id);
+              const interestLabel = t(`common.interests.${interest.id}`);
               return (
                 <Pressable
                   key={interest.id}
                   onPress={() => toggleInterest(interest.id)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Interesse ${interest.label}`}
+                  accessibilityLabel={`${t("common.labels.interests")} ${interestLabel}`}
                   accessibilityState={{ selected: active }}
                   style={[
                     styles.interestChip,
@@ -458,15 +494,17 @@ export default function SettingsScreen() {
                   ]}
                 >
                   <Text style={[styles.interestLabel, active ? styles.interestLabelActive : null]}>
-                    {interest.label}
+                    {interestLabel}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
-          <Text style={styles.helperText}>{interests.length}/6 selecionados</Text>
+          <Text style={styles.helperText}>
+            {t("settings.interests.selectedCount", { count: interests.length })}
+          </Text>
           <SettingsButton
-            label="Guardar interesses"
+            label={t("settings.interests.save")}
             onPress={handleSaveInterests}
             disabled={!interestsDirty || savingInterests}
             loading={savingInterests}
@@ -475,16 +513,19 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Notificações" subtitle="Emails e alertas essenciais.">
+        <SettingsSection
+          title={t("settings.sections.notifications.title")}
+          subtitle={t("settings.sections.notifications.subtitle")}
+        >
           {prefsQuery.isLoading ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color="rgba(255,255,255,0.7)" />
-              <Text style={styles.helperText}>A carregar notificações...</Text>
+              <Text style={styles.helperText}>{t("settings.notifications.loading")}</Text>
             </View>
           ) : (
             <View style={styles.stack}>
               <SettingsToggle
-                label="Alertas sociais"
+                label={t("settings.notifications.social")}
                 value={notificationPrefs.allowSocialNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -495,7 +536,7 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label="Eventos e lembretes"
+                label={t("settings.notifications.events")}
                 value={notificationPrefs.allowEventNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -506,7 +547,7 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label="Alertas do sistema"
+                label={t("settings.notifications.system")}
                 value={notificationPrefs.allowSystemNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -517,7 +558,7 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label="Marketing e campanhas"
+                label={t("settings.notifications.marketing")}
                 value={notificationPrefs.allowMarketingNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -528,14 +569,14 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label="Vendas e pagamentos"
+                label={t("settings.notifications.sales")}
                 value={notificationPrefs.allowSalesAlerts}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({ ...prev, allowSalesAlerts: next }))
                 }
               />
               <SettingsToggle
-                label="Email de novidades e segurança"
+                label={t("settings.notifications.news")}
                 value={notificationPrefs.allowEmailNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({ ...prev, allowEmailNotifications: next }))
@@ -545,20 +586,26 @@ export default function SettingsScreen() {
           )}
           <View style={styles.pushRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.pushTitle}>Notificações push</Text>
-              <Text style={styles.helperText}>Alertas em tempo real no teu iPhone.</Text>
+              <Text style={styles.pushTitle}>{t("settings.notifications.pushTitle")}</Text>
+              <Text style={styles.helperText}>{t("settings.notifications.pushSubtitle")}</Text>
             </View>
             {pushStatus === "granted" ? (
               <View style={styles.pushBadge}>
-                <Text style={styles.pushBadgeText}>Ativas</Text>
+                <Text style={styles.pushBadgeText}>{t("settings.notifications.pushActive")}</Text>
               </View>
             ) : pushStatus === "unavailable" ? (
               <View style={styles.pushBadgeMuted}>
-                <Text style={styles.pushBadgeTextMuted}>Indisponível</Text>
+                <Text style={styles.pushBadgeTextMuted}>
+                  {t("settings.notifications.pushUnavailable")}
+                </Text>
               </View>
             ) : (
               <SettingsButton
-                label={pushStatus === "denied" ? "Abrir definições" : "Ativar push"}
+                label={
+                  pushStatus === "denied"
+                    ? t("settings.notifications.pushOpenSettings")
+                    : t("settings.notifications.pushEnable")
+                }
                 onPress={handlePushPermission}
                 loading={pushBusy}
                 variant="secondary"
@@ -567,7 +614,7 @@ export default function SettingsScreen() {
             )}
           </View>
           <SettingsButton
-            label="Guardar notificações"
+            label={t("settings.notifications.save")}
             onPress={handleSaveNotifications}
             disabled={!notificationsDirty || savingNotifications}
             loading={savingNotifications}
@@ -577,17 +624,41 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title="Consentimentos por organização"
-          subtitle="Controla como cada organização comunica contigo."
+          title={t("settings.sections.language.title")}
+          subtitle={t("settings.sections.language.subtitle")}
+        >
+          <View style={styles.stack}>
+            {languageOptions.map((option) => {
+              const active = locale === option.value;
+              return (
+                <SettingsRow
+                  key={option.value}
+                  label={option.label}
+                  onPress={() => setLocale(option.value)}
+                  disabled={active}
+                  trailing={
+                    active ? (
+                      <Ionicons name="checkmark" size={18} color="rgba(255,255,255,0.9)" />
+                    ) : null
+                  }
+                />
+              );
+            })}
+          </View>
+        </SettingsSection>
+
+        <SettingsSection
+          title={t("settings.consents.title")}
+          subtitle={t("settings.consents.subtitle")}
         >
           {consentError ? <Text style={styles.errorText}>{consentError}</Text> : null}
           {consentsQuery.isLoading ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color="rgba(255,255,255,0.7)" />
-              <Text style={styles.helperText}>A carregar consentimentos...</Text>
+              <Text style={styles.helperText}>{t("settings.consents.loading")}</Text>
             </View>
           ) : consents.length === 0 ? (
-            <Text style={styles.helperText}>Sem organizações associadas.</Text>
+            <Text style={styles.helperText}>{t("settings.consents.empty")}</Text>
           ) : (
             <View style={styles.stack}>
               {consents.map((item) => {
@@ -595,7 +666,7 @@ export default function SettingsScreen() {
                   item.organization.publicName ||
                   item.organization.businessName ||
                   item.organization.username ||
-                  "Organização";
+                  t("settings.consents.orgFallback");
                 const orgUsername = item.organization.username ?? null;
                 return (
                   <View key={item.organization.id} style={styles.consentCard}>
@@ -608,7 +679,7 @@ export default function SettingsScreen() {
                       disabled={!orgUsername}
                       style={styles.consentHeader}
                       accessibilityRole="button"
-                      accessibilityLabel={`Abrir organização ${orgName}`}
+                      accessibilityLabel={t("settings.consents.openOrg", { name: orgName })}
                       accessibilityState={{ disabled: !orgUsername }}
                     >
                       {item.organization.brandingAvatarUrl ? (
@@ -625,10 +696,10 @@ export default function SettingsScreen() {
                         const savingKey = `${item.organization.id}:${type}`;
                         const label =
                           type === "MARKETING"
-                            ? "Marketing"
+                            ? t("settings.consents.marketing")
                             : type === "CONTACT_EMAIL"
-                              ? "Contacto por email"
-                              : "Contacto por SMS";
+                              ? t("settings.consents.contactEmail")
+                              : t("settings.consents.contactSms");
                         return (
                           <SettingsToggle
                             key={type}
@@ -649,35 +720,51 @@ export default function SettingsScreen() {
           )}
         </SettingsSection>
 
-        <SettingsSection title="Sessão e conta" subtitle="Termina sessão ou elimina a conta.">
+        <SettingsSection
+          title={t("settings.sections.session.title")}
+          subtitle={t("settings.sections.session.subtitle")}
+        >
           <View style={styles.rowButtons}>
-            <SettingsButton label="Terminar sessão" onPress={handleLogout} variant="secondary" style={{ flex: 1 }} />
-            <SettingsButton label="Apagar conta" onPress={() => setDeleteModalOpen(true)} variant="danger" style={{ flex: 1 }} />
+            <SettingsButton
+              label={t("settings.session.signOut")}
+              onPress={handleLogout}
+              variant="secondary"
+              style={{ flex: 1 }}
+            />
+            <SettingsButton
+              label={t("settings.session.delete")}
+              onPress={() => setDeleteModalOpen(true)}
+              variant="danger"
+              style={{ flex: 1 }}
+            />
           </View>
         </SettingsSection>
 
-        <SettingsSection title="Legal e app" subtitle="Informação legal e versão.">
+        <SettingsSection
+          title={t("settings.sections.legal.title")}
+          subtitle={t("settings.sections.legal.subtitle")}
+        >
           <View style={styles.stack}>
             <Pressable
               style={styles.linkRow}
               onPress={() => Linking.openURL(termsUrl)}
               accessibilityRole="link"
-              accessibilityLabel="Abrir termos"
+              accessibilityLabel={t("settings.legal.openTerms")}
             >
-              <Text style={styles.linkLabel}>Termos</Text>
+              <Text style={styles.linkLabel}>{t("settings.legal.terms")}</Text>
               <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
             </Pressable>
             <Pressable
               style={styles.linkRow}
               onPress={() => Linking.openURL(privacyUrl)}
               accessibilityRole="link"
-              accessibilityLabel="Abrir política de privacidade"
+              accessibilityLabel={t("settings.legal.openPrivacy")}
             >
-              <Text style={styles.linkLabel}>Política de Privacidade</Text>
+              <Text style={styles.linkLabel}>{t("settings.legal.privacy")}</Text>
               <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
             </Pressable>
             <View style={styles.versionRow}>
-              <Text style={styles.helperText}>Versão {version}</Text>
+              <Text style={styles.helperText}>{t("settings.legal.version", { version })}</Text>
             </View>
           </View>
         </SettingsSection>
@@ -685,20 +772,20 @@ export default function SettingsScreen() {
 
       <SettingsModal
         visible={deleteModalOpen}
-        title="Apagar conta ORYA"
-        subtitle="A conta será desativada já. Tens 30 dias para reativar via login ou email. Escreve APAGAR CONTA para confirmar."
-        confirmLabel="Confirmar eliminação"
-        cancelLabel="Cancelar"
+        title={t("settings.session.deleteModalTitle")}
+        subtitle={t("settings.session.deleteModalSubtitle")}
+        confirmLabel={t("settings.session.deleteConfirmLabel")}
+        cancelLabel={t("common.actions.cancel")}
         onCancel={() => {
           setDeleteModalOpen(false);
           setDeleteConfirm("");
         }}
         onConfirm={handleDeleteAccount}
-        confirmInputLabel="Confirmação"
+        confirmInputLabel={t("settings.session.deleteInputLabel")}
         confirmInputValue={deleteConfirm}
         onConfirmInputChange={setDeleteConfirm}
-        confirmPlaceholder="APAGAR CONTA"
-        confirmDisabled={deleteConfirm.trim().toUpperCase() !== "APAGAR CONTA"}
+        confirmPlaceholder={deletePhraseUpper}
+        confirmDisabled={deleteConfirm.trim().toUpperCase() !== deletePhraseUpper}
         confirmLoading={deleting}
       />
     </LiquidBackground>

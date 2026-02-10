@@ -10,9 +10,11 @@ export default defineConfig({
     globals: true,
   },
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "."),
-      "server-only": path.resolve(__dirname, "tests/server-only.ts"),
-    },
+    alias: [
+      { find: /^@\/(.*)$/, replacement: path.resolve(__dirname, "$1") },
+      { find: /^@orya\/shared$/, replacement: path.resolve(__dirname, "packages/shared/src/index.ts") },
+      { find: /^@orya\/shared\/(.*)$/, replacement: path.resolve(__dirname, "packages/shared/src/$1") },
+      { find: "server-only", replacement: path.resolve(__dirname, "tests/server-only.ts") },
+    ],
   },
 });

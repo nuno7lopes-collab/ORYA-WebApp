@@ -6,6 +6,7 @@ import { logError } from "@/lib/observability/logger";
 import { BudgetsClient, DescribeBudgetsCommand } from "@aws-sdk/client-budgets";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { getAwsConfig } from "@/lib/awsSdk";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ async function fetchBudgetSummary() {
   } satisfies CostPayload;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -82,3 +83,4 @@ export async function GET(req: NextRequest) {
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -38,21 +38,21 @@ export default function MobileTopBar({
         <div className="flex items-center justify-between">
           <Link href={logoHref} className="flex items-center gap-2" aria-label="Ir para Início">
             <Image
-              src="/brand/orya-logo-flat.png"
+              src="/brand/logo_icon.png"
               alt="ORYA"
-              width={74}
-              height={41}
+              width={28}
+              height={28}
               priority
-              className="h-6 w-auto object-contain drop-shadow-[0_0_10px_rgba(107,255,255,0.2)]"
+              className="h-7 w-7 object-contain"
             />
-            <span className="text-[12px] font-semibold tracking-[0.32em] text-white/85">ORYA</span>
+            <span className="text-[12px] font-semibold tracking-[0.28em] text-white/85">ORYA</span>
           </Link>
           <div className="flex items-center gap-2">
             {showSearch && (
               <button
                 type="button"
                 onClick={handleOpenSearch}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/85 hover:bg-white/15 transition"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/75 hover:border-white/30 hover:bg-white/10 transition"
                 aria-label="Procurar"
               >
                 <SearchIcon className="h-4 w-4" />
@@ -61,12 +61,12 @@ export default function MobileTopBar({
             {showNotifications && (
               <Link
                 href={notificationsHref}
-                className="relative flex h-9 w-9 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10 transition"
                 aria-label="Alertas"
               >
-                <BellIcon className="h-4 w-4 text-amber-100" />
+                <BellIcon className="h-4 w-4 text-white/70" />
                 {unreadCount > 0 && (
-                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#ff5bd6] shadow-[0_0_10px_rgba(255,91,214,0.7)]" />
+                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]" />
                 )}
               </Link>
             )}

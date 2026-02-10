@@ -3,8 +3,9 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest, _params: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, _params: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -30,3 +31,4 @@ export async function GET(req: NextRequest, _params: { params: Promise<{ id: str
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

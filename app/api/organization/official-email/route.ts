@@ -4,6 +4,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { validateOfficialEmail } from "@/lib/organizationOfficialEmail";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function fail(
   ctx: ReturnType<typeof getRequestContext>,
@@ -15,7 +16,7 @@ function fail(
   return respondError(ctx, { errorCode, message, retryable }, { status });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const body = (await req.json().catch(() => null)) as { email?: string | null } | null;
@@ -29,3 +30,4 @@ export async function POST(req: NextRequest) {
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
+export const POST = withApiEnvelope(_POST);

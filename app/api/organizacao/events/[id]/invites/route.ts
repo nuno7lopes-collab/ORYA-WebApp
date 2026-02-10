@@ -12,6 +12,7 @@ import { NotificationType, OrganizationModule } from "@prisma/client";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { createNotification, shouldNotify } from "@/lib/notifications";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -139,7 +140,7 @@ async function fail(
   );
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -200,7 +201,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -361,7 +362,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -429,3 +430,6 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const DELETE = withApiEnvelope(_DELETE);

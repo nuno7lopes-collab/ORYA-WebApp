@@ -103,9 +103,6 @@ const snapshot = {
     policyType: "MODERATE",
     cancellationWindowMinutes: 120,
     guestBookingAllowed: false,
-    allowPayAtVenue: false,
-    depositRequired: false,
-    depositAmountCents: 0,
     noShowFeeCents: 2_000,
   },
   pricingSnapshot: {
@@ -117,11 +114,11 @@ const snapshot = {
     feeMode: "INCLUDED",
     platformFeeBps: 800,
     platformFeeFixedCents: 30,
-    stripeFeeBps: 140,
-    stripeFeeFixedCents: 25,
-    stripeFeeEstimateCents: 165,
+    stripeFeeBps: 0,
+    stripeFeeFixedCents: 0,
+    stripeFeeEstimateCents: 0,
     cardPlatformFeeCents: 0,
-    combinedFeeEstimateCents: 165,
+    combinedFeeEstimateCents: 0,
   },
 };
 

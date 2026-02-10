@@ -6,6 +6,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { deleteHardBlocksByEvent } from "@/domain/hardBlocks/commands";
 import { deleteMatchSlotsByEvent } from "@/domain/padel/matchSlots/commands";
@@ -220,6 +221,17 @@ async function _POST(req: Request) {
       await tx.eventInvite.deleteMany({ where: { eventId } });
       await tx.padelPairing.deleteMany({ where: { eventId } });
       await tx.event.delete({ where: { id: eventId } });
+    });
+
+    await auditAdminAction({
+      action: "EVENT_PURGE",
+      actorUserId: admin.userId,
+      payload: {
+        eventId,
+        title: event.title,
+        slug: event.slug,
+        organizationId,
+      },
     });
 
     return jsonWrap({ ok: true, eventId, title: event.title, slug: event.slug }, { status: 200 });

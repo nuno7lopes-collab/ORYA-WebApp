@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { EventStatus } from "@prisma/client";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 export async function listPublicEvents(params: {
   organizationId: number;
@@ -12,7 +12,7 @@ export async function listPublicEvents(params: {
   return prisma.event.findMany({
     where: {
       organizationId,
-      status: EventStatus.PUBLISHED,
+      status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
       isDeleted: false,
       startsAt: from ? { gte: from } : undefined,
       endsAt: to ? { lte: to } : undefined,

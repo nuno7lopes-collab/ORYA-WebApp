@@ -31,6 +31,11 @@ export type CheckoutDraft = {
   bookingStartsAt?: string | null;
   pendingExpiresAt?: string | null;
   bookingExpiresAt?: string | null;
+  guest?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
   sourceType?: string;
   paymentScenario?: string | null;
   pairingId?: number | null;

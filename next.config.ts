@@ -148,6 +148,8 @@ const nextConfig: NextConfig = {
     ];
   },
   webpack(config) {
+    const sharedIndex = path.join(process.cwd(), "packages/shared/src/index.ts");
+    const sharedRoot = path.join(process.cwd(), "packages/shared/src");
     const resolvedPath = path.join(
       process.cwd(),
       "node_modules/@reduxjs/toolkit/dist/redux-toolkit.legacy-esm.js",
@@ -155,6 +157,8 @@ const nextConfig: NextConfig = {
     config.resolve = config.resolve ?? {};
     config.resolve.alias = {
       ...(config.resolve.alias ?? {}),
+      "@orya/shared": sharedIndex,
+      "@orya/shared/": `${sharedRoot}/`,
       "@reduxjs/toolkit": resolvedPath,
     };
     return config;

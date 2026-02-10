@@ -101,7 +101,7 @@ export default function Index() {
 
   if (loading || gateStatus === "loading") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b101a" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b1014" }}>
         <ActivityIndicator />
       </View>
     );
@@ -119,7 +119,7 @@ export default function Index() {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
-          backgroundColor: "#0b101a",
+          backgroundColor: "#0b1014",
         }}
       >
         <Text style={{ color: "white", fontSize: 16, fontWeight: "600", textAlign: "center" }}>
@@ -149,5 +149,5 @@ export default function Index() {
     );
   }
 
-  return gateStatus === "ready" ? <Redirect href="/(tabs)" /> : <Redirect href="/onboarding" />;
+  return gateStatus === "ready" ? <Redirect href="/agora" /> : <Redirect href="/onboarding" />;
 }

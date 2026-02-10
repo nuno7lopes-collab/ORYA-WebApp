@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getUserFollowingSet } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 export const runtime = "nodejs";
 
@@ -25,49 +26,196 @@ async function _GET(req: NextRequest) {
 
   const followingSet = await getUserFollowingSet(user.id);
   const followingIds = Array.from(followingSet).filter(Boolean);
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const activeEventStatuses = PUBLIC_EVENT_DISCOVER_STATUSES;
 
-  const baseWhere = {
+  const publicWhere = {
     isDeleted: false,
     visibility: "PUBLIC" as const,
     username: { not: null },
     NOT: { username: "" },
-    id: { not: user.id, notIn: followingIds.length > 0 ? followingIds : undefined },
   };
 
-  const primary = await prisma.profile.findMany({
+  const ticketEvents = await prisma.ticket.findMany({
     where: {
-      ...baseWhere,
+      userId: user.id,
+      status: "ACTIVE",
+      event: {
+        status: { in: activeEventStatuses },
+        isDeleted: false,
+        startsAt: { gte: now, lte: windowEnd },
+      },
     },
     select: {
-      id: true,
-      username: true,
-      fullName: true,
-      avatarUrl: true,
+      eventId: true,
+      event: { select: { id: true, title: true, slug: true, startsAt: true } },
     },
-    orderBy: { updatedAt: "desc" },
-    take: limit,
+    distinct: ["eventId"],
   });
 
-  const remaining = limit - primary.length;
-  const fallback =
-    remaining > 0
-      ? await prisma.profile.findMany({
-          where: {
-            ...baseWhere,
-            id: { notIn: [user.id, ...primary.map((p) => p.id), ...followingIds] },
-          },
-          select: {
-            id: true,
-            username: true,
-            fullName: true,
-            avatarUrl: true,
-          },
-          orderBy: { updatedAt: "desc" },
-          take: remaining,
-        })
-      : [];
+  const favoriteEvents = await prisma.eventFavorite.findMany({
+    where: {
+      userId: user.id,
+      event: {
+        status: { in: activeEventStatuses },
+        isDeleted: false,
+        startsAt: { gte: now, lte: windowEnd },
+      },
+    },
+    select: {
+      eventId: true,
+      event: { select: { id: true, title: true, slug: true, startsAt: true } },
+    },
+  });
 
-  const combined = [...primary, ...fallback];
+  const eventMeta = new Map<number, { id: number; title: string; slug: string; startsAt: Date }>();
+  ticketEvents.forEach((row) => {
+    if (row.event) eventMeta.set(row.event.id, row.event);
+  });
+  favoriteEvents.forEach((row) => {
+    if (row.event) eventMeta.set(row.event.id, row.event);
+  });
+
+  const reasonMap = new Map<
+    string,
+    { type: "SAME_EVENT_TICKET" | "SAME_EVENT_FAVORITE"; event: { id: number; title: string; slug: string; startsAt: Date } }
+  >();
+
+  const ticketEventIds = ticketEvents.map((row) => row.eventId);
+  if (ticketEventIds.length > 0) {
+    const ticketRows = await prisma.ticket.findMany({
+      where: {
+        eventId: { in: ticketEventIds },
+        status: "ACTIVE",
+        userId: { not: null },
+      },
+      select: { userId: true, eventId: true },
+    });
+
+    ticketRows.forEach((row) => {
+      const otherId = row.userId;
+      if (!otherId || otherId === user.id) return;
+      if (followingSet.has(otherId)) return;
+      if (reasonMap.has(otherId)) return;
+      const event = eventMeta.get(row.eventId);
+      if (!event) return;
+      reasonMap.set(otherId, { type: "SAME_EVENT_TICKET", event });
+    });
+  }
+
+  const favoriteEventIds = favoriteEvents.map((row) => row.eventId);
+  if (favoriteEventIds.length > 0) {
+    const favoriteRows = await prisma.eventFavorite.findMany({
+      where: {
+        eventId: { in: favoriteEventIds },
+        userId: { not: user.id },
+      },
+      select: { userId: true, eventId: true },
+    });
+
+    favoriteRows.forEach((row) => {
+      const otherId = row.userId;
+      if (!otherId || otherId === user.id) return;
+      if (followingSet.has(otherId)) return;
+      if (reasonMap.has(otherId)) return;
+      const event = eventMeta.get(row.eventId);
+      if (!event) return;
+      reasonMap.set(otherId, { type: "SAME_EVENT_FAVORITE", event });
+    });
+  }
+
+  const reasonUserIds = Array.from(reasonMap.keys());
+  const reasonProfiles = reasonUserIds.length
+    ? await prisma.profile.findMany({
+        where: {
+          ...publicWhere,
+          id: {
+            in: reasonUserIds,
+            notIn: followingIds.length > 0 ? followingIds : undefined,
+            not: user.id,
+          },
+        },
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          avatarUrl: true,
+          updatedAt: true,
+        },
+      })
+    : [];
+
+  const reasonItems = reasonProfiles
+    .map((profile) => ({
+      profile,
+      reason: reasonMap.get(profile.id) ?? null,
+    }))
+    .filter((item) => Boolean(item.reason))
+    .sort((a, b) => {
+      const aRank = a.reason?.type === "SAME_EVENT_TICKET" ? 0 : 1;
+      const bRank = b.reason?.type === "SAME_EVENT_TICKET" ? 0 : 1;
+      if (aRank !== bRank) return aRank - bRank;
+      return b.profile.updatedAt.getTime() - a.profile.updatedAt.getTime();
+    });
+
+  const reasonSuggestions = reasonItems.map((item) => ({
+    id: item.profile.id,
+    username: item.profile.username,
+    fullName: item.profile.fullName,
+    avatarUrl: item.profile.avatarUrl,
+    mutualsCount: 0,
+    isFollowing: false,
+    reason: item.reason
+      ? {
+          type: item.reason.type,
+          event: {
+            id: item.reason.event.id,
+            title: item.reason.event.title,
+            slug: item.reason.event.slug,
+            startsAt: item.reason.event.startsAt.toISOString(),
+          },
+        }
+      : null,
+  }));
+
+  const reasonIds = reasonSuggestions.map((item) => item.id);
+  const excludedIds = [user.id, ...followingIds, ...reasonIds].filter(Boolean);
+
+  const baseWhere = {
+    ...publicWhere,
+    id: { notIn: excludedIds.length > 0 ? excludedIds : undefined },
+  };
+
+  const remaining = Math.max(0, limit - reasonSuggestions.length);
+  const primary = remaining
+    ? await prisma.profile.findMany({
+        where: {
+          ...baseWhere,
+        },
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          avatarUrl: true,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: remaining,
+      })
+    : [];
+
+  const combined = [
+    ...reasonSuggestions,
+    ...primary.map((item) => ({
+      id: item.id,
+      username: item.username,
+      fullName: item.fullName,
+      avatarUrl: item.avatarUrl,
+      mutualsCount: 0,
+      isFollowing: false,
+      reason: null,
+    })),
+  ].slice(0, limit);
   const suggestedIds = combined.map((item) => item.id);
 
   const mutualsMap = new Map<string, number>();
@@ -87,12 +235,8 @@ async function _GET(req: NextRequest) {
   }
 
   const items = combined.map((item) => ({
-    id: item.id,
-    username: item.username,
-    fullName: item.fullName,
-    avatarUrl: item.avatarUrl,
-    mutualsCount: mutualsMap.get(item.id) ?? 0,
-    isFollowing: false,
+    ...item,
+    mutualsCount: mutualsMap.get(item.id) ?? item.mutualsCount ?? 0,
   }));
 
   return jsonWrap({ ok: true, items }, { status: 200 });

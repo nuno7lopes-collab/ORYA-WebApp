@@ -10,6 +10,7 @@ import { LOYALTY_GUARDRAILS } from "@/lib/loyalty/guardrails";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -30,7 +31,7 @@ function fail(
   );
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PUT(req: NextRequest) {
+async function _PUT(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -203,3 +204,5 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const GET = withApiEnvelope(_GET);
+export const PUT = withApiEnvelope(_PUT);

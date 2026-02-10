@@ -36,6 +36,7 @@ import {
   type PadelImportError,
 } from "@/domain/padel/imports";
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -89,7 +90,7 @@ const worksheetToJson = (worksheet: ReturnType<Workbook["addWorksheet"]>) => {
   return rows;
 };
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -678,3 +679,4 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

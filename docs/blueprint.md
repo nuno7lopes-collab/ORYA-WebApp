@@ -8,7 +8,8 @@ ORYA — Blueprint Final v9 (SSOT)
 
 ## Estado de Implementação (NÃO-NORMATIVO)
 
-O estado real de execução (slices + gates) é rastreado no `docs/ssot_registry.md` (secções de validação runtime) e em relatórios sob `reports/`.  
+O estado real de execução (slices + gates) é rastreado no `docs/ssot_registry.md` (secções de validação runtime).  
+Artefactos derivados (exports locais) não são canónicos e não devem ser versionados.
 Este blueprint é normativo/arquitetural; não é fonte de status de execução.
 Fechado = decisões finais; implementação ainda em curso — ver status.
 
@@ -51,6 +52,8 @@ Store/Serviços -- C2/C5 -------------------------------------------->
 
 ## RACI mínimo (NÃO-NORMATIVO, mas EXECUTIVO)
 
+RACI = Responsible, Accountable, Consulted, Informed (quem executa, decide, consulta, informa).
+
 Roles: Eng Lead, Product, Ops, Security, Legal/Compliance
 
 | Área crítica | Responsible | Accountable | Consulted | Informed |
@@ -64,7 +67,7 @@ Roles: Eng Lead, Product, Ops, Security, Legal/Compliance
 ## CHANGELOG (v9.0) — correções finais anti-drift
 - Check‑in: normalizado para `requiresEntitlementForEntry` (ticket = entitlement) e removida ambiguidade em torneios (QR_REGISTRATION).
 - QR offline assinado: fechado como Fase 3 . PassKit na V1.5 mantém validação **online** (lookup por tokenHash).
-- PricingSnapshot/fees: removidas “estimates”; `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
+- PricingSnapshot/fees: **estimates proibidas** (qualquer estimate é legado e não canónico); `processorFeesStatus=PENDING|FINAL` + `processorFeesActual` nullable até reconciliação. Net final deriva sempre do Ledger (append‑only).
 - Ledger append‑only: tipos explícitos `PROCESSOR_FEES_FINAL` e `PROCESSOR_FEES_ADJUSTMENT`; net final = soma de entries por payment.
 - Entitlements: `policyVersionApplied` alinhado e obrigatório para entitlements ligados a eventos.
 - Contratos: Finanças passa a usar `customerIdentityId` (Identity SSOT) e snapshot fields alinhados.
@@ -80,11 +83,6 @@ Roles: Eng Lead, Product, Ops, Security, Legal/Compliance
 - Policy Defaults v1 FECHADO (Apêndice A).
 - Legal: sign‑off/versionamento FECHADO (19.1).
 - Stripe Standard: mitigação operacional clarificada (sem controlo directo de payouts).
-
-
-> **Nota de execução (importante):** neste momento **não há dados sensíveis nem históricos que precisem de ser preservados**. Podemos **apagar os dados atuais** e **recriar tabelas/colunas** conforme o blueprint, sem plano de migração. (Isto simplifica muito as Fases 1–2: o foco é *higienizar* schema e código, não “migrar dados”.)
-
-
 ---
 
 ## System Invariants & Non-Negotiables (NORMATIVE)
@@ -229,7 +227,7 @@ UI consistente e previsível, rápida, acessível, com estados claros e feedback
 	4.	Integração sem monólito confuso
 Fronteiras claras; integração via contratos; zero duplicação de lógica entre owners.
 	5.	Determinismo financeiro
-Ledger único, reconciliável; idempotência obrigatória; relatórios derivados (não inventados).
+Ledger único, reconciliável; idempotência obrigatória; outputs derivados (não inventados).
 	6.	RGPD by design
 Minimização de PII em logs; consentimentos; retenção; portabilidade.
 	7.	Escala sem rebentar orçamento
@@ -262,6 +260,67 @@ Perfil do utilizador:
 	•	mostrar/ocultar: stats padel, jogos recentes, eventos futuros, histórico (por secções)
 	•	ainda com 2 níveis base (público/privado), mas com toggles por secção
 
+2.1.1 Perfil Mobile — UI/UX (FECHADO)
+
+Objetivo
+	•	Definir o padrão único do Perfil na app mobile (iOS/Android) para Utilizador e Organização, com regras técnicas e UX consistentes.
+	•	Garantir comportamento previsível, acessível e alinhado com Social + Perfil Público + Context Switch.
+
+Escopo
+	•	Perfil de Utilizador (view público + view próprio).
+	•	Perfil Público de Organização (view público).
+	•	Não inclui Painel da Organização (/org/*), que é acessível apenas via contexto de organização.
+
+Padrão de layout (comum)
+	•	App Bar: sticky, com back, share e menu (kebab). Em colapso mostra nome + @username.
+	•	Hero: cover opcional + avatar circular; nome, @username e badges.
+	•	Badge “Organização” obrigatório em perfis ORG; badge “Verificada” se aplicável.
+	•	CTA primário abaixo do Hero, sempre visível no topo da área scrollável.
+	•	Stats Row imediata após CTA; tap em cada contador abre lista.
+	•	Navegação por secções com “chips” ou tabs horizontais sticky.
+	•	Conteúdo em blocos; só renderizar blocos com dados elegíveis.
+	•	Padrão de espaçamento 8pt; área mínima de toque 44pt; safe areas respeitadas.
+
+Regras específicas — Utilizador
+	•	Stats: “Seguidores” + “A seguir”. Contadores de eventos são opcionais e só se existirem dados.
+	•	CTA: Follow/Unfollow para outros utilizadores; “Editar Perfil” para o próprio.
+	•	Secções mínimas (se existirem dados): Próximos Eventos, Eventos Passados, Padel (stats + resultados), Conquistas, Interesses.
+	•	Privacidade: o viewer só vê secções públicas; secções privadas aparecem apenas no próprio perfil com etiqueta “Privado”.
+	•	No próprio perfil, acesso rápido a “Definições de Privacidade” e “Gestão de Conta”.
+
+Regras específicas — Organização
+	•	Stats: apenas “Seguidores”. Não existe “A seguir”.
+	•	CTA primário é derivado do módulo ativo, por ordem:
+		–	Eventos/Torneios: “Ver eventos” ou “Comprar bilhetes”.
+		–	Serviços/Reservas: “Reservar”.
+		–	Loja: “Ver loja”.
+		–	Sem módulos: “Contactar”.
+	•	Secções ordenadas: HERO → ABOUT → EVENTS_AGENDA → STORE → SERVICES → FORMS → GALLERY → FAQ → CONTACT.
+	•	OrgPublicProfileLayout (JSON versionado) controla visibilidade/ordem; só editável no painel da organização.
+
+Estados e Empty States
+	•	Loading: skeletons para Hero, Stats e primeiro bloco.
+	•	Empty: mensagens curtas com CTA útil (ex.: “Ainda sem eventos” + “Ver próximos”).
+	•	Error: fallback com retry; nunca mostra dados parciais sem indicação.
+
+Interações e Navegação
+	•	Pull-to-refresh obrigatório.
+	•	Share abre share sheet nativo com deep link do perfil.
+	•	Tap no avatar abre imagem em full-screen se existir.
+	•	Scroll colapsa Hero para App Bar compacta.
+
+Acessibilidade & Performance
+	•	Suporte a Dynamic Type e leitor de ecrã.
+	•	Contraste AA mínimo.
+	•	Imagens com lazy-load e placeholder.
+	•	Paginação em listas longas (seguidores, eventos passados).
+
+Telemetria mínima (EventLog)
+	•	PROFILE_VIEWED (user/org)
+	•	PROFILE_SHARED
+	•	PROFILE_FOLLOWED / PROFILE_UNFOLLOWED
+	•	PROFILE_CTA_CLICKED (com tipo do CTA)
+
 2.2 Social (seguidores)
 
 - Um utilizador pode **seguir** e **deixar de seguir** Utilizadores e Organizações.
@@ -277,7 +336,7 @@ Perfil do utilizador:
 2.3 Organizações
 
 Uma Organization é entidade pública com branding e montra:
-	•	serviços, eventos, torneios, loja, links, reviews (futuro), staff
+	•	serviços, eventos, torneios, loja, links, reviews, staff
 	•	No perfil público, mostrar um **crachá “Organização”** (para distinguir de perfis de utilizador).
 
 Membros:
@@ -364,7 +423,7 @@ Guardrail:
 	•	CRM — customer profiles, consentimentos, timeline, segmentos (fase 2: automações/campanhas)
 	•	Formulários — campos extra/waivers por contexto; exports; assinaturas/aceites
 	•	Promoções — códigos, regras, bundles, limites/anti-abuso, tracking, ROI
-	•	Loja — catálogo, stock, POS/checkout via Finanças, relatórios, inventário centralizado
+	•	Loja — catálogo, stock, POS/checkout via Finanças, dashboards, inventário centralizado
 	•	Chat interno — canais por contexto, alertas do sistema, pesquisa e mentions
 	•	Activity Feed (Ops) — feed de operações (derivado de EventLog) + canal automático no chat
 	•	Perfil público — páginas públicas agregadas (org/jogador), seguidores, stats e share
@@ -374,7 +433,7 @@ Guardrail:
 
 3.2 Ferramentas verticais (Domínio)
 	•	Eventos — criação, tickets/lotes, sessões, páginas públicas base (SEO), exports, recorrência (fase 2)
-	•	Serviços — catálogo de serviços (profissionais/recursos), reservas, políticas, reviews (fase 3)
+	•	Serviços — catálogo de serviços (profissionais/recursos), reservas, políticas, reviews (v1)
 	•	Padel — Clube — hub operacional do clube (KPIs, atalhos, metadados Padel)
 	•	Padel — Torneios — competição (formatos, inscrições, matches, bracket/standings), live ops e widgets
 	•	Digital Goods (fase 2/3) — venda de produtos digitais/cursos via Loja + Entitlements
@@ -386,10 +445,11 @@ Nota de produto: Padel é um vertical inicial forte, mas o blueprint v9 garante 
 
 4) Decisions Locked v9 (não avançar sem isto)
 
-D0) Fora de scope (v1–v3): API pública
-	•	Não vamos expor API pública/SDK/webhooks para terceiros nesta fase.
-	•	Apenas contratos internos versionados (Secção 6) e exports/configurações por organização.
-	•	Integrações externas só via exports e integrações pontuais configuráveis (Fase 2+), sem “public API”.
+D0) Fora de scope (v1–v3): API pública (terceiros)
+	•	Não vamos expor API pública/SDK para terceiros nesta fase.
+	•	Endpoint(s) públicos **first‑party** (ex.: páginas públicas/agenda) são permitidos, read‑only e rate‑limited.
+	•	Qualquer “Public API” com chaves/SDK é **futuro**: sem documentação externa, sem onboarding de parceiros e **desativado por defeito** em prod até decisão explícita.
+	•	Integrações externas só via exports e integrações pontuais configuráveis (Fase 2+), sem “public API” aberta.
 
 
 D1) Evento base obrigatório para torneios
@@ -397,6 +457,43 @@ D1) Evento base obrigatório para torneios
 Todo torneio de Padel tem eventId obrigatório.
 	•	Eventos: tickets, SEO, página pública base, sessões, entitlements
 	•	Padel Torneios: competição, matches, bracket/standings, live ops
+
+D1.1) Schedule de Evento — invariantes de tempo (FECHADO)
+	•	`endsAt` é **obrigatório** em toda a stack (criação, edição, ingestão, seed).  
+	•	Regra: `endsAt` **tem de ser depois** de `startsAt` (nunca antes).  
+	•	Default canónico: se `endsAt` faltar ou for inválido, usar **`startsAt + 5h`**.  
+	•	Evento publicado **nunca** pode regressar a `DRAFT`. `DRAFT` nunca é público.  
+	•	Chat de evento: `open_at = startsAt`, `read_only_at = endsAt`, `close_at = endsAt + 24h`.  
+	•	Chat de evento (acesso) — **presença** obrigatória: **Entitlement + check-in consumido**.  
+	•	Definição: **check‑in consumido = entitlement consumido** (`CheckinResultCode.OK` ou `ALREADY_USED`).  
+	•	Entitlement mantém-se como prova única de acesso ao evento; o chat é uma feature de presença.  
+	•	Entrada no chat é por **convite com aceitação explícita**; convite emitido após entitlement consumido (check‑in/claim) se dentro da janela.  
+	•	Convites de chat **expiram** e **não podem ser aceites** após `endsAt + 24h` (janela de participantes).  
+	•	Chat de evento aparece em “Mensagens” **apenas após** convite aceite.  
+	•	CTA “Entrar no chat” na página do evento **e** no bilhete/carteira, apenas após entitlement consumido.  
+	•	Notificação do chat enviada após entitlement consumido (respeita preferências do utilizador).  
+	•	Chat de evento é **exclusivo da app** (não existe chat de evento na web para users).  
+	•	Após `close_at`: chat fica **read‑only** para quem tem acesso; histórico **não expira**.  
+	•	Discovery: eventos `PAST`/`CANCELLED` **não** entram em listas públicas.  
+	•	Mobile checkout: CTA **bloqueado** se `status != ACTIVE` **ou** `endsAt < now`.  
+	•	Wallet: separação “Ativos/Histórico” **baseada em `endsAt`** (ou janela de check‑in).
+	•	Higiene legacy: executar `scripts/fix_event_ends_at.js` para corrigir eventos com `endsAt <= startsAt`.
+
+D1.2) Mensagens & Chat — decisões de produto (FECHADO)
+	•	Mensagens para utilizador final **apenas na app** (sem chat na web).  
+	•	“Inbox” único de Mensagens: eventos + reservas/serviços + chats com organizações + chats entre utilizadores.  
+	•	Chat de evento segue D1.1 (convite aceite, CTA pós‑consumo, app‑only, read‑only após close, histórico permanente).  
+	•	Chat de reservas/serviços: canal **só ativa** com a 1ª mensagem (não criar canal vazio).  
+	•	Chat de serviço (pré‑reserva): **apenas via pedido**; pedido **aprovado por staff** da organização.  
+	•	Chat org‑contact (cliente → organização): **pedido obrigatório**, aprovado por staff.  
+	•	Reserva: organização pode iniciar chat no **detalhe da reserva** (1ª mensagem cria canal).  
+	•	Chat interno da organização: **só canais** (sem mensagens diretas internas); admins criam por defeito; canais automáticos do sistema (Ops, evento, reserva).  
+	•	Canais cliente‑profissional: cliente vê o profissional; admins podem ver/escrever; identidade padrão para admins é “Organização”; identidade pessoal opcional quando necessário; admins **não aparecem** como membros visíveis ao cliente.  
+	•	Mensagens entre utilizadores: só entre amigos/seguidores confirmados; pedidos de mensagem para desconhecidos; grupos por convite.  
+	•	Notificações: push em todas as mensagens por defeito; opção de silenciar por conversa.  
+	•	Conteúdo: **texto apenas** na Fase 1; anexos em fase futura.  
+	•	“Anular envio”: janela de **2 minutos**.  
+	•	Retenção: mensagens guardadas; chats de evento/reserva ficam read‑only após fecho, sem purge.
 
 D2) Owners (fontes de verdade) — semântica blindada
 	•	Ticketing / Sessions / Página pública base / Entitlements de acesso: Eventos
@@ -414,13 +511,17 @@ Regra: nenhum domínio duplica estado de outro owner. Integração só via contr
 
 **Regra de negócio (fundamental):** **só ORGANIZAÇÕES** podem ser donas de coisas que se vendem/operam (Eventos, Loja/Produtos, Serviços/Reservas). Utilizadores **nunca** “criam/vendem em nome próprio”; apenas atuam como membros de uma Organização no **Painel da Organização** (RBAC). No lado do utilizador, mesmo sendo dono/admin, vê a Organização apenas como público.
 
-D3) Agenda Engine e prioridade de conflitos
+D3) Agenda Engine e conflitos (FECHADO)
 
-Prioridade MVP: HardBlock > MatchSlot > Booking > SoftBlock
-Qualquer override exige permissão + auditoria.
+Regra base: **quem marca primeiro ocupa**. Nada sobrepõe automaticamente.  
+Conflitos ficam bloqueados; quem chega depois tem de se adaptar.
 
-D3.1 MatchSlot é sempre hard-block funcional
-MatchSlot nunca pode ser “soft”.
+Override **só manual** por Owner/Admin, com auditoria e notificações.  
+Se o override mexer numa reserva de utilizador, requer **pedido + aceitação** (ver 9.2).
+
+D3.1 MatchSlot (Padel)
+MatchSlot bloqueia novas marcações no mesmo horário/campo.  
+Se já existir reserva/aula, MatchSlot **não** sobrepõe automaticamente; requer override explícito.
 
 D4) Finanças determinística (Stripe Connect + Fees ORYA) — decisão única
 
@@ -429,7 +530,8 @@ D4) Finanças determinística (Stripe Connect + Fees ORYA) — decisão única
 
 Princípios
 - Stripe Connect obrigatório já (v1.x): cada Organization tem `stripeAccountId`.
-- **Finanças é o único gateway**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
+- **Finanças é o único gateway lógico**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
+  Endpoints especializados de checkout são permitidos **apenas** se delegarem ao domínio Finanças e respeitarem idempotência/policies canónicas.
 - Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
 - “Pago” só existe quando `Payment.status == SUCCEEDED`.
 
@@ -472,6 +574,8 @@ D4.2 PricingSnapshot (obrigatório) (FECHADO)
   - lineItems com preços unitários e quantidades (para auditoria)
 - Regra: **qualquer cálculo futuro** usa o snapshot + o Ledger (SSOT), nunca re‑calcula com regras novas.
 - `netToOrgFinal` **não** vive no snapshot inicial; é sempre derivado de `SUM(entries.amountSigned)` quando `processorFeesStatus=FINAL`.
+- **Proibição de estimativas:** campos do tipo `*Estimate*` são legados e **não** podem ser usados como verdade nem para decisões.  
+  Só `processorFeesActual` (quando FINAL) e o Ledger são canónicos.
 
 D4.3 Fee determinística + versionamento (obrigatório) (FECHADO)
 - Fee calculada em Finanças durante `createCheckout` e congelada no `Payment`.
@@ -650,8 +754,7 @@ D8.1) EventAccessPolicy é a única verdade de acesso (FECHADO)
 
 D8.2) Convites por token (guest checkout) — versão final (FECHADO)
 
-Convites permitem checkout como convidado via token **na WebApp e no site público**.  
-**Na app mobile, guest checkout não é permitido** — o utilizador tem de estar autenticado.
+Convites permitem checkout como convidado via token **na WebApp, no site público e na app mobile**.
 
 Regras fechadas
 1) InviteToken one‑time + expira
@@ -678,12 +781,19 @@ Regras fechadas
 
 6) Eventos VIP (login obrigatório)
 - Para eventos que exijam login: `guestCheckoutAllowed=false` e `mode=INVITE_ONLY` (sem exceções).
-- **App mobile (regra global):** mesmo que `guestCheckoutAllowed=true`, o checkout exige login.
+- App mobile segue a mesma regra de `guestCheckoutAllowed`.
+
+7) Guest Ticket Link (acesso sem conta) — FECHADO
+- Após compra guest, emitir `GuestTicketAccessToken` (guardar **apenas** `tokenHash`).
+- Email de compra deve incluir link `/guest/tickets/[token]`.
+- Expiração: `expiresAt = fim da janela de check‑in` (default: abre `startsAt - 6h`, fecha `endsAt + 6h`; se `endsAt` faltar, fecha `startsAt + 24h`).
+- Segurança: token único + hash, sem PII no link; rate limit em rotas de QR.
+- Se falhar emissão do token, usar fallback seguro (`/`).
 
 UX recomendada
 - Página de convite (web): “Aceitar convite” → pede nome + email (pré‑preenchido se possível)
 - Pós‑compra (web): “Criar conta para guardar bilhetes e entrar mais rápido” (1 clique)
-- Mobile: “Iniciar sessão” como gate obrigatório antes do checkout.
+- Mobile: permitir guest checkout quando `guestCheckoutAllowed=true`; login opcional.
 
 ⸻
 
@@ -964,7 +1074,7 @@ D14) Multi-Organizações (empresa mãe → filiais)
 	•	RBAC suporta: permissões na mãe, permissões por filial, e papéis herdáveis/limitados (Secção 11)
 
 D15) Macro + Micro Analytics (obrigatório)
-	•	relatórios financeiros e operacionais com drill-down por dimensões
+	•	dashboards financeiros e operacionais com drill-down por dimensões
 	•	sempre derivados do Ledger + dimensões (sem duplicar estado “financeiro” fora de Finanças)
 
 D16) Ops Feed (Activity Feed) é first-class
@@ -2243,6 +2353,303 @@ On uncertainty or partial failure:
 #### Notes
 Consumer dedupe por eventId; replays não duplicam items.
 
+C10) Stripe Webhooks ↔ Finanças (ingestão e reconciliação) — **FECHADO**
+Regras:
+	•	Endpoint canónico: `/api/stripe/webhook` (alias `/api/webhooks/stripe` deve apontar para o mesmo handler).
+	•	Assinatura Stripe obrigatória; rejeitar se `livemode` não corresponder ao modo esperado.
+	•	Dedupe obrigatório por `stripeEventId` (idempotencyKey global).
+	•	Resolver `orgId` por `stripeAccountId` (Connect) ou metadata `orgId` no PaymentIntent/Charge.
+	•	Se `orgId` não for resolvido → guardar evento + DLQ + alerta (sem side‑effects).
+	•	Persistir evento bruto (`StripeEvent`) com: `stripeEventId`, `type`, `account`, `created`, `livemode`, `requestId?`, `correlationId`.
+	•	Mapeamento mínimo (SSOT):
+		–	`payment_intent.succeeded` → Payment.SUCCEEDED + ledger + entitlements
+		–	`payment_intent.processing` → Payment.PROCESSING
+		–	`payment_intent.payment_failed` → Payment.FAILED
+		–	`payment_intent.canceled` → Payment.CANCELLED
+		–	`charge.refunded` → Payment.REFUNDED/PARTIAL_REFUND + reversões de ledger
+		–	`charge.dispute.created` → Payment.DISPUTED + Entitlement.SUSPENDED
+		–	`charge.dispute.closed` → CHARGEBACK_WON/LOST + entitlement update + ledger
+		–	`balance.available` → trigger reconciliação (fees finais)
+		–	`payout.paid` / `payout.failed` → atualizar read‑model de Payout (não controla payout)
+	•	Estados terminais não regredem; apenas transições permitidas pelo state machine (D4.9).
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C10  
+**Contract Name:** Stripe Webhooks ↔ Finanças (ingestão e reconciliação)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Finanças  
+**Primary Consumers:** Webhook handler, Finance workers, Entitlement issuance, Ledger
+
+#### Purpose
+Garantir ingestão idempotente de eventos Stripe e reconciliação determinística do estado financeiro.
+
+#### Idempotency
+- **Idempotency Key:** stripeEventId  
+- **Scope:** global  
+- **Guarantee:** replays não duplicam side‑effects.
+
+#### Input Payload (Example)
+```json
+{
+  "id": "evt_123",
+  "type": "payment_intent.succeeded",
+  "livemode": true,
+  "data": {"object": {"id": "pi_456"}},
+  "created": 1769900000
+}
+```
+
+#### Output / Response (Example)
+```json
+{"status":"ACK","stripeEventId":"evt_123"}
+```
+
+#### Error Cases
+- `INVALID_SIGNATURE`
+- `LIVEMODE_MISMATCH`
+- `ORG_UNRESOLVED` (armazenar + DLQ + alerta; **sem side‑effects**)
+
+#### Ordering & Duplication
+Tolerar duplicados e out‑of‑order.  
+Eventos antigos não podem reverter estados terminais.
+
+#### Side Effects
+☑ ledger entries  
+☑ entitlement issuance  
+☑ downstream async jobs  
+☑ notifications (quando aplicável)
+
+#### Observability
+Logs e métricas com `stripeEventId`, `stripeAccountId`, `orgId`, `paymentId`, `correlationId`.
+
+#### Failure Mode
+Assinatura inválida → 400.  
+Org não resolvida → 200 (ACK) + DLQ + alerta; nenhum side‑effect.
+
+---
+
+C11) EventLog + Outbox (schema canónico e versionamento) — **FECHADO**
+
+Regras:
+	•	`eventType` em formato `domain.action` (lowercase, sem espaços).
+	•	`eventVersion` obrigatório (semver).
+	•	Campos mínimos do EventLog:
+		–	`eventId` (UUID), `eventType`, `eventVersion`, `orgId`
+		–	`subjectType`, `subjectId`
+		–	`actorIdentityId?`, `causationId`, `correlationId`
+		–	`payload` (PII minimizado), `createdAt`
+	•	PII: sem email/telefone em claro; usar `identityId`/hash.
+	•	Qualquer mutação com side‑effects escreve **EventLog + Outbox** na mesma transação.
+	•	Outbox é append‑only e garante at‑least‑once; consumers são idempotentes.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C11  
+**Contract Name:** EventLog + Outbox (schema e versionamento)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Ops/Platform  
+**Primary Consumers:** Workers, CRM, Activity Feed, Search, Analytics
+
+#### Purpose
+Garantir trilho auditável, versionado e compatível para todos os eventos internos.
+
+#### Idempotency
+- **Idempotency Key:** eventId  
+- **Scope:** global
+
+#### Input Payload (Example)
+```json
+{
+  "eventId": "evt_abc",
+  "eventType": "payment.succeeded",
+  "eventVersion": "1.0.0",
+  "orgId": "org_123",
+  "subjectType": "PAYMENT",
+  "subjectId": "pay_456",
+  "correlationId": "corr_789"
+}
+```
+
+#### Ordering & Duplication
+At‑least‑once; consumidores idempotentes; ordering não garantido.
+
+#### Side Effects
+☑ downstream async jobs  
+☑ materializações (read‑models)
+
+#### Observability
+EventLog é fonte para métricas e auditoria; payload com PII minimizado.
+
+---
+
+C12) Identity/Auth (SSOT + claim/merge) — **FECHADO**
+
+Regras:
+	•	Tipos: `USER` e `GUEST_EMAIL`.
+	•	Email normalizado: `trim + NFKC + lowercase`; hash HMAC para dedupe.
+	•	Guest checkout cria/usa `Identity(GUEST_EMAIL)` por email normalizado.
+	•	Email verificado → **claim automático** para `Identity(USER)`:
+		–	mover Entitlements para o USER
+		–	criar registo de merge (auditável)
+		–	**não** alterar LedgerEntry nem Payment histórico
+	•	Merge é idempotente e nunca destrói histórico; identidade antiga fica como tombstone.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C12  
+**Contract Name:** Identity/Auth (SSOT + claim/merge)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Identity/Auth  
+**Primary Consumers:** Finanças, Entitlements, CRM, Check‑in, Org/RBAC
+
+#### Idempotency
+- **Idempotency Key:** `emailHash + userId` (claim)  
+- **Scope:** global
+
+#### Failure Mode
+Sem email verificado → claim bloqueado (fail‑closed).
+
+---
+
+C13) Org Context + RBAC (resolução e step‑up) — **FECHADO**
+
+Regras:
+	•	`orgId` é obrigatório no path (`/org/:orgId/*`) ou header `X-ORYA-ORG-ID`.
+	•	Cookies/lastUsedOrg **só** para redirect de UI (nunca para autorização).
+	•	Qualquer operação sem `orgId` resolve para **403** com `ORG_CONTEXT_REQUIRED`.
+	•	Step‑up obrigatório em ações críticas (refunds, alterações de fee policy, export PII, cancelamentos).
+	•	Service roles não podem bypassar isolamento de org.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C13  
+**Contract Name:** Org Context + RBAC (resolução e step‑up)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Security/RBAC  
+**Primary Consumers:** Todos os módulos B2B
+
+#### Failure Mode
+Ambiguidade de org → fail‑closed (403) + audit log.
+
+---
+
+C14) Payout Release + Risk Holds (ops) — **FECHADO**
+
+Regras:
+	•	ORYA **não** controla payouts em Stripe Standard; controla **gating operacional**.
+	•	Release interno é **read‑model** + alerta; não altera Stripe.
+	•	Pré‑requisitos para “allow new checkouts”:
+		–	`onboardingStatus=COMPLETE`
+		–	sem `risk.hold=true`
+		–	thresholds 19.2.2 não excedidos
+	•	Se bloqueado: `payoutsBlocked=true`, emitir `risk.flagged` + Ops alert.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C14  
+**Contract Name:** Payout Release + Risk Holds  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Ops/Finanças  
+**Primary Consumers:** Payout cron, Admin Ops UI
+
+#### Idempotency
+- **Idempotency Key:** payoutId ou balance_transaction.id  
+- **Scope:** por org
+
+---
+
+C15) Money & Rounding (pricing determinístico) — **FECHADO**
+
+Regras:
+	•	Todos os montantes são **inteiros** em minor units (sem floats).
+	•	Rounding: `round_half_up` em cada passo relevante.
+	•	Ordem canónica:
+		1) `gross = sum(lineItems)`
+		2) `discounts` → `subtotal`
+		3) `taxes` (se aplicável) sobre `subtotal`
+		4) `platformFee` (base: `subtotal` por default; override via FeePolicyVersion)
+		5) `total = subtotal + taxes + fee` (se `feeMode=ADDED`)
+	•	`pricingSnapshot` é imutável; qualquer cálculo posterior deriva do snapshot + Ledger.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C15  
+**Contract Name:** Money & Rounding (pricing determinístico)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Finanças  
+**Primary Consumers:** Finanças, Events, Store, Reservations, Padel
+
+---
+
+C16) Search Index (read‑model derivado) — **FECHADO**
+
+Regras:
+	•	Index é read‑model derivado do EventLog (não é owner).
+	•	Jobs idempotentes por `sourceType+sourceId+version`.
+	•	Unpublish/disable → remoção/soft‑delete no index.
+	•	Rebuild completo por job (reprodutível).
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C16  
+**Contract Name:** Search Index (read‑model derivado)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Search/Discovery  
+**Primary Consumers:** Discover UI, Public Search
+
+---
+
+C17) CRM Ingest + Dedupe (read‑model) — **FECHADO**
+
+Regras:
+	•	CRM ingere **apenas** a partir do EventLog.
+	•	Idempotência por `eventId`; se existir `externalId`, dedupe por `(orgId, externalId)`.
+	•	Rebuild diário reprodutível; nunca confiar em contadores incrementais sem replay.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C17  
+**Contract Name:** CRM Ingest + Dedupe  
+**Current Version:** v1.0.0  
+**Owner:** Domain: CRM  
+**Primary Consumers:** CRM UI, Analytics, Ops
+
+---
+
+C18) Media/Uploads (SSOT de ficheiros) — **FECHADO**
+
+Regras:
+	•	Todo upload cria `MediaAsset` com owner, orgId, checksum e metadata.
+	•	Acesso por URLs assinadas com TTL (sem public‑by‑default).
+	•	Apagar asset remove acesso e invalida URLs; logs/audit obrigatórios.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C18  
+**Contract Name:** Media/Uploads (SSOT de ficheiros)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Platform/Storage  
+**Primary Consumers:** Events, Store, Org Profile, Mobile/Web
+
 7) Entitlements e sourceType (canónico e unificado)
 
 > **FECHADO (SSOT):** Entitlement + Identity são a única fonte de verdade de “quem tem direito a quê”. Tickets/Bookings/Registos são *origens* (source), não “provas” de acesso.
@@ -2253,8 +2660,7 @@ Consumer dedupe por eventId; replays não duplicam items.
   - `USER` (userId)
   - `GUEST_EMAIL` (emailNormalizado + emailHash)
 - Permite:
-  - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy` **na WebApp e no site**  
-    (na app mobile, guest checkout é sempre bloqueado)
+  - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy` **na WebApp, no site e na app mobile**
   - claim/merge posterior para user (quando o email for verificado)
   - RGPD delete/anonymize sem destruir ledger (ledger mantém apenas IDs/pseudónimos)
 
@@ -2323,6 +2729,7 @@ Quando um utilizador cria conta e **verifica o email**:
   - move (claim) todos os entitlements elegíveis para `Identity(USER)`
   - escreve `AuditLog` + `EventLog` (idempotencyKey = `emailHash+userId+batchVersion`)
 - Regra: o claim nunca altera o ledger; apenas ownership lógico de acesso.
+- Mobile (app): executar claim **automaticamente no login**, com cooldown local para evitar chamadas repetidas.
 
 7.8 Matriz de verdade (Payment × Ticket × Entitlement) — **FECHADO**
 Nota (escopo):
@@ -2499,7 +2906,7 @@ Guardrails:
 Detalhes premium v2
 	•	páginas públicas com branding org, partilha, CTA claro
 	•	bilhete multi-sessão (via entitlements e políticas)
-	•	“chat do evento” (Fase 3): canal do evento para participantes (moderação)
+	•	chat do evento (app‑only) para participantes; moderação avançada em fase futura
 
 ⸻
 
@@ -2509,6 +2916,40 @@ Faz
 	•	agenda engine, bookings, recursos, profissionais, disponibilidade
 	•	políticas: cancelamento, no-show, penalizações (configurável)
 	•	janelas de reserva e preços diferenciados por segmento (via CRM+Promoções, mas suportado em regras)
+
+	Calendário único (Padel/Clube) — **FECHADO**
+	•	Um clube tem **um calendário** com reservas, aulas e torneios sincronizados.
+	•	Tudo o que ocupa um campo bloqueia esse campo naquele horário.
+	•	Conflitos seguem D3: **quem marca primeiro ocupa**; nada sobrepõe automaticamente.
+	•	Campos removidos ficam **inativos** (não apaga histórico); reservas antigas mantêm o campo e mostram o nome atual.
+	•	Campos com nomes automáticos por defeito, sempre editáveis.
+
+	Visibilidade de calendário — **FECHADO**
+	•	Utilizador: mês atual + 3 meses; **passado escondido**; no dia atual, horas passadas também escondidas.
+	•	Organização: até **fim do ano + 2 anos**; passado disponível **apenas leitura**.
+
+	Permissões (calendário) — **FECHADO**
+	•	Owner/Admin: tudo.
+	•	Staff: reservas/bloqueios apenas nos campos/recursos atribuídos.
+	•	Trainer: aulas próprias nos campos/recursos atribuídos.
+
+	Override / mudança de reserva — **FECHADO**
+	•	Org só pode pedir mudança até **T‑4h** antes da reserva.
+	•	Utilizador responde até **24h** ou até **T‑2h** (o que ocorrer primeiro).
+	•	Sem resposta = **recusado**; reserva mantém‑se como estava.
+	•	Org pode cancelar o pedido a qualquer momento (com notificação).
+	•	Se Org cancelar a reserva, **reembolso total automático**.
+	•	Contra‑proposta do utilizador: **1 alternativa**; Org tem 12h para aceitar.
+	•	Se o novo horário tiver preço diferente: **cobrar/refund** apenas a diferença após aceitação.
+
+	Guest booking (entitlements) — **FECHADO**
+	•	Guest permitido quando a policy do serviço/organização permite.
+	•	Booking confirmado **cria Entitlement** (prova única de acesso).
+	•	Owner do Entitlement pode ser **guest (email)**; claim posterior liga a conta.
+
+	Aulas recorrentes — **FECHADO**
+	•	ClassSeries (regra) + ClassSession (instância) com exceções por data.
+	•	Cada sessão entra na Agenda Engine e **bloqueia o campo** nesse horário.
 
 	Booking Policy — snapshot obrigatório
 
@@ -2531,7 +2972,8 @@ UX (Fase 1) — obrigatório
 	•	calendário dia/semana
 	•	drag & drop com RBAC + auditoria
 	•	camadas/filters: reservas, matchSlots, aulas, bloqueios
-	•	overrides com logs (quem mexeu, quando, porquê)
+	•	recorrência de aulas (semanal) + exceções por data
+	•	overrides com logs + notificações + aceitação quando mexe em reserva de utilizador
 
 Integrações (Fase 1)
 	•	“Adicionar ao Calendário” (ICS) para utilizador
@@ -2539,7 +2981,6 @@ Integrações (Fase 1)
 
 Fase 2
 	•	waitlist
-	•	recorrência
 	•	open matches
 	•	multi-dia (base alojamentos)
 
@@ -2642,6 +3083,7 @@ Operação premium
 Faz
 	•	scanner QR + lista manual
 	•	logs, presença/no-show, idempotência
+	•	check-in consumido = entitlement consumido (presença confirmada)
 
 Fase 2
 	•	self check-in antifraude
@@ -2723,7 +3165,7 @@ Segurança
 9.7 Equipa (RBAC)
 
 Faz
-	•	membros, convites, roles/scopes, packs, auditoria
+	•	membros, convites, roles/scopes, auditoria
 	•	suporte a multi-org (mãe vs filial)
 
 Fase 2
@@ -2753,7 +3195,7 @@ CRM — contadores como read model
 Regra:
 	•	CrmCustomer counters são read models derivados de CrmInteraction.
 	•	Qualquer “increment” tem de ser idempotente e reprodutível.
-	•	Existe job diário de rebuild completo + drift report.
+	•	Existe job diário de rebuild completo + drift check.
 	•	Dedupe obrigatório: CrmInteraction tem idempotencyKey e/ou externalId (para evitar contagens duplicadas por retries/webhooks).
 	•	RGPD: rebuild diário respeita entidades apagadas/anónimas (não re-hidratar nem recontar PII removida).
 
@@ -2839,7 +3281,7 @@ Faz
 Faz
 	•	códigos, regras, bundles, tracking, anti-abuso
 	•	elegibilidade avançada (1ª compra, VIP, off-peak, etc.)
-	•	relatórios de eficácia/ROI
+	•	métricas de eficácia/ROI
 	•	integração com segmentos CRM
 	•	“0€ tickets” não podem existir “por acidente”.
 	•	Anti-abuso é central em Finanças (rate limits, 1 por user por event, etc.).
@@ -2933,12 +3375,34 @@ Fase 2/3
 9.14 Chat interno
 
 Faz
-	•	canais por contexto, pesquisa, mentions
-	•	canal “Ops” (Activity Feed) com alertas automáticos (ver Secção 12)
+	•	chat tipo Slack: **só canais** (sem mensagens diretas internas)
+	•	admins criam canais por defeito (staff pode pedir aprovação, opcional por organização)
+	•	canais automáticos do sistema: Operações/Ops, evento, reserva/serviço
+	•	canais cliente‑profissional com admins invisíveis ao cliente
+	•	identidade do remetente: profissional visível ao cliente; admins falam por defeito como “Organização”
+	•	pesquisa, mentions e histórico
 
 Fase 1
 	•	histórico + pesquisa obrigatórios
 	•	push/mobile para alertas críticos (via Notificações)
+	•	chat interno na web (app staff fica para fase futura)
+
+⸻
+
+9.15 Mensagens (utilizadores finais)
+
+Faz
+	•	mensagens **apenas na app** (sem chat na web)
+	•	inbox único: eventos + reservas/serviços + chats com organizações + chats entre utilizadores
+	•	chat de evento: aparece apenas após convite aceite e entitlement consumido
+	•	chat de reserva/serviço: ativa com a 1ª mensagem
+	•	mensagens entre utilizadores: só amigos/seguidores confirmados; pedidos para desconhecidos; grupos por convite
+	•	convites de chat B2C: API canónica `/api/me/messages/invites` (não usar `/api/chat/invites`)
+	•	pedidos user‑user: dedupe por par; se existir pedido inverso, auto‑aceitar e criar conversa
+	•	chat interno V1 removido (internal_chat_* e /api/organizacao/chat/canais)
+	•	notificações em todas as mensagens por defeito, com opção de silenciar
+	•	conteúdo texto apenas na Fase 1
+	•	“anular envio” até 2 minutos
 
 ⸻
 
@@ -3009,7 +3473,7 @@ Alias:
 
 ⸻
 
-11) RBAC v2 — packs, roles e scopes
+11) RBAC v2 — roles, scopes e role packs
 
 11.1 Roles “reais”
 
@@ -3250,7 +3714,7 @@ Eventos mínimos recomendados (MVP):
 	•	padel.registration.created, padel.registration.expired
 	•	checkin.success, checkin.denied, checkin.duplicate
 	•	refund.created, refund.succeeded, chargeback.opened
-	•	review.negative / report.created (fase 2/3 com moderação)
+	•	review.negative / moderation.flagged (fase 2/3 com moderação)
 	•	inventory.low_stock (fase 2)
 
 12.6 Guardrails de Arquitetura (obrigatório v1)
@@ -3258,7 +3722,7 @@ Eventos mínimos recomendados (MVP):
 	•	falhar build se alguém importar Stripe fora de Finanças
 	•	falhar build se alguém escrever entidades fora do “owner” (podes fazer via wrappers ou lint rules)
 	•	Contract Tests
-	•	cada contrato em domain/contracts/* tem testes unit e “golden tests”
+	•	cada contrato tem testes unit e “golden tests” nos módulos `domain/*` (perto do owner)
 	•	Anti-drift migrations
 	•	pipeline que falha se schema Prisma divergir do DB (staging)
 
@@ -3342,6 +3806,41 @@ ADITAMENTO FECHADO: ranking mínimo e observabilidade para produção v1.
 - Anti‑abuso:
   - keyword stuffing → downrank com `reasonCode=RANKING_SPAM_KEYWORDS`
   - org com `risk.flagged` → downrank com `reasonCode=RANKING_RISK_FLAGGED`
+
+⸻
+
+13.2 Ranking Unificado v2 (Personalização Total) — **FECHADO**
+ADITAMENTO FECHADO: ranking canónico único para eventos em todas as superfícies.
+
+- **Engine único**: usado por **Agora, Descobrir, Mapa, Pesquisa** (eventos).
+- **Categorias canónicas** via `Event.interestTags` (sem matching por texto).
+  - Lista canónica: `padel, concertos, festas, viagens, bem_estar, gastronomia, aulas, workshops`.
+  - **Fallback** se `interestTags` vazio:
+    - `PADEL → padel`
+    - `PARTY → festas`
+    - `TALK → workshops`
+    - `OTHER/VOLUNTEERING → bem_estar`
+- **Sinais comportamentais** (SSOT): `user_event_signals`
+  - `CLICK`, `VIEW`, `DWELL`, `FAVORITE`, `PURCHASE`
+- **Afinidade social**:
+  - org seguida → boost
+  - amigos (mutual follows) com tickets → boost
+- **Contexto real**:
+  - distância + janela temporal (live/soon/semana)
+- **Feedback explícito**:
+  - `HIDE_EVENT` remove/penaliza
+  - `HIDE_CATEGORY` e `HIDE_ORG` penalizam/ocultam
+- **Pesos iniciais** (v2):
+  - `preference=0.35`, `behavior=0.25`, `social=0.20`, `context=0.15`, `recency=0.05`
+  - negativos via multiplicador (`NEGATIVE_MULTIPLIER`)
+- **Razões explicáveis** (`rank.reasons`):
+  - `PREF_MATCH`, `BEHAVIOR_PURCHASE`, `BEHAVIOR_FAVORITE`
+  - `SOCIAL_ORG_FOLLOW`, `SOCIAL_FRIENDS_GOING`
+  - `CONTEXT_NEARBY`, `CONTEXT_SOON`
+  - `NEGATIVE_HIDE_CATEGORY`, `NEGATIVE_HIDE_ORG`, `NEGATIVE_HIDE_EVENT`
+- **Ingestão canónica** de sinais:
+  - `POST /api/me/events/signals`
+- **Endpoints**: `GET /api/explorar/list` e `GET /api/eventos/list` usam ranking unificado.
 
 ⸻
 
@@ -3511,13 +4010,9 @@ F1-A) Base técnica e contratos (ordem por módulos)
 	•	Objetivo: preparar migração total para AWS sem re-arquitetar depois
 
 	3.	Contratos versionados
-	•	domain/contracts/reservas.ts
-	•	domain/contracts/financas.ts
-	•	domain/contracts/checkin.ts
-	•	domain/contracts/crm.ts
-	•	domain/contracts/notifications.ts
-	•	domain/contracts/address.ts
-	•	testes de contrato (unit + integração)
+	•	definição canónica no `docs/ssot_registry.md`
+	•	implementação nos módulos `domain/*` (por owner)
+	•	testes de contrato (unit + integração) junto ao owner
 	4.	Refactors estruturais (higiene)
 	•	Agenda: deprecar PadelCourtBlock/PadelAvailability → centralizar em Reservas
 	•	Pagamentos: remover checkout Stripe directo fora de Finanças
@@ -3530,7 +4025,7 @@ F1-A) Base técnica e contratos (ordem por módulos)
 	•	exports mínimos
 	6.	RBAC + auditoria
 	•	middleware orgRbacGuard
-	•	packs v2 activos
+	•	role packs v2 activos
 	•	audit log em operações críticas
 	7. Guardrails: architecture tests + anti-drift + contract tests
 
@@ -3696,7 +4191,7 @@ F3-B) Produto
 	1.	Padel interclubes/equipas
 	2.	ELO/Glicko
 	3.	Streaming + widgets avançados
-	4.	Eventos com chat do evento + moderação
+	4.	Moderação avançada de chat (eventos + organização)
 	5.	Digital goods completo
 	6.	White-label avançado
 	7.	Integrações federações/partners
@@ -3745,12 +4240,12 @@ A) IN (obrigatório para v1.0)
 	•	DSAR básico operativo (19.4)
 	•	Trust & Safety mínimo operativo (19.2)
 	•	Observabilidade mínima (SLIs + alertas críticos 14.1.1)
+	•	Discovery/ranking avançado (Ranking Unificado v2)
 
 B) OUT (existe no blueprint, mas fica bloqueado/feature‑flagged em v1.0)
 	•	QR offline assinado (S2) e validação offline
-	•	Discovery/ranking avançado (personalização, recomendações, modelos)
 	•	Automações CRM complexas e campanhas
-	•	Funcionalidades sociais não essenciais (chat do evento, reviews, comunidade)
+	•	Funcionalidades sociais não essenciais (comunidade)
 	•	Marketplace avançado e integrações enterprise
 
 C) Regra de execução (hard)
@@ -4079,7 +4574,7 @@ Any new feature MUST be evaluated against this threat model.
 - DR “game days” (semestral):
   - simular indisponibilidade de componentes críticos (fila/jobs, storage, compute)
   - validar recuperação e impacto em RPO/RTO
-- Restore tests recorrentes + relatórios assinados.
+- Restore tests recorrentes + exports assinados.
 - Observabilidade avançada (tracing end‑to‑end, SLOs por domínio).
 - Risk engine mais sofisticado (modelos e regras dinâmicas).
 - Automação de DSAR e auditorias internas periódicas.
@@ -4136,12 +4631,12 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 - Multi-clube e multi-court com agendas independentes.
 - Otimização de ocupação (open matches, listas de espera) conforme regras de Reservas (Fase 2).
 - Integração com torneios via **MatchSlot hard-block** e CalendarBlock (D3/D3.1).
-- Agenda com visões dia/semana e drag & drop (UI), respeitando prioridades: HardBlock > MatchSlot > Booking > SoftBlock.
+- Agenda com visões dia/semana e drag & drop (UI), respeitando D3 (quem marca primeiro ocupa).
 
 ### 2.2 Sócios, Jogadores e Comunicação
 - **CRM e Perfil unificado (owner: CRM/Perfil publico)** com tags/segmentos de Padel.
-- **Credits/loyalty** apenas via Servicos/Financas/CRM (Fase 2), sem carteira paralela em Padel.
-- Planos e passes (assinaturas/pacotes) via Stripe Billing (Fase 2).
+- **Credits/loyalty** desativados em v1; reavaliar via Servicos/Financas/CRM (Fase 2), sem carteira paralela em Padel.
+- Planos e passes (assinaturas/pacotes) via Stripe Billing (Fase 2, fora do escopo atual; CRM/Finanças).
 - Comunicação via Notificações/Chat interno (owners core), com triggers a partir do EventLog.
 - Matchmaking e comunidade (dominio Padel).
 
@@ -4263,7 +4758,7 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 - **Availability:** opcional para staff/jogadores.
 
 **Regra central:** tudo o que ocupa um court vira um item na Agenda Engine. Reservas, aulas e matches são apenas tipos diferentes.
-**Prioridade v9 (D3/D3.1):** HardBlock > MatchSlot > Booking > SoftBlock, e **MatchSlot e sempre hard-block**.
+**Prioridade v9 (D3/D3.1):** quem marca primeiro ocupa; nada sobrepõe automaticamente. MatchSlot bloqueia novas marcações, mas não sobrepõe reservas/aulas existentes sem override explícito.
 
 **Mapeamento AS-IS (repo):** `PadelCourtBlock` → CalendarBlock, `PadelAvailability` → Availability, `PadelMatch` → EventMatchSlot, Serviços/Aulas → ServiceSession.
 
@@ -4294,14 +4789,12 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 **Owner:** Reservas. Politicas sao aplicadas via Reservas e **snapshot imutavel** por booking (v9).
 
 **Presets:**
-- **Standard:** pagamento total online.
-- **Flex:** depósito online + restante no clube.
-- **Clube tradicional:** sem pagamento online (apenas bloqueia slot).
+- **Standard:** pagamento total online (ou gratuito).
 
 **Regras mínimas:**
 - Reserva por utilizador ORYA ou guest booking (quando permitido por policy).
-- Pagamento obrigatório vs “pagar no clube”.
-- Depósito vs pagamento total.
+- Pagamento online obrigatório quando `price > 0`.
+- **Sem depósito** e **sem pagamento no local** (fora de scope v1+).
 - No-show fee configurável.
 
 ### 5.5 Ciclo de Vida do Torneio
@@ -4309,7 +4802,7 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 - **Published:** inscrições abertas.
 - **Locked:** quadro fechado, regras de refund mudam.
 - **Live:** scores ativos e operação.
-- **Completed:** exports finais + relatório.
+- **Completed:** exports finais + resumo.
 
 **Regra v9:** transicoes publicam EventLog e aplicam politica de refund versionada (Financas).
 
@@ -4324,7 +4817,7 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 | Área | AS-IS | TO-BE | Notas |
 |---|---|---|---|
 | Reservas de courts | **DONE (F1)** | F1 (Obrigatório) | Owner: Reservas/Agenda. |
-| Agenda com drag & drop | Parcial | F1-C (Premium) | UI; respeitar prioridades D3. |
+| Agenda com drag & drop | Parcial | F1-C (Premium) | UI; respeitar regra D3. |
 | Pagamentos em reservas | **DONE (F1)** | F1 (Obrigatório) | Via Financas; sem Stripe direto. |
 | CRM de sócios | Parcial | F2 | Owner: CRM. |
 | Aulas integradas | Parcial | F1 (atalho) / F2 (integração) | Owner: Servicos. |
@@ -4360,7 +4853,7 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 - **Operação:** auto-schedule, live score, páginas públicas e exports básicos.
 
 **Fase 2 — Upgrade Core**
-- **Clube:** CRM/planos, aulas integradas, relatórios financeiros base.
+- **Clube:** CRM/planos, aulas integradas, dashboards financeiros base.
 - **Torneios:** presets/templates, waitlist automática, Americano/Mexicano, double elimination.
 - **UX:** multilinguagem base e monitor/TV melhorado.
 
@@ -4423,7 +4916,7 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 
 ### 10.1 Reservas de courts
 **Decisão:** Slots configuráveis com bloqueios (base), com duas vistas: slots fixos e janelas flexíveis.
-**Regra v9:** owner = Reservas; MatchSlot e sempre hard-block (D3/D3.1).
+**Regra v9:** owner = Reservas; MatchSlot bloqueia novas marcações, sem sobrepor reservas/aulas existentes sem override explícito (D3/D3.1).
 
 **Standard (Ferramenta A):**
 - Duração base (ex: 60/90 min), buffer (ex: 10 min), horários do clube, regras por court.
@@ -4643,7 +5136,7 @@ O plano posiciona a ORYA ao nível das plataformas globais de referência (Playt
 
 ### 16.2 Gestão de Clube (Ferramenta A) — análise comparativa
 - **Reservas e agenda inteligente:** disponibilidade em tempo real, agenda multi-court, drag & drop, listas de espera e open matches (F2). Alinha-se com líderes como Playtomic, com a vantagem da agenda unificada com torneios.
-- **Pagamentos integrados:** checkout unificado **via Financas** e políticas flexíveis (total, depósito ou offline). Esta flexibilidade supera modelos rígidos de marketplace.
+- **Pagamentos integrados:** checkout unificado **via Financas** com pagamento total online (ou gratuito quando `price=0`).
 - **CRM e comunidade:** perfil único do jogador, comunicação direta e matchmaking. Espaço claro para evoluir com rating de nível e evolução estatística.
 - **Aulas e academia:** gestão de treinadores, agenda e pagamentos; integração faseada evita dívida técnica no MVP.
 - **Eventos sociais e ligas internas:** Americano/Mexicano (F2), ladders e ranking interno, reforçando engajamento semanal.
@@ -4759,7 +5252,7 @@ Padel não é um produto isolado; é uma **camada de domínio**. As ferramentas 
 
 **Reservas (tool Reservas)**
 - **Dono de:** slots, janelas, buffers, bloqueios hard/soft, waitlist, open matches, drag & drop.
-- **Regra:** MatchSlot e sempre hard-block (D3/D3.1).
+- **Regra:** MatchSlot bloqueia novas marcações; override só manual (D3/D3.1).
 - **Padel:** templates/horários recomendados, vista filtrada por courts Padel, atalhos “criar bloqueio”.
 
 **Finanças**
@@ -4815,7 +5308,7 @@ Padel não é um produto isolado; é uma **camada de domínio**. As ferramentas 
 - **Operação offline:** “imprimir e operar” + reconciliação pós-evento.
 - **Lock states:** quem pode mexer no quê em estado Live.
 - **Dispute flow:** resolução e auditoria com UX clara.
-- **Modelo de negócio:** guest booking, depósito, regras de cancelamento por janela.
+- **Modelo de negócio:** guest booking e regras de cancelamento por janela.
 - **No-show:** lembretes automáticos e penalizações.
 - **Métricas operacionais:** funil de reservas, funil split-pay, tempo até publicar, atrasos por court.
 
@@ -4975,7 +5468,7 @@ Este apêndice é o resumo operacional canónico. Conteúdo detalhado histórico
 
 ### UX/UI & Mobile (NÃO‑NORMATIVO)
 - UX focada em estados canónicos e fluxos fail‑closed.
-- Mobile é B2C com login obrigatório; guest checkout só WebApp/site.
+- Mobile é B2C; guest checkout permitido quando `guestCheckoutAllowed=true`.
 - Padel: UX centrada em matchmaking, estados de dupla e operação do clube.
 
 ### Planos Operacionais (OPERACIONAL)

@@ -49,6 +49,10 @@ function getBrowserSupabaseClient() {
   const isLocalhostDomain =
     typeof cookieDomain === "string" &&
     (cookieDomain === "localhost" || cookieDomain.endsWith(".localhost"));
+  const isSecure =
+    typeof window !== "undefined"
+      ? window.location.protocol === "https:"
+      : !isLocalhostDomain;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
@@ -58,14 +62,12 @@ function getBrowserSupabaseClient() {
 
   cleanupAuthStorage();
   return createBrowserClient(supabaseUrl, supabaseAnonKey, {
-    cookieOptions: cookieDomain
-      ? {
-          domain: cookieDomain,
-          path: "/",
-          sameSite: "lax",
-          ...(isLocalhostDomain ? {} : { secure: true }),
-        }
-      : undefined,
+    cookieOptions: {
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+      path: "/",
+      sameSite: "lax",
+      ...(isSecure ? { secure: true } : {}),
+    },
   });
 }
 

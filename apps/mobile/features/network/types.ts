@@ -7,6 +7,15 @@ export type SocialSuggestion = {
   mutualsCount?: number;
   isFollowing?: boolean;
   isRequested?: boolean;
+  reason?: {
+    type: "SAME_EVENT_TICKET" | "SAME_EVENT_FAVORITE";
+    event?: {
+      id: number;
+      title: string;
+      slug?: string | null;
+      startsAt?: string | null;
+    };
+  } | null;
 };
 
 export type FollowStatus = "FOLLOWING" | "REQUESTED" | "NONE";

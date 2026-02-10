@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { decideCancellation } from "@/lib/bookingCancellation";
+import { normalizeEmail } from "@/lib/utils/email";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import {
@@ -13,6 +14,7 @@ import {
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
 import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -23,7 +25,7 @@ function errorCodeForStatus(status: number) {
   return "INTERNAL_ERROR";
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -42,8 +44,16 @@ export async function GET(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
+    const normalizedEmail = normalizeEmail(user.email ?? "");
     const bookings = await prisma.booking.findMany({
-      where: { userId: user.id },
+      where: normalizedEmail
+        ? {
+            OR: [
+              { userId: user.id },
+              { guestEmail: normalizedEmail },
+            ],
+          }
+        : { userId: user.id },
       orderBy: [{ startsAt: "asc" }, { id: "desc" }],
       take: 200,
       select: {
@@ -137,7 +147,25 @@ export async function GET(req: NextRequest) {
           },
         },
         court: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, isActive: true },
+        },
+        changeRequests: {
+          where: { status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            requestedBy: true,
+            status: true,
+            proposedStartsAt: true,
+            proposedCourtId: true,
+            proposedProfessionalId: true,
+            proposedResourceId: true,
+            priceDeltaCents: true,
+            currency: true,
+            expiresAt: true,
+            createdAt: true,
+          },
         },
         review: {
           select: { id: true },
@@ -318,8 +346,23 @@ export async function GET(req: NextRequest) {
           : null,
         reviewId: booking.review?.id ?? null,
         service: booking.service ? { id: booking.service.id, title: booking.service.title } : null,
-        court: booking.court ? { id: booking.court.id, name: booking.court.name } : null,
+        court: booking.court ? { id: booking.court.id, name: booking.court.name, isActive: booking.court.isActive } : null,
         organization: booking.service?.organization ?? null,
+        changeRequest: booking.changeRequests?.[0]
+          ? {
+              id: booking.changeRequests[0].id,
+              requestedBy: booking.changeRequests[0].requestedBy,
+              status: booking.changeRequests[0].status,
+              proposedStartsAt: booking.changeRequests[0].proposedStartsAt,
+              proposedCourtId: booking.changeRequests[0].proposedCourtId,
+              proposedProfessionalId: booking.changeRequests[0].proposedProfessionalId,
+              proposedResourceId: booking.changeRequests[0].proposedResourceId,
+              priceDeltaCents: booking.changeRequests[0].priceDeltaCents,
+              currency: booking.changeRequests[0].currency,
+              expiresAt: booking.changeRequests[0].expiresAt,
+              createdAt: booking.changeRequests[0].createdAt,
+            }
+          : null,
         policy,
         snapshotTimezone: booking.snapshotTimezone,
         cancellation: {
@@ -344,3 +387,4 @@ export async function GET(req: NextRequest) {
     return fail(500, "Erro ao carregar reservas.", "INTERNAL_ERROR", true);
   }
 }
+export const GET = withApiEnvelope(_GET);

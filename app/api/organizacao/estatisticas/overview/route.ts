@@ -5,12 +5,13 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EventStatus, EventTemplateType, OrganizationModule, AnalyticsDimensionKey, AnalyticsMetricKey, EntitlementType } from "@prisma/client";
+import { EventTemplateType, OrganizationModule, AnalyticsDimensionKey, AnalyticsMetricKey, EntitlementType } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { Prisma } from "@prisma/client";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 const LISBON_TZ = "Europe/Lisbon";
 
@@ -210,7 +211,7 @@ async function _GET(req: NextRequest) {
     const activeEventsCount = await prisma.event.count({
       where: {
         organizationId: organization.id,
-        status: EventStatus.PUBLISHED,
+        status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
         ...eventTemplateFilter,
       },
     });

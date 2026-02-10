@@ -5,7 +5,7 @@ import path from "path";
 const ROOT = process.cwd();
 const UI_FILES = [
   "app/organizacao/(dashboard)/settings/page.tsx",
-  "app/admin/organizacoes/page.tsx",
+  "app/admin/(protected)/organizacoes/page.tsx",
   "app/[username]/page.tsx",
   "app/organizacao/OrganizationTopBar.tsx",
   "app/organizacao/OrganizationDashboardShell.tsx",

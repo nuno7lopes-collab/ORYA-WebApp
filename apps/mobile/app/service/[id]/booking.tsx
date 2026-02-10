@@ -15,6 +15,7 @@ import { useAuth } from "../../../lib/auth";
 import { safeBack } from "../../../lib/navigation";
 import { getUserFacingError } from "../../../lib/errors";
 import { trackEvent } from "../../../lib/analytics";
+import { api } from "../../../lib/api";
 
 type AvailabilityDay = {
   date: string;
@@ -61,6 +62,8 @@ const formatTime = (date: string) => {
   return parsed.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
 };
 
+const monthKey = (year: number, month: number) => year * 12 + (month - 1);
+
 const resolveAssignmentMode = (serviceKind?: string | null, orgMode?: string | null) => {
   if (serviceKind === "COURT") return "RESOURCE";
   if (orgMode === "RESOURCE") return "RESOURCE";
@@ -101,11 +104,16 @@ export default function ServiceBookingScreen() {
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [pendingSlot, setPendingSlot] = useState<AvailabilitySlot | null>(null);
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
 
   const assignmentMode = useMemo(
     () => resolveAssignmentMode(service?.kind ?? null, service?.organization?.reservationAssignmentMode ?? null),
     [service?.kind, service?.organization?.reservationAssignmentMode],
   );
+  const guestAllowed = Boolean(service?.policy?.guestBookingAllowed);
+  const isGuest = !session?.user?.id;
 
   const availableProfessionals = useMemo(() => {
     const professionals = service?.professionals ?? [];
@@ -202,9 +210,12 @@ export default function ServiceBookingScreen() {
     try {
       const params = new URLSearchParams({ month: calendarMonth });
       buildAvailabilityParams(params);
-      const res = await fetch(`/api/servicos/${serviceId}/calendario?${params.toString()}`, { cache: "no-store" });
-      const json: CalendarResponse = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) {
+      const result = await api.requestRaw<CalendarResponse>(
+        `/api/servicos/${serviceId}/calendario?${params.toString()}`,
+        { cache: "no-store" },
+      );
+      const json: CalendarResponse = result.data ?? { ok: false };
+      if (!result.ok || !json.ok) {
         throw new Error(json.error || "Não foi possível carregar o calendário.");
       }
       setCalendarDays(json.days ?? []);
@@ -222,9 +233,11 @@ export default function ServiceBookingScreen() {
     try {
       const params = new URLSearchParams({ day: selectedDay });
       buildAvailabilityParams(params);
-      const res = await fetch(`/api/servicos/${serviceId}/slots?${params.toString()}`, { cache: "no-store" });
-      const json: SlotsResponse = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) {
+      const result = await api.requestRaw<SlotsResponse>(`/api/servicos/${serviceId}/slots?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const json: SlotsResponse = result.data ?? { ok: false };
+      if (!result.ok || !json.ok) {
         throw new Error(json.error || "Não foi possível carregar horários.");
       }
       setSlots(json.items ?? []);
@@ -262,7 +275,7 @@ export default function ServiceBookingScreen() {
   const reserveSlot = useCallback(async (slotOverride?: AvailabilitySlot) => {
     const slot = slotOverride ?? selectedSlot;
     if (!serviceId || !service || !slot) return;
-    if (!session?.user?.id) {
+    if (isGuest && !guestAllowed) {
       openAuth();
       return;
     }
@@ -272,6 +285,11 @@ export default function ServiceBookingScreen() {
       if (service.locationMode === "CHOOSE_AT_BOOKING" && !addressSelection?.addressId) {
         throw new Error("Seleciona uma morada antes de reservar.");
       }
+      if (isGuest) {
+        if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
+          throw new Error("Nome, email e telemóvel são obrigatórios.");
+        }
+      }
       const payload = buildBookingPayload({
         startsAt: slot.startsAt,
         professionalId: assignmentMode === "PROFESSIONAL" ? selectedProfessionalId : null,
@@ -280,16 +298,33 @@ export default function ServiceBookingScreen() {
         selectedAddons: selectedAddonsPayload,
         packageId: selectedPackageId,
       });
-      const res = await fetch(`/api/servicos/${serviceId}/reservar`, {
+      const payloadWithGuest = isGuest
+        ? {
+            ...payload,
+            guest: {
+              name: guestName.trim(),
+              email: guestEmail.trim(),
+              phone: guestPhone.trim(),
+            },
+          }
+        : payload;
+      const result = await api.requestRaw<{
+        ok: boolean;
+        booking?: { id?: number; startsAt?: string; pendingExpiresAt?: string | null };
+        error?: string;
+        message?: string;
+      }>(`/api/servicos/${serviceId}/reservar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payloadWithGuest),
       });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
+      const json = result.data;
+      if (!result.ok || !json?.ok) {
         if (json?.error === "PHONE_REQUIRED") {
-          setPhoneRequired(true);
-          setPendingSlot(slot);
+          if (!isGuest) {
+            setPhoneRequired(true);
+            setPendingSlot(slot);
+          }
           throw new Error(json?.message || "Telemóvel obrigatório para reservar.");
         }
         throw new Error(json?.message || json?.error || "Não foi possível criar a pré-reserva.");
@@ -306,6 +341,9 @@ export default function ServiceBookingScreen() {
         bookingStartsAt: json.booking?.startsAt ?? slot.startsAt,
         pendingExpiresAt: json.booking?.pendingExpiresAt ?? null,
         bookingExpiresAt: json.booking?.pendingExpiresAt ?? null,
+        guest: isGuest
+          ? { name: guestName.trim(), email: guestEmail.trim(), phone: guestPhone.trim() }
+          : null,
         sourceType: "SERVICE_BOOKING",
         ticketName: "Reserva",
         quantity: 1,
@@ -337,6 +375,11 @@ export default function ServiceBookingScreen() {
     addressSelection?.addressId,
     assignmentMode,
     basePriceCents,
+    guestAllowed,
+    guestEmail,
+    guestName,
+    guestPhone,
+    isGuest,
     openAuth,
     router,
     selectedAddonsPayload,
@@ -361,13 +404,17 @@ export default function ServiceBookingScreen() {
     setPhoneSaving(true);
     setBookingError(null);
     try {
-      const res = await fetch("/api/me/contact-phone", {
+      const result = await api.requestRaw<{
+        ok: boolean;
+        error?: string;
+        message?: string;
+      }>("/api/me/contact-phone", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contactPhone: value }),
       });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
+      const json = result.data;
+      if (!result.ok || !json?.ok) {
         throw new Error(json?.error || "Não foi possível guardar o telemóvel.");
       }
       setPhoneRequired(false);
@@ -388,7 +435,8 @@ export default function ServiceBookingScreen() {
   const canReserve =
     Boolean(selectedSlot) &&
     (!phoneRequired) &&
-    (!service || service.locationMode !== "CHOOSE_AT_BOOKING" || Boolean(addressSelection?.addressId));
+    (!service || service.locationMode !== "CHOOSE_AT_BOOKING" || Boolean(addressSelection?.addressId)) &&
+    (!isGuest || (guestName.trim() && guestEmail.trim() && guestPhone.trim()));
 
   if (isLoading) {
     return (
@@ -411,13 +459,16 @@ export default function ServiceBookingScreen() {
           <View className="px-5 pt-12 pb-6">
             <Pressable
               onPress={handleBack}
-              className="flex-row items-center gap-2"
-              style={{ minHeight: tokens.layout.touchTarget }}
+              style={{
+                width: tokens.layout.touchTarget,
+                height: tokens.layout.touchTarget,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
             >
               <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-              <Text className="text-white text-sm font-semibold">Voltar</Text>
             </Pressable>
           </View>
           <View className="px-5">
@@ -448,13 +499,16 @@ export default function ServiceBookingScreen() {
         <View className="px-5 pt-12 pb-4">
           <Pressable
             onPress={handleBack}
-            className="flex-row items-center gap-2"
-            style={{ minHeight: tokens.layout.touchTarget }}
+            style={{
+              width: tokens.layout.touchTarget,
+              height: tokens.layout.touchTarget,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
             accessibilityRole="button"
             accessibilityLabel="Voltar"
           >
             <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-            <Text className="text-white text-sm font-semibold">Voltar</Text>
           </Pressable>
         </View>
 
@@ -629,7 +683,12 @@ export default function ServiceBookingScreen() {
                       onPress={() => {
                         const [year, month] = calendarMonth.split("-").map(Number);
                         const prev = new Date(year, month - 2, 1);
-                        setCalendarMonth(prev.toISOString().slice(0, 7));
+                        const today = new Date();
+                        const minKey = monthKey(today.getFullYear(), today.getMonth() + 1);
+                        const prevKey = monthKey(prev.getFullYear(), prev.getMonth() + 1);
+                        if (prevKey >= minKey) {
+                          setCalendarMonth(prev.toISOString().slice(0, 7));
+                        }
                       }}
                       className="rounded-full border border-white/10 px-2 py-1"
                       accessibilityRole="button"
@@ -642,7 +701,13 @@ export default function ServiceBookingScreen() {
                       onPress={() => {
                         const [year, month] = calendarMonth.split("-").map(Number);
                         const next = new Date(year, month, 1);
-                        setCalendarMonth(next.toISOString().slice(0, 7));
+                        const today = new Date();
+                        const minKey = monthKey(today.getFullYear(), today.getMonth() + 1);
+                        const maxKey = minKey + 3;
+                        const nextKey = monthKey(next.getFullYear(), next.getMonth() + 1);
+                        if (nextKey <= maxKey) {
+                          setCalendarMonth(next.toISOString().slice(0, 7));
+                        }
                       }}
                       className="rounded-full border border-white/10 px-2 py-1"
                       accessibilityRole="button"
@@ -687,6 +752,40 @@ export default function ServiceBookingScreen() {
                 )}
               </View>
             </GlassCard>
+
+            {isGuest && guestAllowed ? (
+              <GlassCard intensity={50}>
+                <View className="gap-3">
+                  <Text className="text-white text-sm font-semibold">Dados do convidado</Text>
+                  <View className="gap-2">
+                    <TextInput
+                      value={guestName}
+                      onChangeText={setGuestName}
+                      placeholder="Nome"
+                      placeholderTextColor="rgba(255,255,255,0.45)"
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
+                    />
+                    <TextInput
+                      value={guestEmail}
+                      onChangeText={setGuestEmail}
+                      placeholder="Email"
+                      placeholderTextColor="rgba(255,255,255,0.45)"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
+                    />
+                    <TextInput
+                      value={guestPhone}
+                      onChangeText={setGuestPhone}
+                      placeholder="Telemóvel"
+                      placeholderTextColor="rgba(255,255,255,0.45)"
+                      keyboardType="phone-pad"
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
+                    />
+                  </View>
+                </View>
+              </GlassCard>
+            ) : null}
 
             {selectedDay ? (
               <GlassCard intensity={50}>
@@ -801,7 +900,7 @@ export default function ServiceBookingScreen() {
                     </Text>
                   )}
                 </Pressable>
-                {!session?.user?.id ? (
+                {!session?.user?.id && !guestAllowed ? (
                   <Text className="text-white/60 text-xs text-center">Inicia sessão para concluir.</Text>
                 ) : null}
               </View>

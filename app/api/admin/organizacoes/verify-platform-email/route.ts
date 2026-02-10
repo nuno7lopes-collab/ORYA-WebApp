@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
@@ -9,6 +10,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { OrgType } from "@prisma/client";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type VerifyPlatformEmailBody = {
   organizationId?: number | string;
@@ -29,7 +31,7 @@ function fail(
   return respondError(ctx, { errorCode, message, retryable }, { status });
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -115,6 +117,18 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
+    await auditAdminAction({
+      action: "ORGANIZATION_VERIFY_PLATFORM_EMAIL",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: {
+        organizationId: organization.id,
+        alreadyVerified,
+        cancelledPayouts,
+        officialEmail: updated.officialEmail,
+      },
+    });
+
     return respondOk(
       ctx,
       {
@@ -137,3 +151,4 @@ export async function POST(req: NextRequest) {
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
+export const POST = withApiEnvelope(_POST);

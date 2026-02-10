@@ -7,6 +7,12 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import type { RequestContext } from "@/lib/http/requestContext";
 import { verifyMfaCode } from "@/lib/admin/mfa";
+import {
+  readAdminHost,
+  readMfaSessionCookie,
+  shouldRequireAdminMfa,
+  verifyMfaSession,
+} from "@/lib/admin/mfaSession";
 import type { Prisma } from "@prisma/client";
 
 const execFileAsync = promisify(execFile);
@@ -37,6 +43,21 @@ function parseAllowlist(value?: string | null) {
     .filter(Boolean);
 }
 
+export function resolveInfraIpAllowlist(action?: string | null) {
+  const normalized = (action ?? "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  const scopedKey = normalized ? `ADMIN_INFRA_${normalized}_IP_ALLOWLIST` : "";
+  const candidates = [
+    scopedKey,
+    "ADMIN_INFRA_IP_ALLOWLIST",
+    "ADMIN_ACTION_IP_ALLOWLIST",
+  ].filter(Boolean);
+  for (const key of candidates) {
+    const value = process.env[key];
+    if (value && value.trim()) return parseAllowlist(value);
+  }
+  return [];
+}
+
 function ipv4ToLong(ip: string) {
   const parts = ip.split(".").map((part) => Number(part));
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) {
@@ -55,8 +76,7 @@ function cidrContains(cidr: string, ip: string) {
   return (ipLong & mask) === (baseLong & mask);
 }
 
-function isIpAllowed(ip: string | null) {
-  const allowlist = parseAllowlist(process.env.ADMIN_ACTION_IP_ALLOWLIST);
+function isIpAllowed(ip: string | null, allowlist: string[]) {
   if (allowlist.length === 0) return true;
   if (!ip) return false;
   if (allowlist.includes("*")) return true;
@@ -88,6 +108,7 @@ export async function requireInfraAction(params: {
   confirmProd?: unknown;
   mfaCode?: string | null;
   recoveryCode?: string | null;
+  ipAllowlist?: string[];
 }) {
   if (process.env.INFRA_READ_ONLY !== "false") {
     return { ok: false as const, status: 403, error: "INFRA_READ_ONLY", message: "Infra read-only." };
@@ -102,18 +123,27 @@ export async function requireInfraAction(params: {
   const headerBreakGlass = params.req.headers.get("x-orya-break-glass");
   const bypassAllowlist = breakGlass && headerBreakGlass === breakGlass;
 
+  const allowlist = params.ipAllowlist ?? parseAllowlist(process.env.ADMIN_ACTION_IP_ALLOWLIST);
   const clientIp = getClientIp(params.req);
-  if (!bypassAllowlist && !isIpAllowed(clientIp)) {
+  if (!bypassAllowlist && !isIpAllowed(clientIp, allowlist)) {
     return { ok: false as const, status: 403, error: "IP_NOT_ALLOWED", message: "IP não permitido." };
   }
 
-  const mfaResult = await verifyMfaCode({
-    userId: params.admin.userId,
-    code: params.mfaCode,
-    recoveryCode: params.recoveryCode,
-  });
-  if (!mfaResult.ok) {
-    return { ok: false as const, status: 401, error: mfaResult.error, message: "2FA inválido." };
+  const host = await readAdminHost(params.req);
+  const requiresMfa = shouldRequireAdminMfa(host);
+  if (requiresMfa) {
+    const token = await readMfaSessionCookie(params.req);
+    const session = verifyMfaSession(token, params.admin.userId);
+    if (!session.ok) {
+      const mfaResult = await verifyMfaCode({
+        userId: params.admin.userId,
+        code: params.mfaCode,
+        recoveryCode: params.recoveryCode,
+      });
+      if (!mfaResult.ok) {
+        return { ok: false as const, status: 401, error: mfaResult.error, message: "2FA inválido." };
+      }
+    }
   }
 
   return { ok: true as const };

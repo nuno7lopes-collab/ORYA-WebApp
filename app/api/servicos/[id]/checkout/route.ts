@@ -6,8 +6,8 @@ import { retrievePaymentIntent, cancelPaymentIntent } from "@/domain/finance/gat
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { isUnauthenticatedError } from "@/lib/security";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
@@ -16,11 +16,16 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { normalizeEmail } from "@/lib/utils/email";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
+
+const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const HOLD_MINUTES = 10;
 const ORYA_CARD_FEE_BPS = 100;
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -35,8 +40,16 @@ export async function POST(
 
   try {
     const supabase = await createSupabaseServer();
-    const user = await ensureAuthenticated(supabase);
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
+    const guestInput = payload?.guest ?? null;
+    const guestEmailRaw = typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
+    const guestNameRaw = typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
+    const guestPhoneRaw = typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
+    const guestEmailNormalized = normalizeEmail(guestEmailRaw);
+    const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
+    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
     const bookingId = Number(payload?.bookingId);
     const paymentMethodRaw =
       typeof payload?.paymentMethod === "string" ? payload.paymentMethod.trim().toLowerCase() : null;
@@ -46,12 +59,24 @@ export async function POST(
       return fail("RESERVA_INVALIDA", "Reserva inválida.", 400);
     }
 
-    const profile = await prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { contactPhone: true },
-    });
-    if (!profile?.contactPhone) {
-      return fail("PHONE_REQUIRED", "Telemóvel obrigatório para reservar.", 400);
+    if (user) {
+      const profile = await prisma.profile.findUnique({
+        where: { id: user.id },
+        select: { contactPhone: true },
+      });
+      if (!profile?.contactPhone) {
+        return fail("PHONE_REQUIRED", "Telemóvel obrigatório para reservar.", 400);
+      }
+    } else {
+      if (!guestEmail || !guestNameRaw) {
+        return fail("GUEST_REQUIRED", "Nome e email obrigatórios para convidado.", 400);
+      }
+      if (!EMAIL_REGEX.test(guestEmailRaw)) {
+        return fail("INVALID_GUEST_EMAIL", "Email inválido.", 400);
+      }
+      if (!guestPhone || !isValidPhone(guestPhone)) {
+        return fail("PHONE_REQUIRED", "Telemóvel obrigatório para reservar.", 400);
+      }
     }
 
     const booking = await prisma.booking.findFirst({
@@ -91,8 +116,14 @@ export async function POST(
     if (!booking || !booking.service) {
       return fail("RESERVA_INVALIDA", "Reserva inválida.", 404);
     }
-    if (booking.userId !== user.id) {
-      return fail("FORBIDDEN", "Sem permissões.", 403);
+    if (user) {
+      if (booking.userId !== user.id) {
+        return fail("FORBIDDEN", "Sem permissões.", 403);
+      }
+    } else {
+      if (!booking.guestEmail || !guestEmailNormalized || booking.guestEmail !== guestEmailNormalized) {
+        return fail("FORBIDDEN", "Sem permissões.", 403);
+      }
     }
     const reservasAccess = await ensureReservasModuleAccess({
       id: booking.service.organizationId,
@@ -114,7 +145,7 @@ export async function POST(
       await cancelBooking({
         bookingId: booking.id,
         organizationId: booking.organizationId,
-        actorUserId: user.id,
+        actorUserId: user?.id ?? null,
         data: { status: "CANCELLED_BY_CLIENT" },
       });
       return fail("RESERVA_EXPIRADA", "Reserva expirada.", 410);
@@ -161,7 +192,6 @@ export async function POST(
     }
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
     const pricing = computePricing(amountCents, 0, {
       platformDefaultFeeMode: "INCLUDED",
       organizationPlatformFeeBps: booking.service.organization.platformFeeBps ?? undefined,
@@ -176,24 +206,17 @@ export async function POST(
       feeMode: pricing.feeMode,
       platformFeeBps: pricing.feeBpsApplied,
       platformFeeFixedCents: pricing.feeFixedApplied,
-      stripeFeeBps: stripeBaseFees.feeBps,
-      stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
     });
     const cardPlatformFeeCents =
       paymentMethod === "card"
         ? Math.max(0, Math.round((amountCents * ORYA_CARD_FEE_BPS) / 10_000))
         : 0;
     const totalCents = combinedFees.totalCents + cardPlatformFeeCents;
-    const stripeFeeEstimateCents =
-      totalCents === 0
-        ? 0
-        : Math.max(
-            0,
-            Math.round((totalCents * (stripeBaseFees.feeBps ?? 0)) / 10_000) +
-              (stripeBaseFees.feeFixedCents ?? 0),
-          );
     const platformFeeCents = Math.min(pricing.platformFeeCents + cardPlatformFeeCents, totalCents);
-    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents - stripeFeeEstimateCents);
+    const stripeFeeEstimateCents = 0;
+    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
     const sourceId = String(booking.id);
     const pendingPayment = await prisma.payment.findFirst({
       where: {
@@ -263,7 +286,10 @@ export async function POST(
           bookingId: String(booking.id),
           serviceId: String(booking.serviceId),
           organizationId: String(booking.organizationId),
-          userId: booking.userId,
+          userId: booking.userId ?? "",
+          guestEmail: booking.guestEmail ?? guestEmailNormalized ?? "",
+          guestName: booking.guestName ?? guestNameRaw ?? "",
+          guestPhone: booking.guestPhone ?? guestPhone ?? "",
           policyId: booking.service.policyId ? String(booking.service.policyId) : "",
           platformFeeCents: String(platformFeeCents),
           cardPlatformFeeCents: String(cardPlatformFeeCents),
@@ -324,7 +350,7 @@ export async function POST(
     await updateBooking({
       bookingId: booking.id,
       organizationId: booking.organizationId,
-      actorUserId: user.id,
+      actorUserId: user?.id ?? null,
       data: { paymentIntentId: intent.id },
     });
 
@@ -345,3 +371,4 @@ export async function POST(
     return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }
 }
+export const POST = withApiEnvelope(_POST);

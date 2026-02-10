@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList,
+  StyleSheet,
   Platform,
   Pressable,
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   UIManager,
   LayoutAnimation,
   View,
-  InteractionManager,
 } from "react-native";
-import { i18n, tokens } from "@orya/shared";
+import { FlashList } from "@shopify/flash-list";
+import { tokens, useTranslation } from "@orya/shared";
 import { useDebouncedValue, useDiscoverFeed } from "../../features/discover/hooks";
 import { useDiscoverStore } from "../../features/discover/store";
 import { useIpLocation } from "../../features/onboarding/hooks";
@@ -20,17 +21,18 @@ import { GlassSurface } from "../../components/glass/GlassSurface";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
-import { DiscoverDateFilter, DiscoverKind, DiscoverOfferCard } from "../../features/discover/types";
+import { DiscoverDateFilter, DiscoverKind, DiscoverOfferCard, DiscoverPriceFilter } from "../../features/discover/types";
 import { FiltersBottomSheet } from "../../components/discover/FiltersBottomSheet";
-import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
+import { DiscoverGridCard, DiscoverGridCardSkeleton } from "../../components/discover/DiscoverGridCard";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { getDistanceKm } from "../../lib/geo";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS } from "react-native-reanimated";
+import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
+import { useGlobalSearchParams, useRouter } from "expo-router";
+import { useScopedTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
+import { useIsFocused } from "@react-navigation/native";
+import { resolveEventInterestTags } from "../../features/events/interestTags";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -40,20 +42,23 @@ type DiscoverListItem =
   | { kind: "skeleton"; key: string }
   | { kind: "offer"; offer: DiscoverOfferCard };
 
-const WORLD_OPTIONS: Array<{ key: "padel" | "events" | "services"; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { key: "padel", label: "Padel", icon: "tennisball" },
-  { key: "events", label: "Eventos", icon: "calendar" },
-  { key: "services", label: "Serviços", icon: "briefcase" },
-];
+type WorldOption = { key: "padel" | "events" | "services"; label: string; icon: keyof typeof Ionicons.glyphMap };
+
+const GRID_COLUMNS = 3;
+const GRID_GAP = 10;
+const GRID_PADDING = 20;
+const GRID_SKELETON_COUNT = 12;
 
 export default function DiscoverScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ search?: string; q?: string }>();
-  const t = i18n.pt.discover;
+  const isFocused = useIsFocused();
+  const params = useGlobalSearchParams<{ search?: string; q?: string }>();
+  const { t } = useTranslation();
   const priceFilter = useDiscoverStore((state) => state.priceFilter);
   const worlds = useDiscoverStore((state) => state.worlds);
   const dateFilter = useDiscoverStore((state) => state.dateFilter);
   const city = useDiscoverStore((state) => state.city);
+  const locationLabel = useDiscoverStore((state) => state.locationLabel);
   const locationAddressId = useDiscoverStore((state) => state.locationAddressId);
   const locationLat = useDiscoverStore((state) => state.locationLat);
   const locationLng = useDiscoverStore((state) => state.locationLng);
@@ -62,6 +67,7 @@ export default function DiscoverScreen() {
   const setWorlds = useDiscoverStore((state) => state.setWorlds);
   const setDateFilter = useDiscoverStore((state) => state.setDateFilter);
   const setLocation = useDiscoverStore((state) => state.setLocation);
+  const clearLocation = useDiscoverStore((state) => state.clearLocation);
   const distanceKm = useDiscoverStore((state) => state.distanceKm);
   const setDistanceKm = useDiscoverStore((state) => state.setDistanceKm);
   const resetFilters = useDiscoverStore((state) => state.resetFilters);
@@ -69,7 +75,13 @@ export default function DiscoverScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [dataReady, setDataReady] = useState(false);
+  const [hiddenEventIds, setHiddenEventIds] = useState<number[]>([]);
+  const hiddenEventSet = useMemo(() => new Set(hiddenEventIds), [hiddenEventIds]);
+  const [hiddenTags, setHiddenTags] = useState<string[]>([]);
+  const hiddenTagSet = useMemo(() => new Set(hiddenTags), [hiddenTags]);
   const searchInputRef = useRef<TextInput>(null);
+  const searchParamsAppliedRef = useRef(false);
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 280);
   const debouncedCity = useDebouncedValue(city, 320);
   const shouldFetchLocation = dataReady && locationSource === "NONE";
   const { data: ipLocation } = useIpLocation(shouldFetchLocation);
@@ -77,20 +89,53 @@ export default function DiscoverScreen() {
   const userLon = locationLng ?? ipLocation?.approxLatLon?.lon ?? null;
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(12);
+  const topBar = useTopBarScroll();
   const locationResolveRef = useRef(false);
+  const { width: screenWidth } = useWindowDimensions();
+  const gridItemSize = useMemo(() => {
+    const available = screenWidth - GRID_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1);
+    return Math.max(80, Math.floor(available / GRID_COLUMNS));
+  }, [screenWidth]);
 
-  const panGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .activeOffsetX([-24, 24])
-        .failOffsetY([-12, 12])
-        .onEnd((event) => {
-          const shouldGo = event.translationX > 70 && Math.abs(event.velocityX) > 300;
-          if (shouldGo) {
-            runOnJS(router.push)("/(tabs)/agora");
-          }
-        }),
-    [router],
+  const { block, unblock } = useScopedTabSwipeBlocker();
+  const worldScrollBlockedRef = useRef(false);
+  const handleWorldScrollStart = useCallback(() => {
+    if (worldScrollBlockedRef.current) return;
+    worldScrollBlockedRef.current = true;
+    block();
+  }, [block]);
+  const handleWorldScrollEnd = useCallback(() => {
+    if (!worldScrollBlockedRef.current) return;
+    worldScrollBlockedRef.current = false;
+    unblock();
+  }, [unblock]);
+
+  const WORLD_OPTIONS: WorldOption[] = useMemo(
+    () => [
+      { key: "padel", label: t("discover:worlds.padel"), icon: "tennisball" },
+      { key: "events", label: t("discover:worlds.events"), icon: "calendar" },
+      { key: "services", label: t("discover:worlds.services"), icon: "briefcase" },
+    ],
+    [t],
+  );
+
+  const DATE_FILTER_LABELS: Record<DiscoverDateFilter, string> = useMemo(
+    () => ({
+      today: t("discover:dateFilters.today"),
+      weekend: t("discover:dateFilters.weekend"),
+      upcoming: t("discover:dateFilters.upcoming"),
+      all: t("discover:dateFilters.all"),
+    }),
+    [t],
+  );
+
+  const PRICE_FILTER_LABELS: Record<DiscoverPriceFilter, string> = useMemo(
+    () => ({
+      free: t("discover:priceFilters.free"),
+      paid: t("discover:priceFilters.paid"),
+      all: t("discover:priceFilters.all"),
+    }),
+    [t],
   );
 
   const isAllWorlds = worlds.length === 0 || worlds.length === WORLD_OPTIONS.length;
@@ -104,22 +149,51 @@ export default function DiscoverScreen() {
           : "events"
       : "all";
 
-  const toggleWorld = (key: "padel" | "events" | "services") => {
-    const exists = worlds.includes(key as any);
-    const next = exists ? worlds.filter((item) => item !== key) : [...worlds, key];
-    setWorlds(next.length === WORLD_OPTIONS.length ? [] : next);
-  };
+  const isSearchActive = searchOpen;
+  const trimmedSearchQuery = debouncedSearchQuery.trim();
+  const feedEnabled = dataReady && (!isSearchActive || trimmedSearchQuery.length > 0);
+  const canShowMapCta = resolvedKind !== "services";
 
-  const { data, isFetching, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+  const toggleWorld = useCallback(
+    (key: "padel" | "events" | "services") => {
+      const exists = worlds.includes(key as any);
+      const next = exists ? worlds.filter((item) => item !== key) : [...worlds, key];
+      setWorlds(next.length === WORLD_OPTIONS.length ? [] : next);
+    },
+    [setWorlds, worlds],
+  );
+
+  const {
+    data,
+    isFetching,
+    isLoading,
+    isError,
+    isRefetching,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } =
     useDiscoverFeed(
-      { q: "", type: priceFilter, kind: resolvedKind, date: dateFilter, city: debouncedCity },
-      dataReady,
+      {
+        q: isSearchActive ? trimmedSearchQuery : "",
+        type: priceFilter,
+        kind: resolvedKind,
+        date: dateFilter,
+        city: debouncedCity,
+      },
+      feedEnabled,
     );
 
   const items = useMemo<DiscoverOfferCard[]>(() => data?.pages.flatMap((page) => page.items) ?? [], [data?.pages]);
 
   const feedItems = useMemo(() => {
     const filtered = items.filter((item) => {
+      if (item.type === "event" && hiddenEventSet.has(item.event.id)) return false;
+      if (item.type === "event" && hiddenTagSet.size > 0) {
+        const tags = resolveEventInterestTags(item.event);
+        if (tags.some((tag) => hiddenTagSet.has(tag))) return false;
+      }
       if (!isAllWorlds) {
         if (item.type === "event") {
           const isPadelEvent = (item.event.categories ?? []).includes("PADEL");
@@ -149,35 +223,99 @@ export default function DiscoverScreen() {
       return true;
     });
     return filtered;
-  }, [distanceKm, isAllWorlds, items, priceFilter, userLat, userLon, worlds]);
+  }, [distanceKm, hiddenEventSet, hiddenTagSet, isAllWorlds, items, priceFilter, userLat, userLon, worlds]);
 
-  const showSkeleton = isLoading && items.length === 0;
-  const showEmpty = !isLoading && !isError && feedItems.length === 0;
-  const hasActiveFilters = Boolean(
-    locationSource !== "NONE" ||
-      priceFilter !== "all" ||
-      !isAllWorlds ||
-      dateFilter !== "all" ||
-      distanceKm !== 5,
-  );
+  const showSearchIdle = isSearchActive && trimmedSearchQuery.length === 0;
+  const showSkeleton = isLoading && items.length === 0 && (!isSearchActive || trimmedSearchQuery.length > 0);
+  const showEmpty =
+    !isLoading && !isError && feedItems.length === 0 && (!isSearchActive || trimmedSearchQuery.length > 0);
+  const activeFilters = useMemo(() => {
+    const chips: Array<{ key: string; label: string; onPress: () => void }> = [];
+    const locationText = locationLabel || city;
+    if (locationSource === "APPLE_MAPS" && locationText) {
+      chips.push({
+        key: "location",
+        label: `Em ${locationText}`,
+        onPress: () => clearLocation(),
+      });
+    }
+    if (dateFilter !== "all") {
+      chips.push({
+        key: `date-${dateFilter}`,
+        label: DATE_FILTER_LABELS[dateFilter],
+        onPress: () => setDateFilter("all"),
+      });
+    }
+    if (priceFilter !== "all") {
+      chips.push({
+        key: `price-${priceFilter}`,
+        label: PRICE_FILTER_LABELS[priceFilter],
+        onPress: () => setPriceFilter("all"),
+      });
+    }
+    if (distanceKm !== 5) {
+      chips.push({
+        key: `distance-${distanceKm}`,
+        label: `Até ${distanceKm} km`,
+        onPress: () => setDistanceKm(5),
+      });
+    }
+    if (!isAllWorlds) {
+      worlds.forEach((world) => {
+        const meta = WORLD_OPTIONS.find((option) => option.key === world);
+        chips.push({
+          key: `world-${world}`,
+          label: meta?.label ?? world,
+          onPress: () => toggleWorld(world),
+        });
+      });
+    }
+    return chips;
+  }, [
+    city,
+    clearLocation,
+    dateFilter,
+    distanceKm,
+    isAllWorlds,
+    locationLabel,
+    locationSource,
+    priceFilter,
+    setDateFilter,
+    setDistanceKm,
+    setPriceFilter,
+    toggleWorld,
+    worlds,
+  ]);
+
+  const hasActiveFilters = activeFilters.length > 0;
+  const showEmptyActions = hasActiveFilters || (!searchOpen && canShowMapCta);
+  const showEmptyClear = hasActiveFilters;
+  const showEmptyMap = !searchOpen && canShowMapCta;
 
   const listData = useMemo<DiscoverListItem[]>(
     () =>
-      showSkeleton
-        ? Array.from({ length: 5 }, (_, index) => ({
+      showSearchIdle
+        ? []
+        : showSkeleton
+        ? Array.from({ length: GRID_SKELETON_COUNT }, (_, index) => ({
             kind: "skeleton" as const,
             key: `discover-skeleton-${index}`,
           }))
         : feedItems.map((offer) => ({ kind: "offer" as const, offer })),
-    [feedItems, showSkeleton],
+    [feedItems, showSearchIdle, showSkeleton],
   );
 
-  const activeKindMeta = useMemo(
-    () => ({
-      subtitle: "Eventos, serviços e experiências para ti.",
-    }),
-    [],
-  );
+  const activeKindMeta = useMemo(() => {
+    const subtitleParts: string[] = [];
+    const locationText = locationLabel || city;
+    if (locationText) subtitleParts.push(`Em ${locationText}`);
+    if (dateFilter !== "all") subtitleParts.push(DATE_FILTER_LABELS[dateFilter]);
+    const subtitle =
+      subtitleParts.length > 0
+        ? subtitleParts.join(" · ")
+        : t("discover:subtitle");
+    return { subtitle };
+  }, [city, dateFilter, locationLabel]);
 
   useEffect(() => {
     if (Platform.OS === "android" || Platform.OS === "ios") {
@@ -187,19 +325,9 @@ export default function DiscoverScreen() {
     }
   }, [items.length]);
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      const task = InteractionManager.runAfterInteractions(() => {
-        if (active) setDataReady(true);
-      });
-      return () => {
-        active = false;
-        task.cancel();
-        setDataReady(false);
-      };
-    }, []),
-  );
+  useEffect(() => {
+    if (isFocused) setDataReady(true);
+  }, [isFocused]);
 
   useEffect(() => {
     if (!ipLocation?.city) return;
@@ -234,12 +362,17 @@ export default function DiscoverScreen() {
   }, [city, ipLocation?.city, locationAddressId, locationSource, setLocation]);
 
   useEffect(() => {
+    if (searchParamsAppliedRef.current) return;
     const shouldOpen = params.search === "1" || params.search === "true";
-    if (shouldOpen) setSearchOpen(true);
-    if (typeof params.q === "string" && params.q.trim().length > 0) {
-      setSearchQuery(params.q);
+    const query = typeof params.q === "string" ? params.q.trim() : "";
+    if (shouldOpen || query) {
+      searchParamsAppliedRef.current = true;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setSearchOpen(true);
+      if (query) setSearchQuery(query);
+      router.setParams({ search: undefined, q: undefined });
     }
-  }, [params.q, params.search]);
+  }, [params.q, params.search, router]);
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -247,55 +380,55 @@ export default function DiscoverScreen() {
     return () => clearTimeout(id);
   }, [searchOpen]);
 
-  const handleCloseSearch = useCallback(() => {
+  const handleCancelSearch = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSearchOpen(false);
     setSearchQuery("");
-    router.setParams({ search: undefined, q: undefined });
-  }, [router]);
+    searchInputRef.current?.blur();
+  }, []);
 
-  const handleSubmitSearch = useCallback(() => {
-    const query = searchQuery.trim();
-    router.push({ pathname: "/search", params: query ? { q: query } : {} });
-  }, [router, searchQuery]);
+  const handleOpenSearch = useCallback(() => {
+    if (searchOpen) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSearchOpen(true);
+  }, [searchOpen]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    searchInputRef.current?.focus();
+  }, []);
 
   const handleRefresh = useCallback(() => {
     refetch();
   }, [refetch]);
 
+  const endReachedGuard = useRef(true);
   const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+    if (!hasNextPage || isFetchingNextPage || isLoading || showSearchIdle) return;
+    if (!endReachedGuard.current) return;
+    endReachedGuard.current = false;
+    fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, showSearchIdle]);
+
+  const handleScrollBeginDrag = useCallback(() => {
+    endReachedGuard.current = true;
+  }, []);
 
   const renderItem = useCallback(
-    ({ item, index }: { item: DiscoverListItem; index: number }) => {
+    ({ item }: { item: DiscoverListItem }) => {
       if (item.kind === "skeleton") {
-        return <EventCardSquareSkeleton />;
+        return <DiscoverGridCardSkeleton size={gridItemSize} style={styles.gridItem} />;
       }
-
-      if (item.offer.type === "event") {
-        return (
-          <EventCardSquare
-            event={item.offer.event}
-            index={index}
-            userLat={userLat}
-            userLon={userLon}
-            source="discover"
-          />
-        );
-      }
-
       return (
-        <GlassSurface intensity={52} padding={16} style={{ marginBottom: 16 }}>
-          <Text className="text-white text-base font-semibold">{item.offer.service.title}</Text>
-          <Text className="text-white/60 text-sm mt-1" numberOfLines={2}>
-            {item.offer.service.description ?? "Serviço premium"}
-          </Text>
-        </GlassSurface>
+        <DiscoverGridCard
+          offer={item.offer}
+          size={gridItemSize}
+          source="discover"
+          style={styles.gridItem}
+        />
       );
     },
-    [userLat, userLon],
+    [gridItemSize],
   );
 
   const keyExtractor = useCallback(
@@ -304,82 +437,113 @@ export default function DiscoverScreen() {
   );
 
   return (
-    <GestureDetector gesture={panGesture}>
-      <LiquidBackground>
-        <TopAppHeader />
-        <FlatList
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding, paddingTop: topPadding }}
-        data={listData}
-        keyExtractor={keyExtractor}
-        keyboardShouldPersistTaps="handled"
-        refreshing={isFetching && !isFetchingNextPage}
-        onRefresh={handleRefresh}
-        removeClippedSubviews={Platform.OS === "android"}
-        initialNumToRender={6}
-        maxToRenderPerBatch={6}
-        updateCellsBatchingPeriod={40}
-        windowSize={7}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.35}
-        ListHeaderComponent={
-          <View>
-            {searchOpen && (
-              <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingHorizontal: 14,
-                    paddingVertical: 10,
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    borderColor: "rgba(255,255,255,0.14)",
-                    backgroundColor: "rgba(255,255,255,0.06)",
-                  }}
-                >
-                  <Ionicons name="search" size={16} color="rgba(240,246,255,0.9)" />
-                  <TextInput
-                    ref={searchInputRef}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholder="Pesquisar eventos, pessoas ou organizações"
-                    placeholderTextColor="rgba(235, 244, 255, 0.45)"
-                    accessibilityLabel="Pesquisar"
-                    accessibilityHint="Escreve para procurar eventos, pessoas ou organizações"
-                    returnKeyType="search"
-                    onSubmitEditing={handleSubmitSearch}
-                    style={{ flex: 1, color: "white", fontSize: 14 }}
-                  />
+    <View collapsable={false} style={{ flex: 1 }}>
+      <LiquidBackground variant="deep">
+        <TopAppHeader
+          scrollState={topBar}
+          variant="custom"
+          centerSlot={
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={20} color="rgba(240,246,255,0.92)" />
+              <View style={styles.searchInputWrap}>
+                <TextInput
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder={t("discover:searchPlaceholder")}
+                  placeholderTextColor="rgba(235, 244, 255, 0.6)"
+                  accessibilityLabel={t("common:actions.search")}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                  editable={searchOpen}
+                  onSubmitEditing={() => searchInputRef.current?.blur()}
+                  style={styles.searchInput}
+                />
+                {!searchOpen ? (
                   <Pressable
-                    onPress={handleCloseSearch}
-                    hitSlop={10}
+                    onPress={handleOpenSearch}
                     accessibilityRole="button"
-                    accessibilityLabel="Fechar pesquisa"
-                    style={({ pressed }) => [
-                      {
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: "rgba(255,255,255,0.08)",
-                        borderWidth: 1,
-                        borderColor: "rgba(255,255,255,0.12)",
-                      },
-                      pressed ? { opacity: 0.8, transform: [{ scale: 0.97 }] } : null,
-                    ]}
-                  >
-                    <Ionicons name="close" size={14} color="rgba(240,246,255,0.8)" />
-                  </Pressable>
-                </View>
+                    accessibilityLabel={t("common:actions.search")}
+                    accessibilityHint={t("discover:cta.openSearch")}
+                    style={styles.searchOverlay}
+                  />
+                ) : null}
               </View>
-            )}
-            <View className="px-5 pb-4 flex-row items-center gap-12">
+              {searchOpen && searchQuery ? (
+                <Pressable
+                  onPress={handleClearSearch}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("common:actions.clearSearch")}
+                  hitSlop={10}
+                  style={({ pressed }) => [styles.searchClear, pressed ? { opacity: 0.8 } : null]}
+                >
+                  <Ionicons name="close" size={14} color="rgba(240,246,255,0.9)" />
+                </Pressable>
+              ) : null}
+            </View>
+          }
+          rightSlot={
+            searchOpen ? (
+              <Pressable
+                onPress={handleCancelSearch}
+                accessibilityRole="button"
+                accessibilityLabel={t("discover:cta.cancelSearch")}
+                hitSlop={10}
+                style={({ pressed }) => [styles.searchCancel, pressed ? { opacity: 0.85 } : null]}
+              >
+                <Text style={styles.searchCancelText}>{t("common:actions.cancel")}</Text>
+              </Pressable>
+            ) : undefined
+          }
+          showNotifications={false}
+          showMessages={false}
+        />
+        <FlashList
+          contentContainerStyle={{ paddingHorizontal: GRID_PADDING, paddingBottom: tabBarPadding, paddingTop: topPadding }}
+          data={listData}
+          keyExtractor={keyExtractor}
+          keyboardShouldPersistTaps="handled"
+          numColumns={GRID_COLUMNS}
+          columnWrapperStyle={styles.gridRow}
+          estimatedItemSize={gridItemSize}
+          refreshing={isRefetching}
+          onRefresh={handleRefresh}
+          removeClippedSubviews={Platform.OS === "android"}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          updateCellsBatchingPeriod={40}
+          windowSize={7}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.35}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onScroll={topBar.onScroll}
+          onScrollEndDrag={topBar.onScrollEndDrag}
+          onMomentumScrollEnd={topBar.onMomentumScrollEnd}
+          scrollEventThrottle={16}
+          ListHeaderComponentStyle={styles.listHeader}
+          ListHeaderComponent={
+            searchOpen ? (
+              trimmedSearchQuery.length > 0 ? (
+                <View className="px-5 pb-4">
+                  <SectionHeader
+                    title={t("discover:sections.results")}
+                    subtitle={t("discover:sections.resultsFor", { query: trimmedSearchQuery })}
+                  />
+                </View>
+              ) : (
+                <View style={{ height: 8 }} />
+              )
+            ) : (
+            <View style={{ width: "100%" }}>
+              <View className="px-5 pb-4 flex-row items-center gap-12">
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                style={{ flex: 1 }}
                 contentContainerStyle={{ gap: 10, paddingVertical: 2 }}
+                onScrollBeginDrag={handleWorldScrollStart}
+                onScrollEndDrag={handleWorldScrollEnd}
+                onMomentumScrollEnd={handleWorldScrollEnd}
               >
                 {WORLD_OPTIONS.map((world) => {
                   const active = worlds.includes(world.key);
@@ -388,32 +552,20 @@ export default function DiscoverScreen() {
                       key={world.key}
                       onPress={() => toggleWorld(world.key)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Filtrar por ${world.label}`}
+                      accessibilityLabel={t("discover:cta.filterBy", { label: world.label })}
                       accessibilityState={{ selected: active }}
                       style={({ pressed }) => [
-                        {
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 8,
-                          paddingHorizontal: 16,
-                          paddingVertical: 10,
-                          borderRadius: 999,
-                          borderWidth: 1,
-                          borderColor: active ? "rgba(170, 220, 255, 0.55)" : "rgba(255,255,255,0.12)",
-                          backgroundColor: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)",
-                          minHeight: tokens.layout.touchTarget,
-                        },
+                        styles.worldChip,
+                        active ? styles.worldChipActive : null,
                         pressed ? { opacity: 0.9 } : null,
                       ]}
                     >
                       <Ionicons
                         name={world.icon}
-                        size={16}
-                        color={active ? "#ffffff" : "rgba(200, 220, 255, 0.7)"}
+                        size={18}
+                        color={active ? "#ffffff" : "rgba(220, 235, 255, 0.7)"}
                       />
-                      <Text style={active ? { color: "#ffffff", fontWeight: "600" } : { color: "rgba(255,255,255,0.7)" }}>
-                        {world.label}
-                      </Text>
+                      <Text style={active ? styles.worldChipTextActive : styles.worldChipText}>{world.label}</Text>
                     </Pressable>
                   );
                 })}
@@ -422,7 +574,7 @@ export default function DiscoverScreen() {
                 <Pressable
                   onPress={() => setFiltersOpen(true)}
                   accessibilityRole="button"
-                  accessibilityLabel="Abrir filtros"
+                  accessibilityLabel={t("discover:cta.openFilters")}
                   style={({ pressed }) => [
                     {
                       flexDirection: "row",
@@ -441,32 +593,7 @@ export default function DiscoverScreen() {
                 >
                   <Ionicons name="options-outline" size={16} color="rgba(255,255,255,0.9)" />
                   <Text style={{ color: "rgba(255,255,255,0.85)", fontWeight: "600", fontSize: 12 }}>
-                    Filtros
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push("/map")}
-                  accessibilityRole="button"
-                  accessibilityLabel="Abrir mapa"
-                  style={({ pressed }) => [
-                    {
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 999,
-                      borderWidth: 1,
-                      borderColor: "rgba(255,255,255,0.12)",
-                      backgroundColor: "rgba(255,255,255,0.08)",
-                      minHeight: tokens.layout.touchTarget,
-                    },
-                    pressed ? { opacity: 0.85 } : null,
-                  ]}
-                >
-                  <Ionicons name="map-outline" size={16} color="rgba(255,255,255,0.9)" />
-                  <Text style={{ color: "rgba(255,255,255,0.85)", fontWeight: "600", fontSize: 12 }}>
-                    Mapa
+                    {t("common:labels.filters")}
                   </Text>
                 </Pressable>
               </View>
@@ -474,82 +601,162 @@ export default function DiscoverScreen() {
 
             {hasActiveFilters ? (
               <View className="px-5 pb-4">
-                <Pressable
-                  onPress={() => resetFilters()}
-                  className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                  style={{ minHeight: tokens.layout.touchTarget - 8 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Limpar filtros"
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+                  onScrollBeginDrag={handleWorldScrollStart}
+                  onScrollEndDrag={handleWorldScrollEnd}
+                  onMomentumScrollEnd={handleWorldScrollEnd}
                 >
-                  <Text className="text-white/75 text-xs font-semibold">Limpar filtros</Text>
-                </Pressable>
+                  {activeFilters.map((filter) => (
+                    <Pressable
+                      key={filter.key}
+                      onPress={filter.onPress}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("discover:cta.removeFilter", { label: filter.label })}
+                      style={({ pressed }) => [
+                        styles.activeChip,
+                        pressed ? { opacity: 0.9 } : null,
+                      ]}
+                    >
+                      <Text style={styles.activeChipText}>{filter.label}</Text>
+                      <Ionicons name="close" size={12} color="rgba(240,246,255,0.7)" />
+                    </Pressable>
+                  ))}
+                  <Pressable
+                    onPress={resetFilters}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("discover:cta.clearFilters")}
+                    style={({ pressed }) => [
+                      styles.clearChip,
+                      pressed ? { opacity: 0.9 } : null,
+                    ]}
+                  >
+                    <Ionicons name="refresh" size={14} color="rgba(240,246,255,0.7)" />
+                    <Text style={styles.activeChipText}>{t("common:actions.clearFilters")}</Text>
+                  </Pressable>
+                </ScrollView>
               </View>
             ) : null}
 
             <View className="px-5">
-              <SectionHeader title="Para ti" subtitle={activeKindMeta.subtitle} />
+              <SectionHeader title={t("discover:sections.forYou")} subtitle={activeKindMeta.subtitle} />
             </View>
           </View>
+            )
         }
         renderItem={renderItem}
-        ListFooterComponent={
-          !showSkeleton ? (
-            <View className="pt-2">
+        ListFooterComponentStyle={styles.listFooter}
+          ListFooterComponent={
+            !showSkeleton ? (
+              <View className="pt-2">
+              {showSearchIdle ? (
+                <GlassSurface intensity={50}>
+                  <Text className="text-white/70 text-sm">{t("discover:empty.prompt")}</Text>
+                </GlassSurface>
+              ) : null}
               {isError ? (
                 <GlassSurface intensity={50}>
-                  <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o feed.</Text>
+                  <Text className="text-red-300 text-sm mb-3">{t("discover:empty.loadError")}</Text>
                   <Pressable
                     onPress={() => refetch()}
                     className="rounded-xl bg-white/10 px-4 py-3"
                     style={{ minHeight: tokens.layout.touchTarget }}
                     accessibilityRole="button"
-                    accessibilityLabel={t.retry}
+                    accessibilityLabel={t("common:actions.retry")}
                   >
-                    <Text className="text-white text-sm font-semibold text-center">{t.retry}</Text>
+                    <Text className="text-white text-sm font-semibold text-center">{t("common:actions.retry")}</Text>
                   </Pressable>
                 </GlassSurface>
               ) : null}
               {showEmpty ? (
-                <GlassSurface intensity={50}>
-                  <Text className="text-white/70 text-sm">{t.empty}</Text>
-                  {hasActiveFilters ? (
-                    <Pressable
-                      onPress={() => resetFilters()}
-                      className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
-                      style={{ minHeight: tokens.layout.touchTarget }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Limpar filtros"
-                    >
-                      <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    onPress={() => router.push("/map")}
-                    className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
-                    style={{ minHeight: tokens.layout.touchTarget }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Ver no mapa"
-                  >
-                    <Text className="text-white text-sm font-semibold text-center">Ver no mapa</Text>
-                  </Pressable>
-                </GlassSurface>
+                <View style={styles.emptyWrap}>
+                  <GlassSurface intensity={45} padding={18} contentStyle={styles.emptyCard}>
+                    <View style={styles.emptyIcon}>
+                      <Ionicons name="sparkles-outline" size={20} color="rgba(240,246,255,0.85)" />
+                    </View>
+                    <Text style={styles.emptyTitle}>
+                      {searchOpen ? t("discover:empty.noResults") : t("discover:empty.noContent")}
+                    </Text>
+                    <Text style={styles.emptySubtitle}>
+                      {searchOpen
+                        ? t("discover:empty.notFound", { query: trimmedSearchQuery })
+                        : hasActiveFilters
+                          ? t("discover:empty.noResultsFilters")
+                          : t("discover:empty.noEventsNearby")}
+                    </Text>
+                    {showEmptyActions ? (
+                      <View style={styles.emptyActions}>
+                        {showEmptyClear ? (
+                          <View style={styles.emptyActionSlot}>
+                            <Pressable
+                              onPress={() => resetFilters()}
+                              style={({ pressed }) => [
+                                styles.emptyCtaIcon,
+                                styles.emptyCtaPrimary,
+                                pressed ? { opacity: 0.92 } : null,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityLabel={t("discover:cta.clearFilters")}
+                            >
+                              <Ionicons name="refresh" size={22} color="#ffffff" />
+                            </Pressable>
+                          </View>
+                        ) : null}
+                        {showEmptyMap ? (
+                          <View style={showEmptyClear ? styles.emptyActionSlot : styles.emptyActionSingle}>
+                            <Pressable
+                              onPress={() => router.push("/map")}
+                              style={({ pressed }) => [
+                                styles.emptyCtaIcon,
+                                styles.emptyCtaSecondary,
+                                pressed ? { opacity: 0.92 } : null,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityLabel={t("discover:cta.seeOnMap")}
+                            >
+                              <Ionicons name="map-outline" size={22} color="rgba(240,246,255,0.95)" />
+                            </Pressable>
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </GlassSurface>
+                  <View style={styles.emptyGhostGrid}>
+                    {Array.from({ length: GRID_COLUMNS * 3 }, (_, index) => (
+                      <View
+                        key={`empty-ghost-${index}`}
+                        style={[styles.emptyGhostTile, { width: gridItemSize, height: gridItemSize }]}
+                      />
+                    ))}
+                  </View>
+                </View>
               ) : null}
-              {isFetchingNextPage ? (
-                <EventCardSquareSkeleton />
+              {!showSearchIdle && isFetchingNextPage ? (
+                <View style={styles.gridFooterRow}>
+                  {Array.from({ length: GRID_COLUMNS }, (_, index) => (
+                    <DiscoverGridCardSkeleton
+                      key={`discover-loading-${index}`}
+                      size={gridItemSize}
+                      style={styles.gridItem}
+                    />
+                  ))}
+                </View>
               ) : null}
-              {!isError && hasNextPage && !isFetchingNextPage ? (
+              {!showSearchIdle && !showEmpty && !isError && hasNextPage && !isFetchingNextPage ? (
                 <Pressable
                   onPress={() => fetchNextPage()}
                   className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"
-                  accessibilityLabel={t.loadMore}
+                  accessibilityLabel={t("common:actions.loadMore")}
                 >
-                  <Text className="text-white text-sm font-semibold text-center">{t.loadMore}</Text>
+                  <Text className="text-white text-sm font-semibold text-center">{t("common:actions.loadMore")}</Text>
                 </Pressable>
               ) : null}
-              {!isLoading && isFetching && !isFetchingNextPage ? (
-                <Text className="mt-3 text-white/50 text-center text-xs">{t.loading}</Text>
+              {!showSearchIdle && !isLoading && isFetching && !isFetchingNextPage ? (
+                <Text className="mt-3 text-white/50 text-center text-xs">{t("common:actions.loading")}</Text>
               ) : null}
             </View>
           ) : null
@@ -566,6 +773,239 @@ export default function DiscoverScreen() {
           onPriceChange={setPriceFilter}
         />
       </LiquidBackground>
-    </GestureDetector>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  listHeader: {
+    width: "100%",
+  },
+  listFooter: {
+    width: "100%",
+  },
+  gridRow: {
+    justifyContent: "flex-start",
+    gap: GRID_GAP,
+  },
+  gridItem: {
+    marginBottom: GRID_GAP,
+  },
+  gridFooterRow: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  emptyWrap: {
+    width: "100%",
+    gap: 16,
+  },
+  emptyCard: {
+    alignItems: "center",
+    gap: 6,
+  },
+  emptyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    color: "rgba(230, 245, 255, 0.6)",
+    fontSize: 11,
+    textAlign: "center",
+  },
+  emptyActions: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 10,
+  },
+  emptyActionSlot: {
+    flex: 1,
+    alignItems: "center",
+  },
+  emptyActionSingle: {
+    width: "100%",
+    maxWidth: 140,
+    alignItems: "center",
+  },
+  emptyCtaIcon: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCtaPrimary: {
+    borderColor: "rgba(170, 220, 255, 0.5)",
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  emptyCtaSecondary: {
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  emptyGhostGrid: {
+    width: "100%",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: GRID_GAP,
+    justifyContent: "flex-start",
+  },
+  emptyGhostTile: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    marginRight: 10,
+  },
+  searchInputWrap: {
+    flex: 1,
+    position: "relative",
+  },
+  searchOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  searchInput: {
+    flex: 1,
+    color: "white",
+    fontSize: 14,
+    fontWeight: "600",
+    paddingVertical: 0,
+  },
+  searchClear: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  searchCancel: {
+    height: 42,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchCancelText: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  searchPlaceholder: {
+    color: "rgba(235, 244, 255, 0.72)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  worldChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    minHeight: tokens.layout.touchTarget + 2,
+  },
+  worldChipActive: {
+    borderColor: "rgba(170, 220, 255, 0.6)",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    shadowColor: "rgba(120, 210, 255, 0.4)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+  worldChipText: {
+    color: "rgba(235, 245, 255, 0.75)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  worldChipTextActive: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    minHeight: tokens.layout.touchTarget - 6,
+  },
+  filterChipActive: {
+    borderColor: "rgba(170, 220, 255, 0.55)",
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  filterChipText: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  filterChipTextActive: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  activeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    minHeight: tokens.layout.touchTarget - 8,
+  },
+  clearChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    minHeight: tokens.layout.touchTarget - 8,
+  },
+  activeChipText: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+});

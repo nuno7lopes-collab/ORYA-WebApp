@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontDownloadsClient from "@/components/storefront/StorefrontDownloadsClient";
+import { normalizeUsernameInput } from "@/lib/username";
+import { isReservedUsername } from "@/lib/reservedUsernames";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +14,20 @@ type PageProps = {
 
 export default async function StoreDownloadsPage({ params }: PageProps) {
   const resolvedParams = await params;
-  const username = resolvedParams?.username;
+  const rawUsername = resolvedParams?.username ?? "";
+  const username = normalizeUsernameInput(rawUsername);
 
-  if (!username || username.toLowerCase() === "me") {
+  if (!username) {
+    notFound();
+  }
+  if (username === "me") {
     redirect("/me");
+  }
+  if (isReservedUsername(username)) {
+    notFound();
+  }
+  if (rawUsername !== username) {
+    redirect(`/${username}/loja/descargas`);
   }
 
   const [profile, organization] = await Promise.all([

@@ -2,7 +2,7 @@
 
 /* ================== CORES BASE ================== */
 :root {
-  --background: #0b1020;
+  --background: #0b1014;
   --foreground: #ffffff;
 
   --orya-pink: #ff00c8;
@@ -47,7 +47,7 @@
 
   --orya-card-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(4, 8, 16, 0.92));
   --orya-card-bg-soft: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(4, 8, 16, 0.88));
-  --orya-topbar-bg: linear-gradient(120deg, rgba(8, 10, 20, 0.55), rgba(8, 10, 20, 0.8));
+  --orya-topbar-bg: linear-gradient(180deg, rgba(11, 16, 20, 0.78), rgba(11, 16, 20, 0.78));
   --org-topbar-height: 64px;
 
   --glass-bg: rgba(255, 255, 255, 0.06);
@@ -58,17 +58,9 @@
   --divider: rgba(255, 255, 255, 0.08);
 
   --theme-bg-color: var(--background);
-  --theme-bg-image: radial-gradient(circle at 18% 18%, rgba(110, 140, 255, 0.28), transparent 55%),
-    radial-gradient(circle at 78% 22%, rgba(255, 122, 205, 0.2), transparent 55%),
-    radial-gradient(circle at 35% 85%, rgba(72, 255, 229, 0.12), transparent 60%),
-    linear-gradient(160deg, #0a0f1e 0%, #0f1428 48%, #0b1020 100%);
-  --theme-bg-overlay: linear-gradient(
-    180deg,
-    rgba(10, 12, 24, 0.15) 0%,
-    rgba(6, 8, 18, 0.6) 58%,
-    rgba(4, 6, 14, 0.92) 100%
-  );
-  --theme-bg-overlay-opacity: 0.92;
+  --theme-bg-image: none;
+  --theme-bg-overlay: none;
+  --theme-bg-overlay-opacity: 1;
   --theme-text: var(--foreground);
   --theme-muted: rgba(255, 255, 255, 0.78);
   --theme-accent: var(--orya-cyan);
@@ -611,7 +603,7 @@ html[data-theme-mode="light"] body:is([data-orya-bg="orya-bg-user"], [data-orya-
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b1020;
+    --background: #0b1014;
     --foreground: #ffffff;
   }
 }
@@ -908,11 +900,15 @@ body[data-nav-hidden="true"] .main-shell {
 
 /* Padding default do main quando a navbar está visível (páginas públicas) */
 body:not([data-nav-hidden="true"]) .main-shell {
-  padding-top: 4rem;
-  padding-bottom: 120px;
+  padding-top: 5.5rem;
+  padding-bottom: 0;
 }
 
 @media (max-width: 768px) {
+  body:not([data-nav-hidden="true"]) .main-shell {
+    padding-bottom: 120px;
+  }
+
   body[data-mobile-nav-hidden="true"] .main-shell {
     padding-top: 0;
   }
@@ -944,6 +940,19 @@ body:not([data-nav-hidden="true"]) .main-shell {
 }
 .orya-scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+.orya-clamp-1 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.orya-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ============ ORYA – React DatePicker dark neon theme ============ */
@@ -1467,7 +1476,7 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
 /* ============ LANDING ORYA ============ */
 
 .landing-shell {
-  --landing-ink: #010103;
+  --landing-ink: #0b1014;
   --landing-cyan: #5ef6ff;
   --landing-blue: #4c6dff;
   --landing-pink: #ff5fd7;
@@ -1499,7 +1508,7 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
   background-size: 300% 100%;
   background-position: 0% 50%;
   filter: blur(22px) saturate(1.4);
-  opacity: 0.9;
+  opacity: 0;
   animation: landing-flow 18s linear infinite;
 }
 
@@ -1510,7 +1519,7 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
     radial-gradient(circle at 20% 50%, rgba(255, 95, 215, 0.22), transparent 60%),
     radial-gradient(circle at 80% 50%, rgba(76, 109, 255, 0.22), transparent 60%),
     radial-gradient(circle at 50% 20%, rgba(94, 246, 255, 0.16), transparent 55%);
-  opacity: 0.6;
+  opacity: 0;
   filter: blur(30px);
   mix-blend-mode: screen;
 }

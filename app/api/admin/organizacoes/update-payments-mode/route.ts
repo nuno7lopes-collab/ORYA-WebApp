@@ -3,6 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { OrgType } from "@prisma/client";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
@@ -109,6 +110,17 @@ async function _POST(req: NextRequest) {
       },
       ip,
       userAgent,
+    });
+
+    await auditAdminAction({
+      action: "ORGANIZATION_PAYMENTS_MODE_UPDATE",
+      actorUserId: admin.userId,
+      payload: {
+        organizationId: organization.id,
+        from: organization.orgType,
+        to: orgType,
+        cancelledPayouts,
+      },
     });
 
     return jsonWrap({

@@ -7,6 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
@@ -62,7 +63,7 @@ function fail(
   );
 }
 
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
@@ -145,7 +146,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
   }
 }
 
-export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
@@ -323,7 +324,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   }
 }
 
-export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
     const user = await requireUser();
@@ -376,3 +377,6 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

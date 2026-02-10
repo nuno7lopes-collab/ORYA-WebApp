@@ -25,6 +25,7 @@ import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { OrganizationFormStatus, type Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
 import { ensurePublicProfileLayout, type PublicProfileModuleType } from "@/lib/publicProfileLayout";
 import { formatEventLocationLabel, pickCanonicalField } from "@/lib/location/eventLocation";
@@ -32,6 +33,7 @@ import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import type { Metadata } from "next";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { isReservedUsername } from "@/lib/reservedUsernames";
+import { normalizeUsernameInput } from "@/lib/username";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -47,7 +49,7 @@ export async function generateMetadata({
   params: PageProps["params"];
 }): Promise<Metadata> {
   const resolved = await params;
-  const username = resolved?.username?.trim();
+  const username = normalizeUsernameInput(resolved?.username ?? "");
   const baseUrl = getAppBaseUrl();
 
   if (!username) {
@@ -311,13 +313,24 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
 export default async function UserProfilePage({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
   const resolvedSearchParams = await searchParams;
-  const usernameParam = resolvedParams?.username;
+  const rawUsernameParam = resolvedParams?.username ?? "";
+  const usernameParam = normalizeUsernameInput(rawUsernameParam);
+  const serviceIdParam = resolvedSearchParams && "serviceId" in resolvedSearchParams
+    ? resolvedSearchParams.serviceId
+    : undefined;
 
-  if (!usernameParam || usernameParam.toLowerCase() === "me") {
+  if (!usernameParam) {
+    notFound();
+  }
+  if (usernameParam === "me") {
     redirect("/me");
   }
   if (isReservedUsername(usernameParam)) {
     notFound();
+  }
+  if (rawUsernameParam !== usernameParam) {
+    const query = serviceIdParam ? `?serviceId=${encodeURIComponent(serviceIdParam)}` : "";
+    redirect(`/${usernameParam}${query}`);
   }
 
   const [viewerId, profile, organizationProfileRaw] = await Promise.all([
@@ -465,7 +478,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       prisma.event.findMany({
         where: {
           organizationId: organizationProfile.id,
-          status: "PUBLISHED",
+          status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
           isDeleted: false,
           type: "ORGANIZATION_EVENT",
         },
@@ -1774,10 +1787,25 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
               </>
             ) : (
               <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl text-center">
-                <h2 className="text-lg font-semibold text-white">Perfil privado</h2>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/10">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-6 w-6 text-white/90"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M7 11V8a5 5 0 0 1 10 0v3" />
+                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                  </svg>
+                </div>
+                <h2 className="mt-3 text-lg font-semibold text-white">Esta conta é privada</h2>
                 <p className="mt-2 text-sm text-white/70">
-                  {displayName} mantém a timeline privada. Envia um pedido para seguir e aguarda
-                  aprovação.
+                  {displayName} mantém a timeline privada. Segue para veres publicações, eventos e
+                  detalhes de padel.
                 </p>
               </section>
             )}

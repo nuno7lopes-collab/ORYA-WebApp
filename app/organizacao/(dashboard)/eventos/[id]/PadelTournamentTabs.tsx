@@ -1655,9 +1655,14 @@ export default function PadelTournamentTabs({
     if (!file) return;
     updateResultDraft(matchId, { uploading: true, error: null });
     try {
+      const organizationId = configRes?.config?.organizationId;
+      if (!organizationId) {
+        updateResultDraft(matchId, { uploading: false, error: "Organização inválida." });
+        return;
+      }
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/upload?scope=padel-match", {
+      const res = await fetch(`/api/upload?scope=padel-match&organizationId=${organizationId}`, {
         method: "POST",
         body: form,
       });

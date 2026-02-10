@@ -3,7 +3,14 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
-import { auditInfraAction, normalizeTargetEnv, requireInfraAction, runScript } from "@/app/api/admin/infra/_helpers";
+import {
+  auditInfraAction,
+  normalizeTargetEnv,
+  requireInfraAction,
+  resolveInfraIpAllowlist,
+  runScript,
+} from "@/app/api/admin/infra/_helpers";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +45,7 @@ function resolveDomains() {
   return { root, app, admin };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -57,6 +64,7 @@ export async function POST(req: NextRequest) {
     if (!mode) return fail(ctx, 400, "MODE_INVALID", "Modo inválido.");
 
     const targetEnv = normalizeTargetEnv(body?.targetEnv);
+    const ipAllowlist = resolveInfraIpAllowlist("MODE");
     const guard = await requireInfraAction({
       req,
       ctx,
@@ -65,6 +73,7 @@ export async function POST(req: NextRequest) {
       confirmProd: body?.confirmProd,
       mfaCode: body?.mfaCode,
       recoveryCode: body?.recoveryCode,
+      ipAllowlist,
     });
     if (!guard.ok) {
       return fail(ctx, guard.status, guard.error, guard.message);
@@ -115,3 +124,4 @@ export async function POST(req: NextRequest) {
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
+export const POST = withApiEnvelope(_POST);

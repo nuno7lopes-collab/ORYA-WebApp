@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getPlatformAndStripeFees, setPlatformFees, setStripeBaseFees } from "@/lib/platformSettings";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 
@@ -81,6 +82,18 @@ async function _POST(req: NextRequest) {
     ]);
 
     const { orya, stripe } = await getPlatformAndStripeFees();
+
+    await auditAdminAction({
+      action: "FEES_UPDATE",
+      actorUserId: admin.userId,
+      payload: {
+        platformFeeBps: orya.feeBps,
+        platformFeeFixedCents: orya.feeFixedCents,
+        stripeFeeBps: stripe.feeBps,
+        stripeFeeFixedCents: stripe.feeFixedCents,
+        stripeRegion: stripe.region,
+      },
+    });
 
     return jsonWrap({ ok: true, orya, stripe }, { status: 200 });
   } catch (err) {

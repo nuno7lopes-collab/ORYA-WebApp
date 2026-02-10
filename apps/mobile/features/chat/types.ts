@@ -35,9 +35,10 @@ export type ChatMessageSender = {
 
 export type ChatMessage = {
   id: string;
-  body: string;
+  body: string | null;
   kind: "USER" | "ANNOUNCEMENT" | "SYSTEM";
   createdAt: string;
+  deletedAt?: string | null;
   sender: ChatMessageSender | null;
 };
 

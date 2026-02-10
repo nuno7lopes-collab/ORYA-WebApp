@@ -13,7 +13,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -105,6 +105,7 @@ const withTimeout = async <T,>(promise: Promise<T>, ms: number, label = "timeout
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ step?: string }>();
   const queryClient = useQueryClient();
   const { session, loading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
@@ -136,8 +137,16 @@ export default function OnboardingScreen() {
     requestId: number;
   } | null>(null);
   const locationRequestIdRef = useRef(0);
+  const didApplyStartRef = useRef(false);
 
   const USERNAME_MIN_LEN = 3;
+
+  const startAtPadel = useMemo(() => {
+    const raw = params?.step;
+    if (!raw) return false;
+    if (Array.isArray(raw)) return raw[0] === "padel";
+    return raw === "padel";
+  }, [params?.step]);
   const USERNAME_DEBOUNCE_MS = 300;
   const USERNAME_TIMEOUT_MS = 6500;
 
@@ -238,6 +247,23 @@ export default function OnboardingScreen() {
       mounted = false;
     };
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!startAtPadel || loadingDraft || didApplyStartRef.current) return;
+    didApplyStartRef.current = true;
+    setInterests((prev) => {
+      if (prev.includes("padel")) {
+        setStep("padel");
+        return prev;
+      }
+      if (prev.length >= MAX_INTERESTS) {
+        setStep("interests");
+        return prev;
+      }
+      setStep("padel");
+      return [...prev, "padel"];
+    });
+  }, [loadingDraft, startAtPadel]);
 
   useEffect(() => {
     if (loadingDraft || didInitDraftRef.current) return;
@@ -473,7 +499,7 @@ export default function OnboardingScreen() {
       });
       await setOnboardingDone(true);
       await clearOnboardingDraft();
-      router.replace("/(tabs)");
+      router.replace("/agora");
     } catch (err: any) {
       const raw = String(err?.message ?? "");
       const message = "Não foi possível concluir o onboarding. Tenta novamente.";
@@ -1000,7 +1026,6 @@ export default function OnboardingScreen() {
                 accessibilityLabel="Voltar"
               >
                 <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-                <Text style={styles.backLabel}>Voltar</Text>
               </Pressable>
             </View>
 

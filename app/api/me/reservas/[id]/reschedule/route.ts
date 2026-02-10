@@ -24,6 +24,7 @@ import {
   getSnapshotRescheduleWindowMinutes,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
+import { normalizeEmail } from "@/lib/utils/email";
 
 const SLOT_STEP_MINUTES = 15;
 
@@ -60,6 +61,15 @@ function buildBlocks(
     end: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
     professionalId: booking.professionalId,
     resourceId: booking.resourceId,
+  }));
+}
+
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
   }));
 }
 
@@ -106,6 +116,7 @@ async function _POST(
         id: true,
         organizationId: true,
         userId: true,
+        guestEmail: true,
         serviceId: true,
         startsAt: true,
         durationMinutes: true,
@@ -133,7 +144,11 @@ async function _POST(
       return fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.");
     }
 
-    if (booking.userId !== user.id) {
+    const normalizedEmail = normalizeEmail(user.email ?? "");
+    const isOwner =
+      booking.userId === user.id ||
+      (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+    if (!isOwner) {
       return fail(403, "FORBIDDEN", "Sem permissões.");
     }
 
@@ -267,7 +282,7 @@ async function _POST(
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
     const bookingEndsAt = new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks] = await Promise.all([
+    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: booking.organizationId,
@@ -311,13 +326,22 @@ async function _POST(
         },
         select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
+      prisma.classSession.findMany({
+        where: {
+          organizationId: booking.organizationId,
+          status: "SCHEDULED",
+          startsAt: { lt: bookingEndsAt },
+          endsAt: { gt: startsAt },
+        },
+        select: { id: true, startsAt: true, endsAt: true, professionalId: true },
+      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(blockingBookings);
+    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
     const slotKey = startsAt.toISOString();
     let slotIsAvailable = false;
@@ -380,6 +404,16 @@ async function _POST(
         startsAt: item.startsAt,
         endsAt: new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000),
       }));
+    classSessions.forEach((session) => {
+      if (assignmentMode === "RESOURCE") return;
+      if (!session.professionalId || session.professionalId !== scopeIdForConflict) return;
+      existing.push({
+        type: "BOOKING",
+        sourceId: `class:${session.id}`,
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+      });
+    });
     softBlocks.forEach((block) => {
       if (block.scopeType === "ORGANIZATION") {
         existing.push({ type: "SOFT_BLOCK", sourceId: String(block.id), startsAt: block.startsAt, endsAt: block.endsAt });

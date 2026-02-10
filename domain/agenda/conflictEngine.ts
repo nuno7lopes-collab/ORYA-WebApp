@@ -66,7 +66,6 @@ const normalize = (items: AgendaCandidate[]) => {
   return [...items]
     .map((item) => ({ ...item, priority: toPriority(item) }))
     .sort((a, b) => {
-      if (b.priority !== a.priority) return b.priority - a.priority;
       const aStart = a.startsAt.getTime();
       const bStart = b.startsAt.getTime();
       if (aStart !== bStart) return aStart - bStart;
@@ -125,30 +124,11 @@ export function evaluateCandidate(params: {
   }
 
   const top = overlapping[0];
-  if (candidate.priority > toPriority(top)) {
-    return {
-      allowed: true,
-      winnerType: candidate.type,
-      reason: "OVERRIDES_LOWER_PRIORITY",
-      conflicts,
-    };
-  }
-
-  if (candidate.priority === toPriority(top)) {
-    return {
-      allowed: false,
-      winnerType: top.type,
-      blockedBy: top.type,
-      reason: "BLOCKED_BY_EQUAL_PRIORITY",
-      conflicts,
-    };
-  }
-
   return {
     allowed: false,
     winnerType: top.type,
     blockedBy: top.type,
-    reason: "BLOCKED_BY_HIGHER_PRIORITY",
+    reason: "BLOCKED_BY_EQUAL_PRIORITY",
     conflicts,
   };
 }

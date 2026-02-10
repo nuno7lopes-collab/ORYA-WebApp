@@ -25,6 +25,7 @@ import { supabase } from "../../lib/supabase";
 import { AuthMethod, setLastAuthMethod } from "../../lib/authMethod";
 import { trackEvent } from "../../lib/analytics";
 import { getMobileEnv } from "../../lib/env";
+import { useTranslation } from "@orya/shared";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -61,6 +62,7 @@ const isAccountLinkError = (err: any) => {
 const isCancelError = (err: any) => err?.code === "ERR_CANCELED" || err?.code === "ERR_CANCELLED";
 
 export default function AuthGatewayScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams<{ next?: string }>();
   const { loading, session } = useAuth();
@@ -143,13 +145,13 @@ export default function AuthGatewayScreen() {
       (reason.includes("host.exp.Exponent") || reason.toLowerCase().includes("unacceptable audience"))
     ) {
       if (showDevHints) {
-        Alert.alert("Apple Sign In", "O login com Apple não funciona no Expo Go. Usa um development build.");
+        Alert.alert(t("auth.errorGeneric"), t("auth.devAppleHint"));
       } else {
-        Alert.alert("Não foi possível entrar.", "Tenta novamente.");
+        Alert.alert(t("auth.errorGeneric"), t("auth.errorRetry"));
       }
       return;
     }
-    Alert.alert("Não foi possível entrar.", "Tenta novamente.");
+    Alert.alert(t("auth.errorGeneric"), t("auth.errorRetry"));
   };
 
   const handleApple = async () => {
@@ -294,45 +296,45 @@ export default function AuthGatewayScreen() {
             <Image source={ORYA_LOGO} style={styles.brandSymbol} contentFit="contain" />
             <Text style={styles.brandWordmark}>ORYA</Text>
           </View>
-          <Text style={styles.title}>Entra na ORYA</Text>
-          <Text style={styles.subtitle}>Descobre serviços, eventos e experiências.</Text>
+          <Text style={styles.title}>{t("auth.heroTitle")}</Text>
+          <Text style={styles.subtitle}>{t("auth.heroSubtitle")}</Text>
         </View>
 
         <GlassCard style={styles.card}>
           <View style={styles.buttonStack}>
             {appleAvailable ? (
               <AuthButton
-                label="Continuar com Apple"
+                label={t("auth.apple")}
                 variant="apple"
                 onPress={handleApple}
                 loading={busyMethod === "apple"}
                 disabled={Boolean(busyMethod)}
-                accessibilityLabel="Continuar com Apple"
+                accessibilityLabel={t("auth.apple")}
               />
             ) : null}
             <AuthButton
-              label="Continuar com Google"
+              label={t("auth.google")}
               variant="google"
               onPress={handleGoogle}
               loading={busyMethod === "google"}
               disabled={Boolean(busyMethod)}
-              accessibilityLabel="Continuar com Google"
+              accessibilityLabel={t("auth.google")}
             />
           </View>
 
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
-            <Text style={styles.dividerText}>ou</Text>
+            <Text style={styles.dividerText}>{t("auth.divider")}</Text>
             <View style={styles.divider} />
           </View>
 
           <AuthButton
-            label="Continuar com e-mail"
+            label={t("auth.emailButton")}
             variant="email"
             onPress={handleEmail}
             loading={busyMethod === "email"}
             disabled={Boolean(busyMethod)}
-            accessibilityLabel="Continuar com e-mail"
+            accessibilityLabel={t("auth.emailButton")}
           />
 
           <View style={styles.legal}>
@@ -342,10 +344,10 @@ export default function AuthGatewayScreen() {
           <Pressable
             onPress={() => setHelpVisible(true)}
             accessibilityRole="button"
-            accessibilityLabel="Precisas de ajuda"
+            accessibilityLabel={t("auth.help")}
             style={styles.helpLink}
           >
-            <Text style={styles.helpText}>Precisas de ajuda?</Text>
+            <Text style={styles.helpText}>{t("auth.help")}</Text>
           </Pressable>
         </GlassCard>
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { makeUtcDateFromLocal } from "@/lib/reservas/availability";
+import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
@@ -35,6 +35,15 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
     end: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
     professionalId: booking.professionalId,
     resourceId: booking.resourceId,
+  }));
+}
+
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
   }));
 }
 
@@ -97,6 +106,20 @@ async function _GET(
     const dayParam = parseDayParam(req.nextUrl.searchParams.get("day"));
     if (!dayParam) {
       return jsonWrap({ ok: false, error: "Dia inválido." }, { status: 400 });
+    }
+    const todayParts = getDateParts(new Date(), timezone);
+    const dayKey = dayParam.year * 12 + (dayParam.month - 1);
+    const minKey = todayParts.year * 12 + (todayParts.month - 1);
+    const maxKey = minKey + 3;
+    if (dayKey < minKey || dayKey > maxKey) {
+      return jsonWrap({ ok: false, error: "RANGE_NOT_ALLOWED" }, { status: 400 });
+    }
+    if (
+      dayParam.year === todayParts.year &&
+      dayParam.month === todayParts.month &&
+      dayParam.day < todayParts.day
+    ) {
+      return jsonWrap({ ok: true, items: [] });
     }
 
     const rangeStart = makeUtcDateFromLocal({ ...dayParam, hour: 0, minute: 0 }, timezone);
@@ -256,7 +279,7 @@ async function _GET(
         );
       }
     }
-    const [templates, overrides, bookings] = await Promise.all([
+    const [templates, overrides, bookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -298,13 +321,22 @@ async function _GET(
         },
         select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
+      prisma.classSession.findMany({
+        where: {
+          organizationId: service.organizationId,
+          status: "SCHEDULED",
+          startsAt: { lt: rangeEnd },
+          endsAt: { gt: rangeStart },
+        },
+        select: { startsAt: true, endsAt: true, professionalId: true },
+      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(bookings);
+    const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
 
     const slotMap = new Map<string, { startsAt: Date; durationMinutes: number }>();
     const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly

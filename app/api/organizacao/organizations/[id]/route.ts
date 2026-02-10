@@ -6,6 +6,7 @@ import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -18,7 +19,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -99,3 +100,4 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ id: 
     return fail(500, "INTERNAL_ERROR");
   }
 }
+export const DELETE = withApiEnvelope(_DELETE);

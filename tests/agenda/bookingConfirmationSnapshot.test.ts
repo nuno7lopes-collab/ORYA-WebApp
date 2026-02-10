@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/platformSettings", () => ({
   getPlatformFees: vi.fn(async () => ({ feeBps: 800, feeFixedCents: 30 })),
-  getStripeBaseFees: vi.fn(async () => ({ feeBps: 140, feeFixedCents: 25, region: "UE" })),
 }));
 
 import {
@@ -19,9 +18,6 @@ const basePolicy = {
   allowReschedule: true,
   rescheduleWindowMinutes: 2880,
   guestBookingAllowed: false,
-  allowPayAtVenue: false,
-  depositRequired: false,
-  depositAmountCents: 0,
   noShowFeeCents: 0,
 };
 
@@ -72,7 +68,7 @@ describe("booking confirmation snapshot", () => {
       tx,
       booking,
       now: new Date("2026-01-27T12:00:00.000Z"),
-      paymentMeta: { grossAmountCents: 11_000, cardPlatformFeeCents: 0, stripeFeeEstimateCents: 154 },
+      paymentMeta: { grossAmountCents: 11_000, cardPlatformFeeCents: 0 },
     });
 
     expect(result.ok).toBe(true);

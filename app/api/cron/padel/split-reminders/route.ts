@@ -11,6 +11,7 @@ import { queuePairingReminder, queuePairingWindowOpen } from "@/domain/notificat
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 const WINDOW_MINUTES = 30;
 const MAX_PAIRINGS = 500;
@@ -44,7 +45,7 @@ async function _POST(req: NextRequest) {
           templateType: "PADEL",
           isDeleted: false,
           startsAt: { gte: windowStart, lte: windowEnd },
-          status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+          status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
         },
         select: { id: true, title: true, slug: true, timezone: true, organizationId: true },
         take: 120,

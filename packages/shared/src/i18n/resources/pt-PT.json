@@ -1,0 +1,511 @@
+{
+  "common": {
+    "appName": "ORYA",
+    "actions": {
+      "back": "Voltar",
+      "cancel": "Cancelar",
+      "close": "Fechar",
+      "save": "Guardar",
+      "confirm": "Confirmar",
+      "retry": "Tentar novamente",
+      "reload": "Recarregar",
+      "search": "Pesquisar",
+      "clearSearch": "Limpar pesquisa",
+      "clearFilters": "Limpar filtros",
+      "seeOnMap": "Ver no mapa",
+      "loadMore": "Carregar mais",
+      "explore": "Explorar",
+      "continue": "Continuar",
+      "update": "Atualizar",
+      "sending": "A enviar...",
+      "updating": "A atualizar...",
+      "saving": "A guardar...",
+      "loading": "A carregar...",
+      "delete": "Eliminar",
+      "open": "Abrir",
+      "done": "Concluído",
+      "signIn": "Entrar",
+      "share": "Partilhar",
+      "accept": "Aceitar",
+      "decline": "Recusar",
+      "validate": "Validar",
+      "allow": "Permitir",
+      "notNow": "Agora não",
+      "join": "Juntar-me",
+      "create": "Criar",
+      "openMap": "Abrir no mapa"
+    },
+    "labels": {
+      "email": "Email",
+      "password": "Password",
+      "name": "Nome",
+      "username": "Username",
+      "location": "Localização",
+      "price": "Preço",
+      "date": "Data",
+      "time": "Hora",
+      "search": "Pesquisa",
+      "filters": "Filtros",
+      "interests": "Interesses",
+      "language": "Idioma",
+      "error": "Erro"
+    },
+    "interests": {
+      "padel": "Padel",
+      "concertos": "Concertos",
+      "festas": "Festas",
+      "viagens": "Viagens",
+      "bem_estar": "Bem-estar",
+      "gastronomia": "Gastronomia",
+      "aulas": "Aulas",
+      "workshops": "Workshops"
+    },
+    "status": {
+      "active": "Ativo",
+      "cancelled": "Cancelado",
+      "ended": "Terminado",
+      "draft": "Rascunho",
+      "live": "A decorrer",
+      "upcoming": "Brevemente",
+      "closed": "Fechado",
+      "soldOut": "Esgotado",
+      "available": "Disponível",
+      "public": "Público",
+      "followers": "Só seguidores",
+      "private": "Privado"
+    },
+    "time": {
+      "today": "Hoje",
+      "tomorrow": "Amanhã",
+      "inDays": "Em {{count}} dias",
+      "inHours": "Em {{count}}h",
+      "available": "Disponível",
+      "ended": "Já passou",
+      "startsIn": "Em {{value}}",
+      "endsIn": "Termina {{value}}",
+      "now": "Agora"
+    },
+    "price": {
+      "free": "Grátis",
+      "from": "Desde {{price}}",
+      "ticketsSoon": "Bilhetes em breve",
+      "soldOut": "Esgotado"
+    },
+    "units": {
+      "km": "{{value}} km",
+      "kmShort": "<1 km",
+      "minutesShort": "{{count}} min"
+    },
+    "empty": {
+      "generic": "Sem resultados."
+    }
+  },
+  "auth": {
+    "title": "Entrar",
+    "subtitle": "Entra ou cria conta para continuares.",
+    "heroTitle": "Entra na ORYA",
+    "heroSubtitle": "Descobre serviços, eventos e experiências.",
+    "apple": "Continuar com Apple",
+    "google": "Continuar com Google",
+    "emailButton": "Entrar com Email",
+    "emailMagic": "Receber link por email",
+    "emailPlaceholder": "email@exemplo.pt",
+    "passwordPlaceholder": "Password",
+    "divider": "ou",
+    "help": "Precisas de ajuda?",
+    "privacy": "Privacidade",
+    "terms": "Termos",
+    "errorGeneric": "Não foi possível entrar.",
+    "errorRetry": "Tenta novamente.",
+    "devAppleHint": "O login com Apple não funciona no Expo Go. Usa um development build.",
+    "accountLinkTitle": "Email já existe",
+    "accountLinkBody": "Este email já tem conta noutro método. Queremos ligar as contas para continuares.",
+    "accountLinkContinue": "Continuar com e-mail",
+    "accountLinkCancel": "Cancelar",
+    "email": {
+      "title": "Entrar com e-mail",
+      "subtitle": "Usa o teu e-mail para continuar na ORYA.",
+      "helper": "Confirma o email e verifica o spam se necessário.",
+      "signIn": "Entrar",
+      "signUp": "Criar conta",
+      "toggleToSignIn": "Já tens conta? Entrar",
+      "toggleToSignUp": "Ainda não tens conta? Criar",
+      "resetPassword": "Recuperar password",
+      "sendingReset": "A enviar link...",
+      "showPassword": "Mostrar password",
+      "hidePassword": "Esconder password",
+      "confirmEmailTitle": "Confirma o email",
+      "confirmEmailBody": "Enviámos um link de confirmação para o teu email.",
+      "linkSent": "Link enviado. Confirma o email e entra com a tua password.",
+      "errors": {
+        "invalidEmail": "Email inválido.",
+        "emptyPassword": "Preenche a password.",
+        "invalidCredentials": "Email ou password incorretos.",
+        "emailNotConfirmed": "Confirma o email para continuar.",
+        "userExists": "Já existe uma conta com este email.",
+        "userExistsSignIn": "Já existe uma conta com este email. Entra com a tua password.",
+        "signupDisabled": "Registo temporariamente indisponível.",
+        "invalidPassword": "Password inválida.",
+        "passwordMin": "A password deve ter pelo menos 6 caracteres.",
+        "unknown": "Não foi possível entrar. Tenta novamente.",
+        "resetFailed": "Não foi possível enviar o email de recuperação.",
+        "resetSent": "Enviámos um link para recuperar a password.",
+        "sessionMissing": "Sessão não criada."
+      }
+    },
+    "helpSheet": {
+      "title": "Precisas de ajuda?",
+      "body1": "Se o login falhar, confirma se já tens conta com o mesmo e-mail.",
+      "body2": "No Apple/Google, autoriza o acesso ao e-mail para podermos ligar a conta.",
+      "close": "Fechar"
+    },
+    "legal": {
+      "text": "Ao continuar, aceitas os <terms>Termos</terms> e a <privacy>Política de Privacidade</privacy>."
+    }
+  },
+  "discover": {
+    "title": "Descobrir",
+    "subtitle": "Eventos para hoje e próximos dias",
+    "searchPlaceholder": "Pesquisar",
+    "offer": "Oferta",
+    "worlds": {
+      "padel": "Padel",
+      "events": "Eventos",
+      "services": "Serviços"
+    },
+    "dateFilters": {
+      "today": "Hoje",
+      "weekend": "Fim-de-semana",
+      "upcoming": "Próximos 7 dias",
+      "all": "Qualquer data"
+    },
+    "priceFilters": {
+      "free": "Grátis",
+      "paid": "Pagos",
+      "all": "Todos"
+    },
+    "sections": {
+      "results": "Resultados",
+      "resultsFor": "Para \"{{query}}\"",
+      "forYou": "Para ti"
+    },
+    "empty": {
+      "prompt": "Escreve para pesquisar.",
+      "noResults": "Sem resultados",
+      "noContent": "Nada por aqui ainda",
+      "noResultsFilters": "Não há resultados para estes filtros.",
+      "noEventsNearby": "Ainda não há eventos por aqui.",
+      "notFound": "Não encontrámos “{{query}}”.",
+      "loadError": "Não foi possível carregar o feed."
+    },
+    "cta": {
+      "openFilters": "Abrir filtros",
+      "openSearch": "Abrir pesquisa",
+      "cancelSearch": "Cancelar pesquisa",
+      "clearFilters": "Limpar filtros",
+      "seeOnMap": "Ver no mapa",
+      "filterBy": "Filtrar por {{label}}",
+      "removeFilter": "Remover filtro {{label}}"
+    },
+    "filters": {
+      "title": "Filtros",
+      "close": "Fechar filtros",
+      "location": "Localização",
+      "locationPlaceholder": "Procura uma localização",
+      "clearLocation": "Limpar localização",
+      "distance": "Distância",
+      "date": "Data",
+      "price": "Preço",
+      "eventType": "Tipo",
+      "nearbyDistance": "Perto de ti · {{distance}}",
+      "validating": "A validar morada...",
+      "locationCity": "Localização: {{city}}",
+      "searching": "A procurar...",
+      "noResults": "Sem resultados",
+      "selectLocation": "Selecionar {{label}}",
+      "suggestionsError": "Falha ao obter sugestões.",
+      "validateError": "Não foi possível validar esta morada."
+    }
+  },
+  "agora": {
+    "title": "Agora",
+    "error": "Não foi possível carregar o Agora.",
+    "empty": "Sem atividade agora.",
+    "ctaDiscover": "Ir para Descobrir",
+    "openMap": "Abrir mapa"
+  },
+  "messages": {
+    "title": "Mensagens",
+    "subtitle": "Conversas dos eventos e mensagens diretas.",
+    "requests": "Pedidos",
+    "requestsWithCount": "Pedidos ({{count}})",
+    "unreadCount": "{{count}} novas",
+    "lastMessageEmpty": "Sem mensagens por enquanto.",
+    "empty": {
+      "title": "Ainda não tens mensagens ativas.",
+      "ctaExplore": "Explorar eventos"
+    },
+    "signin": {
+      "title": "Inicia sessão",
+      "body": "Entra na tua conta para veres as mensagens do evento.",
+      "cta": "Entrar",
+      "ctaExplore": "Explorar eventos"
+    },
+    "requestsScreen": {
+      "signinTitle": "Inicia sessão",
+      "signinBody": "Entra para veres os pedidos de mensagem.",
+      "error": "Não foi possível carregar os pedidos.",
+      "empty": "Sem pedidos pendentes.",
+      "requestLabel": "Pedido de mensagem",
+      "userFallback": "Utilizador"
+    },
+    "errors": {
+      "load": "Não foi possível carregar os chats."
+    },
+    "status": {
+      "open": "Chat aberto",
+      "announcements": "Anúncios",
+      "readOnly": "Só leitura",
+      "closed": "Fechado"
+    },
+    "thread": {
+      "eventTitleFallback": "Chat do evento",
+      "conversationTitleFallback": "Conversa",
+      "errors": {
+        "load": "Não foi possível carregar o chat.",
+        "loadMore": "Não foi possível carregar mais mensagens.",
+        "send": "Não foi possível enviar a mensagem.",
+        "undoExpired": "Já não é possível anular esta mensagem.",
+        "undoFailed": "Não foi possível anular.",
+        "muteFailed": "Não foi possível silenciar.",
+        "muteUpdateFailed": "Não foi possível atualizar.",
+        "readOnly": "Este chat está em modo leitura.",
+        "participantsOnly": "Chat disponível apenas para participantes.",
+        "signInRequired": "Inicia sessão para aceder ao chat."
+      },
+      "mute": {
+        "title": "Silenciar conversa",
+        "remove": "Remover silêncio",
+        "chooseDuration": "Escolhe a duração:",
+        "options": {
+          "1h": "1 hora",
+          "8h": "8 horas",
+          "1w": "1 semana",
+          "forever": "Sempre"
+        }
+      },
+      "signinTitle": "Inicia sessão",
+      "signinBody": "Entra para aceder ao chat.",
+      "viewEvent": "Ver evento",
+      "context": {
+        "booking": "Reserva",
+        "service": "Serviço",
+        "org": "Organização",
+        "group": "Grupo",
+        "message": "Mensagem"
+      },
+      "readOnly": {
+        "title": "Chat em modo leitura",
+        "bookingInactive": "A reserva já não está ativa.",
+        "adminsOnly": "Apenas administradores podem enviar mensagens neste momento.",
+        "footer": "Este chat está em modo leitura.",
+        "announcementsOnly": "Apenas organizadores podem publicar anúncios."
+      },
+      "loadOlder": "Carregar mensagens antigas",
+      "announcement": "Anúncio",
+      "undoPromptTitle": "Mensagem",
+      "undoPromptBody": "Anular envio?",
+      "undoAction": "Anular",
+      "messageDeleted": "Mensagem removida",
+      "muted": "Silenciado",
+      "empty": "Ainda não há mensagens. Diz olá.",
+      "inputPlaceholder": "Escreve uma mensagem",
+      "send": "Enviar mensagem"
+    }
+  },
+  "settings": {
+    "title": "Definições",
+    "sections": {
+      "account": {"title": "Conta", "subtitle": "Email e recuperação."},
+      "privacy": {"title": "Privacidade", "subtitle": "Controla quem pode ver o teu perfil."},
+      "interests": {"title": "Interesses", "subtitle": "Escolhe até 6 interesses."},
+      "notifications": {"title": "Notificações", "subtitle": "Emails e alertas essenciais."},
+      "language": {"title": "Idioma", "subtitle": "Escolhe o idioma da app."},
+      "session": {"title": "Sessão e conta", "subtitle": "Termina sessão ou elimina a conta."},
+      "legal": {"title": "Legal e app", "subtitle": "Informação legal e versão."}
+    },
+    "fields": {
+      "email": "Email",
+      "emailPlaceholder": "email@exemplo.pt"
+    },
+    "privacy": {
+      "public": "Perfil público",
+      "followers": "Só seguidores",
+      "private": "Privado",
+      "save": "Guardar privacidade"
+    },
+    "interests": {
+      "selectedCount": "{{count}}/6 selecionados",
+      "save": "Guardar interesses"
+    },
+    "notifications": {
+      "loading": "A carregar notificações...",
+      "social": "Alertas sociais",
+      "events": "Eventos e lembretes",
+      "system": "Sistema e segurança",
+      "marketing": "Marketing e campanhas",
+      "sales": "Vendas e pagamentos",
+      "news": "Email de novidades e segurança",
+      "pushTitle": "Notificações push",
+      "pushSubtitle": "Alertas em tempo real no teu iPhone.",
+      "pushActive": "Ativas",
+      "pushUnavailable": "Indisponível",
+      "pushOpenSettings": "Abrir definições",
+      "pushEnable": "Ativar push",
+      "save": "Guardar notificações"
+    },
+    "account": {
+      "updateEmail": "Atualizar email",
+      "resetPassword": "Recuperar password",
+      "updating": "A atualizar...",
+      "sending": "A enviar..."
+    },
+    "messages": {
+      "invalidEmail": "Indica um email válido.",
+      "emailUpdated": "Email atualizado. Pode ser necessária confirmação.",
+      "emailUpdateFailed": "Não foi possível atualizar o email.",
+      "resetInvalidEmail": "Indica um email válido para recuperar a password.",
+      "resetSent": "Enviámos um link para recuperar a password.",
+      "resetFailed": "Não foi possível enviar o link de recuperação.",
+      "privacySaveFailed": "Não foi possível guardar a privacidade.",
+      "interestsSaveFailed": "Não foi possível guardar os interesses.",
+      "notificationsSaveFailed": "Não foi possível guardar as notificações.",
+      "consentSaveFailed": "Não foi possível guardar o consentimento.",
+      "logoutFailed": "Não foi possível terminar sessão.",
+      "deleteFailed": "Não foi possível marcar a conta para eliminação."
+    },
+    "consents": {
+      "title": "Consentimentos por organização",
+      "subtitle": "Controla como cada organização comunica contigo.",
+      "loading": "A carregar consentimentos...",
+      "empty": "Sem organizações associadas.",
+      "orgFallback": "Organização",
+      "openOrg": "Abrir organização {{name}}",
+      "marketing": "Marketing",
+      "contactEmail": "Contacto por email",
+      "contactSms": "Contacto por SMS"
+    },
+    "session": {
+      "signOut": "Terminar sessão",
+      "delete": "Eliminar conta",
+      "deleteHint": "Esta ação é permanente.",
+      "deleteTitle": "Eliminar conta",
+      "deleteBody": "Para confirmar, escreve o teu email.",
+      "deleteInput": "Email",
+      "deleteConfirm": "Eliminar",
+      "deletePhrase": "APAGAR CONTA",
+      "deleteModalTitle": "Apagar conta ORYA",
+      "deleteModalSubtitle": "A conta será desativada já. Tens 30 dias para reativar via login ou email. Escreve APAGAR CONTA para confirmar.",
+      "deleteConfirmLabel": "Confirmar eliminação",
+      "deleteInputLabel": "Confirmação"
+    },
+    "legal": {
+      "terms": "Termos",
+      "privacy": "Política de Privacidade",
+      "version": "Versão {{version}}",
+      "openTerms": "Abrir termos",
+      "openPrivacy": "Abrir política de privacidade"
+    },
+    "language": {
+      "label": "Idioma",
+      "pt-PT": "Português (Portugal)",
+      "en-US": "English (US)",
+      "es-ES": "Español (España)"
+    }
+  },
+  "onboarding": {
+    "title": "Vamos começar",
+    "steps": {
+      "basic": "Perfil",
+      "interests": "Interesses",
+      "padel": "Padel",
+      "location": "Localização"
+    },
+    "basic": {
+      "title": "Cria o teu perfil",
+      "nameLabel": "Nome completo",
+      "namePlaceholder": "O teu nome",
+      "usernameLabel": "Username",
+      "usernamePlaceholder": "@teunome",
+      "continue": "Continuar"
+    },
+    "interests": {
+      "title": "O que te interessa?",
+      "subtitle": "Escolhe até 6 interesses.",
+      "continue": "Continuar"
+    },
+    "padel": {
+      "title": "O teu perfil de padel",
+      "gender": "Género",
+      "level": "Nível",
+      "side": "Preferência",
+      "continue": "Continuar"
+    },
+    "location": {
+      "title": "Onde estás?",
+      "subtitle": "Usamos isto para recomendar eventos perto de ti.",
+      "allow": "Permitir localização",
+      "skip": "Ignorar por agora",
+      "continue": "Continuar"
+    },
+    "errors": {
+      "usernameTaken": "Este username já está em uso.",
+      "usernameInvalid": "Este username não é válido."
+    }
+  },
+  "events": {
+    "status": {
+      "cancelled": "Cancelado",
+      "ended": "Terminado",
+      "draft": "Rascunho",
+      "active": "Ativo"
+    },
+    "labels": {
+      "tournament": "TORNEIO",
+      "padel": "PADEL",
+      "event": "EVENTO"
+    },
+    "badges": {
+      "live": "AO VIVO",
+      "featured": "DESTAQUE"
+    },
+    "access": {
+      "public": "PÚBLICO",
+      "invite": "CONVITE",
+      "unlisted": "UNLISTED"
+    },
+    "tickets": {
+      "available": "Disponível",
+      "closed": "Fechado",
+      "upcoming": "Brevemente",
+      "soldOut": "Esgotado",
+      "lastSeats": "Últimos {{count}}",
+      "remaining": "{{count}}+ lugares",
+      "freeEntry": "Entrada livre"
+    },
+    "attendance": {
+      "registered": "{{sold}}/{{total}} inscritos",
+      "registeredPlus": "{{sold}}+ inscritos"
+    }
+  },
+  "services": {
+    "kind": {
+      "court": "PADEL",
+      "class": "AULA",
+      "service": "SERVIÇO"
+    }
+  },
+  "errors": {
+    "generic": "Algo correu mal."
+  }
+}

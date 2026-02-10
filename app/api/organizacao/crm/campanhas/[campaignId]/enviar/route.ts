@@ -9,10 +9,11 @@ import { OrganizationMemberRole } from "@prisma/client";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
-export async function POST(req: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
+async function _POST(req: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -98,3 +99,4 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

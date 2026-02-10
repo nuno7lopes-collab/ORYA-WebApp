@@ -7,59 +7,33 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { OrganizationMemberRole } from "@prisma/client";
-
-const CHAT_ORG_ROLES: OrganizationMemberRole[] = [
-  OrganizationMemberRole.OWNER,
-  OrganizationMemberRole.CO_OWNER,
-  OrganizationMemberRole.ADMIN,
-  OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.TRAINER,
-];
+import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 
 async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const entitlements = await prisma.entitlement.findMany({
+    const identityIds = await getUserIdentityIds(user.id);
+    const ownerClauses = buildEntitlementOwnerClauses({
+      userId: user.id,
+      identityIds,
+      email: user.email ?? null,
+    });
+
+    const acceptedInvites = await prisma.chatEventInvite.findMany({
       where: {
-        ownerUserId: user.id,
-        eventId: { not: null },
-        status: { in: ["ACTIVE"] },
+        status: "ACCEPTED",
+        userId: user.id,
+        entitlement: {
+          status: "ACTIVE",
+          OR: ownerClauses,
+          checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
+        },
       },
       select: { eventId: true },
     });
-
-    const orgMemberships = await prisma.organizationMember.findMany({
-      where: {
-        userId: user.id,
-        role: { in: CHAT_ORG_ROLES },
-      },
-      select: { organizationId: true },
-    });
-    const orgIds = Array.from(new Set(orgMemberships.map((m) => m.organizationId)));
-
-    const [ownedEvents, orgEvents] = await Promise.all([
-      prisma.event.findMany({
-        where: { ownerUserId: user.id, isDeleted: false },
-        select: { id: true },
-      }),
-      orgIds.length > 0
-        ? prisma.event.findMany({
-            where: { organizationId: { in: orgIds }, isDeleted: false },
-            select: { id: true },
-          })
-        : Promise.resolve([] as Array<{ id: number }>),
-    ]);
-
-    const eventIds = Array.from(
-      new Set([
-        ...entitlements.map((entry) => entry.eventId).filter(Boolean),
-        ...ownedEvents.map((entry) => entry.id),
-        ...orgEvents.map((entry) => entry.id),
-      ]),
-    ) as number[];
+    const eventIds = Array.from(new Set(acceptedInvites.map((invite) => invite.eventId).filter(Boolean))) as number[];
     if (eventIds.length === 0) {
       return jsonWrap({ items: [] }, { status: 200 });
     }
@@ -107,7 +81,6 @@ async function _GET(req: NextRequest) {
       },
     });
     const eventMap = new Map(events.map((event) => [event.id, event]));
-
     const items = threads
       .map((thread) => {
         const event = eventMap.get(thread.entityId);

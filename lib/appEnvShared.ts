@@ -2,6 +2,12 @@ export type AppEnv = "prod" | "test";
 
 const TEST_HOST_PREFIXES = ["test.", "staging."];
 
+export function isTruthyEnvFlag(value?: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 export function normalizeAppEnv(value?: string | null): AppEnv | null {
   if (!value) return null;
   const lowered = value.trim().toLowerCase();

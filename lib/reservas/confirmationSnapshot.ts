@@ -1,9 +1,9 @@
 import { FeeMode, type Prisma } from "@prisma/client";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 
-export const BOOKING_CONFIRMATION_SNAPSHOT_VERSION = 4;
+export const BOOKING_CONFIRMATION_SNAPSHOT_VERSION = 5;
 
 type BookingPolicyRow = {
   id: number;
@@ -14,9 +14,6 @@ type BookingPolicyRow = {
   allowReschedule: boolean | null;
   rescheduleWindowMinutes: number | null;
   guestBookingAllowed: boolean | null;
-  allowPayAtVenue: boolean | null;
-  depositRequired: boolean | null;
-  depositAmountCents: number | null;
   noShowFeeCents: number | null;
 };
 
@@ -66,9 +63,6 @@ export type BookingPolicySnapshot = {
   allowReschedule: boolean;
   rescheduleWindowMinutes: number | null;
   guestBookingAllowed: boolean;
-  allowPayAtVenue: boolean;
-  depositRequired: boolean;
-  depositAmountCents: number;
   noShowFeeCents: number;
 };
 
@@ -179,9 +173,6 @@ async function resolvePolicy(params: {
         allowReschedule: true,
         rescheduleWindowMinutes: true,
         guestBookingAllowed: true,
-        allowPayAtVenue: true,
-        depositRequired: true,
-        depositAmountCents: true,
         noShowFeeCents: true,
       },
     });
@@ -201,9 +192,6 @@ async function resolvePolicy(params: {
         allowReschedule: true,
         rescheduleWindowMinutes: true,
         guestBookingAllowed: true,
-        allowPayAtVenue: true,
-        depositRequired: true,
-        depositAmountCents: true,
         noShowFeeCents: true,
       },
     })) ??
@@ -219,9 +207,6 @@ async function resolvePolicy(params: {
         allowReschedule: true,
         rescheduleWindowMinutes: true,
         guestBookingAllowed: true,
-        allowPayAtVenue: true,
-        depositRequired: true,
-        depositAmountCents: true,
         noShowFeeCents: true,
       },
     }));
@@ -246,9 +231,6 @@ function buildPolicySnapshot(policy: BookingPolicyRow): BookingPolicySnapshot {
     allowReschedule: Boolean(policy.allowReschedule),
     rescheduleWindowMinutes,
     guestBookingAllowed: Boolean(policy.guestBookingAllowed),
-    allowPayAtVenue: Boolean(policy.allowPayAtVenue),
-    depositRequired: Boolean(policy.depositRequired),
-    depositAmountCents: Math.max(0, toInt(policy.depositAmountCents) ?? 0),
     noShowFeeCents: Math.max(0, toInt(policy.noShowFeeCents) ?? 0),
   };
 }
@@ -307,7 +289,6 @@ async function buildPricingSnapshot(params: {
   const grossAmountCents = toInt(paymentMeta?.grossAmountCents);
 
   const platformDefaults = await getPlatformFees();
-  const stripeDefaults = await getStripeBaseFees();
   const org = booking.service?.organization ?? null;
   const isPlatformOrg = org?.orgType === "PLATFORM";
 
@@ -328,8 +309,8 @@ async function buildPricingSnapshot(params: {
     feeMode,
     platformFeeBps: pricing.feeBpsApplied,
     platformFeeFixedCents: pricing.feeFixedApplied,
-    stripeFeeBps: stripeDefaults.feeBps,
-    stripeFeeFixedCents: stripeDefaults.feeFixedCents,
+    stripeFeeBps: 0,
+    stripeFeeFixedCents: 0,
   });
 
   const totalCents =
@@ -339,8 +320,7 @@ async function buildPricingSnapshot(params: {
 
   // Fee cents represent only what is added on top of the base price.
   const feeCents = feeMode === FeeMode.ADDED ? Math.max(0, totalCents - baseCents) : 0;
-  const stripeFeeEstimateCents =
-    Math.max(0, toInt(paymentMeta?.stripeFeeEstimateCents) ?? combinedFees.stripeFeeCentsEstimate);
+  const stripeFeeEstimateCents = 0;
 
   return {
     baseCents,
@@ -351,8 +331,8 @@ async function buildPricingSnapshot(params: {
     feeMode,
     platformFeeBps: pricing.feeBpsApplied,
     platformFeeFixedCents: pricing.feeFixedApplied,
-    stripeFeeBps: stripeDefaults.feeBps,
-    stripeFeeFixedCents: stripeDefaults.feeFixedCents,
+    stripeFeeBps: 0,
+    stripeFeeFixedCents: 0,
     stripeFeeEstimateCents,
     cardPlatformFeeCents,
     combinedFeeEstimateCents: combinedFees.combinedFeeCents + cardPlatformFeeCents,
@@ -440,9 +420,6 @@ function parsePolicySnapshot(raw: unknown): BookingPolicySnapshot | null {
         ? rescheduleWindowMinutes
         : null,
     guestBookingAllowed: Boolean(raw.guestBookingAllowed),
-    allowPayAtVenue: Boolean(raw.allowPayAtVenue),
-    depositRequired: Boolean(raw.depositRequired),
-    depositAmountCents: clampNonNegative(raw.depositAmountCents),
     noShowFeeCents: clampNonNegative(raw.noShowFeeCents),
   };
 }

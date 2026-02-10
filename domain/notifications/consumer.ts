@@ -648,20 +648,70 @@ export async function deliverNotificationOutboxItem(item: {
     return notification;
   }
 
+  if (item.notificationType === "CHAT_AVAILABLE") {
+    const eventId = typeof payload.eventId === "number" ? payload.eventId : Number(payload.eventId);
+    if (!Number.isFinite(eventId)) throw new Error("CHAT_AVAILABLE_MISSING_EVENT");
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, title: true, slug: true, organizationId: true },
+    });
+    if (!event) throw new Error("CHAT_AVAILABLE_EVENT_NOT_FOUND");
+
+    const title = "Chat disponível";
+    const body = `O chat do evento ${event.title ?? "Evento"} está disponível.`;
+    const ctaUrl = event.slug ? `/eventos/${event.slug}` : "/eventos";
+
+    const notification = await createNotificationRecord({
+      userId: item.userId,
+      type: NotificationType.CHAT_AVAILABLE,
+      title,
+      body,
+      payload: payloadJson,
+      ctaUrl,
+      ctaLabel: "Entrar no chat",
+      priority: "NORMAL",
+      organizationId: event.organizationId ?? undefined,
+      eventId: event.id,
+      sourceEventId,
+    });
+
+    await maybeSendPush(
+      item.userId,
+      notification.type,
+      { title: notification.title ?? title, body: notification.body ?? body, deepLink: ctaUrl },
+      { organizationId: notification.organizationId ?? null, eventId: notification.eventId ?? null },
+    );
+    return notification;
+  }
+
   if (item.notificationType === "CHAT_MESSAGE") {
     const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : null;
+    const threadId = typeof payload.threadId === "string" ? payload.threadId : null;
     const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
     const senderId = typeof payload.senderId === "string" ? payload.senderId : null;
     const preview = typeof payload.preview === "string" ? payload.preview : "";
     const payloadOrgId =
       typeof payload.organizationId === "number" ? payload.organizationId : Number(payload.organizationId);
+    const payloadContextType =
+      typeof payload.contextType === "string" ? payload.contextType : null;
+    const eventId = typeof payload.eventId === "number" ? payload.eventId : Number(payload.eventId);
 
-    if (!conversationId || !messageId) throw new Error("CHAT_MESSAGE_MISSING_CONTEXT");
+    if ((!conversationId && !threadId) || !messageId) throw new Error("CHAT_MESSAGE_MISSING_CONTEXT");
 
-    const conversation = await prisma.chatConversation.findUnique({
-      where: { id: conversationId },
-      select: { id: true, type: true, title: true, organizationId: true },
-    });
+    const conversation = conversationId
+      ? await prisma.chatConversation.findUnique({
+          where: { id: conversationId },
+          select: { id: true, type: true, title: true, organizationId: true, contextType: true },
+        })
+      : null;
+
+    const event =
+      Number.isFinite(eventId) && eventId > 0
+        ? await prisma.event.findUnique({
+            where: { id: eventId },
+            select: { id: true, title: true, slug: true, organizationId: true },
+          })
+        : null;
 
     const sender = senderId
       ? await prisma.profile.findUnique({
@@ -672,18 +722,37 @@ export async function deliverNotificationOutboxItem(item: {
 
     const senderLabel =
       sender?.fullName?.trim() || (sender?.username ? `@${sender.username}` : "Utilizador");
-    const title =
-      conversation?.type === "GROUP"
-        ? `Nova mensagem em ${conversation?.title || "Grupo"}`
-        : `Nova mensagem de ${senderLabel}`;
+    const isEventThread = Boolean(threadId);
+    const isB2C =
+      isEventThread ||
+      !conversation?.organizationId ||
+      ["ORG_CONTACT", "BOOKING", "SERVICE", "USER_DM", "USER_GROUP"].includes(
+        payloadContextType ?? conversation?.contextType ?? "",
+      );
+
+    const title = isEventThread
+      ? `Nova mensagem em ${event?.title || "Evento"}`
+      : isB2C
+        ? conversation?.type === "GROUP" || conversation?.contextType === "USER_GROUP"
+          ? `Nova mensagem em ${conversation?.title || "Grupo"}`
+          : `Nova mensagem de ${senderLabel}`
+        : conversation?.type === "GROUP"
+          ? `Nova mensagem em ${conversation?.title || "Grupo"}`
+          : `Nova mensagem de ${senderLabel}`;
     const body = preview || "Tens uma nova mensagem.";
     const orgId = Number.isFinite(payloadOrgId)
       ? payloadOrgId
-      : conversation?.organizationId ?? undefined;
-    const baseChatUrl = conversationId
-      ? `/organizacao/chat?conversationId=${encodeURIComponent(conversationId)}`
-      : "/organizacao/chat";
-    const ctaUrl = appendOrganizationIdToHref(baseChatUrl, orgId ?? null);
+      : conversation?.organizationId ?? event?.organizationId ?? undefined;
+    const baseChatUrl = isEventThread
+      ? event?.id
+        ? `/messages/${encodeURIComponent(threadId ?? "")}?eventId=${event.id}`
+        : `/messages/${encodeURIComponent(threadId ?? "")}`
+      : isB2C
+        ? `/messages/${encodeURIComponent(conversationId ?? "")}`
+        : conversationId
+          ? `/organizacao/chat?conversationId=${encodeURIComponent(conversationId)}`
+          : "/organizacao/chat";
+    const ctaUrl = isB2C ? baseChatUrl : appendOrganizationIdToHref(baseChatUrl, orgId ?? null);
 
     const notification = await createNotificationRecord({
       userId: item.userId,

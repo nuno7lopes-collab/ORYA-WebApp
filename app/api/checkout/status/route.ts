@@ -5,6 +5,7 @@ import { CheckoutStatus, deriveCheckoutStatusFromPayment } from "@/domain/financ
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Status = CheckoutStatus;
 
@@ -16,7 +17,7 @@ function cleanParam(v: string | null) {
   return s ? s : null;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const url = new URL(req.url);
   const purchaseId = cleanParam(url.searchParams.get("purchaseId"));
@@ -245,3 +246,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

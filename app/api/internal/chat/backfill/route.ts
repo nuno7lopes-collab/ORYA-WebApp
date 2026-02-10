@@ -34,40 +34,6 @@ async function _GET(req: NextRequest) {
       await prisma.$executeRaw(Prisma.sql`SELECT app_v3.chat_ensure_booking_thread(${booking.id})`);
     }
 
-    const eventMemberInsert = await prisma.$executeRaw(Prisma.sql`
-      INSERT INTO app_v3.chat_members (thread_id, user_id, role, joined_at)
-      SELECT DISTINCT
-        ct.id,
-        COALESCE(t.owner_user_id, t.user_id),
-        'PARTICIPANT'::app_v3."ChatMemberRole",
-        now()
-      FROM app_v3.chat_threads ct
-      JOIN app_v3.tickets t ON ct.entity_type = 'EVENT'::app_v3."ChatEntityType" AND ct.entity_id = t.event_id
-      WHERE t.status IN ('ACTIVE')
-        AND COALESCE(t.owner_user_id, t.user_id) IS NOT NULL
-      ON CONFLICT (thread_id, user_id) DO UPDATE
-        SET left_at = NULL,
-            updated_at = now()
-      WHERE app_v3.chat_members.banned_at IS NULL
-    `);
-
-    const tournamentMemberInsert = await prisma.$executeRaw(Prisma.sql`
-      INSERT INTO app_v3.chat_members (thread_id, user_id, role, joined_at)
-      SELECT DISTINCT
-        ct.id,
-        te.user_id,
-        'PARTICIPANT'::app_v3."ChatMemberRole",
-        now()
-      FROM app_v3.chat_threads ct
-      JOIN app_v3.tournament_entries te ON ct.entity_type = 'EVENT'::app_v3."ChatEntityType" AND ct.entity_id = te.event_id
-      WHERE te.status = 'CONFIRMED'
-        AND te.user_id IS NOT NULL
-      ON CONFLICT (thread_id, user_id) DO UPDATE
-        SET left_at = NULL,
-            updated_at = now()
-      WHERE app_v3.chat_members.banned_at IS NULL
-    `);
-
     const bookingMemberInsert = await prisma.$executeRaw(Prisma.sql`
       INSERT INTO app_v3.chat_members (thread_id, user_id, role, joined_at)
       SELECT DISTINCT
@@ -89,8 +55,8 @@ async function _GET(req: NextRequest) {
       ok: true,
       events: events.length,
       bookings: bookings.length,
-      eventMembers: Number(eventMemberInsert),
-      tournamentMembers: Number(tournamentMemberInsert),
+      eventMembers: 0,
+      tournamentMembers: 0,
       bookingMembers: Number(bookingMemberInsert),
     });
   } catch (err) {

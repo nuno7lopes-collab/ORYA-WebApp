@@ -1,12 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
+import { getRequestContext } from "@/lib/http/requestContext";
 import { DsarCaseStatus, DsarCaseType, SaleSummaryStatus, TicketStatus } from "@prisma/client";
 
 async function resolveLegalHold(userId: string) {
@@ -27,6 +29,7 @@ async function resolveLegalHold(userId: string) {
 
 async function _POST(req: NextRequest) {
   try {
+    const ctx = getRequestContext(req);
     const admin = await requireAdminUser();
     if (!admin.ok) {
       return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
@@ -44,6 +47,7 @@ async function _POST(req: NextRequest) {
       select: { id: true, username: true, fullName: true, roles: true },
     });
 
+    const processedUserIds: string[] = [];
     for (const profile of pending) {
       try {
         const legalHold = await resolveLegalHold(profile.id);
@@ -116,10 +120,22 @@ async function _POST(req: NextRequest) {
         } catch (authErr) {
           logWarn("admin.users.purge_pending_auth_remove_failed", { error: authErr, userId: profile.id });
         }
+        processedUserIds.push(profile.id);
       } catch (userErr) {
         logError("admin.users.purge_pending_anonymize_failed", userErr, { userId: profile.id });
       }
     }
+
+    await auditAdminAction({
+      action: "USERS_PURGE_PENDING",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: {
+        processed: processedUserIds.length,
+        attempted: pending.length,
+        userIds: processedUserIds.slice(0, 25),
+      },
+    });
 
     return jsonWrap({ ok: true, processed: pending.length }, { status: 200 });
   } catch (err) {

@@ -3,6 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
 
@@ -74,6 +75,16 @@ async function _POST(req: Request) {
       tableCount: tableNames.length,
       keepProfiles: mode === "KEEP_PROFILES",
       adminUserId: admin.userId,
+    });
+
+    await auditAdminAction({
+      action: "DATA_PURGE",
+      actorUserId: admin.userId,
+      payload: {
+        mode,
+        tableCount: tableNames.length,
+        authUsersTruncated: mode === "ALL",
+      },
     });
 
     return jsonWrap(

@@ -44,6 +44,15 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
+  }));
+}
+
 const toInt = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
@@ -265,7 +274,7 @@ export async function confirmPendingBooking({
   }
 
   const shouldUseOrgOnly = false;
-  const [templates, overrides, blocking] = await Promise.all([
+  const [templates, overrides, blocking, classSessions] = await Promise.all([
     tx.weeklyAvailabilityTemplate.findMany({
       where: {
         organizationId: booking.organizationId,
@@ -308,13 +317,22 @@ export async function confirmPendingBooking({
       },
       select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
     }),
+    tx.classSession.findMany({
+      where: {
+        organizationId: booking.organizationId,
+        status: "SCHEDULED",
+        startsAt: { lt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000) },
+        endsAt: { gt: booking.startsAt },
+      },
+      select: { startsAt: true, endsAt: true, professionalId: true },
+    }),
   ]);
 
   const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
   const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
   const templatesByScope = groupByScope(templates);
   const overridesByScope = groupByScope(overrides);
-  const blocks = buildBlocks(blocking);
+  const blocks = [...buildBlocks(blocking), ...buildSessionBlocks(classSessions)];
   const slotKey = booking.startsAt.toISOString();
   const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly
     ? [{ scopeType: "ORGANIZATION", scopeId: 0 }]
@@ -414,18 +432,20 @@ export async function confirmPendingBooking({
     });
   }
 
-  await tx.userActivity.create({
-    data: {
-      userId: booking.userId,
-      type: "BOOKING_CREATED",
-      visibility: "PRIVATE",
-      metadata: {
-        bookingId: booking.id,
-        serviceId: booking.serviceId,
-        organizationId: booking.organizationId,
+  if (booking.userId) {
+    await tx.userActivity.create({
+      data: {
+        userId: booking.userId,
+        type: "BOOKING_CREATED",
+        visibility: "PRIVATE",
+        metadata: {
+          bookingId: booking.id,
+          serviceId: booking.serviceId,
+          organizationId: booking.organizationId,
+        },
       },
-    },
-  });
+    });
+  }
 
   return {
     ok: true,

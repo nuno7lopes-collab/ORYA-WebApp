@@ -21,6 +21,7 @@ import {
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 const DURATION_OPTIONS = [30, 60, 90, 120];
+const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 type Service = {
   id: number;
@@ -31,6 +32,7 @@ type Service = {
   unitPriceCents: number;
   currency: string;
   isActive: boolean;
+  kind?: string | null;
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode?: "FIXED" | "CHOOSE_AT_BOOKING" | null;
@@ -99,6 +101,37 @@ type ResourceItem = {
   isActive: boolean;
 };
 
+type CourtItem = {
+  id: number;
+  name: string | null;
+  isActive: boolean;
+  padelClubId?: number;
+};
+
+type ClassSeriesItem = {
+  id: number;
+  dayOfWeek: number;
+  startMinute: number;
+  durationMinutes: number;
+  capacity: number;
+  validFrom: string;
+  validUntil: string | null;
+  isActive: boolean;
+  professional?: { id: number; name: string } | null;
+  court?: { id: number; name: string | null; isActive?: boolean | null } | null;
+  _count?: { sessions: number };
+};
+
+type ClassSessionItem = {
+  id: number;
+  startsAt: string;
+  endsAt: string;
+  status: string;
+  professional?: { id: number; name: string } | null;
+  court?: { id: number; name: string | null; isActive?: boolean | null } | null;
+  series?: { id: number };
+};
+
 type LocationMode = "FIXED" | "CHOOSE_AT_BOOKING";
 
 function formatMoney(cents: number, currency: string) {
@@ -123,6 +156,9 @@ export default function ServicoDetalhePage() {
   const packsKey = packsEnabled && serviceId ? `/api/organizacao/servicos/${serviceId}/packs` : null;
   const addonsKey = serviceId ? `/api/organizacao/servicos/${serviceId}/addons` : null;
   const packagesKey = serviceId ? `/api/organizacao/servicos/${serviceId}/packages` : null;
+  const classSeriesKey = serviceId ? `/api/organizacao/servicos/${serviceId}/class-series` : null;
+  const classSessionsKey = serviceId ? `/api/organizacao/servicos/${serviceId}/class-sessions` : null;
+  const clubsKey = "/api/padel/clubs?includeInactive=1";
 
   const { data: serviceData, mutate: mutateService } = useSWR<{ ok: boolean; service: Service }>(
     serviceKey,
@@ -152,16 +188,41 @@ export default function ServicoDetalhePage() {
     packagesKey,
     fetcher,
   );
+  const { data: classSeriesData, mutate: mutateClassSeries } = useSWR<{ ok: boolean; items: ClassSeriesItem[] }>(
+    classSeriesKey,
+    fetcher,
+  );
+  const { data: classSessionsData, mutate: mutateClassSessions } = useSWR<{ ok: boolean; items: ClassSessionItem[] }>(
+    classSessionsKey,
+    fetcher,
+  );
+  const { data: clubsData } = useSWR<{ ok: boolean; items: { id: number; name: string; isActive: boolean }[] }>(
+    clubsKey,
+    fetcher,
+  );
 
   const service = serviceData?.service ?? null;
   const packs = packsEnabled ? packsData?.items ?? [] : [];
   const addons = addonsData?.items ?? [];
   const packages = packagesData?.items ?? [];
+  const classSeries = classSeriesData?.items ?? [];
+  const classSessions = classSessionsData?.items ?? [];
+  const clubs = clubsData?.items ?? [];
   const policies = policiesData?.items ?? [];
   const professionals = professionalsData?.items ?? [];
   const resources = resourcesData?.items ?? [];
   const activeProfessionals = professionals.filter((professional) => professional.isActive);
   const activeResources = resources.filter((resource) => resource.isActive);
+  const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
+  const courtsKey = selectedClubId ? `/api/padel/clubs/${selectedClubId}/courts` : null;
+  const { data: courtsData } = useSWR<{ ok: boolean; items: CourtItem[] }>(courtsKey, fetcher);
+  const courts = courtsData?.items ?? [];
+
+  useEffect(() => {
+    if (selectedClubId || clubs.length === 0) return;
+    const preferred = clubs.find((club) => club.isActive) ?? clubs[0];
+    if (preferred) setSelectedClubId(preferred.id);
+  }, [clubs, selectedClubId]);
 
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -224,6 +285,19 @@ export default function ServicoDetalhePage() {
   const [packDrafts, setPackDrafts] = useState<Record<number, { quantity: string; price: string; label: string; recommended: boolean; isActive: boolean }>>({});
   const [packSavingId, setPackSavingId] = useState<number | null>(null);
 
+  const [seriesEditingId, setSeriesEditingId] = useState<number | null>(null);
+  const [seriesDay, setSeriesDay] = useState("1");
+  const [seriesStartTime, setSeriesStartTime] = useState("18:00");
+  const [seriesDuration, setSeriesDuration] = useState("60");
+  const [seriesCapacity, setSeriesCapacity] = useState("4");
+  const [seriesValidFrom, setSeriesValidFrom] = useState("");
+  const [seriesValidUntil, setSeriesValidUntil] = useState("");
+  const [seriesProfessionalId, setSeriesProfessionalId] = useState("");
+  const [seriesCourtId, setSeriesCourtId] = useState("");
+  const [seriesActive, setSeriesActive] = useState(true);
+  const [seriesSaving, setSeriesSaving] = useState(false);
+  const [seriesError, setSeriesError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!service) return;
     setFormTitle(service.title ?? "");
@@ -245,6 +319,11 @@ export default function ServicoDetalhePage() {
     setLinkedProfessionalIds(service.professionalLinks?.map((link) => link.professionalId) ?? []);
     setLinkedResourceIds(service.resourceLinks?.map((link) => link.resourceId) ?? []);
   }, [service]);
+
+  useEffect(() => {
+    if (seriesValidFrom) return;
+    setSeriesValidFrom(new Date().toISOString().slice(0, 10));
+  }, [seriesValidFrom]);
 
   useEffect(() => {
     if (formLocationMode !== "FIXED") {
@@ -432,7 +511,13 @@ export default function ServicoDetalhePage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload?scope=service-cover", { method: "POST", body: formData });
+      if (!organizationId) {
+        throw new Error("Organização inválida.");
+      }
+      const res = await fetch(`/api/upload?scope=service-cover&organizationId=${organizationId}`, {
+        method: "POST",
+        body: formData,
+      });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.url) {
         throw new Error(json?.error || "Falha no upload da imagem.");
@@ -719,6 +804,107 @@ export default function ServicoDetalhePage() {
       method: "DELETE",
     });
     mutatePacks();
+  };
+
+  const resetSeriesForm = () => {
+    setSeriesEditingId(null);
+    setSeriesDay("1");
+    setSeriesStartTime("18:00");
+    setSeriesDuration("60");
+    setSeriesCapacity("4");
+    setSeriesValidFrom(new Date().toISOString().slice(0, 10));
+    setSeriesValidUntil("");
+    setSeriesProfessionalId("");
+    setSeriesCourtId("");
+    setSeriesActive(true);
+    setSeriesError(null);
+  };
+
+  const handleSeriesEdit = (series: ClassSeriesItem) => {
+    const hour = Math.floor(series.startMinute / 60);
+    const minute = series.startMinute % 60;
+    const pad = (value: number) => String(value).padStart(2, "0");
+    setSeriesEditingId(series.id);
+    setSeriesDay(String(series.dayOfWeek));
+    setSeriesStartTime(`${pad(hour)}:${pad(minute)}`);
+    setSeriesDuration(String(series.durationMinutes));
+    setSeriesCapacity(String(series.capacity));
+    setSeriesValidFrom(series.validFrom?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+    setSeriesValidUntil(series.validUntil ? series.validUntil.slice(0, 10) : "");
+    setSeriesProfessionalId(series.professional?.id ? String(series.professional.id) : "");
+    setSeriesCourtId(series.court?.id ? String(series.court.id) : "");
+    setSeriesActive(series.isActive);
+    setSeriesError(null);
+  };
+
+  const handleSeriesSubmit = async () => {
+    if (!serviceId) return;
+    const [hourStr, minuteStr] = seriesStartTime.split(":");
+    const hour = Number(hourStr);
+    const minute = Number(minuteStr);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+      setSeriesError("Hora inválida.");
+      return;
+    }
+    if (!seriesValidFrom) {
+      setSeriesError("Seleciona a data inicial.");
+      return;
+    }
+    const startMinute = hour * 60 + minute;
+    const payload = {
+      dayOfWeek: Number(seriesDay),
+      startMinute,
+      durationMinutes: Number(seriesDuration),
+      capacity: Number(seriesCapacity),
+      validFrom: seriesValidFrom,
+      validUntil: seriesValidUntil || null,
+      professionalId: seriesProfessionalId ? Number(seriesProfessionalId) : null,
+      courtId: seriesCourtId ? Number(seriesCourtId) : null,
+      isActive: seriesActive,
+    };
+
+    setSeriesSaving(true);
+    setSeriesError(null);
+    try {
+      const url = seriesEditingId
+        ? `/api/organizacao/servicos/${serviceId}/class-series/${seriesEditingId}`
+        : `/api/organizacao/servicos/${serviceId}/class-series`;
+      const res = await fetch(url, {
+        method: seriesEditingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || json?.error || "Erro ao guardar série.");
+      }
+      mutateClassSeries();
+      mutateClassSessions();
+      resetSeriesForm();
+    } catch (err) {
+      setSeriesError(err instanceof Error ? err.message : "Erro ao guardar série.");
+    } finally {
+      setSeriesSaving(false);
+    }
+  };
+
+  const handleSeriesToggle = async (series: ClassSeriesItem, next: boolean) => {
+    if (!serviceId) return;
+    try {
+      const res = await fetch(`/api/organizacao/servicos/${serviceId}/class-series/${series.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: next }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || json?.error || "Erro ao atualizar série.");
+      }
+      mutateClassSeries();
+      mutateClassSessions();
+    } catch (err) {
+      setSeriesError(err instanceof Error ? err.message : "Erro ao atualizar série.");
+    }
   };
 
   if (!serviceId) {
@@ -1545,6 +1731,231 @@ export default function ServicoDetalhePage() {
           })}
         </div>
       </section>
+
+      {service?.kind === "CLASS" && (
+        <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-white">Aulas recorrentes</h2>
+              <p className={DASHBOARD_MUTED}>Cria séries e gere sessões automaticamente.</p>
+            </div>
+            {seriesEditingId && (
+              <button type="button" className={CTA_SECONDARY} onClick={resetSeriesForm}>
+                Cancelar edição
+              </button>
+            )}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <label className="text-[12px] text-white/70">
+              Dia da semana
+              <select
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesDay}
+                onChange={(e) => setSeriesDay(e.target.value)}
+              >
+                {DAY_LABELS.map((label, idx) => (
+                  <option key={label} value={idx}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[12px] text-white/70">
+              Hora
+              <input
+                type="time"
+                step={900}
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesStartTime}
+                onChange={(e) => setSeriesStartTime(e.target.value)}
+              />
+            </label>
+            <label className="text-[12px] text-white/70">
+              Duração (min)
+              <select
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesDuration}
+                onChange={(e) => setSeriesDuration(e.target.value)}
+              >
+                {DURATION_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[12px] text-white/70">
+              Capacidade
+              <input
+                type="number"
+                min="1"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesCapacity}
+                onChange={(e) => setSeriesCapacity(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <label className="text-[12px] text-white/70">
+              Válido desde
+              <input
+                type="date"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesValidFrom}
+                onChange={(e) => setSeriesValidFrom(e.target.value)}
+              />
+            </label>
+            <label className="text-[12px] text-white/70">
+              Válido até
+              <input
+                type="date"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesValidUntil}
+                onChange={(e) => setSeriesValidUntil(e.target.value)}
+              />
+            </label>
+            <label className="text-[12px] text-white/70">
+              Profissional
+              <select
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesProfessionalId}
+                onChange={(e) => setSeriesProfessionalId(e.target.value)}
+              >
+                <option value="">Sem profissional</option>
+                {activeProfessionals.map((professional) => (
+                  <option key={professional.id} value={professional.id}>
+                    {professional.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[12px] text-white/70">
+              Campo (opcional)
+              <select
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={seriesCourtId}
+                onChange={(e) => setSeriesCourtId(e.target.value)}
+                disabled={courts.length === 0}
+              >
+                <option value="">Sem campo</option>
+                {courts.map((court) => (
+                  <option key={court.id} value={court.id}>
+                    {court.name || `Campo ${court.id}`}{court.isActive ? "" : " (inativo)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {clubs.length > 0 && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-[12px] text-white/70">
+                Clube
+                <select
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                  value={selectedClubId ?? ""}
+                  onChange={(e) => setSelectedClubId(Number(e.target.value))}
+                >
+                  {clubs.map((club) => (
+                    <option key={club.id} value={club.id}>
+                      {club.name}{club.isActive ? "" : " (inativo)"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-[12px] text-white/70">
+            <input
+              type="checkbox"
+              checked={seriesActive}
+              onChange={(e) => setSeriesActive(e.target.checked)}
+            />
+            Série ativa
+          </label>
+
+          {seriesError && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+              {seriesError}
+            </div>
+          )}
+
+          <button type="button" className={CTA_PRIMARY} onClick={handleSeriesSubmit} disabled={seriesSaving}>
+            {seriesSaving ? "A guardar..." : seriesEditingId ? "Guardar série" : "Criar série"}
+          </button>
+
+          <div className="space-y-3">
+            {classSeries.length === 0 && (
+              <p className="text-[12px] text-white/60">Sem séries criadas.</p>
+            )}
+            {classSeries.map((series) => {
+              const hour = Math.floor(series.startMinute / 60);
+              const minute = series.startMinute % 60;
+              const pad = (value: number) => String(value).padStart(2, "0");
+              return (
+                <div key={series.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {DAY_LABELS[series.dayOfWeek]} · {pad(hour)}:{pad(minute)} · {series.durationMinutes} min
+                      </p>
+                      <p className="text-[12px] text-white/60">
+                        Capacidade {series.capacity}
+                        {series.professional?.name ? ` · ${series.professional.name}` : ""}
+                        {series.court?.name ? ` · ${series.court.name}${series.court.isActive === false ? " (inativo)" : ""}` : ""}
+                      </p>
+                      <p className="text-[11px] text-white/45">
+                        Válido: {series.validFrom.slice(0, 10)}
+                        {series.validUntil ? ` → ${series.validUntil.slice(0, 10)}` : ""}
+                      </p>
+                      <p className="text-[11px] text-white/45">
+                        Sessões: {series._count?.sessions ?? 0}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                      <span>{series.isActive ? "Ativa" : "Inativa"}</span>
+                      <button
+                        type="button"
+                        className={CTA_SECONDARY}
+                        onClick={() => handleSeriesEdit(series)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className={CTA_DANGER}
+                        onClick={() => handleSeriesToggle(series, !series.isActive)}
+                      >
+                        {series.isActive ? "Desativar" : "Reativar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[12px] text-white/60">Próximas sessões</p>
+            {classSessions.length === 0 ? (
+              <p className="text-[12px] text-white/50">Sem sessões futuras.</p>
+            ) : (
+              <div className="space-y-2">
+                {classSessions.slice(0, 10).map((session) => (
+                  <div key={session.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
+                    {new Date(session.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                    {session.professional?.name ? ` · ${session.professional.name}` : ""}
+                    {session.court?.name ? ` · ${session.court.name}${session.court.isActive === false ? " (inativo)" : ""}` : ""}
+                    {session.status ? ` · ${session.status}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-3")}>
         <div>

@@ -28,6 +28,7 @@ type EventPageClientProps = {
   uiTickets: WaveTicket[];
   checkoutUiVariant: "DEFAULT" | "PADEL";
   locale?: string | null;
+  eventIsActive?: boolean;
   padelMeta?: {
     eventId: number;
     organizationId: number | null;
@@ -59,6 +60,7 @@ export default function EventPageClient({
   uiTickets,
   checkoutUiVariant,
   locale,
+  eventIsActive = true,
   padelMeta,
   defaultPadelTicketId,
 }: EventPageClientProps) {
@@ -104,6 +106,7 @@ export default function EventPageClient({
   useEffect(() => {
     const wantsCheckout = searchParams.get("checkout");
     if (!wantsCheckout || checkoutHandledRef.current) return;
+    if (!eventIsActive) return;
 
     const visibleTickets = fallbackWaves.filter((ticket) => ticket.isVisible);
     const purchasableTickets = visibleTickets.filter(
@@ -150,6 +153,7 @@ export default function EventPageClient({
     promoParam,
     searchParams,
     slug,
+    eventIsActive,
   ]);
 
   useEffect(() => {

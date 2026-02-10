@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { isStoreDigitalEnabled, isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -80,6 +80,9 @@ async function _GET(req: NextRequest) {
     if (!isStoreFeatureEnabled()) {
       return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
     }
+    if (!isStoreDigitalEnabled()) {
+      return jsonWrap({ ok: false, error: "Loja digital desativada." }, { status: 403 });
+    }
 
     const tokenRaw = req.nextUrl.searchParams.get("token");
     const token = tokenRaw?.trim();
@@ -142,6 +145,9 @@ async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
       return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+    }
+    if (!isStoreDigitalEnabled()) {
+      return jsonWrap({ ok: false, error: "Loja digital desativada." }, { status: 403 });
     }
 
     const supabase = await createSupabaseServer();

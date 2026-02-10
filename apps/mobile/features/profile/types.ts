@@ -23,6 +23,7 @@ export type AgendaItem = {
   title: string;
   startAt: string;
   endAt: string | null;
+  coverImageUrl?: string | null;
   status?: string | null;
   label?: string | null;
   ctaHref?: string | null;
@@ -63,10 +64,19 @@ export type PublicProfilePayload = {
     isMutual?: boolean;
   } | null;
   isSelf?: boolean;
+  privacy?: {
+    isPrivate: boolean;
+    canView: boolean;
+  };
 };
 
 export type PublicProfileEvents = {
   type: "user" | "organization";
   upcoming: PublicEventCard[];
   past: PublicEventCard[];
+  locked?: boolean;
+  privacy?: {
+    isPrivate: boolean;
+    canView: boolean;
+  };
 };

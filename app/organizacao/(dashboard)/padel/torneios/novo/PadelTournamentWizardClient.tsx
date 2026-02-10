@@ -268,6 +268,10 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
 
   useEffect(() => {
     if (!startsAt) return;
+    if (!endsAt) {
+      const shifted = shiftDateTimeLocal(startsAt, 5 * 60);
+      if (shifted) setEndsAt(shifted);
+    }
     if (!registrationEndsAt) {
       const shifted = shiftDateTimeLocal(startsAt, -24 * 60);
       if (shifted) setRegistrationEndsAt(shifted);
@@ -407,6 +411,18 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       setError("Indica a data/hora de início.");
       return;
     }
+    if (!endsAt) {
+      setError("Indica a data/hora de fim.");
+      return;
+    }
+    if (startsAt && endsAt) {
+      const startDate = parseDateTimeLocal(startsAt);
+      const endDate = parseDateTimeLocal(endsAt);
+      if (startDate && endDate && endDate <= startDate) {
+        setError("A data/hora de fim tem de ser depois do início.");
+        return;
+      }
+    }
     const clubIdValue = Number(selectedClubId);
     if (!Number.isFinite(clubIdValue) || clubIdValue <= 0) {
       setError("Seleciona um clube.");
@@ -470,7 +486,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       title: trimmedTitle,
       description: description.trim() || null,
       startsAt,
-      endsAt: endsAt || startsAt,
+      endsAt: endsAt || shiftDateTimeLocal(startsAt, 5 * 60) || startsAt,
       status: "DRAFT",
       timezone: timezone || undefined,
       addressId: location.addressId,

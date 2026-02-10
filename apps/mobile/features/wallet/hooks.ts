@@ -2,11 +2,11 @@ import { useMemo } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { fetchWalletDetail, fetchWalletPage } from "./api";
 
-type WalletMode = "upcoming" | "history";
+type WalletMode = "all" | "upcoming" | "history";
 
 const pageSize = 20;
 
-export const useWalletFeed = (mode: WalletMode, enabled = true) => {
+export const useWalletFeed = (mode: WalletMode = "all", enabled = true) => {
   const queryKey = useMemo(() => ["wallet", "feed", mode], [mode]);
 
   return useInfiniteQuery({

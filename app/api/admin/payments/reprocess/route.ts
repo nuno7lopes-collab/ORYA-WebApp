@@ -4,11 +4,13 @@ import { enqueueOperation } from "@/lib/operations/enqueue";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -56,6 +58,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    await auditAdminAction({
+      action: "PAYMENT_REPROCESS",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: { paymentIntentId },
+    });
+
     return respondOk(ctx, { paymentIntentId }, { status: 200 });
   } catch (err) {
     logError("admin.payments.reprocess_failed", err);
@@ -66,3 +75,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

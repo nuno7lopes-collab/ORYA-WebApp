@@ -2,11 +2,13 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -57,6 +59,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    await auditAdminAction({
+      action: "REFUND_RETRY",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: { operationId, operationType: op.operationType },
+    });
+
     return respondOk(ctx, { retried: true }, { status: 200 });
   } catch (err) {
     logError("admin.refunds.retry_failed", err);
@@ -67,3 +76,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

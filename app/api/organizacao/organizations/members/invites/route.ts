@@ -19,6 +19,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { resolveUserIdentifier } from "@/lib/userResolver";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const resolveIp = (req: NextRequest) => {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -147,7 +148,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -279,7 +280,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -507,7 +508,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -893,3 +894,6 @@ export async function PATCH(req: NextRequest) {
     return fail(500, "INTERNAL_ERROR");
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);

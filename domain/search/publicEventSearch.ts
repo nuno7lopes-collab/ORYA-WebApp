@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma, SearchIndexVisibility } from "@prisma/client";
+import { Prisma, SearchIndexVisibility, SourceType } from "@prisma/client";
 import { toPublicEventCardFromIndex, PublicEventCard, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
+import { filterOrphanedEventSearchItems } from "@/domain/searchIndex/guard";
 
 const DEFAULT_PAGE_SIZE = 12;
 
@@ -129,6 +130,7 @@ export async function searchPublicEvents(
 
   const where: Prisma.SearchIndexItemWhereInput = {
     visibility: SearchIndexVisibility.PUBLIC,
+    sourceType: SourceType.EVENT,
   };
 
   if (q) {
@@ -172,7 +174,9 @@ export async function searchPublicEvents(
     nextCursor = nextItem?.id ?? null;
   }
 
-  const filtered = events.filter((item) => {
+  const safeEvents = await filterOrphanedEventSearchItems(events);
+
+  const filtered = safeEvents.filter((item) => {
     const priceFrom = item.priceFromCents;
     if (priceMinCents !== null && priceMaxCents !== null) {
       return (

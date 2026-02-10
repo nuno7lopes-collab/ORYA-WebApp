@@ -21,9 +21,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Extrapolate,
+  cancelAnimation,
   interpolate,
   runOnJS,
   useAnimatedReaction,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -65,8 +67,8 @@ const RANGE_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   month: "short",
 });
 
-const SHEET_HANDLE_HEIGHT = 16;
-const SCROLL_ENABLE_OFFSET = 36;
+const SHEET_HANDLE_HEIGHT = 28;
+const SHEET_HANDLE_DRAG_AREA = SHEET_HANDLE_HEIGHT + 18;
 
 const formatEventDate = (startsAt?: string | null, endsAt?: string | null) => {
   if (!startsAt) return null;
@@ -104,7 +106,8 @@ export default function MapScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const topPadding = useTopHeaderPadding(18);
+  const headerPadding = useTopHeaderPadding(18);
+  const topPadding = Platform.OS === "ios" ? insets.top + 10 : headerPadding;
   const { height } = useWindowDimensions();
   const bottomPadding = Math.max(insets.bottom + 24, 24);
 
@@ -120,9 +123,10 @@ export default function MapScreen() {
   const [templateType, setTemplateType] = useState<MapTemplateFilter>("all");
   const [rangeStart, setRangeStart] = useState<Date | null>(null);
   const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
-  const [listScrollEnabled, setListScrollEnabled] = useState(false);
+  const [isSheetCollapsed, setIsSheetCollapsed] = useState(true);
 
   const mapRef = useRef<MapView | null>(null);
+  const listRef = useRef<FlatList<MapListItem> | null>(null);
   const centerModeRef = useRef<"none" | "ip" | "device">("none");
 
   const city = useDiscoverStore((state) => state.city);
@@ -458,8 +462,9 @@ export default function MapScreen() {
   }, [animateToRegion, deviceCoords, ipLat, ipLng]);
 
   const bottomInset = Platform.OS === "ios" ? Math.max(insets.bottom + 14, 24) : 0;
-  const sheetMaxHeight = Math.min(Math.max(height * 0.82, 360), height - 120);
-  const sheetMidHeight = Math.min(Math.max(height * 0.34, 220), sheetMaxHeight - 80);
+  const isLandscape = height < 520;
+  const sheetMaxHeight = Math.min(Math.max(height * (isLandscape ? 0.7 : 0.82), 300), height - 120);
+  const sheetMidHeight = Math.min(Math.max(height * (isLandscape ? 0.28 : 0.34), 200), sheetMaxHeight - 80);
   const sheetMinHeight = Math.max(84, bottomInset + SHEET_HANDLE_HEIGHT + 16);
   const effectiveMaxHeight = isEmpty ? sheetMidHeight : sheetMaxHeight;
   const sheetHeight = useSharedValue(sheetMinHeight);
@@ -469,6 +474,8 @@ export default function MapScreen() {
   const lastSnapRef = useRef(0);
   const lastSnapIndex = useSharedValue(0);
   const gestureStart = useSharedValue(sheetMinHeight);
+  const scrollY = useSharedValue(0);
+  const startedInHandle = useSharedValue(false);
 
   useEffect(() => {
     minHeight.value = sheetMinHeight;
@@ -476,7 +483,7 @@ export default function MapScreen() {
     maxHeight.value = effectiveMaxHeight;
     sheetHeight.value = clampValue(sheetHeight.value, sheetMinHeight, effectiveMaxHeight);
     if (isEmpty && lastSnapRef.current === 2) {
-      lastSnapRef.current = 1;
+      setLastSnap(1);
       lastSnapIndex.value = 1;
     }
   }, [
@@ -485,6 +492,7 @@ export default function MapScreen() {
     maxHeight,
     midHeight,
     minHeight,
+    setLastSnap,
     sheetHeight,
     sheetMaxHeight,
     sheetMidHeight,
@@ -492,14 +500,26 @@ export default function MapScreen() {
     lastSnapIndex,
   ]);
 
-  useAnimatedReaction(
-    () => sheetHeight.value > minHeight.value + SCROLL_ENABLE_OFFSET,
-    (enabled, prev) => {
-      if (enabled !== prev) {
-        runOnJS(setListScrollEnabled)(enabled);
+  const syncCollapsedState = useCallback(
+    (collapsed: boolean) => {
+      setIsSheetCollapsed(collapsed);
+      if (collapsed && lastSnapRef.current !== 0) {
+        lastSnapRef.current = 0;
+        lastSnapIndex.value = 0;
+        scrollY.value = 0;
       }
     },
-    [minHeight],
+    [lastSnapIndex, scrollY],
+  );
+
+  useAnimatedReaction(
+    () => sheetHeight.value <= minHeight.value + 1,
+    (collapsed, prev) => {
+      if (collapsed !== prev) {
+        runOnJS(syncCollapsedState)(collapsed);
+      }
+    },
+    [minHeight, syncCollapsedState],
   );
 
   const triggerHaptic = useCallback((index: number) => {
@@ -512,9 +532,16 @@ export default function MapScreen() {
     Haptics.impactAsync(feedback).catch(() => undefined);
   }, []);
 
-  const setLastSnap = useCallback((index: number) => {
-    lastSnapRef.current = index;
-  }, []);
+  const setLastSnap = useCallback(
+    (index: number) => {
+      lastSnapRef.current = index;
+      setIsSheetCollapsed(index === 0);
+      if (index === 0) {
+        scrollY.value = 0;
+      }
+    },
+    [scrollY],
+  );
 
   const snapToIndex = useCallback(
     (index: number) => {
@@ -522,21 +549,20 @@ export default function MapScreen() {
       const dest =
         resolvedIndex === 2 ? sheetMaxHeight : resolvedIndex === 1 ? sheetMidHeight : sheetMinHeight;
       if (lastSnapRef.current !== resolvedIndex) {
-        lastSnapRef.current = resolvedIndex;
+        setLastSnap(resolvedIndex);
         lastSnapIndex.value = resolvedIndex;
         triggerHaptic(resolvedIndex);
       }
       sheetHeight.value = withSpring(dest, { damping: 26, stiffness: 320 });
     },
-    [isEmpty, lastSnapIndex, sheetHeight, sheetMaxHeight, sheetMidHeight, sheetMinHeight, triggerHaptic],
+    [isEmpty, lastSnapIndex, setLastSnap, sheetHeight, sheetMaxHeight, sheetMidHeight, sheetMinHeight, triggerHaptic],
   );
 
   const openSheet = useCallback(() => {
-    if (Platform.OS === "ios") {
+    if (Platform.OS === "ios" && lastSnapRef.current === 0) {
       snapToIndex(1);
     }
   }, [snapToIndex]);
-
 
   const sheetProgress = useDerivedValue(() => {
     const range = Math.max(maxHeight.value - minHeight.value, 1);
@@ -567,13 +593,44 @@ export default function MapScreen() {
     height: sheetHeight.value,
   }));
 
+  const fabAnimatedStyle = useAnimatedStyle(() => {
+    const offset = sheetHeight.value + 16;
+    const maxRise = height - insets.top - 110;
+    const clampedOffset = Math.min(offset, Math.max(maxRise, 120));
+    const opacity = interpolate(sheetProgress.value, [0.85, 1], [1, 0], Extrapolate.CLAMP);
+    return {
+      opacity,
+      transform: [{ translateY: -clampedOffset }],
+    };
+  });
+
+  const scrollGesture = useMemo(() => Gesture.Native(), []);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
+        .activeOffsetY([-8, 8])
+        .simultaneousWithExternalGesture(scrollGesture)
         .onStart(() => {
+          cancelAnimation(sheetHeight);
           gestureStart.value = sheetHeight.value;
+          startedInHandle.value = false;
         })
         .onUpdate((event) => {
+          if (startedInHandle.value === false) {
+            startedInHandle.value = event.y <= SHEET_HANDLE_DRAG_AREA;
+          }
+          const atTop = scrollY.value <= 0;
+          const canDrag = atTop || startedInHandle.value;
+          const atMax = sheetHeight.value >= maxHeight.value - 1;
+          if (!canDrag) return;
+          if (atMax && event.translationY < 0) return;
           const next = clampWorklet(
             gestureStart.value - event.translationY,
             minHeight.value,
@@ -582,6 +639,7 @@ export default function MapScreen() {
           sheetHeight.value = next;
         })
         .onEnd((event) => {
+          startedInHandle.value = false;
           const projected = clampWorklet(
             sheetHeight.value - event.velocityY * 0.2,
             minHeight.value,
@@ -614,15 +672,32 @@ export default function MapScreen() {
         }),
     [
       gestureStart,
-      sheetHeight,
+      maxHeight,
       minHeight,
       midHeight,
-      maxHeight,
       isEmpty,
-      triggerHaptic,
-      setLastSnap,
       lastSnapIndex,
+      scrollGesture,
+      scrollY,
+      setLastSnap,
+      sheetHeight,
+      triggerHaptic,
     ],
+  );
+
+  const tapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .enabled(isSheetCollapsed)
+        .onEnd(() => {
+          runOnJS(snapToIndex)(1);
+        }),
+    [isSheetCollapsed, snapToIndex],
+  );
+
+  const sheetGesture = useMemo(
+    () => Gesture.Simultaneous(panGesture, tapGesture),
+    [panGesture, tapGesture],
   );
 
   const mapTitle = "Eventos no mapa";
@@ -645,7 +720,7 @@ export default function MapScreen() {
 
   const sheetHeader = useMemo(
     () => (
-      <View>
+      <View style={styles.sheetHeaderSticky}>
         <View style={styles.sheetHeader}>
           <View style={styles.sheetHeaderInfo}>
             <View style={styles.sheetHeaderTitleRow}>
@@ -713,17 +788,21 @@ export default function MapScreen() {
     return filteredEvents.map((event) => ({ type: "event" as const, event }));
   }, [discoverQuery.isLoading, filteredEvents, queryEnabled]);
 
-  const allowListScroll = listScrollEnabled && !isEmpty;
+  const allowListScroll = !isSheetCollapsed && !isEmpty;
 
   const handleSelectEvent = useCallback(
     (event: PublicEventCard) => {
       setSelectedEventId(event.id);
+      const index = filteredEvents.findIndex((item) => item.id === event.id);
+      if (index >= 0) {
+        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.2 });
+      }
       if (event.location?.lat != null && event.location?.lng != null) {
         animateToRegion(event.location.lat, event.location.lng, 0.06);
       }
       openSheet();
     },
-    [animateToRegion, openSheet],
+    [animateToRegion, filteredEvents, openSheet],
   );
 
   const handleOpenEvent = useCallback(
@@ -834,10 +913,14 @@ export default function MapScreen() {
     return `event-${item.event.id}-${index}`;
   }, []);
 
+  const handleScrollToIndexFailed = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
+
   if (Platform.OS !== "ios") {
     return (
       <LiquidBackground>
-        <TopAppHeader />
+        <TopAppHeader variant="title" title="Mapa" showNotifications={false} showMessages={false} />
         <FlatList
           data={listData}
           keyExtractor={keyExtractor}
@@ -849,11 +932,14 @@ export default function MapScreen() {
                 onPress={() => safeBack(router, navigation, "/(tabs)/index")}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar"
-                className="flex-row items-center gap-2"
-                style={{ minHeight: tokens.layout.touchTarget }}
+                style={{
+                  width: tokens.layout.touchTarget,
+                  height: tokens.layout.touchTarget,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
               >
                 <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-                <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
               </Pressable>
               <View style={{ marginTop: 10, marginBottom: 12 }}>
                 <Text style={{ color: "#ffffff", fontSize: 20, fontWeight: "700" }}>Mapa</Text>
@@ -953,7 +1039,6 @@ export default function MapScreen() {
 
   return (
     <LiquidBackground variant="solid">
-      <TopAppHeader />
       <View style={{ flex: 1 }}>
         <MapView
           ref={mapRef}
@@ -961,6 +1046,11 @@ export default function MapScreen() {
           initialRegion={initialRegion}
           mapType="mutedStandard"
           style={{ flex: 1 }}
+          showsPointsOfInterest={false}
+          showsBuildings={false}
+          showsTraffic={false}
+          showsCompass={false}
+          showsScale={false}
           showsUserLocation={locationStatus === "granted"}
           showsMyLocationButton={false}
           onMapReady={() => setMapReady(true)}
@@ -996,18 +1086,17 @@ export default function MapScreen() {
         </MapView>
 
         <View style={{ position: "absolute", top: topPadding, left: 20, right: 20 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Pressable
               onPress={() => safeBack(router, navigation, "/(tabs)/index")}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
               style={({ pressed }) => [
-                styles.controlButton,
+                styles.backButton,
                 pressed ? styles.controlPressed : null,
               ]}
             >
-              <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.95)" />
-              <Text style={styles.controlLabel}>Voltar</Text>
+              <Ionicons name="chevron-back" size={20} color="rgba(245,250,255,0.95)" />
             </Pressable>
             <View style={{ flex: 1 }}>
               <MapFiltersBar
@@ -1029,14 +1118,6 @@ export default function MapScreen() {
                 compact
               />
             </View>
-            <Pressable
-              onPress={handleRecenter}
-              accessibilityRole="button"
-              accessibilityLabel="Recentrar mapa"
-              style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
-            >
-              <Ionicons name="locate-outline" size={18} color="rgba(255,255,255,0.9)" />
-            </Pressable>
           </View>
 
           {locationStatus !== "granted" ? (
@@ -1063,53 +1144,77 @@ export default function MapScreen() {
         <Animated.View
           style={[
             styles.sheetWrapper,
-            { bottom: bottomInset },
             sheetPositionStyle,
           ]}
         >
-          <Animated.View style={[styles.sheetBackground, sheetAnimatedStyle]}>
-            <GestureDetector gesture={panGesture}>
+          <GestureDetector gesture={sheetGesture}>
+            <Animated.View style={[styles.sheetBackground, sheetAnimatedStyle]}>
               <View style={styles.sheetHandleContainer}>
                 <View style={styles.sheetHandleIndicator} />
               </View>
-            </GestureDetector>
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, blurAnimatedStyle]}>
               <BlurView tint="dark" intensity={30} style={StyleSheet.absoluteFillObject} />
             </Animated.View>
-            <FlatList
-              data={listData}
-              keyExtractor={keyExtractor}
-              renderItem={renderItem}
-              style={{ flex: 1 }}
-              scrollEnabled={allowListScroll}
-              bounces={allowListScroll}
-              alwaysBounceVertical={false}
-              contentContainerStyle={{
-                paddingHorizontal: 20,
-                paddingBottom: bottomInset > 0 ? 20 : insets.bottom + 16,
-                paddingTop: 0,
-                flexGrow: 1,
-                justifyContent: isEmpty ? "center" : "flex-start",
-              }}
-              showsVerticalScrollIndicator={false}
-              ListHeaderComponent={sheetHeader}
-              stickyHeaderIndices={[0]}
-              ListEmptyComponent={
-                isEmpty ? (
-                  <GlassSurface intensity={48} style={{ padding: 16 }}>
-                    <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
-                    <Pressable
-                      onPress={clearMapFilters}
-                      className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
-                      style={{ minHeight: tokens.layout.touchTarget }}
-                    >
-                      <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
-                    </Pressable>
-                  </GlassSurface>
-                ) : null
-              }
-            />
-          </Animated.View>
+              <GestureDetector gesture={scrollGesture}>
+                <Animated.FlatList
+                  ref={listRef}
+                  data={listData}
+                  keyExtractor={keyExtractor}
+                  renderItem={renderItem}
+                  style={{ flex: 1 }}
+                  scrollEnabled={allowListScroll}
+                  bounces={allowListScroll}
+                  alwaysBounceVertical={false}
+                  pointerEvents={isSheetCollapsed ? "none" : "auto"}
+                  onScroll={scrollHandler}
+                  scrollEventThrottle={16}
+                  onScrollToIndexFailed={handleScrollToIndexFailed}
+                  contentContainerStyle={{
+                    paddingHorizontal: 20,
+                    paddingBottom: Math.max(insets.bottom + 16, 20),
+                    paddingTop: 0,
+                    flexGrow: 1,
+                    justifyContent: isEmpty ? "center" : "flex-start",
+                  }}
+                  showsVerticalScrollIndicator={false}
+                  ListHeaderComponent={sheetHeader}
+                  stickyHeaderIndices={[0]}
+                  ListEmptyComponent={
+                    isEmpty ? (
+                      <GlassSurface intensity={48} style={{ padding: 16 }}>
+                        <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
+                        <Pressable
+                          onPress={clearMapFilters}
+                          className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                          style={{ minHeight: tokens.layout.touchTarget }}
+                        >
+                          <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
+                        </Pressable>
+                      </GlassSurface>
+                    ) : null
+                  }
+                />
+              </GestureDetector>
+            </Animated.View>
+          </GestureDetector>
+        </Animated.View>
+
+        <Animated.View style={[styles.fabWrapper, fabAnimatedStyle]}>
+          <Pressable
+            onPress={handleRecenter}
+            accessibilityRole="button"
+            accessibilityLabel="Recentrar mapa"
+            style={({ pressed }) => [styles.fabButton, pressed ? styles.controlPressed : null]}
+          >
+            <GlassSurface
+              intensity={52}
+              padding={0}
+              style={styles.fabSurface}
+              contentStyle={styles.fabContent}
+            >
+              <Ionicons name="locate" size={19} color="rgba(245,250,255,0.95)" style={styles.fabIcon} />
+            </GlassSurface>
+          </Pressable>
         </Animated.View>
       </View>
     </LiquidBackground>
@@ -1117,21 +1222,15 @@ export default function MapScreen() {
 }
 
 const styles = {
-  controlButton: {
-    flexDirection: "row" as const,
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center" as const,
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+    justifyContent: "center" as const,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(10,14,24,0.65)",
-  },
-  controlLabel: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 12,
-    fontWeight: "600" as const,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(10,14,24,0.72)",
   },
   iconButton: {
     width: 32,
@@ -1201,15 +1300,15 @@ const styles = {
   },
   sheetHandleContainer: {
     height: SHEET_HANDLE_HEIGHT,
-    paddingTop: 6,
-    paddingBottom: 0,
+    paddingTop: 10,
+    paddingBottom: 6,
     paddingHorizontal: 0,
     alignItems: "center" as const,
     justifyContent: "flex-start" as const,
   },
   sheetHandleIndicator: {
-    width: 40,
-    height: 3,
+    width: 48,
+    height: 4,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.35)",
   },
@@ -1233,6 +1332,12 @@ const styles = {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
+  },
+  sheetHeaderSticky: {
+    backgroundColor: "rgba(10,14,24,0.96)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+    paddingTop: 4,
   },
   sheetHeaderInfo: {
     flex: 1,
@@ -1279,5 +1384,28 @@ const styles = {
     color: "rgba(255,255,255,0.8)",
     fontSize: 12,
     fontWeight: "600" as const,
+  },
+  fabWrapper: {
+    position: "absolute" as const,
+    right: 20,
+    bottom: 0,
+    zIndex: 12,
+  },
+  fabButton: {
+    borderRadius: 999,
+  },
+  fabSurface: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  fabContent: {
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderRadius: 22,
+  },
+  fabIcon: {
+    marginLeft: 0.5,
+    marginTop: 0.5,
   },
 };

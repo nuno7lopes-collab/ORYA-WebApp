@@ -24,8 +24,6 @@ jobs:
       STRIPE_PAYOUTS_WEBHOOK_SECRET: whsec_dummy
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_dummy
       QR_SECRET_KEY: dummy
-      RESEND_API_KEY: dummy
-      RESEND_FROM_EMAIL: no-reply@example.com
       APP_BASE_URL: https://example.com
       ORYA_CRON_SECRET: dummy
       APPLE_SIGNIN_SERVICE_ID: com.example.app
@@ -62,7 +60,6 @@ jobs:
             "STRIPE_WEBHOOK_SECRET",
             "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
             "QR_SECRET_KEY",
-            "RESEND_API_KEY",
             "ORYA_CRON_SECRET",
             "APPLE_SIGNIN_SERVICE_ID",
             "APPLE_SIGNIN_REDIRECT_URI",
@@ -99,7 +96,6 @@ jobs:
       STRIPE_SECRET_KEY: sk_test_dummy
       STRIPE_WEBHOOK_SECRET: whsec_dummy
       QR_SECRET_KEY: dummy
-      RESEND_API_KEY: dummy
     steps:
       - uses: actions/checkout@v4
 

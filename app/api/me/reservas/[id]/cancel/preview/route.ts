@@ -12,6 +12,7 @@ import {
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { normalizeEmail } from "@/lib/utils/email";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -45,6 +46,7 @@ async function _POST(
       select: {
         id: true,
         userId: true,
+        guestEmail: true,
         status: true,
         startsAt: true,
         paymentIntentId: true,
@@ -56,7 +58,11 @@ async function _POST(
     if (!booking) {
       return fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.");
     }
-    if (booking.userId !== user.id) {
+    const normalizedEmail = normalizeEmail(user.email ?? "");
+    const isOwner =
+      booking.userId === user.id ||
+      (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+    if (!isOwner) {
       return fail(403, "FORBIDDEN", "Sem permissões.");
     }
 

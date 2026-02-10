@@ -19,6 +19,7 @@ const LAST_SEEN_DEBOUNCE_SECONDS = Number(process.env.CHAT_LAST_SEEN_DEBOUNCE_SE
 const AUTH_RECHECK_MS = Number(process.env.CHAT_WS_AUTH_RECHECK_MS || 10 * 60 * 1000);
 
 const ALLOWED_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"]);
+const B2C_CONTEXT_TYPES = new Set(["USER_DM", "USER_GROUP", "ORG_CONTACT", "BOOKING", "SERVICE"]);
 
 function loadEnv() {
   if (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) return;
@@ -176,9 +177,13 @@ async function ensureOrgAccess(userId, organizationId) {
   return membership;
 }
 
-async function getConversationIds(userId, organizationId) {
+async function getConversationIds(userId, organizationId, scope) {
+  const conversationWhere =
+    scope === "b2c"
+      ? { contextType: { in: Array.from(B2C_CONTEXT_TYPES) } }
+      : { organizationId };
   const rows = await prisma.chatConversationMember.findMany({
-    where: { userId, conversation: { organizationId } },
+    where: { userId, conversation: conversationWhere },
     select: { conversationId: true },
   });
   return rows.map((row) => row.conversationId);
@@ -242,8 +247,13 @@ function handleIncomingEvent(event) {
 
   if (type === "conversation:update") {
     const orgId = event.organizationId;
-    if (!orgId) return;
-    broadcast(organizationConnections.get(orgId), event);
+    if (orgId) {
+      broadcast(organizationConnections.get(orgId), event);
+      return;
+    }
+    if (event.conversationId) {
+      broadcast(conversationConnections.get(event.conversationId), event);
+    }
     return;
   }
 
@@ -255,7 +265,7 @@ function handleIncomingEvent(event) {
 }
 
 async function syncMembership(ws, state) {
-  const conversationIds = await getConversationIds(state.userId, state.organizationId);
+  const conversationIds = await getConversationIds(state.userId, state.organizationId, state.scope);
   const nextSet = new Set(conversationIds);
 
   for (const convoId of state.conversations) {
@@ -297,6 +307,8 @@ wss.on("connection", async (ws, req) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const token = url.searchParams.get("token") || url.searchParams.get("access_token");
   const orgIdParam = Number(url.searchParams.get("organizationId") || "");
+  const scopeParam = url.searchParams.get("scope");
+  const forceB2C = scopeParam === "b2c";
 
   const user = await validateToken(token);
   if (!user) {
@@ -304,41 +316,45 @@ wss.on("connection", async (ws, req) => {
     return;
   }
 
-  const organizationId = await resolveOrganizationId(user.id, orgIdParam || null, req.headers.cookie);
-  if (!organizationId) {
-    ws.close(4003, "NO_ORG");
-    return;
+  const organizationId = forceB2C ? null : await resolveOrganizationId(user.id, orgIdParam || null, req.headers.cookie);
+  const scope = organizationId ? "org" : "b2c";
+
+  if (scope === "org") {
+    const membership = await ensureOrgAccess(user.id, organizationId);
+    if (!membership) {
+      ws.close(4003, "FORBIDDEN");
+      return;
+    }
   }
 
-  const membership = await ensureOrgAccess(user.id, organizationId);
-  if (!membership) {
-    ws.close(4003, "FORBIDDEN");
-    return;
-  }
-
-  const conversationIds = await getConversationIds(user.id, organizationId);
+  const conversationIds = await getConversationIds(user.id, organizationId, scope);
   const state = {
     userId: user.id,
     organizationId,
     conversations: new Set(conversationIds),
     token,
     authTimer: null,
+    scope,
   };
 
   connections.set(ws, state);
-  addToMap(organizationConnections, organizationId, ws);
+  if (organizationId) {
+    addToMap(organizationConnections, organizationId, ws);
+  }
   addToMap(userConnections, user.id, ws);
   for (const convoId of conversationIds) {
     addToMap(conversationConnections, convoId, ws);
   }
 
   await setPresenceOnline(user.id);
-  await publishEvent({
-    type: "presence:update",
-    organizationId,
-    userId: user.id,
-    status: "online",
-  });
+  if (organizationId) {
+    await publishEvent({
+      type: "presence:update",
+      organizationId,
+      userId: user.id,
+      status: "online",
+    });
+  }
 
   state.authTimer = setInterval(async () => {
     const valid = await validateToken(state.token);
@@ -393,7 +409,9 @@ wss.on("connection", async (ws, req) => {
 
   ws.on("close", async () => {
     connections.delete(ws);
-    removeFromMap(organizationConnections, state.organizationId, ws);
+    if (state.organizationId) {
+      removeFromMap(organizationConnections, state.organizationId, ws);
+    }
     removeFromMap(userConnections, state.userId, ws);
     for (const convoId of state.conversations) {
       removeFromMap(conversationConnections, convoId, ws);
@@ -405,13 +423,15 @@ wss.on("connection", async (ws, req) => {
     if (!remaining || remaining.size === 0) {
       await setPresenceOffline(state.userId);
       await updateLastSeen(state.userId);
-      await publishEvent({
-        type: "presence:update",
-        organizationId: state.organizationId,
-        userId: state.userId,
-        status: "offline",
-        lastSeenAt: new Date().toISOString(),
-      });
+      if (state.organizationId) {
+        await publishEvent({
+          type: "presence:update",
+          organizationId: state.organizationId,
+          userId: state.userId,
+          status: "offline",
+          lastSeenAt: new Date().toISOString(),
+        });
+      }
     }
   });
 });

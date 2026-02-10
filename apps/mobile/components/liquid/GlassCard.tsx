@@ -1,8 +1,7 @@
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { PropsWithChildren } from "react";
-import { StyleSheet, View, ViewStyle } from "react-native";
+import { StyleSheet, ViewStyle } from "react-native";
 import { tokens } from "@orya/shared";
+import { GlassSurface } from "../ui/GlassSurface";
 
 type GlassCardProps = PropsWithChildren<{
   className?: string;
@@ -23,43 +22,22 @@ export function GlassCard({
   contentStyle,
 }: GlassCardProps) {
   return (
-    <View
+    <GlassSurface
+      variant="card"
       className={className}
-      style={[
-        styles.shell,
-        highlight ? styles.highlight : null,
-        style,
-      ]}
+      intensity={intensity}
+      padding={padding}
+      tint="dark"
+      style={[highlight ? styles.highlight : null, style]}
+      contentStyle={contentStyle}
+      withGradient
     >
-      <LinearGradient
-        colors={["rgba(255,255,255,0.18)", "rgba(255,255,255,0.02)", "rgba(0,0,0,0.18)"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      <BlurView
-        intensity={intensity}
-        tint="dark"
-        style={[styles.blur, { padding }, contentStyle]}
-      >
-        {children}
-      </BlurView>
-    </View>
+      {children}
+    </GlassSurface>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: {
-    borderRadius: tokens.radius.xl,
-    borderWidth: 1,
-    borderColor: tokens.colors.border,
-    overflow: "hidden",
-    backgroundColor: tokens.colors.surface,
-  },
-  blur: {
-    borderRadius: tokens.radius.xl,
-  },
   highlight: {
     borderColor: "rgba(148, 214, 255, 0.45)",
     shadowColor: "rgba(148, 214, 255, 0.6)",

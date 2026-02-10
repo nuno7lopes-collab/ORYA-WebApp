@@ -17,11 +17,24 @@ CREATE INDEX IF NOT EXISTS user_close_friends_user_exp_idx
 CREATE INDEX IF NOT EXISTS user_close_friends_friend_idx
   ON app_v3.user_close_friends(friend_user_id);
 
-CREATE INDEX IF NOT EXISTS padel_community_comments_author_time_idx
-  ON app_v3.padel_community_comments(author_user_id, created_at);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'app_v3' AND table_name = 'padel_community_comments'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS padel_community_comments_author_time_idx ON app_v3.padel_community_comments(author_user_id, created_at)';
+  END IF;
 
-CREATE INDEX IF NOT EXISTS padel_community_reactions_user_time_idx
-  ON app_v3.padel_community_reactions(user_id, created_at);
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'app_v3' AND table_name = 'padel_community_reactions'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS padel_community_reactions_user_time_idx ON app_v3.padel_community_reactions(user_id, created_at)';
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS entitlements_owner_user_start_idx
   ON app_v3.entitlements(owner_user_id, snapshot_start_at);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,47 +15,122 @@ import { useNavigation } from "@react-navigation/native";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
+import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Image } from "expo-image";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
-import { fetchChatMessages, sendChatMessage } from "../../features/chat/api";
+import { fetchChatMessages, sendChatMessage, muteEventThread, undoEventMessage } from "../../features/chat/api";
 import { useEventChatThread } from "../../features/chat/hooks";
-import { ChatMessage } from "../../features/chat/types";
+import type { ChatMessage } from "../../features/chat/types";
+import {
+  fetchConversationMessages,
+  sendConversationMessage,
+  markConversationRead,
+  muteConversation,
+  undoConversationMessage,
+} from "../../features/messages/api";
+import type { ConversationMessage, ConversationMember, ConversationMessagesResponse } from "../../features/messages/types";
 import { getUserFacingError } from "../../lib/errors";
+import { getMobileEnv } from "../../lib/env";
+import { formatTime } from "../../lib/formatters";
 
 const POLL_INTERVAL_MS = 6000;
+const UNDO_WINDOW_MS = 2 * 60 * 1000;
 
-const formatTime = (value?: string | null) => {
-  if (!value) return "";
+type UnifiedMessage = {
+  id: string;
+  body: string | null;
+  createdAt: string;
+  deletedAt?: string | null;
+  kind?: "USER" | "ANNOUNCEMENT" | "SYSTEM";
+  sender: {
+    id: string;
+    fullName: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+  } | null;
+};
+
+const resolveStatusLabel = (status: string | null | undefined, t: (key: string) => string) => {
+  if (status === "OPEN") return t("messages.status.open");
+  if (status === "ANNOUNCEMENTS") return t("messages.status.announcements");
+  if (status === "READ_ONLY") return t("messages.status.readOnly");
+  return t("messages.status.closed");
+};
+
+const resolveChatError = (err: unknown, fallback: string, t: (key: string) => string) => {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  if (message.includes("READ_ONLY")) return t("messages.thread.errors.readOnly");
+  if (message.includes("FORBIDDEN")) return t("messages.thread.errors.participantsOnly");
+  if (message.includes("UNAUTHENTICATED")) return t("messages.thread.errors.signInRequired");
+  return getUserFacingError(err, fallback);
+};
+
+const toUnified = (message: ChatMessage | ConversationMessage): UnifiedMessage => {
+  if ("kind" in message) {
+    return {
+      id: message.id,
+      body: message.body ?? null,
+      kind: message.kind,
+      createdAt: message.createdAt,
+      deletedAt: message.deletedAt ?? null,
+      sender: message.sender,
+    };
+  }
+  return {
+    id: message.id,
+    body: message.body ?? null,
+    createdAt: message.createdAt,
+    deletedAt: message.deletedAt ?? null,
+    sender: message.sender,
+  };
+};
+
+const mergeMessages = (prev: UnifiedMessage[], incoming: UnifiedMessage[]) => {
+  if (!incoming.length) return prev;
+  const map = new Map(prev.map((item) => [item.id, item]));
+  let changed = false;
+  incoming.forEach((item) => {
+    const existing = map.get(item.id);
+    if (!existing) {
+      map.set(item.id, item);
+      changed = true;
+      return;
+    }
+    if (item.deletedAt && !existing.deletedAt) {
+      map.set(item.id, { ...existing, deletedAt: item.deletedAt, body: null });
+      changed = true;
+    }
+  });
+  if (!changed) return prev;
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+};
+
+const buildWsBaseUrl = () => {
+  const envUrl =
+    process.env.EXPO_PUBLIC_CHAT_WS_URL?.trim() ||
+    process.env.NEXT_PUBLIC_CHAT_WS_URL?.trim();
+  if (envUrl) return envUrl;
+  const base = getMobileEnv().apiBaseUrl;
   try {
-    return new Intl.DateTimeFormat("pt-PT", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+    const parsed = new URL(base);
+    const protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${parsed.hostname}:4001`;
   } catch {
     return "";
   }
 };
 
-const resolveStatusLabel = (status?: string | null) => {
-  if (status === "OPEN") return "Chat aberto";
-  if (status === "ANNOUNCEMENTS") return "Anúncios";
-  if (status === "READ_ONLY") return "Só leitura";
-  return "Fechado";
-};
-
-const resolveChatError = (err: unknown, fallback: string) => {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  if (message.includes("READ_ONLY")) return "Este chat está em modo leitura.";
-  if (message.includes("FORBIDDEN")) return "Chat disponível apenas para participantes.";
-  if (message.includes("UNAUTHENTICATED")) return "Inicia sessão para aceder ao chat.";
-  return getUserFacingError(err, fallback);
-};
-
 export default function ChatThreadScreen() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{
     threadId?: string | string[];
     eventId?: string | string[];
@@ -62,15 +138,19 @@ export default function ChatThreadScreen() {
     coverImageUrl?: string | string[];
     startsAt?: string | string[];
     endsAt?: string | string[];
+    source?: string | string[];
   }>();
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const topPadding = useTopHeaderPadding(16);
+  const topBar = useTopBarScroll({ hideOnScroll: false });
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
   const scrollRef = useRef<ScrollView | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const wsReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const threadId = useMemo(
     () => (Array.isArray(params.threadId) ? params.threadId[0] : params.threadId) ?? "",
@@ -78,6 +158,10 @@ export default function ChatThreadScreen() {
   );
   const eventIdRaw = Array.isArray(params.eventId) ? params.eventId[0] : params.eventId;
   const eventId = eventIdRaw ? Number(eventIdRaw) : null;
+  const source = Array.isArray(params.source) ? params.source[0] : params.source;
+  const isEvent = source === "event" || Boolean(eventId);
+  const isConversation = !isEvent;
+
   const nextRoute = useMemo(() => (threadId ? `/messages/${threadId}` : "/messages"), [threadId]);
   const openAuth = useCallback(() => {
     router.push({ pathname: "/auth", params: { next: nextRoute } });
@@ -90,9 +174,9 @@ export default function ChatThreadScreen() {
     [router],
   );
 
-  const threadQuery = useEventChatThread(eventId, Boolean(eventId && accessToken), accessToken);
+  const threadQuery = useEventChatThread(eventId, Boolean(isEvent && eventId && accessToken), accessToken);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [latestCursor, setLatestCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,34 +185,67 @@ export default function ChatThreadScreen() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
+  const [conversation, setConversation] = useState<ConversationMessagesResponse["conversation"] | null>(null);
+  const [members, setMembers] = useState<ConversationMember[]>([]);
+  const [conversationCanPost, setConversationCanPost] = useState(true);
+  const [conversationReadOnlyReason, setConversationReadOnlyReason] = useState<string | null>(null);
+  const [mutedUntil, setMutedUntil] = useState<string | null>(null);
 
   const eventTitle = useMemo(() => {
     const raw = Array.isArray(params.title) ? params.title[0] : params.title;
-    return raw ?? threadQuery.data?.event.title ?? "Chat do evento";
-  }, [params.title, threadQuery.data?.event.title]);
+    return raw ?? threadQuery.data?.event.title ?? t("messages.thread.eventTitleFallback");
+  }, [params.title, threadQuery.data?.event.title, t]);
+
+  const conversationTitle = useMemo(() => {
+    const raw = Array.isArray(params.title) ? params.title[0] : params.title;
+    if (raw) return raw;
+    if (!conversation) return t("messages.thread.conversationTitleFallback");
+    if (conversation.title) return conversation.title;
+    const other = members.find((member) => member.userId !== userId);
+    return (
+      other?.fullName?.trim() ||
+      (other?.username ? `@${other.username}` : t("messages.thread.conversationTitleFallback"))
+    );
+  }, [conversation, members, params.title, t, userId]);
+
   const coverImageUrl = useMemo(() => {
     const raw = Array.isArray(params.coverImageUrl) ? params.coverImageUrl[0] : params.coverImageUrl;
     return raw ?? threadQuery.data?.event.coverImageUrl ?? null;
   }, [params.coverImageUrl, threadQuery.data?.event.coverImageUrl]);
 
-  const statusLabel = resolveStatusLabel(threadQuery.data?.thread.status);
-  const canPost = Boolean(threadQuery.data?.canPost);
+  const statusLabel = resolveStatusLabel(threadQuery.data?.thread.status, t);
+  const canPost = isEvent ? Boolean(threadQuery.data?.canPost) : Boolean(conversationCanPost);
 
   const loadInitial = useCallback(async () => {
     if (!threadId || !accessToken) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchChatMessages(threadId, { limit: 40 }, accessToken);
-      setMessages(response.items ?? []);
-      setCursor(response.nextCursor ?? null);
-      setLatestCursor(response.latestCursor ?? null);
+      if (isEvent) {
+        const response = await fetchChatMessages(threadId, { limit: 40 }, accessToken);
+        setMessages(response.items?.map(toUnified) ?? []);
+        setCursor(response.nextCursor ?? null);
+        setLatestCursor(response.latestCursor ?? null);
+      } else {
+        const response = await fetchConversationMessages(threadId, { limit: 40 }, accessToken);
+        setConversation(response.conversation ?? null);
+        setMembers(response.members ?? []);
+        setConversationCanPost(Boolean(response.canPost));
+        setConversationReadOnlyReason(response.readOnlyReason ?? null);
+        setMessages(response.items?.map(toUnified) ?? []);
+        setCursor(response.nextCursor ?? null);
+        setLatestCursor(response.latestCursor ?? null);
+        const lastMessage = response.items?.[response.items.length - 1];
+        if (lastMessage?.id) {
+          await markConversationRead(threadId, lastMessage.id, accessToken).catch(() => null);
+        }
+      }
     } catch (err) {
-      setError(resolveChatError(err, "Não foi possível carregar o chat."));
+      setError(resolveChatError(err, t("messages.thread.errors.load"), t));
     } finally {
       setLoading(false);
     }
-  }, [accessToken, threadId]);
+  }, [accessToken, isEvent, threadId]);
 
   useEffect(() => {
     if (!threadId || !accessToken) return;
@@ -139,43 +256,126 @@ export default function ChatThreadScreen() {
     if (!threadId || !accessToken || !cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const response = await fetchChatMessages(threadId, { limit: 40, cursor }, accessToken);
-      if (response.items?.length) {
-        setMessages((prev) => [...response.items, ...prev]);
+      if (isEvent) {
+        const response = await fetchChatMessages(threadId, { limit: 40, cursor }, accessToken);
+        if (response.items?.length) {
+          setMessages((prev) => [...response.items.map(toUnified), ...prev]);
+        }
+        setCursor(response.nextCursor ?? null);
+      } else {
+        const response = await fetchConversationMessages(threadId, { limit: 40, cursor }, accessToken);
+        if (response.items?.length) {
+          setMessages((prev) => [...response.items.map(toUnified), ...prev]);
+        }
+        setCursor(response.nextCursor ?? null);
       }
-      setCursor(response.nextCursor ?? null);
     } catch (err) {
-      setError(resolveChatError(err, "Não foi possível carregar mais mensagens."));
+      setError(resolveChatError(err, t("messages.thread.errors.loadMore"), t));
     } finally {
       setLoadingMore(false);
     }
-  }, [accessToken, cursor, loadingMore, threadId]);
+  }, [accessToken, cursor, isEvent, loadingMore, threadId]);
 
   useEffect(() => {
     if (!threadId || !accessToken) return;
     const interval = setInterval(async () => {
       try {
-        const response = await fetchChatMessages(
-          threadId,
-          latestCursor ? { after: latestCursor } : { limit: 12 },
-          accessToken,
-        );
-        if (response.items?.length) {
-          setMessages((prev) => {
-            const existing = new Set(prev.map((item) => item.id));
-            const fresh = response.items.filter((item) => !existing.has(item.id));
-            return fresh.length > 0 ? [...prev, ...fresh] : prev;
-          });
-        }
-        if (response.latestCursor) {
-          setLatestCursor(response.latestCursor);
+        if (isEvent) {
+          const response = await fetchChatMessages(
+            threadId,
+            latestCursor ? { after: latestCursor } : { limit: 12 },
+            accessToken,
+          );
+          if (response.items?.length) {
+            setMessages((prev) => mergeMessages(prev, response.items.map(toUnified)));
+          }
+          if (response.latestCursor) {
+            setLatestCursor(response.latestCursor);
+          }
+        } else {
+          const response = await fetchConversationMessages(
+            threadId,
+            latestCursor ? { after: latestCursor } : { limit: 12 },
+            accessToken,
+          );
+          if (response.items?.length) {
+            setMessages((prev) => mergeMessages(prev, response.items.map(toUnified)));
+            const last = response.items[response.items.length - 1];
+            if (last?.id) {
+              await markConversationRead(threadId, last.id, accessToken).catch(() => null);
+            }
+          }
+          if (response.latestCursor) {
+            setLatestCursor(response.latestCursor);
+          }
         }
       } catch {
         // silent polling failure
       }
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [accessToken, latestCursor, threadId]);
+  }, [accessToken, isEvent, latestCursor, threadId]);
+
+  useEffect(() => {
+    if (!isConversation || !accessToken || !threadId) return;
+    const wsBase = buildWsBaseUrl();
+    if (!wsBase) return;
+
+    const connect = () => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+      const wsUrl = new URL(wsBase);
+      wsUrl.searchParams.set("token", accessToken);
+      wsUrl.searchParams.set("scope", "b2c");
+      const ws = new WebSocket(wsUrl.toString());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "conversation:sync" }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (!payload || typeof payload !== "object") return;
+          if (payload.type === "message:new" && payload.conversationId === threadId) {
+            const incoming = payload.message as UnifiedMessage;
+            setMessages((prev) => {
+              if (prev.some((item) => item.id === incoming.id)) return prev;
+              return [...prev, incoming];
+            });
+            if (incoming.id) {
+              markConversationRead(threadId, incoming.id, accessToken).catch(() => null);
+            }
+          }
+          if (payload.type === "message:delete" && payload.conversationId === threadId) {
+            const deletedAt = payload.deletedAt as string | undefined;
+            setMessages((prev) =>
+              prev.map((item) =>
+                item.id === payload.messageId
+                  ? { ...item, deletedAt: deletedAt ?? new Date().toISOString(), body: null }
+                  : item,
+              ),
+            );
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
+        wsReconnectRef.current = setTimeout(connect, 2000);
+      };
+    };
+
+    connect();
+    return () => {
+      if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
+  }, [accessToken, isConversation, threadId]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -188,50 +388,138 @@ export default function ChatThreadScreen() {
     if (!body) return;
     setSending(true);
     try {
-      const message = await sendChatMessage(threadId, body, accessToken);
-      setMessages((prev) => [...prev, message]);
+      if (isEvent) {
+        const message = await sendChatMessage(threadId, body, accessToken);
+        setMessages((prev) => [...prev, toUnified(message)]);
+      } else {
+        const response = await sendConversationMessage(threadId, body, accessToken);
+        setMessages((prev) => [...prev, toUnified(response.item)]);
+      }
       setInput("");
       setAutoScroll(true);
     } catch (err) {
-      setError(resolveChatError(err, "Não foi possível enviar a mensagem."));
+      setError(resolveChatError(err, t("messages.thread.errors.send"), t));
     } finally {
       setSending(false);
     }
-  }, [accessToken, input, sending, threadId]);
+  }, [accessToken, input, isEvent, sending, threadId]);
 
-  const handleScroll = useCallback((event: any) => {
-    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-    const distanceToBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    setAutoScroll(distanceToBottom < 60);
-  }, []);
+  const handleUndo = useCallback(
+    async (messageId: string, createdAt: string) => {
+      const elapsed = Date.now() - new Date(createdAt).getTime();
+      if (elapsed > UNDO_WINDOW_MS) {
+        Alert.alert(t("messages.thread.undoPromptTitle"), t("messages.thread.errors.undoExpired"));
+        return;
+      }
+      try {
+        if (isEvent) {
+          await undoEventMessage(threadId, messageId, accessToken);
+        } else {
+          await undoConversationMessage(threadId, messageId, accessToken);
+        }
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === messageId
+              ? { ...item, deletedAt: new Date().toISOString(), body: null }
+              : item,
+          ),
+        );
+      } catch (err) {
+        Alert.alert(
+          t("messages.thread.undoPromptTitle"),
+          getUserFacingError(err, t("messages.thread.errors.undoFailed")),
+        );
+      }
+    },
+    [accessToken, isEvent, t, threadId],
+  );
+
+  const handleScroll = useCallback(
+    (event: any) => {
+      topBar.onScroll(event);
+      const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+      const distanceToBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+      setAutoScroll(distanceToBottom < 60);
+    },
+    [topBar],
+  );
+
+  const openMuteMenu = useCallback(() => {
+    const now = Date.now();
+    const presets = [
+      { label: t("messages.thread.mute.options.1h"), value: now + 60 * 60 * 1000 },
+      { label: t("messages.thread.mute.options.8h"), value: now + 8 * 60 * 60 * 1000 },
+      { label: t("messages.thread.mute.options.1w"), value: now + 7 * 24 * 60 * 60 * 1000 },
+      { label: t("messages.thread.mute.options.forever"), value: now + 365 * 24 * 60 * 60 * 1000 },
+    ];
+    const buttons = presets.map((preset) => ({
+      text: preset.label,
+      onPress: async () => {
+        const until = new Date(preset.value).toISOString();
+        try {
+          if (isEvent) {
+            const res = await muteEventThread(threadId, until, accessToken);
+            setMutedUntil(res.mutedUntil ?? until);
+          } else {
+            const res = await muteConversation(threadId, until, accessToken);
+            setMutedUntil(res.mutedUntil ?? until);
+          }
+        } catch (err) {
+          Alert.alert(
+            t("settings.sections.notifications.title"),
+            getUserFacingError(err, t("messages.thread.errors.muteFailed")),
+          );
+        }
+      },
+    }));
+
+    if (mutedUntil) {
+      buttons.unshift({
+        text: t("messages.thread.mute.remove"),
+        onPress: async () => {
+          try {
+            if (isEvent) {
+              const res = await muteEventThread(threadId, null, accessToken);
+              setMutedUntil(res.mutedUntil ?? null);
+            } else {
+              const res = await muteConversation(threadId, null, accessToken);
+              setMutedUntil(res.mutedUntil ?? null);
+            }
+          } catch (err) {
+            Alert.alert(
+              t("settings.sections.notifications.title"),
+              getUserFacingError(err, t("messages.thread.errors.muteUpdateFailed")),
+            );
+          }
+        },
+      });
+    }
+
+    Alert.alert(t("messages.thread.mute.title"), t("messages.thread.mute.chooseDuration"), [
+      ...buttons,
+      { text: t("common.actions.cancel"), style: "cancel" },
+    ]);
+  }, [accessToken, isEvent, mutedUntil, t, threadId]);
 
   if (!session?.user?.id) {
     return (
       <LiquidBackground>
-        <TopAppHeader />
+        <TopAppHeader scrollState={topBar} variant="title" title={isEvent ? eventTitle : conversationTitle} />
         <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: insets.bottom + 24 }}>
-          <Pressable
-            onPress={() => safeBack(router, navigation, "/messages")}
-            accessibilityRole="button"
-            accessibilityLabel="Voltar"
-            className="flex-row items-center gap-2"
-            style={{ minHeight: tokens.layout.touchTarget }}
-          >
-            <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-            <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
-          </Pressable>
           <GlassCard intensity={55} className="mt-5">
-            <Text className="text-white text-sm font-semibold mb-2">Inicia sessão</Text>
-            <Text className="text-white/65 text-sm">Entra para aceder ao chat do evento.</Text>
+            <Text className="text-white text-sm font-semibold mb-2">
+              {t("messages.thread.signinTitle")}
+            </Text>
+            <Text className="text-white/65 text-sm">{t("messages.thread.signinBody")}</Text>
             <Pressable
               onPress={openAuth}
               className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
-              accessibilityLabel="Entrar"
+              accessibilityLabel={t("common.actions.signIn")}
             >
               <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                Entrar
+                {t("common.actions.signIn")}
               </Text>
             </Pressable>
           </GlassCard>
@@ -240,74 +528,153 @@ export default function ChatThreadScreen() {
     );
   }
 
+  const backButton = (
+    <Pressable
+      onPress={() => safeBack(router, navigation, "/messages")}
+      accessibilityRole="button"
+      accessibilityLabel="Voltar"
+      style={({ pressed }) => [
+        {
+          width: tokens.layout.touchTarget,
+          height: tokens.layout.touchTarget,
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: tokens.layout.touchTarget,
+        },
+        pressed ? { opacity: 0.8 } : null,
+      ]}
+    >
+      <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+    </Pressable>
+  );
+
+  const muteButton = (
+    <Pressable
+      onPress={openMuteMenu}
+      accessibilityRole="button"
+      accessibilityLabel="Silenciar conversa"
+      style={({ pressed }) => [
+        {
+          width: tokens.layout.touchTarget,
+          height: tokens.layout.touchTarget,
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: tokens.layout.touchTarget,
+        },
+        pressed ? { opacity: 0.8 } : null,
+      ]}
+    >
+      <Ionicons name="notifications-off-outline" size={18} color="rgba(255,255,255,0.9)" />
+    </Pressable>
+  );
+
   return (
     <LiquidBackground>
-      <TopAppHeader />
+      <TopAppHeader
+        scrollState={topBar}
+        variant="title"
+        title={isEvent ? eventTitle : conversationTitle}
+        leftSlot={backButton}
+        rightSlot={muteButton}
+        showMessages={false}
+        showNotifications
+      />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
       >
         <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: insets.bottom + 12 }}>
-          <Pressable
-            onPress={() => safeBack(router, navigation, "/messages")}
-            accessibilityRole="button"
-            accessibilityLabel="Voltar"
-            className="flex-row items-center gap-2"
-            style={{ minHeight: tokens.layout.touchTarget }}
-          >
-            <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-            <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
-          </Pressable>
-
-          <GlassCard intensity={60} className="mt-4">
-            <View className="flex-row items-center gap-3">
-              <View
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                }}
-              >
-                {coverImageUrl ? (
-                  <Image source={{ uri: coverImageUrl }} style={{ width: "100%", height: "100%" }} />
-                ) : (
-                  <View className="flex-1 items-center justify-center">
-                    <Ionicons name="calendar-outline" size={18} color="rgba(255,255,255,0.6)" />
-                  </View>
-                )}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text className="text-white text-sm font-semibold" numberOfLines={1}>
-                  {eventTitle}
-                </Text>
-                <Text className="text-white/60 text-xs mt-1">{statusLabel}</Text>
-              </View>
-              {threadQuery.data?.event.slug ? (
-                <Pressable
-                  onPress={() =>
-                    router.push({
-                      pathname: "/event/[slug]",
-                      params: { slug: threadQuery.data?.event.slug ?? "", source: "messages" },
-                    })
-                  }
-                  className="rounded-full border border-white/15 px-3 py-1"
-                  accessibilityRole="button"
-                  accessibilityLabel="Ver evento"
+          {isEvent ? (
+            <GlassCard intensity={60} className="mt-4">
+              <View className="flex-row items-center gap-3">
+                <View
+                  style={{
+                    width: 46,
+                    height: 46,
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    backgroundColor: "rgba(255,255,255,0.08)",
+                  }}
                 >
-                  <Text className="text-white/70 text-[11px]">Ver evento</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </GlassCard>
+                  {coverImageUrl ? (
+                    <Image source={{ uri: coverImageUrl }} style={{ width: "100%", height: "100%" }} />
+                  ) : (
+                    <View className="flex-1 items-center justify-center">
+                      <Ionicons name="calendar-outline" size={18} color="rgba(255,255,255,0.6)" />
+                    </View>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+                    {eventTitle}
+                  </Text>
+                  <Text className="text-white/60 text-xs mt-1">{statusLabel}</Text>
+                </View>
+                {threadQuery.data?.event.slug ? (
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: "/event/[slug]",
+                        params: { slug: threadQuery.data?.event.slug ?? "", source: "messages" },
+                      })
+                    }
+                    className="rounded-full border border-white/15 px-3 py-1"
+                    accessibilityRole="button"
+                    accessibilityLabel="Ver evento"
+                  >
+                    <Text className="text-white/70 text-[11px]">Ver evento</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </GlassCard>
+          ) : (
+            <GlassCard intensity={60} className="mt-4">
+              <View className="flex-row items-center gap-3">
+                <View
+                  style={{
+                    width: 46,
+                    height: 46,
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    backgroundColor: "rgba(255,255,255,0.08)",
+                  }}
+                >
+                  {coverImageUrl ? (
+                    <Image source={{ uri: coverImageUrl }} style={{ width: "100%", height: "100%" }} />
+                  ) : (
+                    <View className="flex-1 items-center justify-center">
+                      <Ionicons name="chatbubble-ellipses-outline" size={18} color="rgba(255,255,255,0.6)" />
+                    </View>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+                    {conversationTitle}
+                  </Text>
+                  <Text className="text-white/60 text-xs mt-1">
+                    {conversation?.contextType === "BOOKING"
+                      ? "Reserva"
+                      : conversation?.contextType === "SERVICE"
+                        ? "Serviço"
+                        : conversation?.contextType === "ORG_CONTACT"
+                          ? "Organização"
+                          : conversation?.contextType === "USER_GROUP"
+                            ? "Grupo"
+                            : "Mensagem"}
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          )}
 
           {!canPost ? (
             <GlassCard intensity={48} className="mt-4">
               <Text className="text-white text-sm font-semibold mb-1">Chat em modo leitura</Text>
               <Text className="text-white/65 text-sm">
-                Apenas administradores podem enviar mensagens neste momento.
+                {conversationReadOnlyReason === "BOOKING_INACTIVE"
+                  ? "A reserva já não está ativa."
+                  : "Apenas administradores podem enviar mensagens neste momento."}
               </Text>
             </GlassCard>
           ) : null}
@@ -334,6 +701,8 @@ export default function ChatThreadScreen() {
             <ScrollView
               ref={scrollRef}
               onScroll={handleScroll}
+              onScrollEndDrag={topBar.onScrollEndDrag}
+              onMomentumScrollEnd={topBar.onMomentumScrollEnd}
               scrollEventThrottle={16}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingTop: 16, paddingBottom: 12, gap: 12 }}
@@ -354,12 +723,13 @@ export default function ChatThreadScreen() {
               ) : null}
               {messages.length === 0 ? (
                 <Text className="text-white/60 text-sm text-center">
-                  Ainda não há mensagens. Diz olá ao grupo.
+                  Ainda não há mensagens. Diz olá.
                 </Text>
               ) : null}
               {messages.map((message) => {
                 const isMine = message.sender?.id === userId;
                 const isAnnouncement = message.kind === "ANNOUNCEMENT";
+                const isDeleted = Boolean(message.deletedAt);
                 if (isAnnouncement) {
                   return (
                     <View key={message.id} className="items-center">
@@ -396,32 +766,50 @@ export default function ChatThreadScreen() {
                         />
                       </Pressable>
                     ) : null}
-                    <View
-                      style={{
-                        maxWidth: "78%",
-                        backgroundColor: isMine ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.08)",
-                        borderRadius: 16,
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
+                    <Pressable
+                      onLongPress={() => {
+                        if (!isMine) return;
+                        Alert.alert("Mensagem", "Anular envio?", [
+                          { text: "Cancelar", style: "cancel" },
+                          {
+                            text: "Anular",
+                            style: "destructive",
+                            onPress: () => handleUndo(message.id, message.createdAt),
+                          },
+                        ]);
                       }}
+                      disabled={!isMine}
                     >
-                      {!isMine && message.sender?.fullName ? (
-                        <Pressable
-                          onPress={() => openSenderProfile(message.sender?.username)}
-                          disabled={!message.sender?.username}
-                          style={{ alignSelf: "flex-start" }}
-                          accessibilityRole="button"
-                          accessibilityLabel="Abrir perfil"
-                          accessibilityState={{ disabled: !message.sender?.username }}
-                        >
-                          <Text className="text-white/70 text-[11px] mb-1">{message.sender.fullName}</Text>
-                        </Pressable>
-                      ) : null}
-                      <Text className="text-white text-sm">{message.body}</Text>
-                      <Text className="text-white/45 text-[10px] mt-1 text-right">
-                        {formatTime(message.createdAt)}
-                      </Text>
-                    </View>
+                      <View
+                        style={{
+                          maxWidth: "78%",
+                          backgroundColor: isMine ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.08)",
+                          borderRadius: 16,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          opacity: isDeleted ? 0.65 : 1,
+                        }}
+                      >
+                        {!isMine && message.sender?.fullName ? (
+                          <Pressable
+                            onPress={() => openSenderProfile(message.sender?.username)}
+                            disabled={!message.sender?.username}
+                            style={{ alignSelf: "flex-start" }}
+                            accessibilityRole="button"
+                            accessibilityLabel="Abrir perfil"
+                            accessibilityState={{ disabled: !message.sender?.username }}
+                          >
+                            <Text className="text-white/70 text-[11px] mb-1">{message.sender.fullName}</Text>
+                          </Pressable>
+                        ) : null}
+                        <Text className="text-white text-sm">
+                          {isDeleted ? "Mensagem removida" : message.body}
+                        </Text>
+                        <Text className="text-white/45 text-[10px] mt-1 text-right">
+                          {formatTime(message.createdAt)}
+                        </Text>
+                      </View>
+                    </Pressable>
                   </View>
                 );
               })}
@@ -436,7 +824,7 @@ export default function ChatThreadScreen() {
             paddingTop: 8,
           }}
         >
-          {threadQuery.isError && !threadQuery.data ? (
+          {isEvent && threadQuery.isError && !threadQuery.data ? (
             <Text className="text-white/60 text-xs text-center">
               Chat disponível apenas para participantes.
             </Text>
@@ -470,7 +858,7 @@ export default function ChatThreadScreen() {
             </View>
           ) : (
             <Text className="text-white/60 text-xs text-center">
-              {statusLabel === "Só leitura" || statusLabel === "Fechado"
+              {statusLabel === "Só leitura" || statusLabel === "Fechado" || conversationReadOnlyReason
                 ? "Este chat está em modo leitura."
                 : "Apenas organizadores podem publicar anúncios."}
             </Text>

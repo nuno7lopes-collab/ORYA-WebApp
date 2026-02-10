@@ -1,5 +1,4 @@
 import { Ionicons } from "../icons/Ionicons";
-import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +14,7 @@ import {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import type { TouchData } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { TabKey } from "./tabOrder";
 
 const LEFT_TABS: Array<{
   key: string;
@@ -22,39 +22,47 @@ const LEFT_TABS: Array<{
   inactive: keyof typeof Ionicons.glyphMap;
 }> = [
   { key: "agora", active: "flash", inactive: "flash-outline" },
-  { key: "tickets", active: "ticket", inactive: "ticket-outline" },
   { key: "network", active: "people", inactive: "people-outline" },
+  { key: "messages", active: "chatbubble-ellipses", inactive: "chatbubble-ellipses-outline" },
   { key: "profile", active: "person-circle", inactive: "person-circle-outline" },
 ];
 
 const RIGHT_TAB = { key: "index", icon: "search" as keyof typeof Ionicons.glyphMap };
 const TAB_LABELS: Record<string, string> = {
   agora: "Agora",
-  tickets: "Bilhetes",
+  messages: "Mensagens",
   network: "Rede",
   profile: "Perfil",
   index: "Descobrir",
 };
 
-export const TAB_BAR_HEIGHT = 60;
-const RIGHT_PILL_SIZE = 56;
-const ICON_SIZE = 24;
-const ICON_NUDGE_Y = -1;
-const TAB_SLOT_SIZE = 52;
-const SLOTS_SIDE_PADDING = 23;
-const BUBBLE_EXTRA = 40;
+export const TAB_BAR_HEIGHT = 50;
+const RIGHT_PILL_SIZE = 44;
+const ICON_SIZE = 22;
+const ICON_NUDGE_Y = -0.5;
+const ACTIVE_ICON_COLOR = "rgba(255,255,255,1)";
+const INACTIVE_ICON_COLOR = "rgba(235,242,255,0.78)";
+const TAB_SLOT_SIZE = 44;
+const SLOTS_SIDE_PADDING = 18;
+const BUBBLE_EXTRA = 30;
 
-const PILL_GAP = 10;
-const WRAPPER_PADDING = 16;
+const PILL_GAP = 6;
+const WRAPPER_PADDING = 12;
 const TRACK_PADDING_X = 0;
 const TRACK_PADDING_Y = 0;
-const BUBBLE_GAP = 3;
+const BUBBLE_GAP = 2;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
+type FloatingTabBarProps = {
+  activeKey: TabKey;
+  onSelect: (key: TabKey) => void;
+  pagerProgress?: Animated.Value | Animated.AnimatedInterpolation<number>;
+};
+
+export function FloatingTabBar({ activeKey, onSelect, pagerProgress }: FloatingTabBarProps) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
-  const safeBottom = Math.max(insets.bottom, 10) + 10;
+  const safeBottom = Math.max(insets.bottom, 8) + 8;
 
   const bubbleX = useRef(new Animated.Value(0)).current;
   const bubbleOpacity = useRef(new Animated.Value(0)).current;
@@ -84,9 +92,8 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const slotWidth = hasSlotMetrics ? slotLayouts[0]!.width : slotWidthFallback;
   const bubbleWidth = slotWidth + BUBBLE_EXTRA;
 
-  const currentRouteName = state.routes[state.index]?.name;
-  const activeLeftIndex = LEFT_TABS.findIndex((tab) => tab.key === currentRouteName);
-  const rightActive = currentRouteName === RIGHT_TAB.key;
+  const activeLeftIndex = LEFT_TABS.findIndex((tab) => tab.key === activeKey);
+  const rightActive = activeKey === RIGHT_TAB.key;
 
   const handleSlotLayout = useCallback((index: number, event: LayoutChangeEvent) => {
     const { x, width } = event.nativeEvent.layout;
@@ -143,6 +150,62 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
       }).start();
     }
   }, [activeLeftIndex, bubbleOpacity, setBubbleToIndex, slotWidth]);
+
+  const bubbleFollowX = useMemo(() => {
+    if (!pagerProgress) return bubbleX;
+    const fallbackCenters = LEFT_TABS.map((_, index) => SLOTS_SIDE_PADDING + slotWidthFallback * (index + 0.5));
+    const centers = slotCenters ?? fallbackCenters;
+    const outputRange = centers.map((center) => center - bubbleWidth / 2);
+    const inputRange = centers.map((_, index) => index);
+    return pagerProgress.interpolate({
+      inputRange,
+      outputRange,
+      extrapolate: "clamp",
+    });
+  }, [bubbleWidth, bubbleX, pagerProgress, slotCenters, slotWidthFallback]);
+
+  const bubbleFollowOpacity = useMemo(() => {
+    if (!pagerProgress) return bubbleOpacity;
+    const lastLeftIndex = Math.max(LEFT_TABS.length - 1, 0);
+    const fadeStart = Math.max(0, lastLeftIndex - 0.4);
+    const fadeMid = lastLeftIndex + 0.15;
+    const fadeEnd = lastLeftIndex + 0.55;
+    return Animated.multiply(
+      bubbleOpacity,
+      pagerProgress.interpolate({
+        inputRange: [0, fadeStart, fadeMid, fadeEnd],
+        outputRange: [1, 1, 0.4, 0],
+        extrapolate: "clamp",
+      }),
+    );
+  }, [bubbleOpacity, pagerProgress]);
+
+  const rightBubbleOpacity = useMemo(() => {
+    if (!pagerProgress) return rightActive ? 1 : 0;
+    const lastLeftIndex = Math.max(LEFT_TABS.length - 1, 0);
+    const rightIndex = lastLeftIndex + 1;
+    const showStart = Math.max(0, lastLeftIndex - 0.3);
+    const showMid = lastLeftIndex + 0.1;
+    const showNear = rightIndex - 0.4;
+    return pagerProgress.interpolate({
+      inputRange: [showStart, showMid, showNear, rightIndex],
+      outputRange: [0, 0.2, 0.75, 1],
+      extrapolate: "clamp",
+    });
+  }, [pagerProgress, rightActive]);
+
+  const rightBubbleScale = useMemo(() => {
+    if (!pagerProgress) return 1;
+    const lastLeftIndex = Math.max(LEFT_TABS.length - 1, 0);
+    const rightIndex = lastLeftIndex + 1;
+    const scaleStart = Math.max(0, lastLeftIndex - 0.3);
+    const scaleMid = rightIndex - 0.6;
+    return pagerProgress.interpolate({
+      inputRange: [scaleStart, scaleMid, rightIndex],
+      outputRange: [0.92, 1, 1.02],
+      extrapolate: "clamp",
+    });
+  }, [pagerProgress]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -277,8 +340,8 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           const targetIndex = dragIndexRef.current ?? activeLeftIndex;
           if (targetIndex != null && targetIndex >= 0) {
             const routeKey = LEFT_TABS[targetIndex]?.key;
-            if (routeKey && routeKey !== currentRouteName) {
-              navigation.navigate(routeKey);
+            if (routeKey && routeKey !== activeKey) {
+              onSelect(routeKey as TabKey);
             } else if (routeKey) {
               setBubbleToIndex(targetIndex);
             }
@@ -292,14 +355,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           dragIndexRef.current = null;
           setDragIndex(null);
         }),
-    [
-      activeLeftIndex,
-      animatePress,
-      currentRouteName,
-      navigation,
-      setBubbleToIndex,
-      updateBubbleFromTouch,
-    ],
+    [activeLeftIndex, activeKey, animatePress, onSelect, setBubbleToIndex, updateBubbleFromTouch],
   );
 
   const visualLeftIndex = dragIndex ?? (activeLeftIndex >= 0 ? activeLeftIndex : null);
@@ -343,9 +399,9 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                     style={[
                       styles.bubbleTrack,
                       {
-                        opacity: bubbleOpacity,
+                        opacity: bubbleFollowOpacity,
                         width: bubbleWidth,
-                        transform: [{ translateX: bubbleX }],
+                        transform: [{ translateX: dragIndex != null ? bubbleX : bubbleFollowX }],
                       },
                     ]}
                   >
@@ -353,7 +409,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                       <View pointerEvents="none" style={styles.bubbleFillWrap}>
                         <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
                         <LinearGradient
-                          colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
+                          colors={["rgba(255,255,255,0.36)", "rgba(255,255,255,0.18)", "rgba(255,255,255,0.06)"]}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                           style={StyleSheet.absoluteFill}
@@ -378,8 +434,8 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                         onLayout={(event) => handleSlotLayout(index, event)}
                         style={({ pressed }) => [styles.tabSlot, pressed && styles.tabPressed]}
                         onPress={() => {
-                          if (tab.key !== currentRouteName) {
-                            navigation.navigate(tab.key);
+                          if (tab.key !== activeKey) {
+                            onSelect(tab.key as TabKey);
                           }
                           if (slotWidth) setBubbleToIndex(index);
                         }}
@@ -396,7 +452,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
                           <Ionicons
                             name={iconName}
                             size={ICON_SIZE}
-                            color={isActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
+                            color={isActive ? ACTIVE_ICON_COLOR : INACTIVE_ICON_COLOR}
                             style={styles.iconGlyph}
                           />
                         </View>
@@ -417,7 +473,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           style={({ pressed }) => [styles.rightPill, pressed && styles.tabPressed]}
           hitSlop={10}
           onPress={() => {
-            navigation.navigate(RIGHT_TAB.key);
+            onSelect(RIGHT_TAB.key as TabKey);
           }}
         >
           <View style={styles.rightCircle}>
@@ -431,24 +487,33 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
               />
             </View>
             <View style={styles.rightBorder} pointerEvents="none" />
-            {rightActive && (
-              <View pointerEvents="none" style={styles.rightBubble}>
+            {rightActive || pagerProgress ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.rightBubble,
+                  {
+                    opacity: rightBubbleOpacity as any,
+                    transform: [{ scale: rightBubbleScale as any }],
+                  },
+                ]}
+              >
                 <View pointerEvents="none" style={styles.bubbleFillWrap}>
                   <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
                   <LinearGradient
-                    colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0.04)"]}
+                    colors={["rgba(255,255,255,0.36)", "rgba(255,255,255,0.18)", "rgba(255,255,255,0.06)"]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={StyleSheet.absoluteFill}
                   />
                 </View>
-              </View>
-            )}
+              </Animated.View>
+            ) : null}
             <View style={styles.iconBox}>
               <Ionicons
                 name={RIGHT_TAB.icon}
                 size={ICON_SIZE}
-                color={rightActive ? "rgba(255,255,255,0.98)" : "rgba(220,230,245,0.68)"}
+                color={rightActive ? ACTIVE_ICON_COLOR : INACTIVE_ICON_COLOR}
                 style={styles.iconGlyph}
               />
             </View>
@@ -476,7 +541,7 @@ const styles = StyleSheet.create({
     height: TAB_BAR_HEIGHT,
     borderRadius: TAB_BAR_HEIGHT / 2,
     overflow: "hidden",
-    backgroundColor: "rgba(14,18,28,0.45)",
+    backgroundColor: "rgba(14,18,28,0.6)",
   },
   track: {
     flex: 1,
@@ -505,7 +570,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: TAB_BAR_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.16)",
   },
   pillFillWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -529,7 +594,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: RIGHT_PILL_SIZE / 2,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.16)",
   },
   bubbleTrack: {
     position: "absolute",
@@ -541,9 +606,9 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 999,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.28)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    borderColor: "rgba(255,255,255,0.32)",
   },
   bubbleFillWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -585,8 +650,8 @@ const styles = StyleSheet.create({
     right: BUBBLE_GAP,
     borderRadius: 999,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.28)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    borderColor: "rgba(255,255,255,0.32)",
   },
 });

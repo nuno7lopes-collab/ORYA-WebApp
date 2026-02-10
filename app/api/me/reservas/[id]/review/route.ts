@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { normalizeEmail } from "@/lib/utils/email";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -36,6 +37,7 @@ async function _POST(
       select: {
         id: true,
         userId: true,
+        guestEmail: true,
         serviceId: true,
         organizationId: true,
         status: true,
@@ -45,7 +47,11 @@ async function _POST(
     if (!booking) {
       return jsonWrap({ ok: false, error: "Reserva não encontrada." }, { status: 404 });
     }
-    if (booking.userId !== user.id) {
+    const normalizedEmail = normalizeEmail(user.email ?? "");
+    const isOwner =
+      booking.userId === user.id ||
+      (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+    if (!isOwner) {
       return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
     }
     if (booking.status !== "COMPLETED") {

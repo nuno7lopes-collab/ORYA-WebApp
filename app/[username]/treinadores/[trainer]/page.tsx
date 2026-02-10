@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getProfileCoverUrl } from "@/lib/profileCover";
+import { normalizeUsernameInput } from "@/lib/username";
+import { isReservedUsername } from "@/lib/reservedUsernames";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,8 +18,29 @@ function isUuid(value: string) {
 
 export default async function TrainerProfilePage({ params }: PageProps) {
   const resolved = await params;
-  const orgUsername = resolved.username;
-  const trainerParam = resolved.trainer;
+  const rawOrgUsername = resolved.username ?? "";
+  const orgUsername = normalizeUsernameInput(rawOrgUsername);
+  const trainerRaw = resolved.trainer ?? "";
+  const trainerParam = isUuid(trainerRaw) ? trainerRaw : normalizeUsernameInput(trainerRaw);
+
+  if (!orgUsername) {
+    notFound();
+  }
+  if (orgUsername === "me") {
+    redirect("/me");
+  }
+  if (isReservedUsername(orgUsername)) {
+    notFound();
+  }
+  if (rawOrgUsername !== orgUsername) {
+    redirect(`/${orgUsername}/treinadores/${encodeURIComponent(trainerRaw)}`);
+  }
+  if (!trainerParam) {
+    notFound();
+  }
+  if (!isUuid(trainerRaw) && trainerRaw !== trainerParam) {
+    redirect(`/${orgUsername}/treinadores/${encodeURIComponent(trainerParam)}`);
+  }
 
   const organization = await prisma.organization.findFirst({
     where: { username: orgUsername, status: "ACTIVE" },

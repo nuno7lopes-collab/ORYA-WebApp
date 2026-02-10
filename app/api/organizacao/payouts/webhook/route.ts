@@ -9,8 +9,9 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk, respondPlainText } from "@/lib/http/envelope";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { getStripePayoutsWebhookSecret } from "@/lib/stripeKeys";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const webhookSecret = getStripePayoutsWebhookSecret();
   const sig = req.headers.get("stripe-signature");
@@ -83,3 +84,4 @@ export async function POST(req: NextRequest) {
 
   return respondOk(ctx, { received: true }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

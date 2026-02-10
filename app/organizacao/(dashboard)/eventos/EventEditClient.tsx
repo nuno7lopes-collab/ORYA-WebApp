@@ -10,6 +10,9 @@ import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl, parseEventCoverToken } from "@/lib/eventCover";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
+import { FilterChip } from "@/app/components/mobile/MobileFilters";
+import InterestIcon from "@/app/components/interests/InterestIcon";
+import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 import type { Prisma } from "@prisma/client";
 
@@ -69,6 +72,13 @@ type PadelCategoryDraft = {
   capacityTeams: string;
 };
 
+const buildDefaultEndsAt = (startsAt: string) => {
+  const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime())) return "";
+  const end = new Date(start.getTime() + 5 * 60 * 60 * 1000);
+  return end.toISOString();
+};
+
 const arePadelDraftsEqual = (
   a: Record<number, PadelCategoryDraft>,
   b: Record<number, PadelCategoryDraft>,
@@ -100,6 +110,7 @@ type EventEditClientProps = {
     description: string | null;
     startsAt: string;
     endsAt: string;
+    interestTags?: string[] | null;
     address?: string | null;
     addressId?: string | null;
     addressRef?: {
@@ -166,6 +177,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [description, setDescription] = useState(event.description ?? "");
   const [startsAt, setStartsAt] = useState(event.startsAt);
   const [endsAt, setEndsAt] = useState(event.endsAt);
+  const [interestTags, setInterestTags] = useState<InterestId[]>(
+    (Array.isArray(event.interestTags) ? event.interestTags : []) as InterestId[],
+  );
   const initialAddress = event.addressRef?.formattedAddress ?? "";
   const [locationAddressId, setLocationAddressId] = useState<string | null>(event.addressId ?? null);
   const [locationQuery, setLocationQuery] = useState(initialAddress);
@@ -682,7 +696,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       }
       if (idx === 1) {
         if (!startsAt) issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
-        if (endsAt && startsAt && new Date(endsAt).getTime() < new Date(startsAt).getTime()) {
+        if (!endsAt) issues.push({ field: "endsAt", message: "Data/hora de fim obrigatória." });
+        if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
           issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
         }
       }
@@ -720,12 +735,22 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   }, [startsAt]);
 
   useEffect(() => {
-    if (!endsAt) {
+    if (startsAt && endsAt && new Date(endsAt).getTime() > new Date(startsAt).getTime()) {
       clearErrorsForFields(["endsAt"]);
+    }
+  }, [endsAt, startsAt]);
+
+  useEffect(() => {
+    if (!startsAt) return;
+    const start = new Date(startsAt);
+    if (Number.isNaN(start.getTime())) return;
+    if (!endsAt) {
+      setEndsAt(buildDefaultEndsAt(startsAt));
       return;
     }
-    if (startsAt && new Date(endsAt).getTime() >= new Date(startsAt).getTime()) {
-      clearErrorsForFields(["endsAt"]);
+    const end = new Date(endsAt);
+    if (Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) {
+      setEndsAt(buildDefaultEndsAt(startsAt));
     }
   }, [endsAt, startsAt]);
 
@@ -760,7 +785,13 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload?scope=event-cover", { method: "POST", body: formData });
+      if (!organizationId) {
+        throw new Error("Organização inválida.");
+      }
+      const res = await fetch(`/api/upload?scope=event-cover&organizationId=${organizationId}`, {
+        method: "POST",
+        body: formData,
+      });
       const json = await res.json();
       if (!res.ok || !json?.url) {
         throw new Error(json?.error || "Falha no upload da imagem.");
@@ -924,6 +955,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           endsAt,
           addressId: resolvedAddressId,
           templateType,
+          interestTags,
           isGratis,
           coverImageUrl: coverUrl,
           liveHubVisibility,
@@ -1101,6 +1133,31 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             rows={4}
             className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
           />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Interesses do evento</label>
+          <div className="flex flex-wrap gap-2">
+            {INTEREST_OPTIONS.map((interest) => {
+              const active = interestTags.includes(interest.id);
+              return (
+                <FilterChip
+                  key={interest.id}
+                  label={interest.label}
+                  icon={<InterestIcon id={interest.id} className="h-3 w-3" />}
+                  active={active}
+                  onClick={() => {
+                    setInterestTags((prev) => {
+                      if (prev.includes(interest.id)) {
+                        return prev.filter((item) => item !== interest.id);
+                      }
+                      return [...prev, interest.id];
+                    });
+                  }}
+                />
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-white/55">Usado para personalização e ranking.</p>
         </div>
 
         <div id="livehub" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 space-y-3">

@@ -6,6 +6,8 @@ import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCartOverlay from "@/components/storefront/StorefrontCartOverlay";
 import StorefrontProductClient from "@/components/storefront/StorefrontProductClient";
 import StorefrontFooter from "@/components/storefront/StorefrontFooter";
+import { normalizeUsernameInput } from "@/lib/username";
+import { isReservedUsername } from "@/lib/reservedUsernames";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +17,21 @@ type PageProps = {
 
 export default async function StoreProductPage({ params }: PageProps) {
   const resolvedParams = await params;
-  const username = resolvedParams?.username;
+  const rawUsername = resolvedParams?.username ?? "";
+  const username = normalizeUsernameInput(rawUsername);
   const slug = resolvedParams?.slug;
 
-  if (!username || username.toLowerCase() === "me") {
+  if (!username) {
+    notFound();
+  }
+  if (username === "me") {
     redirect("/me");
+  }
+  if (isReservedUsername(username)) {
+    notFound();
+  }
+  if (rawUsername !== username) {
+    redirect(`/${username}/loja/produto/${encodeURIComponent(slug ?? "")}`);
   }
 
   const [profile, organization] = await Promise.all([

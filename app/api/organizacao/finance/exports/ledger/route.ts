@@ -12,6 +12,7 @@ import { toCsv } from "@/lib/exports/csv";
 import { requireOfficialEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseRange(req: NextRequest) {
   const from = req.nextUrl.searchParams.get("from");
@@ -34,7 +35,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -134,3 +135,4 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+export const GET = withApiEnvelope(_GET);

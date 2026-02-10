@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { toPublicEventCardWithPrice, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
+import { PUBLIC_EVENT_STATUSES } from "@/domain/events/publicStatus";
 import { getPublicDiscoverBySlug } from "@/domain/search/publicDiscover";
 import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
@@ -22,12 +23,20 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
   const event = await prisma.event.findFirst({
     where: {
       slug,
-      status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+      status: { in: PUBLIC_EVENT_STATUSES },
       isDeleted: false,
       organization: { status: "ACTIVE" },
     },
     include: {
       organization: { select: { publicName: true, businessName: true, username: true } },
+      addressRef: {
+        select: {
+          formattedAddress: true,
+          canonical: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
       ticketTypes: {
         select: {
           id: true,
@@ -115,7 +124,7 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
   });
   const accessPolicy = {
     ...resolvedPolicy.policyInput,
-    policyVersion: latestPolicy?.policyVersion ?? null,
+    ...(latestPolicy?.policyVersion ? { policyVersion: latestPolicy.policyVersion } : {}),
   };
 
   const isPadelTemplate =

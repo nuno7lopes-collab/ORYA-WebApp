@@ -1,3 +1,5 @@
+import { formatDistanceKmValue } from "./formatters";
+
 export const getDistanceKm = (
   lat?: number | null,
   lng?: number | null,
@@ -25,7 +27,5 @@ export const formatDistanceKm = (
 ) => {
   const distance = getDistanceKm(lat, lng, userLat, userLng);
   if (distance == null) return null;
-  if (distance < 1) return "<1 km";
-  if (distance < 10) return `${distance.toFixed(1)} km`;
-  return `${Math.round(distance)} km`;
+  return formatDistanceKmValue(distance);
 };

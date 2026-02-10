@@ -23,6 +23,7 @@ type StoreProductImagesPanelProps = {
   productsEndpoint: string;
   storeLocked: boolean;
   storeEnabled: boolean;
+  organizationId?: number | null;
 };
 
 type ImageFormState = {
@@ -47,6 +48,7 @@ export default function StoreProductImagesPanel({
   productsEndpoint,
   storeLocked,
   storeEnabled,
+  organizationId = null,
 }: StoreProductImagesPanelProps) {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
@@ -130,7 +132,10 @@ export default function StoreProductImagesPanel({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload?scope=store-product", { method: "POST", body: formData });
+      const uploadEndpoint = organizationId
+        ? `/api/upload?scope=store-product&organizationId=${organizationId}`
+        : "/api/upload?scope=store-product";
+      const res = await fetch(uploadEndpoint, { method: "POST", body: formData });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.url) {
         throw new Error(json?.error || "Erro no upload da imagem.");

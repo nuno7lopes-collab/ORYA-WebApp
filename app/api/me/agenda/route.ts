@@ -3,6 +3,11 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getEventCoverUrl } from "@/lib/eventCover";
+import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { PUBLIC_EVENT_STATUSES } from "@/domain/events/publicStatus";
+import { isPublicEventCardComplete } from "@/domain/events/publicEventCard";
+import { resolveEventLocation } from "@/lib/location/eventLocation";
 
 type AgendaItem = {
   id: string;
@@ -10,6 +15,7 @@ type AgendaItem = {
   title: string;
   startAt: string;
   endAt: string | null;
+  coverImageUrl?: string | null;
   status?: string | null;
   label?: string | null;
   ctaHref?: string | null;
@@ -54,6 +60,41 @@ const templateLabel = (template: string | null) => {
   return "Evento";
 };
 
+const toAbsoluteUrl = (url: string | null | undefined) => {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = getAppBaseUrl().replace(/\/+$/, "");
+  return `${base}${url.startsWith("/") ? "" : "/"}${url}`;
+};
+
+const resolveEventCover = (coverImageUrl: string | null | undefined, seed: string | number) =>
+  toAbsoluteUrl(
+    getEventCoverUrl(coverImageUrl ?? null, {
+      seed,
+      width: 320,
+      quality: 70,
+      format: "webp",
+    }),
+  );
+
+const isAgendaEventComplete = (event: {
+  title: string;
+  startsAt: Date;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: any | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
+}) => {
+  const location = resolveEventLocation({ addressRef: event.addressRef ?? null });
+  return isPublicEventCardComplete({
+    title: event.title,
+    startsAt: event.startsAt,
+    location: { formattedAddress: location.formattedAddress, city: location.city },
+  });
+};
+
 const participationPriority: Record<string, number> = {
   BILHETE: 5,
   STAFF: 4,
@@ -90,6 +131,7 @@ async function _GET(req: NextRequest) {
           OR: [{ userId }, { ownerUserId: userId }],
           event: {
             isDeleted: false,
+            status: { in: PUBLIC_EVENT_STATUSES },
             startsAt: { lte: end },
             endsAt: { gte: start },
           },
@@ -104,6 +146,15 @@ async function _GET(req: NextRequest) {
               endsAt: true,
               status: true,
               templateType: true,
+              coverImageUrl: true,
+              addressRef: {
+                select: {
+                  formattedAddress: true,
+                  canonical: true,
+                  latitude: true,
+                  longitude: true,
+                },
+              },
             },
           },
         },
@@ -115,6 +166,7 @@ async function _GET(req: NextRequest) {
           expiresAt: { gte: new Date() },
           event: {
             isDeleted: false,
+            status: { in: PUBLIC_EVENT_STATUSES },
             startsAt: { lte: end },
             endsAt: { gte: start },
           },
@@ -129,6 +181,15 @@ async function _GET(req: NextRequest) {
               endsAt: true,
               status: true,
               templateType: true,
+              coverImageUrl: true,
+              addressRef: {
+                select: {
+                  formattedAddress: true,
+                  canonical: true,
+                  latitude: true,
+                  longitude: true,
+                },
+              },
             },
           },
         },
@@ -138,6 +199,7 @@ async function _GET(req: NextRequest) {
           userId,
           event: {
             isDeleted: false,
+            status: { in: PUBLIC_EVENT_STATUSES },
             startsAt: { lte: end },
             endsAt: { gte: start },
           },
@@ -152,6 +214,15 @@ async function _GET(req: NextRequest) {
               endsAt: true,
               status: true,
               templateType: true,
+              coverImageUrl: true,
+              addressRef: {
+                select: {
+                  formattedAddress: true,
+                  canonical: true,
+                  latitude: true,
+                  longitude: true,
+                },
+              },
             },
           },
         },
@@ -180,6 +251,9 @@ async function _GET(req: NextRequest) {
                 { actualStartAt: { gte: start, lte: end } },
               ],
             },
+            {
+              event: { isDeleted: false, status: { in: PUBLIC_EVENT_STATUSES } },
+            },
           ],
         },
         select: {
@@ -191,7 +265,23 @@ async function _GET(req: NextRequest) {
           roundLabel: true,
           groupLabel: true,
           courtName: true,
-          event: { select: { id: true, title: true, slug: true } },
+          event: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              startsAt: true,
+              coverImageUrl: true,
+              addressRef: {
+                select: {
+                  formattedAddress: true,
+                  canonical: true,
+                  latitude: true,
+                  longitude: true,
+                },
+              },
+            },
+          },
         },
       }),
       prisma.organizationFormSubmission.findMany({
@@ -216,6 +306,7 @@ async function _GET(req: NextRequest) {
     const staffEvents = await prisma.event.findMany({
       where: {
         isDeleted: false,
+        status: { in: PUBLIC_EVENT_STATUSES },
         startsAt: { lte: end },
         endsAt: { gte: start },
         organization: {
@@ -236,6 +327,15 @@ async function _GET(req: NextRequest) {
         endsAt: true,
         status: true,
         templateType: true,
+        coverImageUrl: true,
+        addressRef: {
+          select: {
+            formattedAddress: true,
+            canonical: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
       },
     });
 
@@ -249,9 +349,17 @@ async function _GET(req: NextRequest) {
         startsAt: Date;
         endsAt: Date;
         templateType: string | null;
+        coverImageUrl?: string | null;
+        addressRef?: {
+          formattedAddress?: string | null;
+          canonical?: any | null;
+          latitude?: number | null;
+          longitude?: number | null;
+        } | null;
       },
       status: string,
     ) => {
+      if (!isAgendaEventComplete(event)) return;
       const priority = participationPriority[status] ?? 1;
       const existing = eventMap.get(event.id);
       if (existing && existing.priority >= priority) return;
@@ -265,6 +373,7 @@ async function _GET(req: NextRequest) {
           endAt: event.endsAt ? event.endsAt.toISOString() : null,
           status,
           label: templateLabel(event.templateType ?? null),
+          coverImageUrl: resolveEventCover(event.coverImageUrl ?? null, event.slug ?? event.id),
           ctaHref: `/eventos/${event.slug}`,
           ctaLabel: "Abrir evento",
         },
@@ -287,6 +396,7 @@ async function _GET(req: NextRequest) {
     const items: AgendaItem[] = Array.from(eventMap.values()).map((entry) => entry.item);
 
     matchRows.forEach((match) => {
+      if (!isAgendaEventComplete(match.event)) return;
       const startAt = match.plannedStartAt ?? match.startTime ?? match.actualStartAt;
       if (!startAt) return;
       const detail =
@@ -298,6 +408,7 @@ async function _GET(req: NextRequest) {
         startAt: startAt.toISOString(),
         endAt: match.plannedEndAt ? match.plannedEndAt.toISOString() : null,
         label: "Jogo",
+        coverImageUrl: resolveEventCover(match.event.coverImageUrl ?? null, match.event.slug ?? match.event.id),
         ctaHref: match.event.slug ? `/eventos/${match.event.slug}/live` : null,
         ctaLabel: "Ver jogo",
       });

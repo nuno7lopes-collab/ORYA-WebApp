@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { isStoreDigitalEnabled, isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -70,6 +70,9 @@ async function _PATCH(
   try {
     if (!isStoreFeatureEnabled()) {
       return fail(403, "Loja desativada.");
+    }
+    if (!isStoreDigitalEnabled()) {
+      return fail(403, "Loja digital desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -165,6 +168,9 @@ async function _DELETE(
     if (!isStoreFeatureEnabled()) {
       return fail(403, "Loja desativada.");
     }
+    if (!isStoreDigitalEnabled()) {
+      return fail(403, "Loja digital desativada.");
+    }
 
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -211,7 +217,13 @@ async function _DELETE(
       console.warn("[DELETE /api/me/store/products/[id]/digital-assets/[assetId]] remove error", removal.error);
     }
 
-    await prisma.storeDigitalAsset.delete({ where: { id: asset.id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.storeDigitalAsset.delete({ where: { id: asset.id } });
+      await tx.mediaAsset.updateMany({
+        where: { bucket, objectPath: asset.storagePath },
+        data: { deletedAt: new Date() },
+      });
+    });
 
     return respondOk(ctx, {});
   } catch (err) {

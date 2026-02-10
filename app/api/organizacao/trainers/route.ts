@@ -11,6 +11,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function fail(
   ctx: ReturnType<typeof getRequestContext>,
@@ -29,7 +30,7 @@ function fail(
   );
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -118,7 +119,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -257,7 +258,7 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -419,3 +420,6 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);
+export const POST = withApiEnvelope(_POST);

@@ -119,6 +119,7 @@ export async function getMfaStatus(userId: string) {
   const unused = recovery.filter((code) => !code.usedAt).length;
   return {
     enabled: Boolean(record?.enabledAt),
+    pending: Boolean(record && !record.enabledAt),
     updatedAt: record?.updatedAt?.toISOString() ?? null,
     recoveryUnused: unused,
     configMissing: !process.env.ADMIN_TOTP_ENCRYPTION_KEY,
@@ -129,6 +130,9 @@ export async function enrollMfa(userId: string, userEmail?: string | null) {
   const existing = await prisma.adminMfa.findFirst({ where: { userId } });
   if (existing?.enabledAt) {
     throw new Error("MFA_ALREADY_ENABLED");
+  }
+  if (existing) {
+    throw new Error("MFA_ALREADY_PENDING");
   }
 
   const secret = generateSecret();
@@ -198,23 +202,13 @@ export async function verifyMfaCode(params: { userId: string; code?: string | nu
   return { ok: true as const, usedRecovery: false };
 }
 
-export async function resetMfa(params: { userId: string; code?: string | null }) {
-  const record = await prisma.adminMfa.findFirst({
-    where: { userId: params.userId },
-  });
-  if (!record) throw new Error("MFA_NOT_ENROLLED");
+function buildIssuerLabel(userId: string, userEmail?: string | null) {
+  const issuer = process.env.ADMIN_TOTP_ISSUER ?? "ORYA";
+  const label = userEmail ?? `admin:${userId}`;
+  return { issuer, label };
+}
 
-  const code = params.code ? normalizeCode(params.code) : "";
-  if (!code) return { ok: false as const, error: "MFA_CODE_REQUIRED" };
-
-  const secret = decryptSecret({
-    secretEnc: record.secretEnc,
-    secretIv: record.secretIv,
-    secretTag: record.secretTag,
-  });
-  const isValid = authenticator.check(code, secret);
-  if (!isValid) return { ok: false as const, error: "MFA_CODE_INVALID" };
-
+async function rotateMfaSecret(record: { id: string; userId: string }, userEmail?: string | null) {
   const newSecret = generateSecret();
   const recoveryCodes = generateRecoveryCodes();
   const recoveryRecords = buildRecoveryRecords(recoveryCodes);
@@ -231,9 +225,37 @@ export async function resetMfa(params: { userId: string; code?: string | null })
     },
   });
 
-  const issuer = process.env.ADMIN_TOTP_ISSUER ?? "ORYA";
-  const label = `admin:${params.userId}`;
+  const { issuer, label } = buildIssuerLabel(record.userId, userEmail);
   const otpauth = authenticator.keyuri(label, issuer, newSecret);
 
-  return { ok: true as const, payload: { otpauth, recoveryCodes } };
+  return { otpauth, recoveryCodes };
+}
+
+export async function resetMfa(params: { userId: string; code?: string | null; userEmail?: string | null }) {
+  const record = await prisma.adminMfa.findFirst({
+    where: { userId: params.userId },
+  });
+  if (!record) throw new Error("MFA_NOT_ENROLLED");
+
+  const code = params.code ? normalizeCode(params.code) : "";
+  if (!code) return { ok: false as const, error: "MFA_CODE_REQUIRED" };
+
+  const secret = decryptSecret({
+    secretEnc: record.secretEnc,
+    secretIv: record.secretIv,
+    secretTag: record.secretTag,
+  });
+  const isValid = authenticator.check(code, secret);
+  if (!isValid) return { ok: false as const, error: "MFA_CODE_INVALID" };
+  const payload = await rotateMfaSecret(record, params.userEmail ?? null);
+  return { ok: true as const, payload };
+}
+
+export async function forceResetMfa(params: { userId: string; userEmail?: string | null }) {
+  const record = await prisma.adminMfa.findFirst({
+    where: { userId: params.userId },
+  });
+  if (!record) throw new Error("MFA_NOT_ENROLLED");
+  const payload = await rotateMfaSecret(record, params.userEmail ?? null);
+  return { ok: true as const, payload };
 }

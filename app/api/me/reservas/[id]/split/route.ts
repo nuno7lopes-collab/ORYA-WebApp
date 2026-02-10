@@ -5,11 +5,12 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { normalizeEmail } from "@/lib/utils/email";
 import { getBookingState } from "@/lib/reservas/bookingState";
 import { ensureBookingPendingExpiry } from "@/domain/bookings/commands";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { normalizeSplitParticipants, type SplitParticipantInput, type SplitPricingMode, type SplitDynamicMode } from "@/lib/reservas/bookingSplit";
 
 function parseId(value: string) {
@@ -60,6 +61,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       select: {
         id: true,
         userId: true,
+        guestEmail: true,
         price: true,
         currency: true,
         splitPayment: {
@@ -98,7 +100,11 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (!booking) {
       return fail(ctx, 404, "NOT_FOUND", "Reserva não encontrada.");
     }
-    if (booking.userId !== user.id) {
+    const normalizedEmail = normalizeEmail(user.email ?? "");
+    const isOwner =
+      booking.userId === user.id ||
+      (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+    if (!isOwner) {
       return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
 
@@ -149,6 +155,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         pendingExpiresAt: true,
         startsAt: true,
         userId: true,
+        guestEmail: true,
         organizationId: true,
         organization: {
           select: {
@@ -164,7 +171,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (!booking) {
       return fail(ctx, 404, "NOT_FOUND", "Reserva não encontrada.");
     }
-    if (booking.userId !== user.id) {
+    const normalizedEmail = normalizeEmail(user.email ?? "");
+    const isOwner =
+      booking.userId === user.id ||
+      (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+    if (!isOwner) {
       return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
     const bookingState = getBookingState(booking);
@@ -221,7 +232,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const inviteMap = new Map(invites.map((invite) => [invite.id, invite]));
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
     const isPlatformOrg = booking.organization?.orgType === "PLATFORM";
 
     const computed = normalized.participants.map((participant) => {
@@ -239,8 +249,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         feeMode: pricing.feeMode,
         platformFeeBps: pricing.feeBpsApplied,
         platformFeeFixedCents: pricing.feeFixedApplied,
-        stripeFeeBps: stripeBaseFees.feeBps,
-        stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+        stripeFeeBps: 0,
+        stripeFeeFixedCents: 0,
       });
 
       const invite = participant.inviteId ? inviteMap.get(participant.inviteId) : null;

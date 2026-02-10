@@ -22,8 +22,10 @@ import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
 import { createTournamentForEvent } from "@/domain/tournaments/commands";
 import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
 import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
+import { buildDefaultEndsAt, isEndsAtAfterStart } from "@/lib/events/schedule";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { normalizeInterestIds } from "@/lib/ranking/interests";
 import {
   EventTemplateType,
   EventStatus,
@@ -37,6 +39,7 @@ import {
   OrganizationModule,
   TournamentFormat,
 } from "@prisma/client";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ALLOWED_PADEL_FORMATS = new Set<padel_format>([
   padel_format.TODOS_CONTRA_TODOS,
@@ -66,6 +69,7 @@ type CreateOrganizationEventBody = {
   status?: string;
   timezone?: string;
   templateType?: string; // PADEL | OTHER
+  interestTags?: string[];
   ticketTypes?: TicketTypeInput[];
   addressId?: string | null;
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
@@ -176,7 +180,7 @@ async function generateUniqueSlug(baseSlug: string) {
   return `${baseSlug}-${maxSuffix + 1}`;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -330,10 +334,12 @@ export async function POST(req: NextRequest) {
       return fail(400, "Data/hora de início inválida.");
     }
 
-    // Para simplificar e evitar conflitos de tipos, endsAt será sempre enviado.
-    // Se o utilizador não mandar, usamos a mesma data/hora de início.
+    // endsAt é obrigatório; se o utilizador não mandar, usamos startsAt + 5h.
     const endsAtParsed = parseDate(endsAtRaw);
-    const endsAt = endsAtParsed && endsAtParsed >= startsAt ? endsAtParsed : startsAt;
+    if (endsAtParsed && !isEndsAtAfterStart(startsAt, endsAtParsed)) {
+      return fail(400, "A data/hora de fim tem de ser depois do início.");
+    }
+    const endsAt = endsAtParsed ?? buildDefaultEndsAt(startsAt);
 
     const padelRequested = Boolean(body.padel) || templateTypeRaw === "PADEL";
     const templateTypeFromBody =
@@ -403,6 +409,7 @@ export async function POST(req: NextRequest) {
     }
 
     const pricingModeRaw = typeof body.pricingMode === "string" ? body.pricingMode.trim().toUpperCase() : null;
+    const interestTags = normalizeInterestIds(body.interestTags ?? []);
     const ticketPrices = ticketTypesData.map((t) => t.price);
     const hasZeroTicket = ticketPrices.some((price) => price === 0);
     const hasPaidTicket = ticketPrices.some((price) => price > 0);
@@ -701,6 +708,7 @@ export async function POST(req: NextRequest) {
           description,
           type: "ORGANIZATION_EVENT",
           templateType,
+          interestTags,
           ownerUserId: profile.id,
           organizationId: organization?.id ?? null,
           startsAt,
@@ -1004,3 +1012,4 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

@@ -1,6 +1,7 @@
 import { EventPricingMode } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { normalizeEndsAt } from "@/lib/events/schedule";
 
 export type PublicEventCard = {
   id: number;
@@ -12,6 +13,7 @@ export type PublicEventCard = {
   startsAt: string;
   endsAt: string;
   templateType?: string | null;
+  interestTags?: string[];
   location: {
     city: string | null;
     addressId: string | null;
@@ -28,6 +30,10 @@ export type PublicEventCard = {
   status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT";
   isHighlighted: boolean;
   ticketTypes?: PublicEventTicketType[];
+  rank?: {
+    score: number;
+    reasons: Array<{ code: string; label?: string; weight?: number }>;
+  };
 };
 
 export type PublicEventCardWithPrice = PublicEventCard & { _priceFromCents: number | null };
@@ -57,6 +63,7 @@ type PublicEventCardInput = {
   endsAt: Date | string | null;
   status: string;
   templateType: string | null;
+  interestTags?: string[] | null;
   ownerUserId: string | null;
   organization?: { publicName: string | null; businessName?: string | null; username?: string | null } | null;
   addressId: string | null;
@@ -96,6 +103,7 @@ type PublicEventCardIndexInput = {
   endsAt: Date | string | null;
   status: string;
   templateType: string | null;
+  interestTags?: string[] | null;
   pricingMode: string | null;
   isGratis: boolean;
   priceFromCents: number | null;
@@ -126,6 +134,21 @@ const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[
   return null;
 };
 
+const resolveEventDates = (
+  startsAt: Date | string | null,
+  endsAt: Date | string | null,
+) => {
+  const start =
+    startsAt instanceof Date ? startsAt : startsAt ? new Date(startsAt) : null;
+  if (!start || Number.isNaN(start.getTime())) {
+    const end = endsAt instanceof Date ? endsAt : endsAt ? new Date(endsAt) : null;
+    return { start: null, end: end && !Number.isNaN(end.getTime()) ? end : null };
+  }
+  const endRaw = endsAt instanceof Date ? endsAt : endsAt ? new Date(endsAt) : null;
+  const end = normalizeEndsAt(start, endRaw);
+  return { start, end };
+};
+
 export function isPublicEventCardComplete(input: {
   title?: string | null;
   startsAt?: string | Date | null;
@@ -150,17 +173,27 @@ export function isPublicEventCardComplete(input: {
 
 export function resolvePublicEventStatus(event: {
   status: string;
+  startsAt: Date | string | null;
   endsAt: Date | string | null;
 }): PublicEventCard["status"] {
   if (event.status === "CANCELLED") return "CANCELLED";
   if (event.status === "DRAFT") return "DRAFT";
+  if (event.status === "FINISHED") return "PAST";
 
   const now = Date.now();
+  const startDate =
+    event.startsAt instanceof Date
+      ? event.startsAt
+      : event.startsAt
+        ? new Date(event.startsAt)
+        : null;
+  const endDateRaw =
+    event.endsAt instanceof Date ? event.endsAt : event.endsAt ? new Date(event.endsAt) : null;
   const endDate =
-    event.endsAt instanceof Date
-      ? event.endsAt.getTime()
-      : event.endsAt
-        ? new Date(event.endsAt).getTime()
+    startDate && !Number.isNaN(startDate.getTime())
+      ? normalizeEndsAt(startDate, endDateRaw).getTime()
+      : endDateRaw && !Number.isNaN(endDateRaw.getTime())
+        ? endDateRaw.getTime()
         : null;
 
   if (endDate && endDate < now) return "PAST";
@@ -194,10 +227,15 @@ export function toPublicEventCardWithPrice(params: {
   const hostUsername = event.organization?.username ?? ownerProfile?.username ?? null;
 
   const categories = resolveEventCategories(event.templateType);
+  const interestTags = Array.isArray(event.interestTags) ? event.interestTags : [];
+  const { start: normalizedStart, end: normalizedEnd } = resolveEventDates(
+    event.startsAt,
+    event.endsAt,
+  );
   const isHighlighted = resolveIsHighlighted({
     status: event.status,
-    startsAt: event.startsAt,
-    endsAt: event.endsAt,
+    startsAt: normalizedStart,
+    endsAt: normalizedEnd,
     coverImageUrl: event.coverImageUrl,
   });
   const canonical = event.addressRef?.canonical ?? null;
@@ -232,9 +270,10 @@ export function toPublicEventCardWithPrice(params: {
     title: event.title,
     description: event.description ?? null,
     shortDescription: event.description?.slice(0, 200) ?? null,
-    startsAt: event.startsAt ? new Date(event.startsAt).toISOString() : "",
-    endsAt: event.endsAt ? new Date(event.endsAt).toISOString() : "",
+    startsAt: normalizedStart ? normalizedStart.toISOString() : "",
+    endsAt: normalizedEnd ? normalizedEnd.toISOString() : "",
     templateType: event.templateType ?? null,
+    interestTags,
     location: {
       city,
       addressId: event.addressId ?? null,
@@ -248,7 +287,11 @@ export function toPublicEventCardWithPrice(params: {
     categories,
     hostName,
     hostUsername,
-    status: resolvePublicEventStatus({ status: event.status, endsAt: event.endsAt }),
+    status: resolvePublicEventStatus({
+      status: event.status,
+      startsAt: normalizedStart,
+      endsAt: normalizedEnd,
+    }),
     isHighlighted,
     ticketTypes,
     _priceFromCents: priceFromCents,
@@ -270,10 +313,14 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
       ? input.priceFromCents / 100
       : null;
 
+  const { start: normalizedStart, end: normalizedEnd } = resolveEventDates(
+    input.startsAt,
+    input.endsAt,
+  );
   const isHighlighted = resolveIsHighlighted({
     status: input.status,
-    startsAt: input.startsAt,
-    endsAt: input.endsAt,
+    startsAt: normalizedStart,
+    endsAt: normalizedEnd,
     coverImageUrl: input.coverImageUrl,
   });
   const canonical = input.addressRef?.canonical ?? null;
@@ -290,8 +337,8 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     title: input.title,
     description: input.description ?? null,
     shortDescription: input.description?.slice(0, 200) ?? null,
-    startsAt: input.startsAt ? new Date(input.startsAt).toISOString() : "",
-    endsAt: input.endsAt ? new Date(input.endsAt).toISOString() : "",
+    startsAt: normalizedStart ? normalizedStart.toISOString() : "",
+    endsAt: normalizedEnd ? normalizedEnd.toISOString() : "",
     location: {
       city,
       addressId: input.addressId ?? null,
@@ -303,9 +350,14 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     isGratis: input.isGratis,
     priceFrom,
     categories: resolveEventCategories(input.templateType),
+    interestTags: Array.isArray(input.interestTags) ? input.interestTags : [],
     hostName: input.hostName ?? null,
     hostUsername: input.hostUsername ?? null,
-    status: resolvePublicEventStatus({ status: input.status, endsAt: input.endsAt }),
+    status: resolvePublicEventStatus({
+      status: input.status,
+      startsAt: normalizedStart,
+      endsAt: normalizedEnd,
+    }),
     isHighlighted,
   };
 }
@@ -339,7 +391,11 @@ function resolveIsHighlighted(params: {
   endsAt: Date | string | null;
   coverImageUrl?: string | null;
 }): boolean {
-  const status = resolvePublicEventStatus({ status: params.status, endsAt: params.endsAt });
+  const status = resolvePublicEventStatus({
+    status: params.status,
+    startsAt: params.startsAt,
+    endsAt: params.endsAt,
+  });
   if (status !== "ACTIVE") return false;
 
   const start =

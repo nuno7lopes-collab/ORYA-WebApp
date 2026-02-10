@@ -11,6 +11,7 @@ import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { headers } from "next/headers";
 import { resolveLocale, t } from "@/lib/i18n";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ function formatDate(date: Date | null | undefined, locale: string) {
 
 async function loadEvents(query?: string): Promise<EventCard[]> {
   const filters: Prisma.EventWhereInput[] = [
-    { status: { in: ["PUBLISHED", "DATE_CHANGED"] } },
+    { status: { in: PUBLIC_EVENT_DISCOVER_STATUSES } },
     { isDeleted: false },
     { organizationId: { not: null } },
     { organization: { status: "ACTIVE" } },

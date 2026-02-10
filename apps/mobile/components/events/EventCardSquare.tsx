@@ -4,12 +4,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View, InteractionManager } from "react-native";
 import { BlurView } from "expo-blur";
-import { PublicEventCard, tokens } from "@orya/shared";
+import { PublicEventCard, tokens, useTranslation } from "@orya/shared";
 import { FavoriteToggle } from "./FavoriteToggle";
 import { formatDistanceKm } from "../../lib/geo";
 import { GlassSkeleton } from "../glass/GlassSkeleton";
 import { getDominantTint, getFallbackTint } from "../../lib/imageTint";
 import MaskedView from "@react-native-masked-view/masked-view";
+import { EventFeedbackSheet } from "./EventFeedbackSheet";
+import { sendEventSignal } from "../../features/events/signals";
+import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 
 type EventCardSquareProps = {
   event: PublicEventCard;
@@ -18,7 +21,9 @@ type EventCardSquareProps = {
   userLon?: number | null;
   statusTag?: string | null;
   showFavorite?: boolean;
+  showCountdown?: boolean;
   source?: string;
+  onHide?: (payload: { eventId: number; scope: "event" | "category" | "org"; tag?: string | null }) => void;
 };
 
 type PriceState = {
@@ -26,39 +31,71 @@ type PriceState = {
   isSoon: boolean;
 };
 
-const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
-  day: "2-digit",
-  month: "short",
-});
-
-const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-const formatDate = (startsAt?: string, endsAt?: string): string | null => {
+const formatEventDate = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
   try {
     const start = new Date(startsAt);
     const end = endsAt ? new Date(endsAt) : null;
-    const date = EVENT_DATE_FORMATTER.format(start);
-    const time = EVENT_TIME_FORMATTER.format(start);
+    const date = formatDate(start, { day: "2-digit", month: "short" });
+    const time = formatTime(start, { hour: "2-digit", minute: "2-digit" });
     if (!end || Number.isNaN(end.getTime())) return `${date} · ${time}`;
-    const endTime = EVENT_TIME_FORMATTER.format(end);
+    const endTime = formatTime(end, { hour: "2-digit", minute: "2-digit" });
     return `${date} · ${time}-${endTime}`;
   } catch {
     return null;
   }
 };
 
-const resolvePriceState = (event: PublicEventCard): PriceState | null => {
-  if (event.isGratis) return { label: "Grátis", isSoon: false };
-  if (typeof event.priceFrom === "number") return { label: `Desde ${event.priceFrom.toFixed(0)}€`, isSoon: false };
+const formatCountdown = (ms: number) => {
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60000));
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+};
+
+const resolvePriceState = (event: PublicEventCard, t: (key: string, options?: any) => string): PriceState | null => {
+  if (event.isGratis) return { label: t("common:price.free"), isSoon: false };
+  if (typeof event.priceFrom === "number") {
+    return { label: t("common:price.from", { price: formatCurrency(event.priceFrom, "EUR") }), isSoon: false };
+  }
   const ticketTypes = event.ticketTypes ?? [];
   const hasUpcoming = ticketTypes.some((ticket) => ticket.status === "UPCOMING");
   const hasTickets = ticketTypes.length > 0;
-  if (hasUpcoming) return { label: "Bilhetes em breve", isSoon: true };
-  if (hasTickets) return { label: "Bilhetes em breve", isSoon: true };
+  if (hasUpcoming) return { label: t("common:price.ticketsSoon"), isSoon: true };
+  if (hasTickets) return { label: t("common:price.ticketsSoon"), isSoon: true };
+  return null;
+};
+
+const resolveCountdownTag = (
+  event: PublicEventCard,
+  now: number,
+  t: (key: string, options?: any) => string,
+): string | null => {
+  const startsAtMs = event.startsAt ? new Date(event.startsAt).getTime() : null;
+  const endsAtMs = event.endsAt ? new Date(event.endsAt).getTime() : null;
+  if (startsAtMs && startsAtMs > now) {
+    return t("common:time.startsIn", { value: formatCountdown(startsAtMs - now) });
+  }
+  if (endsAtMs && endsAtMs > now) {
+    return t("common:time.endsIn", { value: formatCountdown(endsAtMs - now) });
+  }
+  if (startsAtMs && startsAtMs <= now && (!endsAtMs || endsAtMs > now)) {
+    return t("common:status.live");
+  }
+  return null;
+};
+
+const resolveStatusTag = (status: PublicEventCard["status"] | undefined, t: (key: string) => string) => {
+  if (status === "CANCELLED") return t("events:status.cancelled");
+  if (status === "PAST") return t("events:status.ended");
+  if (status === "DRAFT") return t("events:status.draft");
   return null;
 };
 
@@ -89,19 +126,24 @@ export const EventCardSquare = memo(function EventCardSquare({
   userLon,
   statusTag,
   showFavorite,
+  showCountdown,
   source,
+  onHide,
 }: EventCardSquareProps) {
+  const { t } = useTranslation();
   const router = useRouter();
   const scale = useRef(new Animated.Value(1)).current;
   const fade = useRef(new Animated.Value(0)).current;
   const translate = useRef(new Animated.Value(10)).current;
+  const [now, setNow] = useState(() => Date.now());
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   const rawCategory = event.categories?.[0];
-  const category = (
-    rawCategory && rawCategory !== "OTHER" && rawCategory !== "GERAL"
-      ? rawCategory
-      : "EVENTO"
-  ).toUpperCase();
+  const category = useMemo(() => {
+    if (rawCategory === "PADEL") return t("events:labels.padel");
+    if (rawCategory && rawCategory !== "OTHER" && rawCategory !== "GERAL") return rawCategory;
+    return t("events:labels.event");
+  }, [rawCategory, t]).toUpperCase();
   const cover = event.coverImageUrl ?? null;
   const tintSeed = useMemo(
     () => cover ?? event.slug ?? event.title ?? "orya",
@@ -114,9 +156,16 @@ export const EventCardSquare = memo(function EventCardSquare({
     event.location?.city ??
     event.location?.name ??
     null;
-  const date = formatDate(event.startsAt, event.endsAt);
-  const priceState = resolvePriceState(event);
-  const secondaryTag = statusTag ?? priceState?.label ?? null;
+  const date = formatEventDate(event.startsAt, event.endsAt);
+  const priceState = resolvePriceState(event, t);
+  const countdownTag = showCountdown ? resolveCountdownTag(event, now, t) : null;
+  const liveLabel = t("common:status.live");
+  const isLive = countdownTag === liveLabel;
+  const livePulse = useRef(new Animated.Value(1)).current;
+  const statusBadge = resolveStatusTag(event.status, t) ?? statusTag ?? null;
+  const showStatusBadge =
+    statusBadge && (event.status === "CANCELLED" || event.status === "PAST" || event.status === "DRAFT");
+  const secondaryTag = showStatusBadge ? statusBadge : countdownTag ?? statusTag ?? priceState?.label ?? null;
   const showHeart = showFavorite ?? true;
   const distanceLabel = formatDistanceKm(
     event.location?.lat ?? null,
@@ -124,7 +173,7 @@ export const EventCardSquare = memo(function EventCardSquare({
     userLat ?? null,
     userLon ?? null,
   );
-  const overlayHeight = "32%";
+  const overlayHeight = "44%";
 
   const linkHref = useMemo(
     () => ({
@@ -144,7 +193,7 @@ export const EventCardSquare = memo(function EventCardSquare({
         imageTag: event.slug ? `event-${event.slug}` : undefined,
       },
     }),
-    [category, event, location, priceState.label, source],
+    [category, event, location, priceState?.label, source],
   );
 
   useEffect(() => {
@@ -163,6 +212,26 @@ export const EventCardSquare = memo(function EventCardSquare({
       }),
     ]).start();
   }, [fade, index, translate]);
+
+  useEffect(() => {
+    if (!showCountdown) return;
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [showCountdown]);
+
+  useEffect(() => {
+    if (!isLive) return;
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(livePulse, { toValue: 0.25, duration: 900, useNativeDriver: true }),
+        Animated.timing(livePulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [isLive, livePulse]);
 
   useEffect(() => {
     let active = true;
@@ -191,103 +260,119 @@ export const EventCardSquare = memo(function EventCardSquare({
   }, [cover, fallbackTint, tintSeed]);
 
   return (
-    <Link href={linkHref} asChild push>
-      <Pressable
-        onPressIn={() => {
-          Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, friction: 7 }).start();
-        }}
-        onPressOut={() => {
-          Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
-        }}
-        onPress={() => router.prefetch?.(linkHref)}
-        accessibilityRole="button"
-        accessibilityLabel={`Abrir evento ${event.title}`}
-      >
-        <Animated.View
-          style={{
-            opacity: fade,
-            transform: [{ translateY: translate }, { scale }],
+    <>
+      <Link href={linkHref} asChild push>
+        <Pressable
+          onPressIn={() => {
+            Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, friction: 7 }).start();
           }}
+          onPressOut={() => {
+            Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
+          }}
+          onPress={() => {
+            sendEventSignal({ eventId: event.id, signalType: "CLICK" });
+            router.prefetch?.(linkHref);
+          }}
+          onLongPress={() => setFeedbackVisible(true)}
+          delayLongPress={320}
+          accessibilityRole="button"
+          accessibilityLabel={`Abrir evento ${event.title}`}
         >
-          <View style={styles.card}>
-            <View style={styles.media}>
-              {cover ? (
-                <Image
-                  source={{ uri: cover }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="cover"
-                  transition={220}
-                  cachePolicy="memory-disk"
-                />
-              ) : (
-                <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(255,255,255,0.06)" }]} />
-              )}
-              <MaskedView
-                style={[styles.bottomMask, { height: overlayHeight }]}
-                maskElement={
-                  <LinearGradient
-                    colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
+          <Animated.View
+            style={{
+              opacity: fade,
+              transform: [{ translateY: translate }, { scale }],
+            }}
+          >
+            <View style={styles.card}>
+              <View style={styles.media}>
+                {cover ? (
+                  <Image
+                    source={{ uri: cover }}
                     style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    transition={220}
+                    cachePolicy="memory-disk"
                   />
-                }
-              >
-                <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
-              </MaskedView>
-              <LinearGradient
-                colors={[
-                  withAlpha(tint, 0.0),
-                  withAlpha(tint, 0.5),
-                  withAlpha(tint, 0.9),
-                ]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={[styles.bottomGradient, { height: overlayHeight }]}
-              />
+                ) : (
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(255,255,255,0.06)" }]} />
+                )}
+                <MaskedView
+                  style={[styles.bottomMask, { height: overlayHeight }]}
+                  maskElement={
+                    <LinearGradient
+                      colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  }
+                >
+                  <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+                </MaskedView>
+                <LinearGradient
+                  colors={[
+                    withAlpha(tint, 0.0),
+                    withAlpha(tint, 0.55),
+                    withAlpha(tint, 0.95),
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={[styles.bottomGradient, { height: overlayHeight }]}
+                />
                 <View style={styles.tagsRow}>
-                <View style={styles.tag}>
-                  <Text style={styles.tagText}>{category}</Text>
+                  <View style={styles.tag}>
+                    <Text style={styles.tagText}>{category}</Text>
+                  </View>
+                  {secondaryTag ? (
+                    <View style={[styles.tag, priceState?.isSoon ? styles.tagSoon : null, isLive ? styles.tagLive : null]}>
+                      {isLive ? (
+                        <Animated.View style={[styles.liveDot, { opacity: livePulse, transform: [{ scale: livePulse }] }]} />
+                      ) : null}
+                      <Text style={styles.tagText}>{secondaryTag}</Text>
+                    </View>
+                  ) : null}
                 </View>
-                {secondaryTag ? (
-                  <View style={[styles.tag, priceState?.isSoon ? styles.tagSoon : null]}>
-                    <Text style={styles.tagText}>{secondaryTag}</Text>
+                {showHeart ? (
+                  <View style={styles.heart}>
+                    <FavoriteToggle eventId={event.id} style={styles.heartButton} />
                   </View>
                 ) : null}
-              </View>
-              {showHeart ? (
-                <View style={styles.heart}>
-                  <FavoriteToggle eventId={event.id} style={styles.heartButton} />
-                </View>
-              ) : null}
-              <View style={[styles.overlay, { height: overlayHeight }]}>
-                <Text style={styles.overlayTitle} numberOfLines={2}>
-                  {event.title}
-                </Text>
-                <View style={styles.overlayRow}>
-                  {date ? (
-                    <Text style={styles.overlayMeta} numberOfLines={1}>
-                      {date}
-                    </Text>
-                  ) : null}
-                  {priceState?.label ? (
-                    <Text style={styles.overlayMetaMuted} numberOfLines={1}>
-                      {date ? `· ${priceState.label}` : priceState.label}
-                    </Text>
-                  ) : null}
-                </View>
-                {location ? (
-                  <Text style={styles.overlayMetaMuted} numberOfLines={1}>
-                    {location}
-                    {distanceLabel ? ` · ${distanceLabel}` : ""}
+                <View style={[styles.overlay, { height: overlayHeight }]}>
+                  <Text style={styles.overlayTitle} numberOfLines={2}>
+                    {event.title}
                   </Text>
-                ) : null}
+                  <View style={styles.overlayRow}>
+                    {date ? (
+                      <Text style={styles.overlayMeta} numberOfLines={1}>
+                        {date}
+                      </Text>
+                    ) : null}
+                    {priceState?.label ? (
+                      <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                        {date ? `· ${priceState.label}` : priceState.label}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {location ? (
+                    <Text style={styles.overlayMetaMuted} numberOfLines={1}>
+                      {location}
+                      {distanceLabel ? ` · ${distanceLabel}` : ""}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
             </View>
-          </View>
-        </Animated.View>
-      </Pressable>
-    </Link>
+          </Animated.View>
+        </Pressable>
+      </Link>
+      <EventFeedbackSheet
+        visible={feedbackVisible}
+        event={event}
+        onClose={() => setFeedbackVisible(false)}
+        onHide={onHide}
+      />
+    </>
   );
 });
 
@@ -385,16 +470,28 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.55)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.18)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   tagSoon: {
     backgroundColor: "rgba(15, 23, 42, 0.7)",
     borderColor: "rgba(210, 230, 255, 0.4)",
+  },
+  tagLive: {
+    borderColor: "rgba(255, 120, 120, 0.55)",
   },
   tagText: {
     color: "#ffffff",
     fontSize: 11,
     fontWeight: "600",
     letterSpacing: 0.2,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#ff6464",
   },
   heart: {
     position: "absolute",

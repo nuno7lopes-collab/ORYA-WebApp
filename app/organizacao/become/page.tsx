@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import BecomeOrganizationForm from "@/components/organization/BecomeOrganizationForm";
 import BackLink from "@/components/BackLink";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
+import Link from "next/link";
 
 // app/organizacao/become/page.tsx
 
@@ -38,9 +39,9 @@ export default async function BecomeOrganizationPage() {
 
         <footer className="pt-4 text-center text-[12px] text-white/60">
           Ao continuar, confirmas que representas esta entidade e aceitas os{" "}
-          <a href="#" className="underline underline-offset-2 hover:text-white">
-            Termos do Organização da ORYA
-          </a>
+          <Link href="/legal/organizacao" className="underline underline-offset-2 hover:text-white">
+            Termos da Organização da ORYA
+          </Link>
           .
         </footer>
       </div>

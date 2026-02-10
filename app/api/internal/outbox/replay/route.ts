@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correlationId: string }) {
   if (!requireInternalSecret(req)) {
@@ -15,7 +16,7 @@ function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correl
   return null;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const unauthorized = ensureInternalSecret(req, ctx);
   if (unauthorized) return unauthorized;
@@ -70,3 +71,4 @@ export async function POST(req: NextRequest) {
 
   return respondOk(ctx, { eventId, rearmedAt: now.toISOString() });
 }
+export const POST = withApiEnvelope(_POST);

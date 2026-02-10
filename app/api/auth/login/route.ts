@@ -1,12 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { normalizeUsernameInput } from "@/lib/username";
+import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 function isUnconfirmedError(err: unknown) {
   if (!err) return false;
@@ -19,15 +20,12 @@ function isUnconfirmedError(err: unknown) {
   );
 }
 
-function normalizeIdentifier(raw: string) {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("@")) return trimmed.slice(1);
-  return trimmed;
-}
-
 async function _POST(req: NextRequest) {
   if (!isSameOriginOrApp(req)) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    return jsonWrap(
+      { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
+      { status: 403 }
+    );
   }
 
   const ctx = getRequestContext(req);
@@ -36,7 +34,7 @@ async function _POST(req: NextRequest) {
     | null;
   const identifierRaw = body?.identifier ?? "";
   const password = body?.password ?? "";
-  const identifier = normalizeIdentifier(identifierRaw);
+  const identifier = identifierRaw.trim();
 
   const limiter = await rateLimit(req, {
     windowMs: 5 * 60 * 1000,
@@ -46,14 +44,23 @@ async function _POST(req: NextRequest) {
   });
   if (!limiter.allowed) {
     return jsonWrap(
-      { ok: false, error: "RATE_LIMITED" },
+      {
+        ok: false,
+        errorCode: "RATE_LIMITED",
+        message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+        retryable: true,
+      },
       { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
     );
   }
 
   if (!identifier || !password) {
     return jsonWrap(
-      { ok: false, error: "MISSING_CREDENTIALS" },
+      {
+        ok: false,
+        errorCode: "MISSING_CREDENTIALS",
+        message: "Preenche o email/username e a password.",
+      },
       { status: 400 }
     );
   }
@@ -61,22 +68,45 @@ async function _POST(req: NextRequest) {
   try {
     let email = identifier.toLowerCase();
     if (!email.includes("@")) {
-      const profile = await prisma.profile.findFirst({
-        where: { username: { equals: identifier, mode: "insensitive" } },
-        select: { id: true },
-      });
-      if (!profile) {
+      const normalizedUsername = normalizeUsernameInput(identifier);
+      if (!normalizedUsername) {
         return jsonWrap(
-          { ok: false, error: "INVALID_CREDENTIALS" },
+          {
+            ok: false,
+            errorCode: "INVALID_CREDENTIALS",
+            message: "Credenciais inválidas.",
+          },
           { status: 401 }
         );
       }
+
+      const resolved = await resolveUsernameOwner(normalizedUsername, {
+        expectedOwnerType: "user",
+        includeDeletedUser: false,
+        requireActiveOrganization: false,
+        backfillGlobalUsername: true,
+      });
+      if (!resolved || resolved.ownerType !== "user") {
+        return jsonWrap(
+          {
+            ok: false,
+            errorCode: "INVALID_CREDENTIALS",
+            message: "Credenciais inválidas.",
+          },
+          { status: 401 }
+        );
+      }
+
       const { data, error } = await supabaseAdmin.auth.admin.getUserById(
-        profile.id
+        resolved.ownerId
       );
       if (error || !data?.user?.email) {
         return jsonWrap(
-          { ok: false, error: "INVALID_CREDENTIALS" },
+          {
+            ok: false,
+            errorCode: "INVALID_CREDENTIALS",
+            message: "Credenciais inválidas.",
+          },
           { status: 401 }
         );
       }
@@ -92,12 +122,20 @@ async function _POST(req: NextRequest) {
     if (error || !data?.session) {
       if (isUnconfirmedError(error)) {
         return jsonWrap(
-          { ok: false, error: "EMAIL_NOT_CONFIRMED" },
+          {
+            ok: false,
+            errorCode: "EMAIL_NOT_CONFIRMED",
+            message: "Email ainda não confirmado.",
+          },
           { status: 401 }
         );
       }
       return jsonWrap(
-        { ok: false, error: "INVALID_CREDENTIALS" },
+        {
+          ok: false,
+          errorCode: "INVALID_CREDENTIALS",
+          message: "Credenciais inválidas.",
+        },
         { status: 401 }
       );
     }
@@ -117,7 +155,7 @@ async function _POST(req: NextRequest) {
       orgId: ctx.orgId,
     });
     return jsonWrap(
-      { ok: false, error: "SERVER_ERROR" },
+      { ok: false, errorCode: "SERVER_ERROR", message: "Erro inesperado no servidor." },
       { status: 500 }
     );
   }

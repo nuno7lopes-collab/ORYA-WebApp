@@ -10,20 +10,18 @@ type LiquidBackgroundProps = PropsWithChildren<{
 type GradientTuple = readonly [string, string, ...string[]];
 
 const gradientVariants: Record<NonNullable<LiquidBackgroundProps["variant"]>, GradientTuple> = {
-  solid: ["#0b101a", "#0b101a"],
-  default: ["#0b101a", "#0f1626", "#0b101a"],
-  deep: ["#070b12", "#0b1220", "#111b2f"],
+  solid: ["#0b1014", "#0d1320", "#101826"],
+  default: ["#070b12", "#0b1220", "#111b2f"],
+  deep: ["#05070d", "#0a1224", "#131f39"],
 };
 
 export function LiquidBackground({
   children,
-  variant = "solid",
+  variant = "deep",
 }: LiquidBackgroundProps) {
   return (
     <View style={styles.root}>
-      {variant !== "solid" ? (
-        <LinearGradient colors={gradientVariants[variant]} style={StyleSheet.absoluteFill} />
-      ) : null}
+      <LinearGradient colors={gradientVariants[variant]} style={StyleSheet.absoluteFill} />
       <View style={styles.content}>{children}</View>
     </View>
   );

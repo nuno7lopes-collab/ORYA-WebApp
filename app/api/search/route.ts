@@ -5,6 +5,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { pickCanonicalField } from "@/lib/location/eventLocation";
+import { filterOrphanedEventSearchItems } from "@/domain/searchIndex/guard";
 
 const DEFAULT_LIMIT = 10;
 
@@ -104,7 +105,9 @@ async function _GET(req: NextRequest) {
       avatarUrl: org.brandingAvatarUrl,
     }));
 
-    const eventItems = events.map((event) => ({
+    const safeEvents = await filterOrphanedEventSearchItems(events);
+
+    const eventItems = safeEvents.map((event) => ({
       type: "EVENT" as const,
       id: event.sourceId,
       slug: event.slug,

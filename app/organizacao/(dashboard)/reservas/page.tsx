@@ -19,7 +19,6 @@ import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability"
 import { resolveServiceAssignmentMode, type ReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import AvailabilityEditor from "@/app/organizacao/(dashboard)/reservas/_components/AvailabilityEditor";
 import BookingChargesPanel from "@/app/organizacao/(dashboard)/reservas/_components/BookingChargesPanel";
-import ChatThread from "@/components/chat/ChatThread";
 import {
   CTA_PRIMARY,
   CTA_SECONDARY,
@@ -297,11 +296,24 @@ type BookingItem = {
   partySize?: number | null;
   inviteSummary?: { total: number; accepted: number; declined: number; pending: number };
   participantSummary?: { total: number; confirmed: number; cancelled: number };
-  court?: { id: number; name: string | null } | null;
+  court?: { id: number; name: string | null; isActive?: boolean | null } | null;
   professional?: { id: number; name: string; user?: { fullName?: string | null; avatarUrl?: string | null } | null } | null;
   resource?: { id: number; label: string; capacity: number } | null;
   service: { id: number; title: string | null; kind?: string | null } | null;
   user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
+  changeRequest?: {
+    id: number;
+    requestedBy: "ORG" | "USER";
+    status: string;
+    proposedStartsAt: string;
+    proposedCourtId?: number | null;
+    proposedProfessionalId?: number | null;
+    proposedResourceId?: number | null;
+    priceDeltaCents: number;
+    currency: string;
+    expiresAt: string;
+    createdAt: string;
+  } | null;
 };
 
 const getBookingMode = (booking: BookingItem): ReservationAssignmentMode => {
@@ -512,7 +524,12 @@ export default function ReservasDashboardPage() {
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+  const [rescheduleNotice, setRescheduleNotice] = useState<string | null>(null);
   const [rescheduleBusy, setRescheduleBusy] = useState(false);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatConversationId, setChatConversationId] = useState<string | null>(null);
   const [noShowBusy, setNoShowBusy] = useState(false);
   const [modeSaving, setModeSaving] = useState<string | null>(null);
   const initializedRef = useRef(false);
@@ -648,6 +665,33 @@ export default function ReservasDashboardPage() {
   const membershipRole = orgData?.membershipRole ?? null;
   const isStaffMember = membershipRole === "STAFF";
 
+  const handleSendChat = async () => {
+    if (!drawerBooking?.id) return;
+    if (!chatDraft.trim()) {
+      setChatError("Escreve uma mensagem antes de enviar.");
+      return;
+    }
+    setChatSending(true);
+    setChatError(null);
+    try {
+      const response = await fetch(`/api/chat/bookings/${drawerBooking.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: chatDraft.trim() }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || "Erro ao enviar mensagem.");
+      }
+      setChatDraft("");
+      setChatConversationId(payload?.conversationId ?? null);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Erro ao enviar mensagem.");
+    } finally {
+      setChatSending(false);
+    }
+  };
+
   useEffect(() => {
     if (!drawerBooking) {
       setRescheduleDate("");
@@ -661,6 +705,9 @@ export default function ReservasDashboardPage() {
       setInviteContact("");
       setInviteMessage("");
       setInviteError(null);
+      setChatDraft("");
+      setChatError(null);
+      setChatConversationId(null);
       return;
     }
     const start = new Date(drawerBooking.startsAt);
@@ -671,6 +718,8 @@ export default function ReservasDashboardPage() {
     setInviteContact("");
     setInviteMessage("");
     setInviteError(null);
+    setChatError(null);
+    setChatConversationId(null);
   }, [drawerBooking, timezone]);
 
   useEffect(() => {
@@ -1479,6 +1528,7 @@ export default function ReservasDashboardPage() {
     }
     setRescheduleBusy(true);
     setRescheduleError(null);
+    setRescheduleNotice(null);
     try {
       const res = await fetch(`/api/organizacao/reservas/${drawerBooking.id}/reschedule`, {
         method: "POST",
@@ -1490,7 +1540,12 @@ export default function ReservasDashboardPage() {
         throw new Error(json?.message || json?.error || "Erro ao reagendar reserva.");
       }
       mutateBookings();
-      if (json.booking) {
+      if (json.request) {
+        setRescheduleNotice("Pedido de reagendamento enviado ao cliente.");
+        setDrawerBooking((prev) => (prev ? { ...prev, changeRequest: json.request } : prev));
+        setRescheduleDate("");
+        setRescheduleTime("");
+      } else if (json.booking) {
         setDrawerBooking((prev) => (prev ? { ...prev, ...json.booking } : prev));
       }
     } catch (err) {
@@ -3210,7 +3265,45 @@ export default function ReservasDashboardPage() {
                   <p className="text-[12px] text-white/60">Conversa direta com o cliente.</p>
                 </div>
               </div>
-              <ChatThread entityType="BOOKING" entityId={drawerBooking.id} canPostAnnouncements />
+              <div className="space-y-2">
+                <textarea
+                  value={chatDraft}
+                  onChange={(event) => setChatDraft(event.target.value)}
+                  rows={3}
+                  placeholder="Escreve a primeira mensagem para iniciar o chat."
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white outline-none focus:border-white/30 focus:ring-2 focus:ring-white/10"
+                  disabled={chatSending || drawerBookingClosed}
+                />
+                {chatError ? <p className="text-[11px] text-red-200">{chatError}</p> : null}
+                <div className="flex items-center justify-between">
+                  {chatConversationId ? (
+                    <Link
+                      href={{
+                        pathname: "/organizacao/chat",
+                        query: {
+                          conversationId: chatConversationId,
+                          ...(organizationId ? { organizationId } : {}),
+                        },
+                      }}
+                      className={cn(CTA_SECONDARY, "text-[11px]")}
+                    >
+                      Abrir chat
+                    </Link>
+                  ) : (
+                    <span className={cn(DASHBOARD_MUTED, "text-[11px]")}>
+                      O chat só aparece após a primeira mensagem.
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSendChat}
+                    disabled={chatSending || drawerBookingClosed || !chatDraft.trim()}
+                    className={cn(CTA_PRIMARY, "text-[11px]")}
+                  >
+                    {chatSending ? "A enviar..." : "Enviar mensagem"}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {!drawerBookingClosed && (
@@ -3219,6 +3312,16 @@ export default function ReservasDashboardPage() {
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Reagendar</p>
                   <p className="text-[12px] text-white/60">Escolhe nova data e hora.</p>
                 </div>
+                {drawerBooking.changeRequest?.status === "PENDING" && (
+                  <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                    Pedido pendente até{" "}
+                    {new Date(drawerBooking.changeRequest.expiresAt).toLocaleString("pt-PT", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                    .
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2 text-[12px]">
                   <label className="flex flex-col gap-1 text-white/60">
                     Data
@@ -3226,6 +3329,7 @@ export default function ReservasDashboardPage() {
                       type="date"
                       value={rescheduleDate}
                       onChange={(event) => setRescheduleDate(event.target.value)}
+                      disabled={drawerBooking.changeRequest?.status === "PENDING"}
                       className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                     />
                   </label>
@@ -3236,6 +3340,7 @@ export default function ReservasDashboardPage() {
                       step={900}
                       value={rescheduleTime}
                       onChange={(event) => setRescheduleTime(event.target.value)}
+                      disabled={drawerBooking.changeRequest?.status === "PENDING"}
                       className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                     />
                   </label>
@@ -3243,11 +3348,14 @@ export default function ReservasDashboardPage() {
                 {rescheduleError && (
                   <p className="text-[11px] text-red-200">{rescheduleError}</p>
                 )}
+                {rescheduleNotice && (
+                  <p className="text-[11px] text-emerald-200">{rescheduleNotice}</p>
+                )}
                 <button
                   type="button"
                   className="w-full rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] text-white hover:bg-white/20 disabled:opacity-60"
                   onClick={handleReschedule}
-                  disabled={rescheduleBusy}
+                  disabled={rescheduleBusy || drawerBooking.changeRequest?.status === "PENDING"}
                 >
                   {rescheduleBusy ? "A reagendar..." : "Reagendar reserva"}
                 </button>

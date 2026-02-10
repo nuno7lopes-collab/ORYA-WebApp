@@ -41,8 +41,10 @@ import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 import { computeCombinedFees } from "@/lib/fees";
-import { getStripeBaseFees } from "@/lib/platformSettings";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
+import { issueGuestTicketAccessToken } from "@/lib/guestTickets/accessTokens";
+import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
+import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutMetadataSchema, normalizeItemsForMetadata, parseCheckoutItems } from "@/lib/checkoutSchemas";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { computeGraceUntil } from "@/domain/padelDeadlines";
@@ -809,8 +811,6 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
   // --------- PREPARAR CRIAÇÃO DE BILHETES + STOCK ---------
   let createdTicketsCount = 0;
   let saleSummaryId: number | null = null;
-  const stripeBaseFees = await getStripeBaseFees();
-
   // Sanity-check opcional: garantir que breakdown bate com o amount recebido
   if (parsedBreakdown && typeof intent.amount_received === "number") {
     const combined = computeCombinedFees({
@@ -819,8 +819,8 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
       feeMode: (parsedBreakdown.feeMode as FeeMode | null) ?? FeeMode.ADDED,
       platformFeeBps: parsedBreakdown.feeBpsApplied ?? 0,
       platformFeeFixedCents: parsedBreakdown.feeFixedApplied ?? 0,
-      stripeFeeBps: stripeBaseFees.feeBps ?? 0,
-      stripeFeeFixedCents: stripeBaseFees.feeFixedCents ?? 0,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
     });
     const expectedTotal =
       (combined.totalCents ?? 0) + Math.max(0, parsedBreakdown.cardPlatformFeeCents ?? 0);
@@ -1211,6 +1211,30 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     const baseUrl = getAppBaseUrl();
 
     try {
+      let ticketUrl = userId ? `${baseUrl}/me/carteira?section=wallet` : `${baseUrl}/`;
+      if (!userId) {
+        const normalizedEmail = normalizeEmail(targetEmail);
+        const purchaseRef = purchaseAnchor ?? intent.id;
+        if (normalizedEmail && eventRecord?.id) {
+          const checkinWindow = buildDefaultCheckinWindow(
+            eventRecord.startsAt ?? null,
+            eventRecord.endsAt ?? null,
+          );
+          const expiresAt = checkinWindow.end ?? new Date(Date.now() + 6 * 60 * 60 * 1000);
+          try {
+            const token = await issueGuestTicketAccessToken({
+              purchaseId: purchaseRef,
+              eventId: eventRecord.id,
+              guestEmail: normalizedEmail,
+              expiresAt,
+            });
+            ticketUrl = `${baseUrl}/guest/tickets/${encodeURIComponent(token)}`;
+          } catch (err) {
+            logWebhookError("fulfill_payment.guest_ticket_token_failed", err, { intentId: intent.id });
+            ticketUrl = `${baseUrl}/`;
+          }
+        }
+      }
       await sendPurchaseConfirmationEmail({
         to: targetEmail,
         eventTitle: eventRecord.title,
@@ -1219,7 +1243,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
         endsAt: eventRecord.endsAt?.toISOString() ?? null,
         addressRef: eventRecord.addressRef ?? null,
         ticketsCount: createdTicketsCount,
-        ticketUrl: userId ? `${baseUrl}/me/carteira?section=wallet` : `${baseUrl}/`,
+        ticketUrl,
       });
       logWebhookInfo("fulfill_payment.confirmation_email_sent", { targetEmail });
     } catch (emailErr) {

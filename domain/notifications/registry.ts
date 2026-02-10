@@ -105,6 +105,8 @@ export const NOTIFICATION_CATEGORY_BY_TYPE: Record<NotificationType, Notificatio
   EVENT_SALE: "system",
   EVENT_PAYOUT_STATUS: "system",
   STRIPE_STATUS: "system",
+  BOOKING_CHANGE_REQUEST: "events",
+  BOOKING_CHANGE_RESPONSE: "events",
   FOLLOW_REQUEST: "network",
   FOLLOW_ACCEPT: "network",
   EVENT_REMINDER: "events",
@@ -121,6 +123,7 @@ export const NOTIFICATION_CATEGORY_BY_TYPE: Record<NotificationType, Notificatio
   TICKET_TRANSFER_DECLINED: "events",
   CLUB_INVITE: "network",
   NEW_EVENT_FROM_FOLLOWED_ORGANIZATION: "network",
+  CHAT_AVAILABLE: "chat",
   CHAT_OPEN: "chat",
   CHAT_ANNOUNCEMENT: "chat",
   CHAT_MESSAGE: "chat",
@@ -382,6 +385,24 @@ const registry: Record<NotificationType, RegistryEntry> = {
       ...buildEventCta(ctx),
     }),
   },
+  BOOKING_CHANGE_REQUEST: {
+    category: "events",
+    build: (ctx) => ({
+      title: "Pedido de alteração de reserva",
+      body: "Existe um pedido para alterar uma reserva.",
+      ctaUrl: ctx.ctaUrl ?? "/me/reservas",
+      ctaLabel: ctx.ctaLabel ?? "Ver reserva",
+    }),
+  },
+  BOOKING_CHANGE_RESPONSE: {
+    category: "events",
+    build: (ctx) => ({
+      title: "Resposta à alteração de reserva",
+      body: "O teu pedido de alteração teve uma resposta.",
+      ctaUrl: ctx.ctaUrl ?? "/me/reservas",
+      ctaLabel: ctx.ctaLabel ?? "Ver reserva",
+    }),
+  },
   EVENT_REMINDER: {
     category: "events",
     required: ["eventId"],
@@ -536,6 +557,17 @@ const registry: Record<NotificationType, RegistryEntry> = {
       body: "Há novidades no chat.",
       ctaUrl: "/organizacao/chat",
       ctaLabel: "Abrir chat",
+    }),
+  },
+  CHAT_AVAILABLE: {
+    category: "chat",
+    preferStored: true,
+    required: ["eventId"],
+    build: () => ({
+      title: "Chat disponível",
+      body: "O chat ficou disponível.",
+      ctaUrl: "/messages",
+      ctaLabel: "Entrar no chat",
     }),
   },
   CHAT_ANNOUNCEMENT: {

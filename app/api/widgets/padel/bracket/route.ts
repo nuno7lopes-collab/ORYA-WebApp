@@ -8,6 +8,7 @@ import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessP
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { isWidgetsEnabled } from "@/lib/featureFlags";
 
 type MatchRow = {
   id: number;
@@ -67,6 +68,9 @@ function fail(
 
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
+  if (!isWidgetsEnabled()) {
+    return fail(ctx, 403, "Widgets desativados.");
+  }
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const slug = req.nextUrl.searchParams.get("slug");
   const eventId = eventIdParam ? Number(eventIdParam) : null;

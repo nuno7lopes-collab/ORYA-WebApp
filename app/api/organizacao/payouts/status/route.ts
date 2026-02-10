@@ -13,8 +13,9 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError, logInfo } from "@/lib/observability/logger";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -132,3 +133,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

@@ -1,19 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getOrganizationFollowingSet } from "@/domain/social/follows";
-import { listPublicDiscoverIndex } from "@/domain/search/publicDiscover";
+import { listRankedEvents } from "@/domain/ranking/listRankedEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { logError } from "@/lib/observability/logger";
 import { Prisma } from "@prisma/client";
-import {
-  PublicEventCard,
-  PublicEventCardWithPrice,
-  toPublicEventCardWithPriceFromIndex,
-  isPublicEventCardComplete,
-} from "@/domain/events/publicEventCard";
+import { PublicEventCard } from "@/domain/events/publicEventCard";
 
 const DEFAULT_PAGE_SIZE = 12;
 const CACHE_TTL_MS = 30 * 1000;
@@ -27,8 +22,6 @@ type ExploreResponse = {
     hasMore: boolean;
   };
 };
-type ExploreItemWithPrice = PublicEventCardWithPrice;
-
 function clampTake(value: number | null): number {
   if (!value || Number.isNaN(value)) return DEFAULT_PAGE_SIZE;
   return Math.min(Math.max(value, 1), 50);
@@ -73,6 +66,7 @@ async function _GET(req: NextRequest) {
   const startDateParam = searchParams.get("startDate");
   const endDateParam = searchParams.get("endDate");
   const templateTypesParam = searchParams.get("templateTypes");
+  const sortParam = searchParams.get("sort");
   const northParam = searchParams.get("north");
   const southParam = searchParams.get("south");
   const eastParam = searchParams.get("east");
@@ -97,18 +91,24 @@ async function _GET(req: NextRequest) {
   const priceMaxRaw = priceMaxParam ? parseFloat(priceMaxParam) : null;
   const priceMax = Number.isFinite(priceMaxRaw) ? priceMaxRaw : null;
 
-  const priceMinCents = Math.round(priceMin * 100);
-  const priceMaxCents = priceMax !== null ? Math.round(priceMax * 100) : null;
-
   let viewerId: string | null = null;
+  let favouriteCategories: string[] | null = null;
   try {
     const supabase = await createSupabaseServer();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     viewerId = user?.id ?? null;
+    if (viewerId) {
+      const profile = await prisma.profile.findUnique({
+        where: { id: viewerId },
+        select: { favouriteCategories: true },
+      });
+      favouriteCategories = profile?.favouriteCategories ?? null;
+    }
   } catch {
     viewerId = null;
+    favouriteCategories = null;
   }
 
   const categoryFilters = (categoriesParam || "")
@@ -133,6 +133,7 @@ async function _GET(req: NextRequest) {
       dayParam ?? "",
       startDateParam ?? "",
       endDateParam ?? "",
+      sortParam ?? "",
       north ?? "",
       south ?? "",
       east ?? "",
@@ -149,7 +150,7 @@ async function _GET(req: NextRequest) {
       return jsonWrap(cached, { status: 200 });
     }
 
-    const { items: indexItems, nextCursor } = await listPublicDiscoverIndex({
+    const { items, nextCursor } = await listRankedEvents({
       q: searchParam,
       city: cityParam,
       categories: categoryFilters.join(",") || null,
@@ -158,6 +159,7 @@ async function _GET(req: NextRequest) {
       day: dayParam,
       startDate: startDateParam,
       endDate: endDateParam,
+      sort: sortParam,
       north,
       south,
       east,
@@ -167,83 +169,11 @@ async function _GET(req: NextRequest) {
       priceMax: priceMaxParam,
       cursor: cursorId,
       limit: take,
+      viewerId,
+      favouriteCategories,
+      lat: north && south ? (north + south) / 2 : null,
+      lng: east && west ? (east + west) / 2 : null,
     });
-
-    let orderedItems = indexItems;
-    if (viewerId && indexItems.length > 0 && searchParam && searchParam.trim().length >= 1) {
-      const organizationIds = Array.from(
-        new Set(
-          indexItems
-            .map((event) => event.organizationId)
-            .filter((id): id is number => typeof id === "number"),
-        ),
-      );
-      if (organizationIds.length > 0) {
-        const followedIds = await getOrganizationFollowingSet(viewerId, organizationIds);
-        if (followedIds.size > 0) {
-          const followed: typeof indexItems = [];
-          const rest: typeof indexItems = [];
-          indexItems.forEach((event) => {
-            if (event.organizationId && followedIds.has(event.organizationId)) {
-              followed.push(event);
-            } else {
-              rest.push(event);
-            }
-          });
-          orderedItems = [...followed, ...rest];
-        }
-      }
-    }
-
-    const computed: ExploreItemWithPrice[] = orderedItems.map((event) =>
-      toPublicEventCardWithPriceFromIndex({
-        sourceId: event.sourceId,
-        slug: event.slug,
-        title: event.title,
-        description: event.description ?? null,
-        startsAt: event.startsAt,
-        endsAt: event.endsAt,
-        status: event.status,
-        templateType: event.templateType ?? null,
-        pricingMode: event.pricingMode ?? null,
-        isGratis: event.isGratis,
-        priceFromCents: event.priceFromCents ?? null,
-        coverImageUrl: event.coverImageUrl ?? null,
-        hostName: event.hostName ?? null,
-        hostUsername: event.hostUsername ?? null,
-        addressId: event.addressId ?? null,
-        addressRef: event.addressRef ?? null,
-      }),
-    );
-
-    const filtered = computed
-      .filter((item) => isPublicEventCardComplete(item))
-      .filter((item) => {
-      if (priceMinCents > 0 && priceMaxCents !== null) {
-        return (
-          !item.isGratis &&
-          item._priceFromCents !== null &&
-          item._priceFromCents >= priceMinCents &&
-          item._priceFromCents <= priceMaxCents
-        );
-      }
-      if (priceMinCents > 0) {
-        return (
-          !item.isGratis &&
-          item._priceFromCents !== null &&
-          item._priceFromCents >= priceMinCents
-        );
-      }
-      if (priceMaxCents !== null) {
-        return (
-          item.isGratis ||
-          (item._priceFromCents !== null && item._priceFromCents <= priceMaxCents)
-        );
-      }
-      return true;
-    });
-
-    const items: ExploreItem[] = filtered.map(({ _priceFromCents, ...rest }) => rest);
 
     const payload: ExploreResponse = {
       items,
@@ -268,6 +198,7 @@ async function _GET(req: NextRequest) {
         q: searchParam ?? null,
         cursor: cursorParam ?? null,
         limit: take,
+        sort: sortParam ?? null,
         priceMin: priceMinParam ?? null,
         priceMax: priceMaxParam ?? null,
         date: dateParam ?? null,

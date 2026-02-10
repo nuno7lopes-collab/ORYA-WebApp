@@ -11,7 +11,7 @@ import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { appendChargebackLedgerEntries, appendDisputeFeeReversal } from "@/domain/finance/ledgerAdjustments";
-import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus } from "@prisma/client";
+import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus, CheckinResultCode } from "@prisma/client";
 import { EntitlementV7Status, mapV7StatusToLegacy } from "@/lib/entitlements/status";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
@@ -38,6 +38,9 @@ import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemp
 import { normalizeEmail } from "@/lib/utils/email";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
+import { ensureEventChatInvite } from "@/lib/chat/invites";
+import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
+import { issueGuestTicketAccessToken } from "@/lib/guestTickets/accessTokens";
 import { maybeReconcileStripeFees } from "@/domain/finance/reconciliationTrigger";
 import { handleStripeWebhook } from "@/domain/finance/webhook";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
@@ -64,6 +67,7 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const MAX_ATTEMPTS = Number(process.env.OPERATIONS_MAX_ATTEMPTS || "5");
 const BATCH_MIN_SIZE = Number(process.env.OPERATIONS_BATCH_MIN_SIZE || "10");
@@ -408,6 +412,46 @@ async function processClaimGuestPurchase(op: OperationRecord) {
       updatedAt: new Date(),
     },
   });
+
+  const eligibleEntitlements = await prisma.entitlement.findMany({
+    where: {
+      purchaseId,
+      ownerUserId: userId,
+      eventId: { not: null },
+      status: EntitlementStatus.ACTIVE,
+      checkins: {
+        some: { resultCode: { in: [CheckinResultCode.OK, CheckinResultCode.ALREADY_USED] } },
+      },
+    },
+    select: { id: true, eventId: true },
+  });
+
+  const eventIds = Array.from(
+    new Set(eligibleEntitlements.map((entitlement) => entitlement.eventId).filter(Boolean)),
+  ) as number[];
+
+  if (eventIds.length) {
+    const events = await prisma.event.findMany({
+      where: { id: { in: eventIds }, isDeleted: false },
+      select: { id: true, startsAt: true, endsAt: true },
+    });
+    const eventMap = new Map(events.map((event) => [event.id, event]));
+
+    await Promise.all(
+      eligibleEntitlements.map((entitlement) => {
+        if (!entitlement.eventId) return Promise.resolve();
+        const event = eventMap.get(entitlement.eventId);
+        if (!event) return Promise.resolve();
+        return ensureEventChatInvite({
+          eventId: entitlement.eventId,
+          entitlementId: entitlement.id,
+          ownerUserId: userId,
+          startsAt: event.startsAt ?? null,
+          endsAt: event.endsAt ?? null,
+        });
+      }),
+    );
+  }
 }
 
 async function processSendEmailOutbox(op: OperationRecord) {
@@ -550,7 +594,7 @@ async function processSendEmailOutbox(op: OperationRecord) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   if (!requireInternalSecret(req)) {
     return respondError(
@@ -1733,7 +1777,11 @@ async function processSendEmailReceipt(op: OperationRecord) {
   const purchaseId =
     op.purchaseId || (typeof payload.purchaseId === "string" ? payload.purchaseId : null);
   const targetEmailRaw =
-    typeof payload.email === "string" ? payload.email : typeof payload.targetEmail === "string" ? payload.targetEmail : null;
+    typeof payload.email === "string"
+      ? payload.email
+      : typeof payload.targetEmail === "string"
+        ? payload.targetEmail
+        : null;
   const userId = typeof payload.userId === "string" ? payload.userId : null;
 
   if (!purchaseId) {
@@ -1770,6 +1818,7 @@ async function processSendEmailReceipt(op: OperationRecord) {
   const event = await prisma.event.findUnique({
     where: { id: sale.eventId },
     select: {
+      id: true,
       title: true,
       slug: true,
       startsAt: true,
@@ -1784,6 +1833,28 @@ async function processSendEmailReceipt(op: OperationRecord) {
   });
 
   const locationPayload = buildLocationPayload(event.addressRef);
+  let ticketUrl = "/me/carteira?section=wallet";
+  if (!userId) {
+    const purchaseRef = sale.purchaseId ?? sale.paymentIntentId ?? purchaseId;
+    const normalizedEmail = normalizeEmail(targetEmail);
+    if (purchaseRef && normalizedEmail && event?.id) {
+      const checkinWindow = buildDefaultCheckinWindow(event.startsAt ?? null, event.endsAt ?? null);
+      const expiresAt = checkinWindow.end ?? new Date(Date.now() + 6 * 60 * 60 * 1000);
+      try {
+        const token = await issueGuestTicketAccessToken({
+          purchaseId: purchaseRef,
+          eventId: event.id,
+          guestEmail: normalizedEmail,
+          expiresAt,
+        });
+        ticketUrl = `/guest/tickets/${encodeURIComponent(token)}`;
+      } catch (err) {
+        logError("worker.guest_ticket_token_failed", err, { purchaseId: purchaseRef });
+        ticketUrl = "/";
+      }
+    }
+  }
+
   await sendPurchaseConfirmationEmail({
     to: targetEmail,
     eventTitle: event.title,
@@ -1792,7 +1863,7 @@ async function processSendEmailReceipt(op: OperationRecord) {
     endsAt: event.endsAt?.toISOString() ?? null,
     ...locationPayload,
     ticketsCount,
-    ticketUrl: absUrl("/me/carteira?section=wallet"),
+    ticketUrl: absUrl(ticketUrl),
   });
 }
 
@@ -1893,3 +1964,4 @@ async function processApplyPromoRedemption(op: OperationRecord) {
     guestEmail,
   });
 }
+export const POST = withApiEnvelope(_POST);

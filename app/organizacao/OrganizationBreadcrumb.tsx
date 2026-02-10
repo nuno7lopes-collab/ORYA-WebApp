@@ -64,7 +64,7 @@ function resolveLabel(
     return "Criar torneio";
   }
   if (pathname.startsWith("/organizacao/eventos/novo")) return preset === "padel" ? "Criar torneio" : "Criar evento";
-  if (pathname.startsWith("/organizacao/chat") || pathname.startsWith("/organizacao/mensagens")) {
+  if (pathname.startsWith("/organizacao/chat")) {
     return "Chat interno";
   }
   if (

@@ -22,6 +22,8 @@ export const OPS_FEED_EVENT_TYPES = new Set([
   "inventory.low_stock",
 ]);
 
+const CHAT_ORG_ROLES = ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"] as const;
+
 function isUniqueViolation(err: unknown) {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 }
@@ -31,17 +33,47 @@ async function maybePostOpsMessage(params: {
   eventType: string;
   createdAt: Date;
 }) {
-  const channel = await prisma.internalChatChannel.findFirst({
-    where: { organizationId: params.organizationId, name: "Operações", isArchived: false },
+  const orgMembers = await prisma.organizationMember.findMany({
+    where: { organizationId: params.organizationId, role: { in: CHAT_ORG_ROLES as any } },
+    select: { userId: true, role: true },
+    orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+  });
+  const fallbackSender = orgMembers[0]?.userId ?? null;
+  if (!fallbackSender) return;
+
+  let conversation = await prisma.chatConversation.findFirst({
+    where: { organizationId: params.organizationId, contextType: "ORG_CHANNEL", title: "Operações" },
     select: { id: true },
   });
-  if (!channel) return;
 
-  await prisma.internalChatMessage.create({
+  if (!conversation) {
+    conversation = await prisma.chatConversation.create({
+      data: {
+        organizationId: params.organizationId,
+        type: "CHANNEL",
+        contextType: "ORG_CHANNEL",
+        title: "Operações",
+        description: "Coordenação do dia-a-dia.",
+        members: {
+          create: orgMembers.map((member) => ({
+            userId: member.userId,
+            role: member.userId === fallbackSender ? "ADMIN" : "MEMBER",
+            organizationId: params.organizationId,
+          })),
+        },
+      },
+      select: { id: true },
+    });
+  }
+
+  await prisma.chatConversationMessage.create({
     data: {
+      conversationId: conversation.id,
       organizationId: params.organizationId,
-      channelId: channel.id,
+      senderId: fallbackSender,
       body: `Evento: ${params.eventType}`,
+      clientMessageId: `ops:${params.eventType}:${params.createdAt.getTime()}`,
+      kind: "SYSTEM",
       createdAt: params.createdAt,
     },
   });

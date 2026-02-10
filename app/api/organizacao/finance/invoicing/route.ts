@@ -15,6 +15,7 @@ import { InvoicingMode, OrganizationModule } from "@prisma/client";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -47,7 +48,7 @@ async function requireOrgAccess(req: NextRequest) {
   return { ok: true as const, user, organization, membership };
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -92,7 +93,7 @@ export async function GET(req: NextRequest) {
   );
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -220,3 +221,5 @@ export async function POST(req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

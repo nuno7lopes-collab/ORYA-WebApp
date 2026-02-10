@@ -16,6 +16,8 @@ import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
+import { api } from "../../lib/api";
+import { buildReturnUrl } from "../../lib/deeplink";
 
 const formatMoney = (cents: number | null | undefined, currency?: string | null): string | null => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return null;
@@ -51,6 +53,7 @@ export default function CheckoutScreen() {
   const [bookingStatus, setBookingStatus] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingChecking, setBookingChecking] = useState(false);
+  const returnUrl = useMemo(() => buildReturnUrl("checkout-redirect"), []);
 
   const draft = useCheckoutStore((state) => state.draft);
   const setPaymentMethod = useCheckoutStore((state) => state.setPaymentMethod);
@@ -97,13 +100,14 @@ export default function CheckoutScreen() {
   const isFreeCheckout = Boolean(draft && draft.totalCents <= 0);
   const isPadelRegistration = draft?.sourceType === "PADEL_REGISTRATION";
   const isServiceBooking = draft?.sourceType === "SERVICE_BOOKING";
+  const isGuestCheckout = Boolean(draft?.guest?.email);
   const itemLabel = isServiceBooking
     ? draft?.ticketName ?? "Reserva"
     : isPadelRegistration
       ? draft?.ticketName ?? "Inscrição"
       : draft?.ticketName ?? "Bilhete";
   const showPaymentMethods = Boolean(draft) && !isFreeCheckout;
-  const canPay = Boolean(draft && session?.user?.id && (stripeKey || isFreeCheckout));
+  const canPay = Boolean(draft && (session?.user?.id || isGuestCheckout) && (stripeKey || isFreeCheckout));
   const openAuth = useCallback(() => {
     router.push({ pathname: "/auth", params: { next: "/checkout" } });
   }, [router]);
@@ -186,9 +190,20 @@ export default function CheckoutScreen() {
     if (!draft?.bookingId) return null;
     setBookingChecking(true);
     try {
-      const res = await fetch(`/api/me/reservas/${draft.bookingId}`, { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
+      const endpoint =
+        isGuestCheckout && draft.serviceId
+          ? `/api/servicos/${draft.serviceId}/booking-status?bookingId=${draft.bookingId}&guestEmail=${encodeURIComponent(
+              draft.guest?.email ?? "",
+            )}`
+          : `/api/me/reservas/${draft.bookingId}`;
+      const result = await api.requestRaw<{
+        ok: boolean;
+        booking?: { status?: string };
+        message?: string;
+        error?: string;
+      }>(endpoint, { cache: "no-store" });
+      const json = result.data;
+      if (!result.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Não foi possível verificar a reserva.");
       }
       const status = json.booking?.status as string | undefined;
@@ -201,7 +216,7 @@ export default function CheckoutScreen() {
     } finally {
       setBookingChecking(false);
     }
-  }, [draft?.bookingId]);
+  }, [draft?.bookingId, draft?.guest?.email, draft?.serviceId, isGuestCheckout]);
 
   const pollBookingStatus = useCallback(async () => {
     if (!draft?.bookingId) return;
@@ -252,7 +267,7 @@ export default function CheckoutScreen() {
 
   const handlePay = async () => {
     if (!draft) return;
-    if (!session?.user?.id) {
+    if (!session?.user?.id && !isGuestCheckout) {
       openAuth();
       return;
     }
@@ -283,16 +298,25 @@ export default function CheckoutScreen() {
           if (!draft.serviceId || !draft.bookingId) {
             throw new Error("Reserva inválida.");
           }
-          const response = await fetch(`/api/servicos/${draft.serviceId}/checkout`, {
+          const result = await api.requestRaw<{
+            ok: boolean;
+            clientSecret?: string | null;
+            paymentIntentId?: string | null;
+            amountCents?: number | null;
+            currency?: string | null;
+            message?: string;
+            error?: string;
+          }>(`/api/servicos/${draft.serviceId}/checkout`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               bookingId: draft.bookingId,
               paymentMethod: toApiPaymentMethod(resolvedMethod),
+              ...(isGuestCheckout ? { guest: draft.guest } : {}),
             }),
           });
-          const json = await response.json().catch(() => null);
-          if (!response.ok || !json?.ok) {
+          const json = result.data;
+          if (!result.ok || !json?.ok) {
             throw new Error(json?.message || json?.error || "Erro ao iniciar pagamento.");
           }
           clientSecret = json.clientSecret ?? null;
@@ -363,7 +387,7 @@ export default function CheckoutScreen() {
       const init = await initPaymentSheet({
         merchantDisplayName: "ORYA",
         paymentIntentClientSecret: clientSecret,
-        returnURL: "orya://checkout-redirect",
+        returnURL: returnUrl,
         allowsDelayedPaymentMethods: true,
         applePay: allowApplePay
           ? {
@@ -445,7 +469,7 @@ export default function CheckoutScreen() {
         actionLabel: "Ver reservas",
         action: () => {
           clearDraft();
-          router.replace("/(tabs)/tickets");
+          router.replace("/tickets");
         },
       };
     }
@@ -475,7 +499,7 @@ export default function CheckoutScreen() {
             return;
           }
           clearDraft();
-          router.replace("/(tabs)/tickets");
+          router.replace("/tickets");
         },
         showSpinner: isServiceBooking,
       };
@@ -521,7 +545,7 @@ export default function CheckoutScreen() {
           if (draft.slug) {
             router.replace({ pathname: "/event/[slug]", params: { slug: draft.slug } });
           } else {
-            router.replace("/(tabs)");
+            router.replace("/(tabs)/index");
           }
         },
       };
@@ -565,11 +589,14 @@ export default function CheckoutScreen() {
             onPress={handleBack}
             accessibilityRole="button"
             accessibilityLabel="Voltar"
-            className="flex-row items-center gap-2"
-            style={{ minHeight: tokens.layout.touchTarget }}
+            style={{
+              width: tokens.layout.touchTarget,
+              height: tokens.layout.touchTarget,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
             <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-            <Text className="text-white text-sm font-semibold">Voltar</Text>
           </Pressable>
         </View>
 
@@ -580,7 +607,7 @@ export default function CheckoutScreen() {
               <Pressable
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
-                onPress={() => router.replace("/(tabs)")}
+                onPress={() => router.replace("/(tabs)/index")}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar ao Descobrir"
               >

@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { isStoreDigitalEnabled, isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -45,6 +45,9 @@ async function _GET(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
       return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+    }
+    if (!isStoreDigitalEnabled()) {
+      return jsonWrap({ ok: false, error: "Loja digital desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);

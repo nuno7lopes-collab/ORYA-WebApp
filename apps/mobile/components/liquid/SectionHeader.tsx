@@ -1,5 +1,6 @@
-import { Text, View } from "react-native";
-import { tokens } from "@orya/shared";
+import { View } from "react-native";
+import { AppHeading } from "../ui/AppHeading";
+import { AppText } from "../ui/AppText";
 
 type SectionHeaderProps = {
   title: string;
@@ -9,8 +10,8 @@ type SectionHeaderProps = {
 export function SectionHeader({ title, subtitle }: SectionHeaderProps) {
   return (
     <View className="mb-3 gap-1">
-      <Text className="text-white text-lg font-semibold">{title}</Text>
-      {subtitle ? <Text className="text-white/75 text-sm">{subtitle}</Text> : null}
+      <AppHeading variant="section">{title}</AppHeading>
+      {subtitle ? <AppText variant="caption" tone="secondary">{subtitle}</AppText> : null}
     </View>
   );
 }

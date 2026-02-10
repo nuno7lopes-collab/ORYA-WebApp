@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createPublicApiKey, revokePublicApiKey } from "@/domain/publicApi/keys";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isPublicApiEnabled } from "@/lib/featureFlags";
 
 function parseScopes(value: unknown): PublicApiScope[] {
   const allowed = new Set(Object.values(PublicApiScope));
@@ -17,6 +18,9 @@ function parseScopes(value: unknown): PublicApiScope[] {
 async function _GET(req: NextRequest) {
   if (!requireInternalSecret(req)) {
     return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
+  if (!isPublicApiEnabled()) {
+    return jsonWrap({ ok: false, error: "PUBLIC_API_DISABLED" }, { status: 403 });
   }
 
   const params = req.nextUrl.searchParams;
@@ -44,6 +48,9 @@ async function _GET(req: NextRequest) {
 async function _POST(req: NextRequest) {
   if (!requireInternalSecret(req)) {
     return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
+  if (!isPublicApiEnabled()) {
+    return jsonWrap({ ok: false, error: "PUBLIC_API_DISABLED" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -77,6 +84,9 @@ async function _POST(req: NextRequest) {
 async function _DELETE(req: NextRequest) {
   if (!requireInternalSecret(req)) {
     return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
+  if (!isPublicApiEnabled()) {
+    return jsonWrap({ ok: false, error: "PUBLIC_API_DISABLED" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));

@@ -1,8 +1,9 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { Prisma } from "@prisma/client";
+import crypto from "crypto";
+import { MediaOwnerType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
@@ -21,6 +22,7 @@ import { enqueueNotification } from "@/domain/notifications/outbox";
 
 const PREVIEW_MAX = 180;
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
+const B2C_CONTEXT_TYPES = new Set(["ORG_CONTACT", "BOOKING", "SERVICE"]);
 
 type MessageWithRelations = Prisma.ChatConversationMessageGetPayload<{
   select: {
@@ -67,6 +69,15 @@ type NormalizedAttachment = {
   metadata: Record<string, unknown>;
 };
 
+type PreparedAttachmentAsset = {
+  bucket: string;
+  objectPath: string;
+  checksumSha256: string;
+  mimeType: string;
+  sizeBytes: number;
+  originalFilename: string | null;
+};
+
 function normalizeAttachments(raw: unknown) {
   if (!Array.isArray(raw)) return { ok: true as const, items: [] as NormalizedAttachment[] };
   const items = raw.filter((entry): entry is AttachmentInput => typeof entry === "object" && entry !== null);
@@ -108,11 +119,97 @@ function normalizeAttachments(raw: unknown) {
   return { ok: true as const, items: typed };
 }
 
+async function computeChecksumFromStorage(bucket: string, objectPath: string): Promise<string | null> {
+  const downloaded = await supabaseAdmin.storage.from(bucket).download(objectPath);
+  if (downloaded.error || !downloaded.data) return null;
+  const buffer = Buffer.from(await downloaded.data.arrayBuffer());
+  if (!buffer.byteLength) return null;
+  return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+async function prepareAttachmentAssets(items: NormalizedAttachment[]) {
+  if (items.length === 0) {
+    return { ok: true as const, items: [] as PreparedAttachmentAsset[] };
+  }
+
+  const prepared: PreparedAttachmentAsset[] = [];
+  for (const entry of items) {
+    const metadata = entry.metadata ?? {};
+    const objectPath =
+      typeof metadata.path === "string" && metadata.path.trim() ? metadata.path.trim() : null;
+    if (!objectPath) {
+      return { ok: false as const, error: "ATTACHMENT_METADATA_REQUIRED" };
+    }
+    const bucket =
+      typeof metadata.bucket === "string" && metadata.bucket.trim()
+        ? metadata.bucket.trim()
+        : process.env.CHAT_ATTACHMENTS_BUCKET ?? env.uploadsBucket ?? "uploads";
+    const checksumRaw =
+      typeof metadata.checksumSha256 === "string" && metadata.checksumSha256.trim()
+        ? metadata.checksumSha256.trim()
+        : null;
+    const checksumSha256 = checksumRaw ?? (await computeChecksumFromStorage(bucket, objectPath));
+    if (!checksumSha256) {
+      return { ok: false as const, error: "ATTACHMENT_CHECKSUM_FAILED" };
+    }
+    const originalFilename =
+      typeof metadata.filename === "string" && metadata.filename.trim()
+        ? metadata.filename.trim()
+        : typeof metadata.name === "string" && metadata.name.trim()
+          ? metadata.name.trim()
+          : null;
+    prepared.push({
+      bucket,
+      objectPath,
+      checksumSha256,
+      mimeType: entry.mime,
+      sizeBytes: entry.size,
+      originalFilename,
+    });
+  }
+
+  return { ok: true as const, items: prepared };
+}
+
 function buildPreview(body: string | null) {
   if (!body) return "";
   const trimmed = body.replace(/\s+/g, " ").trim();
   if (trimmed.length <= PREVIEW_MAX) return trimmed;
   return `${trimmed.slice(0, PREVIEW_MAX - 1)}…`;
+}
+
+function mapSenderForB2C(
+  message: MessageWithRelations,
+  member: {
+    displayAs: "ORGANIZATION" | "PROFESSIONAL";
+    conversation: {
+      contextType: string | null;
+      organization: {
+        id: number;
+        publicName: string | null;
+        businessName: string | null;
+        username: string | null;
+        brandingAvatarUrl: string | null;
+      } | null;
+    };
+  },
+) {
+  if (!member.conversation?.contextType || !B2C_CONTEXT_TYPES.has(member.conversation.contextType)) {
+    return message;
+  }
+  if (member.displayAs !== "ORGANIZATION") return message;
+  const org = member.conversation.organization;
+  if (!org) return message;
+  const orgName = org.publicName || org.businessName || "Organização";
+  return {
+    ...message,
+    sender: {
+      id: `org:${org.id}`,
+      fullName: orgName,
+      username: org.username ?? null,
+      avatarUrl: org.brandingAvatarUrl ?? null,
+    },
+  };
 }
 
 async function resolveMessageAttachments<T extends { attachments: any[] }>(message: T) {
@@ -205,17 +302,67 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "EMPTY_MESSAGE" }, { status: 400 });
     }
 
+    const preparedAssets = await prepareAttachmentAssets(attachmentResult.items);
+    if (!preparedAssets.ok) {
+      return jsonWrap({ ok: false, error: preparedAssets.error }, { status: 400 });
+    }
+
     const member = await prisma.chatConversationMember.findFirst({
       where: {
         conversationId,
         userId: user.id,
         conversation: { organizationId: organization.id },
       },
-      include: { conversation: { select: { id: true, organizationId: true } } },
+      select: {
+        displayAs: true,
+        conversation: {
+          select: {
+            id: true,
+            organizationId: true,
+            type: true,
+            contextType: true,
+            contextId: true,
+            organization: {
+              select: {
+                id: true,
+                publicName: true,
+                businessName: true,
+                username: true,
+                brandingAvatarUrl: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!member?.conversation) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    if (member.conversation.contextType === "BOOKING") {
+      const bookingId = Number(member.conversation.contextId ?? "");
+      if (!Number.isFinite(bookingId)) {
+        return jsonWrap({ ok: false, error: "INVALID_BOOKING" }, { status: 400 });
+      }
+      const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        select: { status: true, startsAt: true, durationMinutes: true, organizationId: true },
+      });
+      if (!booking || booking.organizationId !== organization.id) {
+        return jsonWrap({ ok: false, error: "BOOKING_NOT_FOUND" }, { status: 404 });
+      }
+      if (!["CONFIRMED", "COMPLETED"].includes(booking.status)) {
+        return jsonWrap({ ok: false, error: "BOOKING_INACTIVE" }, { status: 403 });
+      }
+      if (!booking.startsAt || !Number.isFinite(booking.durationMinutes)) {
+        return jsonWrap({ ok: false, error: "BOOKING_INVALID" }, { status: 400 });
+      }
+      const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
+      const closeAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
+      if (Date.now() > closeAt.getTime()) {
+        return jsonWrap({ ok: false, error: "READ_ONLY" }, { status: 403 });
+      }
     }
 
     if (replyToId) {
@@ -227,6 +374,11 @@ async function _POST(req: NextRequest) {
         return jsonWrap({ ok: false, error: "INVALID_REPLY" }, { status: 400 });
       }
     }
+
+    const attachmentOwner =
+      member.conversation.type === "CHANNEL"
+        ? { ownerType: MediaOwnerType.ORGANIZATION, ownerId: String(organization.id) }
+        : { ownerType: MediaOwnerType.USER, ownerId: user.id };
 
     const messageSelect = {
       id: true,
@@ -300,6 +452,26 @@ async function _POST(req: NextRequest) {
             select: messageSelect,
           })) as MessageWithRelations;
 
+          if (preparedAssets.items.length) {
+            await tx.mediaAsset.createMany({
+              data: preparedAssets.items.map((asset) => ({
+                organizationId: organization.id,
+                ownerType: attachmentOwner.ownerType,
+                ownerId: attachmentOwner.ownerId,
+                uploadedByUserId: user.id,
+                scope: "chat-attachment",
+                bucket: asset.bucket,
+                objectPath: asset.objectPath,
+                mimeType: asset.mimeType,
+                sizeBytes: asset.sizeBytes,
+                checksumSha256: asset.checksumSha256,
+                originalFilename: asset.originalFilename,
+                isPublic: CHAT_ATTACHMENTS_PUBLIC,
+              })),
+              skipDuplicates: true,
+            });
+          }
+
           await tx.chatConversation.update({
             where: { id: conversationId },
             data: { lastMessageAt: created.createdAt, lastMessageId: created.id },
@@ -332,12 +504,13 @@ async function _POST(req: NextRequest) {
     }
 
     const messageWithUrls = await resolveMessageAttachments(message);
+    const messageForBroadcast = mapSenderForB2C(messageWithUrls, member);
 
     await publishChatEvent({
       type: "message:new",
       organizationId: organization.id,
       conversationId,
-      message: messageWithUrls,
+      message: messageForBroadcast,
     });
 
     const recipients = await prisma.chatConversationMember.findMany({
@@ -353,7 +526,7 @@ async function _POST(req: NextRequest) {
       buildPreview(message.body ?? null) || (message.attachments.length ? "Anexo" : "");
 
     if (isChatPollingOnly()) {
-      return jsonWrap({ ok: true, message: messageWithUrls });
+      return jsonWrap({ ok: true, message: messageForBroadcast });
     }
 
     if (!isChatRedisAvailable()) {
@@ -378,7 +551,7 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    return jsonWrap({ ok: true, message: messageWithUrls });
+    return jsonWrap({ ok: true, message: messageForBroadcast });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

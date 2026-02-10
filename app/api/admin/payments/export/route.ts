@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { prisma } from "@/lib/prisma";
 import type { Prisma, PaymentMode } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 const MAX_EXPORT = 5000;
 
@@ -19,6 +21,7 @@ function toCsvValue(value: unknown) {
 
 async function _GET(req: NextRequest) {
   try {
+    const ctx = getRequestContext(req);
     const admin = await requireAdminUser();
     if (!admin.ok) {
       return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
@@ -89,6 +92,17 @@ async function _GET(req: NextRequest) {
     );
 
     const csv = [headers.join(","), ...rows].join("\n");
+    await auditAdminAction({
+      action: "PAYMENTS_EXPORT",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: {
+        count: items.length,
+        status: statusParam,
+        mode: modeParam,
+        q: q || null,
+      },
+    });
     return new NextResponse(csv, {
       status: 200,
       headers: {

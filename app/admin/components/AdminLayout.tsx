@@ -39,6 +39,7 @@ const navGroups = [
   {
     label: "Sistema",
     items: [
+      { href: "/admin/audit", label: "Auditoria" },
       { href: "/admin/settings", label: "Configurações" },
       { href: "/admin/infra", label: "Infra" },
     ],
@@ -86,11 +87,6 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const host = window.location.host.split(":")[0]?.toLowerCase();
-    if (host !== "admin.orya.pt") {
-      setMfaGate({ loading: false, required: false, verified: true, reason: null });
-      return;
-    }
     let cancelled = false;
     const load = async () => {
       try {
@@ -125,9 +121,10 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
 
   useEffect(() => {
     if (!mfaBlocking) return;
-    if (activePath === "/admin/infra") return;
+    if (activePath === "/admin/mfa") return;
     if (typeof window === "undefined") return;
-    window.location.href = "/admin/infra?mfa=required";
+    const next = activePath && activePath !== "/admin" ? `?redirectTo=${encodeURIComponent(activePath)}` : "";
+    window.location.href = `/admin/mfa${next}`;
   }, [mfaBlocking, activePath]);
 
   const handleLogout = useCallback(async () => {
@@ -238,9 +235,9 @@ export function AdminLayout({ children, title, subtitle }: AdminLayoutProps) {
         </div>
       </header>
 
-      {mfaBlocking && activePath === "/admin/infra" && (
+      {mfaBlocking && activePath === "/admin/mfa" && (
         <div className="relative z-20 border-b border-amber-400/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
-          2FA obrigatório para aceder ao admin em produção. Finaliza a verificação abaixo para continuar.
+          2FA obrigatório para aceder ao admin. Finaliza a verificação abaixo para continuar.
         </div>
       )}
 

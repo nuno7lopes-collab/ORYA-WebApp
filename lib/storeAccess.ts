@@ -11,6 +11,10 @@ export function isStoreFeatureEnabled() {
   return env.storeEnabled;
 }
 
+export function isStoreDigitalEnabled() {
+  return env.storeDigitalEnabled;
+}
+
 export function isStoreOpen(store: StoreLike) {
   return store?.status === StoreStatus.OPEN;
 }

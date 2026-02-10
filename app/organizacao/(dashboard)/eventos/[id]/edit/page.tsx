@@ -157,6 +157,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
               }
             : null,
           templateType: event.templateType,
+          interestTags: event.interestTags ?? [],
           isGratis: isGratis,
           coverImageUrl: event.coverImageUrl,
           liveHubVisibility: event.liveHubVisibility,

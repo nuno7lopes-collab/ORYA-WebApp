@@ -11,6 +11,7 @@ import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ACCESS_LEVELS = ["NONE", "VIEW", "EDIT"] as const;
 
@@ -43,7 +44,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -117,7 +118,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -145,6 +146,14 @@ export async function PATCH(req: NextRequest) {
     const targetUserId = typeof body?.userId === "string" ? body.userId : null;
     const moduleKey = typeof body?.moduleKey === "string" ? body.moduleKey : null;
     const accessLevelRaw = body?.accessLevel ?? null;
+    const scopeTypeRaw = typeof body?.scopeType === "string" ? body.scopeType.trim().toUpperCase() : null;
+    const scopeIdRaw = body?.scopeId ?? null;
+    const scopeId =
+      typeof scopeIdRaw === "string" || typeof scopeIdRaw === "number"
+        ? String(scopeIdRaw).trim()
+        : null;
+    const scopeType = scopeTypeRaw || null;
+    const ALLOWED_SCOPE_TYPES = new Set(["COURT", "RESOURCE", "PROFESSIONAL"]);
 
     if (!organizationId || !targetUserId || !moduleKey) {
       return fail(400, "INVALID_PAYLOAD");
@@ -191,6 +200,13 @@ export async function PATCH(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
 
+    if (scopeType && !ALLOWED_SCOPE_TYPES.has(scopeType)) {
+      return fail(400, "INVALID_SCOPE_TYPE");
+    }
+    if (scopeType && !scopeId) {
+      return fail(400, "INVALID_SCOPE_ID");
+    }
+
     const shouldClear = accessLevelRaw === null || accessLevelRaw === "DEFAULT";
     const ip = resolveIp(req);
     const userAgent = req.headers.get("user-agent");
@@ -212,8 +228,8 @@ export async function PATCH(req: NextRequest) {
             organizationId,
             userId: targetUserId,
             moduleKey: moduleKey as OrganizationModule,
-            scopeType: null,
-            scopeId: null,
+            scopeType,
+            scopeId,
           },
         });
 
@@ -223,10 +239,10 @@ export async function PATCH(req: NextRequest) {
           actorUserId: user.id,
           action: "PERMISSION_CLEARED",
           entityType: "organization_member_permission",
-          entityId: `${targetUserId}:${moduleKey}`,
-          correlationId: `${targetUserId}:${moduleKey}`,
+          entityId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
+          correlationId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
           toUserId: targetUserId,
-          metadata: { moduleKey },
+          metadata: { moduleKey, scopeType, scopeId },
           ip,
           userAgent,
         });
@@ -234,13 +250,15 @@ export async function PATCH(req: NextRequest) {
         const outbox = await recordOutboxEvent(
           {
             eventType: "organization.permission.cleared",
-            dedupeKey: `org.permission.cleared:${organizationId}:${targetUserId}:${moduleKey}`,
+            dedupeKey: `org.permission.cleared:${organizationId}:${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
             payload: {
               organizationId,
               targetUserId,
               moduleKey,
+              scopeType,
+              scopeId,
             },
-            correlationId: `${targetUserId}:${moduleKey}`,
+            correlationId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
           },
           tx,
         );
@@ -254,10 +272,12 @@ export async function PATCH(req: NextRequest) {
             payload: {
               targetUserId,
               moduleKey,
+              scopeType,
+              scopeId,
             },
             actorUserId: user.id,
             sourceId: String(organizationId),
-            correlationId: `${targetUserId}:${moduleKey}`,
+            correlationId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
           },
           tx,
         );
@@ -284,8 +304,8 @@ export async function PATCH(req: NextRequest) {
             organizationId,
             userId: targetUserId,
             moduleKey: moduleKey as OrganizationModule,
-            scopeType: null,
-            scopeId: null,
+            scopeType,
+            scopeId,
           },
         },
         create: {
@@ -293,8 +313,8 @@ export async function PATCH(req: NextRequest) {
           userId: targetUserId,
           moduleKey: moduleKey as OrganizationModule,
           accessLevel: accessLevel as OrganizationPermissionLevel,
-          scopeType: null,
-          scopeId: null,
+          scopeType,
+          scopeId,
         },
         update: { accessLevel: accessLevel as OrganizationPermissionLevel },
       });
@@ -305,10 +325,10 @@ export async function PATCH(req: NextRequest) {
         actorUserId: user.id,
         action: "PERMISSION_UPDATED",
         entityType: "organization_member_permission",
-        entityId: `${targetUserId}:${moduleKey}`,
-        correlationId: `${targetUserId}:${moduleKey}`,
+        entityId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
+        correlationId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
         toUserId: targetUserId,
-        metadata: { moduleKey, accessLevel },
+        metadata: { moduleKey, accessLevel, scopeType, scopeId },
         ip,
         userAgent,
       });
@@ -316,14 +336,16 @@ export async function PATCH(req: NextRequest) {
       const outbox = await recordOutboxEvent(
         {
           eventType: "organization.permission.updated",
-          dedupeKey: `org.permission.updated:${organizationId}:${targetUserId}:${moduleKey}:${accessLevel}`,
+          dedupeKey: `org.permission.updated:${organizationId}:${targetUserId}:${moduleKey}:${accessLevel}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
           payload: {
             organizationId,
             targetUserId,
             moduleKey,
             accessLevel,
+            scopeType,
+            scopeId,
           },
-          correlationId: `${targetUserId}:${moduleKey}`,
+          correlationId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
         },
         tx,
       );
@@ -334,17 +356,19 @@ export async function PATCH(req: NextRequest) {
           organizationId,
           eventType: "organization.permission.updated",
           idempotencyKey: outbox.eventId,
-          payload: {
-            targetUserId,
-            moduleKey,
-            accessLevel,
+            payload: {
+              targetUserId,
+              moduleKey,
+              accessLevel,
+              scopeType,
+              scopeId,
+            },
+            actorUserId: user.id,
+            sourceId: String(organizationId),
+            correlationId: `${targetUserId}:${moduleKey}:${scopeType ?? "GLOBAL"}:${scopeId ?? "ALL"}`,
           },
-          actorUserId: user.id,
-          sourceId: String(organizationId),
-          correlationId: `${targetUserId}:${moduleKey}`,
-        },
-        tx,
-      );
+          tx,
+        );
     });
 
     return respondOk(ctx, {}, { status: 200 });
@@ -353,3 +377,5 @@ export async function PATCH(req: NextRequest) {
     return fail(500, "INTERNAL_ERROR");
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const PATCH = withApiEnvelope(_PATCH);

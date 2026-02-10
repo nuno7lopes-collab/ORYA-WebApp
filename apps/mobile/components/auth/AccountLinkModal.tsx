@@ -1,5 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { GlassCard } from "./GlassCard";
+import { useTranslation } from "@orya/shared";
 
 type AccountLinkModalProps = {
   visible: boolean;
@@ -8,19 +9,18 @@ type AccountLinkModalProps = {
 };
 
 export function AccountLinkModal({ visible, onClose, onContinueEmail }: AccountLinkModalProps) {
+  const { t } = useTranslation();
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
         <GlassCard style={styles.card}>
-          <Text style={styles.title}>Já tens conta</Text>
-          <Text style={styles.body}>
-            Esse e-mail já está registado. Entra com e-mail para ligar o Google/Apple.
-          </Text>
+          <Text style={styles.title}>{t("auth.accountLinkTitle")}</Text>
+          <Text style={styles.body}>{t("auth.accountLinkBody")}</Text>
           <Pressable onPress={onContinueEmail} accessibilityRole="button" style={styles.primaryButton}>
-            <Text style={styles.primaryText}>Continuar com e-mail</Text>
+            <Text style={styles.primaryText}>{t("auth.accountLinkContinue")}</Text>
           </Pressable>
           <Pressable onPress={onClose} accessibilityRole="button" style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Fechar</Text>
+            <Text style={styles.secondaryText}>{t("auth.accountLinkCancel")}</Text>
           </Pressable>
         </GlassCard>
       </View>

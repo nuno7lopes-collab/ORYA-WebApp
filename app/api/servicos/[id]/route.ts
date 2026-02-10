@@ -45,6 +45,7 @@ async function _GET(
             name: true,
             policyType: true,
             cancellationWindowMinutes: true,
+            guestBookingAllowed: true,
           },
         },
         instructor: {
@@ -130,12 +131,12 @@ async function _GET(
       service.policy ??
       (await prisma.organizationPolicy.findFirst({
         where: { organizationId: service.organization.id, policyType: "MODERATE" },
-        select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true },
+        select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true, guestBookingAllowed: true },
       })) ??
       (await prisma.organizationPolicy.findFirst({
         where: { organizationId: service.organization.id },
         orderBy: { createdAt: "asc" },
-        select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true },
+        select: { id: true, name: true, policyType: true, cancellationWindowMinutes: true, guestBookingAllowed: true },
       }));
 
     const {
@@ -192,17 +193,14 @@ async function _GET(
           capacity: resource.capacity,
           priority: resource.priority,
         })),
-        packs: await prisma.servicePack.findMany({
-          where: { serviceId: service.id, isActive: true },
-          orderBy: [{ recommended: "desc" }, { quantity: "asc" }],
-          select: { id: true, quantity: true, packPriceCents: true, label: true, recommended: true },
-        }),
+        packs: [],
         policy: policy
           ? {
               id: policy.id,
               name: policy.name,
               policyType: policy.policyType,
               cancellationWindowMinutes: policy.cancellationWindowMinutes,
+              guestBookingAllowed: policy.guestBookingAllowed ?? false,
             }
           : null,
       },

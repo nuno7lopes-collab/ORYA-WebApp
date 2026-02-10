@@ -193,6 +193,7 @@ export default async function LojaPage({ searchParams }: PageProps) {
               categoriesEndpoint="/api/organizacao/loja/categories"
               storeLocked={store.catalogLocked}
               storeEnabled={isStoreFeatureEnabled()}
+              organizationId={organization.id}
             />
           </section>
         ) : view === "orders" ? (

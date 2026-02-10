@@ -8,8 +8,16 @@ export type AgoraEvent = PublicEventCard & {
   liveWindowLabel: string;
 };
 
-export type AgoraTimeline = {
-  liveNow: AgoraEvent[];
-  comingSoon: AgoraEvent[];
-  upcoming: AgoraEvent[];
+export type AgoraFeedMode = "agora" | "all";
+
+export type AgoraPage = {
+  items: AgoraEvent[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  mode: AgoraFeedMode;
+};
+
+export type AgoraPageParam = {
+  cursor: string | null;
+  mode: AgoraFeedMode;
 };

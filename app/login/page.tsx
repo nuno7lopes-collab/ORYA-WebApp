@@ -52,6 +52,29 @@ function LoginContent() {
       const { data, error } = await supabaseBrowser.auth.getUser();
       if (cancelled) return;
       if (!error && data?.user) {
+        if (redirectTo.startsWith("/admin")) {
+          try {
+            const res = await fetch("/api/admin/mfa/session", {
+              cache: "no-store",
+              credentials: "include",
+            });
+            if (res.status === 403) {
+              router.replace("/admin/forbidden");
+              return;
+            }
+            const json = await res.json().catch(() => null);
+            if (json?.ok && json.data?.required && !json.data?.verified) {
+              const next =
+                redirectTo && redirectTo !== "/admin"
+                  ? `?redirectTo=${encodeURIComponent(redirectTo)}`
+                  : "";
+              router.replace(`/admin/mfa${next}`);
+              return;
+            }
+          } catch {
+            // fall back to redirect below
+          }
+        }
         router.replace(redirectTo);
         return;
       }

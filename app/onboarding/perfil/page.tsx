@@ -239,7 +239,7 @@ function ProfileForm({
               />
             </div>
             <p className="text-xs text-gray-400">
-              Este será o link público do teu perfil: orya.app/@{username || "teu.username"}
+              Este será o link público do teu perfil: orya.app/{username || "teu.username"}
             </p>
             {usernameHint && (
               <p className="text-xs text-amber-600">{usernameHint}</p>

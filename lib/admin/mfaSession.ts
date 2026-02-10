@@ -66,12 +66,33 @@ function decodePayload(encoded: string): SessionPayload | null {
   }
 }
 
+function parseAdminHosts() {
+  const list =
+    (process.env.ADMIN_HOSTS ?? "")
+      .split(",")
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean) ?? [];
+  const domain = (process.env.ADMIN_DOMAIN ?? "").trim().toLowerCase();
+  if (domain) list.push(domain);
+  return Array.from(new Set(list));
+}
+
 export function shouldRequireAdminMfa(host?: string | null) {
+  const explicit = (process.env.ADMIN_MFA_REQUIRED ?? "").trim().toLowerCase();
+  if (explicit === "false") return false;
+  if (explicit === "true") return true;
+
   const env = getAppEnv();
   if (env !== "prod") return false;
-  if (process.env.ADMIN_MFA_REQUIRED === "false") return false;
+
   const safeHost = (host ?? "").split(":")[0].toLowerCase();
-  return safeHost === "admin.orya.pt";
+  if (!safeHost) return false;
+
+  const adminHosts = parseAdminHosts();
+  if (adminHosts.length > 0) {
+    return adminHosts.includes(safeHost);
+  }
+  return safeHost.startsWith("admin.");
 }
 
 export function buildMfaSession(userId: string) {

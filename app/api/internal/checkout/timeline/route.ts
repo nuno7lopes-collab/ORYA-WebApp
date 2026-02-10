@@ -4,12 +4,13 @@ import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 /**
  * Endpoint interno para inspecionar a timeline de checkout.
  * Uso: /api/internal/checkout/timeline?purchaseId=... ou ?paymentIntentId=...
  */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   if (!requireInternalSecret(req)) {
     return respondError(
@@ -108,3 +109,4 @@ export async function GET(req: NextRequest) {
     { status: 200 },
   );
 }
+export const GET = withApiEnvelope(_GET);

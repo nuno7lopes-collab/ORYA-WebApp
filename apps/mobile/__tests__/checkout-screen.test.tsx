@@ -52,6 +52,7 @@ jest.mock("@stripe/stripe-react-native", () => ({
 }));
 
 jest.mock("@orya/shared", () => ({
+  createApiClient: () => ({ request: jest.fn() }),
   tokens: {
     layout: { touchTarget: 44 },
     spacing: { lg: 16 },
@@ -61,7 +62,7 @@ jest.mock("@orya/shared", () => ({
       textSubtle: "rgba(255,255,255,0.6)",
       border: "rgba(255,255,255,0.1)",
       surface: "rgba(255,255,255,0.05)",
-      background: "#0b101a",
+      background: "#0b1014",
     },
     motion: { normal: 200 },
   },
@@ -83,7 +84,14 @@ jest.mock("../lib/auth", () => ({
 }));
 
   jest.mock("../lib/env", () => ({
-    getMobileEnv: () => ({ stripePublishableKey: "pk_test", appleMerchantId: null }),
+    getMobileEnv: () => ({
+      appEnv: "test",
+      apiBaseUrl: "http://localhost:3000",
+      supabaseUrl: "https://example.supabase.co",
+      supabaseAnonKey: "sb_test_key",
+      stripePublishableKey: "pk_test",
+      appleMerchantId: null,
+    }),
   }));
 
   jest.mock("../lib/analytics", () => ({

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { isStoreDigitalEnabled, isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreOrderStatus } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -24,6 +24,9 @@ async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
       return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+    }
+    if (!isStoreDigitalEnabled()) {
+      return jsonWrap({ ok: false, error: "Loja digital desativada." }, { status: 403 });
     }
 
     const storeParsed = parseStoreId(req);

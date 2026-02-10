@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeUsername, validateUsername } from "../lib/username";
+import { normalizeUsernameInput, sanitizeUsername, validateUsername } from "../lib/username";
 
 describe("mobile username rules", () => {
   it("sanitizes accents, spaces, and invalid chars", () => {
@@ -31,5 +31,10 @@ describe("mobile username rules", () => {
     expect(trimmed.length).toBe(15);
     expect(validateUsername("a".repeat(16)).valid).toBe(true);
     expect(validateUsername("a".repeat(15)).valid).toBe(true);
+  });
+
+  it("normalizes free-form input with @ prefix", () => {
+    expect(normalizeUsernameInput(" @João.Silva ")).toBe("joao.silva");
+    expect(normalizeUsernameInput("@__TEST__")).toBe("__test__");
   });
 });

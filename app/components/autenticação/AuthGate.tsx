@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuthModal } from "./AuthModalContext";
 import { sanitizeRedirectPath } from "@/lib/auth/redirects";
@@ -14,15 +14,22 @@ export function AuthGate() {
   const { isLoggedIn, isLoading } = useUser();
   const openedRef = useRef(false);
   const refreshedRef = useRef(false);
+  const [showFallback, setShowFallback] = useState(false);
 
   useEffect(() => {
     if (openedRef.current || isOpen) return;
     const query = searchParams?.toString();
     const current = `${pathname}${query ? `?${query}` : ""}`;
     const redirectTo = sanitizeRedirectPath(current, "/");
-    openModal({ mode: "login", redirectTo, showGoogle: true });
+    openModal({ mode: "login", redirectTo, showGoogle: true, dismissible: false });
     openedRef.current = true;
   }, [openModal, pathname, searchParams, isOpen]);
+
+  useEffect(() => {
+    setShowFallback(false);
+    const timer = setTimeout(() => setShowFallback(true), 1500);
+    return () => clearTimeout(timer);
+  }, [pathname, searchParams, isOpen]);
 
   useEffect(() => {
     if (isLoading || !isLoggedIn || refreshedRef.current) return;
@@ -38,6 +45,22 @@ export function AuthGate() {
         </div>
         <h1 className="text-lg font-semibold">Acesso reservado</h1>
         <p className="mt-2 text-sm text-white/60">A abrir o login.</p>
+        {showFallback && !isOpen && !isLoading && !isLoggedIn && (
+          <div className="mt-5 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                const query = searchParams?.toString();
+                const current = `${pathname}${query ? `?${query}` : ""}`;
+                const redirectTo = sanitizeRedirectPath(current, "/");
+                openModal({ mode: "login", redirectTo, showGoogle: true, dismissible: false });
+              }}
+              className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+            >
+              Abrir login
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,13 +4,6 @@ import { evaluateCandidate, type AgendaCandidateType } from "@/domain/agenda/con
 const baseStart = new Date("2025-01-01T10:00:00Z");
 const baseEnd = new Date("2025-01-01T11:00:00Z");
 
-const priority: Record<AgendaCandidateType, number> = {
-  HARD_BLOCK: 4,
-  MATCH_SLOT: 3,
-  BOOKING: 2,
-  SOFT_BLOCK: 1,
-};
-
 const makeCandidate = (type: AgendaCandidateType, sourceId: string) => ({
   type,
   sourceId,
@@ -19,7 +12,7 @@ const makeCandidate = (type: AgendaCandidateType, sourceId: string) => ({
 });
 
 describe("agenda conflict engine", () => {
-  it("priority matrix", () => {
+  it("overlaps always block candidate", () => {
     const types: AgendaCandidateType[] = ["HARD_BLOCK", "MATCH_SLOT", "BOOKING", "SOFT_BLOCK"];
 
     types.forEach((candidateType) => {
@@ -28,21 +21,10 @@ describe("agenda conflict engine", () => {
         const existing = [makeCandidate(existingType, `e-${existingType}`)];
         const res = evaluateCandidate({ candidate, existing });
 
-        if (priority[candidateType] > priority[existingType]) {
-          expect(res.allowed).toBe(true);
-          expect(res.reason).toBe("OVERRIDES_LOWER_PRIORITY");
-          expect(res.winnerType).toBe(candidateType);
-        } else if (priority[candidateType] === priority[existingType]) {
-          expect(res.allowed).toBe(false);
-          expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
-          expect(res.winnerType).toBe(existingType);
-          expect(res.blockedBy).toBe(existingType);
-        } else {
-          expect(res.allowed).toBe(false);
-          expect(res.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
-          expect(res.winnerType).toBe(existingType);
-          expect(res.blockedBy).toBe(existingType);
-        }
+        expect(res.allowed).toBe(false);
+        expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
+        expect(res.winnerType).toBe(existingType);
+        expect(res.blockedBy).toBe(existingType);
       });
     });
   });
@@ -70,7 +52,7 @@ describe("agenda conflict engine", () => {
 
     const res = evaluateCandidate({ candidate, existing });
     expect(res.allowed).toBe(false);
-    expect(res.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
+    expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
     expect(res.conflicts.length).toBe(1);
   });
 
@@ -86,8 +68,8 @@ describe("agenda conflict engine", () => {
     ];
 
     const res = evaluateCandidate({ candidate, existing });
-    expect(res.allowed).toBe(true);
-    expect(res.reason).toBe("OVERRIDES_LOWER_PRIORITY");
+    expect(res.allowed).toBe(false);
+    expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
     expect(res.conflicts.length).toBe(1);
   });
 

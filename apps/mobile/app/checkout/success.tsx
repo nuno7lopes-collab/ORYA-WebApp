@@ -126,15 +126,18 @@ export default function CheckoutSuccessScreen() {
             onPress={() =>
               slug
                 ? router.replace({ pathname: "/event/[slug]", params: { slug } })
-                : safeBack(router, navigation, "/(tabs)/tickets")
+                : safeBack(router, navigation, "/tickets")
             }
             accessibilityRole="button"
             accessibilityLabel="Voltar"
-            className="flex-row items-center gap-2"
-            style={{ minHeight: tokens.layout.touchTarget }}
+            style={{
+              width: tokens.layout.touchTarget,
+              height: tokens.layout.touchTarget,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
             <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-            <Text className="text-white text-sm font-semibold">Voltar</Text>
           </Pressable>
         </View>
 
@@ -160,7 +163,7 @@ export default function CheckoutSuccessScreen() {
           ) : null}
 
           <Pressable
-            onPress={() => router.replace("/(tabs)/tickets")}
+            onPress={() => router.replace("/tickets")}
             className="rounded-2xl bg-white/15 px-4 py-4"
             style={{ minHeight: tokens.layout.touchTarget, alignItems: "center", justifyContent: "center" }}
             disabled={checking}

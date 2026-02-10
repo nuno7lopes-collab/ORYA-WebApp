@@ -12,6 +12,7 @@ import { createSoftBlock, deleteSoftBlock, updateSoftBlock } from "@/domain/soft
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] as const;
 
@@ -283,7 +284,7 @@ async function loadSoftBlockExistingCandidates(params: {
   return candidates;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
@@ -378,7 +379,7 @@ export async function POST(req: NextRequest) {
   return respondOk(ctx, { softBlockId: result.data.softBlockId }, { status: 201 });
 }
 
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
@@ -492,7 +493,7 @@ export async function PATCH(req: NextRequest) {
   return respondOk(ctx, { softBlockId: result.data.softBlockId }, { status: 200 });
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const user = await ensureAuthenticated(supabase);
@@ -554,3 +555,6 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);
+export const DELETE = withApiEnvelope(_DELETE);

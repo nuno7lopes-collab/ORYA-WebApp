@@ -13,8 +13,9 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -197,3 +198,4 @@ function errorCodeForStatus(status: number) {
   if (status === 429) return "RATE_LIMITED";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

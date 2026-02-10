@@ -33,6 +33,9 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
 import { shouldEmitSearchIndexUpdate } from "@/domain/searchIndex/triggers";
+import { normalizeInterestIds } from "@/lib/ranking/interests";
+import { buildDefaultEndsAt, isEndsAtAfterStart } from "@/lib/events/schedule";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -76,6 +79,7 @@ type UpdateEventBody = {
   endsAt?: string | null;
   addressId?: string | null;
   templateType?: string | null;
+  interestTags?: string[] | null;
   isGratis?: boolean;
   pricingMode?: string | null;
   coverImageUrl?: string | null;
@@ -153,7 +157,7 @@ async function generateUniqueSlug(baseSlug: string, eventId?: number) {
   return `${baseSlug}-${maxSuffix + 1}`;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -197,6 +201,7 @@ export async function POST(req: NextRequest) {
       organizationId: number | null;
       pricingMode: EventPricingMode | null;
       templateType: EventTemplateType | null;
+      interestTags: string[];
       payoutMode: PayoutMode | null;
       addressId?: string | null;
       ticketTypes: { id: number; soldQuantity: number; price: number; status: TicketTypeStatus; currency: string | null }[];
@@ -232,6 +237,7 @@ export async function POST(req: NextRequest) {
               organizationId: true,
               pricingMode: true,
               templateType: true,
+              interestTags: true,
               payoutMode: true,
               addressId: true,
               ticketTypes: {
@@ -278,9 +284,10 @@ export async function POST(req: NextRequest) {
                 pricing_mode: EventPricingMode | null;
                 template_type: EventTemplateType | null;
                 address_id: string | null;
+                interest_tags: string[] | null;
               }[]
             >(
-              Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode, template_type, address_id FROM app_v3.events WHERE id = ${eventId} LIMIT 1`,
+              Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode, template_type, address_id, interest_tags FROM app_v3.events WHERE id = ${eventId} LIMIT 1`,
             );
             const row = rows[0];
             if (!row) return null;
@@ -322,6 +329,7 @@ export async function POST(req: NextRequest) {
               organizationId: row.organization_id,
               pricingMode: row.pricing_mode ?? null,
               templateType: row.template_type ?? null,
+              interestTags: row.interest_tags ?? [],
               payoutMode: row.payout_mode,
               addressId: row.address_id,
               ticketTypes: ticketTypes.map((t) => ({
@@ -507,6 +515,9 @@ export async function POST(req: NextRequest) {
       }
     }
     if (body.description !== undefined) dataUpdate.description = body.description ?? "";
+    if (Array.isArray(body.interestTags)) {
+      dataUpdate.interestTags = normalizeInterestIds(body.interestTags);
+    }
     if (body.startsAt) {
       const d = new Date(body.startsAt);
       if (Number.isNaN(d.getTime())) {
@@ -520,6 +531,19 @@ export async function POST(req: NextRequest) {
         return fail(400, "endsAt inválido.");
       }
       dataUpdate.endsAt = d;
+    }
+    const scheduleTouched = dataUpdate.startsAt !== undefined || dataUpdate.endsAt !== undefined;
+    if (scheduleTouched) {
+      const nextStartsAt = (dataUpdate.startsAt ?? event.startsAt) as Date;
+      const currentEndsAt = (dataUpdate.endsAt ?? event.endsAt) as Date | null;
+      if (!currentEndsAt || Number.isNaN(currentEndsAt.getTime())) {
+        dataUpdate.endsAt = buildDefaultEndsAt(nextStartsAt);
+      } else if (!isEndsAtAfterStart(nextStartsAt, currentEndsAt)) {
+        if (dataUpdate.endsAt) {
+          return fail(400, "A data/hora de fim tem de ser depois do início.");
+        }
+        dataUpdate.endsAt = buildDefaultEndsAt(nextStartsAt);
+      }
     }
     if (addressIdInput !== undefined) {
       dataUpdate.addressId = addressRecord?.id ?? null;
@@ -618,6 +642,7 @@ export async function POST(req: NextRequest) {
       dataUpdate.startsAt !== undefined ||
       dataUpdate.endsAt !== undefined ||
       dataUpdate.status !== undefined ||
+      dataUpdate.interestTags !== undefined ||
       dataUpdate.isDeleted !== undefined;
     const searchIndexRelevantUpdate = shouldEmitSearchIndexUpdate({
       agendaRelevantUpdate,
@@ -733,6 +758,9 @@ export async function POST(req: NextRequest) {
         const nextEndsAt = (dataUpdate.endsAt ?? event.endsAt ?? event.startsAt) as Date;
         const nextStatus =
           typeof dataUpdate.status === "string" ? dataUpdate.status : (event.status as string);
+        const nextInterestTags = Array.isArray(dataUpdate.interestTags)
+          ? dataUpdate.interestTags
+          : event.interestTags ?? [];
 
         const idempotencyKey = `event.updated:${eventId}:${hashPayload({
           eventId,
@@ -741,6 +769,7 @@ export async function POST(req: NextRequest) {
           endsAt: nextEndsAt,
           status: nextStatus,
           organizationId: event.organizationId,
+          interestTags: nextInterestTags,
         })}`;
 
         await appendEventLog(
@@ -844,3 +873,4 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

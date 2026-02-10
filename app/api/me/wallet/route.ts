@@ -77,9 +77,6 @@ async function _GET(req: NextRequest) {
     const now = new Date();
 
     const andFilters: Prisma.EntitlementWhereInput[] = [];
-    const where: Prisma.EntitlementWhereInput = {
-      AND: andFilters,
-    };
 
     if (!isAdmin) {
       const identities = await prisma.emailIdentity.findMany({
@@ -106,45 +103,112 @@ async function _GET(req: NextRequest) {
       andFilters.push({ type: { in: typeFilter } });
     }
 
-    if (hasUpcoming && !hasPast) {
-      andFilters.push({ snapshotStartAt: { gte: now } });
-    } else if (hasPast && !hasUpcoming) {
-      andFilters.push({ snapshotStartAt: { lt: now } });
-    }
+    const filterMode =
+      hasUpcoming && !hasPast ? "upcoming" : hasPast && !hasUpcoming ? "past" : "all";
 
-    if (cursor?.snapshotStartAt) {
-      const cursorDate = new Date(cursor.snapshotStartAt);
-      andFilters.push({
-        OR: [
-          { snapshotStartAt: { lt: cursorDate } },
+    const buildWhereWithCursor = (cursorPayload: CursorPayload | null) => {
+      if (!cursorPayload?.snapshotStartAt) {
+        return { AND: andFilters };
+      }
+      const cursorDate = new Date(cursorPayload.snapshotStartAt);
+      return {
+        AND: [
+          ...andFilters,
           {
-            snapshotStartAt: cursorDate,
-            id: { lt: cursor.entitlementId },
+            OR: [
+              { snapshotStartAt: { lt: cursorDate } },
+              {
+                snapshotStartAt: cursorDate,
+                id: { lt: cursorPayload.entitlementId },
+              },
+            ],
           },
         ],
+      } satisfies Prisma.EntitlementWhereInput;
+    };
+
+    type EntitlementRow = Prisma.EntitlementGetPayload<Prisma.EntitlementDefaultArgs>;
+    const collected: EntitlementRow[] = [];
+    let pageCursor: CursorPayload | null = cursor;
+    let nextCursor: string | null = null;
+    let hasMore = true;
+
+    const shouldInclude = (item: EntitlementRow, eventInfo: { endsAt: Date | null } | null) => {
+      if (filterMode === "all") return true;
+      const endAt = eventInfo?.endsAt ?? null;
+      if (filterMode === "upcoming") {
+        if (endAt) return endAt >= now;
+        return item.snapshotStartAt >= now;
+      }
+      if (endAt) return endAt < now;
+      return item.snapshotStartAt < now;
+    };
+
+    while (collected.length < take && hasMore) {
+      const page = await prisma.entitlement.findMany({
+        where: buildWhereWithCursor(pageCursor),
+        orderBy: [
+          { snapshotStartAt: "desc" },
+          { id: "desc" },
+        ],
+        take: take + 1,
       });
+
+      const pageItems = page.slice(0, take);
+      const pageHasMore = page.length > take;
+      if (pageItems.length === 0) {
+        hasMore = false;
+        nextCursor = null;
+        break;
+      }
+
+      const pageEventIds = Array.from(
+        new Set(
+          pageItems.map((e) => e.eventId).filter((id): id is number => typeof id === "number"),
+        ),
+      );
+      const pageEvents =
+        pageEventIds.length > 0
+          ? await prisma.event.findMany({
+              where: { id: { in: pageEventIds } },
+              select: { id: true, endsAt: true },
+            })
+          : [];
+      const pageEventMap = new Map(pageEvents.map((event) => [event.id, event]));
+
+      let lastProcessed: EntitlementRow | null = null;
+      for (const item of pageItems) {
+        lastProcessed = item;
+        const eventInfo = item.eventId ? pageEventMap.get(item.eventId) ?? null : null;
+        if (shouldInclude(item, eventInfo)) {
+          collected.push(item);
+        }
+        if (collected.length >= take) break;
+      }
+
+      if (collected.length >= take) {
+        if (lastProcessed?.snapshotStartAt) {
+          nextCursor = buildCursor({
+            snapshotStartAt: lastProcessed.snapshotStartAt.toISOString(),
+            entitlementId: lastProcessed.id,
+          });
+        }
+        break;
+      }
+
+      if (!pageHasMore) {
+        hasMore = false;
+        nextCursor = null;
+        break;
+      }
+
+      const lastItem = pageItems[pageItems.length - 1];
+      pageCursor = lastItem?.snapshotStartAt
+        ? { snapshotStartAt: lastItem.snapshotStartAt.toISOString(), entitlementId: lastItem.id }
+        : null;
     }
 
-    const items = await prisma.entitlement.findMany({
-      where,
-      orderBy: [
-        { snapshotStartAt: "desc" },
-        { id: "desc" },
-      ],
-      take: take + 1,
-    });
-
-    const pageItems = items.slice(0, take);
-    const hasMore = items.length > take;
-    const last = pageItems[pageItems.length - 1];
-    const nextCursor =
-      hasMore && last?.snapshotStartAt
-        ? buildCursor({
-            snapshotStartAt: last.snapshotStartAt.toISOString(),
-            entitlementId: last.id,
-          })
-        : null;
-
+    const pageItems = collected;
     const eventIds = Array.from(
       new Set(pageItems.map((e) => e.eventId).filter((id): id is number => typeof id === "number")),
     ) as number[];

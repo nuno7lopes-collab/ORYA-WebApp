@@ -10,7 +10,7 @@ import type Stripe from "stripe";
 import { createPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { computeFeePolicyVersion, createCheckout } from "@/domain/finance/checkout";
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
@@ -1583,7 +1583,6 @@ async function _POST(req: NextRequest) {
     const amountAfterDiscountCents = preDiscountAmountCents - discountCents;
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
 
     // Org da plataforma? (org_type = PLATFORM → não cobra application fee, usa conta da plataforma)
     const isPlatformOrg = (event.org_type || "").toString().toUpperCase() === "PLATFORM";
@@ -1604,8 +1603,8 @@ async function _POST(req: NextRequest) {
       feeMode: pricing.feeMode,
       platformFeeBps: pricing.feeBpsApplied,
       platformFeeFixedCents: pricing.feeFixedApplied,
-      stripeFeeBps: stripeBaseFees.feeBps,
-      stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
     });
 
     const platformFeeCents = pricing.platformFeeCents; // ORYA base (application_fee)
@@ -1653,17 +1652,9 @@ async function _POST(req: NextRequest) {
     const recipientConnectAccountId = requiresOrganizationStripe ? stripeAccountId : null;
 
     const totalAmountInCents = combinedFees.totalCents + cardPlatformFeeCents;
-    const stripeFeeEstimateCents =
-      totalAmountInCents === 0
-        ? 0
-        : Math.max(
-            0,
-            Math.round((totalAmountInCents * (stripeBaseFees.feeBps ?? 0)) / 10_000) +
-              (stripeBaseFees.feeFixedCents ?? 0),
-          );
-    const platformFeeCombinedCents =
-      totalAmountInCents === 0 ? platformFeeTotalCents : platformFeeTotalCents + stripeFeeEstimateCents;
-    const payoutAmountCents = Math.max(0, totalAmountInCents - platformFeeCombinedCents);
+    const stripeFeeEstimateCents = 0;
+    const platformFeeCombinedCents = platformFeeTotalCents;
+    const payoutAmountCents = Math.max(0, totalAmountInCents - platformFeeTotalCents);
 
     // Validação do total do cliente (tolerante): alguns FE enviam subtotal, outros enviam total.
     if (clientExpectedTotalCents !== null) {

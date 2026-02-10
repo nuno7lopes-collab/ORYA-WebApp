@@ -4,10 +4,12 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { prisma } from "@/lib/prisma";
 import { getLatestBucketDate, runAnalyticsRollupJob } from "@/domain/analytics/rollup";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
+import { getRequestContext } from "@/lib/http/requestContext";
 
 type RollupPayload = {
   organizationId?: number;
@@ -83,6 +85,7 @@ async function _GET(req: NextRequest) {
 
 async function _POST(req: NextRequest) {
   try {
+    const ctx = getRequestContext(req);
     const admin = await requireAdminUser();
     if (!admin.ok) {
       return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
@@ -109,6 +112,16 @@ async function _POST(req: NextRequest) {
       const latestIso = latest ? toIsoDate(latest) : null;
       const todayIso = toIsoDate(new Date());
       if (latestIso && latestIso === todayIso) {
+        await auditAdminAction({
+          action: "OPS_ANALYTICS_ROLLUP_TRIGGER",
+          actorUserId: admin.userId,
+          correlationId: ctx.correlationId,
+          payload: {
+            organizationId,
+            status: "ALREADY_FRESH",
+            latestBucketDate: latestIso,
+          },
+        });
         return jsonWrap({ ok: true, status: "ALREADY_FRESH", latestBucketDate: latestIso });
       }
     }
@@ -121,6 +134,19 @@ async function _POST(req: NextRequest) {
     });
     const { ok: _ok, ...rest } = result;
     const latest = await getLatestBucketDate(organizationId);
+    await auditAdminAction({
+      action: "OPS_ANALYTICS_ROLLUP_TRIGGER",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: {
+        organizationId,
+        fromDate: fromDate ?? null,
+        toDate: toDate ?? null,
+        maxDays: maxDays ?? null,
+        status: "TRIGGERED",
+        latestBucketDate: latest ? toIsoDate(latest) : null,
+      },
+    });
     return jsonWrap({
       ok: true,
       status: "TRIGGERED",

@@ -49,6 +49,15 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
+  }));
+}
+
 function parsePositiveInt(value: string | null) {
   if (!value) return null;
   const parsed = Number(value);
@@ -125,6 +134,12 @@ async function _GET(
     const monthParam = parseMonthParam(req.nextUrl.searchParams.get("month"));
     const todayParts = getDateParts(new Date(), timezone);
     const targetMonth = monthParam ?? { year: todayParts.year, month: todayParts.month };
+    const monthKey = (targetMonth.year * 12) + (targetMonth.month - 1);
+    const minKey = (todayParts.year * 12) + (todayParts.month - 1);
+    const maxKey = minKey + 3;
+    if (monthKey < minKey || monthKey > maxKey) {
+      return jsonWrap({ ok: false, error: "RANGE_NOT_ALLOWED" }, { status: 400 });
+    }
     const { start, end, lastDay } = buildMonthRange({ ...targetMonth, timezone });
 
     const professionalId = parsePositiveInt(req.nextUrl.searchParams.get("professionalId"));
@@ -311,7 +326,7 @@ async function _GET(
 
     const shouldUseOrgOnly = false;
     const now = new Date();
-    const [templates, overrides, bookings] = await Promise.all([
+    const [templates, overrides, bookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -356,13 +371,22 @@ async function _GET(
         },
         select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
+      prisma.classSession.findMany({
+        where: {
+          organizationId: service.organizationId,
+          status: "SCHEDULED",
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+        },
+        select: { startsAt: true, endsAt: true, professionalId: true },
+      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(bookings);
+    const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
 
     const slotMap = new Map<string, number>();
     const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly
@@ -395,6 +419,9 @@ async function _GET(
     const days = Array.from({ length: lastDay }, (_, idx) => {
       const day = idx + 1;
       const key = buildDateKey({ year: targetMonth.year, month: targetMonth.month, day });
+      if (targetMonth.year === todayParts.year && targetMonth.month === todayParts.month && day < todayParts.day) {
+        return { date: key, hasAvailability: false, slots: 0 };
+      }
       return { date: key, hasAvailability: slotMap.has(key), slots: slotMap.get(key) ?? 0 };
     });
 

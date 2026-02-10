@@ -7,7 +7,7 @@ import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
@@ -173,7 +173,6 @@ async function _POST(
     }
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
     const pricing = computePricing(amountCents, 0, {
       platformDefaultFeeMode: "INCLUDED",
       organizationPlatformFeeBps: booking.service.organization.platformFeeBps ?? undefined,
@@ -188,13 +187,13 @@ async function _POST(
       feeMode: pricing.feeMode,
       platformFeeBps: pricing.feeBpsApplied,
       platformFeeFixedCents: pricing.feeFixedApplied,
-      stripeFeeBps: stripeBaseFees.feeBps,
-      stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
     });
     const totalCents = combinedFees.totalCents;
     const platformFeeCents = Math.min(pricing.platformFeeCents, totalCents);
-    const stripeFeeEstimateCents = combinedFees.stripeFeeCentsEstimate ?? 0;
-    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents - stripeFeeEstimateCents);
+    const stripeFeeEstimateCents = 0;
+    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
     const sourceId = String(booking.id);
     const pendingPayment = await prisma.payment.findFirst({
       where: {
@@ -264,7 +263,7 @@ async function _POST(
           bookingId: String(booking.id),
           serviceId: String(booking.serviceId),
           organizationId: String(booking.organizationId),
-          userId: booking.userId,
+          userId: booking.userId ?? "",
           policyId: booking.service.policyId ? String(booking.service.policyId) : "",
           platformFeeCents: String(platformFeeCents),
           feeMode: pricing.feeMode,

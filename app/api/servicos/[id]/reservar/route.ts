@@ -5,7 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { AddressSourceProvider } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
+import { isUnauthenticatedError } from "@/lib/security";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
@@ -18,6 +18,10 @@ import { createBooking } from "@/domain/bookings/commands";
 import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection } from "@/lib/reservas/serviceAddons";
 import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { normalizeEmail } from "@/lib/utils/email";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
+
+const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const PENDING_HOLD_MINUTES = 10;
 const MAX_PENDING_PER_USER = 3;
@@ -57,6 +61,15 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
+  }));
+}
+
 function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
   return {
     ok: false,
@@ -76,18 +89,16 @@ async function _POST(
 
   try {
     const supabase = await createSupabaseServer();
-    const user = await ensureAuthenticated(supabase);
-    const profile = await prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { contactPhone: true },
-    });
-    if (!profile?.contactPhone) {
-      return jsonWrap(
-        { ok: false, error: "PHONE_REQUIRED", message: "Telemóvel obrigatório para reservar." },
-        { status: 400 },
-      );
-    }
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
+    const guestInput = payload?.guest ?? null;
+    const guestEmailRaw = typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
+    const guestNameRaw = typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
+    const guestPhoneRaw = typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
+    const guestEmailNormalized = normalizeEmail(guestEmailRaw);
+    const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
+    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
     const startsAtRaw = typeof payload?.startsAt === "string" ? payload.startsAt : null;
     const startsAt = startsAtRaw ? new Date(startsAtRaw) : null;
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
@@ -118,6 +129,7 @@ async function _POST(
         currency: true,
         locationMode: true,
         addressId: true,
+        policy: { select: { guestBookingAllowed: true } },
         professionalLinks: {
           select: { professionalId: true, professional: { select: { isActive: true } } },
         },
@@ -142,6 +154,39 @@ async function _POST(
 
     if (!service) {
       return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+    }
+
+    if (user) {
+      const profile = await prisma.profile.findUnique({
+        where: { id: user.id },
+        select: { contactPhone: true },
+      });
+      if (!profile?.contactPhone) {
+        return jsonWrap(
+          { ok: false, error: "PHONE_REQUIRED", message: "Telemóvel obrigatório para reservar." },
+          { status: 400 },
+        );
+      }
+    } else {
+      const guestAllowed = Boolean(service.policy?.guestBookingAllowed);
+      if (!guestAllowed) {
+        return jsonWrap({ ok: false, error: "AUTH_REQUIRED", message: "Inicia sessão para reservar." }, { status: 401 });
+      }
+      if (!guestEmail || !guestNameRaw) {
+        return jsonWrap(
+          { ok: false, error: "GUEST_REQUIRED", message: "Nome e email obrigatórios para convidado." },
+          { status: 400 },
+        );
+      }
+      if (!EMAIL_REGEX.test(guestEmailRaw)) {
+        return jsonWrap({ ok: false, error: "INVALID_GUEST_EMAIL", message: "Email inválido." }, { status: 400 });
+      }
+      if (!guestPhone || !isValidPhone(guestPhone)) {
+        return jsonWrap(
+          { ok: false, error: "PHONE_REQUIRED", message: "Telemóvel obrigatório para reservar." },
+          { status: 400 },
+        );
+      }
     }
 
     const assignmentConfig = resolveServiceAssignmentMode({
@@ -229,7 +274,11 @@ async function _POST(
 
     const pendingCount = await prisma.booking.count({
       where: {
-        userId: user.id,
+        ...(user
+          ? { userId: user.id }
+          : guestEmailNormalized
+            ? { guestEmail: guestEmailNormalized }
+            : { guestEmail: "__invalid__" }),
         status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
         pendingExpiresAt: { gt: now },
       },
@@ -323,7 +372,7 @@ async function _POST(
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + effectiveDurationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks] = await Promise.all([
+    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -377,13 +426,22 @@ async function _POST(
         },
         select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
+      prisma.classSession.findMany({
+        where: {
+          organizationId: service.organizationId,
+          status: "SCHEDULED",
+          startsAt: { lt: bookingEndsAt },
+          endsAt: { gt: startsAt },
+        },
+        select: { id: true, startsAt: true, endsAt: true, professionalId: true },
+      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(blockingBookings);
+    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
     const slotKey = startsAt.toISOString();
     const scopesToCheck = shouldUseOrgOnly ? [{ scopeType: "ORGANIZATION" as const, scopeId: 0 }] : scopeIds.map((id) => ({ scopeType, scopeId: id }));
@@ -460,6 +518,18 @@ async function _POST(
         endsAt: block.endsAt,
       });
     });
+    classSessions.forEach((session) => {
+      const scopeId = scopeType === "RESOURCE" ? null : session.professionalId;
+      if (!scopeId) return;
+      const bucket = existingByScope.get(scopeId);
+      if (!bucket) return;
+      bucket.push({
+        type: "BOOKING",
+        sourceId: `class:${session.id}`,
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+      });
+    });
 
     let allowed = false;
     let lastDecision: Parameters<typeof buildAgendaConflictPayload>[0]["decision"] | null = null;
@@ -502,11 +572,14 @@ async function _POST(
       const created = await createBooking({
         tx,
         organizationId: service.organizationId,
-        actorUserId: user.id,
+        actorUserId: user?.id ?? null,
         data: {
           serviceId: service.id,
           organizationId: service.organizationId,
-          userId: user.id,
+          userId: user?.id ?? null,
+          guestEmail: user ? null : guestEmailNormalized,
+          guestName: user ? null : guestNameRaw || null,
+          guestPhone: user ? null : guestPhone || null,
           startsAt,
           durationMinutes: effectiveDurationMinutes,
           price: effectivePriceCents,
@@ -555,7 +628,7 @@ async function _POST(
     const { ip, userAgent } = getRequestMeta(req);
     await recordOrganizationAudit(prisma, {
       organizationId: service.organizationId,
-      actorUserId: user.id,
+      actorUserId: user?.id ?? null,
       action: "BOOKING_PENDING_CREATED",
       metadata: {
         bookingId: booking.id,

@@ -8,6 +8,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { OrganizationMemberRole } from "@prisma/client";
+import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 
 const CHAT_ORG_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -23,18 +24,6 @@ function parseEventId(raw: string | null) {
   return Number.isFinite(id) ? id : null;
 }
 
-async function userHasEventAccess(userId: string, eventId: number) {
-  const entitlement = await prisma.entitlement.findFirst({
-    where: {
-      ownerUserId: userId,
-      eventId,
-      status: { in: ["ACTIVE"] },
-    },
-    select: { id: true },
-  });
-  return Boolean(entitlement);
-}
-
 async function userIsOrgMember(userId: string, organizationId: number | null) {
   if (!organizationId) return false;
   const member = await prisma.organizationMember.findFirst({
@@ -46,6 +35,48 @@ async function userIsOrgMember(userId: string, organizationId: number | null) {
     select: { id: true },
   });
   return Boolean(member);
+}
+
+async function resolveInviteAccess(
+  threadId: string,
+  userId: string,
+  ownerClauses: Array<Record<string, unknown>>,
+) {
+  const now = new Date();
+  const invite = await prisma.chatEventInvite.findFirst({
+    where: { threadId, userId, status: "ACCEPTED" },
+    select: { id: true, entitlementId: true, expiresAt: true, status: true, revokedAt: true },
+  });
+  if (!invite) return { ok: false as const, reason: "INVITE_REQUIRED" };
+  if (invite.revokedAt || invite.status === "REVOKED") {
+    return { ok: true as const, writeAllowed: false as const };
+  }
+
+  const entitlement = await prisma.entitlement.findFirst({
+    where: {
+      id: invite.entitlementId,
+      status: "ACTIVE",
+      OR: ownerClauses as any,
+      checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
+    },
+    select: { id: true },
+  });
+
+  if (!entitlement) {
+    await prisma.$transaction([
+      prisma.chatEventInvite.update({
+        where: { id: invite.id },
+        data: { status: "REVOKED", revokedAt: now, updatedAt: now },
+      }),
+      prisma.chatMember.updateMany({
+        where: { threadId, userId },
+        data: { accessRevokedAt: now },
+      }),
+    ]);
+    return { ok: true as const, writeAllowed: false as const };
+  }
+
+  return { ok: true as const, writeAllowed: true as const };
 }
 
 async function _GET(req: NextRequest) {
@@ -79,15 +110,6 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ error: "NOT_FOUND" }, { status: 404 });
     }
 
-    const isOwner = event.ownerUserId === user.id;
-    const hasEntitlement = await userHasEventAccess(user.id, event.id);
-    const isOrgMember = await userIsOrgMember(user.id, event.organizationId ?? null);
-    const canAccess = isOwner || isOrgMember || hasEntitlement;
-
-    if (!canAccess) {
-      return jsonWrap({ error: "FORBIDDEN" }, { status: 403 });
-    }
-
     await prisma.$executeRaw(Prisma.sql`SELECT app_v3.chat_ensure_event_thread(${event.id})`);
 
     const thread = await prisma.chatThread.findFirst({
@@ -108,6 +130,16 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ error: "THREAD_NOT_FOUND" }, { status: 404 });
     }
 
+    const profile = await prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { roles: true },
+    });
+    const roles = profile?.roles ?? [];
+    const isPlatformAdmin = roles.includes("admin");
+    const isOwner = event.ownerUserId === user.id;
+    const isOrgMember = await userIsOrgMember(user.id, event.organizationId ?? null);
+
+    const now = new Date();
     const existingMember = await prisma.chatMember.findFirst({
       where: { threadId: thread.id, userId: user.id },
       select: { id: true, bannedAt: true },
@@ -116,18 +148,52 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ error: "BANNED" }, { status: 403 });
     }
 
-    const role = isOrgMember || isOwner ? "ORG" : "PARTICIPANT";
-    await prisma.chatMember.upsert({
-      where: { threadId_userId: { threadId: thread.id, userId: user.id } },
-      update: { leftAt: null, role },
-      create: {
-        threadId: thread.id,
-        userId: user.id,
-        role,
-      },
+    let role: "ORG" | "PLATFORM_ADMIN" | "PARTICIPANT" | null = null;
+    const identityIds = await getUserIdentityIds(user.id);
+    const ownerClauses = buildEntitlementOwnerClauses({
+      userId: user.id,
+      identityIds,
+      email: user.email ?? null,
     });
 
-    const canPost = thread.status === "OPEN" || (thread.status === "ANNOUNCEMENTS" && (isOwner || isOrgMember));
+    let participantInviteAccess: Awaited<ReturnType<typeof resolveInviteAccess>> | null = null;
+
+    if (isPlatformAdmin) {
+      role = "PLATFORM_ADMIN";
+    } else if (isOwner || isOrgMember) {
+      role = "ORG";
+    } else {
+      participantInviteAccess = await resolveInviteAccess(thread.id, user.id, ownerClauses);
+      if (!participantInviteAccess.ok) {
+        return jsonWrap({ error: participantInviteAccess.reason }, { status: 403 });
+      }
+      role = "PARTICIPANT";
+    }
+
+    const writeAllowed =
+      role !== "PARTICIPANT" ? true : Boolean(participantInviteAccess?.writeAllowed);
+
+    if (role) {
+      await prisma.chatMember.upsert({
+        where: { threadId_userId: { threadId: thread.id, userId: user.id } },
+        update: {
+          leftAt: null,
+          role,
+          accessRevokedAt: role === "PARTICIPANT" && !writeAllowed ? now : null,
+        },
+        create: {
+          threadId: thread.id,
+          userId: user.id,
+          role,
+          accessRevokedAt: role === "PARTICIPANT" && !writeAllowed ? now : null,
+        },
+      });
+    }
+
+    const canPost =
+      writeAllowed &&
+      (thread.status === "OPEN" ||
+        (thread.status === "ANNOUNCEMENTS" && (role === "ORG" || role === "PLATFORM_ADMIN")));
 
     return jsonWrap({
       thread: {

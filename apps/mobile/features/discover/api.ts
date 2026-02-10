@@ -46,6 +46,8 @@ type CursorState = {
   service: string | null;
 };
 
+const DONE_CURSOR = "__done__";
+
 const DEFAULT_LIMIT = 12;
 
 const toEventQueryString = (params: DiscoverParams): string => {
@@ -135,13 +137,6 @@ const mapServiceOffers = (items: DiscoverServiceCard[]): DiscoverOfferCard[] =>
     service,
   }));
 
-const getOfferSortDate = (item: DiscoverOfferCard): number => {
-  const raw = item.type === "event" ? item.event.startsAt : item.service.nextAvailability;
-  if (!raw) return Number.MAX_SAFE_INTEGER;
-  const ts = new Date(raw).getTime();
-  return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
-};
-
 const fetchEvents = async (params: DiscoverParams): Promise<{ items: DiscoverOfferCard[]; nextCursor: string | null; hasMore: boolean }> => {
   const response = await api.request<unknown>(`/api/explorar/list?${toEventQueryString(params)}`);
   const meta = response && typeof response === "object"
@@ -216,9 +211,15 @@ export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<Di
   }
 
   const perSourceLimit = Math.max(6, Math.ceil(limit / 2));
+  const eventsDone = cursor.event === DONE_CURSOR;
+  const servicesDone = cursor.service === DONE_CURSOR;
   const [eventsResult, servicesResult] = await Promise.allSettled([
-    fetchEvents({ ...params, kind, cursor: cursor.event, limit: perSourceLimit }),
-    fetchServices({ ...params, kind, cursor: cursor.service, limit: perSourceLimit }),
+    eventsDone
+      ? Promise.resolve({ items: [] as DiscoverOfferCard[], nextCursor: DONE_CURSOR, hasMore: false })
+      : fetchEvents({ ...params, kind, cursor: cursor.event, limit: perSourceLimit }),
+    servicesDone
+      ? Promise.resolve({ items: [] as DiscoverOfferCard[], nextCursor: DONE_CURSOR, hasMore: false })
+      : fetchServices({ ...params, kind, cursor: cursor.service, limit: perSourceLimit }),
   ]);
 
   if (eventsResult.status === "rejected" && servicesResult.status === "rejected") {
@@ -228,19 +229,20 @@ export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<Di
   const events =
     eventsResult.status === "fulfilled"
       ? eventsResult.value
-      : { items: [] as DiscoverOfferCard[], nextCursor: null, hasMore: false };
+      : { items: [] as DiscoverOfferCard[], nextCursor: eventsDone ? DONE_CURSOR : null, hasMore: false };
   const services =
     servicesResult.status === "fulfilled"
       ? servicesResult.value
-      : { items: [] as DiscoverOfferCard[], nextCursor: null, hasMore: false };
+      : { items: [] as DiscoverOfferCard[], nextCursor: servicesDone ? DONE_CURSOR : null, hasMore: false };
 
-  const merged = [...events.items, ...services.items]
-    .sort((a, b) => getOfferSortDate(a) - getOfferSortDate(b))
-    .slice(0, limit);
+  const merged = [...events.items, ...services.items].slice(0, limit);
+  const eventCursor = events.hasMore ? events.nextCursor : DONE_CURSOR;
+  const serviceCursor = services.hasMore ? services.nextCursor : DONE_CURSOR;
+  const hasMore = Boolean(events.hasMore || services.hasMore);
 
   return {
     items: merged,
-    nextCursor: encodeCursor(events.nextCursor, services.nextCursor),
-    hasMore: Boolean(events.hasMore || services.hasMore),
+    nextCursor: encodeCursor(eventCursor, serviceCursor),
+    hasMore,
   };
 };

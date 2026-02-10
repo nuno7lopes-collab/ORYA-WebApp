@@ -11,6 +11,7 @@ import { BookingInviteStatus } from "@prisma/client";
 import crypto from "crypto";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { getBookingState, isBookingConfirmed } from "@/lib/reservas/bookingState";
+import { normalizeEmail } from "@/lib/utils/email";
 
 const MAX_INVITES = 20;
 
@@ -79,12 +80,16 @@ async function _GET(
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, guestEmail: true },
     });
     if (!booking) {
       return fail(404, "Reserva não encontrada.");
     }
-    if (booking.userId !== user.id) {
+    const normalizedEmail = normalizeEmail(user.email ?? "");
+    const isOwner =
+      booking.userId === user.id ||
+      (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+    if (!isOwner) {
       return fail(403, "Sem permissões.");
     }
 
@@ -155,12 +160,16 @@ async function _POST(
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      select: { id: true, userId: true, organizationId: true, status: true },
+      select: { id: true, userId: true, guestEmail: true, organizationId: true, status: true },
     });
     if (!booking) {
       return fail(404, "Reserva não encontrada.");
     }
-    if (booking.userId !== user.id) {
+    const normalizedEmail = normalizeEmail(user.email ?? "");
+    const isOwner =
+      booking.userId === user.id ||
+      (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+    if (!isOwner) {
       return fail(403, "Sem permissões.");
     }
     if (!isBookingConfirmed(booking)) {

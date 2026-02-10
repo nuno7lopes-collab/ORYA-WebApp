@@ -8,7 +8,10 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 async function _POST(req: NextRequest) {
   try {
     if (!isSameOrigin(req)) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap(
+        { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
+        { status: 403 }
+      );
     }
 
     const store = await cookies();
@@ -30,7 +33,10 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: true, cleared: all.map((c) => c.name) });
   } catch (err) {
     console.error("[api/auth/clear] erro inesperado:", err);
-    return jsonWrap({ ok: false, error: "CLEAR_FAILED" }, { status: 500 });
+    return jsonWrap(
+      { ok: false, errorCode: "CLEAR_FAILED", message: "Não foi possível limpar a sessão." },
+      { status: 500 }
+    );
   }
 }
 export const POST = withApiEnvelope(_POST);

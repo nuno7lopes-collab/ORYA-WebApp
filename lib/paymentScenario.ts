@@ -7,6 +7,7 @@ export const paymentScenarioSchema = z.enum([
   "RESALE",
   "SUBSCRIPTION",
   "FREE_CHECKOUT",
+  "BOOKING_CHANGE",
 ]);
 
 export type PaymentScenario = z.infer<typeof paymentScenarioSchema>;
@@ -18,5 +19,6 @@ export function normalizePaymentScenario(raw: string | null | undefined): Paymen
   if (value === "RESALE") return "RESALE";
   if (value === "SUBSCRIPTION") return "SUBSCRIPTION";
   if (value === "FREE_CHECKOUT") return "FREE_CHECKOUT";
+  if (value === "BOOKING_CHANGE") return "BOOKING_CHANGE";
   return "SINGLE";
 }

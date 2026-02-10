@@ -4,6 +4,7 @@ import { retrieveCharge } from "@/domain/finance/gateway/stripeGateway";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
+import { notifyOrganizationBookingChangeResponse } from "@/lib/reservas/bookingChangeNotifications";
 import { CrmInteractionSource, CrmInteractionType, EntitlementStatus, EntitlementType, SourceType, type Prisma } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { logError } from "@/lib/observability/logger";
@@ -12,6 +13,8 @@ import {
   buildBookingConfirmationSnapshot,
   type BookingConfirmationPaymentMeta,
 } from "@/lib/reservas/confirmationSnapshot";
+import { normalizeEmail } from "@/lib/utils/email";
+import { updateBooking } from "@/domain/bookings/commands";
 
 function parseNumber(value: unknown) {
   const parsed = Number(value);
@@ -44,8 +47,12 @@ const extractSnapshotCreatedAt = (snapshot: unknown, fallback: Date) => {
 
 const DEFAULT_TIMEZONE = "Europe/Lisbon";
 
-function buildOwnerKey(userId: string | null) {
-  return userId ? `user:${userId}` : "unknown";
+function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
+  if (params.ownerUserId) return `user:${params.ownerUserId}`;
+  if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
+  const guest = normalizeEmail(params.guestEmail);
+  if (guest) return `email:${guest}`;
+  return "unknown";
 }
 
 async function resolveStripeFee(intent: Stripe.PaymentIntent) {
@@ -95,15 +102,16 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
         split: {
           include: {
             booking: {
-              select: {
-                id: true,
-                status: true,
-                organizationId: true,
-                userId: true,
-                serviceId: true,
-                availabilityId: true,
-                startsAt: true,
-                snapshotTimezone: true,
+                select: {
+                  id: true,
+                  status: true,
+                  organizationId: true,
+                  userId: true,
+                  guestEmail: true,
+                  serviceId: true,
+                  availabilityId: true,
+                  startsAt: true,
+                  snapshotTimezone: true,
                 addressRef: { select: { formattedAddress: true } },
                 service: {
                   select: {
@@ -187,6 +195,7 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
       booking,
       purchaseId: purchaseIdResolved,
       ownerUserId: booking.userId,
+      guestEmail: booking.guestEmail ?? null,
     });
 
     await recordOrganizationAudit(tx, {
@@ -201,6 +210,275 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
       },
     });
   });
+
+  return true;
+}
+
+async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise<boolean> {
+  const meta = intent.metadata ?? {};
+  const scenario = typeof meta.paymentScenario === "string" ? meta.paymentScenario.toUpperCase() : "";
+  const requestId = parseId(meta.bookingChangeRequestId);
+  const bookingIdFromMeta = parseId(meta.bookingId);
+  if (scenario !== "BOOKING_CHANGE" && !requestId) return false;
+
+  const amountCents = intent.amount_received ?? intent.amount ?? 0;
+  const now = new Date();
+
+  const result = await prisma.$transaction(async (tx) => {
+    const request = await tx.bookingChangeRequest.findFirst({
+      where: requestId
+        ? { id: requestId }
+        : bookingIdFromMeta
+          ? { bookingId: bookingIdFromMeta, status: "PENDING" }
+          : undefined,
+      orderBy: { createdAt: "desc" },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            organizationId: true,
+            userId: true,
+            guestEmail: true,
+            status: true,
+            startsAt: true,
+            price: true,
+            currency: true,
+            professionalId: true,
+            resourceId: true,
+            courtId: true,
+            confirmationSnapshot: true,
+            confirmationSnapshotVersion: true,
+            confirmationSnapshotCreatedAt: true,
+            policyRef: { select: { policyId: true } },
+            bookingPackage: {
+              select: {
+                packageId: true,
+                label: true,
+                durationMinutes: true,
+                priceCents: true,
+              },
+            },
+            addons: {
+              select: {
+                addonId: true,
+                label: true,
+                deltaMinutes: true,
+                deltaPriceCents: true,
+                quantity: true,
+                sortOrder: true,
+              },
+            },
+            service: {
+              select: {
+                id: true,
+                policyId: true,
+                unitPriceCents: true,
+                currency: true,
+                organization: {
+                  select: {
+                    feeMode: true,
+                    platformFeeBps: true,
+                    platformFeeFixedCents: true,
+                    orgType: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!request || !request.booking) {
+      return {
+        status: "NOT_FOUND" as const,
+        bookingId: bookingIdFromMeta ?? null,
+        organizationId: null,
+      };
+    }
+
+    const booking = request.booking;
+    if (bookingIdFromMeta && booking.id !== bookingIdFromMeta) {
+      return {
+        status: "MISMATCH" as const,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+      };
+    }
+
+    if (request.status === "ACCEPTED") {
+      return { status: "ALREADY" as const, bookingId: booking.id, organizationId: booking.organizationId };
+    }
+
+    if (request.status !== "PENDING") {
+      return { status: "INACTIVE" as const, bookingId: booking.id, organizationId: booking.organizationId };
+    }
+
+    if (request.expiresAt.getTime() <= now.getTime()) {
+      await tx.bookingChangeRequest.update({
+        where: { id: request.id },
+        data: { status: "EXPIRED", respondedAt: now, respondedByUserId: request.respondedByUserId ?? booking.userId },
+      });
+      return { status: "EXPIRED" as const, bookingId: booking.id, organizationId: booking.organizationId };
+    }
+
+    if (booking.status !== "CONFIRMED") {
+      await tx.bookingChangeRequest.update({
+        where: { id: request.id },
+        data: { status: "CANCELLED", respondedAt: now, respondedByUserId: request.respondedByUserId ?? booking.userId },
+      });
+      return { status: "BOOKING_CLOSED" as const, bookingId: booking.id, organizationId: booking.organizationId };
+    }
+
+    const newPriceCents = Math.max(0, Math.round((booking.price ?? 0) + request.priceDeltaCents));
+    const actorUserId = request.respondedByUserId ?? booking.userId ?? null;
+    const { booking: updated } = await updateBooking({
+      tx,
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId,
+      data: {
+        startsAt: request.proposedStartsAt,
+        price: newPriceCents,
+        courtId: request.proposedCourtId ?? booking.courtId,
+        professionalId: request.proposedProfessionalId ?? booking.professionalId,
+        resourceId: request.proposedResourceId ?? booking.resourceId,
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        price: true,
+        currency: true,
+        startsAt: true,
+        durationMinutes: true,
+        serviceId: true,
+        userId: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
+        confirmationSnapshot: true,
+        confirmationSnapshotVersion: true,
+        confirmationSnapshotCreatedAt: true,
+        policyRef: { select: { policyId: true } },
+        bookingPackage: {
+          select: { packageId: true, label: true, durationMinutes: true, priceCents: true },
+        },
+        addons: {
+          select: {
+            addonId: true,
+            label: true,
+            deltaMinutes: true,
+            deltaPriceCents: true,
+            quantity: true,
+            sortOrder: true,
+          },
+        },
+        service: {
+          select: {
+            id: true,
+            policyId: true,
+            unitPriceCents: true,
+            currency: true,
+            organization: {
+              select: {
+                feeMode: true,
+                platformFeeBps: true,
+                platformFeeFixedCents: true,
+                orgType: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (request.priceDeltaCents !== 0 || !updated.confirmationSnapshot) {
+      const snapshotResult = await buildBookingConfirmationSnapshot({
+        tx,
+        booking: updated as any,
+        now,
+        policyIdHint: updated.policyRef?.policyId ?? null,
+        paymentMeta: null,
+      });
+      if (snapshotResult.ok) {
+        const snapshotVersion =
+          updated.confirmationSnapshotVersion ??
+          Math.max(BOOKING_CONFIRMATION_SNAPSHOT_VERSION, snapshotResult.snapshot.version);
+        const snapshotCreatedAt = snapshotResult.snapshot.createdAt
+          ? new Date(snapshotResult.snapshot.createdAt)
+          : now;
+        await tx.booking.update({
+          where: { id: updated.id },
+          data: {
+            confirmationSnapshot: snapshotResult.snapshot,
+            confirmationSnapshotVersion: snapshotVersion,
+            confirmationSnapshotCreatedAt: snapshotCreatedAt,
+          },
+        });
+      }
+    }
+
+    await tx.bookingChangeRequest.update({
+      where: { id: request.id },
+      data: {
+        status: "ACCEPTED",
+        respondedAt: request.respondedAt ?? now,
+        respondedByUserId: request.respondedByUserId ?? actorUserId,
+      },
+    });
+
+    await recordOrganizationAudit(tx, {
+      organizationId: booking.organizationId,
+      actorUserId,
+      action: "BOOKING_RESCHEDULE_ACCEPTED",
+      metadata: {
+        bookingId: booking.id,
+        requestId: request.id,
+        proposedStartsAt: request.proposedStartsAt.toISOString(),
+        priceDeltaCents: request.priceDeltaCents,
+      },
+    });
+
+    return {
+      status: "APPLIED" as const,
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      requestId: request.id,
+      proposedStartsAt: request.proposedStartsAt,
+      priceDeltaCents: request.priceDeltaCents,
+      actorUserId,
+    };
+  });
+
+  if (!result) return true;
+  if (result.status === "APPLIED") {
+    if (result.organizationId && result.bookingId && result.requestId && result.proposedStartsAt) {
+      await notifyOrganizationBookingChangeResponse({
+        organizationId: result.organizationId,
+        bookingId: result.bookingId,
+        requestId: result.requestId,
+        status: "ACCEPTED",
+        proposedStartsAt: result.proposedStartsAt,
+        priceDeltaCents: result.priceDeltaCents ?? 0,
+        actorUserId: result.actorUserId ?? null,
+      });
+    }
+    return true;
+  }
+  if (result.status === "ALREADY") return true;
+
+  if (result.bookingId && intent.id) {
+    try {
+      await refundBookingPayment({
+        bookingId: result.bookingId,
+        paymentIntentId: intent.id,
+        reason: `BOOKING_CHANGE_${result.status}`,
+        amountCents: amountCents > 0 ? amountCents : undefined,
+      });
+    } catch (err) {
+      logError("fulfill_booking_change.refund_failed", err, { bookingId: result.bookingId, paymentIntentId: intent.id });
+    }
+  }
 
   return true;
 }
@@ -241,11 +519,13 @@ async function upsertBookingEntitlement(params: {
     service?: { title: string; coverImageUrl: string | null; addressRef?: { formattedAddress?: string | null } | null } | null;
   };
   purchaseId: string;
-  ownerUserId: string | null;
+  ownerUserId?: string | null;
+  ownerIdentityId?: string | null;
+  guestEmail?: string | null;
 }) {
-  const { tx, booking, purchaseId, ownerUserId } = params;
-  if (!ownerUserId) return;
-  const ownerKey = buildOwnerKey(ownerUserId);
+  const { tx, booking, purchaseId, ownerUserId = null, ownerIdentityId = null, guestEmail = null } = params;
+  if (!ownerUserId && !ownerIdentityId && !guestEmail) return;
+  const ownerKey = buildOwnerKey({ ownerUserId, ownerIdentityId, guestEmail });
   const snapshotTitle = booking.service?.title ?? `Reserva ${booking.id}`;
   const snapshotCoverUrl = booking.service?.coverImageUrl ?? null;
   const snapshotVenueName =
@@ -264,7 +544,7 @@ async function upsertBookingEntitlement(params: {
     update: {
       status: EntitlementStatus.ACTIVE,
       ownerUserId,
-      ownerIdentityId: null,
+      ownerIdentityId,
       purchaseId,
       snapshotTitle,
       snapshotCoverUrl,
@@ -277,7 +557,7 @@ async function upsertBookingEntitlement(params: {
       type: EntitlementType.SERVICE_BOOKING,
       status: EntitlementStatus.ACTIVE,
       ownerUserId,
-      ownerIdentityId: null,
+      ownerIdentityId,
       ownerKey,
       purchaseId,
       bookingId: booking.id,
@@ -410,6 +690,8 @@ export async function fulfillServiceBookingIntent(
   const meta = intent.metadata ?? {};
   const handledSplit = await fulfillSplitParticipantIntent(intent);
   if (handledSplit) return true;
+  const handledChange = await fulfillBookingChangeIntent(intent);
+  if (handledChange) return true;
   const isServiceBooking =
     meta.serviceBooking === "1" ||
     meta.serviceBooking === "true" ||
@@ -427,7 +709,7 @@ export async function fulfillServiceBookingIntent(
   const paymentMeta: BookingConfirmationPaymentMeta = {
     grossAmountCents: meta.grossAmountCents ?? null,
     cardPlatformFeeCents: meta.cardPlatformFeeCents ?? null,
-    stripeFeeEstimateCents: meta.stripeFeeEstimateCents ?? null,
+    stripeFeeEstimateCents: 0,
   };
 
   const paymentIntentId = intent.id;
@@ -490,6 +772,7 @@ export async function fulfillServiceBookingIntent(
             serviceId: true,
             organizationId: true,
             userId: true,
+            guestEmail: true,
             availabilityId: true,
             paymentIntentId: true,
             startsAt: true,
@@ -534,6 +817,7 @@ export async function fulfillServiceBookingIntent(
           booking,
           purchaseId: purchaseIdResolved,
           ownerUserId: userId ?? booking.userId,
+          guestEmail: booking.guestEmail ?? null,
         });
 
         await recordOrganizationAudit(tx, {
@@ -548,13 +832,16 @@ export async function fulfillServiceBookingIntent(
           },
         });
 
-        crmPayload = {
-          organizationId: booking.organizationId,
-          userId: userId ?? booking.userId,
-          bookingId: booking.id,
-          amountCents,
-          currency: (intent.currency ?? "eur").toUpperCase(),
-        };
+        const resolvedUserId = userId ?? booking.userId;
+        crmPayload = resolvedUserId
+          ? {
+              organizationId: booking.organizationId,
+              userId: resolvedUserId,
+              bookingId: booking.id,
+              amountCents,
+              currency: (intent.currency ?? "eur").toUpperCase(),
+            }
+          : null;
         return { crmPayload };
       }
 
@@ -565,6 +852,7 @@ export async function fulfillServiceBookingIntent(
               id: true,
               organizationId: true,
               userId: true,
+              guestEmail: true,
               serviceId: true,
               availabilityId: true,
               startsAt: true,
@@ -705,22 +993,24 @@ export async function fulfillServiceBookingIntent(
           booking,
           purchaseId: purchaseIdResolved,
           ownerUserId: userId ?? booking.userId,
+          guestEmail: booking.guestEmail ?? null,
         });
       }
-      if (!isCancelled && (userId ?? booking.userId)) {
+      const resolvedUserId = userId ?? booking.userId;
+      if (!isCancelled && resolvedUserId) {
         crmPayload = {
           organizationId: booking.organizationId,
-          userId: userId ?? booking.userId,
+          userId: resolvedUserId,
           bookingId: booking.id,
           amountCents,
           currency: (intent.currency ?? "eur").toUpperCase(),
         };
       }
 
-      if (confirmedNow && (userId ?? booking.userId)) {
+      if (confirmedNow && resolvedUserId) {
         await tx.userActivity.create({
           data: {
-            userId: userId ?? booking.userId,
+            userId: resolvedUserId,
             type: "BOOKING_CREATED",
             visibility: "PRIVATE",
             metadata: {

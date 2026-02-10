@@ -894,7 +894,14 @@ export default function OrganizationPublicProfilePanel({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload?scope=avatar", { method: "POST", body: formData });
+      if (!organizationId) {
+        setMessage("Organização inválida.");
+        return;
+      }
+      const res = await fetch(`/api/upload?scope=avatar&organizationId=${organizationId}`, {
+        method: "POST",
+        body: formData,
+      });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.url) {
         setMessage(json?.error || "Não foi possível carregar a imagem.");
@@ -917,7 +924,14 @@ export default function OrganizationPublicProfilePanel({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload?scope=profile-cover", { method: "POST", body: formData });
+      if (!organizationId) {
+        setMessage("Organização inválida.");
+        return;
+      }
+      const res = await fetch(`/api/upload?scope=profile-cover&organizationId=${organizationId}`, {
+        method: "POST",
+        body: formData,
+      });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.url) {
         setMessage(json?.error || "Não foi possível carregar a capa.");

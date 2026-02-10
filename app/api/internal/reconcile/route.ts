@@ -8,6 +8,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { logWarn } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const DEFAULT_STUCK_MINUTES = 15;
 
@@ -22,7 +23,7 @@ function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correl
   return null;
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const unauthorized = ensureInternalSecret(req, ctx);
   if (unauthorized) return unauthorized;
@@ -88,3 +89,4 @@ export async function POST(req: NextRequest) {
 
   return respondOk(ctx, { requeued }, { status: 200 });
 }
+export const POST = withApiEnvelope(_POST);

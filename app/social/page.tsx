@@ -109,6 +109,7 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   MARKETING_PROMO_ALERT: "Marketing",
   CRM_CAMPAIGN: "Campanha",
   SYSTEM_ANNOUNCE: "Sistema",
+  CHAT_AVAILABLE: "Chat",
   CHAT_OPEN: "Chat",
   CHAT_ANNOUNCEMENT: "Chat",
   CHAT_MESSAGE: "Mensagem de chat",

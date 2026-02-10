@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 import type { EventCardDTO } from "@/lib/events";
 
 type DiscoverEvent = EventCardDTO & {
@@ -315,7 +316,7 @@ function buildDiscoverWhere(tab?: DiscoverTab): Prisma.EventWhereInput {
   const organizationFilter: Prisma.OrganizationWhereInput = { status: "ACTIVE" };
 
   const base: Prisma.EventWhereInput = {
-    status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+    status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
     isDeleted: false,
     organizationId: { not: null },
     organization: organizationFilter,

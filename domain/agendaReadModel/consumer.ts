@@ -20,6 +20,10 @@ const ALLOWLIST = new Set([
   "booking.updated",
   "booking.cancelled",
   "booking.no_show",
+  "class_session.created",
+  "class_session.updated",
+  "class_session.cancelled",
+  "class_session.deleted",
   "soft_block.created",
   "soft_block.updated",
   "soft_block.deleted",
@@ -46,6 +50,7 @@ const inferSourceType = (eventType: string): SourceType | null => {
   if (eventType.startsWith("tournament.")) return SourceType.TOURNAMENT;
   if (eventType.startsWith("reservation.")) return SourceType.BOOKING;
   if (eventType.startsWith("booking.")) return SourceType.BOOKING;
+  if (eventType.startsWith("class_session.")) return SourceType.CLASS_SESSION;
   if (eventType.startsWith("soft_block.")) return SourceType.SOFT_BLOCK;
   if (eventType.startsWith("hard_block.")) return SourceType.HARD_BLOCK;
   if (eventType.startsWith("match_slot.")) return SourceType.MATCH;
@@ -416,6 +421,8 @@ type AgendaRebuildItem = {
   status: string;
   padelClubId?: number | null;
   courtId?: number | null;
+  resourceId?: number | null;
+  professionalId?: number | null;
 };
 
 export type AgendaRebuildResult = {
@@ -439,6 +446,8 @@ const sameAgendaItem = (
     status: string;
     padelClubId: number | null;
     courtId: number | null;
+    resourceId: number | null;
+    professionalId: number | null;
   },
   next: AgendaRebuildItem,
 ) => {
@@ -448,7 +457,9 @@ const sameAgendaItem = (
     existing.startsAt.getTime() === next.startsAt.getTime() &&
     existing.endsAt.getTime() === next.endsAt.getTime() &&
     (existing.padelClubId ?? null) === (next.padelClubId ?? null) &&
-    (existing.courtId ?? null) === (next.courtId ?? null)
+    (existing.courtId ?? null) === (next.courtId ?? null) &&
+    (existing.resourceId ?? null) === (next.resourceId ?? null) &&
+    (existing.professionalId ?? null) === (next.professionalId ?? null)
   );
 };
 
@@ -532,6 +543,8 @@ export async function rebuildAgendaItems(params?: {
     status: string;
     padelClubId: number | null;
     courtId: number | null;
+    resourceId: number | null;
+    professionalId: number | null;
   };
   type SoftBlockRow = {
     id: number;
@@ -549,6 +562,18 @@ export async function rebuildAgendaItems(params?: {
     service: { title: string } | null;
     courtId: number | null;
     court: { padelClubId: number } | null;
+    resourceId: number | null;
+    professionalId: number | null;
+  };
+  type ClassSessionRow = {
+    id: number;
+    startsAt: Date;
+    endsAt: Date;
+    status: string;
+    service: { title: string } | null;
+    courtId: number | null;
+    court: { padelClubId: number } | null;
+    professionalId: number | null;
   };
   type MatchRow = {
     id: number;
@@ -595,6 +620,8 @@ export async function rebuildAgendaItems(params?: {
         status: string;
         padelClubId: number | null;
         courtId: number | null;
+        resourceId: number | null;
+        professionalId: number | null;
       }
     >();
 
@@ -618,6 +645,8 @@ export async function rebuildAgendaItems(params?: {
             status: true,
             padelClubId: true,
             courtId: true,
+            resourceId: true,
+            professionalId: true,
           },
         }),
       (rows) => {
@@ -663,6 +692,8 @@ export async function rebuildAgendaItems(params?: {
           status: item.status,
           padelClubId: item.padelClubId ?? null,
           courtId: item.courtId ?? null,
+          resourceId: item.resourceId ?? null,
+          professionalId: item.professionalId ?? null,
           lastEventId: eventId,
           updatedAt: now,
         },
@@ -676,6 +707,8 @@ export async function rebuildAgendaItems(params?: {
           status: item.status,
           padelClubId: item.padelClubId ?? null,
           courtId: item.courtId ?? null,
+          resourceId: item.resourceId ?? null,
+          professionalId: item.professionalId ?? null,
           lastEventId: eventId,
           updatedAt: now,
         },
@@ -737,6 +770,8 @@ export async function rebuildAgendaItems(params?: {
             service: { select: { title: true } },
             courtId: true,
             court: { select: { padelClubId: true } },
+            resourceId: true,
+            professionalId: true,
           },
         }),
       async (rows) => {
@@ -767,6 +802,52 @@ export async function rebuildAgendaItems(params?: {
             status: booking.status,
             padelClubId,
             courtId,
+            resourceId: booking.resourceId ?? null,
+            professionalId: booking.professionalId ?? null,
+          });
+        }
+      },
+    );
+
+    await forEachBatch<ClassSessionRow>(
+      (cursor) =>
+        prisma.classSession.findMany({
+          where: { organizationId: orgId },
+          orderBy: { id: "asc" },
+          take: batchSize,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: {
+            id: true,
+            startsAt: true,
+            endsAt: true,
+            status: true,
+            service: { select: { title: true } },
+            courtId: true,
+            court: { select: { padelClubId: true } },
+            professionalId: true,
+          },
+        }),
+      async (rows) => {
+        for (const session of rows) {
+          if (!isValidInterval(session.startsAt, session.endsAt)) {
+            markInvalid(SourceType.CLASS_SESSION, String(session.id));
+            continue;
+          }
+          const title = session.service?.title ?? "Aula";
+          const courtId = session.courtId ?? null;
+          const padelClubId = session.court?.padelClubId ?? null;
+          await handleDesiredItem({
+            organizationId: orgId,
+            sourceType: SourceType.CLASS_SESSION,
+            sourceId: String(session.id),
+            title,
+            startsAt: session.startsAt,
+            endsAt: session.endsAt,
+            status: session.status,
+            padelClubId,
+            courtId,
+            resourceId: null,
+            professionalId: session.professionalId ?? null,
           });
         }
       },

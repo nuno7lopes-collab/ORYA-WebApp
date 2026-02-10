@@ -47,7 +47,10 @@ function buildEmailHtml(code: string) {
 async function _POST(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap(
+        { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
+        { status: 403 }
+      );
     }
 
     const ctx = getRequestContext(req);
@@ -62,7 +65,7 @@ async function _POST(req: NextRequest) {
 
     if (!rawEmail || !EMAIL_REGEX.test(rawEmail)) {
       return jsonWrap(
-        { ok: false, error: "Email inválido." },
+        { ok: false, errorCode: "INVALID_EMAIL", message: "Email inválido." },
         { status: 400 },
       );
     }
@@ -75,14 +78,23 @@ async function _POST(req: NextRequest) {
     });
     if (!limiter.allowed) {
       return jsonWrap(
-        { ok: false, error: "RATE_LIMITED" },
+        {
+          ok: false,
+          errorCode: "RATE_LIMITED",
+          message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+          retryable: true,
+        },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
       );
     }
 
     if (password !== null && password !== undefined && password.length < 6) {
       return jsonWrap(
-        { ok: false, error: "A password deve ter pelo menos 6 caracteres." },
+        {
+          ok: false,
+          errorCode: "WEAK_PASSWORD",
+          message: "A password deve ter pelo menos 6 caracteres.",
+        },
         { status: 400 },
       );
     }
@@ -95,8 +107,8 @@ async function _POST(req: NextRequest) {
         return jsonWrap(
           {
             ok: false,
-            error: usernameValidation.error,
-            code: usernameValidation.code ?? "USERNAME_INVALID",
+            errorCode: usernameValidation.code ?? "USERNAME_INVALID",
+            message: usernameValidation.error,
           },
           { status: 400 },
         );
@@ -106,7 +118,11 @@ async function _POST(req: NextRequest) {
       });
       if (availability.ok && availability.available === false) {
         return jsonWrap(
-          { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
+          {
+            ok: false,
+            errorCode: "USERNAME_TAKEN",
+            message: "Este @ já está a ser usado — escolhe outro.",
+          },
           { status: 409 },
         );
       }
@@ -132,6 +148,7 @@ async function _POST(req: NextRequest) {
       linkPayload.password = password;
     }
 
+    let otp: string | null = null;
     const { data, error } = await supabaseAdmin.auth.admin.generateLink(linkPayload as any);
 
     if (error) {
@@ -140,16 +157,32 @@ async function _POST(req: NextRequest) {
           ? (error as { code?: string }).code
           : undefined;
       if (errorCode === "email_exists") {
-        return jsonWrap(
-          {
-            ok: false,
-            error: "Este email já tem conta. Inicia sessão ou usa o Google.",
-            code: "email_exists",
-          },
-          { status: 409 },
-        );
-      }
-      if (errorCode === "weak_password") {
+        // Não expor enumeração: gerar magic link OTP e responder genericamente.
+        const loginRes = await supabaseAdmin.auth.admin.generateLink({
+          type: "magiclink",
+          email: rawEmail,
+          options: { redirectTo: `${siteUrl}/auth/callback` },
+        });
+        if (loginRes.error) {
+          console.error("[send-otp] generateLink magiclink error", {
+            error: loginRes.error,
+            requestId: ctx.requestId,
+            correlationId: ctx.correlationId,
+          });
+          return jsonWrap(
+            {
+              ok: false,
+              errorCode: "OTP_GENERATION_FAILED",
+              message: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
+              details: typeof loginRes.error === "object"
+                ? (loginRes.error as unknown as Record<string, unknown>)
+                : undefined,
+            },
+            { status: 500 },
+          );
+        }
+        otp = loginRes.data?.properties?.email_otp ?? null;
+      } else if (errorCode === "weak_password") {
         const reasons =
           typeof error === "object" && error && "reasons" in error
             ? (error as { reasons?: string[] }).reasons
@@ -157,36 +190,43 @@ async function _POST(req: NextRequest) {
         return jsonWrap(
           {
             ok: false,
-            error: "A password não foi aceite pelo sistema de autenticação.",
-            code: "weak_password",
+            errorCode: "WEAK_PASSWORD",
+            message: "A password não foi aceite pelo sistema de autenticação.",
             reasons,
           },
           { status: 400 },
         );
+      } else {
+        console.error("[send-otp] generateLink error", {
+          error,
+          requestId: ctx.requestId,
+          correlationId: ctx.correlationId,
+        });
+        return jsonWrap(
+          {
+            ok: false,
+            errorCode: "OTP_GENERATION_FAILED",
+            message: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
+            details: typeof error === "object" ? (error as unknown as Record<string, unknown>) : undefined,
+          },
+          { status: 500 },
+        );
       }
-      console.error("[send-otp] generateLink error", {
-        error,
-        requestId: ctx.requestId,
-        correlationId: ctx.correlationId,
-      });
-      return jsonWrap(
-        {
-          ok: false,
-              error: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
-              details: typeof error === "object" ? (error as unknown as Record<string, unknown>) : undefined,
-            },
-            { status: 500 },
-          );
+    } else {
+      otp = data?.properties?.email_otp ?? null;
     }
 
-    const otp = data?.properties?.email_otp ?? null;
     if (!otp) {
       console.error("[send-otp] missing email_otp in response", {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
       });
       return jsonWrap(
-        { ok: false, error: "Não foi possível gerar o código. Tenta novamente." },
+        {
+          ok: false,
+          errorCode: "OTP_GENERATION_FAILED",
+          message: "Não foi possível gerar o código. Tenta novamente.",
+        },
         { status: 500 },
       );
     }
@@ -207,12 +247,14 @@ async function _POST(req: NextRequest) {
       return jsonWrap(
         {
           ok: false,
-          error: "Não foi possível enviar o código. Tenta novamente dentro de alguns minutos.",
+          errorCode: "EMAIL_SEND_FAILED",
+          message: "Não foi possível enviar o código. Tenta novamente dentro de alguns minutos.",
         },
         { status: 502 },
       );
     }
 
+    // Por defeito devolvemos otpType signup para evitar enumeração.
     return jsonWrap({ ok: true, otpType: "signup" });
   } catch (err) {
     const ctx = getRequestContext(req);
@@ -222,7 +264,7 @@ async function _POST(req: NextRequest) {
       correlationId: ctx.correlationId,
     });
     return jsonWrap(
-      { ok: false, error: "Erro inesperado ao enviar código." },
+      { ok: false, errorCode: "INTERNAL_ERROR", message: "Erro inesperado ao enviar código." },
       { status: 500 },
     );
   }

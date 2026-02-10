@@ -12,12 +12,14 @@ type AuthModalContextType = {
   redirectTo: string | null;
   onboardingStep: OnboardingStep;
   showGoogle: boolean;
+  dismissible: boolean;
   openModal: (options?: {
     mode?: Mode;
     email?: string;
     redirectTo?: string;
     onboardingStep?: OnboardingStep;
     showGoogle?: boolean;
+    dismissible?: boolean;
   }) => void;
   closeModal: () => void;
   setEmail: (email: string) => void;
@@ -36,6 +38,7 @@ export const AuthModalProvider = ({ children }: { children: ReactNode }) => {
   const [redirectTo, setRedirectToState] = useState<string | null>(null);
   const [onboardingStep, setOnboardingStepState] = useState<OnboardingStep>(null);
   const [showGoogle, setShowGoogle] = useState<boolean>(false);
+  const [dismissible, setDismissible] = useState<boolean>(true);
 
   const openModal = useCallback(
     (options?: {
@@ -44,12 +47,14 @@ export const AuthModalProvider = ({ children }: { children: ReactNode }) => {
       redirectTo?: string;
       onboardingStep?: OnboardingStep;
       showGoogle?: boolean;
+      dismissible?: boolean;
     }) => {
       if (options?.mode !== undefined) setModeState(options.mode);
       if (options?.email !== undefined) setEmailState(options.email);
       if (options?.redirectTo !== undefined) setRedirectToState(options.redirectTo);
       if (options?.onboardingStep !== undefined) setOnboardingStepState(options.onboardingStep);
       setShowGoogle(options?.showGoogle ?? true);
+      setDismissible(options?.dismissible ?? true);
       setIsOpen(true);
     },
     []
@@ -62,6 +67,7 @@ export const AuthModalProvider = ({ children }: { children: ReactNode }) => {
     setRedirectToState(null);
     setOnboardingStepState(null);
     setShowGoogle(false);
+    setDismissible(true);
   }, []);
 
   const setEmail = useCallback((email: string) => {
@@ -89,6 +95,7 @@ export const AuthModalProvider = ({ children }: { children: ReactNode }) => {
         redirectTo,
         onboardingStep,
         showGoogle,
+        dismissible,
         openModal,
         closeModal,
         setEmail,

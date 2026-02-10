@@ -63,6 +63,7 @@ async function resolveEventForTicketTypes(
       title: true,
       coverImageUrl: true,
       startsAt: true,
+      organizationId: true,
       timezone: true,
       addressRef: { select: { formattedAddress: true } },
     },
@@ -71,6 +72,43 @@ async function resolveEventForTicketTypes(
     throw new Error("EVENT_NOT_FOUND");
   }
   return { event, ticketTypes };
+}
+
+async function resolveUserIdFromIdentity(identityId: string | null, tx: DbClient): Promise<string | null> {
+  if (!identityId) return null;
+  const client = tx as any;
+  if (client.emailIdentity && typeof client.emailIdentity.findUnique === "function") {
+    const emailIdentity = await client.emailIdentity.findUnique({
+      where: { id: identityId },
+      select: { userId: true },
+    });
+    if (emailIdentity?.userId) return emailIdentity.userId;
+  }
+  if (client.userIdentity && typeof client.userIdentity.findUnique === "function") {
+    const userIdentity = await client.userIdentity.findUnique({
+      where: { id: identityId },
+      select: { userId: true },
+    });
+    if (userIdentity?.userId) return userIdentity.userId;
+  }
+  return null;
+}
+
+async function ensurePurchaseSignal(params: { userId: string | null; eventId: number; organizationId?: number | null }, tx: DbClient) {
+  if (!params.userId) return;
+  const existing = await tx.userEventSignal.findFirst({
+    where: { userId: params.userId, eventId: params.eventId, signalType: "PURCHASE" },
+    select: { id: true },
+  });
+  if (existing) return;
+  await tx.userEventSignal.create({
+    data: {
+      userId: params.userId,
+      eventId: params.eventId,
+      organizationId: params.organizationId ?? null,
+      signalType: "PURCHASE",
+    },
+  });
 }
 
 function allocatePlatformFeePerUnit(params: {
@@ -111,6 +149,9 @@ async function issueTicketOrderEntitlements(
     order.lines.map((line) => line.ticketTypeId),
     tx,
   );
+
+  const buyerIdentityId = payment.customerIdentityId ?? order.buyerIdentityId ?? null;
+  const buyerUserId = await resolveUserIdFromIdentity(buyerIdentityId, tx);
 
   const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
   const ownerKey = buildOwnerKey(payment.customerIdentityId ?? order.buyerIdentityId ?? null);
@@ -206,6 +247,8 @@ async function issueTicketOrderEntitlements(
       });
     }
   }
+
+  await ensurePurchaseSignal({ userId: buyerUserId, eventId: event.id, organizationId: event.organizationId }, tx);
 }
 
 async function issuePadelRegistrationEntitlements(
@@ -239,6 +282,7 @@ async function issuePadelRegistrationEntitlements(
       title: true,
       coverImageUrl: true,
       startsAt: true,
+      organizationId: true,
       timezone: true,
       addressRef: { select: { formattedAddress: true } },
     },
@@ -290,6 +334,8 @@ async function issuePadelRegistrationEntitlements(
 
   const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
   const snapshotVenueName = formatEventLocationLabel({ addressRef: event.addressRef ?? null }, "Local a anunciar");
+  const buyerIdentityId = payment.customerIdentityId ?? registration.buyerIdentityId ?? null;
+  const buyerUserId = await resolveUserIdFromIdentity(buyerIdentityId, tx);
 
   const normalizeEmail = (value: string | null | undefined) => {
     const email = typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -362,6 +408,8 @@ async function issuePadelRegistrationEntitlements(
       });
     }
   }
+
+  await ensurePurchaseSignal({ userId: buyerUserId, eventId: event.id, organizationId: event.organizationId }, tx);
 }
 
 export async function fulfillPaymentIfSucceeded(

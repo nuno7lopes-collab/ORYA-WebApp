@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import ChatThread from "@/components/chat/ChatThread";
+import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -33,7 +35,7 @@ type BookingItem = {
   professional?: { id: number; name: string; avatarUrl: string | null } | null;
   resource?: { id: number; label: string; capacity: number } | null;
   service: { id: number; title: string | null } | null;
-  court: { id: number; name: string | null } | null;
+  court: { id: number; name: string | null; isActive?: boolean | null } | null;
   organization: {
     id: number;
     publicName: string | null;
@@ -52,6 +54,19 @@ type BookingItem = {
     reason: string | null;
     deadline: string | null;
   };
+  changeRequest?: {
+    id: number;
+    requestedBy: "ORG" | "USER";
+    status: string;
+    proposedStartsAt: string;
+    proposedCourtId?: number | null;
+    proposedProfessionalId?: number | null;
+    proposedResourceId?: number | null;
+    priceDeltaCents: number;
+    currency: string;
+    expiresAt: string;
+    createdAt: string;
+  } | null;
 };
 
 type Response = {
@@ -191,6 +206,18 @@ export default function MinhasReservasPage() {
     error: string | null;
     slots: Array<{ startsAt: string }>;
     selectedStartsAt: string | null;
+  } | null>(null);
+  const [changeAction, setChangeAction] = useState<{
+    bookingId: number;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const [changePayment, setChangePayment] = useState<{
+    bookingId: number;
+    requestId: number;
+    clientSecret: string;
+    amountCents: number;
+    currency: string;
   } | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<
     Record<
@@ -379,6 +406,47 @@ export default function MinhasReservasPage() {
       const message = err instanceof Error ? err.message : "Erro ao carregar horários.";
       setRescheduleState((prev) => (prev ? { ...prev, loading: false, error: message } : prev));
     }
+  };
+
+  const handleChangeRequestResponse = async (booking: BookingItem, action: "ACCEPT" | "DECLINE") => {
+    if (!booking.changeRequest) return;
+    if (changeAction?.loading) return;
+    setChangeAction({ bookingId: booking.id, loading: true, error: null });
+    try {
+      const res = await fetch(`/api/me/reservas/${booking.id}/reschedule/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          requestId: booking.changeRequest.id,
+          paymentMethod: "card",
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || json?.error || "Erro ao responder ao reagendamento.");
+      }
+      if (json.payment?.clientSecret) {
+        setChangePayment({
+          bookingId: booking.id,
+          requestId: booking.changeRequest.id,
+          clientSecret: json.payment.clientSecret,
+          amountCents: json.payment.amountCents,
+          currency: json.payment.currency ?? booking.currency ?? "EUR",
+        });
+      } else {
+        await mutate();
+      }
+      setChangeAction({ bookingId: booking.id, loading: false, error: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erro ao responder ao reagendamento.";
+      setChangeAction({ bookingId: booking.id, loading: false, error: message });
+    }
+  };
+
+  const handleChangePaymentSuccess = async () => {
+    setChangePayment(null);
+    await mutate();
   };
 
   const closeReschedule = () => setRescheduleState(null);
@@ -926,6 +994,13 @@ export default function MinhasReservasPage() {
               const originalStart = new Date(booking.startsAt);
               const showEstimate =
                 estimatedStart && !Number.isNaN(estimatedStart.getTime()) && estimatedStart.getTime() !== originalStart.getTime();
+              const courtLabel = booking.court?.name
+                ? `${booking.court.name}${booking.court.isActive === false ? " (inativo)" : ""}`
+                : "";
+              const pendingChange = booking.changeRequest?.status === "PENDING";
+              const changePriceDelta = booking.changeRequest?.priceDeltaCents ?? 0;
+              const changeBusy = changeAction?.bookingId === booking.id && changeAction.loading;
+              const changeError = changeAction?.bookingId === booking.id ? changeAction.error : null;
               return (
                 <div key={booking.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -938,7 +1013,7 @@ export default function MinhasReservasPage() {
                         {booking.organization?.publicName || booking.organization?.businessName
                           ? ` · ${booking.organization.publicName || booking.organization.businessName}`
                           : ""}
-                        {booking.court?.name ? ` · ${booking.court.name}` : ""}
+                        {courtLabel ? ` · ${courtLabel}` : ""}
                         {booking.professional?.name ? ` · ${booking.professional.name}` : ""}
                         {booking.resource?.label ? ` · ${booking.resource.label}` : ""}
                         {booking.partySize ? ` · ${booking.partySize} pax` : ""}
@@ -960,6 +1035,42 @@ export default function MinhasReservasPage() {
                           Pré-reserva pendente
                           {holdDeadline ? ` · expira às ${holdDeadline}` : ""}
                         </p>
+                      )}
+                      {pendingChange && booking.changeRequest && (
+                        <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                          <p className="font-semibold">Pedido de alteração</p>
+                          <p className="mt-1 text-[12px] text-amber-100/80">
+                            Nova data: {new Date(booking.changeRequest.proposedStartsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                          </p>
+                          {changePriceDelta !== 0 && (
+                            <p className="mt-1 text-[12px] text-amber-100/80">
+                              Diferença: {formatMoney(Math.abs(changePriceDelta), booking.changeRequest.currency || booking.currency || "EUR")}{" "}
+                              {changePriceDelta > 0 ? "a pagar" : "a receber"}
+                            </p>
+                          )}
+                          <p className="mt-1 text-[11px] text-amber-100/70">
+                            Responder até {new Date(booking.changeRequest.expiresAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                          </p>
+                          {changeError && <p className="mt-1 text-[11px] text-red-200">{changeError}</p>}
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[11px] text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
+                              onClick={() => handleChangeRequestResponse(booking, "ACCEPT")}
+                              disabled={changeBusy}
+                            >
+                              {changeBusy ? "A confirmar..." : "Aceitar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/40 disabled:opacity-60"
+                              onClick={() => handleChangeRequestResponse(booking, "DECLINE")}
+                              disabled={changeBusy}
+                            >
+                              Recusar
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -1007,7 +1118,9 @@ export default function MinhasReservasPage() {
                   </div>
                   {openChatId === booking.id && (
                     <div className="mt-3">
-                      <ChatThread entityType="BOOKING" entityId={booking.id} />
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                        Chat disponível apenas na app.
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1040,7 +1153,9 @@ export default function MinhasReservasPage() {
                       {booking.organization?.publicName || booking.organization?.businessName
                         ? ` · ${booking.organization.publicName || booking.organization.businessName}`
                         : ""}
-                      {booking.court?.name ? ` · ${booking.court.name}` : ""}
+                      {booking.court?.name
+                        ? ` · ${booking.court.name}${booking.court.isActive === false ? " (inativo)" : ""}`
+                        : ""}
                       {booking.professional?.name ? ` · ${booking.professional.name}` : ""}
                       {booking.resource?.label ? ` · ${booking.resource.label}` : ""}
                       {booking.partySize ? ` · ${booking.partySize} pax` : ""}
@@ -1061,11 +1176,13 @@ export default function MinhasReservasPage() {
                     )}
                   </div>
                 </div>
-                {openChatId === booking.id && (
-                  <div className="mt-3">
-                    <ChatThread entityType="BOOKING" entityId={booking.id} />
-                  </div>
-                )}
+                  {openChatId === booking.id && (
+                    <div className="mt-3">
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+                        Chat disponível apenas na app.
+                      </div>
+                    </div>
+                  )}
                 {booking.status === "COMPLETED" && !booking.reviewId && (
                   <div className="mt-3 space-y-2">
                     {!reviewDrafts[booking.id]?.open ? (
@@ -1739,6 +1856,125 @@ export default function MinhasReservasPage() {
           </div>
         </div>
       )}
+
+      {changePayment && (
+        <BookingChangePaymentModal
+          clientSecret={changePayment.clientSecret}
+          amountCents={changePayment.amountCents}
+          currency={changePayment.currency}
+          onClose={() => setChangePayment(null)}
+          onSuccess={handleChangePaymentSuccess}
+        />
+      )}
     </main>
+  );
+}
+
+function BookingChangePaymentModal(props: {
+  clientSecret: string;
+  amountCents: number;
+  currency: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const stripePromise = useMemo(() => {
+    try {
+      return loadStripe(getStripePublishableKey());
+    } catch {
+      return null;
+    }
+  }, []);
+
+  if (!stripePromise) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="w-full max-w-lg rounded-3xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
+          Pagamentos indisponíveis. Tenta novamente mais tarde.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-lg rounded-3xl border border-white/12 bg-[#0b0f1d] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.7)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.28em] text-white/55">Pagamento</p>
+            <p className="mt-1 text-sm text-white/80">
+              Diferença de reagendamento: {formatMoney(props.amountCents, props.currency)}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:bg-white/10"
+            onClick={props.onClose}
+          >
+            Fechar
+          </button>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+          <Elements stripe={stripePromise} options={{ clientSecret: props.clientSecret }}>
+            <BookingChangePaymentForm onSuccess={props.onSuccess} />
+          </Elements>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingChangePaymentForm({ onSuccess }: { onSuccess: () => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!stripe || !elements) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: typeof window !== "undefined" ? window.location.href : undefined,
+        },
+        redirect: "if_required",
+      });
+      if (result.error) {
+        setError(result.error.message ?? "Falha no pagamento.");
+      } else {
+        const status = result.paymentIntent?.status;
+        if (status && ["succeeded", "processing"].includes(status)) {
+          onSuccess();
+        } else {
+          setError("Pagamento pendente. Atualiza a página em instantes.");
+        }
+      }
+    } catch (err) {
+      setError("Erro ao confirmar pagamento.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    setError(null);
+  }, [stripe]);
+
+  return (
+    <div className="space-y-3">
+      <PaymentElement />
+      {error && <p className="text-[11px] text-red-200">{error}</p>}
+      <button
+        type="button"
+        className="w-full rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] text-white hover:bg-white/20 disabled:opacity-60"
+        onClick={handleSubmit}
+        disabled={submitting || !stripe || !elements}
+      >
+        {submitting ? "A confirmar..." : "Pagar diferença"}
+      </button>
+    </div>
   );
 }

@@ -10,6 +10,7 @@ import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 import { isWithinMatchmakingWindow } from "@/domain/padelDeadlines";
 import { matchmakeOpenPairings } from "@/domain/padel/matchmaking";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 async function _POST(req: NextRequest) {
   const startedAt = new Date();
@@ -33,7 +34,7 @@ async function _POST(req: NextRequest) {
         padelV2Enabled: true,
         event: {
           isDeleted: false,
-          status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+          status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
         },
       },
       select: {

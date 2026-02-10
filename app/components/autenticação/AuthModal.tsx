@@ -28,14 +28,31 @@ const mapAuthErrorMessage = (message: string | null | undefined) => {
   return message;
 };
 
+const isStableErrorCode = (value: unknown) =>
+  typeof value === "string" && /^[A-Z0-9_]+$/.test(value);
+
+const getErrorCode = (payload: any) => {
+  if (!payload) return null;
+  const candidate = payload.errorCode ?? payload.code ?? payload.error ?? null;
+  return isStableErrorCode(candidate) ? String(candidate) : null;
+};
+
+const getErrorMessage = (payload: any) => {
+  if (!payload) return null;
+  if (typeof payload.message === "string" && payload.message) return payload.message;
+  if (typeof payload.error === "string" && payload.error) return payload.error;
+  return null;
+};
+
+const isRateLimited = (code: string | null) =>
+  code === "RATE_LIMITED" || code === "THROTTLED";
+
 export default function AuthModal() {
   const modal = useAuthModal();
 
   if (!modal.isOpen) return null;
 
-  const modalKey = `${modal.mode}-${modal.redirectTo ?? "none"}`;
-
-  return <AuthModalContent key={modalKey} {...modal} />;
+  return <AuthModalContent {...modal} />;
 }
 
 type AuthModalContentProps = ReturnType<typeof useAuthModal>;
@@ -48,6 +65,7 @@ function AuthModalContent({
   setMode,
   redirectTo,
   showGoogle,
+  dismissible,
 }: AuthModalContentProps) {
   const router = useRouter();
   const { profile, user } = useUser();
@@ -60,6 +78,7 @@ function AuthModalContent({
   const [loginOtpSending, setLoginOtpSending] = useState(false);
   const [resetPasswordSending, setResetPasswordSending] = useState(false);
   const [loginOtpSent, setLoginOtpSent] = useState(false);
+  const [verifyOtpSent, setVerifyOtpSent] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -104,6 +123,7 @@ function AuthModalContent({
     setConfirmPassword("");
     setOtp("");
     setLoginOtpSent(false);
+    setVerifyOtpSent(false);
     setLoginOtpSending(false);
     setResetPasswordSending(false);
     setResetEmailSent(false);
@@ -112,13 +132,18 @@ function AuthModalContent({
     setMode("login");
   }
 
-  async function triggerResendOtp(emailValue: string) {
+  async function triggerOtpRetry(emailValue: string) {
     if (!emailValue || !isEmailLike(emailValue)) {
-      setError("Indica um email válido para reenviar o código.");
+      setError("Indica um email válido para pedir um novo código.");
+      return;
+    }
+    if (signupCooldown > 0) {
+      setError(`Aguarda ${signupCooldown}s para pedir um novo código.`);
       return;
     }
     setLoginOtpSending(true);
     setError(null);
+    setVerifyOtpSent(false);
     try {
       const res = await fetch("/api/auth/send-otp", {
         method: "POST",
@@ -127,15 +152,17 @@ function AuthModalContent({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        if (res.status === 429 || json?.error === "RATE_LIMITED") {
+        const errorCode = getErrorCode(json);
+        const errorMessage = getErrorMessage(json);
+        if (res.status === 429 || isRateLimited(errorCode)) {
           const retryAfterHeader = res.headers.get("Retry-After");
           const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
           const cooldownSeconds =
             Number.isFinite(retryAfter) && retryAfter > 0 ? Math.round(retryAfter) : 60;
           setSignupCooldown(cooldownSeconds);
-          setError("Muitas tentativas. Tenta novamente dentro de alguns minutos.");
+          setError(errorMessage ?? "Muitas tentativas. Tenta novamente dentro de alguns minutos.");
         } else {
-          setError(mapAuthErrorMessage(json?.error) ?? "Não foi possível reenviar o código.");
+          setError(mapAuthErrorMessage(errorMessage) ?? "Não foi possível pedir um novo código.");
         }
         return;
       }
@@ -147,10 +174,10 @@ function AuthModalContent({
           json?.otpType === "magiclink" ? "magiclink" : "signup",
         );
       }
-      setLoginOtpSent(true);
+      setVerifyOtpSent(true);
     } catch (err) {
-      console.error("[AuthModal] resend OTP error:", err);
-      setError("Não foi possível reenviar o código.");
+      console.error("[AuthModal] OTP retry error:", err);
+      setError("Não foi possível pedir um novo código.");
     } finally {
       setLoginOtpSending(false);
     }
@@ -161,7 +188,8 @@ function AuthModalContent({
       if (
         modalRef.current &&
         !modalRef.current.contains(e.target as Node) &&
-        !isOnboarding
+        !isOnboarding &&
+        dismissible
       ) {
         closeModal();
       }
@@ -171,7 +199,7 @@ function AuthModalContent({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [closeModal, isOnboarding]);
+  }, [closeModal, dismissible, isOnboarding]);
 
   useEffect(() => {
     if (mode !== "reset") {
@@ -179,6 +207,9 @@ function AuthModalContent({
     }
     if (mode === "reset") {
       setLoginOtpSent(false);
+    }
+    if (mode !== "verify") {
+      setVerifyOtpSent(false);
     }
   }, [mode]);
 
@@ -318,12 +349,13 @@ function AuthModalContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || data?.ok === false) {
-        setError(mapAuthErrorMessage(data?.error) ?? "Não foi possível enviar recuperação de password.");
-        setResetPasswordSending(false);
-        return;
-      }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.ok === false) {
+      const errorMessage = getErrorMessage(data);
+      setError(mapAuthErrorMessage(errorMessage) ?? "Não foi possível enviar recuperação de password.");
+      setResetPasswordSending(false);
+      return;
+    }
       setResetEmailSent(true);
     } catch (err) {
       console.error("[AuthModal] reset password error:", err);
@@ -355,8 +387,9 @@ function AuthModalContent({
           window.localStorage.setItem("orya_pending_step", "verify");
         }
         setMode("verify");
+        setVerifyOtpSent(false);
         if (candidateEmail) {
-          await triggerResendOtp(candidateEmail);
+          await triggerOtpRetry(candidateEmail);
         }
         setLoading(false);
         return;
@@ -409,7 +442,9 @@ function AuthModalContent({
     const data = await res.json().catch(() => null);
 
     if (!res.ok || !data?.ok) {
-      if (data?.error === "EMAIL_NOT_CONFIRMED") {
+      const errorCode = getErrorCode(data);
+      const errorMessage = getErrorMessage(data);
+      if (errorCode === "EMAIL_NOT_CONFIRMED") {
         const emailValue = isEmailLike(identifier) ? identifier : "";
         if (typeof window !== "undefined" && emailValue) {
           window.localStorage.setItem("orya_pending_email", emailValue);
@@ -417,18 +452,19 @@ function AuthModalContent({
         }
         setMode("verify");
         setEmail(emailValue);
+        setVerifyOtpSent(false);
         setError(
           emailValue
             ? "Email ainda não confirmado. Reenviei-te um novo código."
             : "Email ainda não confirmado. Indica o teu email para receberes o código."
         );
         if (emailValue) {
-          await triggerResendOtp(emailValue);
+          await triggerOtpRetry(emailValue);
         }
-      } else if (data?.error === "RATE_LIMITED") {
-        setError("Muitas tentativas. Tenta novamente dentro de minutos.");
+      } else if (isRateLimited(errorCode)) {
+        setError(errorMessage ?? "Muitas tentativas. Tenta novamente dentro de minutos.");
       } else {
-        setError("Credenciais inválidas. Confirma username/email e password.");
+        setError(errorMessage ?? "Credenciais inválidas. Confirma username/email e password.");
       }
       setLoading(false);
       return;
@@ -488,15 +524,17 @@ function AuthModalContent({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        if (res.status === 429 || json?.error === "RATE_LIMITED") {
+        const errorCode = getErrorCode(json);
+        const errorMessage = getErrorMessage(json);
+        if (res.status === 429 || isRateLimited(errorCode)) {
           const retryAfterHeader = res.headers.get("Retry-After");
           const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
           const cooldownSeconds =
             Number.isFinite(retryAfter) && retryAfter > 0 ? Math.round(retryAfter) : 60;
           setSignupCooldown(cooldownSeconds);
-          setError("Muitas tentativas. Tenta novamente dentro de alguns minutos.");
+          setError(errorMessage ?? "Muitas tentativas. Tenta novamente dentro de alguns minutos.");
         } else {
-          setError(mapAuthErrorMessage(json?.error) ?? "Não foi possível enviar o código.");
+          setError(mapAuthErrorMessage(errorMessage) ?? "Não foi possível enviar o código.");
         }
         setLoading(false);
         return;
@@ -510,6 +548,7 @@ function AuthModalContent({
         );
       }
       setEmail(emailToUse);
+      setVerifyOtpSent(false);
       setMode("verify");
     } catch (err) {
       console.warn("[AuthModal] Falhou envio de OTP custom:", err);
@@ -724,6 +763,7 @@ function AuthModalContent({
   const isLogin = mode === "login";
   const isSignup = mode === "signup";
   const isAuthEmailSending = loginOtpSending || resetPasswordSending;
+  const isOtpRetryBlocked = signupCooldown > 0;
   const onboardingUsername = sanitizeUsername(username);
   const onboardingValidation = validateUsername(onboardingUsername, { allowReservedForEmail });
   const isOnboardingReady =
@@ -765,10 +805,13 @@ function AuthModalContent({
     (mode === "onboarding" && !isOnboardingReady);
 
   const handleClose = () => {
+    if (!dismissible || isOnboarding) return;
     hardResetAuthState();
     closeModal();
     router.push(sanitizeRedirectPath(redirectTo, "/"));
   };
+
+  const canClose = !isOnboarding && dismissible;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl">
@@ -823,7 +866,11 @@ function AuthModalContent({
                 setError(null);
                 setLoginOtpSent(false);
                 setSignupCooldown(0);
+                setVerifyOtpSent(false);
               }}
+              autoComplete={mode === "login" ? "username" : "email"}
+              autoCapitalize="none"
+              inputMode={mode === "login" ? "text" : "email"}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder={mode === "login" ? "nome@exemplo.com ou @username" : "nome@exemplo.com"}
             />
@@ -839,6 +886,7 @@ function AuthModalContent({
                   setPassword(e.target.value);
                   setError(null);
                 }}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
                 className="flex-1 bg-transparent text-sm text-white outline-none"
                 placeholder="••••••••"
               />
@@ -892,6 +940,7 @@ function AuthModalContent({
                       setConfirmPassword(e.target.value);
                       setError(null);
                     }}
+                    autoComplete="new-password"
                     className="flex-1 bg-transparent text-sm text-white outline-none"
                     placeholder="••••••••"
                   />
@@ -1030,7 +1079,11 @@ function AuthModalContent({
                 setEmail(e.target.value);
                 setError(null);
                 setLoginOtpSent(false);
+                setVerifyOtpSent(false);
               }}
+              autoComplete="email"
+              autoCapitalize="none"
+              inputMode="email"
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="nome@exemplo.com"
             />
@@ -1039,14 +1092,31 @@ function AuthModalContent({
               type="text"
               maxLength={8}
               value={otp}
-              onChange={(e) => setOtp(e.target.value)}
+              onChange={(e) => {
+                setOtp(e.target.value);
+                setVerifyOtpSent(false);
+              }}
+              autoComplete="one-time-code"
+              inputMode="numeric"
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="Código de 6 dígitos"
             />
             <div className="mt-2 text-[12px] text-white/65">
               Se não recebeste o email, verifica a caixa de spam.
             </div>
-            <div className="mt-2 flex items-center justify-between text-[12px] text-white/65">
+            <div className="mt-3 flex items-center justify-between text-[12px] text-white/65">
+              <button
+                type="button"
+                onClick={() => triggerOtpRetry(email ?? "")}
+                disabled={loginOtpSending || isOtpRetryBlocked || !email || !isEmailLike(email)}
+                className="text-left text-[#6BFFFF] hover:text-white disabled:opacity-60 transition"
+              >
+                {loginOtpSending
+                  ? "A pedir novo código…"
+                  : isOtpRetryBlocked
+                    ? `Novo código em ${signupCooldown}s`
+                    : "Pedir novo código"}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1058,6 +1128,11 @@ function AuthModalContent({
                 Usar outro email
               </button>
             </div>
+            {verifyOtpSent && (
+              <p className="mt-2 text-[11px] text-emerald-300">
+                Novo código enviado. Verifica o email.
+              </p>
+            )}
           </>
         )}
 
@@ -1084,6 +1159,9 @@ function AuthModalContent({
                 setEmail(e.target.value);
                 setError(null);
               }}
+              autoComplete="email"
+              autoCapitalize="none"
+              inputMode="email"
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="nome@exemplo.com"
             />
@@ -1121,6 +1199,7 @@ function AuthModalContent({
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
+              autoComplete="name"
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="Ex.: Inês Martins"
             />
@@ -1145,6 +1224,8 @@ function AuthModalContent({
                     setUsernameStatus("idle");
                   }}
                   onBlur={() => checkUsernameAvailability(username)}
+                  autoComplete="username"
+                  autoCapitalize="none"
                   className="flex-1 bg-transparent outline-none"
                   placeholder="ines.martins"
                 />
@@ -1322,8 +1403,8 @@ function AuthModalContent({
 
           <button
             type="button"
-            onClick={isOnboarding ? undefined : handleClose}
-            disabled={isOnboarding}
+            onClick={canClose ? handleClose : undefined}
+            disabled={!canClose}
             className="text-[11px] text-white/50 hover:text-white disabled:opacity-60"
           >
             Fechar

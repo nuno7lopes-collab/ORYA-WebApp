@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { TicketStatus, type Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { respondPlainText } from "@/lib/http/envelope";
@@ -21,6 +22,7 @@ function toCsvValue(value: unknown) {
 
 async function _GET(req: NextRequest) {
   try {
+    const ctx = getRequestContext(req);
     const admin = await requireAdminUser();
     if (!admin.ok) {
       return jsonWrap({ ok: false, error: admin.error }, { status: admin.status });
@@ -57,7 +59,20 @@ async function _GET(req: NextRequest) {
       if (userIds.length === 0) {
         const headers = ["ticket_id", "status", "purchased_at", "currency", "price_paid_cents", "platform_fee_cents", "total_paid_cents", "payment_intent_id", "event_id", "event_title", "event_slug", "ticket_type", "user_username", "user_full_name", "user_email"];
         const csv = headers.join(",");
-        return respondPlainText(getRequestContext(req), csv, {
+        await auditAdminAction({
+          action: "TICKETS_EXPORT",
+          actorUserId: admin.userId,
+          correlationId: ctx.correlationId,
+          payload: {
+            count: 0,
+            q: q || null,
+            status: statusRaw,
+            intent: intent || null,
+            slug: slug || null,
+            userQuery,
+          },
+        });
+        return respondPlainText(ctx, csv, {
           status: 200,
           headers: {
             "Content-Type": "text/csv; charset=utf-8",
@@ -162,7 +177,20 @@ async function _GET(req: NextRequest) {
     );
 
     const csv = [headers.join(","), ...rows].join("\n");
-    return respondPlainText(getRequestContext(req), csv, {
+    await auditAdminAction({
+      action: "TICKETS_EXPORT",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: {
+        count: tickets.length,
+        q: q || null,
+        status: statusRaw,
+        intent: intent || null,
+        slug: slug || null,
+        userQuery: userQuery || null,
+      },
+    });
+    return respondPlainText(ctx, csv, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",

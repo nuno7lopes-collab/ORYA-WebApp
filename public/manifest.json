@@ -10,20 +10,14 @@
   "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "/brand/orya-logo-192.png",
-      "sizes": "192x192",
+      "src": "/brand/LOGO.PNG",
+      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/brand/orya-logo-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/brand/orya-logo-512.png",
-      "sizes": "512x512",
+      "src": "/brand/LOGO.PNG",
+      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "maskable"
     }

@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
 import { requireAdminUser } from "@/lib/admin/auth";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getPlatformOfficialEmail, setPlatformOfficialEmail } from "@/lib/platformSettings";
 import { isValidOfficialEmail, normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function fail(
   ctx: ReturnType<typeof getRequestContext>,
@@ -16,7 +18,7 @@ function fail(
   return respondError(ctx, { errorCode, message, retryable }, { status });
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -47,6 +49,12 @@ export async function POST(req: NextRequest) {
     }
 
     const email = await setPlatformOfficialEmail(normalized);
+    await auditAdminAction({
+      action: "PLATFORM_EMAIL_UPDATE",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: { email },
+    });
     return respondOk(ctx, { email }, { status: 200 });
   } catch (err) {
     if (err instanceof Error && err.message === "INVALID_EMAIL") {
@@ -56,3 +64,5 @@ export async function POST(req: NextRequest) {
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

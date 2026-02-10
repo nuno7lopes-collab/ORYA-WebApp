@@ -18,6 +18,25 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const isStableErrorCode = (value: unknown) =>
+  typeof value === "string" && /^[A-Z0-9_]+$/.test(value);
+
+const getErrorCode = (payload: any) => {
+  if (!payload) return null;
+  const candidate = payload.errorCode ?? payload.code ?? payload.error ?? null;
+  return isStableErrorCode(candidate) ? String(candidate) : null;
+};
+
+const getErrorMessage = (payload: any) => {
+  if (!payload) return null;
+  if (typeof payload.message === "string" && payload.message) return payload.message;
+  if (typeof payload.error === "string" && payload.error) return payload.error;
+  return null;
+};
+
+const isRateLimited = (code: string | null) =>
+  code === "RATE_LIMITED" || code === "THROTTLED";
+
 async function checkUsernameAvailabilityRemote(
   value: string,
   onError: (message: string) => void,
@@ -67,6 +86,7 @@ export default function AuthWall({
   const [authOtpCooldown, setAuthOtpCooldown] = useState(0);
   const isEmailLike = (value: string) => value.includes("@");
   const allowReservedForEmail = isEmailLike(identifier) ? identifier.trim().toLowerCase() : null;
+  const isLogin = mode === "login";
 
   useEffect(() => {
     if (authOtpCooldown <= 0) return;
@@ -93,13 +113,13 @@ export default function AuthWall({
     }
   }
 
-  async function triggerResendOtp(emailValue: string) {
+  async function triggerOtpRetry(emailValue: string) {
     if (!emailValue || !isEmailLike(emailValue)) {
-      setError("Indica um email válido para reenviar o código.");
+      setError("Indica um email válido para pedir um novo código.");
       return;
     }
     if (authOtpCooldown > 0) {
-      setError("Aguarda antes de pedir um novo código.");
+      setError(`Aguarda ${authOtpCooldown}s antes de pedir um novo código.`);
       return;
     }
     try {
@@ -110,23 +130,25 @@ export default function AuthWall({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.ok === false) {
-        if (res.status === 429 || data?.error === "RATE_LIMITED") {
+        const errorCode = getErrorCode(data);
+        const errorMessage = getErrorMessage(data);
+        if (res.status === 429 || isRateLimited(errorCode)) {
           const retryAfterHeader = res.headers.get("Retry-After");
           const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
           const cooldownSeconds =
             Number.isFinite(retryAfter) && retryAfter > 0 ? Math.round(retryAfter) : 60;
           setAuthOtpCooldown(cooldownSeconds);
-          setError("Muitas tentativas. Tenta novamente dentro de alguns minutos.");
+          setError(errorMessage ?? "Muitas tentativas. Tenta novamente dentro de alguns minutos.");
           return;
         }
-        setError(data?.error ?? "Não foi possível reenviar o código.");
+        setError(errorMessage ?? "Não foi possível pedir um novo código.");
         return;
       }
       setAuthOtpCooldown(60);
       setError("Enviámos um novo código de verificação.");
     } catch (err) {
-      console.error("[AuthWall] resend OTP error:", err);
-      setError("Não foi possível reenviar o código.");
+      console.error("[AuthWall] OTP retry error:", err);
+      setError("Não foi possível pedir um novo código.");
     }
   }
 
@@ -202,15 +224,23 @@ export default function AuthWall({
           return;
         }
         const token = otp.trim();
-        const { error: verifyErr } = await supabaseBrowser.auth.verifyOtp({
+        let { error: verifyErr } = await supabaseBrowser.auth.verifyOtp({
           type: "signup",
           email: emailToUse,
           token,
         });
         if (verifyErr) {
-          setError(verifyErr.message || "Código inválido ou expirado.");
-          setAuthOtpCooldown(0);
-          return;
+          const fallback = await supabaseBrowser.auth.verifyOtp({
+            type: "magiclink",
+            email: emailToUse,
+            token,
+          });
+          if (fallback.error) {
+            setError(fallback.error.message || "Código inválido ou expirado.");
+            setAuthOtpCooldown(0);
+            return;
+          }
+          verifyErr = null;
         }
         await syncSessionWithServer();
         await delay(400);
@@ -220,7 +250,11 @@ export default function AuthWall({
       }
 
       if (!identifier || !password) {
-        setError("Preenche o email e a palavra-passe.");
+        setError(
+          isLogin
+            ? "Preenche o email/username e a palavra-passe."
+            : "Preenche o email e a palavra-passe.",
+        );
         return;
       }
 
@@ -233,7 +267,9 @@ export default function AuthWall({
         });
         const loginData = await loginRes.json().catch(() => null);
         if (!loginRes.ok || !loginData?.ok) {
-          if (loginData?.error === "EMAIL_NOT_CONFIRMED") {
+          const errorCode = getErrorCode(loginData);
+          const errorMessage = getErrorMessage(loginData);
+          if (errorCode === "EMAIL_NOT_CONFIRMED") {
             const emailValue = isEmailLike(identifier) ? identifier : "";
             setMode("verify");
             setIdentifier(emailValue);
@@ -243,15 +279,15 @@ export default function AuthWall({
                 : "Email ainda não confirmado. Indica o teu email para receberes o código.",
             );
             if (emailValue) {
-              await triggerResendOtp(emailValue);
+              await triggerOtpRetry(emailValue);
             }
             return;
           }
-          if (loginData?.error === "RATE_LIMITED") {
-            setError("Muitas tentativas. Tenta novamente dentro de minutos.");
+          if (isRateLimited(errorCode)) {
+            setError(errorMessage ?? "Muitas tentativas. Tenta novamente dentro de minutos.");
             return;
           }
-          setError("Credenciais inválidas. Confirma username/email e password.");
+          setError(errorMessage ?? "Credenciais inválidas. Confirma username/email e password.");
           return;
         }
 
@@ -294,7 +330,15 @@ export default function AuthWall({
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok) {
-          const message = data?.error ?? "Não foi possível enviar o código de verificação.";
+          const errorCode = getErrorCode(data);
+          const message = getErrorMessage(data) ?? "Não foi possível enviar o código de verificação.";
+          if (isRateLimited(errorCode)) {
+            const retryAfterHeader = res.headers.get("Retry-After");
+            const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+            const cooldownSeconds =
+              Number.isFinite(retryAfter) && retryAfter > 0 ? Math.round(retryAfter) : 60;
+            setAuthOtpCooldown(cooldownSeconds);
+          }
           setError(message);
           return;
         }
@@ -366,16 +410,16 @@ export default function AuthWall({
             <>
               <FormField
                 id="auth-email"
-                label="Email"
+                label={isLogin ? "Email ou username" : "Email"}
                 required
                 inputProps={{
-                  type: "email",
+                  type: isLogin ? "text" : "email",
                   value: identifier,
                   onChange: (e) => setIdentifier(e.target.value),
-                  placeholder: "nome@exemplo.com",
-                  autoComplete: "email",
+                  placeholder: isLogin ? "nome@exemplo.com ou @username" : "nome@exemplo.com",
+                  autoComplete: isLogin ? "username" : "email",
                   autoCapitalize: "none",
-                  inputMode: "email",
+                  inputMode: isLogin ? "text" : "email",
                 }}
               />
               <FormField
@@ -468,6 +512,16 @@ export default function AuthWall({
               />
               <div className="text-[11px] text-white/65">
                 Se não recebeste o email, verifica a caixa de spam.
+              </div>
+              <div className="text-[11px] text-white/65">
+                <button
+                  type="button"
+                  onClick={() => triggerOtpRetry(identifier)}
+                  disabled={submitting || authOtpCooldown > 0}
+                  className="text-[#6BFFFF] hover:text-white disabled:opacity-60 transition"
+                >
+                  {authOtpCooldown > 0 ? `Novo código em ${authOtpCooldown}s` : "Pedir novo código"}
+                </button>
               </div>
             </>
           )}

@@ -13,6 +13,13 @@ export function isSameOrigin(
   req: NextRequest,
   options?: { allowMissing?: boolean }
 ): boolean {
+  const secFetchSite = req.headers.get("sec-fetch-site")?.toLowerCase();
+  if (secFetchSite) {
+    if (secFetchSite === "same-origin" || secFetchSite === "same-site" || secFetchSite === "none") {
+      return true;
+    }
+    return false;
+  }
   const origin = req.headers.get("origin") || req.headers.get("referer");
   if (!origin) return Boolean(options?.allowMissing);
   try {

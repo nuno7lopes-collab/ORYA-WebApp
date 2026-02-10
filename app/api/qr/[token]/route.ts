@@ -5,14 +5,37 @@ import crypto from "crypto";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { generateQR, signTicketToORYA2 } from "@/lib/qr";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/auth/rateLimit";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { logWarn } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Params = { token: string };
 
 async function _GET(req: NextRequest, context: { params: Params | Promise<Params> }) {
+  const ctx = getRequestContext(req);
+  const limiter = await rateLimit(req, {
+    windowMs: 60 * 1000,
+    max: 60,
+    keyPrefix: "qr",
+  });
+  if (!limiter.allowed) {
+    logWarn("qr.rate_limited", { requestId: ctx.requestId, retryAfter: limiter.retryAfter });
+    return jsonWrap(
+      {
+        ok: false,
+        errorCode: "RATE_LIMITED",
+        message: "Demasiados pedidos. Tenta novamente dentro de alguns minutos.",
+        retryable: true,
+      },
+      { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
+    );
+  }
+
   const { token } = await context.params;
   const trimmed = typeof token === "string" ? token.trim() : "";
   if (!trimmed) {
+    logWarn("qr.invalid_token", { requestId: ctx.requestId });
     return jsonWrap({ error: "INVALID_TOKEN" }, { status: 400 });
   }
 
@@ -34,9 +57,11 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
   });
 
   if (!tokenRow?.entitlement) {
+    logWarn("qr.invalid_token", { requestId: ctx.requestId });
     return jsonWrap({ error: "INVALID_TOKEN" }, { status: 404 });
   }
   if (tokenRow.expiresAt && tokenRow.expiresAt < new Date()) {
+    logWarn("qr.expired_token", { requestId: ctx.requestId });
     return jsonWrap({ error: "TOKEN_EXPIRED" }, { status: 410 });
   }
 

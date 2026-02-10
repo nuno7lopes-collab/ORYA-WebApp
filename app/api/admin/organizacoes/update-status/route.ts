@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { logError } from "@/lib/observability/logger";
@@ -189,6 +190,18 @@ async function _POST(req: NextRequest) {
         }
       }
     }
+
+    await auditAdminAction({
+      action: "ORGANIZATION_STATUS_UPDATE",
+      actorUserId: admin.userId,
+      payload: {
+        organizationId: updated.id,
+        publicName: updated.publicName,
+        fromStatus: organization.status,
+        toStatus: updated.status,
+        ownerUserIds: ownerMembers.map((member) => member.userId),
+      },
+    });
 
     return jsonWrap(
       {

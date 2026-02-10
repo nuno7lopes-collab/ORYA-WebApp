@@ -6,7 +6,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { PublicEventCard, tokens } from "@orya/shared";
+import { PublicEventCard, tokens, useTranslation } from "@orya/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
@@ -14,6 +14,10 @@ import { DiscoverServiceCard } from "./types";
 import { fetchEventDetail } from "../events/api";
 import { fetchServiceDetail } from "../services/api";
 import { getDominantTint, getFallbackTint } from "../../lib/imageTint";
+import { EventFeedbackSheet } from "../../components/events/EventFeedbackSheet";
+import { sendEventSignal } from "../events/signals";
+import { formatCurrency, formatDate, formatRelativeDay, formatRelativeHours, formatTime } from "../../lib/formatters";
+import { formatDistanceKm } from "../../lib/geo";
 
 type Props = {
   item: PublicEventCard | DiscoverServiceCard;
@@ -23,15 +27,18 @@ type Props = {
   userLat?: number | null;
   userLon?: number | null;
   source?: string;
+  onHide?: (payload: { eventId: number; scope: "event" | "category" | "org"; tag?: string | null }) => void;
 };
 
 const isServiceCard = (item: PublicEventCard | DiscoverServiceCard): item is DiscoverServiceCard => {
   return "durationMinutes" in item;
 };
 
-const formatEventPrice = (item: PublicEventCard): string | null => {
-  if (item.isGratis) return "Grátis";
-  if (typeof item.priceFrom === "number") return `Desde ${item.priceFrom.toFixed(0)} EUR`;
+const formatEventPrice = (item: PublicEventCard, t: (key: string, options?: any) => string): string | null => {
+  if (item.isGratis) return t("common:price.free");
+  if (typeof item.priceFrom === "number") {
+    return t("common:price.from", { price: formatCurrency(item.priceFrom, "EUR") });
+  }
   const ticketPrices = item.ticketTypes
     ? item.ticketTypes
         .map((ticket) => (typeof ticket.price === "number" ? ticket.price : null))
@@ -40,43 +47,28 @@ const formatEventPrice = (item: PublicEventCard): string | null => {
   if (ticketPrices.length > 0) {
     const min = Math.min(...ticketPrices) / 100;
     const max = Math.max(...ticketPrices) / 100;
-    if (min === max) return `${min.toFixed(0)} EUR`;
-    return `Desde ${min.toFixed(0)} EUR`;
+    if (min === max) return formatCurrency(min, "EUR", { maximumFractionDigits: 0 });
+    return t("common:price.from", { price: formatCurrency(min, "EUR") });
   }
   return null;
 };
 
-const formatServicePrice = (item: DiscoverServiceCard): string => {
-  if (item.unitPriceCents <= 0) return "Grátis";
+const formatServicePrice = (item: DiscoverServiceCard, t: (key: string, options?: any) => string): string => {
+  if (item.unitPriceCents <= 0) return t("common:price.free");
   const amount = item.unitPriceCents / 100;
   const currency = item.currency?.toUpperCase() || "EUR";
-  return `${amount.toFixed(0)} ${currency}`;
+  return formatCurrency(amount, currency, { maximumFractionDigits: 0 });
 };
-
-const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
-  weekday: "short",
-  day: "2-digit",
-  month: "short",
-});
-
-const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
   try {
     const start = new Date(startsAt);
     const end = endsAt ? new Date(endsAt) : null;
-
-    const date = EVENT_DATE_FORMATTER.format(start);
-    const startTime = EVENT_TIME_FORMATTER.format(start);
-
+    const date = formatDate(start, { weekday: "short", day: "2-digit", month: "short" });
+    const startTime = formatTime(start, { hour: "2-digit", minute: "2-digit" });
     if (!end || Number.isNaN(end.getTime())) return `${date} · ${startTime}`;
-
-    const endTime = EVENT_TIME_FORMATTER.format(end);
-
+    const endTime = formatTime(end, { hour: "2-digit", minute: "2-digit" });
     return `${date} · ${startTime}-${endTime}`;
   } catch {
     return null;
@@ -84,68 +76,35 @@ const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
 };
 
 const formatRelativeStart = (startsAt?: string): string | null => {
-  if (!startsAt) return null;
-  try {
-    const start = new Date(startsAt);
-    if (Number.isNaN(start.getTime())) return null;
-
-    const now = new Date();
-    const startDay = new Date(start);
-    startDay.setHours(0, 0, 0, 0);
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    const diffDays = Math.round((startDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-
-    if (diffDays === 0) return "Hoje";
-    if (diffDays === 1) return "Amanhã";
-    if (diffDays > 1 && diffDays <= 6) return `Em ${diffDays} dias`;
-    if (diffDays < 0) return "Já passou";
-    return null;
-  } catch {
-    return null;
-  }
+  return formatRelativeDay(startsAt);
 };
 
 const formatServiceRelativeStart = (nextAvailability?: string | null): string | null => {
-  if (!nextAvailability) return null;
-  try {
-    const next = new Date(nextAvailability);
-    if (Number.isNaN(next.getTime())) return null;
-
-    const now = new Date();
-    const diffMs = next.getTime() - now.getTime();
-    if (diffMs <= 0) return "Disponível";
-
-    const diffHours = Math.floor(diffMs / (60 * 60 * 1000));
-    if (diffHours < 1) return "Hoje";
-    if (diffHours < 24) return `Em ${diffHours}h`;
-    return formatRelativeStart(nextAvailability);
-  } catch {
-    return null;
-  }
+  return formatRelativeHours(nextAvailability ?? undefined);
 };
 
-const resolveStatusLabel = (status?: PublicEventCard["status"]) => {
+const resolveStatusLabel = (status?: PublicEventCard["status"], t?: (key: string) => string) => {
+  const translate = t ?? ((key: string) => key);
   switch (status) {
     case "CANCELLED":
-      return "Cancelado";
+      return translate("events:status.cancelled");
     case "PAST":
-      return "Terminado";
+      return translate("events:status.ended");
     case "DRAFT":
-      return "Rascunho";
+      return translate("events:status.draft");
     default:
-      return "Ativo";
+      return translate("events:status.active");
   }
 };
 
-const resolveServiceKind = (kind: DiscoverServiceCard["kind"]): string => {
+const resolveServiceKind = (kind: DiscoverServiceCard["kind"], t: (key: string) => string): string => {
   switch (kind) {
     case "COURT":
-      return "PADEL";
+      return t("services:kind.court");
     case "CLASS":
-      return "AULA";
+      return t("services:kind.class");
     default:
-      return "SERVIÇO";
+      return t("services:kind.service");
   }
 };
 
@@ -162,28 +121,10 @@ const isLiveNow = (item: PublicEventCard): boolean => {
   return Number.isFinite(start) && Number.isFinite(end) && now >= start && now <= end;
 };
 
-const formatDistanceKm = (
-  lat?: number | null,
-  lng?: number | null,
-  userLat?: number | null,
-  userLng?: number | null,
+const resolveTicketAvailability = (
+  ticketTypes: PublicEventCard["ticketTypes"] | undefined,
+  t: (key: string, options?: any) => string,
 ) => {
-  if (lat == null || lng == null || userLat == null || userLng == null) return null;
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRad(lat - userLat);
-  const dLng = toRad(lng - userLng);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(userLat)) * Math.cos(toRad(lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = 6371 * c;
-  if (!Number.isFinite(distance)) return null;
-  if (distance < 1) return "<1 km";
-  if (distance < 10) return `${distance.toFixed(1)} km`;
-  return `${Math.round(distance)} km`;
-};
-
-const resolveTicketAvailability = (ticketTypes?: PublicEventCard["ticketTypes"]) => {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const totals = ticketTypes
     .filter((ticket) => typeof ticket.totalQuantity === "number")
@@ -195,12 +136,15 @@ const resolveTicketAvailability = (ticketTypes?: PublicEventCard["ticketTypes"])
   const totalQuantity = totals.reduce((acc, item) => acc + item.total, 0);
   const soldQuantity = totals.reduce((acc, item) => acc + item.sold, 0);
   const remaining = Math.max(totalQuantity - soldQuantity, 0);
-  if (remaining === 0) return "Esgotado";
-  if (remaining <= 8) return `Últimos ${remaining}`;
-  return `${remaining}+ lugares`;
+  if (remaining === 0) return t("events:tickets.soldOut");
+  if (remaining <= 8) return t("events:tickets.lastSeats", { count: remaining });
+  return t("events:tickets.remaining", { count: remaining });
 };
 
-const resolveTicketSummary = (ticketTypes?: PublicEventCard["ticketTypes"]) => {
+const resolveTicketSummary = (
+  ticketTypes: PublicEventCard["ticketTypes"] | undefined,
+  t: (key: string, options?: any) => string,
+) => {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const sorted = [...ticketTypes].sort((a, b) => {
     const orderDelta = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
@@ -223,8 +167,8 @@ const resolveTicketSummary = (ticketTypes?: PublicEventCard["ticketTypes"]) => {
   const priceLabel =
     minPrice !== null && maxPrice !== null
       ? minPrice === maxPrice
-        ? `${minPrice.toFixed(0)} ${currency}`
-        : `${minPrice.toFixed(0)}–${maxPrice.toFixed(0)} ${currency}`
+        ? formatCurrency(minPrice, currency, { maximumFractionDigits: 0 })
+        : `${formatCurrency(minPrice, currency, { maximumFractionDigits: 0 })}–${formatCurrency(maxPrice, currency, { maximumFractionDigits: 0 })}`
       : null;
 
   return {
@@ -254,7 +198,10 @@ const withAlpha = (color: string, alpha: number) => {
   return `rgba(12, 16, 24, ${alpha})`;
 };
 
-const resolveAttendanceSummary = (ticketTypes?: PublicEventCard["ticketTypes"]) => {
+const resolveAttendanceSummary = (
+  ticketTypes: PublicEventCard["ticketTypes"] | undefined,
+  t: (key: string, options?: any) => string,
+) => {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const totals = ticketTypes
     .filter((ticket) => typeof ticket.soldQuantity === "number")
@@ -266,8 +213,8 @@ const resolveAttendanceSummary = (ticketTypes?: PublicEventCard["ticketTypes"]) 
   const sold = totals.reduce((acc, item) => acc + item.sold, 0);
   const total = totals.reduce((acc, item) => acc + (item.total ?? 0), 0);
   if (sold <= 0) return null;
-  if (total > 0) return `${sold}/${total} inscritos`;
-  return `${sold}+ inscritos`;
+  if (total > 0) return t("events:attendance.registered", { sold, total });
+  return t("events:attendance.registeredPlus", { sold });
 };
 
 export const DiscoverEventCard = memo(function DiscoverEventCard({
@@ -278,7 +225,9 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   userLat,
   userLon,
   source,
+  onHide,
 }: Props) {
+  const { t } = useTranslation();
   const isFeatured = variant === "featured";
   const isService = itemType ? itemType === "service" : isServiceCard(item);
   const event = !isService ? (item as PublicEventCard) : null;
@@ -286,10 +235,12 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
 
   const category = useMemo(() => {
     if (service) {
-      return service.categoryTag?.trim() || resolveServiceKind(service.kind);
+      return service.categoryTag?.trim() || resolveServiceKind(service.kind, t);
     }
-    return event?.categories?.[0] ?? "EVENTO";
-  }, [event, service]);
+    if (event?.tournament) return t("events:labels.tournament");
+    if ((event?.categories ?? []).includes("PADEL")) return t("events:labels.padel");
+    return event?.categories?.[0] ?? t("events:labels.event");
+  }, [event, service, t]);
 
   const title = service ? service.title : event?.title ?? null;
   const serviceAddress =
@@ -316,7 +267,9 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
     ? service.organization.publicName || service.organization.businessName || "ORYA"
     : event?.hostName ?? event?.hostUsername ?? "ORYA";
 
-  const durationLabel = service ? `${service.durationMinutes} min` : null;
+  const durationLabel = service
+    ? t("common:units.minutesShort", { count: service.durationMinutes })
+    : null;
   const instructorLabel = service?.instructor?.fullName || service?.instructor?.username || null;
   const serviceCover = service?.organization?.brandingAvatarUrl || service?.instructor?.avatarUrl || null;
   const coverImage = isService ? serviceCover : event?.coverImageUrl ?? null;
@@ -341,22 +294,25 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   const router = useRouter();
   const cardHeight = isFeatured ? 190 : 168;
   const overlayHeight = Math.round(cardHeight * (isFeatured ? 0.3 : 0.25));
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   const cardPrice = useMemo(
     () =>
       isService
         ? service
-          ? formatServicePrice(service)
+          ? formatServicePrice(service, t)
           : null
         : event
-          ? formatEventPrice(event)
+          ? formatEventPrice(event, t)
           : null,
-    [event, isService, service],
+    [event, isService, service, t],
   );
   const statusLabel = useMemo(
-    () => (isService ? "Disponível" : resolveStatusLabel(event?.status)),
-    [event?.status, isService],
+    () => (isService ? t("common:status.available") : resolveStatusLabel(event?.status, t)),
+    [event?.status, isService, t],
   );
+  const activeStatusLabel = t("events:status.active");
+  const isFreePrice = isService ? service?.unitPriceCents === 0 : Boolean(event?.isGratis);
   const distanceLabel = useMemo(() => {
     if (isService || !event?.location) return null;
     return formatDistanceKm(
@@ -368,15 +324,18 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   }, [event?.location, isService, userLat, userLon]);
   const availabilityLabel = useMemo(() => {
     if (isService) return null;
-    return resolveTicketAvailability(event?.ticketTypes) ?? (event?.isGratis ? "Entrada livre" : null);
-  }, [event?.isGratis, event?.ticketTypes, isService]);
+    return (
+      resolveTicketAvailability(event?.ticketTypes, t) ??
+      (event?.isGratis ? t("events:tickets.freeEntry") : null)
+    );
+  }, [event?.isGratis, event?.ticketTypes, isService, t]);
   const ticketSummary = useMemo(
-    () => (!isService ? resolveTicketSummary(event?.ticketTypes) : null),
-    [event?.ticketTypes, isService],
+    () => (!isService ? resolveTicketSummary(event?.ticketTypes, t) : null),
+    [event?.ticketTypes, isService, t],
   );
   const attendanceLabel = useMemo(
-    () => (!isService ? resolveAttendanceSummary(event?.ticketTypes) : null),
-    [event?.ticketTypes, isService],
+    () => (!isService ? resolveAttendanceSummary(event?.ticketTypes, t) : null),
+    [event?.ticketTypes, isService, t],
   );
 
   const eventPreviewParams = useMemo(
@@ -409,7 +368,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             serviceTitle: title,
             servicePriceLabel: cardPrice ?? "",
             serviceDuration: durationLabel ?? "",
-            serviceKind: resolveServiceKind(service.kind),
+            serviceKind: resolveServiceKind(service.kind, t),
             serviceOrg: host,
             serviceAddress: serviceAddress ?? "",
             serviceInstructor: instructorLabel ?? "",
@@ -504,14 +463,24 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   }, [scale]);
 
   return (
-    <Link href={linkHref} asChild push>
-      <Pressable
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        android_ripple={{ color: "rgba(255,255,255,0.08)" }}
-        accessibilityRole="button"
-        accessibilityLabel={isService ? `Abrir serviço ${title}` : `Abrir evento ${title}`}
-      >
+    <>
+      <Link href={linkHref} asChild push>
+        <Pressable
+          onPressIn={onPressIn}
+          onPressOut={onPressOut}
+          onPress={() => {
+            if (!isService && event?.id) {
+              sendEventSignal({ eventId: event.id, signalType: "CLICK" });
+            }
+          }}
+          onLongPress={() => {
+            if (!isService && event) setFeedbackVisible(true);
+          }}
+          delayLongPress={320}
+          android_ripple={{ color: "rgba(255,255,255,0.08)" }}
+          accessibilityRole="button"
+          accessibilityLabel={isService ? `Abrir serviço ${title}` : `Abrir evento ${title}`}
+        >
         <Animated.View
           style={{
             opacity: revealOpacity,
@@ -564,8 +533,8 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                     <View className="flex-row items-center justify-between px-3 pt-3">
                       <View className="flex-row flex-wrap items-center gap-2">
                         <GlassPill label={category} />
-                        {!isService && liveNow ? <GlassPill label="AO VIVO" variant="accent" /> : null}
-                        {!isService && isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
+                        {!isService && liveNow ? <GlassPill label={t("events:badges.live")} variant="accent" /> : null}
+                        {!isService && isHighlighted ? <GlassPill label={t("events:badges.featured")} variant="accent" /> : null}
                         {relativeStart ? <GlassPill label={relativeStart} variant="muted" /> : null}
                         {!isService && distanceLabel ? (
                           <GlassPill label={distanceLabel} variant="muted" />
@@ -597,13 +566,13 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                       ) : null}
                       <View style={styles.overlayFooter}>
                         <View style={styles.overlayPills}>
-                          {statusLabel !== "Ativo" ? (
+                          {statusLabel !== activeStatusLabel ? (
                             <GlassPill label={statusLabel} variant="muted" />
                           ) : null}
                           {cardPrice ? (
                             <GlassPill
                               label={cardPrice}
-                              variant={cardPrice === "Grátis" ? "accent" : "muted"}
+                              variant={isFreePrice ? "accent" : "muted"}
                             />
                           ) : null}
                           {!isService && availabilityLabel ? (
@@ -658,8 +627,15 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             </View>
           </GlassCard>
         </Animated.View>
-      </Pressable>
-    </Link>
+        </Pressable>
+      </Link>
+      <EventFeedbackSheet
+        visible={feedbackVisible}
+        event={event}
+        onClose={() => setFeedbackVisible(false)}
+        onHide={onHide}
+      />
+    </>
   );
 });
 

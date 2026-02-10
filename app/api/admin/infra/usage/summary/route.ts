@@ -11,6 +11,7 @@ import {
 } from "@aws-sdk/client-ecs";
 import { ElasticLoadBalancingV2Client, DescribeLoadBalancersCommand } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { getAwsConfig } from "@/lib/awsSdk";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ function fail(ctx: ReturnType<typeof getRequestContext>, status: number, errorCo
   return respondError(ctx, { errorCode, message, retryable: status >= 500 }, { status });
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const admin = await requireAdminUser();
@@ -85,3 +86,4 @@ export async function GET(req: NextRequest) {
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
 }
+export const GET = withApiEnvelope(_GET);

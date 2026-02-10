@@ -8,7 +8,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { isStoreDigitalEnabled, isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { MediaOwnerType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -96,6 +97,9 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (!isStoreFeatureEnabled()) {
       return fail(403, "Loja desativada.");
     }
+    if (!isStoreDigitalEnabled()) {
+      return fail(403, "Loja digital desativada.");
+    }
 
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -158,6 +162,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   try {
     if (!isStoreFeatureEnabled()) {
       return fail(403, "Loja desativada.");
+    }
+    if (!isStoreDigitalEnabled()) {
+      return fail(403, "Loja digital desativada.");
     }
 
     const supabase = await createSupabaseServer();
@@ -236,25 +243,46 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       return fail(500, "Erro ao fazer upload.");
     }
 
-    const created = await prisma.storeDigitalAsset.create({
-      data: {
-        productId: productId.id,
-        storagePath: objectPath,
-        filename: safeName,
-        sizeBytes: buffer.byteLength,
-        mimeType: file.type || "application/octet-stream",
-        maxDownloads,
-        isActive,
-      },
-      select: {
-        id: true,
-        filename: true,
-        sizeBytes: true,
-        mimeType: true,
-        maxDownloads: true,
-        isActive: true,
-        createdAt: true,
-      },
+    const checksumSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+
+    const created = await prisma.$transaction(async (tx) => {
+      await tx.mediaAsset.create({
+        data: {
+          organizationId: null,
+          ownerType: MediaOwnerType.USER,
+          ownerId: user.id,
+          uploadedByUserId: user.id,
+          scope: "store-digital-asset",
+          bucket,
+          objectPath,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: buffer.byteLength,
+          checksumSha256,
+          originalFilename: safeName,
+          isPublic: false,
+        },
+      });
+
+      return tx.storeDigitalAsset.create({
+        data: {
+          productId: productId.id,
+          storagePath: objectPath,
+          filename: safeName,
+          sizeBytes: buffer.byteLength,
+          mimeType: file.type || "application/octet-stream",
+          maxDownloads,
+          isActive,
+        },
+        select: {
+          id: true,
+          filename: true,
+          sizeBytes: true,
+          mimeType: true,
+          maxDownloads: true,
+          isActive: true,
+          createdAt: true,
+        },
+      });
     });
 
     return respondOk(ctx, { item: created }, { status: 201 });

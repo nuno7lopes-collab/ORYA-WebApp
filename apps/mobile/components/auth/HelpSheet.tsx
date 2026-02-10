@@ -1,5 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { GlassCard } from "./GlassCard";
+import { useTranslation } from "@orya/shared";
 
 type HelpSheetProps = {
   visible: boolean;
@@ -7,17 +8,18 @@ type HelpSheetProps = {
 };
 
 export function HelpSheet({ visible, onClose }: HelpSheetProps) {
+  const { t } = useTranslation();
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.sheet}>
           <GlassCard>
-            <Text style={styles.title}>Precisas de ajuda?</Text>
-            <Text style={styles.body}>Se o login falhar, confirma se já tens conta com o mesmo e-mail.</Text>
-            <Text style={styles.body}>No Apple/Google, autoriza o acesso ao e-mail para podermos ligar a conta.</Text>
+            <Text style={styles.title}>{t("auth.helpSheet.title")}</Text>
+            <Text style={styles.body}>{t("auth.helpSheet.body1")}</Text>
+            <Text style={styles.body}>{t("auth.helpSheet.body2")}</Text>
             <Pressable onPress={onClose} accessibilityRole="button" style={styles.closeButton}>
-              <Text style={styles.closeText}>Fechar</Text>
+              <Text style={styles.closeText}>{t("auth.helpSheet.close")}</Text>
             </Pressable>
           </GlassCard>
         </View>

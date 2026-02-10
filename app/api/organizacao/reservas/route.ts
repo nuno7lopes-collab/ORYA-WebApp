@@ -18,12 +18,14 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
+import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
+  OrganizationMemberRole.TRAINER,
 ];
 
 const PENDING_HOLD_MINUTES = 10;
@@ -70,6 +72,15 @@ function buildBlocks(
     end: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
     professionalId: booking.professionalId,
     resourceId: booking.resourceId,
+  }));
+}
+
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
   }));
 }
 
@@ -153,15 +164,35 @@ async function _GET(req: NextRequest) {
     const assignmentMode =
       (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ??
       "PROFESSIONAL";
-    let staffProfessionalIds: number[] | null = null;
-    if (membership.role === OrganizationMemberRole.STAFF && assignmentMode === "PROFESSIONAL") {
-      const staffProfessionals = await prisma.reservationProfessional.findMany({
-        where: { organizationId: organization.id, userId: profile.id, isActive: true },
-        select: { id: true },
+    let scopeFilter: Record<string, unknown> | null = null;
+    if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+      const scopes = await resolveReservasScopesForMember({
+        organizationId: organization.id,
+        userId: profile.id,
       });
-      staffProfessionalIds = staffProfessionals.map((item) => item.id);
-      if (staffProfessionalIds.length === 0) {
+      if (!scopes.hasAny) {
         return respondOk(ctx, { items: [] });
+      }
+      if (membership.role === OrganizationMemberRole.TRAINER) {
+        const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+          organizationId: organization.id,
+          userId: profile.id,
+        });
+        if (trainerProfessionalIds.length === 0) {
+          return respondOk(ctx, { items: [] });
+        }
+        const allowedProfessionals = intersectIds(trainerProfessionalIds, scopes.professionalIds);
+        scopeFilter = {
+          ...(allowedProfessionals.length > 0 ? { professionalId: { in: allowedProfessionals } } : {}),
+          ...(scopes.courtIds.length > 0 ? { courtId: { in: scopes.courtIds } } : {}),
+          ...(scopes.resourceIds.length > 0 ? { resourceId: { in: scopes.resourceIds } } : {}),
+        };
+      } else {
+        const scopeOr: Array<Record<string, unknown>> = [];
+        if (scopes.courtIds.length > 0) scopeOr.push({ courtId: { in: scopes.courtIds } });
+        if (scopes.resourceIds.length > 0) scopeOr.push({ resourceId: { in: scopes.resourceIds } });
+        if (scopes.professionalIds.length > 0) scopeOr.push({ professionalId: { in: scopes.professionalIds } });
+        scopeFilter = scopeOr.length > 0 ? { OR: scopeOr } : null;
       }
     }
 
@@ -169,7 +200,7 @@ async function _GET(req: NextRequest) {
       where: {
         organizationId: organization.id,
         ...rangeFilter,
-        ...(staffProfessionalIds ? { professionalId: { in: staffProfessionalIds } } : {}),
+        ...(scopeFilter ?? {}),
         ...(resolvedClubId ? { court: { padelClubId: resolvedClubId } } : {}),
         ...(resolvedCourtId ? { courtId: resolvedCourtId } : {}),
         status: {
@@ -198,7 +229,7 @@ async function _GET(req: NextRequest) {
         createdAt: true,
         assignmentMode: true,
         partySize: true,
-        court: { select: { id: true, name: true } },
+        court: { select: { id: true, name: true, isActive: true } },
         professional: {
           select: {
             id: true,
@@ -233,6 +264,24 @@ async function _GET(req: NextRequest) {
         },
         participants: {
           select: { status: true },
+        },
+        changeRequests: {
+          where: { status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            requestedBy: true,
+            status: true,
+            proposedStartsAt: true,
+            proposedCourtId: true,
+            proposedProfessionalId: true,
+            proposedResourceId: true,
+            priceDeltaCents: true,
+            currency: true,
+            expiresAt: true,
+            createdAt: true,
+          },
         },
       },
     });
@@ -276,7 +325,7 @@ async function _GET(req: NextRequest) {
         },
         { total: 0, confirmed: 0, cancelled: 0 },
       );
-      const { invites: _invites, participants: _participants, ...rest } = item;
+      const { invites: _invites, participants: _participants, changeRequests: _changeRequests, ...rest } = item;
       return {
         ...rest,
         inviteSummary: inviteCounts,
@@ -284,6 +333,21 @@ async function _GET(req: NextRequest) {
         estimatedStartsAt: delay.estimatedStartsAt ? delay.estimatedStartsAt.toISOString() : null,
         delayMinutes: delay.delayMinutes,
         delayReason: delay.reason,
+        changeRequest: item.changeRequests?.[0]
+          ? {
+              id: item.changeRequests[0].id,
+              requestedBy: item.changeRequests[0].requestedBy,
+              status: item.changeRequests[0].status,
+              proposedStartsAt: item.changeRequests[0].proposedStartsAt,
+              proposedCourtId: item.changeRequests[0].proposedCourtId,
+              proposedProfessionalId: item.changeRequests[0].proposedProfessionalId,
+              proposedResourceId: item.changeRequests[0].proposedResourceId,
+              priceDeltaCents: item.changeRequests[0].priceDeltaCents,
+              currency: item.changeRequests[0].currency,
+              expiresAt: item.changeRequests[0].expiresAt,
+              createdAt: item.changeRequests[0].createdAt,
+            }
+          : null,
       };
     });
 
@@ -328,14 +392,26 @@ async function _POST(req: NextRequest) {
     }
 
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
-    const staffProfessional = isStaff
-      ? await prisma.reservationProfessional.findFirst({
-          where: { organizationId: organization.id, userId: profile.id, isActive: true },
-          select: { id: true },
-        })
-      : null;
-    if (isStaff && !staffProfessional) {
-      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    const isTrainer = membership.role === OrganizationMemberRole.TRAINER;
+    let memberScopes: Awaited<ReturnType<typeof resolveReservasScopesForMember>> | null = null;
+    let trainerProfessionalIds: number[] = [];
+    if (isStaff || isTrainer) {
+      memberScopes = await resolveReservasScopesForMember({
+        organizationId: organization.id,
+        userId: profile.id,
+      });
+      if (!memberScopes.hasAny) {
+        return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+      }
+      if (isTrainer) {
+        trainerProfessionalIds = await resolveTrainerProfessionalIds({
+          organizationId: organization.id,
+          userId: profile.id,
+        });
+        if (trainerProfessionalIds.length === 0) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
+      }
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -459,6 +535,13 @@ async function _POST(req: NextRequest) {
       }
       partySize = partySizeRaw;
       if (resourceIdRaw) {
+        if (memberScopes?.resourceIds?.length) {
+          if (!memberScopes.resourceIds.includes(resourceIdRaw)) {
+            return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+          }
+        } else if (isStaff || isTrainer) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
         if (allowedResourceIds && !allowedResourceIds.includes(resourceIdRaw)) {
           return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
@@ -475,12 +558,18 @@ async function _POST(req: NextRequest) {
         resourceId = resource.id;
         scopeIds = [resource.id];
       } else {
+        if (memberScopes?.resourceIds?.length) {
+          scopeIds = memberScopes.resourceIds;
+        } else if (isStaff || isTrainer) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
         const resources = await prisma.reservationResource.findMany({
           where: {
             organizationId: service.organizationId,
             isActive: true,
             capacity: { gte: partySize },
             ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+            ...(scopeIds.length ? { id: { in: scopeIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
           select: { id: true },
@@ -491,16 +580,22 @@ async function _POST(req: NextRequest) {
         }
       }
     } else {
-      if (isStaff && staffProfessional) {
-        if (allowedProfessionalIds && !allowedProfessionalIds.includes(staffProfessional.id)) {
+      if (professionalIdRaw) {
+        if (memberScopes?.professionalIds?.length) {
+          if (!memberScopes.professionalIds.includes(professionalIdRaw)) {
+            return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+          }
+        } else if (isStaff || isTrainer) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
-        if (professionalIdRaw && professionalIdRaw !== staffProfessional.id) {
-          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        if (isTrainer) {
+          const allowedTrainers = memberScopes?.professionalIds?.length
+            ? intersectIds(trainerProfessionalIds, memberScopes.professionalIds)
+            : trainerProfessionalIds;
+          if (!allowedTrainers.includes(professionalIdRaw)) {
+            return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+          }
         }
-        professionalId = staffProfessional.id;
-        scopeIds = [staffProfessional.id];
-      } else if (professionalIdRaw) {
         if (allowedProfessionalIds && !allowedProfessionalIds.includes(professionalIdRaw)) {
           return fail(ctx, 404, "PROFESSIONAL_INVALID", "Profissional inválido.");
         }
@@ -514,6 +609,13 @@ async function _POST(req: NextRequest) {
         professionalId = professional.id;
         scopeIds = [professional.id];
       } else {
+        if (memberScopes?.professionalIds?.length) {
+          scopeIds = memberScopes.professionalIds;
+        } else if (isTrainer) {
+          scopeIds = trainerProfessionalIds;
+        } else if (isStaff) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
         if (allowedProfessionalIds && allowedProfessionalIds.length === 0) {
           return fail(ctx, 409, "PROFESSIONALS_UNAVAILABLE", "Sem profissionais disponíveis para este serviço.");
         }
@@ -522,6 +624,7 @@ async function _POST(req: NextRequest) {
             organizationId: service.organizationId,
             isActive: true,
             ...(allowedProfessionalIds ? { id: { in: allowedProfessionalIds } } : {}),
+            ...(scopeIds.length ? { id: { in: scopeIds } } : {}),
           },
           orderBy: [{ priority: "asc" }, { id: "asc" }],
           select: { id: true },
@@ -548,7 +651,7 @@ async function _POST(req: NextRequest) {
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks] = await Promise.all([
+    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -602,13 +705,22 @@ async function _POST(req: NextRequest) {
         },
         select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
+      prisma.classSession.findMany({
+        where: {
+          organizationId: service.organizationId,
+          status: "SCHEDULED",
+          startsAt: { lt: bookingEndsAt },
+          endsAt: { gt: startsAt },
+        },
+        select: { id: true, startsAt: true, endsAt: true, professionalId: true },
+      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(blockingBookings);
+    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
     const slotKey = startsAt.toISOString();
     const scopesToCheck = shouldUseOrgOnly
@@ -675,6 +787,16 @@ async function _POST(req: NextRequest) {
         startsAt: booking.startsAt,
         endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
       }));
+    classSessions.forEach((session) => {
+      if (assignmentMode === "RESOURCE") return;
+      if (!session.professionalId || session.professionalId !== scopeIdForConflict) return;
+      existing.push({
+        type: "BOOKING",
+        sourceId: `class:${session.id}`,
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+      });
+    });
     softBlocks.forEach((block) => {
       if (block.scopeType === "ORGANIZATION") {
         existing.push({

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 // DLQ: listar via GET /api/internal/outbox/dlq; replay via POST /api/internal/outbox/replay.
 
@@ -23,7 +24,7 @@ function parseLimit(value: string | null) {
   return Math.min(100, Math.floor(parsed));
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const unauthorized = ensureInternalSecret(req, ctx);
   if (unauthorized) return unauthorized;
@@ -64,3 +65,4 @@ export async function GET(req: NextRequest) {
     nextBefore,
   });
 }
+export const GET = withApiEnvelope(_GET);

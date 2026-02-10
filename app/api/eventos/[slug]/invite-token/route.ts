@@ -6,8 +6,9 @@ import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -119,3 +120,4 @@ function errorCodeForStatus(status: number) {
   if (status === 429) return "RATE_LIMITED";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

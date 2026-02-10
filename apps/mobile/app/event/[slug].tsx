@@ -37,7 +37,10 @@ import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
 import { useEventChatThread } from "../../features/chat/hooks";
+import { acceptMessageInvite } from "../../features/messages/api";
+import { useMessageInvites } from "../../features/messages/hooks";
 import { useProfileSummary } from "../../features/profile/hooks";
+import { sendEventSignal } from "../../features/events/signals";
 
 const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
   weekday: "short",
@@ -231,11 +234,11 @@ export default function EventDetail() {
       case "search":
         return "/search";
       case "tickets":
-        return "/(tabs)/tickets";
+        return "/tickets";
       case "profile":
         return "/(tabs)/profile";
       default:
-        return "/(tabs)";
+        return "/(tabs)/index";
     }
   }, [source]);
 
@@ -291,6 +294,7 @@ export default function EventDetail() {
   const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
   const translate = useRef(new Animated.Value(transitionSource === "discover" ? 20 : 10)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
+  const viewSentRef = useRef(false);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [ticketQuantity, setTicketQuantity] = useState(1);
   const [initiatingCheckout, setInitiatingCheckout] = useState(false);
@@ -314,6 +318,23 @@ export default function EventDetail() {
   const [inviteContact, setInviteContact] = useState("");
   const [pairingBusy, setPairingBusy] = useState(false);
   const [pairingActionBusy, setPairingActionBusy] = useState(false);
+  const [inviteAccepting, setInviteAccepting] = useState(false);
+
+  useEffect(() => {
+    const eventId = data?.id;
+    if (!eventId) return;
+    if (!viewSentRef.current) {
+      sendEventSignal({ eventId, signalType: "VIEW" });
+      viewSentRef.current = true;
+    }
+    const startAt = Date.now();
+    return () => {
+      const dwellMs = Date.now() - startAt;
+      if (dwellMs >= 4000) {
+        sendEventSignal({ eventId, signalType: "DWELL", signalValue: dwellMs });
+      }
+    };
+  }, [data?.id]);
 
   const handleBack = () => {
     safeBack(router, navigation, fallbackRoute);
@@ -563,6 +584,13 @@ export default function EventDetail() {
   );
 
   const isFreeTicket = selectedTicket?.price === 0;
+  const eventIsActive = useMemo(() => {
+    if (!data) return false;
+    if (data.status !== "ACTIVE") return false;
+    const endsAtMs = data.endsAt ? new Date(data.endsAt).getTime() : null;
+    if (endsAtMs == null || Number.isNaN(endsAtMs)) return true;
+    return endsAtMs > Date.now();
+  }, [data]);
   const maxQuantity = useMemo(() => {
     if (isFreeTicket) return 1;
     if (ticketRemaining == null) return 10;
@@ -584,7 +612,8 @@ export default function EventDetail() {
     ticketStatusLabel === "Disponível" &&
     !isLoading &&
     !isError &&
-    canAccessInvite;
+    canAccessInvite &&
+    eventIsActive;
   const ctaLabel = isFreeTicket ? "Inscrever-me" : "Comprar";
 
   const cover = data?.coverImageUrl ?? null;
@@ -614,7 +643,8 @@ export default function EventDetail() {
     }
   };
   const displayImageTag = previewImageTag ?? (data?.slug ? `event-${data.slug}` : null);
-  const showStickyCTA = Boolean(data) && !isLoading && !isError && !isPadelEvent && canAccessInvite;
+  const showStickyCTA =
+    Boolean(data) && !isLoading && !isError && !isPadelEvent && canAccessInvite && eventIsActive;
   const showFavoriteCTA = showStickyCTA && !hasPurchasableTickets;
   const scrollBottomPadding = showStickyCTA
     ? showFavoriteCTA
@@ -641,6 +671,11 @@ export default function EventDetail() {
     Boolean(session?.user?.id && data?.id),
     accessToken,
   );
+  const inviteQuery = useMessageInvites(
+    data?.id ?? null,
+    Boolean(session?.user?.id && data?.id),
+    accessToken,
+  );
 
   const padelEventId = data?.id ?? null;
   const padelEnabled = isPadelEvent && Boolean(padelEventId);
@@ -658,6 +693,34 @@ export default function EventDetail() {
     if (status === "CLOSED") return "Fechado";
     return "Chat indisponível";
   }, [chatQuery.data?.thread.status]);
+
+  const pendingInvite = inviteQuery.data?.items?.[0] ?? null;
+
+  const handleAcceptChatInvite = async () => {
+    if (!pendingInvite || inviteAccepting) return;
+    setInviteAccepting(true);
+    try {
+      const result = await acceptMessageInvite(pendingInvite.id, accessToken);
+      await Promise.all([chatQuery.refetch(), inviteQuery.refetch()]);
+      if (result?.threadId && data?.id) {
+        router.push({
+          pathname: "/messages/[threadId]",
+          params: {
+            threadId: result.threadId,
+            eventId: String(data.id),
+            title: data.title ?? "",
+            coverImageUrl: data.coverImageUrl ?? "",
+            startsAt: data.startsAt ?? "",
+            endsAt: data.endsAt ?? "",
+          },
+        });
+      }
+    } catch (err) {
+      Alert.alert("Chat", getUserFacingError(err, "Não foi possível aceitar o convite."));
+    } finally {
+      setInviteAccepting(false);
+    }
+  };
 
   const handleShare = async () => {
     if (!data) return;
@@ -910,11 +973,14 @@ export default function EventDetail() {
               onPress={handleBack}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
-              className="flex-row items-center gap-2"
-              style={{ minHeight: tokens.layout.touchTarget }}
+              style={{
+                width: tokens.layout.touchTarget,
+                height: tokens.layout.touchTarget,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
               <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-              <Text className="text-white text-sm font-semibold">Voltar</Text>
             </Pressable>
           </View>
 
@@ -1215,13 +1281,9 @@ export default function EventDetail() {
                           <Text className="text-white text-xs font-semibold">Entrar</Text>
                         </Pressable>
                       </View>
-                    ) : chatQuery.isLoading ? (
+                    ) : chatQuery.isLoading || inviteQuery.isLoading ? (
                       <Text className="text-white/60 text-sm">A carregar chat...</Text>
-                    ) : chatQuery.isError || !chatQuery.data ? (
-                      <Text className="text-white/60 text-sm">
-                        Chat disponível apenas para participantes do evento.
-                      </Text>
-                    ) : (
+                    ) : chatQuery.data ? (
                       <Pressable
                         onPress={() =>
                           router.push({
@@ -1245,7 +1307,29 @@ export default function EventDetail() {
                           Abrir chat
                         </Text>
                       </Pressable>
-                    )}
+                    ) : pendingInvite ? (
+                      <View className="gap-2">
+                        <Text className="text-white/70 text-sm">
+                          Tens um convite para o chat deste evento.
+                        </Text>
+                        <Pressable
+                          onPress={handleAcceptChatInvite}
+                          disabled={inviteAccepting}
+                          className="rounded-2xl bg-white/90 px-4 py-3 disabled:opacity-60"
+                          style={{ minHeight: tokens.layout.touchTarget }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Aceitar convite"
+                        >
+                          <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                            {inviteAccepting ? "A aceitar..." : "Aceitar convite"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    ) : chatQuery.isError || !chatQuery.data ? (
+                      <Text className="text-white/60 text-sm">
+                        Chat disponível apenas para participantes do evento.
+                      </Text>
+                    ) : null}
                   </View>
                 </GlassCard>
 

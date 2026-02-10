@@ -6,6 +6,7 @@ import { CheckinResultCode } from "@prisma/client";
 import { buildDefaultCheckinWindow, isOutsideWindow } from "@/lib/checkin/policy";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ensureGroupMemberCheckinAccess } from "@/lib/organizationMemberAccess";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import {
@@ -18,6 +19,8 @@ import {
   resolvePolicyForCheckin,
 } from "@/lib/checkin/accessPolicy";
 import { parseQrToken } from "@/lib/qr";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logWarn } from "@/lib/observability/logger";
 
 type Body = { qrToken?: string; eventId?: number };
 
@@ -72,7 +75,7 @@ async function ensureCheckinAccess(userId: string, eventId: number) {
   return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -95,6 +98,25 @@ export async function POST(req: NextRequest) {
     return fail(401, "Not authenticated");
   }
   const userId = data.user.id;
+
+  const limiter = await rateLimit(req, {
+    windowMs: 60 * 1000,
+    max: 300,
+    keyPrefix: "checkin:preview",
+    identifier: userId,
+  });
+  if (!limiter.allowed) {
+    logWarn("checkin.preview.rate_limited", { requestId: ctx.requestId, userId, retryAfter: limiter.retryAfter });
+    return respondError(
+      ctx,
+      {
+        errorCode: "RATE_LIMITED",
+        message: "Demasiados pedidos. Tenta novamente dentro de alguns minutos.",
+        retryable: true,
+      },
+      { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
+    );
+  }
 
   const body = (await req.json().catch(() => null)) as Body | null;
   const qrTokenRaw = typeof body?.qrToken === "string" ? body.qrToken.trim() : "";
@@ -157,6 +179,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!tokenRow || !tokenRow.entitlement) {
+    logWarn("checkin.preview.invalid_token", { requestId: ctx.requestId, eventId });
     return respondOk(ctx, { code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
@@ -176,6 +199,7 @@ export async function POST(req: NextRequest) {
 
   const now = new Date();
   if (tokenRow.expiresAt && tokenRow.expiresAt < now) {
+    logWarn("checkin.preview.expired_token", { requestId: ctx.requestId, eventId });
     return respondOk(ctx, { code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
@@ -245,3 +269,4 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

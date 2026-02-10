@@ -1,8 +1,8 @@
-import { Redirect, Tabs } from "expo-router";
+import { Redirect, withLayoutContext } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { useEffect, useState } from "react";
+import { ActivityIndicator, Animated, Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
 import { FloatingTabBar } from "../../components/navigation/FloatingTabBar";
 import { getOnboardingDone } from "../../lib/onboardingState";
 import { isAuthError, resolveOnboardingGate } from "../../lib/onboardingGate";
@@ -10,6 +10,23 @@ import { supabase } from "../../lib/supabase";
 import { getOnboardingDraft } from "../../lib/onboardingDraft";
 import { useFavoritesSync } from "../../features/favorites/hooks";
 import { CachedProfile, getProfileCache, setProfileCache } from "../../lib/profileCache";
+import { TAB_ORDER, type TabKey } from "../../components/navigation/tabOrder";
+import { useTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
+import {
+  createMaterialTopTabNavigator,
+  type MaterialTopTabBarProps,
+  type MaterialTopTabNavigationEventMap,
+  type MaterialTopTabNavigationOptions,
+} from "@react-navigation/material-top-tabs";
+import type { ParamListBase, TabNavigationState } from "@react-navigation/native";
+
+const MaterialTopTabs = createMaterialTopTabNavigator();
+const ExpoTopTabs = withLayoutContext<
+  MaterialTopTabNavigationOptions,
+  typeof MaterialTopTabs.Navigator,
+  TabNavigationState<ParamListBase>,
+  MaterialTopTabNavigationEventMap
+>(MaterialTopTabs.Navigator);
 
 export default function TabsLayout() {
   const { loading, session } = useAuth();
@@ -79,9 +96,36 @@ export default function TabsLayout() {
 
   useFavoritesSync(Boolean(session?.user?.id) && gateStatus === "ready");
 
+  const { isBlocked } = useTabSwipeBlocker();
+  const renderLazyPlaceholder = useCallback(
+    () => (
+      <View style={{ flex: 1, backgroundColor: "#0b1014", alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color="rgba(255,255,255,0.7)" />
+      </View>
+    ),
+    [],
+  );
+  const renderTabBar = useCallback((props: MaterialTopTabBarProps) => {
+    const activeRoute = props.state.routes[props.state.index]?.name ?? "agora";
+    const activeKey = ((TAB_ORDER as readonly string[]).includes(activeRoute) ? activeRoute : "agora") as TabKey;
+    const pagerProgress = Animated.subtract(props.position, 1);
+    return (
+      <FloatingTabBar
+        activeKey={activeKey}
+        onSelect={(key) => {
+          const route = props.state.routes.find((item) => item.name === key);
+          if (route) {
+            props.navigation.navigate(route.name);
+          }
+        }}
+        pagerProgress={pagerProgress}
+      />
+    );
+  }, []);
+
   if (loading || gateStatus === "loading") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b101a" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b1014" }}>
         <ActivityIndicator />
       </View>
     );
@@ -93,7 +137,7 @@ export default function TabsLayout() {
 
   if (gateStatus === "offline") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#0b101a" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#0b1014" }}>
         <View style={{ maxWidth: 320 }}>
           <Text style={{ color: "white", fontSize: 16, textAlign: "center", fontWeight: "600" }}>
             Precisas de internet para concluir o onboarding.
@@ -128,54 +172,31 @@ export default function TabsLayout() {
   }
 
   return (
-    <Tabs
-      backBehavior="history"
-      screenOptions={{
-        headerShown: false,
-        tabBarShowLabel: false,
-        tabBarHideOnKeyboard: true,
-        sceneContainerStyle: { backgroundColor: "#0b101a" },
-        lazy: true,
-        lazyPreloadDistance: 0,
-        tabBarStyle: {
-          position: "absolute",
-          backgroundColor: "transparent",
-          borderTopWidth: 0,
-          elevation: 0,
-        },
-      }}
-      tabBar={(props) => <FloatingTabBar {...props} />}
-    >
-      <Tabs.Screen
-        name="agora"
-        options={{
-          title: "Agora",
+    <View style={{ flex: 1, backgroundColor: "#0b1014" }}>
+      <ExpoTopTabs
+        tabBarPosition="bottom"
+        swipeEnabled={!isBlocked}
+        animationEnabled
+        backBehavior="history"
+        initialRouteName="agora"
+        tabBar={renderTabBar}
+        screenOptions={{
+          tabBarShowLabel: false,
+          tabBarShowIcon: false,
+          tabBarIndicatorStyle: { height: 0 },
+          tabBarStyle: { backgroundColor: "transparent" },
+          lazy: true,
+          lazyPreloadDistance: 1,
+          lazyPlaceholder: renderLazyPlaceholder,
         }}
-      />
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Descobrir",
-        }}
-      />
-      <Tabs.Screen
-        name="tickets"
-        options={{
-          title: "Bilhetes",
-        }}
-      />
-      <Tabs.Screen
-        name="network"
-        options={{
-          title: "Rede",
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Perfil",
-        }}
-      />
-    </Tabs>
+      >
+        <ExpoTopTabs.Screen name="wallet" options={{ title: "Bilhetes" }} />
+        <ExpoTopTabs.Screen name="agora" options={{ title: "Agora" }} />
+        <ExpoTopTabs.Screen name="network" options={{ title: "Rede" }} />
+        <ExpoTopTabs.Screen name="messages" options={{ title: "Mensagens" }} />
+        <ExpoTopTabs.Screen name="profile" options={{ title: "Perfil" }} />
+        <ExpoTopTabs.Screen name="index" options={{ title: "Descobrir" }} />
+      </ExpoTopTabs>
+    </View>
   );
 }

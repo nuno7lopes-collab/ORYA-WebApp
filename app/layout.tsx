@@ -20,11 +20,8 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   icons: {
-    icon: [
-      { url: "/brand/orya-logo-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/brand/orya-logo-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [{ url: "/brand/orya-logo-180.png", sizes: "180x180", type: "image/png" }],
+    icon: [{ url: "/brand/LOGO.PNG", sizes: "1024x1024", type: "image/png" }],
+    apple: [{ url: "/brand/LOGO.PNG", sizes: "1024x1024", type: "image/png" }],
   },
 };
 
@@ -76,14 +73,14 @@ export default async function RootLayout({
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full`}
       suppressHydrationWarning
     >
-      <body className="antialiased min-h-screen flex flex-col font-sans">
+      <body className="antialiased min-h-screen md:min-h-0 flex flex-col font-sans">
         <BackgroundShell>
           <ThemeRuntime />
           <AuthModalProvider>
             <AuthLinkInterceptor />
             <Navbar adminHostHint={isAdminHost} />
             <RecoveryRedirector />
-            <div className="main-shell flex-1 transition-[padding] duration-200">
+            <div className="main-shell min-h-0 flex flex-col transition-[padding] duration-200">
               {children}
             </div>
             <AuthModal />

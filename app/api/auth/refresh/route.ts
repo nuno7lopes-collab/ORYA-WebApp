@@ -15,7 +15,10 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 async function _POST(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap(
+        { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
+        { status: 403 }
+      );
     }
 
     const supabase = await createSupabaseServer();
@@ -28,7 +31,7 @@ async function _POST(req: NextRequest) {
 
     if (!access_token || !refresh_token) {
       return jsonWrap(
-        { ok: false, error: "MISSING_TOKENS" },
+        { ok: false, errorCode: "MISSING_TOKENS", message: "Tokens em falta." },
         { status: 400 },
       );
     }
@@ -41,7 +44,12 @@ async function _POST(req: NextRequest) {
     if (error) {
       console.error("[auth/refresh] setSession error:", error);
       return jsonWrap(
-        { ok: false, error: error.message },
+        {
+          ok: false,
+          errorCode: "INVALID_SESSION",
+          message: "Sessão inválida.",
+          details: { reason: error.message },
+        },
         { status: 400 },
       );
     }
@@ -50,7 +58,7 @@ async function _POST(req: NextRequest) {
   } catch (err) {
     console.error("[auth/refresh] unexpected error:", err);
     return jsonWrap(
-      { ok: false, error: "SERVER_ERROR" },
+      { ok: false, errorCode: "SERVER_ERROR", message: "Erro inesperado no servidor." },
       { status: 500 },
     );
   }

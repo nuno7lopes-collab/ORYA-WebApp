@@ -1,11 +1,11 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-08
+Atualizado: 2026-02-10
 
 **Index**
 - Regra de hierarquia
 - P0 endpoints (guardrails)
-- Contratos SSOT (C‑G5, Auth, Payments, Outbox, Access, Entitlements, Padel, Invoices, Address, Identity, Search)
+- Contratos SSOT (C‑G5, Auth/Org, Payments/Ledger, Stripe Webhooks, EventLog/Outbox, Access, Entitlements, Padel, Invoices/Payouts, Pricing, Address, Identity, Search, CRM, Media)
 - Official Email (SSOT)
 - Runtime Validation Checklist
 - Runtime Validation Results
@@ -33,10 +33,12 @@ for adicionada/removida (manter este bloco como fonte única).
 
 - `app/api/payments/intent/route.ts`
 - `app/api/checkout/status/route.ts`
+- `app/api/checkout/resale/route.ts`
+- `app/api/convites/[token]/checkout/route.ts`
+- `app/api/cobrancas/[token]/checkout/route.ts`
 - `app/api/store/checkout/route.ts`
 - `app/api/store/checkout/prefill/route.ts`
 - `app/api/servicos/[id]/checkout/route.ts`
-- `app/api/servicos/[id]/creditos/checkout/route.ts`
 - `app/api/organizacao/reservas/[id]/checkout/route.ts`
 - `app/api/padel/pairings/[id]/checkout/route.ts`
 - `app/api/admin/payments/refund/route.ts`
@@ -81,7 +83,7 @@ for adicionada/removida (manter este bloco como fonte única).
 - `requestId` e `correlationId` devem estar no body e nos headers.
 - Erros devem ser fail‑closed e com `errorCode` estável.
 
-**Estado:** VERIFIED (static)
+**Estado:** PARTIAL
 **Evidência:** `lib/http/envelope.ts`, `lib/http/withApiEnvelope.ts`, `lib/api/wrapResponse.ts`.
 Varredura local encontrou **0** rotas em `app/api/**/route.ts` sem helper de envelope.
 
@@ -93,10 +95,41 @@ Varredura local encontrou **0** rotas em `app/api/**/route.ts` sem helper de env
 **Contrato SSOT**
 - Rotas internas e cron exigem segredo interno.
 - Rotas organizacionais exigem contexto de organização explícito.
+- `orgId` deve vir do path (`/org/:orgId/*`) ou header `X-ORYA-ORG-ID`.
+- Cookies/lastUsedOrg são apenas para redirect de UI (nunca para autorização).
+- Step‑up obrigatório em ações críticas (refunds, fee policy, export PII, cancelamentos).
 
-**Estado:** VERIFIED (static)
+**Estado:** PARTIAL
 **Evidência:** `lib/security.ts`, `lib/organizationContext.ts`, `app/api/internal/**`, `app/api/cron/**`.
 Varredura local encontrou **0** rotas internas/cron sem segredo.
+
+---
+
+## Auth — Fluxos e Erros (C-Auth)
+**Fonte:** `docs/authentication.md`
+
+**Contrato SSOT**
+- Fluxos de login/signup/verify/reset são unificados (modal, wall e login page).
+- Endpoints de auth devolvem `errorCode` estável + `message` humanizada.
+- `Retry-After` governa cooldown no reenviar código.
+
+**Estado:** VERIFIED (static)
+**Evidência:** `docs/authentication.md`, `app/components/autenticação/AuthModal.tsx`,
+`app/components/checkout/AuthWall.tsx`, `app/api/auth/*`.
+
+---
+
+## Public API (futuro, desativada por defeito)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Sem API pública para terceiros em v1–v3.
+- Endpoints públicos first‑party (read‑only) são permitidos e rate‑limited.
+- Chaves/SDK para terceiros são **futuro** e devem estar **desativados** por defeito em prod.
+
+**Estado:** VERIFIED (static)
+**Evidência:** `domain/publicApi/auth.ts`, `lib/featureFlags.ts`, `app/api/internal/public-api/keys/route.ts`.
+**Nota:** `app/api/public/agenda/route.ts` é first‑party read‑only com rate‑limit; não é API de terceiros.
 
 ---
 
@@ -106,14 +139,44 @@ Varredura local encontrou **0** rotas internas/cron sem segredo.
 **Contrato SSOT**
 - `Payment` + `LedgerEntry` são a fonte de verdade financeira.
 - Checkout único e idempotente converge para `/api/payments/intent`.
+- Estimativas (`*Estimate*`) são proibidas como verdade; apenas fees reais (ledger/processor) são canónicos.
 
-**Estado:** VERIFIED (static)
+**Estado:** PARTIAL
 **Evidência:** `domain/finance/paymentIntent.ts`, `domain/finance/checkout.ts`,
 `app/api/payments/intent/route.ts`, `app/api/checkout/status/route.ts`.
 
 **Nota:** validação runtime depende de credenciais externas; ver secção "Runtime Validation Checklist" neste documento.
 **Nota:** Stripe Connect Standard usa destination charges com `application_fee_amount` + `transfer_data.destination`.
 Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (Standard).
+
+---
+
+## Stripe Webhooks (C10) — ingestão e reconciliação
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Endpoint canónico: `/api/stripe/webhook` (alias `/api/webhooks/stripe`).
+- Assinatura obrigatória; rejeitar se `livemode` não corresponder ao modo esperado.
+- Dedupe obrigatório por `stripeEventId`.
+- Resolver `orgId` via `stripeAccountId` ou metadata; se não resolver → DLQ + alerta (sem side‑effects).
+- Mapeamento mínimo inclui `payment_intent.*`, `charge.refunded`, `charge.dispute.*`, `balance.available`, `payout.*`.
+- Eventos fora de ordem não podem regredir estados terminais.
+
+**Estado:** PARTIAL
+**Evidência:** `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`, `domain/finance/*`.
+
+---
+
+## Pricing & Rounding (C15)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Montantes em minor units (inteiros); rounding `round_half_up`.
+- Ordem canónica: gross → discounts → taxes → platformFee → total.
+- `pricingSnapshot` é imutável e base para cálculos futuros.
+
+**Estado:** TODO
+**Evidência:** N/A (definição fechada, validação pendente).
 
 ---
 
@@ -134,14 +197,27 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 
 ---
 
+## EventLog + Outbox (C11) — schema e versionamento
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- `eventType` em formato `domain.action` + `eventVersion` semver.
+- Campos mínimos no EventLog: `eventId`, `eventType`, `eventVersion`, `orgId`, `subjectType`, `subjectId`, `correlationId`, `causationId`, `payload` (PII minimizado).
+- Mutação com side‑effects escreve EventLog + Outbox na mesma transação.
+- Consumers idempotentes; ordering não garantido.
+
+**Estado:** VERIFIED (static)
+**Evidência:** `prisma/schema.prisma` (EventLog), `prisma/migrations/20260209123000_eventlog_media_assets`, `domain/eventLog/append.ts`, `domain/outbox/*`.
+
+---
+
 ## EventAccessPolicy + Check‑in
 **Fonte:** `docs/blueprint.md`
 
 **Contrato SSOT**
 - `EventAccessPolicy` é a única fonte de verdade para regras de acesso/check‑in.
 - Check‑in sempre valida policy version aplicada.
-- **Plataforma:** guest checkout é permitido apenas na WebApp e no site quando `guestCheckoutAllowed=true`.  
-  Na app mobile, guest checkout é sempre bloqueado (login obrigatório).
+- **Plataforma:** guest checkout é permitido na WebApp, no site público e na app mobile quando `guestCheckoutAllowed=true`.
 - **Restrição:** `inviteTokenAllowed=true` exige `inviteIdentityMatch=EMAIL|BOTH` (USERNAME não suporta tokens).
 - **Integridade:** convites por username só para utilizadores existentes; sem conta → convite por email.
 
@@ -156,8 +232,9 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 **Fonte:** `docs/blueprint.md`
 
 **Contrato SSOT**
-- `Entitlement` é a fonte de verdade de acesso (tickets/registrations são origem, não prova).
+- `Entitlement` é a fonte de verdade de acesso (tickets/registrations/booking são origem, não prova).
 - Refunds/chargebacks atualizam Entitlement (REVOKED/SUSPENDED) e Ticket (REFUNDED/DISPUTED) de forma canónica.
+ - Guest bookings criam Entitlement com owner por email (claim posterior liga a conta).
 
 **Estado:** VERIFIED (static)
 **Evidência:** `domain/finance/fulfillment.ts`, `app/api/stripe/webhook/route.ts`,
@@ -180,6 +257,20 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 
 ---
 
+## C5 — Notificações (event‑driven + dedupe)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Notificações são disparadas por eventos (EventLog/Outbox); nunca ponto‑a‑ponto.
+- Preferências e consentimento são obrigatórios antes do envio.
+- Dedupe por `sourceEventId` (idempotencyKey); replays não duplicam.
+- Logs de delivery são obrigatórios (auditoria + suporte).
+
+**Estado:** PARTIAL
+**Evidência:** `domain/notifications/*`, `app/api/internal/notifications/sweep/route.ts`.
+
+---
+
 ## Invoices + Payouts (artefactos financeiros)
 **Fonte:** `docs/blueprint.md`
 
@@ -187,6 +278,8 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 - `Invoice` e `Payout` registam documentos e saídas financeiras (read‑model canónico).
 - Não existe `PendingPayout`/`Transaction`; payout control interno está desligado.
 - Faturação do consumidor **não é obrigatória** na ORYA (D9.1).
+- Payout release interno é apenas read‑model + gating operacional (sem controlo Stripe).
+- Bloqueio operacional de checkouts quando `onboardingStatus != COMPLETE` ou `risk.hold=true`.
 
 **Estado:** VERIFIED (static)
 **Evidência:** `prisma/schema.prisma`, `lib/store/invoice.ts`,
@@ -211,6 +304,50 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 
 ---
 
+## C8 — Loyalty (pontos não monetários)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Pontos não alteram ledger financeiro; são read‑model separado.
+- Emissão/consumo via EventLog + jobs idempotentes.
+- Guardrails globais de caps e ranges são obrigatórios.
+
+**Estado:** PARTIAL
+**Evidência:** `domain/loyaltyOutbox.ts`, `app/api/cron/loyalty/expire/route.ts`.
+
+---
+
+## C9 — Activity Feed / Ops (EventLog → Feed + Chat)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Activity Feed deriva do EventLog; consumer idempotente.
+- Mensagens Ops no chat são geradas a partir do feed (não ponto‑a‑ponto).
+- Dedupe por `eventId`.
+
+**Estado:** PARTIAL
+**Evidência:** `domain/opsFeed/consumer.ts`, `app/api/chat/**`.
+
+---
+
+## C10 — Chat de Evento (presença via Check‑in)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Entitlement continua a ser a prova única de acesso ao **evento**.
+- **Chat de evento** é feature de **presença**: exige **entitlement + check‑in consumido**.
+- Definição: **check‑in consumido = entitlement consumido** (`CheckinResultCode.OK` ou `ALREADY_USED`).
+- Entrada no chat é por **convite com aceitação explícita**; check‑in/claim gera convite se dentro da janela.
+- Convites **expiram** e **não podem ser aceites** após `endsAt + 24h`.
+- **App‑only**: não existe chat de evento na web para users.
+- Retenção após `endsAt`: participantes até `+24h` (CLOSED depois); org staff read‑only até `+3d`; platform admin read‑only até `+7d`.
+- Check‑in deve disparar convite/ligação ao chat de forma idempotente.
+
+**Estado:** TODO
+**Evidência:** N/A (regra normativa nova; implementação pendente).
+
+---
+
 ## Localização do Utilizador (coarse, profile)
 **Fonte:** `docs/blueprint.md` (addendum)
 
@@ -230,8 +367,12 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 
 **Contrato SSOT**
 - Identidade é centralizada (hoje Supabase). `customerIdentityId` é canónico em finanças.
+- Tipos: `USER` e `GUEST_EMAIL`; email normalizado (`trim + NFKC + lowercase`) + hash HMAC.
+- Guest checkout cria/usa `Identity(GUEST_EMAIL)` por email.
+- Email verificado → claim automático (move Entitlements para USER, sem alterar Ledger/Payment histórico).
+- Merge é idempotente e auditável; identidade antiga fica como tombstone.
 
-**Estado:** VERIFIED (static)
+**Estado:** PARTIAL
 **Evidência:** `lib/security.ts`, `domain/finance/*`, `apps/mobile/lib/supabase.js`.
 
 **Nota:** fluxos E2E devem ser verificados em staging quando credenciais estiverem disponíveis.
@@ -243,9 +384,98 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 
 **Contrato SSOT**
 - Discover é read‑only na fase inicial (sem mutações críticas fora do backend).
+- Index é read‑model derivado do EventLog; jobs idempotentes por `sourceType+sourceId+version`.
+- Unpublish/disable remove do index; rebuild completo é reprodutível.
+
+**Estado:** PARTIAL
+**Evidência:** uso de endpoints públicos em `apps/mobile/features/discover/api.ts`.
+
+---
+
+## Unified Event Ranking (SSOT)
+**Fonte:** `docs/blueprint.md` (13.2)
+
+**Contrato SSOT**
+- `Event.interestTags` é canónico (categorias de interesse).
+- `SearchIndexItem.interestTags` é derivado do evento (read‑model).
+- `user_event_signals` é a única fonte de sinais comportamentais/feedback explícito.
+- Um único ranking canónico é usado em **Agora, Descobrir, Mapa, Pesquisa** (eventos).
+- Ingestão canónica de sinais: `POST /api/me/events/signals`.
+- Superfícies públicas usam ranking unificado: `GET /api/explorar/list`, `GET /api/eventos/list`.
+
+**Estado:** PARTIAL
+**Evidência:** `domain/ranking/eventRanker.ts`, `domain/ranking/listRankedEvents.ts`,
+`app/api/explorar/list/route.ts`, `app/api/eventos/list/route.ts`,
+`app/api/me/events/signals/route.ts`, `prisma/schema.prisma`.
+
+---
+
+## Cut‑line v1 (feature flags + 403 por defeito)
+**Fonte:** `docs/blueprint.md` (Secção 17.1)
+
+**Contrato SSOT**
+- Funcionalidades OUT devem estar escondidas e protegidas por feature‑flag.
+- Sem flag ativa → **403** por defeito.
 
 **Estado:** VERIFIED (static)
-**Evidência:** uso de endpoints públicos em `apps/mobile/features/discover/api.ts`.
+**Evidência:** `lib/featureFlags.ts`, `lib/storeAccess.ts`, `app/api/store/digital/*`, `app/api/widgets/*`, `app/api/internal/public-api/keys/route.ts`.
+
+---
+
+## CRM Ingest + Dedupe (C17)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- CRM ingere **apenas** do EventLog (sem ponto‑a‑ponto).
+- Idempotência por `eventId`; se existir `externalId`, dedupe por `(orgId, externalId)`.
+- Rebuild diário reprodutível (read‑model).
+
+**Estado:** TODO
+**Evidência:** N/A (definição fechada, validação pendente).
+
+---
+
+## Chat/Mensagens (SSOT)
+**Fonte:** `docs/blueprint.md` (D1.1 + D1.2 + 9.14 + 9.15)
+
+**Contrato SSOT**
+- Chat de evento/reserva (B2C) é armazenado em `chat_threads` + `chat_messages`.
+- Chat interno da organização e mensagens entre utilizadores usam `chat_conversations`,
+  `chat_conversation_members` e `chat_conversation_messages`.
+- Utilizador final: mensagens **apenas na app** (sem chat web).
+- Chat de evento: acesso só após entitlement consumido + convite aceite; read‑only após `close_at`;
+  histórico não expira.
+- Chat interno: **só canais**, sem DMs internas; admins criam por defeito; canais automáticos do sistema.
+- Canais cliente‑profissional: cliente vê apenas o profissional; admins podem ver/escrever
+  com identidade “Organização” por defeito.
+- Pedidos de contacto (ORG_CONTACT/SERVICE) exigem **aprovação de staff** antes de criar conversa.
+- Service chat (pré‑reserva) só via pedido; Booking chat inicia no detalhe da reserva.
+- Convites B2C usam **/api/me/messages/invites** (canónico). `/api/chat/invites` não existe.
+- Pedidos USER_DM: dedupe por par e auto‑aceitam se houver pedido inverso.
+- Chat interno V1 (internal_chat_* e /api/organizacao/chat/canais) foi removido.
+- Notificações e silêncio são por conversa (default ligado).
+- Texto apenas na Fase 1; “anular envio” até 2 minutos.
+
+**Estado:** PARTIAL
+**Evidência:** `prisma/schema.prisma` (chat_*),
+`app/api/chat/*`, `app/api/chat/threads/*`, `app/api/cron/chat/maintenance/route.ts`,
+`apps/mobile/features/chat/*`, `apps/mobile/app/(tabs)/messages.tsx`.
+
+---
+
+## Media/Uploads (C18)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Todo upload cria `MediaAsset` com owner, orgId, checksum e metadata.
+- Acesso por URL assinada (TTL); sem public‑by‑default.
+- Delete invalida URLs + audit obrigatório.
+
+**Estado:** VERIFIED (static)
+**Evidência:** `prisma/schema.prisma` (MediaAsset), `app/api/upload/route.ts`, `app/api/upload/delete/route.ts`,
+`app/api/chat/messages/route.ts`, `app/api/me/store/products/[id]/digital-assets/route.ts`,
+`app/api/organizacao/loja/products/[id]/digital-assets/route.ts`.
+**Nota:** uploads de chat usam `metadata.path`/`metadata.bucket` devolvidos pelo presign; `ownerType=ORGANIZATION` em `CHANNEL` e `ownerType=USER` nos restantes tipos; `orgId` mantém tenancy.
 
 ---
 
@@ -464,27 +694,14 @@ Resumo: P0 **bloqueado** por Stripe key expirada. Address Service **pendente** (
 ---
 
 ## API ↔ UI Coverage (snapshot, NON‑NORMATIVE)
-Fonte: `reports/api_ui_coverage.csv`
-
-### Resumo
-- Total rotas: 513
-- Covered: 326
-- Orphan: 143
-- Exempt: 44
-- UI endpoints missing API: 0
-
-### Detalhe
-- Lista completa de orphans e endpoints missing API: `reports/api_orphans.md`
-- CSV completo: `reports/api_ui_coverage.csv`
-
-### Nota
-- Este report inclui varredura **web + mobile** (app + apps/mobile).
+Relatório removido (não canónico).
+Se necessário, gerar sob demanda via `scripts/audit_api_ui_coverage.ts`.
 
 
 ## Observações finais
 - Este registry deve ser atualizado sempre que houver novas decisões de produto/contratos.
 - Qualquer novo endpoint crítico deve usar o envelope canónico e os gates de segurança.
-- Cobertura UI↔API: ver secção "API ↔ UI Coverage" neste documento (alguns orphans são mobile/admin).
+- Cobertura UI↔API: ver secção "API ↔ UI Coverage" neste documento (gerada sob demanda).
 
 ---
 

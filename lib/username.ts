@@ -1,7 +1,8 @@
 export {
+  normalizeUsernameInput,
   sanitizeUsername,
   validateUsername,
   USERNAME_RULES_HINT,
   type UsernameValidation,
   type UsernameValidationOptions,
-} from "../packages/shared/src/usernamePolicy";
+} from "@orya/shared/usernamePolicy";

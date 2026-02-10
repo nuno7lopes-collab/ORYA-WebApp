@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "../icons/Ionicons";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import { DiscoverDateFilter, DiscoverPriceFilter } from "../../features/discover/types";
 import { useDiscoverStore } from "../../features/discover/store";
 import {
@@ -18,6 +18,7 @@ import {
   fetchGeoDetails,
   type MobileGeoAutocompleteItem,
 } from "../../features/discover/location";
+import { formatDistanceKmValue } from "../../lib/formatters";
 
 type FilterSheetProps = {
   visible: boolean;
@@ -35,24 +36,7 @@ type FilterSheetProps = {
 
 const DISTANCE_OPTIONS = [5, 10, 25, 50];
 
-const DATE_OPTIONS: Array<{ key: DiscoverDateFilter; label: string }> = [
-  { key: "today", label: "Hoje" },
-  { key: "weekend", label: "Fim‑de‑semana" },
-  { key: "upcoming", label: "Próximos 7 dias" },
-  { key: "all", label: "Qualquer data" },
-];
-
-const PRICE_OPTIONS: Array<{ key: DiscoverPriceFilter; label: string }> = [
-  { key: "free", label: "Grátis" },
-  { key: "paid", label: "Pagos" },
-  { key: "all", label: "Todos" },
-];
-
-const EVENT_TYPE_OPTIONS: Array<{ key: "all" | "events" | "padel"; label: string }> = [
-  { key: "all", label: "Todos" },
-  { key: "events", label: "Eventos" },
-  { key: "padel", label: "Padel" },
-];
+type Option<T> = { key: T; label: string };
 
 export function FiltersBottomSheet({
   visible,
@@ -67,6 +51,7 @@ export function FiltersBottomSheet({
   eventType,
   onEventTypeChange,
 }: FilterSheetProps) {
+  const { t } = useTranslation();
   const translateY = useRef(new Animated.Value(300)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const locationLabel = useDiscoverStore((state) => state.locationLabel);
@@ -83,6 +68,31 @@ export function FiltersBottomSheet({
   const locationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSearchSeq = useRef(0);
   const locationDetailsSeq = useRef(0);
+  const DATE_OPTIONS: Array<Option<DiscoverDateFilter>> = useMemo(
+    () => [
+      { key: "today", label: t("discover:dateFilters.today") },
+      { key: "weekend", label: t("discover:dateFilters.weekend") },
+      { key: "upcoming", label: t("discover:dateFilters.upcoming") },
+      { key: "all", label: t("discover:dateFilters.all") },
+    ],
+    [t],
+  );
+  const PRICE_OPTIONS: Array<Option<DiscoverPriceFilter>> = useMemo(
+    () => [
+      { key: "free", label: t("discover:priceFilters.free") },
+      { key: "paid", label: t("discover:priceFilters.paid") },
+      { key: "all", label: t("discover:priceFilters.all") },
+    ],
+    [t],
+  );
+  const EVENT_TYPE_OPTIONS: Array<Option<\"all\" | \"events\" | \"padel\">> = useMemo(
+    () => [
+      { key: "all", label: t("discover:priceFilters.all") },
+      { key: "events", label: t("discover:worlds.events") },
+      { key: "padel", label: t("discover:worlds.padel") },
+    ],
+    [t],
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -120,12 +130,12 @@ export function FiltersBottomSheet({
         if (locationSearchSeq.current === seq) {
           setLocationSuggestions(items);
         }
-      } catch (err) {
-        if (locationSearchSeq.current === seq) {
-          setLocationSuggestions([]);
-          setLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
-        }
-      } finally {
+        } catch (err) {
+          if (locationSearchSeq.current === seq) {
+            setLocationSuggestions([]);
+          setLocationSearchError(err instanceof Error ? err.message : t("discover:filters.suggestionsError"));
+          }
+        } finally {
         if (locationSearchSeq.current === seq) {
           setLocationSearchLoading(false);
         }
@@ -185,7 +195,7 @@ export function FiltersBottomSheet({
       setLocationQuery(label);
     } catch (err) {
       if (locationDetailsSeq.current === seq) {
-        setLocationSearchError("Não foi possível validar esta morada.");
+        setLocationSearchError(t("discover:filters.validateError"));
       }
     } finally {
       if (locationDetailsSeq.current === seq) {
@@ -216,7 +226,7 @@ export function FiltersBottomSheet({
     </Pressable>
   );
 
-  const distanceLabel = useMemo(() => `${distanceKm} km`, [distanceKm]);
+  const distanceLabel = useMemo(() => formatDistanceKmValue(distanceKm), [distanceKm]);
   const showEventType = typeof eventType === "string" && typeof onEventTypeChange === "function";
 
   return (
@@ -225,7 +235,7 @@ export function FiltersBottomSheet({
         style={styles.overlay}
         onPress={onClose}
         accessibilityRole="button"
-        accessibilityLabel="Fechar filtros"
+        accessibilityLabel={t("discover:filters.close")}
       >
         <Animated.View style={[styles.overlayDim, { opacity }]} />
       </Pressable>
@@ -233,13 +243,13 @@ export function FiltersBottomSheet({
         <BlurView tint="dark" intensity={80} style={StyleSheet.absoluteFill} />
         <View style={styles.sheetHandle} />
         <View style={styles.header}>
-          <Text style={styles.title}>Filtros</Text>
+          <Text style={styles.title}>{t("discover:filters.title")}</Text>
           <Pressable
             onPress={onClose}
             style={styles.close}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Fechar filtros"
+            accessibilityLabel={t("discover:filters.close")}
           >
             <Ionicons name="close" size={18} color="#ffffff" />
           </Pressable>
@@ -247,7 +257,7 @@ export function FiltersBottomSheet({
 
         {showDistance ? (
           <View style={styles.block}>
-            <Text style={styles.label}>Distância</Text>
+            <Text style={styles.label}>{t("discover:filters.distance")}</Text>
             <View style={styles.row}>
               {DISTANCE_OPTIONS.map((value) =>
                 renderOption(
@@ -258,13 +268,13 @@ export function FiltersBottomSheet({
                 ),
               )}
             </View>
-            <Text style={styles.helper}>Perto de ti · {distanceLabel}</Text>
+            <Text style={styles.helper}>{t("discover:filters.nearbyDistance", { distance: distanceLabel })}</Text>
           </View>
         ) : null}
 
         <View style={styles.block}>
           <View style={styles.locationHeader}>
-            <Text style={styles.label}>Localização</Text>
+            <Text style={styles.label}>{t("discover:filters.location")}</Text>
             {locationSource !== "NONE" ? (
               <Text style={styles.locationSource}>
                 {locationSource === "APPLE_MAPS" ? "Apple" : "IP"}
@@ -280,12 +290,12 @@ export function FiltersBottomSheet({
                 setShowSuggestions(true);
                 setLocationSearchError(null);
               }}
-              placeholder="Procura uma localizacao"
+              placeholder={t("discover:filters.locationPlaceholder")}
               placeholderTextColor="rgba(255,255,255,0.4)"
               style={styles.input}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
-              accessibilityLabel="Localização"
+              accessibilityLabel={t("discover:filters.location")}
             />
             {locationQuery ? (
               <Pressable
@@ -297,26 +307,26 @@ export function FiltersBottomSheet({
                 }}
                 style={styles.clear}
                 accessibilityRole="button"
-                accessibilityLabel="Limpar localização"
+                accessibilityLabel={t("discover:filters.clearLocation")}
               >
                 <Ionicons name="close" size={12} color="rgba(255,255,255,0.7)" />
               </Pressable>
             ) : null}
           </View>
           {locationDetailsLoading ? (
-            <Text style={styles.helper}>A validar morada...</Text>
+            <Text style={styles.helper}>{t("discover:filters.validating")}</Text>
           ) : locationLabel ? (
             <Text style={styles.helper}>{locationLabel}</Text>
           ) : city ? (
-            <Text style={styles.helper}>Localização: {city}</Text>
+            <Text style={styles.helper}>{t("discover:filters.locationCity", { city })}</Text>
           ) : null}
           {locationSearchError ? <Text style={styles.errorText}>{locationSearchError}</Text> : null}
           {showSuggestions ? (
             <View style={styles.suggestions}>
               {locationSearchLoading ? (
-                <Text style={styles.suggestionMuted}>A procurar...</Text>
+                <Text style={styles.suggestionMuted}>{t("discover:filters.searching")}</Text>
               ) : locationSuggestions.length === 0 ? (
-                <Text style={styles.suggestionMuted}>Sem resultados</Text>
+                <Text style={styles.suggestionMuted}>{t("discover:filters.noResults")}</Text>
               ) : (
                 locationSuggestions.map((item) => (
                   <Pressable
@@ -324,7 +334,7 @@ export function FiltersBottomSheet({
                     onPress={() => handleSelectSuggestion(item)}
                     style={styles.suggestionItem}
                     accessibilityRole="button"
-                    accessibilityLabel={`Selecionar ${item.label}`}
+                    accessibilityLabel={t("discover:filters.selectLocation", { label: item.label })}
                   >
                     <Text style={styles.suggestionTitle}>{item.label}</Text>
                     {item.city ? (
@@ -338,7 +348,7 @@ export function FiltersBottomSheet({
         </View>
 
         <View style={styles.block}>
-          <Text style={styles.label}>Data</Text>
+          <Text style={styles.label}>{t("discover:filters.date")}</Text>
           <View style={styles.row}>
             {DATE_OPTIONS.map((option) =>
               renderOption(`date-${option.key}`, option.label, date === option.key, () => onDateChange(option.key)),
@@ -348,7 +358,7 @@ export function FiltersBottomSheet({
 
         {showEventType ? (
           <View style={styles.block}>
-            <Text style={styles.label}>Tipo</Text>
+            <Text style={styles.label}>{t("discover:filters.eventType")}</Text>
             <View style={styles.row}>
               {EVENT_TYPE_OPTIONS.map((option) =>
                 renderOption(
@@ -363,7 +373,7 @@ export function FiltersBottomSheet({
         ) : null}
 
         <View style={styles.block}>
-          <Text style={styles.label}>Preço</Text>
+          <Text style={styles.label}>{t("discover:filters.price")}</Text>
           <View style={styles.row}>
             {PRICE_OPTIONS.map((option) =>
               renderOption(`price-${option.key}`, option.label, price === option.key, () => onPriceChange(option.key)),

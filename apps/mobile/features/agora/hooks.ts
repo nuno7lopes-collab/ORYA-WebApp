@@ -1,57 +1,34 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchAgoraTimeline } from "./api";
-import { fetchDiscoverPage } from "../discover/api";
-import { useIpLocation } from "../onboarding/hooks";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { fetchAgoraPage } from "./api";
+import { AgoraPageParam } from "./types";
 
-export const useAgoraTimeline = (enabled = true) =>
-  useQuery({
-    queryKey: ["agora", "timeline"],
-    queryFn: fetchAgoraTimeline,
+export const useAgoraFeed = (enabled = true) => {
+  const feed = useInfiniteQuery({
+    queryKey: ["agora", "feed"],
+    initialPageParam: { cursor: null, mode: "agora" } as AgoraPageParam,
+    queryFn: ({ pageParam }) => fetchAgoraPage(pageParam),
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? ({ cursor: lastPage.nextCursor, mode: lastPage.mode } satisfies AgoraPageParam) : null,
     staleTime: 1000 * 60 * 2,
+    gcTime: 10 * 60_000,
+    retry: 1,
     enabled,
     refetchOnWindowFocus: false,
   });
 
-export const useAgoraPersonalized = (enabled = true) => {
-  const { data: ipLocation } = useIpLocation(enabled);
-  const city = ipLocation?.city ?? "";
-  const locationReady = Boolean(ipLocation);
-  return useQuery({
-    queryKey: ["agora", "personalized", city],
-    queryFn: () => fetchDiscoverPage({ limit: 8, city: city || undefined, kind: "events" }),
-    staleTime: 1000 * 60 * 2,
-    enabled: enabled && locationReady,
-    refetchOnWindowFocus: false,
-  });
-};
-
-export const useAgoraFeed = (enabled = true) => {
-  const timeline = useAgoraTimeline(enabled);
-  const personalized = useAgoraPersonalized(enabled);
-
-  const isLoading = timeline.isLoading || personalized.isLoading;
-  const isError = timeline.isError || personalized.isError;
-
-  const liveItems = timeline.data?.liveNow ?? [];
-  const soonItems = timeline.data?.comingSoon ?? [];
-  const upcomingItems = timeline.data?.upcoming ?? [];
-  const personalizedItems = personalized.data?.items.filter((item) => item.type === "event").map((item) => item.event) ?? [];
-
-  const hasLive = useMemo(() => liveItems.length + soonItems.length > 0, [liveItems.length, soonItems.length]);
+  const items = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data?.pages]);
 
   return {
-    isLoading,
-    isError,
-    hasLive,
-    liveItems,
-    soonItems,
-    upcomingItems,
-    personalizedItems,
-    timelineError: timeline.error ?? null,
-    personalizedError: personalized.error ?? null,
-    refetch: async () => {
-      await Promise.all([timeline.refetch(), personalized.refetch()]);
-    },
+    items,
+    isLoading: feed.isLoading,
+    isError: feed.isError,
+    isFetching: feed.isFetching,
+    isRefetching: feed.isRefetching,
+    isFetchingNextPage: feed.isFetchingNextPage,
+    hasNextPage: feed.hasNextPage,
+    fetchNextPage: feed.fetchNextPage,
+    feedError: feed.error ?? null,
+    refetch: feed.refetch,
   };
 };

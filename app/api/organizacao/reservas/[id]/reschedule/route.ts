@@ -19,16 +19,18 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
-import { updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
+import { computeBookingPriceComponents } from "@/lib/reservas/bookingPricing";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
+  OrganizationMemberRole.TRAINER,
 ];
 
 const SLOT_STEP_MINUTES = 15;
@@ -80,6 +82,15 @@ function buildBlocks(
     end: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
     professionalId: booking.professionalId,
     resourceId: booking.resourceId,
+  }));
+}
+
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
   }));
 }
 
@@ -136,12 +147,32 @@ async function _POST(
       include: {
         professional: { select: { userId: true } },
         resource: { select: { id: true, capacity: true } },
+        addons: {
+          select: {
+            addonId: true,
+            label: true,
+            deltaMinutes: true,
+            deltaPriceCents: true,
+            quantity: true,
+            sortOrder: true,
+          },
+        },
+        bookingPackage: {
+          select: {
+            packageId: true,
+            label: true,
+            durationMinutes: true,
+            priceCents: true,
+          },
+        },
         service: {
           select: {
             id: true,
             organizationId: true,
             kind: true,
             durationMinutes: true,
+            unitPriceCents: true,
+            currency: true,
             professionalLinks: { select: { professionalId: true, professional: { select: { isActive: true } } } },
             resourceLinks: { select: { resourceId: true, resource: { select: { isActive: true, capacity: true } } } },
             organization: { select: { timezone: true, reservationAssignmentMode: true } },
@@ -153,11 +184,41 @@ async function _POST(
     if (!booking) {
       return fail(ctx, 404, "BOOKING_NOT_FOUND", "Reserva não encontrada.");
     }
-    if (
-      membership.role === OrganizationMemberRole.STAFF &&
-      (!booking.professional?.userId || booking.professional.userId !== profile.id)
-    ) {
-      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+      const scopes = await resolveReservasScopesForMember({
+        organizationId: organization.id,
+        userId: profile.id,
+      });
+      if (!scopes.hasAny) {
+        return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+      }
+      if (membership.role === OrganizationMemberRole.TRAINER) {
+        const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+          organizationId: organization.id,
+          userId: profile.id,
+        });
+        const allowedProfessionals = scopes.professionalIds.length
+          ? intersectIds(trainerProfessionalIds, scopes.professionalIds)
+          : trainerProfessionalIds;
+        if (!allowedProfessionals.length || !booking.professionalId || !allowedProfessionals.includes(booking.professionalId)) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
+        if (scopes.courtIds.length && booking.courtId && !scopes.courtIds.includes(booking.courtId)) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
+        if (scopes.resourceIds.length && booking.resourceId && !scopes.resourceIds.includes(booking.resourceId)) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
+      } else {
+        const allowed = [
+          booking.courtId && scopes.courtIds.includes(booking.courtId),
+          booking.resourceId && scopes.resourceIds.includes(booking.resourceId),
+          booking.professionalId && scopes.professionalIds.includes(booking.professionalId),
+        ].some(Boolean);
+        if (!allowed) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
+      }
     }
     if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(booking.status)) {
       return fail(ctx, 409, "BOOKING_CLOSED", "Reserva já encerrada.");
@@ -171,6 +232,11 @@ async function _POST(
 
     if (startsAt <= new Date()) {
       return fail(ctx, 400, "TIME_PASSED", "Este horário já passou.");
+    }
+    const now = new Date();
+    const hoursUntilBooking = (booking.startsAt.getTime() - now.getTime()) / (60 * 60 * 1000);
+    if (hoursUntilBooking < 4) {
+      return fail(ctx, 400, "RESCHEDULE_WINDOW_EXPIRED", "Prazo de reagendamento expirado.");
     }
 
     const assignmentConfig = resolveServiceAssignmentMode({
@@ -279,7 +345,7 @@ async function _POST(
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
     const bookingEndsAt = new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks] = await Promise.all([
+    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: booking.service.organizationId,
@@ -326,13 +392,22 @@ async function _POST(
         },
         select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
+      prisma.classSession.findMany({
+        where: {
+          organizationId: booking.service.organizationId,
+          status: "SCHEDULED",
+          startsAt: { lt: bookingEndsAt },
+          endsAt: { gt: startsAt },
+        },
+        select: { id: true, startsAt: true, endsAt: true, professionalId: true },
+      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(blockingBookings);
+    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
     const slotKey = startsAt.toISOString();
     const scopesToCheck = scopeIds.map((id) => ({ scopeType, scopeId: id, assignable: true }));
@@ -395,6 +470,16 @@ async function _POST(
         startsAt: item.startsAt,
         endsAt: new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000),
       }));
+    classSessions.forEach((session) => {
+      if (assignmentMode === "RESOURCE") return;
+      if (!session.professionalId || session.professionalId !== scopeIdForConflict) return;
+      existing.push({
+        type: "BOOKING",
+        sourceId: `class:${session.id}`,
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+      });
+    });
     softBlocks.forEach((block) => {
       if (block.scopeType === "ORGANIZATION") {
         existing.push({
@@ -421,55 +506,87 @@ async function _POST(
     }
 
     const { ip, userAgent } = getRequestMeta(req);
-    const { booking: updated } = await updateBooking({
-      bookingId: booking.id,
-      organizationId: booking.organizationId,
-      actorUserId: profile.id,
+    const expiresAt = new Date(Math.min(now.getTime() + 24 * 60 * 60 * 1000, booking.startsAt.getTime() - 2 * 60 * 60 * 1000));
+    if (expiresAt.getTime() <= now.getTime()) {
+      return fail(ctx, 400, "RESCHEDULE_WINDOW_EXPIRED", "Prazo de reagendamento expirado.");
+    }
+    const pricing = computeBookingPriceComponents({
+      serviceDurationMinutes: booking.service?.durationMinutes ?? booking.durationMinutes ?? 0,
+      serviceUnitPriceCents: booking.service?.unitPriceCents ?? booking.price ?? 0,
+      bookingPackage: booking.bookingPackage ?? null,
+      addons: booking.addons ?? null,
+    });
+    const currentPriceCents = Math.max(0, Math.round(booking.price ?? pricing.priceCents ?? 0));
+    const nextPriceCents = Math.max(0, Math.round(pricing.priceCents ?? currentPriceCents));
+    const priceDeltaCents = nextPriceCents - currentPriceCents;
+    const currency = (booking.currency ?? booking.service?.currency ?? "EUR").toUpperCase();
+
+    await prisma.bookingChangeRequest.updateMany({
+      where: { bookingId: booking.id, status: "PENDING" },
+      data: { status: "CANCELLED", respondedAt: now, respondedByUserId: profile.id },
+    });
+
+    const request = await prisma.bookingChangeRequest.create({
       data: {
-        startsAt,
-        professionalId,
-        resourceId,
-        partySize,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        requestedBy: "ORG",
+        requestedByUserId: profile.id,
+        status: "PENDING",
+        proposedStartsAt: startsAt,
+        proposedCourtId: booking.courtId ?? null,
+        proposedProfessionalId: professionalId ?? null,
+        proposedResourceId: resourceId ?? null,
+        priceDeltaCents,
+        currency,
+        expiresAt,
       },
-      select: { id: true, startsAt: true, status: true, professionalId: true, resourceId: true },
     });
 
     await recordOrganizationAudit(prisma, {
       organizationId: organization.id,
       actorUserId: profile.id,
-      action: "BOOKING_RESCHEDULED",
+      action: "BOOKING_RESCHEDULE_REQUESTED",
       metadata: {
         bookingId: booking.id,
         serviceId: booking.serviceId,
         previousStartsAt: booking.startsAt.toISOString(),
         nextStartsAt: startsAt.toISOString(),
         actorRole: membership.role,
+        requestId: request.id,
+        expiresAt: request.expiresAt.toISOString(),
+        priceDeltaCents,
       },
       ip,
       userAgent,
     });
 
     if (booking.userId) {
-      const shouldSend = await shouldNotify(booking.userId, "SYSTEM_ANNOUNCE");
+      const shouldSend = await shouldNotify(booking.userId, "BOOKING_CHANGE_REQUEST");
       if (shouldSend) {
         await createNotification({
           userId: booking.userId,
-          type: "SYSTEM_ANNOUNCE",
-          title: "Reserva reagendada",
-          body: `Nova data: ${startsAt.toLocaleString("pt-PT", {
+          type: "BOOKING_CHANGE_REQUEST",
+          title: "Pedido de reagendamento",
+          body: `Nova data proposta: ${startsAt.toLocaleString("pt-PT", {
             day: "2-digit",
             month: "short",
             hour: "2-digit",
             minute: "2-digit",
           })}`,
           ctaUrl: "/me/reservas",
-          ctaLabel: "Ver reservas",
+          ctaLabel: "Responder",
           organizationId: organization.id,
+          payload: {
+            bookingId: booking.id,
+            requestId: request.id,
+            expiresAt: request.expiresAt.toISOString(),
+          },
         });
       }
     }
 
-    return respondOk(ctx, { booking: updated });
+    return respondOk(ctx, { request });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");

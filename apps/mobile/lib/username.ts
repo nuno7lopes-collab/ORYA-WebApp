@@ -1,4 +1,5 @@
 export {
+  normalizeUsernameInput,
   sanitizeUsername,
   validateUsername,
   USERNAME_RULES_HINT,

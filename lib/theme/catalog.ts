@@ -38,12 +38,10 @@ export const BACKGROUND_CATALOG: CatalogBackground[] = [
     labelKey: "oryaDark",
     descriptionKey: "oryaDark",
     category: "global",
-    color: "#0b1020",
-    image:
-      "radial-gradient(circle at 18% 18%, rgba(110, 140, 255, 0.28), transparent 55%), radial-gradient(circle at 78% 22%, rgba(255, 122, 205, 0.2), transparent 55%), radial-gradient(circle at 35% 85%, rgba(72, 255, 229, 0.12), transparent 60%), linear-gradient(160deg, #0a0f1e 0%, #0f1428 48%, #0b1020 100%)",
-    overlay:
-      "linear-gradient(180deg, rgba(10, 12, 24, 0.15) 0%, rgba(6, 8, 18, 0.6) 58%, rgba(4, 6, 14, 0.92) 100%)",
-    overlayOpacity: 0.92,
+    color: "#0b1014",
+    image: "none",
+    overlay: "none",
+    overlayOpacity: 1,
   },
   {
     id: "orya-light",
@@ -62,11 +60,9 @@ export const BACKGROUND_CATALOG: CatalogBackground[] = [
     labelKey: "landingFlow",
     descriptionKey: "landingFlow",
     category: "landing",
-    color: "#010103",
-    image:
-      "linear-gradient(90deg, rgba(255, 95, 215, 0.38) 0%, rgba(122, 77, 255, 0.48) 35%, rgba(76, 109, 255, 0.42) 70%, rgba(255, 95, 215, 0.38) 100%)",
-    overlay:
-      "radial-gradient(circle at 20% 50%, rgba(255, 95, 215, 0.22), transparent 60%), radial-gradient(circle at 80% 50%, rgba(76, 109, 255, 0.22), transparent 60%), radial-gradient(circle at 50% 20%, rgba(94, 246, 255, 0.16), transparent 55%), radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 0%, rgba(1, 1, 3, 0.82) 60%, rgba(0, 0, 0, 0.98) 100%)",
+    color: "#0b1014",
+    image: "none",
+    overlay: "none",
     overlayOpacity: 1,
   },
   {

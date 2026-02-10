@@ -1,6 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { prisma } from "@/lib/prisma";
 import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -12,12 +11,18 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 async function _GET(req: NextRequest) {
   try {
     if (!isAppRequest(req) && !isSameOrigin(req, { allowMissing: true })) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap(
+        { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
+        { status: 403 }
+      );
     }
 
     const email = req.nextUrl.searchParams.get("email");
     if (!email || !email.includes("@")) {
-      return jsonWrap({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
+      return jsonWrap(
+        { ok: false, errorCode: "INVALID_EMAIL", message: "Email inválido." },
+        { status: 400 }
+      );
     }
     const normalized = email.trim().toLowerCase();
 
@@ -29,48 +34,29 @@ async function _GET(req: NextRequest) {
     });
     if (!limiter.allowed) {
       return jsonWrap(
-        { ok: false, error: "RATE_LIMITED" },
+        {
+          ok: false,
+          errorCode: "RATE_LIMITED",
+          message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+          retryable: true,
+        },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
       );
     }
-    const allowDetails = isAppRequest(req);
-    if (!allowDetails) {
-      return jsonWrap(
-        {
-          ok: true,
-          blocked: false,
-          message: "Se existir conta, receberás instruções.",
-        },
-        { status: 200 },
-      );
-    }
-
-    const authUser = await prisma.users.findFirst({
-      where: { email: normalized },
-      select: { id: true },
-    });
-    const pending = authUser
-      ? await prisma.profile.findFirst({
-          where: { id: authUser.id, status: "PENDING_DELETE" },
-          select: { deletionScheduledFor: true },
-        })
-      : null;
-    if (pending) {
-      return jsonWrap(
-        {
-          ok: true,
-          blocked: true,
-          message:
-            "Este email está associado a uma conta marcada para eliminação. Inicia sessão para a recuperar ou usa outro email.",
-          deletionScheduledFor: pending.deletionScheduledFor,
-        },
-        { status: 200 },
-      );
-    }
-    return jsonWrap({ ok: true, blocked: false }, { status: 200 });
+    return jsonWrap(
+      {
+        ok: true,
+        blocked: false,
+        message: "Se existir conta, receberás instruções.",
+      },
+      { status: 200 },
+    );
   } catch (err) {
     console.error("[auth/check-email] erro", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap(
+      { ok: false, errorCode: "INTERNAL_ERROR", message: "Erro inesperado ao verificar email." },
+      { status: 500 }
+    );
   }
 }
 export const GET = withApiEnvelope(_GET);
@@ -82,13 +68,19 @@ export const GET = withApiEnvelope(_GET);
 async function _POST(req: NextRequest) {
   try {
     if (!isAppRequest(req) && !isSameOrigin(req, { allowMissing: true })) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap(
+        { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
+        { status: 403 }
+      );
     }
 
     const body = (await req.json().catch(() => null)) as { email?: string } | null;
     const email = body?.email;
     if (!email || !email.includes("@")) {
-      return jsonWrap({ ok: false, error: "INVALID_EMAIL" }, { status: 400 });
+      return jsonWrap(
+        { ok: false, errorCode: "INVALID_EMAIL", message: "Email inválido." },
+        { status: 400 }
+      );
     }
     const normalized = email.trim().toLowerCase();
 
@@ -100,20 +92,29 @@ async function _POST(req: NextRequest) {
     });
     if (!limiter.allowed) {
       return jsonWrap(
-        { ok: false, error: "RATE_LIMITED" },
+        {
+          ok: false,
+          errorCode: "RATE_LIMITED",
+          message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+          retryable: true,
+        },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
       );
     }
 
-    const authUser = await prisma.users.findFirst({
-      where: { email: normalized },
-      select: { id: true },
-    });
-
-    return jsonWrap({ ok: true, exists: Boolean(authUser) }, { status: 200 });
+    return jsonWrap(
+      {
+        ok: true,
+        message: "Se existir conta, receberás instruções.",
+      },
+      { status: 200 },
+    );
   } catch (err) {
     console.error("[auth/check-email] erro", err);
-    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
+    return jsonWrap(
+      { ok: false, errorCode: "INTERNAL_ERROR", message: "Erro inesperado ao verificar email." },
+      { status: 500 }
+    );
   }
 }
 

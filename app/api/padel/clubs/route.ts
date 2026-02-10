@@ -390,13 +390,39 @@ async function _DELETE(req: NextRequest) {
     );
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.padelClubCourt.deleteMany({ where: { padelClubId: clubId } });
-    await tx.padelClubStaff.deleteMany({ where: { padelClubId: clubId } });
-    await tx.padelClub.delete({ where: { id: clubId } });
+  const now = new Date();
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.padelClubCourt.updateMany({
+      where: { padelClubId: clubId, deletedAt: null },
+      data: { isActive: false, deletedAt: now },
+    });
+    await tx.padelClubStaff.updateMany({
+      where: { padelClubId: clubId, deletedAt: null },
+      data: { isActive: false, deletedAt: now },
+    });
+    const saved = await tx.padelClub.update({
+      where: { id: clubId },
+      data: { isActive: false, deletedAt: now, isDefault: false },
+    });
+
+    const defaults = await tx.padelClub.count({
+      where: { organizationId: organization.id, isDefault: true, deletedAt: null, isActive: true },
+    });
+    if (defaults === 0) {
+      const nextDefault = await tx.padelClub.findFirst({
+        where: { organizationId: organization.id, isActive: true, deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+      if (nextDefault) {
+        await tx.padelClub.update({ where: { id: nextDefault.id }, data: { isDefault: true } });
+      }
+    }
+
+    return saved;
   });
 
-  return jsonWrap({ ok: true, deleted: true }, { status: 200 });
+  return jsonWrap({ ok: true, deleted: true, club: updated }, { status: 200 });
 }
 export const GET = withApiEnvelope(_GET);
 export const POST = withApiEnvelope(_POST);

@@ -106,6 +106,9 @@ async function _GET(req: NextRequest) {
     }
 
     for (const booking of completedBookings) {
+      if (!booking.userId) {
+        continue;
+      }
       try {
         await ingestCrmInteraction({
           organizationId: booking.organizationId,

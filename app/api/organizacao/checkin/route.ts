@@ -8,6 +8,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { ensureGroupMemberCheckinAccess } from "@/lib/organizationMemberAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import {
@@ -19,6 +20,10 @@ import {
   resolvePolicyForCheckin,
 } from "@/lib/checkin/accessPolicy";
 import { parseQrToken } from "@/lib/qr";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureEventChatInvite } from "@/lib/chat/invites";
+import { createNotification } from "@/lib/notifications";
+import { logWarn } from "@/lib/observability/logger";
 
 type Body = { qrToken?: string; eventId?: number; deviceId?: string };
 
@@ -73,7 +78,7 @@ async function ensureOrganization(userId: string, eventId: number) {
   return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -96,6 +101,25 @@ export async function POST(req: NextRequest) {
     return fail(401, "Not authenticated");
   }
   const userId = data.user.id;
+
+  const limiter = await rateLimit(req, {
+    windowMs: 60 * 1000,
+    max: 300,
+    keyPrefix: "checkin:org",
+    identifier: userId,
+  });
+  if (!limiter.allowed) {
+    logWarn("checkin.org.rate_limited", { requestId: ctx.requestId, userId, retryAfter: limiter.retryAfter });
+    return respondError(
+      ctx,
+      {
+        errorCode: "RATE_LIMITED",
+        message: "Demasiados pedidos. Tenta novamente dentro de alguns minutos.",
+        retryable: true,
+      },
+      { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
+    );
+  }
 
   const body = (await req.json().catch(() => null)) as Body | null;
   const qrTokenRaw = typeof body?.qrToken === "string" ? body.qrToken.trim() : "";
@@ -147,6 +171,7 @@ export async function POST(req: NextRequest) {
           type: true,
           status: true,
           ownerUserId: true,
+          ownerIdentityId: true,
           purchaseId: true,
           policyVersionApplied: true,
           checkins: { select: { resultCode: true } },
@@ -156,13 +181,14 @@ export async function POST(req: NextRequest) {
   });
 
   if (!tokenRow || !tokenRow.entitlement) {
+    logWarn("checkin.org.invalid_token", { requestId: ctx.requestId, eventId });
     return respondOk(ctx, { code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
   const ent = tokenRow.entitlement;
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { startsAt: true, endsAt: true, organizationId: true },
+    select: { id: true, title: true, slug: true, startsAt: true, endsAt: true, organizationId: true },
   });
   const orgId = event?.organizationId ?? null;
   if (!orgId) {
@@ -179,6 +205,7 @@ export async function POST(req: NextRequest) {
 
   const now = new Date();
   if (tokenRow.expiresAt && tokenRow.expiresAt < now) {
+    logWarn("checkin.org.expired_token", { requestId: ctx.requestId, eventId });
     return respondOk(ctx, { code: CheckinResultCode.INVALID }, { status: 200 });
   }
 
@@ -294,6 +321,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (
+      result === CheckinResultCode.OK ||
+      result === CheckinResultCode.ALREADY_USED
+    ) {
+      try {
+        const inviteResult = await ensureEventChatInvite({
+          eventId,
+          entitlementId: ent.id,
+          ownerUserId: ent.ownerUserId ?? null,
+          startsAt: event?.startsAt ?? null,
+          endsAt: event?.endsAt ?? null,
+        });
+        if (inviteResult.ok && inviteResult.created && ent.ownerUserId && event) {
+          await createNotification({
+            userId: ent.ownerUserId,
+            type: "CHAT_AVAILABLE",
+            title: "Chat disponível",
+            body: `O chat do evento ${event.title ?? "Evento"} está disponível.`,
+            ctaUrl: event.slug ? `/eventos/${event.slug}` : "/eventos",
+            ctaLabel: "Entrar no chat",
+            organizationId: event.organizationId ?? null,
+            eventId: event.id,
+            inviteId: inviteResult.inviteId,
+          });
+        }
+      } catch (err) {
+        console.warn("[organização/checkin] Falha ao criar convite de chat", err);
+      }
+    }
+
     return respondOk(ctx, { code: result }, { status: 200 });
   } catch (err: any) {
     if (err?.code === "P2002") {
@@ -316,3 +373,4 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

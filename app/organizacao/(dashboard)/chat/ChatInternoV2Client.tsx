@@ -62,6 +62,8 @@ type ConversationMember = {
 type ConversationItem = {
   id: string;
   type: "DIRECT" | "GROUP" | "CHANNEL";
+  contextType?: string | null;
+  contextId?: string | null;
   title: string | null;
   lastMessageAt: string | null;
   lastMessage: {
@@ -75,6 +77,24 @@ type ConversationItem = {
   viewerLastReadMessageId: string | null;
   mutedUntil?: string | null;
   notifLevel?: "ALL" | "MENTIONS_ONLY" | "OFF";
+};
+
+type ContactRequest = {
+  id: string;
+  contextType: "ORG_CONTACT" | "SERVICE";
+  contextId: string | null;
+  createdAt: string;
+  requester: {
+    id: string;
+    fullName: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+  };
+  service?: {
+    id: number;
+    title: string | null;
+    coverImageUrl: string | null;
+  } | null;
 };
 
 type ConversationListItem = { type: "conversation"; key: string; conversation: ConversationItem };
@@ -371,6 +391,9 @@ export default function ChatInternoV2Client() {
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [conversationSearch, setConversationSearch] = useState("");
+  const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
+  const [contactRequestsLoading, setContactRequestsLoading] = useState(false);
+  const [contactRequestsError, setContactRequestsError] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [members, setMembers] = useState<MemberReadState[]>([]);
@@ -606,6 +629,43 @@ export default function ChatInternoV2Client() {
       }
     },
     [activeConversationId],
+  );
+
+  const loadContactRequests = useCallback(async () => {
+    setContactRequestsError(null);
+    setContactRequestsLoading(true);
+    try {
+      const data = await fetcher<{ ok: boolean; items: ContactRequest[] }>("/api/chat/contact-requests");
+      setContactRequests(data.items ?? []);
+    } catch (err) {
+      setContactRequestsError(err instanceof Error ? err.message : "Erro ao carregar pedidos.");
+    } finally {
+      setContactRequestsLoading(false);
+    }
+  }, []);
+
+  const handleApproveContactRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await fetcher(`/api/chat/contact-requests/${requestId}/approve`, { method: "POST" });
+        await Promise.all([loadContactRequests(), loadConversations()]);
+      } catch (err) {
+        setContactRequestsError(err instanceof Error ? err.message : "Erro ao aprovar pedido.");
+      }
+    },
+    [loadContactRequests, loadConversations],
+  );
+
+  const handleRejectContactRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await fetcher(`/api/chat/contact-requests/${requestId}/reject`, { method: "POST" });
+        await loadContactRequests();
+      } catch (err) {
+        setContactRequestsError(err instanceof Error ? err.message : "Erro ao rejeitar pedido.");
+      }
+    },
+    [loadContactRequests],
   );
 
   const loadOrganizationId = useCallback(async () => {
@@ -1204,7 +1264,8 @@ export default function ChatInternoV2Client() {
   useEffect(() => {
     loadConversations();
     loadDirectory();
-  }, [loadConversations, loadDirectory]);
+    loadContactRequests();
+  }, [loadConversations, loadDirectory, loadContactRequests]);
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversation?.id ?? null;
@@ -1917,7 +1978,9 @@ export default function ChatInternoV2Client() {
   const headerTitle = useMemo(() => {
     if (!activeConversation) return "Conversa";
     const title = buildConversationTitle(activeConversation, user?.id ?? null);
-    return activeConversation.type === "CHANNEL" ? `# ${title}` : title;
+    return activeConversation.type === "CHANNEL" && activeConversation.contextType === "ORG_CHANNEL"
+      ? `# ${title}`
+      : title;
   }, [activeConversation, user?.id]);
   const headerAvatarUrl = useMemo(() => {
     if (!activeConversation) return null;
@@ -1988,6 +2051,71 @@ export default function ChatInternoV2Client() {
           </div>
         </header>
 
+        {contactRequestsLoading ? (
+          <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-white/60">
+            A carregar pedidos...
+          </div>
+        ) : contactRequestsError ? (
+          <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-100">
+            {contactRequestsError}
+          </div>
+        ) : contactRequests.length > 0 ? (
+          <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[11px] text-white/70">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-white/85">Pedidos de contacto</p>
+              <button
+                type="button"
+                className={cn(CTA_NEUTRAL, "h-6 px-2 text-[10px]")}
+                onClick={() => loadContactRequests()}
+              >
+                Atualizar
+              </button>
+            </div>
+            <div className="space-y-2">
+              {contactRequests.map((request) => {
+                const requesterName =
+                  request.requester.fullName?.trim() ||
+                  (request.requester.username ? `@${request.requester.username}` : "Cliente");
+                const subtitle =
+                  request.contextType === "SERVICE"
+                    ? request.service?.title
+                      ? `Serviço · ${request.service.title}`
+                      : "Serviço"
+                    : "Pedido geral";
+                return (
+                  <div
+                    key={request.id}
+                    className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-[11px] font-semibold text-white/90">{requesterName}</p>
+                        <p className="truncate text-[10px] text-white/50">{subtitle}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className={cn(CTA_PRIMARY, "h-7 px-2 text-[10px]")}
+                          onClick={() => handleApproveContactRequest(request.id)}
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(CTA_GHOST, "h-7 px-2 text-[10px]")}
+                          onClick={() => handleRejectContactRequest(request.id)}
+                        >
+                          Rejeitar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         {conversationsLoading ? (
           <div className="space-y-2">
             {[...Array(4)].map((_, idx) => (
@@ -2025,7 +2153,10 @@ export default function ChatInternoV2Client() {
                 const isActive = conversation.id === activeConversation?.id;
                 const unread = conversation.unreadCount > 0;
                 const title = buildConversationTitle(conversation, user?.id ?? null);
-                const displayTitle = conversation.type === "CHANNEL" ? `# ${title}` : title;
+                const displayTitle =
+                  conversation.type === "CHANNEL" && conversation.contextType === "ORG_CHANNEL"
+                    ? `# ${title}`
+                    : title;
                 const lastTime = conversation.lastMessageAt ? formatMessageTime(conversation.lastMessageAt) : "";
                 const lastPreview =
                   conversation.lastMessage?.body ??
@@ -2043,6 +2174,8 @@ export default function ChatInternoV2Client() {
                 const muted = conversation.mutedUntil
                   ? new Date(conversation.mutedUntil) > new Date()
                   : false;
+                const isCustomerConversation =
+                  conversation.contextType && conversation.contextType !== "ORG_CHANNEL";
                 return (
                   <div
                     key={conversation.id}
@@ -2073,7 +2206,12 @@ export default function ChatInternoV2Client() {
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-[13px] font-semibold text-white/95">{displayTitle}</p>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p className="truncate text-[13px] font-semibold text-white/95">{displayTitle}</p>
+                              {isCustomerConversation ? (
+                                <span className={subtlePill}>Cliente</span>
+                              ) : null}
+                            </div>
                             {lastTime ? <span className="text-[10px] text-white/45">{lastTime}</span> : null}
                           </div>
                           <div className="mt-0.5 flex items-center justify-between gap-2">

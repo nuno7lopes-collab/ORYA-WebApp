@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef } from "react";
-import { Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../components/icons/Ionicons";
@@ -13,6 +13,9 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useServiceDetail } from "../../features/services/hooks";
 import { LinearGradient } from "expo-linear-gradient";
 import { safeBack } from "../../lib/navigation";
+import { useAuth } from "../../lib/auth";
+import { createMessageRequest } from "../../features/messages/api";
+import { getUserFacingError } from "../../lib/errors";
 
 const formatPrice = (amountCents: number, currency: string): string => {
   if (amountCents <= 0) return "Grátis";
@@ -67,11 +70,17 @@ export default function ServiceDetailScreen() {
   }>();
   const router = useRouter();
   const navigation = useNavigation();
+  const { session } = useAuth();
+  const accessToken = session?.access_token ?? null;
   const sourceValue = useMemo(
     () => (Array.isArray(source) ? source[0] : source) ?? null,
     [source],
   );
   const idValue = useMemo(() => (Array.isArray(id) ? id[0] : id) ?? "", [id]);
+  const nextRoute = useMemo(() => (idValue ? `/service/${idValue}` : "/service"), [idValue]);
+  const openAuth = useCallback(() => {
+    router.push({ pathname: "/auth", params: { next: nextRoute } });
+  }, [nextRoute, router]);
   const previewTitle = useMemo(
     () => (Array.isArray(serviceTitle) ? serviceTitle[0] : serviceTitle) ?? "Serviço",
     [serviceTitle],
@@ -111,6 +120,7 @@ export default function ServiceDetailScreen() {
   }, [imageTag]);
 
   const { data, isLoading, isError, error, refetch } = useServiceDetail(idValue);
+  const [contacting, setContacting] = useState(false);
   const transitionSource = source === "discover" ? "discover" : "direct";
   const fallbackRoute = useMemo(() => {
     switch (sourceValue) {
@@ -123,11 +133,29 @@ export default function ServiceDetailScreen() {
       case "agora":
         return "/(tabs)/agora";
       default:
-        return "/(tabs)";
+        return "/(tabs)/index";
     }
   }, [sourceValue]);
   const handleBack = () => {
     safeBack(router, navigation, fallbackRoute);
+  };
+
+  const handleContactOrganization = async () => {
+    if (!data?.id) return;
+    if (!accessToken) {
+      openAuth();
+      return;
+    }
+    if (contacting) return;
+    setContacting(true);
+    try {
+      await createMessageRequest({ serviceId: data.id }, accessToken);
+      Alert.alert("Mensagem", "Pedido enviado. A organização vai responder em breve.");
+    } catch (err) {
+      Alert.alert("Mensagem", getUserFacingError(err, "Não foi possível enviar o pedido."));
+    } finally {
+      setContacting(false);
+    }
   };
 
   const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
@@ -189,11 +217,14 @@ export default function ServiceDetailScreen() {
             onPress={handleBack}
             accessibilityRole="button"
             accessibilityLabel="Voltar"
-            className="flex-row items-center gap-2"
-            style={{ minHeight: tokens.layout.touchTarget }}
+            style={{
+              width: tokens.layout.touchTarget,
+              height: tokens.layout.touchTarget,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
             <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-            <Text className="text-white text-sm font-semibold">Voltar</Text>
           </Pressable>
         </View>
 
@@ -421,6 +452,19 @@ export default function ServiceDetailScreen() {
             ) : null}
 
             <View className="pt-5">
+              <Pressable
+                onPress={handleContactOrganization}
+                disabled={contacting}
+                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-4 mb-3"
+                style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Perguntar à organização"
+                accessibilityState={{ disabled: contacting }}
+              >
+                <Text className="text-center text-white text-sm font-semibold">
+                  {contacting ? "A enviar..." : "Perguntar à organização"}
+                </Text>
+              </Pressable>
               <Pressable
                 onPress={() => {
                   if (!data?.id) return;

@@ -16,9 +16,6 @@ describe("booking cancellation refund", () => {
         allowReschedule: true,
         rescheduleWindowMinutes: 2880,
         guestBookingAllowed: false,
-        allowPayAtVenue: false,
-        depositRequired: false,
-        depositAmountCents: 0,
         noShowFeeCents: 0,
       },
       pricingSnapshot: {
@@ -30,11 +27,11 @@ describe("booking cancellation refund", () => {
         feeMode: "ADDED",
         platformFeeBps: 800,
         platformFeeFixedCents: 30,
-        stripeFeeBps: 140,
-        stripeFeeFixedCents: 25,
-        stripeFeeEstimateCents: 200,
+        stripeFeeBps: 0,
+        stripeFeeFixedCents: 0,
+        stripeFeeEstimateCents: 0,
         cardPlatformFeeCents: 0,
-        combinedFeeEstimateCents: 1000, // orya(800) + stripe(200)
+        combinedFeeEstimateCents: 830, // orya(800) + fixo(30)
       },
     };
 
@@ -42,8 +39,8 @@ describe("booking cancellation refund", () => {
     expect(res?.rule).toBe("CLIENT_CANCEL_KEEP_FEES");
     expect(res?.totalCents).toBe(11_000);
     expect(res?.penaltyCents).toBe(1000);
-    expect(res?.feesRetainedCents).toBe(1050);
-    expect(res?.refundCents).toBe(8950);
+    expect(res?.feesRetainedCents).toBe(1080);
+    expect(res?.refundCents).toBe(8920);
   });
 
   it("org cancel is full refund", () => {
@@ -60,9 +57,6 @@ describe("booking cancellation refund", () => {
         allowReschedule: false,
         rescheduleWindowMinutes: null,
         guestBookingAllowed: false,
-        allowPayAtVenue: false,
-        depositRequired: false,
-        depositAmountCents: 0,
         noShowFeeCents: 0,
       },
       pricingSnapshot: {
@@ -74,11 +68,11 @@ describe("booking cancellation refund", () => {
         feeMode: "INCLUDED",
         platformFeeBps: 800,
         platformFeeFixedCents: 30,
-        stripeFeeBps: 140,
-        stripeFeeFixedCents: 25,
-        stripeFeeEstimateCents: 200,
+        stripeFeeBps: 0,
+        stripeFeeFixedCents: 0,
+        stripeFeeEstimateCents: 0,
         cardPlatformFeeCents: 0,
-        combinedFeeEstimateCents: 1000,
+        combinedFeeEstimateCents: 830,
       },
     };
 
@@ -88,4 +82,3 @@ describe("booking cancellation refund", () => {
     expect(res?.penaltyCents).toBe(0);
   });
 });
-

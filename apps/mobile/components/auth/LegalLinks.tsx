@@ -1,4 +1,5 @@
 import { Linking, StyleSheet, Text } from "react-native";
+import { Trans, useTranslation } from "react-i18next";
 
 type LegalLinksProps = {
   termsUrl: string;
@@ -6,25 +7,28 @@ type LegalLinksProps = {
 };
 
 export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
+  useTranslation();
   return (
     <Text style={styles.text}>
-      Ao continuar, aceitas os{" "}
-      <Text
-        style={styles.link}
-        accessibilityRole="link"
-        onPress={() => Linking.openURL(termsUrl)}
-      >
-        Termos
-      </Text>
-      {" "}e a{" "}
-      <Text
-        style={styles.link}
-        accessibilityRole="link"
-        onPress={() => Linking.openURL(privacyUrl)}
-      >
-        Política de Privacidade
-      </Text>
-      .
+      <Trans
+        i18nKey="auth.legal.text"
+        components={{
+          terms: (
+            <Text
+              style={styles.link}
+              accessibilityRole="link"
+              onPress={() => Linking.openURL(termsUrl)}
+            />
+          ),
+          privacy: (
+            <Text
+              style={styles.link}
+              accessibilityRole="link"
+              onPress={() => Linking.openURL(privacyUrl)}
+            />
+          ),
+        }}
+      />
     </Text>
   );
 }

@@ -3,11 +3,13 @@ import { NextRequest } from "next/server";
 
 const prismaFindMany = vi.hoisted(() => vi.fn());
 const prismaProfileFindUnique = vi.hoisted(() => vi.fn());
+const prismaEventFindMany = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     searchIndexItem: { findMany: prismaFindMany },
     profile: { findUnique: prismaProfileFindUnique },
+    event: { findMany: prismaEventFindMany },
   },
 }));
 
@@ -26,6 +28,7 @@ let GET: typeof import("@/app/api/explorar/list/route").GET;
 beforeEach(async () => {
   prismaFindMany.mockReset();
   prismaProfileFindUnique.mockReset();
+  prismaEventFindMany.mockReset();
   vi.resetModules();
   GET = (await import("@/app/api/explorar/list/route")).GET;
 });
@@ -37,8 +40,8 @@ const baseIndexItem = (overrides: Partial<any> = {}) => ({
   slug: "evento-1",
   title: "Evento 1",
   description: "Desc",
-  startsAt: new Date("2025-01-01T10:00:00Z"),
-  endsAt: new Date("2025-01-01T12:00:00Z"),
+  startsAt: new Date("2099-01-01T10:00:00Z"),
+  endsAt: new Date("2099-01-01T12:00:00Z"),
   status: "PUBLISHED",
   templateType: null,
   pricingMode: "STANDARD",
@@ -65,6 +68,7 @@ const baseIndexItem = (overrides: Partial<any> = {}) => ({
 describe("explorar list route", () => {
   it("devolve items com DTO público", async () => {
     prismaFindMany.mockResolvedValue([baseIndexItem()]);
+    prismaEventFindMany.mockResolvedValue([{ id: 1 }]);
 
     const req = new NextRequest("http://localhost/api/explorar/list?limit=1");
     const res = await GET(req);

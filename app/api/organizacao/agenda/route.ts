@@ -6,10 +6,11 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { OrganizationModule } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
+import { resolveReservasScopesForMember, resolveTrainerProfessionalIds, intersectIds } from "@/lib/reservas/memberScopes";
 
 async function _GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -41,7 +42,7 @@ async function _GET(req: NextRequest) {
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+    roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"],
   });
   if (!organization || !membership) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -72,6 +73,13 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
+  const now = new Date();
+  const limitEnd = new Date(Date.UTC(now.getUTCFullYear() + 2, 11, 31, 23, 59, 59, 999));
+  const boundedTo = to.getTime() > limitEnd.getTime() ? limitEnd : to;
+  if (from.getTime() > boundedTo.getTime()) {
+    return jsonWrap({ ok: true, items: [] }, { status: 200 });
+  }
+
   let resolvedClubId: number | null = padelClubId && Number.isFinite(padelClubId) ? padelClubId : null;
   const resolvedCourtId: number | null = courtId && Number.isFinite(courtId) ? courtId : null;
   if (resolvedClubId) {
@@ -95,12 +103,47 @@ async function _GET(req: NextRequest) {
     }
   }
 
+  let scopeFilter: { courtIds?: number[]; resourceIds?: number[]; professionalIds?: number[] } | null = null;
+  let scopeMode: "OR" | "AND" = "OR";
+  if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+    const scopes = await resolveReservasScopesForMember({
+      organizationId: organization.id,
+      userId: user.id,
+    });
+    if (!scopes.hasAny) {
+      return jsonWrap({ ok: true, items: [] }, { status: 200 });
+    }
+    if (membership.role === OrganizationMemberRole.TRAINER) {
+      const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+        organizationId: organization.id,
+        userId: user.id,
+      });
+      if (trainerProfessionalIds.length === 0) {
+        return jsonWrap({ ok: true, items: [] }, { status: 200 });
+      }
+      scopeFilter = {
+        courtIds: scopes.courtIds,
+        resourceIds: scopes.resourceIds,
+        professionalIds: intersectIds(trainerProfessionalIds, scopes.professionalIds),
+      };
+      scopeMode = "AND";
+    } else {
+      scopeFilter = {
+        courtIds: scopes.courtIds,
+        resourceIds: scopes.resourceIds,
+        professionalIds: scopes.professionalIds,
+      };
+    }
+  }
+
   const items = await getAgendaItemsForOrganization({
     organizationId: organization.id,
     from,
-    to,
+    to: boundedTo,
     padelClubId: resolvedClubId,
     courtId: resolvedCourtId,
+    scopeFilter,
+    scopeMode,
   });
   return jsonWrap({ ok: true, items }, { status: 200 });
 }

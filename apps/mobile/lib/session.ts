@@ -11,6 +11,8 @@ export const getActiveSession = async (minTtlMs = 60_000) => {
       const refreshed = await supabase.auth.refreshSession();
       if (refreshed.data.session) {
         session = refreshed.data.session;
+      } else if (!session || expiresAt <= Date.now()) {
+        session = null;
       }
     }
 

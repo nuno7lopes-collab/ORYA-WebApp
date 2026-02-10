@@ -8,6 +8,7 @@ import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 const DEFAULT_LIMIT = 12;
 const SUPPORTED_FORMATS = new Set<padel_format>([
@@ -92,7 +93,7 @@ async function _GET(req: NextRequest) {
 
     const where: Prisma.EventWhereInput = {
       templateType: "PADEL",
-      status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+      status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
       isDeleted: false,
       organizationId: { not: null },
       organization: { status: "ACTIVE" },

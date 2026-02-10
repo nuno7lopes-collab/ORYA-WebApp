@@ -24,18 +24,28 @@ export type WalletItem = {
   consumedAt?: string | null;
 };
 
-export function useWallet() {
+export type WalletFilter = "all" | "upcoming" | "past";
+
+export function useWallet(options: { filter?: WalletFilter; enabled?: boolean } = {}) {
+  const filter = options.filter ?? "all";
+  const enabled = options.enabled ?? true;
   const [items, setItems] = useState<WalletItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
 
   const fetchWallet = useCallback(async () => {
+    if (!enabled) return;
     setLoading(true);
     setError(null);
     setAuthRequired(false);
     try {
-      const res = await fetch("/api/me/wallet", { cache: "no-store", credentials: "include" });
+      const params = new URLSearchParams();
+      if (filter === "upcoming") params.append("filter", "upcoming");
+      if (filter === "past") params.append("filter", "past");
+      const query = params.toString();
+      const url = query ? `/api/me/wallet?${query}` : "/api/me/wallet";
+      const res = await fetch(url, { cache: "no-store", credentials: "include" });
       if (!res.ok) {
         const text = await res.text();
         if (res.status === 401) {
@@ -67,11 +77,12 @@ export function useWallet() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled, filter]);
 
   useEffect(() => {
+    if (!enabled) return;
     fetchWallet();
-  }, [fetchWallet]);
+  }, [enabled, fetchWallet, filter]);
 
   return { items, loading, error, authRequired, refetch: fetchWallet };
 }

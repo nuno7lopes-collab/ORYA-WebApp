@@ -19,7 +19,6 @@ jobs:
       STRIPE_SECRET_KEY: sk_test_dummy
       STRIPE_WEBHOOK_SECRET: whsec_dummy
       QR_SECRET_KEY: dummy
-      RESEND_API_KEY: dummy
     steps:
       - uses: actions/checkout@v4
         with:

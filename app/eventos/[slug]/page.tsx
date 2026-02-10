@@ -542,6 +542,7 @@ export default async function EventPage({
 
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
+  const eventIsActive = !eventEnded;
   const canSeeTickets = !isInviteRestricted || isInvited || isAdmin;
 
   const orderedTickets = visibleTicketTypes
@@ -1523,6 +1524,7 @@ export default async function EventPage({
           uiTickets={uiTickets}
           checkoutUiVariant={checkoutVariant === "PADEL" ? "PADEL" : "DEFAULT"}
           locale={locale}
+          eventIsActive={eventIsActive}
           padelMeta={
             checkoutVariant === "PADEL"
               ? {

@@ -25,6 +25,9 @@ import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
+import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
+import { FilterChip } from "@/app/components/mobile/MobileFilters";
+import InterestIcon from "@/app/components/interests/InterestIcon";
 
 type TicketTypeRow = {
   name: string;
@@ -301,6 +304,7 @@ export function NewOrganizationEventPage({
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  const [interestTags, setInterestTags] = useState<InterestId[]>([]);
   const [locationQuery, setLocationQuery] = useState("");
   const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
   const [locationSearchLoading, setLocationSearchLoading] = useState(false);
@@ -766,7 +770,7 @@ export function NewOrganizationEventPage({
     }
     const start = roundToNextHour(new Date());
     const end = new Date(start);
-    end.setHours(end.getHours() + 1);
+    end.setHours(end.getHours() + 5);
     setStartsAt(buildLocalDateTime(formatInputDate(start), formatInputTime(start)));
     setEndsAt(buildLocalDateTime(formatInputDate(end), formatInputTime(end)));
     scheduleInitializedRef.current = true;
@@ -1669,7 +1673,11 @@ export function NewOrganizationEventPage({
     setUploadingCover(true);
     setErrorMessage(null);
     try {
-      const res = await fetch("/api/upload?scope=event-cover", {
+      const organizationId = organizationIdFromStatus;
+      if (!organizationId) {
+        throw new Error("Organização inválida.");
+      }
+      const res = await fetch(`/api/upload?scope=event-cover&organizationId=${organizationId}`, {
         method: "POST",
         body: formData,
       });
@@ -1967,6 +1975,9 @@ export function NewOrganizationEventPage({
     }
     if (!startsAt) {
       issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
+    }
+    if (!endsAt) {
+      issues.push({ field: "endsAt", message: "Data/hora de fim obrigatória." });
     }
     if (!locationTbd && !locationProviderId) {
       issues.push({ field: "location", message: "Seleciona uma sugestão de localização." });
@@ -2446,6 +2457,7 @@ export function NewOrganizationEventPage({
         startsAt,
         endsAt,
         templateType: templateToSend,
+        interestTags,
         addressId: resolvedAddressId,
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
@@ -2963,8 +2975,8 @@ export function NewOrganizationEventPage({
 
   const resolveEndFallback = () => {
     const baseStart = resolveStartFallback();
-    const base = endsAt ? new Date(endsAt) : new Date(baseStart.getTime() + 60 * 60 * 1000);
-    return Number.isNaN(base.getTime()) ? new Date(baseStart.getTime() + 60 * 60 * 1000) : base;
+    const base = endsAt ? new Date(endsAt) : new Date(baseStart.getTime() + 5 * 60 * 60 * 1000);
+    return Number.isNaN(base.getTime()) ? new Date(baseStart.getTime() + 5 * 60 * 60 * 1000) : base;
   };
 
   const handleStartDateChange = (value: string) => {
@@ -4396,6 +4408,32 @@ export function NewOrganizationEventPage({
                     <p className="text-[11px] text-white/55">{descriptionSummary}</p>
                   </div>
                 </button>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                <p className="text-[12px] text-white/80">Interesses do evento</p>
+                <p className="text-[11px] text-white/55">Ajuda o ranking e personalização.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {INTEREST_OPTIONS.map((interest) => {
+                    const active = interestTags.includes(interest.id);
+                    return (
+                      <FilterChip
+                        key={interest.id}
+                        label={interest.label}
+                        icon={<InterestIcon id={interest.id} className="h-3 w-3" />}
+                        active={active}
+                        onClick={() => {
+                          setInterestTags((prev) => {
+                            if (prev.includes(interest.id)) {
+                              return prev.filter((item) => item !== interest.id);
+                            }
+                            return [...prev, interest.id];
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="space-y-1.5">

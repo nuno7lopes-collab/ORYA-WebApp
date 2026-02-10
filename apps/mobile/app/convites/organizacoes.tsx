@@ -7,6 +7,7 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { fetchOrganizationInvites, respondOrganizationInvite } from "../../features/notifications/api";
@@ -15,6 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { tokens } from "@orya/shared";
+import { useAuth } from "../../lib/auth";
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "owner",
@@ -50,12 +52,14 @@ const formatOrgName = (invite: OrganizationInvite) => {
 };
 
 export default function OrganizationInvitesScreen() {
+  const { session } = useAuth();
   const topPadding = useTopHeaderPadding(12);
   const tabBarPadding = useTabBarPadding();
   const queryClient = useQueryClient();
   const router = useRouter();
   const navigation = useNavigation();
   const params = useLocalSearchParams<{ source?: string }>();
+  const topBar = useTopBarScroll({ hideOnScroll: false });
   const [pendingId, setPendingId] = useState<string | null>(null);
   const source = useMemo(() => {
     const raw = params.source;
@@ -63,14 +67,34 @@ export default function OrganizationInvitesScreen() {
     if (typeof raw === "string" && raw.trim().length > 0) return raw;
     return null;
   }, [params.source]);
-  const fallbackRoute = source === "notifications" ? "/notifications" : "/(tabs)";
+  const fallbackRoute = source === "notifications" ? "/notifications" : "/(tabs)/index";
+  const backButton = (
+    <Pressable
+      onPress={() => safeBack(router, navigation, fallbackRoute)}
+      accessibilityRole="button"
+      accessibilityLabel="Voltar"
+      style={({ pressed }) => [
+        {
+          width: tokens.layout.touchTarget,
+          height: tokens.layout.touchTarget,
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: tokens.layout.touchTarget,
+        },
+        pressed ? { opacity: 0.8 } : null,
+      ]}
+    >
+      <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+    </Pressable>
+  );
 
   const invitesQuery = useQuery({
-    queryKey: ["org-invites"],
-    queryFn: fetchOrganizationInvites,
+    queryKey: ["org-invites", session?.user?.id ?? "anon"],
+    queryFn: () => fetchOrganizationInvites(session?.access_token ?? null),
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     retry: 1,
+    enabled: Boolean(session?.access_token),
   });
 
   const invites = useMemo(() => invitesQuery.data ?? [], [invitesQuery.data]);
@@ -80,15 +104,17 @@ export default function OrganizationInvitesScreen() {
       if (pendingId) return;
       setPendingId(inviteId);
       try {
-        await respondOrganizationInvite(inviteId, action);
-        await queryClient.invalidateQueries({ queryKey: ["org-invites"] });
+        await respondOrganizationInvite(inviteId, action, session?.access_token ?? null);
+        await queryClient.invalidateQueries({
+          queryKey: ["org-invites", session?.user?.id ?? "anon"],
+        });
       } catch {
         Alert.alert("Não foi possível", "Tenta novamente.");
       } finally {
         setPendingId(null);
       }
     },
-    [pendingId, queryClient],
+    [pendingId, queryClient, session?.access_token, session?.user?.id],
   );
 
   const renderInvite = useCallback(
@@ -204,18 +230,8 @@ export default function OrganizationInvitesScreen() {
 
   return (
     <LiquidBackground variant="solid">
-      <TopAppHeader />
+      <TopAppHeader scrollState={topBar} variant="title" title="Convites" leftSlot={backButton} />
       <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: tabBarPadding }}>
-        <Pressable
-          onPress={() => safeBack(router, navigation, fallbackRoute)}
-          className="flex-row items-center gap-2 mb-3"
-          style={{ minHeight: tokens.layout.touchTarget }}
-          accessibilityRole="button"
-          accessibilityLabel="Voltar"
-        >
-          <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-          <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
-        </Pressable>
         <View style={{ marginBottom: 14 }}>
           <Text className="text-white text-2xl font-semibold">Convites de organização</Text>
           <Text className="text-white/60 text-sm">Aceita ou recusa convites pendentes.</Text>

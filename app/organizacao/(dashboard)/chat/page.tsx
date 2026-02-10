@@ -10,9 +10,18 @@ import { CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
 import { OrganizationMemberRole } from "@prisma/client";
 import ChatPreviewClient from "./preview/ChatPreviewClient";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import ChatInternoClient from "./ChatInternoClient";
+import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
-export default async function OrganizationChatPage() {
+export default async function OrganizationChatPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
+}) {
+  const resolvedSearchParams =
+    typeof searchParams === "object" && typeof (searchParams as Promise<Record<string, string>>)?.then === "function"
+      ? await (searchParams as Promise<Record<string, string | string[] | undefined>>)
+      : (searchParams ?? {});
   const { user } = await getCurrentUser();
 
   if (!user) {
@@ -30,6 +39,25 @@ export default async function OrganizationChatPage() {
 
   if (!organization || !membership || !allowedRoles.has(membership.role)) {
     const target = appendOrganizationIdToHref("/organizacao/organizations", organization?.id ?? null);
+    redirect(target);
+  }
+
+  const rawOrgId = Array.isArray(resolvedSearchParams?.organizationId)
+    ? resolvedSearchParams?.organizationId[0]
+    : resolvedSearchParams?.organizationId;
+  const requestedOrgId = parseOrganizationId(rawOrgId);
+  if (!requestedOrgId || requestedOrgId !== organization.id) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(resolvedSearchParams)) {
+        if (key === "organizationId" || typeof value === "undefined") continue;
+        if (Array.isArray(value)) {
+          value.forEach((item) => params.append(key, item));
+        } else {
+          params.set(key, value);
+        }
+    }
+    params.set("organizationId", String(organization.id));
+    const target = `/organizacao/chat?${params.toString()}`;
     redirect(target);
   }
 
@@ -66,9 +94,12 @@ export default async function OrganizationChatPage() {
     );
   }
 
+  const ui = typeof resolvedSearchParams?.ui === "string" ? resolvedSearchParams?.ui.trim().toLowerCase() : "";
+  const showInterno = ui !== "preview";
+
   return (
     <div className={cn("h-full min-h-0 w-full text-white")}>
-      <ChatPreviewClient />
+      {showInterno ? <ChatInternoClient /> : <ChatPreviewClient />}
     </div>
   );
 }

@@ -88,6 +88,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
       MARKETING_PROMO_ALERT: t("notificationsTypeMarketing", locale),
       CRM_CAMPAIGN: t("notificationsTypeCampaign", locale),
       SYSTEM_ANNOUNCE: t("notificationsTypeSystem", locale),
+      CHAT_AVAILABLE: t("notificationsTypeChat", locale),
       CHAT_OPEN: t("notificationsTypeChat", locale),
       CHAT_ANNOUNCEMENT: t("notificationsTypeChat", locale),
       CHAT_MESSAGE: t("notificationsTypeChatMessage", locale),

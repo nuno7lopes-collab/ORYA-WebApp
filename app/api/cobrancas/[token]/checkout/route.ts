@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { BookingChargeStatus, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { getPaidSalesGate, formatPaidSalesGateMessage } from "@/lib/organizationPayments";
@@ -102,7 +102,6 @@ async function _POST(
     }
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
     const pricing = computePricing(amountCents, 0, {
       platformDefaultFeeMode: "INCLUDED",
       organizationPlatformFeeBps: organization.platformFeeBps ?? undefined,
@@ -118,14 +117,14 @@ async function _POST(
       feeMode: pricing.feeMode,
       platformFeeBps: pricing.feeBpsApplied,
       platformFeeFixedCents: pricing.feeFixedApplied,
-      stripeFeeBps: stripeBaseFees.feeBps,
-      stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
     });
 
     const totalCents = combinedFees.totalCents;
     const platformFeeCents = Math.min(pricing.platformFeeCents, totalCents);
-    const stripeFeeEstimateCents = combinedFees.stripeFeeCentsEstimate ?? 0;
-    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents - stripeFeeEstimateCents);
+    const stripeFeeEstimateCents = 0;
+    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
 
     const sourceId = parseChargeSourceId(charge.id);
 

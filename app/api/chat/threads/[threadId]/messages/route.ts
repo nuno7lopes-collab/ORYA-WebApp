@@ -8,6 +8,9 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
 import { OrganizationMemberRole } from "@prisma/client";
+import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
+import { enqueueNotification } from "@/domain/notifications/outbox";
+import { isChatRedisAvailable, isChatUserOnline } from "@/lib/chat/redis";
 
 const CHAT_ORG_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -42,18 +45,6 @@ function decodeCursor(raw: string | null) {
   }
 }
 
-async function userHasEventAccess(userId: string, eventId: number) {
-  const entitlement = await prisma.entitlement.findFirst({
-    where: {
-      ownerUserId: userId,
-      eventId,
-      status: { in: ["ACTIVE"] },
-    },
-    select: { id: true },
-  });
-  return Boolean(entitlement);
-}
-
 async function userIsOrgMember(userId: string, organizationId: number | null) {
   if (!organizationId) return false;
   const member = await prisma.organizationMember.findFirst({
@@ -67,7 +58,49 @@ async function userIsOrgMember(userId: string, organizationId: number | null) {
   return Boolean(member);
 }
 
-async function ensureMemberAccess(threadId: string, userId: string) {
+async function resolveInviteAccess(
+  threadId: string,
+  userId: string,
+  ownerClauses: Array<Record<string, unknown>>,
+) {
+  const now = new Date();
+  const invite = await prisma.chatEventInvite.findFirst({
+    where: { threadId, userId, status: "ACCEPTED" },
+    select: { id: true, entitlementId: true, status: true, revokedAt: true },
+  });
+  if (!invite) return { ok: false as const, reason: "INVITE_REQUIRED" };
+  if (invite.revokedAt || invite.status === "REVOKED") {
+    return { ok: true as const, writeAllowed: false as const };
+  }
+
+  const entitlement = await prisma.entitlement.findFirst({
+    where: {
+      id: invite.entitlementId,
+      status: "ACTIVE",
+      OR: ownerClauses as any,
+      checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
+    },
+    select: { id: true },
+  });
+
+  if (!entitlement) {
+    await prisma.$transaction([
+      prisma.chatEventInvite.update({
+        where: { id: invite.id },
+        data: { status: "REVOKED", revokedAt: now, updatedAt: now },
+      }),
+      prisma.chatMember.updateMany({
+        where: { threadId, userId },
+        data: { accessRevokedAt: now },
+      }),
+    ]);
+    return { ok: true as const, writeAllowed: false as const };
+  }
+
+  return { ok: true as const, writeAllowed: true as const };
+}
+
+async function ensureMemberAccess(threadId: string, user: { id: string; email?: string | null }) {
   const thread = await prisma.chatThread.findUnique({
     where: { id: threadId },
     select: {
@@ -84,35 +117,72 @@ async function ensureMemberAccess(threadId: string, userId: string) {
     return { ok: false as const, error: "THREAD_NOT_FOUND" };
   }
 
+  const event = await prisma.event.findFirst({
+    where: { id: thread.entityId, isDeleted: false },
+    select: { id: true, organizationId: true, ownerUserId: true, startsAt: true, endsAt: true },
+  });
+  if (!event) return { ok: false as const, error: "EVENT_NOT_FOUND" };
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: user.id },
+    select: { roles: true },
+  });
+  const roles = profile?.roles ?? [];
+  const isPlatformAdmin = roles.includes("admin");
+  const isOwner = event.ownerUserId === user.id;
+  const isOrgMember = await userIsOrgMember(user.id, event.organizationId ?? null);
+
+  const now = new Date();
   const existingMember = await prisma.chatMember.findFirst({
-    where: { threadId: thread.id, userId },
+    where: { threadId: thread.id, userId: user.id },
     select: { id: true, bannedAt: true },
   });
   if (existingMember?.bannedAt) {
     return { ok: false as const, error: "BANNED" };
   }
 
-  if (!existingMember) {
-    const event = await prisma.event.findFirst({
-      where: { id: thread.entityId, isDeleted: false },
-      select: { id: true, organizationId: true, ownerUserId: true },
-    });
-    if (!event) return { ok: false as const, error: "EVENT_NOT_FOUND" };
-    const isOwner = event.ownerUserId === userId;
-    const hasEntitlement = await userHasEventAccess(userId, event.id);
-    const isOrgMember = await userIsOrgMember(userId, event.organizationId ?? null);
-    if (!isOwner && !hasEntitlement && !isOrgMember) {
-      return { ok: false as const, error: "FORBIDDEN" };
+  let role: "ORG" | "PLATFORM_ADMIN" | "PARTICIPANT" | null = null;
+  const identityIds = await getUserIdentityIds(user.id);
+  const ownerClauses = buildEntitlementOwnerClauses({
+    userId: user.id,
+    identityIds,
+    email: user.email ?? null,
+  });
+
+  let participantInviteAccess: Awaited<ReturnType<typeof resolveInviteAccess>> | null = null;
+  if (isPlatformAdmin) {
+    role = "PLATFORM_ADMIN";
+  } else if (isOwner || isOrgMember) {
+    role = "ORG";
+  } else {
+    participantInviteAccess = await resolveInviteAccess(thread.id, user.id, ownerClauses);
+    if (!participantInviteAccess.ok) {
+      return { ok: false as const, error: participantInviteAccess.reason };
     }
-    const role = isOwner || isOrgMember ? "ORG" : "PARTICIPANT";
+    role = "PARTICIPANT";
+  }
+
+  const writeAllowed =
+    role !== "PARTICIPANT" ? true : Boolean(participantInviteAccess?.writeAllowed);
+
+  if (role) {
     await prisma.chatMember.upsert({
-      where: { threadId_userId: { threadId: thread.id, userId } },
-      update: { leftAt: null, role },
-      create: { threadId: thread.id, userId, role },
+      where: { threadId_userId: { threadId: thread.id, userId: user.id } },
+      update: {
+        leftAt: null,
+        role,
+        accessRevokedAt: role === "PARTICIPANT" && !writeAllowed ? now : null,
+      },
+      create: {
+        threadId: thread.id,
+        userId: user.id,
+        role,
+        accessRevokedAt: role === "PARTICIPANT" && !writeAllowed ? now : null,
+      },
     });
   }
 
-  return { ok: true as const, thread };
+  return { ok: true as const, thread, role, writeAllowed };
 }
 
 async function _GET(req: NextRequest, context: { params: { threadId: string } }) {
@@ -121,7 +191,7 @@ async function _GET(req: NextRequest, context: { params: { threadId: string } })
     const user = await ensureAuthenticated(supabase);
 
     const threadId = context.params.threadId;
-    const access = await ensureMemberAccess(threadId, user.id);
+    const access = await ensureMemberAccess(threadId, user);
     if (!access.ok) {
       const status = access.error === "THREAD_NOT_FOUND" || access.error === "EVENT_NOT_FOUND" ? 404 : 403;
       return jsonWrap({ error: access.error }, { status });
@@ -143,7 +213,6 @@ async function _GET(req: NextRequest, context: { params: { threadId: string } })
       const items = await prisma.chatMessage.findMany({
         where: {
           threadId,
-          deletedAt: null,
           OR: [
             { createdAt: { gt: after.createdAt } },
             { createdAt: after.createdAt, id: { gt: after.id } },
@@ -156,6 +225,7 @@ async function _GET(req: NextRequest, context: { params: { threadId: string } })
           body: true,
           kind: true,
           createdAt: true,
+          deletedAt: true,
           user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
         },
       });
@@ -166,9 +236,10 @@ async function _GET(req: NextRequest, context: { params: { threadId: string } })
         thread: threadPayload,
         items: items.map((item) => ({
           id: item.id,
-          body: item.body,
+          body: item.deletedAt ? null : item.body,
           kind: item.kind,
           createdAt: item.createdAt.toISOString(),
+          deletedAt: item.deletedAt ? item.deletedAt.toISOString() : null,
           sender: item.user
             ? {
                 id: item.user.id,
@@ -182,13 +253,12 @@ async function _GET(req: NextRequest, context: { params: { threadId: string } })
       });
     }
 
-    const items = await prisma.chatMessage.findMany({
-      where: {
-        threadId,
-        deletedAt: null,
-        ...(cursor
-          ? {
-              OR: [
+      const items = await prisma.chatMessage.findMany({
+        where: {
+          threadId,
+          ...(cursor
+            ? {
+                OR: [
                 { createdAt: { lt: cursor.createdAt } },
                 { createdAt: cursor.createdAt, id: { lt: cursor.id } },
               ],
@@ -197,14 +267,15 @@ async function _GET(req: NextRequest, context: { params: { threadId: string } })
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit,
-      select: {
-        id: true,
-        body: true,
-        kind: true,
-        createdAt: true,
-        user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
-      },
-    });
+        select: {
+          id: true,
+          body: true,
+          kind: true,
+          createdAt: true,
+          deletedAt: true,
+          user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+        },
+      });
 
     const ordered = items.slice().reverse();
     const nextCursor = items.length === limit ? encodeCursor(items[items.length - 1]) : null;
@@ -215,9 +286,10 @@ async function _GET(req: NextRequest, context: { params: { threadId: string } })
       thread: threadPayload,
       items: ordered.map((item) => ({
         id: item.id,
-        body: item.body,
+        body: item.deletedAt ? null : item.body,
         kind: item.kind,
         createdAt: item.createdAt.toISOString(),
+        deletedAt: item.deletedAt ? item.deletedAt.toISOString() : null,
         sender: item.user
           ? {
               id: item.user.id,
@@ -245,7 +317,7 @@ async function _POST(req: NextRequest, context: { params: { threadId: string } }
     const user = await ensureAuthenticated(supabase);
     const threadId = context.params.threadId;
 
-    const access = await ensureMemberAccess(threadId, user.id);
+    const access = await ensureMemberAccess(threadId, user);
     if (!access.ok) {
       const status = access.error === "THREAD_NOT_FOUND" || access.error === "EVENT_NOT_FOUND" ? 404 : 403;
       return jsonWrap({ error: access.error }, { status });
@@ -269,18 +341,16 @@ async function _POST(req: NextRequest, context: { params: { threadId: string } }
       closeAt: thread.closeAt.toISOString(),
     };
 
+    if (!access.writeAllowed) {
+      return jsonWrap({ error: "READ_ONLY" }, { status: 403 });
+    }
+
     if (thread.status === "READ_ONLY" || thread.status === "CLOSED") {
       return jsonWrap({ error: "READ_ONLY" }, { status: 403 });
     }
 
     if (thread.status === "ANNOUNCEMENTS") {
-      const event = await prisma.event.findFirst({
-        where: { id: thread.entityId, isDeleted: false },
-        select: { ownerUserId: true, organizationId: true },
-      });
-      const isOwner = event?.ownerUserId === user.id;
-      const isOrgMember = await userIsOrgMember(user.id, event?.organizationId ?? null);
-      if (!isOwner && !isOrgMember) {
+      if (access.role !== "ORG" && access.role !== "PLATFORM_ADMIN") {
         return jsonWrap({ error: "READ_ONLY" }, { status: 403 });
       }
     }
@@ -297,9 +367,39 @@ async function _POST(req: NextRequest, context: { params: { threadId: string } }
         body: true,
         kind: true,
         createdAt: true,
+        deletedAt: true,
         user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
       },
     });
+
+    const recipients = await prisma.chatMember.findMany({
+      where: { threadId, userId: { not: user.id }, bannedAt: null },
+      select: { userId: true, mutedUntil: true },
+    });
+
+    const now = new Date();
+    const preview = body.length > 160 ? `${body.slice(0, 157)}…` : body;
+
+    if (isChatRedisAvailable()) {
+      for (const recipient of recipients) {
+        if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
+        const online = await isChatUserOnline(recipient.userId);
+        if (online) continue;
+        await enqueueNotification({
+          dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
+          userId: recipient.userId,
+          notificationType: "CHAT_MESSAGE",
+          payload: {
+            threadId,
+            eventId: thread.entityId,
+            messageId: message.id,
+            senderId: user.id,
+            preview,
+            contextType: "EVENT",
+          },
+        });
+      }
+    }
 
     return jsonWrap({
       thread: threadPayload,
@@ -308,6 +408,7 @@ async function _POST(req: NextRequest, context: { params: { threadId: string } }
         body: message.body,
         kind: message.kind,
         createdAt: message.createdAt.toISOString(),
+        deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
         sender: message.user
           ? {
               id: message.user.id,

@@ -6,6 +6,7 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreProductStatus } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function getStoreContext(userId: string) {
   const store = await prisma.store.findFirst({
@@ -29,7 +30,7 @@ function errorCodeForStatus(status: number) {
   return "INTERNAL_ERROR";
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -125,3 +126,4 @@ export async function GET(req: NextRequest) {
     return fail(500, "Erro ao carregar resumo.", "INTERNAL_ERROR", true);
   }
 }
+export const GET = withApiEnvelope(_GET);

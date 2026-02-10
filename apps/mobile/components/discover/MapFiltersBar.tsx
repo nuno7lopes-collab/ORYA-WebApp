@@ -307,11 +307,6 @@ export function MapFiltersBar({
   const [draftEnd, setDraftEnd] = useState<Date | null>(rangeEnd);
   const [currentMonth, setCurrentMonth] = useState<Date>(rangeStart ?? new Date());
 
-  const typeLabel = useMemo(() => {
-    const found = TEMPLATE_OPTIONS.find((option) => option.key === templateType);
-    return found?.label ?? "Todos";
-  }, [templateType]);
-
   useEffect(() => {
     if (!priceOpen) return;
     setDraftMin(priceMin);
@@ -325,18 +320,6 @@ export function MapFiltersBar({
     setDraftEnd(rangeEnd);
     setCurrentMonth(rangeStart ?? rangeEnd ?? new Date());
   }, [dateOpen, rangeEnd, rangeStart]);
-
-  const priceLabel = useMemo(() => {
-    const formatter = compact ? formatPriceLabelShort : formatPriceLabel;
-    const minLabel = formatter(priceMin, false);
-    const maxLabel = formatter(priceMax, true);
-    return `${minLabel} – ${maxLabel}`;
-  }, [compact, priceMax, priceMin]);
-
-  const dateLabel = useMemo(
-    () => (compact ? formatRangeLabelShort(rangeStart, rangeEnd) : formatRangeLabel(rangeStart, rangeEnd)),
-    [compact, rangeEnd, rangeStart],
-  );
 
   const handlePriceChange = (minValue: number, maxValue: number) => {
     setDraftMin(minValue);
@@ -398,8 +381,6 @@ export function MapFiltersBar({
     ? [styles.barScrollContent, styles.barScrollContentCompact]
     : styles.barScrollContent;
   const chipStyle = compact ? [styles.chip, styles.chipCompact] : styles.chip;
-  const chipLabelStyle = compact ? [styles.chipLabel, styles.chipLabelCompact] : styles.chipLabel;
-  const chipValueStyle = compact ? [styles.chipValue, styles.chipValueCompact] : styles.chipValue;
   const clearChipStyle = compact ? [styles.chip, styles.chipCompact, styles.clearChip] : [styles.chip, styles.clearChip];
 
   return (
@@ -411,15 +392,21 @@ export function MapFiltersBar({
           contentContainerStyle={barScrollStyle}
         >
           <Pressable
+            onPress={() => setDateOpen(true)}
+            style={chipStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrar data"
+          >
+            <Ionicons name="calendar-outline" size={16} color="rgba(245,250,255,0.9)" />
+          </Pressable>
+
+          <Pressable
             onPress={() => setPriceOpen(true)}
             style={chipStyle}
             accessibilityRole="button"
             accessibilityLabel="Filtrar preço"
           >
-            <Text style={chipLabelStyle}>Preço</Text>
-            <Text style={chipValueStyle} numberOfLines={2}>
-              {priceLabel}
-            </Text>
+            <Ionicons name="cash-outline" size={16} color="rgba(245,250,255,0.9)" />
           </Pressable>
 
           <Pressable
@@ -428,22 +415,7 @@ export function MapFiltersBar({
             accessibilityRole="button"
             accessibilityLabel="Filtrar tipo"
           >
-            <Text style={chipLabelStyle}>Tipo</Text>
-            <Text style={chipValueStyle} numberOfLines={2}>
-              {typeLabel}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setDateOpen(true)}
-            style={chipStyle}
-            accessibilityRole="button"
-            accessibilityLabel="Filtrar data"
-          >
-            <Text style={chipLabelStyle}>Data</Text>
-            <Text style={chipValueStyle} numberOfLines={2}>
-              {dateLabel}
-            </Text>
+            <Ionicons name="filter" size={16} color="rgba(245,250,255,0.9)" />
           </Pressable>
 
           <Pressable
@@ -452,8 +424,7 @@ export function MapFiltersBar({
             accessibilityRole="button"
             accessibilityLabel="Limpar filtros"
           >
-            <Ionicons name="refresh" size={14} color="rgba(255,255,255,0.85)" />
-            <Text style={styles.clearChipText}>Limpar</Text>
+            <Ionicons name="refresh" size={16} color="rgba(245,250,255,0.9)" />
           </Pressable>
         </ScrollView>
       </View>
@@ -588,7 +559,7 @@ export function MapFiltersBar({
                   accessibilityLabel={`Selecionar dia ${dayLabel}`}
                   accessibilityState={{ disabled: isPast, selected: isStart || isEnd }}
                 >
-                  <Text
+              <Text
                     style={
                       isPast
                         ? styles.dayCellTextDisabled
@@ -598,6 +569,7 @@ export function MapFiltersBar({
                           ? styles.dayCellTextInRange
                           : styles.dayCellText
                     }
+                    allowFontScaling={false}
                   >
                     {cell.getDate()}
                   </Text>
@@ -641,53 +613,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   barScrollContentCompact: {
-    gap: 8,
+    gap: 6,
+    paddingHorizontal: 0,
   },
   chip: {
-    minWidth: 86,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    minWidth: 36,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    width: 36,
+    height: 36,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(10,14,24,0.5)",
-    alignItems: "flex-start",
-    gap: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 0,
   },
   chipCompact: {
-    minWidth: 76,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  chipLabel: {
-    color: "rgba(255,255,255,0.45)",
-    fontSize: 9,
-    fontWeight: "600",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  chipLabelCompact: {
-    fontSize: 8,
-    letterSpacing: 0.4,
-  },
-  chipValue: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  chipValueCompact: {
-    fontSize: 10,
+    minWidth: 32,
+    width: 32,
+    height: 32,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   clearChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
+    paddingHorizontal: 0,
     borderColor: "rgba(255,255,255,0.18)",
-  },
-  clearChipText: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 12,
-    fontWeight: "600",
   },
   modalRoot: {
     flex: 1,
@@ -890,20 +844,36 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.75)",
     fontSize: 12,
     fontWeight: "600",
+    lineHeight: 14,
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
   dayCellTextDisabled: {
     color: "rgba(255,255,255,0.28)",
     fontSize: 12,
     fontWeight: "600",
+    lineHeight: 14,
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
   dayCellTextSelected: {
     color: "#0b101a",
     fontSize: 12,
     fontWeight: "700",
+    lineHeight: 14,
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
   dayCellTextInRange: {
     color: "#ffffff",
     fontSize: 12,
     fontWeight: "600",
+    lineHeight: 14,
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
   },
 });

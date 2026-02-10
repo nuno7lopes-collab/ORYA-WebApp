@@ -9,7 +9,6 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
-import ChatThread from "@/components/chat/ChatThread";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { resolveLocale, t } from "@/lib/i18n";
@@ -1958,7 +1957,7 @@ function OneVOneLiveLayout({
   const [goalLimitsDraft, setGoalLimitsDraft] = useState<GoalLimitsConfig>(
     normalizeGoalLimits(tournament?.goalLimits as GoalLimitsConfig),
   );
-  const [activeTab, setActiveTab] = useState<"chat" | "stats" | "rules">("chat");
+  const [activeTab, setActiveTab] = useState<"stats" | "rules">("stats");
   const featuredMatchId = typeof tournament?.featuredMatchId === "number" ? tournament.featuredMatchId : null;
   const bracketStage =
     tournament?.stages?.find((s: any) => s.stageType === "PLAYOFF" && s.matches?.length) ??
@@ -2384,7 +2383,7 @@ function OneVOneLiveLayout({
             </button>
           )}
           <div className="flex items-center gap-2 pt-2 text-[11px] uppercase tracking-[0.18em] text-white/50">
-            {(["chat", "stats", "rules"] as const).map((tab) => (
+            {(["stats", "rules"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -2395,18 +2394,11 @@ function OneVOneLiveLayout({
                     : "border-white/15 bg-white/5 text-white/60"
                 }`}
               >
-                {tab === "chat" ? t("tabChat", locale) : tab === "stats" ? t("tabStats", locale) : t("tabRules", locale)}
+                {tab === "stats" ? t("tabStats", locale) : t("tabRules", locale)}
               </button>
             ))}
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
-            {activeTab === "chat" && (
-              <ChatThread
-                entityType="EVENT"
-                entityId={event.id}
-                canPostAnnouncements={canPostAnnouncements}
-              />
-            )}
             {activeTab === "stats" && t("statsSoon", locale)}
             {activeTab === "rules" && (
               <ul className="space-y-1 text-sm text-white/70">

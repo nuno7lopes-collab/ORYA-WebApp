@@ -2,8 +2,9 @@ import { NextRequest } from "next/server";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(_req: NextRequest, _params: { params: Promise<{ id: string }> }) {
+async function _POST(_req: NextRequest, _params: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(_req);
   const auth = await requireAdminUser();
   if (!auth.ok) {
@@ -19,3 +20,4 @@ export async function POST(_req: NextRequest, _params: { params: Promise<{ id: s
     { status: 409 },
   );
 }
+export const POST = withApiEnvelope(_POST);

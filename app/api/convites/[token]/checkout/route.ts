@@ -7,7 +7,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { SourceType, PaymentStatus, ProcessorFeesStatus } from "@prisma/client";
@@ -161,7 +161,6 @@ async function _POST(
     }
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
 
     const pricing = computePricing(baseShareCents, 0, {
       platformDefaultFeeMode: "INCLUDED",
@@ -177,24 +176,17 @@ async function _POST(
       feeMode: pricing.feeMode,
       platformFeeBps: pricing.feeBpsApplied,
       platformFeeFixedCents: pricing.feeFixedApplied,
-      stripeFeeBps: stripeBaseFees.feeBps,
-      stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
     });
     const cardPlatformFeeCents =
       paymentMethod === "card"
         ? Math.max(0, Math.round((baseShareCents * ORYA_CARD_FEE_BPS) / 10_000))
         : 0;
     const totalCents = combinedFees.totalCents + cardPlatformFeeCents;
-    const stripeFeeEstimateCents =
-      totalCents === 0
-        ? 0
-        : Math.max(
-            0,
-            Math.round((totalCents * (stripeBaseFees.feeBps ?? 0)) / 10_000) +
-              (stripeBaseFees.feeFixedCents ?? 0),
-          );
     const platformFeeCents = Math.min(pricing.platformFeeCents + cardPlatformFeeCents, totalCents);
-    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents - stripeFeeEstimateCents);
+    const stripeFeeEstimateCents = 0;
+    const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
 
     const sourceId = String(booking.id);
     const purchaseId = `booking_${booking.id}_split_${participant.id}`;

@@ -8,6 +8,7 @@ import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { computeLiveWarnings } from "@/domain/tournaments/liveWarnings";
 import { Avatar } from "@/components/ui/avatar";
 import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { normalizeUsernameInput } from "@/lib/username";
 
 type PageProps = { params: Promise<{ id: string }> };
 type TournamentLiveManagerProps = { tournamentId: number };
@@ -269,7 +270,7 @@ export function TournamentLiveManager({ tournamentId }: TournamentLiveManagerPro
       const next: Participant = {
         id: slotDraft.id ?? nextNegativeId(),
         name,
-        username: slotMode === "user" ? slotDraft.username.trim().replace(/^@/, "") || null : null,
+        username: slotMode === "user" ? normalizeUsernameInput(slotDraft.username) || null : null,
         email: slotMode === "guest" ? slotDraft.email.trim().toLowerCase() || null : null,
         avatarUrl: slotDraft.avatarUrl?.trim() || null,
         seed: activeSlotIndex + 1,

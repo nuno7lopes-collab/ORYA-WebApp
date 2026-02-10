@@ -40,7 +40,7 @@ async function _GET(req: NextRequest) {
   }
 
   const courts = await prisma.padelClubCourt.findMany({
-    where: { padelClubId: club.id },
+    where: { padelClubId: club.id, deletedAt: null },
     orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
   });
 
@@ -154,8 +154,12 @@ async function _DELETE(req: NextRequest) {
   if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
 
   try {
-    const deleted = await prisma.padelClubCourt.delete({ where: { id: courtId, padelClubId: club.id } });
-    return jsonWrap({ ok: true, court: deleted }, { status: 200 });
+    const now = new Date();
+    const updated = await prisma.padelClubCourt.update({
+      where: { id: courtId, padelClubId: club.id },
+      data: { isActive: false, deletedAt: now },
+    });
+    return jsonWrap({ ok: true, court: updated }, { status: 200 });
   } catch (err) {
     console.error("[padel/clubs/courts/delete] error", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

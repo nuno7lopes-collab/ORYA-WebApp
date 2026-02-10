@@ -3,6 +3,7 @@ export type ServicePolicy = {
   name: string;
   policyType: string;
   cancellationWindowMinutes: number;
+  guestBookingAllowed?: boolean;
 };
 
 export type ServicePack = {

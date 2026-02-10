@@ -47,7 +47,10 @@ function buildEmailHtml(link: string) {
 async function _POST(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return jsonWrap(
+        { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
+        { status: 403 }
+      );
     }
 
     const ctx = getRequestContext(req);
@@ -55,7 +58,10 @@ async function _POST(req: NextRequest) {
     const rawEmail = body?.email?.toLowerCase().trim() ?? "";
 
     if (!rawEmail || !EMAIL_REGEX.test(rawEmail)) {
-      return jsonWrap({ ok: false, error: "Email inválido." }, { status: 400 });
+      return jsonWrap(
+        { ok: false, errorCode: "INVALID_EMAIL", message: "Email inválido." },
+        { status: 400 }
+      );
     }
 
     const limiter = await rateLimit(req, {
@@ -66,7 +72,12 @@ async function _POST(req: NextRequest) {
     });
     if (!limiter.allowed) {
       return jsonWrap(
-        { ok: false, error: "RATE_LIMITED" },
+        {
+          ok: false,
+          errorCode: "RATE_LIMITED",
+          message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+          retryable: true,
+        },
         { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } }
       );
     }
@@ -97,7 +108,11 @@ async function _POST(req: NextRequest) {
         correlationId: ctx.correlationId,
       });
       return jsonWrap(
-        { ok: false, error: "Não foi possível gerar o link de recuperação. Tenta mais tarde." },
+        {
+          ok: false,
+          errorCode: "RESET_LINK_FAILED",
+          message: "Não foi possível gerar o link de recuperação. Tenta mais tarde.",
+        },
         { status: 500 },
       );
     }
@@ -109,7 +124,11 @@ async function _POST(req: NextRequest) {
         correlationId: ctx.correlationId,
       });
       return jsonWrap(
-        { ok: false, error: "Não foi possível gerar o link de recuperação. Tenta mais tarde." },
+        {
+          ok: false,
+          errorCode: "RESET_LINK_FAILED",
+          message: "Não foi possível gerar o link de recuperação. Tenta mais tarde.",
+        },
         { status: 500 },
       );
     }
@@ -142,7 +161,11 @@ async function _POST(req: NextRequest) {
         correlationId: ctx.correlationId,
       });
       return jsonWrap(
-        { ok: false, error: "Não conseguimos enviar o email agora. Tenta novamente em breve." },
+        {
+          ok: false,
+          errorCode: "EMAIL_SEND_FAILED",
+          message: "Não conseguimos enviar o email agora. Tenta novamente em breve.",
+        },
         { status: 502 },
       );
     }
@@ -156,7 +179,7 @@ async function _POST(req: NextRequest) {
       correlationId: ctx.correlationId,
     });
     return jsonWrap(
-      { ok: false, error: "Erro inesperado ao pedir recuperação." },
+      { ok: false, errorCode: "INTERNAL_ERROR", message: "Erro inesperado ao pedir recuperação." },
       { status: 500 },
     );
   }

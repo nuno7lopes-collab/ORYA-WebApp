@@ -373,6 +373,19 @@ export function sanitizeUsername(input: string): string {
   return collapsedDots.toLowerCase().slice(0, USERNAME_MAX);
 }
 
+/**
+ * Normaliza input livre (incluindo @ inicial) para username válido.
+ * - trim
+ * - remove @ inicial
+ * - sanitizeUsername
+ */
+export function normalizeUsernameInput(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const trimmed = String(raw).trim();
+  const withoutAt = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+  return sanitizeUsername(withoutAt);
+}
+
 export function normalizeReserved(input: string): string {
   const base = (input ?? "")
     .normalize("NFKD")

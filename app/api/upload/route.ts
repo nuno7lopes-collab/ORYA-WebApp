@@ -5,8 +5,13 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
+import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
+import { MediaOwnerType } from "@prisma/client";
+import { getActiveOrganizationForUser, ORG_ACTIVE_WRITE_OPTIONS } from "@/lib/organizationContext";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 
@@ -87,7 +92,8 @@ function isRateLimited(ip: string) {
 
 async function _POST(req: NextRequest) {
   try {
-    await requireUser(); // só utilizadores autenticados podem fazer upload
+    const ctx = getRequestContext(req);
+    const user = await requireUser(); // só utilizadores autenticados podem fazer upload
 
     const ip = getClientIp(req);
     if (isRateLimited(ip)) {
@@ -125,13 +131,44 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ error: "Só são permitidas imagens (png, jpg, gif, webp)." }, { status: 400 });
     }
 
-    const scope = req.nextUrl.searchParams.get("scope");
+    const scopeRaw = req.nextUrl.searchParams.get("scope");
+    const scope = scopeRaw && scopeRaw.trim() ? scopeRaw.trim() : "general";
+    const organizationIdParam = req.nextUrl.searchParams.get("organizationId");
+    const organizationId =
+      organizationIdParam && organizationIdParam.trim()
+        ? Number(organizationIdParam)
+        : null;
+    const orgRequiredScopes = new Set(["event-cover", "service-cover", "padel-match"]);
+    const orgOptionalScopes = new Set(["avatar", "profile-cover", "store-product"]);
+    const isOrgScope =
+      orgRequiredScopes.has(scope) ||
+      (orgOptionalScopes.has(scope) && Number.isFinite(organizationId ?? NaN));
+    if (orgRequiredScopes.has(scope) && !Number.isFinite(organizationId ?? NaN)) {
+      return jsonWrap({ error: "organizationId obrigatório para este upload." }, { status: 400 });
+    }
+
+    let orgContext: { organizationId: number } | null = null;
+    if (isOrgScope) {
+      if (!Number.isFinite(organizationId ?? NaN)) {
+        return jsonWrap({ error: "organizationId inválido." }, { status: 400 });
+      }
+      const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+        organizationId: organizationId ?? undefined,
+        ...ORG_ACTIVE_WRITE_OPTIONS,
+      });
+      if (!organization || !membership) {
+        return jsonWrap({ error: "Sem permissões para esta organização." }, { status: 403 });
+      }
+      orgContext = { organizationId: organization.id };
+    }
+
     const isPublicScope =
       scope === "avatar" ||
       scope === "event-cover" ||
       scope === "profile-cover" ||
       scope === "service-cover" ||
-      scope === "store-product";
+      scope === "store-product" ||
+      scope === "padel-match";
 
     const bucketResolution = (() => {
       if (scope === "avatar") {
@@ -152,6 +189,9 @@ async function _POST(req: NextRequest) {
       }
       if (scope === "store-product") {
         return { bucket: env.uploadsBucket || "uploads", folder: "store-products" };
+      }
+      if (scope === "padel-match") {
+        return { bucket: env.uploadsBucket || "uploads", folder: "padel-matches" };
       }
       // default/general uploads
       return { bucket: env.uploadsBucket || "uploads", folder: "uploads" };
@@ -195,6 +235,60 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ error: "Erro ao fazer upload da imagem." }, { status: 500 });
     }
 
+    const checksumSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+    const ownerType = isOrgScope ? MediaOwnerType.ORGANIZATION : MediaOwnerType.USER;
+    const ownerId = isOrgScope ? String(orgContext?.organizationId ?? "") : user.id;
+    if (isOrgScope && !orgContext?.organizationId) {
+      await supabaseAdmin.storage.from(bucketResolution.bucket).remove([objectPath]).catch(() => null);
+      return jsonWrap({ error: "Organization inválida." }, { status: 400 });
+    }
+
+    let mediaAssetId: string | null = null;
+    try {
+      const created = await prisma.mediaAsset.create({
+        data: {
+          organizationId: isOrgScope ? orgContext?.organizationId ?? null : null,
+          ownerType,
+          ownerId,
+          uploadedByUserId: user.id,
+          scope,
+          bucket: bucketResolution.bucket,
+          objectPath,
+          mimeType: detected.mime,
+          sizeBytes: buffer.byteLength,
+          checksumSha256,
+          originalFilename: file.name ? String(file.name) : null,
+          isPublic: isPublicScope,
+        },
+        select: { id: true },
+      });
+      mediaAssetId = created.id;
+
+      if (isOrgScope && orgContext?.organizationId) {
+        await recordOrganizationAudit(prisma, {
+          organizationId: orgContext.organizationId,
+          actorUserId: user.id,
+          action: "MEDIA_UPLOAD",
+          entityType: "MediaAsset",
+          entityId: created.id,
+          correlationId: ctx.correlationId ?? null,
+          metadata: {
+            scope,
+            bucket: bucketResolution.bucket,
+            objectPath,
+            mimeType: detected.mime,
+            sizeBytes: buffer.byteLength,
+          },
+          ip,
+          userAgent: req.headers.get("user-agent"),
+        });
+      }
+    } catch (err) {
+      console.error("[POST /api/upload] media asset error", err);
+      await supabaseAdmin.storage.from(bucketResolution.bucket).remove([objectPath]).catch(() => null);
+      return jsonWrap({ error: "Erro ao registar o upload." }, { status: 500 });
+    }
+
     let url: string | null = null;
     let signedUrl: string | null = null;
 
@@ -221,6 +315,7 @@ async function _POST(req: NextRequest) {
         size: buffer.byteLength,
         scope: scope ?? "general",
         bucket: bucketResolution.bucket,
+        assetId: mediaAssetId,
       },
       { status: 201 },
     );

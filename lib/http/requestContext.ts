@@ -6,7 +6,7 @@ import {
   ORYA_REQUEST_ID_HEADER,
   REQUEST_ID_HEADER,
 } from "@/lib/http/headers";
-import { normalizeAppEnv, resolveEnvFromHost } from "@/lib/appEnvShared";
+import { isTruthyEnvFlag, normalizeAppEnv, resolveEnvFromHost } from "@/lib/appEnvShared";
 import { setRequestAppEnv } from "@/lib/appEnvContext";
 
 type HeaderSource = {
@@ -45,6 +45,10 @@ function extractHost(headers: HeaderSource) {
 }
 
 function applyEnvFromHeaders(headers: HeaderSource) {
+  if (isTruthyEnvFlag(process.env.SINGLE_DB_MODE)) {
+    setRequestAppEnv("prod");
+    return;
+  }
   const override = normalizeAppEnv(process.env.APP_ENV ?? null) ?? normalizeAppEnv(process.env.NEXT_PUBLIC_APP_ENV ?? null);
   if (override) {
     setRequestAppEnv(override);

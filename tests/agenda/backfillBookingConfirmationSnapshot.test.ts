@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/platformSettings", () => ({
   getPlatformFees: vi.fn(async () => ({ feeBps: 800, feeFixedCents: 30 })),
-  getStripeBaseFees: vi.fn(async () => ({ feeBps: 140, feeFixedCents: 25, region: "UE" })),
 }));
 
 import { backfillBookingConfirmationSnapshots } from "@/lib/reservas/backfillConfirmationSnapshot";
@@ -16,9 +15,6 @@ const basePolicy = {
   policyType: "MODERATE",
   cancellationWindowMinutes: 2880,
   guestBookingAllowed: false,
-  allowPayAtVenue: false,
-  depositRequired: false,
-  depositAmountCents: 0,
   noShowFeeCents: 0,
 };
 
@@ -90,4 +86,3 @@ describe("booking confirmation snapshot backfill", () => {
     expect(bookingUpdate).toHaveBeenCalledTimes(1);
   });
 });
-

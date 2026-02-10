@@ -6,6 +6,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 
@@ -75,6 +76,19 @@ async function _POST(req: NextRequest) {
       charges_enabled && payouts_enabled && (!requirements_due || requirements_due.length === 0)
         ? "CONNECTED"
         : "INCOMPLETE";
+
+    await auditAdminAction({
+      action: "ORGANIZATION_REFRESH_PAYMENTS_STATUS",
+      actorUserId: admin.userId,
+      payload: {
+        organizationId: organization.id,
+        status,
+        charges_enabled,
+        payouts_enabled,
+        requirements_due,
+        accountId: account.id,
+      },
+    });
 
     return jsonWrap({
       ok: true,

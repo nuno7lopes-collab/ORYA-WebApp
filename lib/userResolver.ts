@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { normalizeUsernameInput } from "@/lib/username";
+import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 export type ResolvedUser = {
   userId: string;
@@ -51,32 +53,49 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
   // Username (case insensitive). Para email, procura em auth.users e mapeia para profile.
   const lowered = normalized.toLowerCase();
 
-  // Tenta por username no profile (citext)
-  let match = await prisma.profile.findFirst({
-    where: {
-      OR: [{ username: normalized }, { username: lowered }],
-      isDeleted: false,
-    },
-    select,
-  });
-
-  let resolvedEmail: string | null = null;
   // Se for email, procurar em auth.users e ligar ao profile
-  if (!match && normalized.includes("@")) {
+  if (normalized.includes("@")) {
     const userByEmail = await prisma.users.findFirst({
       where: { email: lowered },
       select: { id: true, email: true },
     });
 
     if (userByEmail) {
-      match = await prisma.profile.findUnique({
+      const match = await prisma.profile.findUnique({
         where: { id: userByEmail.id },
         select,
       });
-      resolvedEmail = userByEmail.email ?? null;
+      if (!match) return null;
+      const resolvedEmail = userByEmail.email ?? null;
+      return {
+        userId: match.id,
+        profile: {
+          id: match.id,
+          username: match.username,
+          fullName: match.fullName,
+          avatarUrl: match.avatarUrl,
+          email: resolvedEmail ?? null,
+        },
+      };
     }
+    return null;
   }
 
+  const normalizedUsername = normalizeUsernameInput(normalized);
+  if (!normalizedUsername) return null;
+
+  const resolved = await resolveUsernameOwner(normalizedUsername, {
+    expectedOwnerType: "user",
+    includeDeletedUser: false,
+    requireActiveOrganization: false,
+    backfillGlobalUsername: true,
+  });
+  if (!resolved || resolved.ownerType !== "user") return null;
+
+  const match = await prisma.profile.findUnique({
+    where: { id: resolved.ownerId },
+    select,
+  });
   if (!match) return null;
 
   return {
@@ -86,7 +105,7 @@ export async function resolveUserIdentifier(identifier: string): Promise<Resolve
       username: match.username,
       fullName: match.fullName,
       avatarUrl: match.avatarUrl,
-      email: resolvedEmail ?? (normalized.includes("@") ? normalized : null),
+      email: null,
     },
   };
 }

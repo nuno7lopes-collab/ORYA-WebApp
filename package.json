@@ -39,6 +39,7 @@
     "gate:runbooks": "node scripts/v9_runbook_gate.mjs",
     "gate:todo": "node scripts/v9_todo_gate.mjs",
     "gate:api-ui-coverage": "FAIL_ON_ORPHANS=1 node -r ts-node/register scripts/audit_api_ui_coverage.ts",
+    "audit:public-events": "node scripts/run-ts.cjs scripts/audit_public_events.ts",
     "v9:api-mapping": "node scripts/v9_api_frontend_mapping.mjs",
     "v9:inventory": "node scripts/v9_inventory.mjs",
     "covers:build": "node scripts/generate_cover_library.js",

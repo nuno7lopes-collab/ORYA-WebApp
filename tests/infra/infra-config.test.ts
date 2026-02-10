@@ -30,6 +30,6 @@ test("CloudFormation uses cost-first defaults", () => {
 });
 
 test("Admin infra UI exists", () => {
-  expect(existsSync(path.join(root, "app/admin/infra/page.tsx"))).toBe(true);
+  expect(existsSync(path.join(root, "app/admin/(protected)/infra/page.tsx"))).toBe(true);
   expect(existsSync(path.join(root, "app/api/admin/infra/status/route.ts"))).toBe(true);
 });

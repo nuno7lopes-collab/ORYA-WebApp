@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { EventTemplateType, Prisma, SearchIndexVisibility, SearchIndexItem } from "@prisma/client";
+import { EventTemplateType, Prisma, SearchIndexVisibility, SourceType } from "@prisma/client";
 import {
   toPublicEventCardWithPriceFromIndex,
   PublicEventCard,
   PublicEventCardWithPrice,
   isPublicEventCardComplete,
 } from "@/domain/events/publicEventCard";
+import { filterOrphanedEventSearchItems } from "@/domain/searchIndex/guard";
 
 const DEFAULT_PAGE_SIZE = 12;
 
@@ -252,6 +253,7 @@ function buildDiscoverWhere(params: DiscoverParams): Prisma.SearchIndexItemWhere
 
   const where: Prisma.SearchIndexItemWhereInput = {
     visibility: SearchIndexVisibility.PUBLIC,
+    sourceType: SourceType.EVENT,
   };
 
   if (q) {
@@ -397,7 +399,8 @@ export async function listPublicDiscoverIndex(
     nextCursor = nextItem?.id ?? null;
   }
 
-  return { items, nextCursor };
+  const safeItems = await filterOrphanedEventSearchItems(items);
+  return { items: safeItems, nextCursor };
 }
 
 export async function listPublicDiscover(
@@ -426,6 +429,7 @@ export async function getPublicDiscoverBySlug(slug: string): Promise<PublicEvent
   const item = await prisma.searchIndexItem.findFirst({
     where: {
       visibility: SearchIndexVisibility.PUBLIC,
+      sourceType: SourceType.EVENT,
       slug,
     },
     include: {
@@ -439,6 +443,9 @@ export async function getPublicDiscoverBySlug(slug: string): Promise<PublicEvent
     return null;
   }
 
-  const { _priceFromCents, ...event } = mapSearchItemToPublicEventCardWithPrice(item, item.addressRef);
+  const [safeItem] = await filterOrphanedEventSearchItems([item], { prune: true });
+  if (!safeItem) return null;
+
+  const { _priceFromCents, ...event } = mapSearchItemToPublicEventCardWithPrice(safeItem, safeItem.addressRef);
   return isPublicEventCardComplete(event) ? event : null;
 }

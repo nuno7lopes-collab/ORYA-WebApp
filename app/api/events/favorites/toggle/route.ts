@@ -46,6 +46,18 @@ async function _POST(req: NextRequest) {
     select: { eventId: true, notify: true, updatedAt: true },
   });
 
+  try {
+    await prisma.userEventSignal.create({
+      data: {
+        userId: user.id,
+        eventId,
+        signalType: "FAVORITE",
+      },
+    });
+  } catch (err) {
+    console.warn("[api/events/favorites/toggle] failed to create signal", err);
+  }
+
   return jsonWrap({ ok: true, isFavorite: true, favorite }, { status: 200 });
 }
 

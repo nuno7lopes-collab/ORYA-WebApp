@@ -29,6 +29,14 @@ Keep secrets out of git. Use single-line base64 for Apple keys.
 - EMAIL_FROM (optional, defaults to noreply@SES_IDENTITY_DOMAIN)
 - APP_BASE_URL / NEXT_PUBLIC_BASE_URL (recommended, used by checkout flows)
 - ORYA_CRON_SECRET (required for /api/internal + /api/cron)
+- CHAT_ATTACHMENTS_BUCKET (override bucket para anexos de chat)
+- CHAT_ATTACHMENTS_PUBLIC (true para URLs públicas de anexos; default false)
+
+Feature flags (server, optional):
+- STORE_ENABLED (ativa a loja no geral)
+- STORE_DIGITAL_ENABLED (ativa downloads/ativos digitais da loja)
+- WIDGETS_ENABLED (ativa endpoints públicos de widgets)
+- PUBLIC_API_ENABLED (ativa chaves/API pública para terceiros)
 
 Legacy/compat (present in some envs but not required by current runtime):
 - NEXTAUTH_SECRET

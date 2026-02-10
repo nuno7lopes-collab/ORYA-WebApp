@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { logAccountEvent } from "@/lib/accountEvents";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
@@ -73,6 +74,11 @@ async function _POST(req: NextRequest) {
         type: "admin_user_hard_delete",
         metadata: { actorUserId: admin.userId, ip, userAgent, note: authResult.note },
       });
+      await auditAdminAction({
+        action: "USER_HARD_DELETE",
+        actorUserId: admin.userId,
+        payload: { userId, note: authResult.note },
+      });
       return jsonWrap({
         ok: true,
         message: "Utilizador removido em definitivo.",
@@ -95,6 +101,11 @@ async function _POST(req: NextRequest) {
         type: "admin_user_ban",
         metadata: { actorUserId: admin.userId, ip, userAgent },
       });
+      await auditAdminAction({
+        action: "USER_BAN",
+        actorUserId: admin.userId,
+        payload: { userId },
+      });
       return jsonWrap({ ok: true, message: "Utilizador banido." });
     }
 
@@ -111,6 +122,11 @@ async function _POST(req: NextRequest) {
         userId,
         type: "admin_user_unban",
         metadata: { actorUserId: admin.userId, ip, userAgent },
+      });
+      await auditAdminAction({
+        action: "USER_UNBAN",
+        actorUserId: admin.userId,
+        payload: { userId },
       });
       return jsonWrap({ ok: true, message: "Utilizador reativado." });
     }

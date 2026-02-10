@@ -8,6 +8,7 @@ import { resolveUserIdentifier } from "@/lib/userResolver";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -40,7 +41,7 @@ function normalizeIdentifier(raw: string): CheckResult {
   return { ok: true, normalized: validation.normalized, type: "username" };
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -186,3 +187,4 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+export const POST = withApiEnvelope(_POST);

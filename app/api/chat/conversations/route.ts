@@ -39,7 +39,7 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
-    const { user, organization } = await requireChatContext(req);
+    const { user, organization, membership } = await requireChatContext(req);
 
     const limiter = await rateLimit(req, {
       windowMs: 10 * 1000,
@@ -63,12 +63,13 @@ async function _GET(req: NextRequest) {
         conversation: updatedAfter
           ? {
               organizationId: organization.id,
+              type: "CHANNEL",
               OR: [
                 { lastMessageAt: { gt: updatedAfter } },
                 { lastMessageAt: null, createdAt: { gt: updatedAfter } },
               ],
             }
-          : { organizationId: organization.id },
+          : { organizationId: organization.id, type: "CHANNEL" },
       },
       include: {
         lastReadMessage: { select: { id: true, createdAt: true } },
@@ -77,6 +78,10 @@ async function _GET(req: NextRequest) {
             id: true,
             type: true,
             title: true,
+            contextType: true,
+            contextId: true,
+            customerId: true,
+            professionalId: true,
             createdAt: true,
             lastMessageAt: true,
             lastMessageId: true,
@@ -169,10 +174,21 @@ async function _GET(req: NextRequest) {
         lastSeenAt: presenceMap.get(member.userId) ?? null,
       }));
 
+      const fallbackTitle =
+        conv.type === "DIRECT"
+          ? resolveTitleFallback(members, user.id)
+          : conv.type === "CHANNEL"
+            ? "Canal"
+            : "Grupo";
+
       return {
         id: conv.id,
         type: conv.type,
-        title: conv.title ?? (conv.type === "DIRECT" ? resolveTitleFallback(members, user.id) : "Grupo"),
+        contextType: conv.contextType,
+        contextId: conv.contextId,
+        customerId: conv.customerId,
+        professionalId: conv.professionalId,
+        title: conv.title ?? fallbackTitle,
         lastMessageAt: conv.lastMessageAt,
         lastMessage: conv.lastMessage,
         unreadCount: unreadCountMap.get(conv.id) ?? 0,
@@ -183,7 +199,7 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return jsonWrap({ ok: true, items });
+    return jsonWrap({ ok: true, items, viewerRole: membership.role });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
@@ -202,7 +218,7 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
     }
 
-    const { user, organization } = await requireChatContext(req);
+    const { user, organization, membership } = await requireChatContext(req);
 
     const limiter = await rateLimit(req, {
       windowMs: 60 * 1000,
@@ -219,204 +235,91 @@ async function _POST(req: NextRequest) {
 
     const payload = (await req.json().catch(() => null)) as {
       type?: unknown;
-      userId?: unknown;
       title?: unknown;
       memberIds?: unknown;
     } | null;
 
     const typeRaw = typeof payload?.type === "string" ? payload?.type.trim().toUpperCase() : null;
-    const userId = typeof payload?.userId === "string" ? payload.userId.trim() : null;
     const title = typeof payload?.title === "string" ? payload.title.trim() : "";
     const memberIds = Array.isArray(payload?.memberIds)
       ? payload?.memberIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
       : [];
 
-    const isDirect = typeRaw ? typeRaw === "DIRECT" : Boolean(userId);
-    const isGroup = typeRaw ? typeRaw === "GROUP" : !userId;
-    const isChannel = typeRaw ? typeRaw === "CHANNEL" : false;
-
-    if (isDirect) {
-      if (!userId || userId === user.id) {
-        return jsonWrap({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
-      }
-
-      const block = await prisma.chatUserBlock.findFirst({
-        where: {
-          OR: [
-            { blockerId: user.id, blockedId: userId },
-            { blockerId: userId, blockedId: user.id },
-          ],
-        },
-      });
-      if (block) {
-        return jsonWrap({ ok: false, error: "CHAT_BLOCKED" }, { status: 403 });
-      }
-
-      const existing = await prisma.chatConversation.findFirst({
-        where: {
-          organizationId: organization.id,
-          type: "DIRECT",
-          members: {
-            every: { userId: { in: [user.id, userId] } },
-            some: { userId },
-          },
-        },
-        include: {
-          members: { include: { user: { select: { id: true, fullName: true, username: true, avatarUrl: true } } } },
-        },
-      });
-
-      if (existing && existing.members.length === 2) {
-        return jsonWrap({ ok: true, conversation: existing });
-      }
-
-      const memberships = await prisma.organizationMember.findMany({
-        where: { organizationId: organization.id, userId: { in: [user.id, userId] } },
-        select: { userId: true },
-      });
-      if (memberships.length !== 2) {
-        return jsonWrap({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
-      }
-
-      const conversation = await prisma.chatConversation.create({
-        data: {
-          organizationId: organization.id,
-          type: "DIRECT",
-          createdByUserId: user.id,
-          members: {
-            create: [
-              { userId: user.id, role: "ADMIN", organizationId: organization.id },
-              { userId, role: "MEMBER", organizationId: organization.id },
-            ],
-          },
-        },
-        include: {
-          members: {
-            include: { user: { select: { id: true, fullName: true, username: true, avatarUrl: true } } },
-          },
-        },
-      });
-
-      await publishChatEvent({
-        type: "conversation:update",
-        action: "created",
-        organizationId: organization.id,
-        conversationId: conversation.id,
-        conversation,
-      });
-
-      console.log("[chat] conversa direta criada", { conversationId: conversation.id, actor: user.id });
-
-      return jsonWrap({ ok: true, conversation }, { status: 201 });
+    const isChannel = typeRaw ? typeRaw === "CHANNEL" : true;
+    if (!isChannel) {
+      return jsonWrap({ ok: false, error: "ONLY_CHANNELS" }, { status: 400 });
     }
 
-    if (isGroup) {
-      if (title.length < 2) {
-        return jsonWrap({ ok: false, error: "INVALID_TITLE" }, { status: 400 });
-      }
+    if (title.length < 2) {
+      return jsonWrap({ ok: false, error: "INVALID_TITLE" }, { status: 400 });
+    }
 
-      const uniqueMembers = Array.from(new Set([user.id, ...memberIds]));
-      if (uniqueMembers.length < 2) {
-        return jsonWrap({ ok: false, error: "INVALID_MEMBERS" }, { status: 400 });
-      }
+    const uniqueMembers = Array.from(new Set([user.id, ...memberIds]));
+    if (uniqueMembers.length < 1) {
+      return jsonWrap({ ok: false, error: "INVALID_MEMBERS" }, { status: 400 });
+    }
 
-      const memberships = await prisma.organizationMember.findMany({
-        where: { organizationId: organization.id, userId: { in: uniqueMembers } },
-        select: { userId: true },
-      });
+    const memberships = await prisma.organizationMember.findMany({
+      where: { organizationId: organization.id, userId: { in: uniqueMembers } },
+      select: { userId: true },
+    });
 
-      if (memberships.length !== uniqueMembers.length) {
-        return jsonWrap({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
-      }
+    if (memberships.length !== uniqueMembers.length) {
+      return jsonWrap({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
+    }
 
-      const conversation = await prisma.chatConversation.create({
+    const adminRoles = new Set(["OWNER", "CO_OWNER", "ADMIN"]);
+    const isAdmin = membership?.role ? adminRoles.has(membership.role) : false;
+
+    if (!isAdmin) {
+      const request = await prisma.chatChannelRequest.create({
         data: {
           organizationId: organization.id,
-          type: "GROUP",
+          requesterId: user.id,
           title,
-          createdByUserId: user.id,
-          members: {
-            create: uniqueMembers.map((memberId) => ({
-              userId: memberId,
-              role: memberId === user.id ? "ADMIN" : "MEMBER",
-              organizationId: organization.id,
-            })),
-          },
         },
-        include: {
-          members: {
-            include: { user: { select: { id: true, fullName: true, username: true, avatarUrl: true } } },
-          },
-        },
+        select: { id: true },
       });
 
-      await publishChatEvent({
-        type: "conversation:update",
-        action: "created",
-        organizationId: organization.id,
-        conversationId: conversation.id,
-        conversation,
-      });
-
-      console.log("[chat] conversa de grupo criada", { conversationId: conversation.id, actor: user.id });
-
-      return jsonWrap({ ok: true, conversation }, { status: 201 });
+      return jsonWrap(
+        { ok: true, pending: true, requestId: request.id },
+        { status: 202 },
+      );
     }
 
-    if (isChannel) {
-      if (title.length < 2) {
-        return jsonWrap({ ok: false, error: "INVALID_TITLE" }, { status: 400 });
-      }
-
-      const uniqueMembers = Array.from(new Set([user.id, ...memberIds]));
-      if (uniqueMembers.length < 1) {
-        return jsonWrap({ ok: false, error: "INVALID_MEMBERS" }, { status: 400 });
-      }
-
-      const memberships = await prisma.organizationMember.findMany({
-        where: { organizationId: organization.id, userId: { in: uniqueMembers } },
-        select: { userId: true },
-      });
-
-      if (memberships.length !== uniqueMembers.length) {
-        return jsonWrap({ ok: false, error: "NOT_IN_ORGANIZATION" }, { status: 400 });
-      }
-
-      const conversation = await prisma.chatConversation.create({
-        data: {
-          organizationId: organization.id,
-          type: "CHANNEL",
-          title,
-          createdByUserId: user.id,
-          members: {
-            create: uniqueMembers.map((memberId) => ({
-              userId: memberId,
-              role: memberId === user.id ? "ADMIN" : "MEMBER",
-              organizationId: organization.id,
-            })),
-          },
-        },
-        include: {
-          members: {
-            include: { user: { select: { id: true, fullName: true, username: true, avatarUrl: true } } },
-          },
-        },
-      });
-
-      await publishChatEvent({
-        type: "conversation:update",
-        action: "created",
+    const conversation = await prisma.chatConversation.create({
+      data: {
         organizationId: organization.id,
-        conversationId: conversation.id,
-        conversation,
-      });
+        type: "CHANNEL",
+        contextType: "ORG_CHANNEL",
+        title,
+        createdByUserId: user.id,
+        members: {
+          create: uniqueMembers.map((memberId) => ({
+            userId: memberId,
+            role: memberId === user.id ? "ADMIN" : "MEMBER",
+            organizationId: organization.id,
+          })),
+        },
+      },
+      include: {
+        members: {
+          include: { user: { select: { id: true, fullName: true, username: true, avatarUrl: true } } },
+        },
+      },
+    });
 
-      console.log("[chat] canal criado", { conversationId: conversation.id, actor: user.id });
+    await publishChatEvent({
+      type: "conversation:update",
+      action: "created",
+      organizationId: organization.id,
+      conversationId: conversation.id,
+      conversation,
+    });
 
-      return jsonWrap({ ok: true, conversation }, { status: 201 });
-    }
+    console.log("[chat] canal criado", { conversationId: conversation.id, actor: user.id });
 
-    return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+    return jsonWrap({ ok: true, conversation }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

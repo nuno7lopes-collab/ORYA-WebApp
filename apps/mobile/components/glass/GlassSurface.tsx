@@ -1,70 +1,8 @@
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
-import { PropsWithChildren } from "react";
-import { StyleSheet, View, ViewStyle } from "react-native";
-import { tokens } from "@orya/shared";
+import type { ComponentProps } from "react";
+import { GlassSurface as BaseGlassSurface } from "../ui/GlassSurface";
 
-type GlassSurfaceProps = PropsWithChildren<{
-  className?: string;
-  intensity?: number;
-  padding?: number;
-  tint?: "dark" | "light";
-  style?: ViewStyle;
-  contentStyle?: ViewStyle;
-  withGradient?: boolean;
-}>;
+export type { GlassSurfaceProps } from "../ui/GlassSurface";
 
-export function GlassSurface({
-  children,
-  className,
-  intensity = 52,
-  padding = tokens.spacing.lg,
-  tint = "dark",
-  style,
-  contentStyle,
-  withGradient = true,
-}: GlassSurfaceProps) {
-  return (
-    <View
-      className={className}
-      style={[
-        styles.shell,
-        style,
-      ]}
-    >
-      {withGradient ? (
-        <LinearGradient
-          colors={["rgba(255,255,255,0.14)", "rgba(255,255,255,0.04)", "rgba(0,0,0,0.2)"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-      ) : null}
-      <BlurView
-        intensity={intensity}
-        tint={tint}
-        style={[
-          styles.blur,
-          { padding },
-          contentStyle,
-        ]}
-      >
-        {children}
-      </BlurView>
-    </View>
-  );
+export function GlassSurface(props: ComponentProps<typeof BaseGlassSurface>) {
+  return <BaseGlassSurface variant="surface" {...props} />;
 }
-
-const styles = StyleSheet.create({
-  shell: {
-    borderRadius: tokens.radius.xl,
-    borderWidth: 1,
-    borderColor: tokens.colors.border,
-    overflow: "hidden",
-    backgroundColor: tokens.colors.glass,
-  },
-  blur: {
-    borderRadius: tokens.radius.xl,
-  },
-});

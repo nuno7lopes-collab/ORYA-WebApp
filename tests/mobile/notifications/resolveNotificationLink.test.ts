@@ -41,31 +41,31 @@ describe("resolveNotificationLink", () => {
   });
 
   it("maps wallet and tickets shortcuts", () => {
-    expectNative("/me/carteira", "/tickets");
-    expectNative("/me/inscricoes", "/tickets");
-    expectNative("/me/bilhetes/ent_123", "/wallet/ent_123");
+    expectNative("/me/carteira", "/tickets?source=notifications");
+    expectNative("/me/inscricoes", "/tickets?source=notifications");
+    expectNative("/me/bilhetes/ent_123", "/wallet/ent_123?source=notifications");
   });
 
   it("maps social notifications tab", () => {
-    expectNative("/social?tab=notifications", "/notifications");
-    expectNative("https://www.orya.pt/social?tab=notifications", "/notifications");
+    expectNative("/social?tab=notifications", "/notifications?source=notifications");
+    expectNative("https://www.orya.pt/social?tab=notifications", "/notifications?source=notifications");
   });
 
   it("maps organization chat conversation", () => {
-    expectNative("/organizacao/chat?conversationId=abc", "/messages/abc");
-    expectNative("/organizacao/chat", "/messages");
+    expectNative("/organizacao/chat?conversationId=abc", "/messages/abc?source=notifications");
+    expectNative("/organizacao/chat", "/messages?source=notifications");
   });
 
   it("keeps already mobile paths", () => {
     expectNative("/event/xyz", "/event/xyz?source=notifications");
-    expectNative("/notifications", "/notifications");
+    expectNative("/notifications", "/notifications?source=notifications");
   });
 
   it("falls back to none for unknown paths", () => {
     expect(resolveNotificationLink("/foo/bar")).toEqual({ kind: "none" });
     expect(resolveNotificationLink("https://www.orya.pt/unknown")).toEqual({
       kind: "native",
-      path: "/unknown",
+      path: "/unknown?source=notifications",
     });
   });
 });

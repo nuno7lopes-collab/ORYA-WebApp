@@ -8,10 +8,11 @@ import type { Prisma } from "@prisma/client";
 import { OrganizationModule, RefundReason } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const PAGE_SIZE = 50;
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
     const supabase = await createSupabaseServer();
@@ -158,3 +159,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+export const GET = withApiEnvelope(_GET);

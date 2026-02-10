@@ -12,7 +12,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { computeStoreShippingQuote } from "@/lib/store/shipping";
 import { validateStorePersonalization } from "@/lib/store/personalization";
@@ -678,7 +678,6 @@ async function _POST(req: NextRequest) {
     const pricingDiscountCents = promoDiscountCents;
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
     const pricing = computePricing(amountCents, pricingDiscountCents, {
       platformDefaultFeeMode: "INCLUDED",
       organizationFeeMode: organization?.feeMode ?? undefined,
@@ -694,12 +693,12 @@ async function _POST(req: NextRequest) {
       feeMode: pricing.feeMode,
       platformFeeBps: pricing.feeBpsApplied,
       platformFeeFixedCents: pricing.feeFixedApplied,
-      stripeFeeBps: stripeBaseFees.feeBps,
-      stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
     });
     const totalCents = combinedFees.totalCents;
-    const stripeFeeEstimateCents = combinedFees.stripeFeeCentsEstimate;
-    const payoutAmountCents = Math.max(0, totalCents - pricing.platformFeeCents - stripeFeeEstimateCents);
+    const stripeFeeEstimateCents = 0;
+    const payoutAmountCents = Math.max(0, totalCents - pricing.platformFeeCents);
 
     const order = await prisma.$transaction(async (tx) => {
       const created = await tx.storeOrder.create({

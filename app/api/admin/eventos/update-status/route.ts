@@ -8,6 +8,7 @@ import type { EventStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/logger";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -107,6 +108,12 @@ async function _POST(req: NextRequest) {
           { status: 404 }
         );
       }
+      if (existing.status !== "DRAFT" && status === "DRAFT") {
+        return jsonWrap(
+          { ok: false, error: "INVALID_STATUS_TRANSITION" },
+          { status: 400 }
+        );
+      }
 
       const updated = await prisma.event.update({
         where: { id: existing.id },
@@ -170,6 +177,19 @@ async function _POST(req: NextRequest) {
           ),
         );
       }
+
+      await auditAdminAction({
+        action: "EVENT_STATUS_UPDATE",
+        actorUserId: admin.userId,
+        payload: {
+          eventId: updated.id,
+          slug: updated.slug,
+          title: updated.title,
+          fromStatus: existing.status,
+          toStatus: updated.status,
+          autoRefundQueued: shouldAutoRefund,
+        },
+      });
 
       return jsonWrap(
         {

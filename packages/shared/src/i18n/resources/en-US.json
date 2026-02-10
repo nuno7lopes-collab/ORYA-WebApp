@@ -1,0 +1,511 @@
+{
+  "common": {
+    "appName": "ORYA",
+    "actions": {
+      "back": "Back",
+      "cancel": "Cancel",
+      "close": "Close",
+      "save": "Save",
+      "confirm": "Confirm",
+      "retry": "Try again",
+      "reload": "Reload",
+      "search": "Search",
+      "clearSearch": "Clear search",
+      "clearFilters": "Clear filters",
+      "seeOnMap": "See on map",
+      "loadMore": "Load more",
+      "explore": "Explore",
+      "continue": "Continue",
+      "update": "Update",
+      "sending": "Sending...",
+      "updating": "Updating...",
+      "saving": "Saving...",
+      "loading": "Loading...",
+      "delete": "Delete",
+      "open": "Open",
+      "done": "Done",
+      "signIn": "Sign in",
+      "share": "Share",
+      "accept": "Accept",
+      "decline": "Decline",
+      "validate": "Validate",
+      "allow": "Allow",
+      "notNow": "Not now",
+      "join": "Join",
+      "create": "Create",
+      "openMap": "Open map"
+    },
+    "labels": {
+      "email": "Email",
+      "password": "Password",
+      "name": "Name",
+      "username": "Username",
+      "location": "Location",
+      "price": "Price",
+      "date": "Date",
+      "time": "Time",
+      "search": "Search",
+      "filters": "Filters",
+      "interests": "Interests",
+      "language": "Language",
+      "error": "Error"
+    },
+    "interests": {
+      "padel": "Padel",
+      "concertos": "Concerts",
+      "festas": "Parties",
+      "viagens": "Travel",
+      "bem_estar": "Wellness",
+      "gastronomia": "Food",
+      "aulas": "Classes",
+      "workshops": "Workshops"
+    },
+    "status": {
+      "active": "Active",
+      "cancelled": "Cancelled",
+      "ended": "Ended",
+      "draft": "Draft",
+      "live": "Live",
+      "upcoming": "Coming soon",
+      "closed": "Closed",
+      "soldOut": "Sold out",
+      "available": "Available",
+      "public": "Public",
+      "followers": "Followers only",
+      "private": "Private"
+    },
+    "time": {
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "inDays": "In {{count}} days",
+      "inHours": "In {{count}}h",
+      "available": "Available",
+      "ended": "Already ended",
+      "startsIn": "In {{value}}",
+      "endsIn": "Ends {{value}}",
+      "now": "Now"
+    },
+    "price": {
+      "free": "Free",
+      "from": "From {{price}}",
+      "ticketsSoon": "Tickets soon",
+      "soldOut": "Sold out"
+    },
+    "units": {
+      "km": "{{value}} km",
+      "kmShort": "<1 km",
+      "minutesShort": "{{count}} min"
+    },
+    "empty": {
+      "generic": "No results."
+    }
+  },
+  "auth": {
+    "title": "Sign in",
+    "subtitle": "Sign in or create an account to continue.",
+    "heroTitle": "Sign in to ORYA",
+    "heroSubtitle": "Discover services, events, and experiences.",
+    "apple": "Continue with Apple",
+    "google": "Continue with Google",
+    "emailButton": "Sign in with Email",
+    "emailMagic": "Send magic link",
+    "emailPlaceholder": "email@example.com",
+    "passwordPlaceholder": "Password",
+    "divider": "or",
+    "help": "Need help?",
+    "privacy": "Privacy",
+    "terms": "Terms",
+    "errorGeneric": "Couldn't sign in.",
+    "errorRetry": "Try again.",
+    "devAppleHint": "Apple sign-in does not work in Expo Go. Use a development build.",
+    "accountLinkTitle": "Email already exists",
+    "accountLinkBody": "This email already has an account. We'll link your accounts to continue.",
+    "accountLinkContinue": "Continue with email",
+    "accountLinkCancel": "Cancel",
+    "email": {
+      "title": "Sign in with email",
+      "subtitle": "Use your email to continue on ORYA.",
+      "helper": "Confirm your email and check spam if needed.",
+      "signIn": "Sign in",
+      "signUp": "Create account",
+      "toggleToSignIn": "Already have an account? Sign in",
+      "toggleToSignUp": "Don't have an account? Create",
+      "resetPassword": "Reset password",
+      "sendingReset": "Sending link...",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "confirmEmailTitle": "Confirm your email",
+      "confirmEmailBody": "We sent a confirmation link to your email.",
+      "linkSent": "Link sent. Confirm your email and sign in with your password.",
+      "errors": {
+        "invalidEmail": "Invalid email.",
+        "emptyPassword": "Enter your password.",
+        "invalidCredentials": "Email or password is incorrect.",
+        "emailNotConfirmed": "Confirm your email to continue.",
+        "userExists": "An account with this email already exists.",
+        "userExistsSignIn": "An account with this email already exists. Sign in with your password.",
+        "signupDisabled": "Sign-up is temporarily unavailable.",
+        "invalidPassword": "Invalid password.",
+        "passwordMin": "Password must be at least 6 characters.",
+        "unknown": "Couldn't sign in. Try again.",
+        "resetFailed": "Couldn't send the reset email.",
+        "resetSent": "We sent a password reset link.",
+        "sessionMissing": "Session not created."
+      }
+    },
+    "helpSheet": {
+      "title": "Need help?",
+      "body1": "If login fails, check whether you already have an account with the same email.",
+      "body2": "For Apple/Google, allow email access so we can link your account.",
+      "close": "Close"
+    },
+    "legal": {
+      "text": "By continuing, you agree to the <terms>Terms</terms> and <privacy>Privacy Policy</privacy>."
+    }
+  },
+  "discover": {
+    "title": "Discover",
+    "subtitle": "Events for today and the next days",
+    "searchPlaceholder": "Search",
+    "offer": "Offer",
+    "worlds": {
+      "padel": "Padel",
+      "events": "Events",
+      "services": "Services"
+    },
+    "dateFilters": {
+      "today": "Today",
+      "weekend": "Weekend",
+      "upcoming": "Next 7 days",
+      "all": "Any date"
+    },
+    "priceFilters": {
+      "free": "Free",
+      "paid": "Paid",
+      "all": "All"
+    },
+    "sections": {
+      "results": "Results",
+      "resultsFor": "For \"{{query}}\"",
+      "forYou": "For you"
+    },
+    "empty": {
+      "prompt": "Type to search.",
+      "noResults": "No results",
+      "noContent": "Nothing here yet",
+      "noResultsFilters": "No results for these filters.",
+      "noEventsNearby": "No events near you yet.",
+      "notFound": "We couldn't find “{{query}}”.",
+      "loadError": "Couldn't load the feed."
+    },
+    "cta": {
+      "openFilters": "Open filters",
+      "openSearch": "Open search",
+      "cancelSearch": "Cancel search",
+      "clearFilters": "Clear filters",
+      "seeOnMap": "See on map",
+      "filterBy": "Filter by {{label}}",
+      "removeFilter": "Remove filter {{label}}"
+    },
+    "filters": {
+      "title": "Filters",
+      "close": "Close filters",
+      "location": "Location",
+      "locationPlaceholder": "Search for a location",
+      "clearLocation": "Clear location",
+      "distance": "Distance",
+      "date": "Date",
+      "price": "Price",
+      "eventType": "Type",
+      "nearbyDistance": "Near you · {{distance}}",
+      "validating": "Validating address...",
+      "locationCity": "Location: {{city}}",
+      "searching": "Searching...",
+      "noResults": "No results",
+      "selectLocation": "Select {{label}}",
+      "suggestionsError": "Couldn't fetch suggestions.",
+      "validateError": "Couldn't validate this address."
+    }
+  },
+  "agora": {
+    "title": "Agora",
+    "error": "Couldn't load Agora.",
+    "empty": "No activity right now.",
+    "ctaDiscover": "Go to Discover",
+    "openMap": "Open map"
+  },
+  "messages": {
+    "title": "Messages",
+    "subtitle": "Event chats and direct messages.",
+    "requests": "Requests",
+    "requestsWithCount": "Requests ({{count}})",
+    "unreadCount": "{{count}} new",
+    "lastMessageEmpty": "No messages yet.",
+    "empty": {
+      "title": "You don't have any active messages yet.",
+      "ctaExplore": "Explore events"
+    },
+    "signin": {
+      "title": "Sign in",
+      "body": "Sign in to see your event messages.",
+      "cta": "Sign in",
+      "ctaExplore": "Explore events"
+    },
+    "requestsScreen": {
+      "signinTitle": "Sign in",
+      "signinBody": "Sign in to view message requests.",
+      "error": "Couldn't load requests.",
+      "empty": "No pending requests.",
+      "requestLabel": "Message request",
+      "userFallback": "User"
+    },
+    "errors": {
+      "load": "Couldn't load chats."
+    },
+    "status": {
+      "open": "Open chat",
+      "announcements": "Announcements",
+      "readOnly": "Read only",
+      "closed": "Closed"
+    },
+    "thread": {
+      "eventTitleFallback": "Event chat",
+      "conversationTitleFallback": "Conversation",
+      "errors": {
+        "load": "Couldn't load the chat.",
+        "loadMore": "Couldn't load more messages.",
+        "send": "Couldn't send the message.",
+        "undoExpired": "You can no longer undo this message.",
+        "undoFailed": "Couldn't undo the message.",
+        "muteFailed": "Couldn't mute the chat.",
+        "muteUpdateFailed": "Couldn't update settings.",
+        "readOnly": "This chat is read-only.",
+        "participantsOnly": "Chat is available only to participants.",
+        "signInRequired": "Sign in to access the chat."
+      },
+      "mute": {
+        "title": "Mute conversation",
+        "remove": "Remove mute",
+        "chooseDuration": "Choose duration:",
+        "options": {
+          "1h": "1 hour",
+          "8h": "8 hours",
+          "1w": "1 week",
+          "forever": "Forever"
+        }
+      },
+      "signinTitle": "Sign in",
+      "signinBody": "Sign in to access the chat.",
+      "viewEvent": "View event",
+      "context": {
+        "booking": "Booking",
+        "service": "Service",
+        "org": "Organization",
+        "group": "Group",
+        "message": "Message"
+      },
+      "readOnly": {
+        "title": "Read-only chat",
+        "bookingInactive": "This booking is no longer active.",
+        "adminsOnly": "Only admins can send messages right now.",
+        "footer": "This chat is read-only.",
+        "announcementsOnly": "Only organizers can publish announcements."
+      },
+      "loadOlder": "Load older messages",
+      "announcement": "Announcement",
+      "undoPromptTitle": "Message",
+      "undoPromptBody": "Undo sending?",
+      "undoAction": "Undo",
+      "messageDeleted": "Message removed",
+      "muted": "Muted",
+      "empty": "No messages yet. Say hello.",
+      "inputPlaceholder": "Write a message",
+      "send": "Send message"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "account": {"title": "Account", "subtitle": "Email and recovery."},
+      "privacy": {"title": "Privacy", "subtitle": "Control who can see your profile."},
+      "interests": {"title": "Interests", "subtitle": "Pick up to 6 interests."},
+      "notifications": {"title": "Notifications", "subtitle": "Essential emails and alerts."},
+      "language": {"title": "Language", "subtitle": "Choose the app language."},
+      "session": {"title": "Session and account", "subtitle": "Sign out or delete account."},
+      "legal": {"title": "Legal and app", "subtitle": "Legal info and version."}
+    },
+    "fields": {
+      "email": "Email",
+      "emailPlaceholder": "email@example.com"
+    },
+    "privacy": {
+      "public": "Public profile",
+      "followers": "Followers only",
+      "private": "Private",
+      "save": "Save privacy"
+    },
+    "interests": {
+      "selectedCount": "{{count}}/6 selected",
+      "save": "Save interests"
+    },
+    "notifications": {
+      "loading": "Loading notifications...",
+      "social": "Social alerts",
+      "events": "Events and reminders",
+      "system": "System and security",
+      "marketing": "Marketing and campaigns",
+      "sales": "Sales and payments",
+      "news": "News and security email",
+      "pushTitle": "Push notifications",
+      "pushSubtitle": "Real-time alerts on your iPhone.",
+      "pushActive": "Active",
+      "pushUnavailable": "Unavailable",
+      "pushOpenSettings": "Open settings",
+      "pushEnable": "Enable push",
+      "save": "Save notifications"
+    },
+    "account": {
+      "updateEmail": "Update email",
+      "resetPassword": "Reset password",
+      "updating": "Updating...",
+      "sending": "Sending..."
+    },
+    "messages": {
+      "invalidEmail": "Enter a valid email.",
+      "emailUpdated": "Email updated. Confirmation may be required.",
+      "emailUpdateFailed": "Couldn't update email.",
+      "resetInvalidEmail": "Enter a valid email to reset your password.",
+      "resetSent": "We sent a password reset link.",
+      "resetFailed": "Couldn't send the reset link.",
+      "privacySaveFailed": "Couldn't save privacy settings.",
+      "interestsSaveFailed": "Couldn't save interests.",
+      "notificationsSaveFailed": "Couldn't save notifications.",
+      "consentSaveFailed": "Couldn't save consent.",
+      "logoutFailed": "Couldn't sign out.",
+      "deleteFailed": "Couldn't mark account for deletion."
+    },
+    "consents": {
+      "title": "Organization consents",
+      "subtitle": "Control how each organization contacts you.",
+      "loading": "Loading consents...",
+      "empty": "No associated organizations.",
+      "orgFallback": "Organization",
+      "openOrg": "Open organization {{name}}",
+      "marketing": "Marketing",
+      "contactEmail": "Email contact",
+      "contactSms": "SMS contact"
+    },
+    "session": {
+      "signOut": "Sign out",
+      "delete": "Delete account",
+      "deleteHint": "This action is permanent.",
+      "deleteTitle": "Delete account",
+      "deleteBody": "To confirm, type your email.",
+      "deleteInput": "Email",
+      "deleteConfirm": "Delete",
+      "deletePhrase": "DELETE ACCOUNT",
+      "deleteModalTitle": "Delete ORYA account",
+      "deleteModalSubtitle": "Your account will be deactivated now. You have 30 days to reactivate via login or email. Type DELETE ACCOUNT to confirm.",
+      "deleteConfirmLabel": "Confirm deletion",
+      "deleteInputLabel": "Confirmation"
+    },
+    "legal": {
+      "terms": "Terms",
+      "privacy": "Privacy Policy",
+      "version": "Version {{version}}",
+      "openTerms": "Open terms",
+      "openPrivacy": "Open privacy policy"
+    },
+    "language": {
+      "label": "Language",
+      "pt-PT": "Portuguese (Portugal)",
+      "en-US": "English (US)",
+      "es-ES": "Spanish (Spain)"
+    }
+  },
+  "onboarding": {
+    "title": "Let's get started",
+    "steps": {
+      "basic": "Profile",
+      "interests": "Interests",
+      "padel": "Padel",
+      "location": "Location"
+    },
+    "basic": {
+      "title": "Create your profile",
+      "nameLabel": "Full name",
+      "namePlaceholder": "Your name",
+      "usernameLabel": "Username",
+      "usernamePlaceholder": "@yourname",
+      "continue": "Continue"
+    },
+    "interests": {
+      "title": "What are you into?",
+      "subtitle": "Pick up to 6 interests.",
+      "continue": "Continue"
+    },
+    "padel": {
+      "title": "Your padel profile",
+      "gender": "Gender",
+      "level": "Level",
+      "side": "Preference",
+      "continue": "Continue"
+    },
+    "location": {
+      "title": "Where are you?",
+      "subtitle": "We use this to recommend nearby events.",
+      "allow": "Allow location",
+      "skip": "Skip for now",
+      "continue": "Continue"
+    },
+    "errors": {
+      "usernameTaken": "This username is already taken.",
+      "usernameInvalid": "This username is invalid."
+    }
+  },
+  "events": {
+    "status": {
+      "cancelled": "Cancelled",
+      "ended": "Ended",
+      "draft": "Draft",
+      "active": "Active"
+    },
+    "labels": {
+      "tournament": "TOURNAMENT",
+      "padel": "PADEL",
+      "event": "EVENT"
+    },
+    "badges": {
+      "live": "LIVE",
+      "featured": "FEATURED"
+    },
+    "access": {
+      "public": "PUBLIC",
+      "invite": "INVITE",
+      "unlisted": "UNLISTED"
+    },
+    "tickets": {
+      "available": "Available",
+      "closed": "Closed",
+      "upcoming": "Coming soon",
+      "soldOut": "Sold out",
+      "lastSeats": "Last {{count}}",
+      "remaining": "{{count}}+ seats",
+      "freeEntry": "Free entry"
+    },
+    "attendance": {
+      "registered": "{{sold}}/{{total}} attending",
+      "registeredPlus": "{{sold}}+ attending"
+    }
+  },
+  "services": {
+    "kind": {
+      "court": "PADEL",
+      "class": "CLASS",
+      "service": "SERVICE"
+    }
+  },
+  "errors": {
+    "generic": "Something went wrong."
+  }
+}

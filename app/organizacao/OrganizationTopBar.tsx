@@ -167,7 +167,7 @@ export default function OrganizationTopBar({
     }
     if (pathname?.startsWith("/organizacao/reservas")) return setApp("Reservas", "RESERVAS");
     if (pathname?.startsWith("/organizacao/inscricoes")) return setApp("Formulários", "INSCRICOES");
-    if (pathname?.startsWith("/organizacao/chat") || pathname?.startsWith("/organizacao/mensagens")) {
+    if (pathname?.startsWith("/organizacao/chat")) {
       return setApp("Chat interno", "MENSAGENS");
     }
     if (pathname?.startsWith("/organizacao/scan")) return setApp("Check-in", "CHECKIN");

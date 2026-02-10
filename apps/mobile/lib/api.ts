@@ -19,10 +19,20 @@ const isTimeoutErrorMessage = (message: string) => {
   return lower.includes("api timeout") || lower.includes("aborterror") || lower.includes("aborted");
 };
 
+const isServiceUnavailableErrorMessage = (message: string) => {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("api 503") ||
+    lower.includes("auth_unavailable") ||
+    lower.includes("service_unavailable")
+  );
+};
+
 const isNetworkErrorMessage = (message: string) => {
   const lower = message.toLowerCase();
   return (
     isTimeoutErrorMessage(message) ||
+    isServiceUnavailableErrorMessage(message) ||
     lower.includes("network request failed") ||
     lower.includes("failed to fetch")
   );
@@ -45,7 +55,21 @@ const baseApi = createApiClient({
 
 const isUnauthorizedError = (err: unknown) => {
   const message = err instanceof Error ? err.message : String(err ?? "");
+  if (message.includes("AUTH_UNAVAILABLE")) return false;
   return message.includes("API 401") || message.includes("UNAUTHENTICATED");
+};
+
+const isNotFoundErrorMessage = (message: string) => message.includes("API 404");
+
+const hasAuthorizationHeader = (headers?: RequestInit["headers"]) => {
+  if (!headers) return false;
+  if (headers instanceof Headers) {
+    return headers.has("authorization") || headers.has("Authorization");
+  }
+  if (Array.isArray(headers)) {
+    return headers.some(([key]) => key.toLowerCase() === "authorization");
+  }
+  return Object.keys(headers).some((key) => key.toLowerCase() === "authorization");
 };
 
 const stripAuthorizationHeader = (headers?: RequestInit["headers"]) => {
@@ -68,6 +92,16 @@ const stripAuthorizationHeader = (headers?: RequestInit["headers"]) => {
   return next;
 };
 
+const parseResponseBody = async (res: Response) => {
+  const text = await res.text().catch(() => "");
+  if (!text) return { text: "", data: null as unknown };
+  try {
+    return { text, data: JSON.parse(text) as unknown };
+  } catch {
+    return { text, data: null as unknown };
+  }
+};
+
 const withTimeout = async <T>(fn: (signal?: AbortSignal) => Promise<T>, signal?: AbortSignal) => {
   if (signal) return fn(signal);
   const controller = new AbortController();
@@ -83,6 +117,40 @@ const withTimeout = async <T>(fn: (signal?: AbortSignal) => Promise<T>, signal?:
   } finally {
     clearTimeout(timeout);
   }
+};
+
+export type ApiRawResult<T> = {
+  ok: boolean;
+  status: number;
+  data: T | null;
+  errorText?: string;
+};
+
+const requestRawOnce = async <T>(path: string, init: RequestInit = {}): Promise<ApiRawResult<T>> => {
+  const session = await getActiveSession();
+  const accessToken = session?.access_token ?? null;
+  const url = path.startsWith("http") ? path : `${getMobileEnv().apiBaseUrl}${path}`;
+  const headersFromInit =
+    init.headers instanceof Headers
+      ? Object.fromEntries(init.headers.entries())
+      : Array.isArray(init.headers)
+        ? Object.fromEntries(init.headers)
+        : ((init.headers as Record<string, string> | undefined) ?? {});
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...headersFromInit,
+  };
+  if (accessToken && !hasAuthorizationHeader(init.headers)) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  const res = await fetch(url, { ...init, headers });
+  const { text, data } = await parseResponseBody(res);
+  return {
+    ok: res.ok,
+    status: res.status,
+    data: (data as T) ?? null,
+    errorText: text || res.statusText,
+  };
 };
 
 export const api = {
@@ -113,7 +181,9 @@ export const api = {
       }
       if (isDev) {
         const duration = Date.now() - startedAt;
-        console.warn(`[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`);
+        if (!isNotFoundErrorMessage(errorMessage)) {
+          console.warn(`[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`);
+        }
       }
       if (!isUnauthorizedError(err)) throw err;
       let refreshed = false;
@@ -144,13 +214,13 @@ export const api = {
         }
         if (isDev) {
           const duration = Date.now() - startedAt;
-          console.warn(`[api] ${method} ${path} retry failed in ${duration}ms: ${retryMessage}`);
+          if (!isNotFoundErrorMessage(retryMessage)) {
+            console.warn(`[api] ${method} ${path} retry failed in ${duration}ms: ${retryMessage}`);
+          }
         }
         if (isUnauthorizedError(retryErr)) {
           try {
-            if (!refreshed) {
-              await supabase.auth.signOut();
-            }
+            await supabase.auth.signOut();
           } catch {
             // ignore sign out errors
           }
@@ -172,6 +242,72 @@ export const api = {
       Authorization: `Bearer ${accessToken}`,
     };
     return api.request<T>(path, { ...init, headers });
+  },
+  requestRaw: async <T>(path: string, init?: RequestInit): Promise<ApiRawResult<T>> => {
+    if (shouldFailFast()) {
+      throw new Error("API offline");
+    }
+    const method = (init?.method ?? "GET").toUpperCase();
+    const startedAt = Date.now();
+    if (isDev) {
+      console.info(`[api] ${method} ${path} start`);
+    }
+    try {
+      const result = await withTimeout(
+        (signal) => requestRawOnce<T>(path, { ...init, signal: init?.signal ?? signal }),
+        init?.signal,
+      );
+      if (isDev) {
+        const duration = Date.now() - startedAt;
+        const slowTag = duration >= SLOW_REQUEST_MS ? " (slow)" : "";
+        console.info(`[api] ${method} ${path} ${duration}ms${slowTag}`);
+      }
+      if (result.status !== 401) {
+        return result;
+      }
+      let refreshed = false;
+      try {
+        const { data, error } = await supabase.auth.refreshSession();
+        refreshed = Boolean(data.session && !error);
+      } catch {
+        refreshed = false;
+      }
+      if (!refreshed) {
+        return result;
+      }
+      const retryInit = init
+        ? { ...init, headers: stripAuthorizationHeader(init.headers) }
+        : undefined;
+      const retryResult = await withTimeout(
+        (signal) => requestRawOnce<T>(path, { ...retryInit, signal: retryInit?.signal ?? signal }),
+        retryInit?.signal,
+      );
+      if (isDev) {
+        const duration = Date.now() - startedAt;
+        const slowTag = duration >= SLOW_REQUEST_MS ? " (slow)" : "";
+        console.info(`[api] ${method} ${path} retry ${duration}ms${slowTag}`);
+      }
+      if (retryResult.status === 401) {
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // ignore sign out errors
+        }
+      }
+      return retryResult;
+    } catch (err) {
+      const errorMessage = formatError(err);
+      if (isNetworkErrorMessage(errorMessage)) {
+        recordOffline();
+      }
+      if (isDev) {
+        const duration = Date.now() - startedAt;
+        if (!isNotFoundErrorMessage(errorMessage)) {
+          console.warn(`[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`);
+        }
+      }
+      throw err;
+    }
   },
 };
 

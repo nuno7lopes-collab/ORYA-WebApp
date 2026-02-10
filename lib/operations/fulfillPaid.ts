@@ -48,7 +48,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   const meta = intent.metadata ?? {};
   const scenario = normalizePaymentScenario(typeof meta.paymentScenario === "string" ? meta.paymentScenario : null);
   // Deixar cenários especiais para handlers dedicados.
-  if (scenario && ["RESALE", "GROUP_SPLIT", "GROUP_FULL", "GROUP_SPLIT_SECOND_CHARGE"].includes(scenario)) {
+  if (scenario && ["RESALE", "GROUP_SPLIT", "GROUP_FULL", "GROUP_SPLIT_SECOND_CHARGE", "BOOKING_CHANGE"].includes(scenario)) {
     return false;
   }
 

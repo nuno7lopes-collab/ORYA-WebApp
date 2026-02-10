@@ -10,16 +10,22 @@ import { PushGate } from "../components/notifications/PushGate";
 import { StripeProvider } from "@stripe/stripe-react-native";
 import { LogBox, View, ActivityIndicator } from "react-native";
 import { getMobileEnv } from "../lib/env";
+import { resolveAppScheme } from "../lib/deeplink";
 import { useFonts } from "expo-font";
 import { Ionicons } from "../components/icons/Ionicons";
 import { useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
 import { perfMark, perfMeasure, perfLog } from "../lib/perf";
+import { TabSwipeProvider } from "../components/navigation/TabSwipeProvider";
+import { I18nProvider } from "../components/i18n/I18nProvider";
+import { Manrope_500Medium, Manrope_700Bold } from "@expo-google-fonts/manrope";
+import { Sora_600SemiBold, Sora_700Bold } from "@expo-google-fonts/sora";
 
 WebBrowser.maybeCompleteAuthSession();
 
 LogBox.ignoreLogs([
   "SafeAreaView has been deprecated",
+  "SafeAreaView has been deprecated and will be removed in a future release",
   "SafeAreaView is deprecated",
   "Please use 'react-native-safe-area-context' instead",
   "WebCrypto API is not supported",
@@ -32,8 +38,13 @@ export default function RootLayout() {
   const env = getMobileEnv();
   const stripeKey = env.stripePublishableKey ?? "";
   const merchantIdentifier = env.appleMerchantId ?? undefined;
+  const appScheme = resolveAppScheme();
   const [fontsLoaded, fontsError] = useFonts({
     ...Ionicons.font,
+    Sora_600SemiBold,
+    Sora_700Bold,
+    Manrope_500Medium,
+    Manrope_700Bold,
   });
   const [fontTimeout, setFontTimeout] = useState(false);
 
@@ -63,66 +74,78 @@ export default function RootLayout() {
     perfLog("api_base_url", { apiBaseUrl: env.apiBaseUrl, appEnv: env.appEnv });
   }, [env.apiBaseUrl, env.appEnv]);
 
+  const loadingFallback = (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b1014" }}>
+      <ActivityIndicator />
+    </View>
+  );
+
   if (!fontsLoaded && !fontsError && !fontTimeout) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b101a" }}>
-        <ActivityIndicator />
-      </View>
-    );
+    return loadingFallback;
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0b101a" }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0b1014" }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StripeProvider
             publishableKey={stripeKey}
             merchantIdentifier={merchantIdentifier}
-            urlScheme="orya"
+            urlScheme={appScheme}
           >
-            <AuthProvider>
-              <StatusBar style="light" />
-              <PushGate />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: "#0b101a" },
-                }}
-              >
-                <Stack.Screen
-                  name="event/[slug]"
-                  options={{
-                    animation: "fade_from_bottom",
-                    animationDuration: 420,
-                    gestureEnabled: true,
-                  }}
-                />
-                <Stack.Screen
-                  name="service/[id]"
-                  options={{
-                    animation: "fade_from_bottom",
-                    animationDuration: 420,
-                    gestureEnabled: true,
-                  }}
-                />
-                <Stack.Screen
-                  name="service/[id]/booking"
-                  options={{
-                    animation: "slide_from_right",
-                    animationDuration: 380,
-                    gestureEnabled: true,
-                  }}
-                />
-                <Stack.Screen
-                  name="checkout/index"
-                  options={{
-                    animation: "slide_from_right",
-                    animationDuration: 380,
-                    gestureEnabled: true,
-                  }}
-                />
-              </Stack>
-            </AuthProvider>
+            <I18nProvider fallback={loadingFallback}>
+              <AuthProvider>
+                <StatusBar style="light" />
+                <PushGate />
+                <TabSwipeProvider>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: { backgroundColor: "#0b1014" },
+                    }}
+                  >
+                    <Stack.Screen
+                      name="(tabs)"
+                      options={{
+                        headerShown: false,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="event/[slug]"
+                      options={{
+                        animation: "fade_from_bottom",
+                        animationDuration: 420,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="service/[id]"
+                      options={{
+                        animation: "fade_from_bottom",
+                        animationDuration: 420,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="service/[id]/booking"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 380,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="checkout/index"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 380,
+                        gestureEnabled: true,
+                      }}
+                    />
+                  </Stack>
+                </TabSwipeProvider>
+              </AuthProvider>
+            </I18nProvider>
           </StripeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

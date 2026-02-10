@@ -15,6 +15,8 @@ import {
   getSnapshotAllowCancellation,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { normalizeEmail } from "@/lib/utils/email";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -27,7 +29,7 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -99,6 +101,7 @@ export async function POST(
         select: {
           id: true,
           userId: true,
+          guestEmail: true,
           status: true,
           startsAt: true,
           paymentIntentId: true,
@@ -129,7 +132,11 @@ export async function POST(
         return { error: fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.") };
       }
 
-      if (booking.userId !== user.id) {
+      const normalizedEmail = normalizeEmail(user.email ?? "");
+      const isOwner =
+        booking.userId === user.id ||
+        (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
+      if (!isOwner) {
         return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
       }
 
@@ -386,3 +393,4 @@ export async function POST(
     return fail(500, "BOOKING_CANCEL_FAILED", "Erro ao cancelar reserva.", true);
   }
 }
+export const POST = withApiEnvelope(_POST);

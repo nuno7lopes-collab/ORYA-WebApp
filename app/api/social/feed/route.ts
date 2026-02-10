@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { toPublicEventCardWithPrice, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 type FeedItem = {
   id: string;
@@ -60,7 +61,7 @@ async function _GET(req: NextRequest) {
   const events = await prisma.event.findMany({
     where: {
       organizationId: { in: orgIds },
-      status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+      status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
       isDeleted: false,
       organization: { status: "ACTIVE" },
     },

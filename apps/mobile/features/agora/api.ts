@@ -1,6 +1,6 @@
 import { PublicEventCard } from "@orya/shared";
 import { api, unwrapApiResponse } from "../../lib/api";
-import { AgoraEvent, AgoraTimeline } from "./types";
+import { AgoraEvent, AgoraFeedMode, AgoraPage, AgoraPageParam } from "./types";
 
 type LegacyEventListItem = {
   id: number;
@@ -27,17 +27,60 @@ type LegacyEventListItem = {
   stats?: {
     goingCount?: number;
   };
+  interestTags?: string[];
+  rank?: {
+    score: number;
+    reasons: Array<{ code: string; label?: string; weight?: number }>;
+  };
 };
 
 type LegacyEventListPayload = {
-  events: LegacyEventListItem[];
+  events?: LegacyEventListItem[];
+  pagination?: {
+    nextCursor?: string | null;
+    hasMore?: boolean;
+  };
+};
+
+const DEFAULT_LIMIT = 18;
+const MIN_VALID_MS = Date.UTC(2000, 0, 1);
+
+const parseEventDateMs = (value?: string | number | null): number | null => {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    if (value > 1e12) return value;
+    if (value > 1e9) return value * 1000;
+    return null;
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    if (!Number.isFinite(numeric)) return null;
+    if (numeric > 1e12) return numeric;
+    if (numeric > 1e9) return numeric * 1000;
+    return null;
+  }
+  const parsed = new Date(trimmed).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeNumericDate = (value?: string | null): string | undefined => {
+  if (!value) return value ?? undefined;
+  const trimmed = String(value).trim();
+  if (!/^\d+$/.test(trimmed)) return value;
+  const ms = parseEventDateMs(trimmed);
+  if (ms == null) return value;
+  return new Date(ms).toISOString();
 };
 
 const toPublicCard = (item: LegacyEventListItem): PublicEventCard => {
   const now = Date.now();
-  const endAt = item.endDate ? new Date(item.endDate) : null;
-  const startAt = item.startDate ? new Date(item.startDate) : null;
-  const isPast = Boolean(endAt && Number.isFinite(endAt.getTime()) && endAt.getTime() < now);
+  const endMs = parseEventDateMs(item.endDate);
+  const isPast = Boolean(endMs && endMs >= MIN_VALID_MS && endMs < now);
+  const normalizedStart = normalizeNumericDate(item.startDate ?? null);
+  const normalizedEnd = normalizeNumericDate(item.endDate ?? null);
 
   return {
     id: item.id,
@@ -46,16 +89,19 @@ const toPublicCard = (item: LegacyEventListItem): PublicEventCard => {
     title: item.title,
     description: item.shortDescription,
     shortDescription: item.shortDescription,
-    startsAt: item.startDate,
-    endsAt: item.endDate,
+    startsAt: normalizedStart ?? item.startDate,
+    endsAt: normalizedEnd ?? item.endDate,
     coverImageUrl: item.coverImageUrl,
     isGratis: item.isGratis,
     priceFrom: item.priceFrom,
     categories: [item.category ?? "GERAL"],
+    templateType: item.category ?? null,
+    interestTags: Array.isArray(item.interestTags) ? item.interestTags : [],
     hostName: null,
     hostUsername: null,
     status: isPast ? "PAST" : "ACTIVE",
     isHighlighted: Boolean(item.stats?.goingCount && item.stats.goingCount > 20),
+    rank: item.rank ?? undefined,
     location: {
       name: item.venue?.name ?? null,
       city: item.venue?.city ?? null,
@@ -81,12 +127,13 @@ const formatLiveWindowLabel = (status: AgoraEvent["agoraStatus"], startsInMinute
 
 const toAgoraEvent = (item: PublicEventCard): AgoraEvent => {
   const now = Date.now();
-  const start = item.startsAt ? new Date(item.startsAt) : null;
-  const end = item.endsAt ? new Date(item.endsAt) : null;
-  const startMs = start && Number.isFinite(start.getTime()) ? start.getTime() : null;
-  const endMs = end && Number.isFinite(end.getTime()) ? end.getTime() : null;
-  const startsInMinutes =
-    startMs !== null ? Math.max(0, Math.round((startMs - now) / (1000 * 60))) : null;
+  const normalizedStartsAt = normalizeNumericDate(item.startsAt ?? null) ?? item.startsAt;
+  const normalizedEndsAt = normalizeNumericDate(item.endsAt ?? null) ?? item.endsAt;
+  const startMs = parseEventDateMs(normalizedStartsAt ?? null);
+  const endMs = parseEventDateMs(normalizedEndsAt ?? null);
+  const diffMinutes =
+    startMs !== null ? Math.round((startMs - now) / (1000 * 60)) : null;
+  const startsInMinutes = diffMinutes !== null && diffMinutes >= 0 ? diffMinutes : null;
 
   let agoraStatus: AgoraEvent["agoraStatus"] = "UPCOMING";
   if (startMs !== null && endMs !== null && now >= startMs && now <= endMs) {
@@ -97,43 +144,71 @@ const toAgoraEvent = (item: PublicEventCard): AgoraEvent => {
 
   return {
     ...item,
+    startsAt: normalizedStartsAt,
+    endsAt: normalizedEndsAt,
     agoraStatus,
     startsInMinutes,
     liveWindowLabel: formatLiveWindowLabel(agoraStatus, startsInMinutes),
   };
 };
 
-export const fetchAgoraTimeline = async (): Promise<AgoraTimeline> => {
-  const response = await api.request<unknown>("/api/eventos/list?limit=18");
-  const unwrapped = unwrapApiResponse<LegacyEventListPayload>(response);
-  const rawItems = Array.isArray(unwrapped?.events) ? unwrapped.events : [];
-  const mapped = rawItems.map((item) => toAgoraEvent(toPublicCard(item)));
-  const now = Date.now();
-  const futureOrLive = mapped.filter((event) => {
-    if (event.status === "CANCELLED" || event.status === "PAST") return false;
-    if (!event.endsAt) return true;
-    const end = new Date(event.endsAt).getTime();
-    if (!Number.isFinite(end)) return true;
-    return end >= now;
-  });
-  const within24to72 = futureOrLive.filter((event) => {
-    if (!event.startsAt) return false;
-    const start = new Date(event.startsAt).getTime();
-    if (!Number.isFinite(start)) return false;
-    const diffHours = (start - now) / (1000 * 60 * 60);
-    return diffHours >= 24 && diffHours <= 72;
-  });
-  const later = futureOrLive.filter((event) => {
-    if (!event.startsAt) return true;
-    const start = new Date(event.startsAt).getTime();
-    if (!Number.isFinite(start)) return true;
-    const diffHours = (start - now) / (1000 * 60 * 60);
-    return diffHours > 72;
+const filterFutureOrLive = (items: AgoraEvent[], now: number) =>
+  items.filter((event) => {
+    if (event.status === "CANCELLED") return false;
+    const endMs = parseEventDateMs(event.endsAt ?? event.startsAt ?? null);
+    if (event.status === "PAST") {
+      if (!endMs || endMs < MIN_VALID_MS) return true;
+      return endMs >= now;
+    }
+    if (!endMs || endMs < MIN_VALID_MS) return true;
+    return endMs >= now;
   });
 
+const toAgoraQueryString = (params: { cursor?: string | null; limit?: number; mode: AgoraFeedMode }) => {
+  const query = new URLSearchParams();
+  if (params.cursor) query.set("cursor", params.cursor);
+  query.set("limit", String(params.limit ?? DEFAULT_LIMIT));
+  query.set("sort", "startsAt");
+  if (params.mode === "agora") query.set("date", "agora");
+  return query.toString();
+};
+
+const fetchLegacyPage = async (params: { cursor?: string | null; limit?: number; mode: AgoraFeedMode }) => {
+  const response = await api.request<unknown>(`/api/eventos/list?${toAgoraQueryString(params)}`, {
+    headers: { Authorization: "" },
+  });
+  const unwrapped = unwrapApiResponse<LegacyEventListPayload>(response);
+  const events = Array.isArray(unwrapped?.events) ? unwrapped.events : [];
+  const pagination = unwrapped?.pagination ?? {};
   return {
-    liveNow: futureOrLive.filter((event) => event.agoraStatus === "LIVE"),
-    comingSoon: within24to72.filter((event) => event.agoraStatus !== "LIVE"),
-    upcoming: later.slice(0, 8),
+    events,
+    nextCursor: pagination.nextCursor ?? null,
+    hasMore: typeof pagination.hasMore === "boolean" ? pagination.hasMore : pagination.nextCursor != null,
+  };
+};
+
+export const fetchAgoraPage = async (
+  params: Partial<AgoraPageParam> & { limit?: number } = {},
+): Promise<AgoraPage> => {
+  const mode: AgoraFeedMode = params.mode ?? "agora";
+  const cursor = params.cursor ?? null;
+  const limit = params.limit ?? DEFAULT_LIMIT;
+
+  const page = await fetchLegacyPage({ cursor, limit, mode });
+  let mapped = page.events.map((item) => toAgoraEvent(toPublicCard(item)));
+
+  if (mode === "agora") {
+    mapped = filterFutureOrLive(mapped, Date.now());
+  }
+
+  if (mode === "agora" && cursor == null && mapped.length === 0) {
+    return fetchAgoraPage({ mode: "all", cursor: null, limit });
+  }
+
+  return {
+    items: mapped,
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+    mode,
   };
 };

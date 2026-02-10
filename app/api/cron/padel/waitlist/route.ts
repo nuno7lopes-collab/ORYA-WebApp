@@ -11,6 +11,7 @@ import { promoteNextPadelWaitlistEntry } from "@/domain/padelWaitlist";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { queueWaitlistPromoted } from "@/domain/notifications/splitPayments";
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 const MAX_PROMOTIONS_PER_EVENT = 12;
 
@@ -35,7 +36,7 @@ async function _POST(req: NextRequest) {
         padelV2Enabled: true,
         event: {
           isDeleted: false,
-          status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+          status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
         },
       },
       select: {

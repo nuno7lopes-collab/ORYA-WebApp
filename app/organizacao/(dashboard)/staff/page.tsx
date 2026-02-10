@@ -311,6 +311,9 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [reviewNote, setReviewNote] = useState("");
   const [selectedPermissionUserId, setSelectedPermissionUserId] = useState<string>("");
   const [permissionSavingKey, setPermissionSavingKey] = useState<string | null>(null);
+  const [scopeDraftType, setScopeDraftType] = useState<string>("COURT");
+  const [scopeDraftId, setScopeDraftId] = useState<string>("");
+  const [scopeDraftLevel, setScopeDraftLevel] = useState<string>("VIEW");
 
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -408,6 +411,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     });
   }, [members]);
 
+  const selectedMember = useMemo(
+    () => sortedMembers.find((member) => member.userId === selectedPermissionUserId) ?? null,
+    [selectedPermissionUserId, sortedMembers],
+  );
+
   useEffect(() => {
     if (sortedMembers.length === 0) {
       if (selectedPermissionUserId) setSelectedPermissionUserId("");
@@ -419,6 +427,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
   }, [selectedPermissionUserId, sortedMembers]);
 
+  useEffect(() => {
+    setScopeDraftType("COURT");
+    setScopeDraftId("");
+    setScopeDraftLevel("VIEW");
+  }, [selectedMember?.userId]);
+
   const permissionsByUser = useMemo(() => {
     const map = new Map<string, MemberPermission[]>();
     permissions.forEach((perm) => {
@@ -429,15 +443,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     return map;
   }, [permissions]);
 
-  const selectedMember = useMemo(
-    () => sortedMembers.find((member) => member.userId === selectedPermissionUserId) ?? null,
-    [selectedPermissionUserId, sortedMembers],
-  );
   const selectedOverrides = useMemo(() => {
     if (!selectedMember) return new Map<OrganizationModule, MemberPermission>();
     const list = permissionsByUser.get(selectedMember.userId) ?? [];
     const map = new Map<OrganizationModule, MemberPermission>();
     list.forEach((perm) => {
+      if (perm.scopeType) return;
       map.set(perm.moduleKey, perm);
     });
     return map;
@@ -462,9 +473,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     userId: string,
     moduleKey: OrganizationModule,
     accessLevel: string,
+    scopeType?: string | null,
+    scopeId?: string | null,
   ) => {
     if (!resolvedOrganizationId) return;
-    setPermissionSavingKey(`${userId}:${moduleKey}`);
+    const scopeKey = scopeType ? `${scopeType}:${scopeId ?? "ALL"}` : "GLOBAL";
+    setPermissionSavingKey(`${userId}:${moduleKey}:${scopeKey}`);
     try {
       const res = await fetch("/api/organizacao/organizations/members/permissions", {
         method: "PATCH",
@@ -474,6 +488,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
           userId,
           moduleKey,
           accessLevel,
+          scopeType: scopeType ?? null,
+          scopeId: scopeType ? scopeId ?? null : null,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1056,7 +1072,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           const overrideLevel = normalizeAccessLevel(override?.accessLevel ?? null);
                           const baseLevel = selectedDefaults[moduleKey];
                           const effectiveLevel = overrideLevel ?? baseLevel;
-                          const isSaving = permissionSavingKey === `${selectedMember.userId}:${moduleKey}`;
+                          const isSaving = permissionSavingKey === `${selectedMember.userId}:${moduleKey}:GLOBAL`;
                           const canEdit = canManageMember(viewerRole, selectedMember.role);
                           return (
                             <div
@@ -1085,6 +1101,105 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+
+                    {selectedMember && (
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-white">Scopes de Reservas</p>
+                            <p className="text-[11px] text-white/60">Por campo, recurso ou profissional.</p>
+                          </div>
+                          <span className="text-[11px] text-white/50">
+                            {(permissionsByUser.get(selectedMember.userId) ?? []).filter((perm) => perm.moduleKey === "RESERVAS" && perm.scopeType).length} scope(s)
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {(permissionsByUser.get(selectedMember.userId) ?? [])
+                            .filter((perm) => perm.moduleKey === "RESERVAS" && perm.scopeType)
+                            .map((perm) => {
+                              const isSaving =
+                                permissionSavingKey ===
+                                `${selectedMember.userId}:${perm.moduleKey}:${perm.scopeType}:${perm.scopeId ?? "ALL"}`;
+                              return (
+                                <div
+                                  key={`${perm.id}:${perm.scopeType}:${perm.scopeId}`}
+                                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
+                                >
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-semibold text-white">
+                                      {perm.scopeType} · {perm.scopeId}
+                                    </p>
+                                    <p className="text-[11px] text-white/60">
+                                      Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "VIEW"]}
+                                    </p>
+                                  </div>
+                                  <select
+                                    value={normalizeAccessLevel(perm.accessLevel) ?? "VIEW"}
+                                    disabled={!canManageMember(viewerRole, selectedMember.role) || isSaving}
+                                    onChange={(e) =>
+                                      handlePermissionUpdate(
+                                        selectedMember.userId,
+                                        perm.moduleKey,
+                                        e.target.value,
+                                        perm.scopeType,
+                                        perm.scopeId,
+                                      )
+                                    }
+                                    className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
+                                  >
+                                    <option value="DEFAULT">Remover</option>
+                                    <option value="VIEW">Ver</option>
+                                    <option value="EDIT">Editar</option>
+                                  </select>
+                                </div>
+                              );
+                            })}
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <select
+                            value={scopeDraftType}
+                            onChange={(e) => setScopeDraftType(e.target.value)}
+                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                          >
+                            <option value="COURT">COURT</option>
+                            <option value="RESOURCE">RESOURCE</option>
+                            <option value="PROFESSIONAL">PROFESSIONAL</option>
+                          </select>
+                          <input
+                            value={scopeDraftId}
+                            onChange={(e) => setScopeDraftId(e.target.value)}
+                            placeholder="ID"
+                            className="min-w-[120px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                          />
+                          <select
+                            value={scopeDraftLevel}
+                            onChange={(e) => setScopeDraftLevel(e.target.value)}
+                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                          >
+                            <option value="VIEW">Ver</option>
+                            <option value="EDIT">Editar</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handlePermissionUpdate(
+                                selectedMember.userId,
+                                "RESERVAS",
+                                scopeDraftLevel,
+                                scopeDraftType,
+                                scopeDraftId.trim(),
+                              )
+                            }
+                            disabled={!scopeDraftId.trim() || !canManageMember(viewerRole, selectedMember.role)}
+                            className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
+                          >
+                            Adicionar scope
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

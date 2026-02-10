@@ -9,6 +9,7 @@ import { shouldNotify } from "@/lib/notifications";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 const REMINDER_HOURS = 24;
 const WINDOW_MINUTES = 60;
 const MAX_EVENTS = 50;
@@ -29,7 +30,7 @@ async function _POST(req: NextRequest) {
       templateType: "PADEL",
       isDeleted: false,
       startsAt: { gte: windowStart, lte: windowEnd },
-      status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+      status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
     },
     select: { id: true },
     take: MAX_EVENTS,

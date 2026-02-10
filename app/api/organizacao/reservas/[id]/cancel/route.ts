@@ -18,12 +18,14 @@ import {
   computeCancellationRefundFromSnapshot,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
+import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
+  OrganizationMemberRole.TRAINER,
 ];
 
 function parseId(value: string) {
@@ -130,6 +132,9 @@ async function _POST(
           availabilityId: true,
           snapshotTimezone: true,
           confirmationSnapshot: true,
+          courtId: true,
+          resourceId: true,
+          professionalId: true,
           professional: { select: { userId: true } },
           splitPayment: {
             select: {
@@ -150,11 +155,41 @@ async function _POST(
       if (!booking) {
         return { error: fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.") };
       }
-      if (
-        membership.role === OrganizationMemberRole.STAFF &&
-        (!booking.professional?.userId || booking.professional.userId !== profile.id)
-      ) {
-        return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
+      if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+        const scopes = await resolveReservasScopesForMember({
+          organizationId: organization.id,
+          userId: profile.id,
+        });
+        if (!scopes.hasAny) {
+          return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
+        }
+        if (membership.role === OrganizationMemberRole.TRAINER) {
+          const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+            organizationId: organization.id,
+            userId: profile.id,
+          });
+          const allowedProfessionals = scopes.professionalIds.length
+            ? intersectIds(trainerProfessionalIds, scopes.professionalIds)
+            : trainerProfessionalIds;
+          if (!allowedProfessionals.length || !booking.professionalId || !allowedProfessionals.includes(booking.professionalId)) {
+            return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
+          }
+          if (scopes.courtIds.length && booking.courtId && !scopes.courtIds.includes(booking.courtId)) {
+            return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
+          }
+          if (scopes.resourceIds.length && booking.resourceId && !scopes.resourceIds.includes(booking.resourceId)) {
+            return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
+          }
+        } else {
+          const allowed = [
+            booking.courtId && scopes.courtIds.includes(booking.courtId),
+            booking.resourceId && scopes.resourceIds.includes(booking.resourceId),
+            booking.professionalId && scopes.professionalIds.includes(booking.professionalId),
+          ].some(Boolean);
+          if (!allowed) {
+            return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
+          }
+        }
       }
       if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
         return {
@@ -268,11 +303,13 @@ async function _POST(
         refundAmountCents,
         splitRefunds,
         snapshotTimezone: booking.snapshotTimezone,
-        crmPayload: {
-          organizationId: organization.id,
-          userId: booking.userId,
-          bookingId: booking.id,
-        },
+        crmPayload: booking.userId
+          ? {
+              organizationId: organization.id,
+              userId: booking.userId,
+              bookingId: booking.id,
+            }
+          : null,
       };
     });
 

@@ -8,6 +8,8 @@ import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/p
 import { resolvePadelMatchStats } from "@/domain/padel/score";
 import PadelDisputeButton from "./PadelDisputeButton";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
+import { normalizeUsernameInput } from "@/lib/username";
+import { isReservedUsername } from "@/lib/reservedUsernames";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -232,10 +234,20 @@ function buildPadelBadges({
 
 export default async function PadelProfilePage({ params }: PageProps) {
   const resolvedParams = await params;
-  const usernameParam = resolvedParams?.username;
+  const rawUsernameParam = resolvedParams?.username ?? "";
+  const usernameParam = normalizeUsernameInput(rawUsernameParam);
 
-  if (!usernameParam || usernameParam.toLowerCase() === "me") {
+  if (!usernameParam) {
+    notFound();
+  }
+  if (usernameParam === "me") {
     redirect("/me");
+  }
+  if (isReservedUsername(usernameParam)) {
+    notFound();
+  }
+  if (rawUsernameParam !== usernameParam) {
+    redirect(`/${usernameParam}/padel`);
   }
 
   const [viewerId, profile, organizationProfile] = await Promise.all([
@@ -354,8 +366,26 @@ export default async function PadelProfilePage({ params }: PageProps) {
             }}
           />
           <div className="px-5 sm:px-8">
-            <div className="orya-page-width rounded-3xl border border-white/15 bg-white/5 p-6 text-sm text-white/70 backdrop-blur-2xl">
-              Perfil privado.
+            <div className="orya-page-width rounded-3xl border border-white/15 bg-white/5 p-6 text-center shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/10">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  className="h-6 w-6 text-white/90"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M7 11V8a5 5 0 0 1 10 0v3" />
+                  <rect x="5" y="11" width="14" height="9" rx="2" />
+                </svg>
+              </div>
+              <h2 className="mt-3 text-lg font-semibold text-white">Esta conta é privada</h2>
+              <p className="mt-2 text-sm text-white/70">
+                Segue para veres publicações, eventos e detalhes de padel.
+              </p>
             </div>
           </div>
         </section>

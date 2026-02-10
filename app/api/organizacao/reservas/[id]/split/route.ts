@@ -12,7 +12,7 @@ import { getBookingState } from "@/lib/reservas/bookingState";
 import { ensureBookingPendingExpiry } from "@/domain/bookings/commands";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
-import { getPlatformFees, getStripeBaseFees } from "@/lib/platformSettings";
+import { getPlatformFees } from "@/lib/platformSettings";
 import { normalizeSplitParticipants, type SplitParticipantInput, type SplitPricingMode, type SplitDynamicMode } from "@/lib/reservas/bookingSplit";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -249,7 +249,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const inviteMap = new Map(invites.map((invite) => [invite.id, invite]));
 
     const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-    const stripeBaseFees = await getStripeBaseFees();
     const isPlatformOrg = booking.organization?.orgType === "PLATFORM";
 
     const computed = normalized.participants.map((participant) => {
@@ -267,8 +266,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         feeMode: pricing.feeMode,
         platformFeeBps: pricing.feeBpsApplied,
         platformFeeFixedCents: pricing.feeFixedApplied,
-        stripeFeeBps: stripeBaseFees.feeBps,
-        stripeFeeFixedCents: stripeBaseFees.feeFixedCents,
+        stripeFeeBps: 0,
+        stripeFeeFixedCents: 0,
       });
 
       const invite = participant.inviteId ? inviteMap.get(participant.inviteId) : null;

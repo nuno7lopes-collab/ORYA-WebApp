@@ -11,6 +11,7 @@ import { useNetworkActions, useOrganizationFollowActions } from "../features/net
 import { useTabBarPadding } from "../components/navigation/useTabBarPadding";
 import { TopAppHeader } from "../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../components/navigation/useTopHeaderPadding";
+import { useTopBarScroll } from "../components/navigation/useTopBarScroll";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { safeBack } from "../lib/navigation";
 import { tokens } from "@orya/shared";
@@ -19,20 +20,26 @@ import { EventCardSquare, EventCardSquareSkeleton } from "../components/events/E
 import { useOrganizationFollowers, useUserFollowers, useUserFollowing } from "../features/network/followLists";
 import { FollowListModal } from "../components/profile/FollowListModal";
 import { ProfileHeader } from "../components/profile/ProfileHeader";
+import { normalizeUsernameInput } from "../lib/username";
 
 export default function PublicProfileScreen() {
   const params = useLocalSearchParams<{ username?: string }>();
-  const username = typeof params.username === "string" ? params.username : "";
+  const rawUsername = typeof params.username === "string" ? params.username : "";
+  const username = normalizeUsernameInput(rawUsername);
   const router = useRouter();
   const navigation = useNavigation();
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const profileQuery = usePublicProfile(username, accessToken);
-  const eventsQuery = usePublicProfileEvents(username, accessToken, Boolean(username));
+  const privacy = profileQuery.data?.privacy ?? null;
+  const canView = privacy?.canView ?? true;
+  const eventsEnabled = Boolean(username) && profileQuery.isSuccess && canView;
+  const eventsQuery = usePublicProfileEvents(username, accessToken, eventsEnabled);
   const userActions = useNetworkActions();
   const orgActions = useOrganizationFollowActions();
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(16);
+  const topBar = useTopBarScroll({ hideOnScroll: false });
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
 
@@ -40,6 +47,7 @@ export default function PublicProfileScreen() {
   const profile = data?.profile ?? null;
   const isUser = data?.type === "user";
   const isSelf = Boolean(data?.isSelf);
+  const isLocked = Boolean(privacy?.isPrivate && !canView);
   const profileId = profile?.id ?? null;
   const userProfileId = isUser && profileId ? String(profileId) : null;
   const organizationIdRaw = !isUser && profileId ? Number(profileId) : null;
@@ -48,6 +56,26 @@ export default function PublicProfileScreen() {
   const avatarUrl = profile?.avatarUrl ?? null;
   const canOpenFollowers = Boolean(profileId);
   const canOpenFollowing = Boolean(isUser);
+  const topBarTitle = profile?.username ? `@${profile.username}` : profile?.fullName ?? "Perfil";
+  const backButton = (
+    <Pressable
+      onPress={() => safeBack(router, navigation, "/(tabs)/network")}
+      accessibilityRole="button"
+      accessibilityLabel="Voltar"
+      style={({ pressed }) => [
+        {
+          width: tokens.layout.touchTarget,
+          height: tokens.layout.touchTarget,
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: tokens.layout.touchTarget,
+        },
+        pressed ? { opacity: 0.8 } : null,
+      ]}
+    >
+      <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+    </Pressable>
+  );
 
   const userFollowers = useUserFollowers(
     userProfileId,
@@ -105,21 +133,15 @@ export default function PublicProfileScreen() {
 
   return (
     <LiquidBackground>
-      <TopAppHeader />
+      <TopAppHeader scrollState={topBar} variant="title" title={topBarTitle} leftSlot={backButton} />
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: topPadding, paddingBottom: tabBarPadding }}
+        onScroll={topBar.onScroll}
+        onScrollEndDrag={topBar.onScrollEndDrag}
+        onMomentumScrollEnd={topBar.onMomentumScrollEnd}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable
-          onPress={() => safeBack(router, navigation, "/(tabs)/network")}
-          accessibilityRole="button"
-          accessibilityLabel="Voltar"
-          className="flex-row items-center gap-2"
-          style={{ minHeight: tokens.layout.touchTarget }}
-        >
-          <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-          <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "600" }}>Voltar</Text>
-        </Pressable>
         {profileQuery.isLoading ? (
           <View className="gap-3">
             <GlassSkeleton height={180} />
@@ -180,45 +202,63 @@ export default function PublicProfileScreen() {
               </Pressable>
             ) : null}
 
-            <View className="pt-2">
-              <SectionHeader title="Eventos" subtitle="Próximos e anteriores" />
-              {eventsQuery.isLoading ? (
-                <View className="pt-3 gap-3">
-                  <EventCardSquareSkeleton />
-                  <EventCardSquareSkeleton />
+            {isLocked ? (
+              <GlassCard intensity={48} className="mt-2">
+                <View className="items-center gap-3 py-3">
+                  <View className="h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/5">
+                    <Ionicons name="lock-closed" size={20} color="rgba(255,255,255,0.9)" />
+                  </View>
+                  <View className="gap-1">
+                    <Text className="text-white text-sm font-semibold text-center">
+                      Esta conta é privada
+                    </Text>
+                    <Text className="text-white/60 text-xs text-center">
+                      Segue para veres publicações, eventos e detalhes de padel.
+                    </Text>
+                  </View>
                 </View>
-              ) : eventsQuery.isError ? (
-                <GlassCard intensity={50} className="mt-3">
-                  <Text className="text-white/70 text-sm">
-                    Não foi possível carregar os eventos deste perfil.
-                  </Text>
-                </GlassCard>
-              ) : (
-                <View className="pt-3 gap-3">
-                  {(eventsQuery.data?.upcoming ?? []).length > 0 ? (
-                    <View>
-                      <Text className="text-white/70 text-xs mb-2">Próximos</Text>
-                      {(eventsQuery.data?.upcoming ?? []).map((event, index) => (
-                        <EventCardSquare key={`upcoming-${event.id}`} event={event} index={index} source="profile" />
-                      ))}
-                    </View>
-                  ) : (
-                    <GlassCard intensity={46}>
-                      <Text className="text-white/60 text-sm">Sem eventos próximos.</Text>
-                    </GlassCard>
-                  )}
+              </GlassCard>
+            ) : (
+              <View className="pt-2">
+                <SectionHeader title="Eventos" subtitle="Próximos e anteriores" />
+                {eventsQuery.isLoading ? (
+                  <View className="pt-3 gap-3">
+                    <EventCardSquareSkeleton />
+                    <EventCardSquareSkeleton />
+                  </View>
+                ) : eventsQuery.isError ? (
+                  <GlassCard intensity={50} className="mt-3">
+                    <Text className="text-white/70 text-sm">
+                      Não foi possível carregar os eventos deste perfil.
+                    </Text>
+                  </GlassCard>
+                ) : (
+                  <View className="pt-3 gap-3">
+                    {(eventsQuery.data?.upcoming ?? []).length > 0 ? (
+                      <View>
+                        <Text className="text-white/70 text-xs mb-2">Próximos</Text>
+                        {(eventsQuery.data?.upcoming ?? []).map((event, index) => (
+                          <EventCardSquare key={`upcoming-${event.id}`} event={event} index={index} source="profile" />
+                        ))}
+                      </View>
+                    ) : (
+                      <GlassCard intensity={46}>
+                        <Text className="text-white/60 text-sm">Sem eventos próximos.</Text>
+                      </GlassCard>
+                    )}
 
-                  {(eventsQuery.data?.past ?? []).length > 0 ? (
-                    <View className="pt-2">
-                      <Text className="text-white/70 text-xs mb-2">Anteriores</Text>
-                      {(eventsQuery.data?.past ?? []).map((event, index) => (
-                        <EventCardSquare key={`past-${event.id}`} event={event} index={index} source="profile" />
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              )}
-            </View>
+                    {(eventsQuery.data?.past ?? []).length > 0 ? (
+                      <View className="pt-2">
+                        <Text className="text-white/70 text-xs mb-2">Anteriores</Text>
+                        {(eventsQuery.data?.past ?? []).map((event, index) => (
+                          <EventCardSquare key={`past-${event.id}`} event={event} index={index} source="profile" />
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         )}
       </ScrollView>

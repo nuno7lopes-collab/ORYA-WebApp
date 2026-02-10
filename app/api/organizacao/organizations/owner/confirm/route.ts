@@ -11,6 +11,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -23,7 +24,7 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -278,3 +279,4 @@ export async function POST(req: NextRequest) {
     return fail(500, "INTERNAL_ERROR");
   }
 }
+export const POST = withApiEnvelope(_POST);

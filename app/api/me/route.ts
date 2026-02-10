@@ -5,6 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
+import { normalizeAndValidateUsername, setUsernameForOwner } from "@/lib/globalUsernames";
 
 // Tipagem simples devolvida ao frontend
 interface SupabaseUser {
@@ -98,7 +99,7 @@ const isAuthMissing =
       notificationPrefsPromise,
     ]);
 
-    const prismaProfile =
+    let prismaProfile =
       prismaProfileResult.status === "fulfilled" ? prismaProfileResult.value : null;
     const prismaError =
       prismaProfileResult.status === "rejected" ? prismaProfileResult.reason : null;
@@ -122,6 +123,111 @@ const isAuthMissing =
       if (supabaseProfileResult.error) {
         console.warn("[GET /api/me] Erro ao carregar profile (supabase):", {
           supabaseError: supabaseProfileResult.error,
+          requestId: ctx.requestId,
+          correlationId: ctx.correlationId,
+          orgId: ctx.orgId,
+        });
+      }
+    }
+
+    if (!prismaProfile && supabaseProfile) {
+      const rawUsername = typeof (supabaseProfile as any)?.username === "string"
+        ? String((supabaseProfile as any).username)
+        : "";
+      const validated = rawUsername
+        ? normalizeAndValidateUsername(rawUsername, { allowReservedForEmail: user.email ?? null })
+        : null;
+      const safeUsername = validated?.ok ? validated.username : null;
+      const visibilityRaw = (supabaseProfile as any)?.visibility;
+      const visibility =
+        visibilityRaw === "PUBLIC" || visibilityRaw === "PRIVATE" || visibilityRaw === "FOLLOWERS"
+          ? visibilityRaw
+          : "PUBLIC";
+      const onboardingDone =
+        typeof (supabaseProfile as any)?.onboarding_done === "boolean"
+          ? (supabaseProfile as any).onboarding_done
+          : typeof (supabaseProfile as any)?.onboardingDone === "boolean"
+            ? (supabaseProfile as any).onboardingDone
+            : false;
+
+      try {
+        prismaProfile = await prisma.$transaction(async (tx) => {
+          let usernameToPersist: string | null = null;
+          if (safeUsername) {
+            try {
+              await setUsernameForOwner({
+                username: safeUsername,
+                ownerType: "user",
+                ownerId: user.id,
+                tx,
+                allowReservedForEmail: user.email ?? null,
+              });
+              usernameToPersist = safeUsername;
+            } catch {
+              usernameToPersist = null;
+            }
+          }
+
+          return tx.profile.upsert({
+            where: { id: user.id },
+            update: {
+              ...(typeof (supabaseProfile as any)?.full_name === "string"
+                ? { fullName: (supabaseProfile as any).full_name }
+                : {}),
+              ...(usernameToPersist ? { username: usernameToPersist } : {}),
+              ...(typeof (supabaseProfile as any)?.avatar_url === "string"
+                ? { avatarUrl: (supabaseProfile as any).avatar_url }
+                : {}),
+              ...(typeof (supabaseProfile as any)?.cover_url === "string"
+                ? { coverUrl: (supabaseProfile as any).cover_url }
+                : {}),
+              ...(typeof (supabaseProfile as any)?.bio === "string"
+                ? { bio: (supabaseProfile as any).bio }
+                : {}),
+              ...(typeof (supabaseProfile as any)?.padel_level === "string"
+                ? { padelLevel: (supabaseProfile as any).padel_level }
+                : {}),
+              ...(Array.isArray((supabaseProfile as any)?.favourite_categories)
+                ? { favouriteCategories: (supabaseProfile as any).favourite_categories }
+                : {}),
+              ...(visibility ? { visibility } : {}),
+              onboardingDone,
+            },
+            create: {
+              id: user.id,
+              fullName:
+                typeof (supabaseProfile as any)?.full_name === "string"
+                  ? (supabaseProfile as any).full_name
+                  : null,
+              username: usernameToPersist,
+              avatarUrl:
+                typeof (supabaseProfile as any)?.avatar_url === "string"
+                  ? (supabaseProfile as any).avatar_url
+                  : null,
+              coverUrl:
+                typeof (supabaseProfile as any)?.cover_url === "string"
+                  ? (supabaseProfile as any).cover_url
+                  : null,
+              bio:
+                typeof (supabaseProfile as any)?.bio === "string"
+                  ? (supabaseProfile as any).bio
+                  : null,
+              padelLevel:
+                typeof (supabaseProfile as any)?.padel_level === "string"
+                  ? (supabaseProfile as any).padel_level
+                  : null,
+              favouriteCategories: Array.isArray((supabaseProfile as any)?.favourite_categories)
+                ? (supabaseProfile as any).favourite_categories
+                : [],
+              visibility,
+              onboardingDone,
+              roles: ["user"],
+            },
+          });
+        });
+      } catch (err) {
+        console.warn("[GET /api/me] Falha ao sincronizar profile:", {
+          err,
           requestId: ctx.requestId,
           correlationId: ctx.correlationId,
           orgId: ctx.orgId,

@@ -2,11 +2,13 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { enqueueOperation } from "@/lib/operations/enqueue";
+import { auditAdminAction } from "@/lib/admin/audit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   const admin = await requireAdminUser();
   if (!admin.ok) {
@@ -55,6 +57,18 @@ export async function POST(req: NextRequest) {
         reason,
       },
     });
+
+    await auditAdminAction({
+      action: "PAYMENT_DISPUTE",
+      actorUserId: admin.userId,
+      correlationId: ctx.correlationId,
+      payload: {
+        saleSummaryId,
+        paymentIntentId: sale.paymentIntentId ?? null,
+        purchaseId: sale.purchaseId ?? null,
+        reason,
+      },
+    });
     return respondOk(ctx, { queued: true }, { status: 200 });
   } catch (err) {
     logError("admin.payments.dispute_failed", err);
@@ -65,3 +79,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+export const POST = withApiEnvelope(_POST);

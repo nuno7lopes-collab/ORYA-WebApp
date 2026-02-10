@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-import { useWallet } from "@/app/components/wallet/useWallet";
+import { useWallet, type WalletFilter } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -92,7 +92,9 @@ export default function WalletHubClient() {
   const section = searchParams.get("section");
   const { user } = useUser();
   const { openModal: openAuthModal } = useAuthModal();
-  const { items: walletItems, loading: walletLoading } = useWallet();
+  const [walletTab, setWalletTab] = useState<Exclude<WalletFilter, "all">>("upcoming");
+  const { items: walletAll } = useWallet({ filter: "all" });
+  const { items: walletItems, loading: walletLoading } = useWallet({ filter: walletTab });
   const { data: loyaltyData, mutate: mutateLoyalty } = useSWR<LoyaltyResponse>(
     user ? "/api/me/loyalty/recompensas" : null,
     fetcher,
@@ -118,7 +120,7 @@ export default function WalletHubClient() {
 
   const agendaItems = useMemo(() => agendaData?.items ?? [], [agendaData?.items]);
   const upcomingItems = useMemo(() => agendaItems.slice(0, 6), [agendaItems]);
-  const passes = useMemo(() => walletItems.filter((item) => item.status === "ACTIVE"), [walletItems]);
+  const passes = useMemo(() => walletAll.filter((item) => item.status === "ACTIVE"), [walletAll]);
   const plannedReservations = useMemo(
     () => agendaItems.filter((item) => item.type === "RESERVA").length,
     [agendaItems],
@@ -200,7 +202,7 @@ export default function WalletHubClient() {
             {
               id: "passes",
               title: "Passes e bilhetes",
-              value: walletItems.length,
+              value: walletAll.length,
               description: "Tudo o que tens guardado na carteira.",
               href: "/me/carteira#wallet",
             },
@@ -450,15 +452,33 @@ export default function WalletHubClient() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Passes e bilhetes</p>
-              <h2 className="text-lg font-semibold">Os teus acessos ativos</h2>
+              <h2 className="text-lg font-semibold">
+                {walletTab === "upcoming" ? "Os teus acessos ativos" : "Histórico de acessos"}
+              </h2>
             </div>
           </div>
+          <div className="mt-4 inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-xs text-white/70">
+            {(["upcoming", "past"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setWalletTab(tab)}
+                className={`rounded-full px-3 py-1.5 font-semibold transition ${
+                  walletTab === tab ? "bg-white text-black" : "text-white/70 hover:text-white"
+                }`}
+              >
+                {tab === "upcoming" ? "Ativos" : "Histórico"}
+              </button>
+            ))}
+          </div>
           {walletLoading && <p className="mt-4 text-sm text-white/70">A carregar carteira...</p>}
-          {!walletLoading && passes.length === 0 && (
-            <p className="mt-4 text-sm text-white/70">Sem bilhetes na carteira.</p>
+          {!walletLoading && walletItems.length === 0 && (
+            <p className="mt-4 text-sm text-white/70">
+              {walletTab === "upcoming" ? "Sem bilhetes ativos." : "Sem bilhetes no histórico."}
+            </p>
           )}
           <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {passes.map((item) => (
+            {walletItems.map((item) => (
               <WalletCard key={item.entitlementId} item={item} />
             ))}
           </div>

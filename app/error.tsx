@@ -11,7 +11,7 @@ type ErrorProps = {
 
 export default function Error({ error, reset }: ErrorProps) {
   useEffect(() => {
-    // Se quiseres, podes enviar o erro para um serviço externo (Sentry, etc.)
+    // Se quiseres, podes enviar o erro para um serviço externo.
     console.error("[ORYA error boundary]", error);
   }, [error]);
 
