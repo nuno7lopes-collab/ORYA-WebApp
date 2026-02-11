@@ -6,7 +6,7 @@ import { LiquidBackground } from "../components/liquid/LiquidBackground";
 import { GlassCard } from "../components/liquid/GlassCard";
 import { GlassSkeleton } from "../components/glass/GlassSkeleton";
 import { useAuth } from "../lib/auth";
-import { usePublicProfile, usePublicProfileEvents } from "../features/profile/hooks";
+import { usePublicOrganizationAgenda, usePublicProfile, usePublicProfileEvents } from "../features/profile/hooks";
 import { useNetworkActions, useOrganizationFollowActions } from "../features/network/hooks";
 import { useTabBarPadding } from "../components/navigation/useTabBarPadding";
 import { TopAppHeader } from "../components/navigation/TopAppHeader";
@@ -36,6 +36,10 @@ export default function PublicProfileScreen() {
   const canView = privacy?.canView ?? true;
   const eventsEnabled = Boolean(username) && profileQuery.isSuccess && canView;
   const eventsQuery = usePublicProfileEvents(username, accessToken, eventsEnabled);
+  const publicAgendaQuery = usePublicOrganizationAgenda(
+    !isUser && organizationId ? organizationId : null,
+    Boolean(!isUser && organizationId && canView),
+  );
   const userActions = useNetworkActions();
   const orgActions = useOrganizationFollowActions();
   const tabBarPadding = useTabBarPadding();
@@ -221,6 +225,33 @@ export default function PublicProfileScreen() {
               >
                 <Text className="text-emerald-100 text-sm font-semibold text-center">Ver loja</Text>
               </Pressable>
+            ) : null}
+
+            {!isUser && canView ? (
+              <GlassCard intensity={46}>
+                <View className="gap-2">
+                  <Text className="text-white text-sm font-semibold">Agenda pública</Text>
+                  {publicAgendaQuery.isLoading ? (
+                    <Text className="text-white/60 text-xs">A carregar agenda…</Text>
+                  ) : publicAgendaQuery.isError ? (
+                    <Text className="text-white/55 text-xs">Agenda indisponível neste momento.</Text>
+                  ) : (publicAgendaQuery.data?.length ?? 0) > 0 ? (
+                    publicAgendaQuery.data!.slice(0, 3).map((item) => (
+                      <View
+                        key={`agenda-${item.id}`}
+                        className="rounded-xl border border-white/12 bg-white/6 px-3 py-3"
+                      >
+                        <Text className="text-white text-sm font-semibold">{item.title}</Text>
+                        <Text className="text-white/60 text-xs">
+                          {new Date(item.startsAt).toLocaleString("pt-PT")} · {item.sourceType}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text className="text-white/55 text-xs">Sem itens de agenda para os próximos dias.</Text>
+                  )}
+                </View>
+              </GlassCard>
             ) : null}
 
             {isLocked ? (

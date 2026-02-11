@@ -96,6 +96,21 @@ type OverviewResponse =
     }
   | { ok: false; error?: string };
 
+type PlatformFeesResponse =
+  | {
+      ok: true;
+      orya: {
+        feeBps: number;
+        feeFixedCents: number;
+      };
+      stripe: {
+        feeBps: number;
+        feeFixedCents: number;
+        region: string;
+      };
+    }
+  | { ok: false; error?: string };
+
 function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
   const [status, setStatus] = useState<string>("ALL");
   const [mode, setMode] = useState<string>("ALL");
@@ -143,12 +158,17 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
     { revalidateOnFocus: false },
   );
 
+  const { data: platformFees } = useSWR<PlatformFeesResponse>("/api/platform/fees", fetcher, {
+    revalidateOnFocus: false,
+  });
+
   const items = data && "ok" in data && data.ok ? data.items : [];
   const pagination = data && "ok" in data && data.ok ? data.pagination : { nextCursor: null, hasMore: false };
   const errorMsg = data && "ok" in data && !data.ok ? data.error || "Falha ao carregar intents." : null;
   const overviewTotals = overview && "ok" in overview && overview.ok ? overview.totals : null;
   const overviewByOrganization = overview && "ok" in overview && overview.ok ? overview.byOrganization : [];
   const overviewError = overview && "ok" in overview && !overview.ok ? overview.error || "Falha ao carregar overview." : null;
+  const feesData = platformFees && "ok" in platformFees && platformFees.ok ? platformFees : null;
 
   function badgeClass(s: string) {
     switch (s) {
@@ -361,6 +381,29 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
               <div className="mt-2">
                 <AdminTopActions showPaymentsExport />
               </div>
+            </div>
+            <div className="admin-card-soft p-3 md:col-span-2">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Tabela de fees (canónica)</p>
+              {!feesData ? (
+                <p className="mt-2 text-[12px] text-white/55">A carregar configuração de taxas…</p>
+              ) : (
+                <div className="mt-2 grid gap-3 text-[12px] text-white/75 md:grid-cols-2">
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">ORYA</p>
+                    <p className="mt-1 font-semibold text-white">
+                      {feesData.orya.feeBps / 100}% + {formatMoney(feesData.orya.feeFixedCents)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Stripe {feesData.stripe.region}
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {feesData.stripe.feeBps / 100}% + {formatMoney(feesData.stripe.feeFixedCents)}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

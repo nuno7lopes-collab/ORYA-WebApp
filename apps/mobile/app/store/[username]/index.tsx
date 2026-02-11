@@ -5,7 +5,7 @@ import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../../components/liquid/GlassCard";
-import { useStoreCatalog, useStoreCart } from "../../../features/store/hooks";
+import { useStoreBundles, useStoreCatalog, useStoreCart } from "../../../features/store/hooks";
 import { useStoreCartStore } from "../../../features/store/cartStore";
 import { getStoreErrorMessage } from "../../../features/store/errors";
 import { useTopHeaderPadding } from "../../../components/navigation/useTopHeaderPadding";
@@ -30,7 +30,9 @@ export default function StorefrontScreen() {
   const catalog = useStoreCatalog(username, Boolean(username));
   const storeId = catalog.data?.store?.id ?? null;
   useStoreCart(storeId, Boolean(storeId));
+  const bundlesQuery = useStoreBundles(storeId, Boolean(storeId));
   const cartCount = useStoreCartStore((state) => state.itemCount());
+  const bundles = bundlesQuery.data?.items ?? catalog.data?.bundles ?? [];
 
   const subtitle = useMemo(() => {
     if (!catalog.data?.store) return "Loja";
@@ -137,10 +139,10 @@ export default function StorefrontScreen() {
           </GlassCard>
         ) : (
           <View className="gap-5">
-            {catalog.data?.bundles?.length ? (
+            {bundles.length ? (
               <View className="gap-3">
                 <Text className="text-white text-base font-semibold">Packs</Text>
-                {catalog.data.bundles.map((bundle) => (
+                {bundles.map((bundle) => (
                   <GlassCard key={`bundle-${bundle.id}`} intensity={48}>
                     <View className="gap-2">
                       <Text className="text-white text-sm font-semibold">{bundle.name}</Text>

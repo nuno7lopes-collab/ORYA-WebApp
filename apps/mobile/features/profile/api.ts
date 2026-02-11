@@ -1,5 +1,13 @@
+import { PublicEventCard } from "@orya/shared";
 import { api, unwrapApiResponse } from "../../lib/api";
-import { AgendaItem, ProfileAgendaStats, ProfileSummary, PublicProfileEvents, PublicProfilePayload } from "./types";
+import {
+  AgendaItem,
+  ProfileAgendaStats,
+  ProfileSummary,
+  PublicOrganizationAgendaItem,
+  PublicProfileEvents,
+  PublicProfilePayload,
+} from "./types";
 
 type MePayload = {
   user?: {
@@ -26,6 +34,34 @@ type MePayload = {
 
 type AgendaPayload = {
   items?: AgendaItem[];
+};
+
+type EventLookupPayload = {
+  items?: Array<{
+    id: number;
+    slug: string | null;
+    title: string;
+    startsAt: string | null;
+    endsAt: string | null;
+    coverImageUrl: string | null;
+    locationFormattedAddress: string | null;
+    status: string | null;
+  }>;
+};
+
+type ExploreDetailPayload = {
+  item?: PublicEventCard;
+};
+
+type PublicAgendaPayload = {
+  items?: Array<{
+    id?: string;
+    title?: string;
+    startsAt?: string;
+    endsAt?: string | null;
+    sourceType?: string;
+    status?: string;
+  }>;
 };
 
 const toDate = (value?: string | null): Date | null => {
@@ -188,5 +224,91 @@ export const fetchPublicProfileEvents = async (
     `/api/public/profile/events?username=${encodeURIComponent(username)}`,
     accessToken,
   );
-  return unwrapApiResponse<PublicProfileEvents>(response);
+  const payload = unwrapApiResponse<PublicProfileEvents>(response);
+
+  const shouldHydrate = Boolean(accessToken && !payload.locked && payload.privacy?.canView !== false);
+  if (!shouldHydrate) {
+    return payload;
+  }
+
+  const mergeWithLookup = (
+    list: PublicEventCard[],
+    lookupMap: Map<number, NonNullable<EventLookupPayload["items"]>[number]>,
+  ) =>
+    list.map((event) => {
+      const lookup = lookupMap.get(event.id);
+      if (!lookup) return event;
+      return {
+        ...event,
+        coverImageUrl: event.coverImageUrl ?? lookup.coverImageUrl ?? null,
+        status: event.status ?? ((lookup.status as PublicEventCard["status"]) ?? undefined),
+        location: {
+          ...(event.location ?? {}),
+          formattedAddress: event.location?.formattedAddress ?? lookup.locationFormattedAddress ?? null,
+        },
+      };
+    });
+
+  let upcoming = payload.upcoming;
+  let past = payload.past;
+
+  try {
+    const ids = [...new Set([...upcoming, ...past].map((event) => event.id).filter((id) => Number.isFinite(id)))];
+    if (ids.length > 0) {
+      const lookupResponse = await api.requestWithAccessToken<unknown>(
+        `/api/eventos/lookup?ids=${ids.join(",")}`,
+        accessToken,
+      );
+      const lookupPayload = unwrapApiResponse<EventLookupPayload>(lookupResponse);
+      const lookupMap = new Map((lookupPayload.items ?? []).map((item) => [item.id, item]));
+      upcoming = mergeWithLookup(upcoming, lookupMap);
+      past = mergeWithLookup(past, lookupMap);
+    }
+  } catch {
+    // Non-critical enrichment
+  }
+
+  try {
+    const featuredSlug = upcoming[0]?.slug;
+    if (featuredSlug) {
+      const detailResponse = await api.requestWithAccessToken<unknown>(
+        `/api/explorar/eventos/${encodeURIComponent(featuredSlug)}`,
+        accessToken,
+      );
+      const detailPayload = unwrapApiResponse<ExploreDetailPayload>(detailResponse);
+      if (detailPayload?.item?.slug === featuredSlug) {
+        upcoming = upcoming.map((event, index) => (index === 0 ? detailPayload.item! : event));
+      }
+    }
+  } catch {
+    // Non-critical enrichment
+  }
+
+  return {
+    ...payload,
+    upcoming,
+    past,
+  };
+};
+
+export const fetchPublicOrganizationAgenda = async (
+  organizationId: number,
+): Promise<PublicOrganizationAgendaItem[]> => {
+  if (!Number.isFinite(organizationId) || organizationId <= 0) {
+    return [];
+  }
+  const params = new URLSearchParams({
+    organizationId: String(organizationId),
+    from: new Date().toISOString(),
+  });
+  const response = await api.request<unknown>(`/api/public/agenda?${params.toString()}`);
+  const payload = unwrapApiResponse<PublicAgendaPayload>(response);
+  return (payload.items ?? []).map((item) => ({
+    id: String(item.id ?? ""),
+    title: item.title ?? "Agenda",
+    startsAt: item.startsAt ?? new Date().toISOString(),
+    endsAt: item.endsAt ?? null,
+    sourceType: item.sourceType ?? "EVENT",
+    status: item.status ?? "ACTIVE",
+  }));
 };

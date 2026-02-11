@@ -1,5 +1,8 @@
 import { api, ApiError, unwrapApiResponse } from "../../lib/api";
 
+const PADEL_ME_MATCHES_ENDPOINT = "/api/padel/me/matches";
+const PADEL_DISCOVER_ENDPOINT = "/api/padel/discover";
+
 export type PadelOpenPairing = {
   id: number;
   paymentMode?: string | null;
@@ -136,6 +139,22 @@ export type PadelRankingRow = {
   player: { id: number; fullName: string | null; level: string | null };
 };
 
+export type PublicTournamentListItem = {
+  id: number;
+  slug: string | null;
+  title: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  tournament?: { id: number; format: string | null } | null;
+};
+
+export type PublicTournamentPulse = {
+  list: PublicTournamentListItem[];
+  detail?: Record<string, unknown> | null;
+  structure?: Record<string, unknown> | null;
+  live?: Record<string, unknown> | null;
+};
+
 const parseItems = <T>(payload: unknown, key: string): T[] => {
   if (!payload || typeof payload !== "object") return [];
   const raw = (payload as Record<string, unknown>)[key];
@@ -252,7 +271,7 @@ export const fetchPadelMyMatches = async (params?: {
   if (params?.scope) query.set("scope", params.scope);
   if (typeof params?.limit === "number") query.set("limit", String(params.limit));
   const response = await api.request<unknown>(
-    `/api/padel/me/matches${query.toString() ? `?${query.toString()}` : ""}`,
+    `${PADEL_ME_MATCHES_ENDPOINT}${query.toString() ? `?${query.toString()}` : ""}`,
   );
   const unwrapped = unwrapApiResponse<{ items?: PadelMeMatch[] }>(response);
   return parseItems<PadelMeMatch>(unwrapped, "items");
@@ -268,7 +287,7 @@ export const fetchPadelDiscover = async (params?: {
   if (params?.date) query.set("date", params.date);
   if (typeof params?.limit === "number") query.set("limit", String(params.limit));
   const response = await api.request<unknown>(
-    `/api/padel/discover${query.toString() ? `?${query.toString()}` : ""}`,
+    `${PADEL_DISCOVER_ENDPOINT}${query.toString() ? `?${query.toString()}` : ""}`,
   );
   const unwrapped = unwrapApiResponse<{ items?: PadelDiscoverItem[]; levels?: Array<{ id: number; label: string }> }>(response);
   return {
@@ -291,4 +310,59 @@ export const fetchPadelRankings = async (params?: {
   );
   const unwrapped = unwrapApiResponse<{ items?: PadelRankingRow[] }>(response);
   return parseItems<PadelRankingRow>(unwrapped, "items");
+};
+
+export const fetchTournamentsList = async (limit = 12): Promise<PublicTournamentListItem[]> => {
+  const query = new URLSearchParams();
+  query.set("limit", String(Math.max(1, Math.min(200, Math.floor(limit)))));
+  const response = await api.request<unknown>(`/api/tournaments/list?${query.toString()}`);
+  const unwrapped = unwrapApiResponse<{ tournaments?: PublicTournamentListItem[] }>(response);
+  return parseItems<PublicTournamentListItem>(unwrapped, "tournaments");
+};
+
+export const fetchTournamentPublic = async (eventId: number) => {
+  if (!Number.isFinite(eventId) || eventId <= 0) {
+    throw new ApiError(400, "Torneio inválido.");
+  }
+  const response = await api.request<unknown>(`/api/tournaments/${eventId}`);
+  const unwrapped = unwrapApiResponse<{ tournament?: Record<string, unknown> }>(response);
+  return unwrapped.tournament ?? null;
+};
+
+export const fetchTournamentStructure = async (eventId: number) => {
+  if (!Number.isFinite(eventId) || eventId <= 0) {
+    throw new ApiError(400, "Torneio inválido.");
+  }
+  const response = await api.request<unknown>(`/api/tournaments/${eventId}/structure`);
+  const unwrapped = unwrapApiResponse<{ tournament?: Record<string, unknown> }>(response);
+  return unwrapped.tournament ?? null;
+};
+
+export const fetchTournamentLive = async (slug: string) => {
+  const safeSlug = slug?.trim();
+  if (!safeSlug) {
+    throw new ApiError(400, "Slug inválido.");
+  }
+  const response = await api.request<unknown>(`/api/tournaments/${encodeURIComponent(safeSlug)}/live`);
+  const unwrapped = unwrapApiResponse<{ tournament?: Record<string, unknown> }>(response);
+  return unwrapped.tournament ?? null;
+};
+
+export const fetchPublicTournamentPulse = async (): Promise<PublicTournamentPulse> => {
+  const list = await fetchTournamentsList(8);
+  const featured = list.find((item) => Number.isFinite(item.id) && item.id > 0) ?? null;
+  if (!featured) return { list };
+
+  const [detail, structure, live] = await Promise.allSettled([
+    fetchTournamentPublic(featured.id),
+    fetchTournamentStructure(featured.id),
+    featured.slug ? fetchTournamentLive(featured.slug) : Promise.resolve(null),
+  ]);
+
+  return {
+    list,
+    detail: detail.status === "fulfilled" ? detail.value : null,
+    structure: structure.status === "fulfilled" ? structure.value : null,
+    live: live.status === "fulfilled" ? live.value : null,
+  };
 };

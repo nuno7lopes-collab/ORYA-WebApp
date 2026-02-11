@@ -615,6 +615,19 @@ function AuthModalContent({
     }
 
     try {
+      const checkEmailRes = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailToUse }),
+      });
+      const checkEmailJson = await checkEmailRes.json().catch(() => null);
+      if (!checkEmailRes.ok || checkEmailJson?.ok === false) {
+        const errorMessage = getErrorMessage(checkEmailJson);
+        setError(mapAuthErrorMessage(errorMessage) ?? "Não foi possível validar o email.");
+        setLoading(false);
+        return;
+      }
+
       const res = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -715,12 +728,35 @@ function AuthModalContent({
     }
 
     await syncSessionWithServer();
+    try {
+      await fetch("/api/email/verified", { method: "POST" });
+    } catch (claimErr) {
+      console.warn("[AuthModal] /api/email/verified failed:", claimErr);
+    }
     swrMutate("/api/auth/me");
     if (typeof window !== "undefined") {
       clearPendingVerification();
     }
     await finishAuthAndMaybeOnboard();
     setLoading(false);
+  }
+
+  async function handleAuthRecoveryClear() {
+    try {
+      setLoading(true);
+      await fetch("/api/auth/clear", { method: "POST" });
+      await supabaseBrowser.auth.signOut();
+      if (typeof window !== "undefined") {
+        clearPendingVerification();
+      }
+      await swrMutate("/api/auth/me");
+      setError("Sessão limpa. Tenta novamente.");
+    } catch (err) {
+      console.error("[AuthModal] auth clear error:", err);
+      setError("Não foi possível limpar a sessão local.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function checkUsernameAvailability(
@@ -1487,6 +1523,14 @@ function AuthModalContent({
         {error && (
           <div className="mt-3 space-y-2">
             <p className="text-[12px] text-red-300 leading-snug">{error}</p>
+            <button
+              type="button"
+              onClick={handleAuthRecoveryClear}
+              disabled={loading}
+              className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10 transition disabled:opacity-50"
+            >
+              Limpar sessão local e tentar de novo
+            </button>
             {mode === "signup" && error.toLowerCase().includes("já tem conta") && (
               <div className="space-y-2 text-[12px] text-white/75">
                 <button

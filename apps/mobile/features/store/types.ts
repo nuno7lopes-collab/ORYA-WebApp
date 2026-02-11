@@ -240,6 +240,23 @@ export type StoreShippingMethodsResponse = {
   methods: StoreShippingMethod[];
 };
 
+export type StoreShippingQuote = {
+  shippingCents: number;
+  zoneId: number;
+  methodId: number;
+  methodName: string;
+  freeOverRemainingCents: number | null;
+  methodFreeOverRemainingCents: number | null;
+};
+
+export type StoreShippingQuoteResponse = {
+  quote: StoreShippingQuote;
+};
+
+export type StoreBundlesResponse = {
+  items: StoreCatalogBundle[];
+};
+
 export type StoreCheckoutPrefill = {
   customer: {
     name: string | null;

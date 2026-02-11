@@ -61,11 +61,41 @@ export async function appendEventLog(
     createdAt: input.createdAt ?? new Date(),
   };
 
-  const result = await tx.eventLog.createMany({
-    data: [data],
-    skipDuplicates: true,
-  });
-  if (result.count === 0) return null;
+  const delegate = tx.eventLog as unknown as {
+    createMany?: (args: {
+      data: Prisma.EventLogCreateManyInput[];
+      skipDuplicates?: boolean;
+    }) => Promise<{ count: number }>;
+    create?: (args: { data: Prisma.EventLogCreateManyInput }) => Promise<{ id: string }>;
+    findUnique?: (args: { where: { id: string } }) => Promise<unknown>;
+  };
 
-  return tx.eventLog.findUnique({ where: { id: eventId } });
+  if (typeof delegate.createMany === "function") {
+    const result = await delegate.createMany({
+      data: [data],
+      skipDuplicates: true,
+    });
+    if (result.count === 0) return null;
+    if (typeof delegate.findUnique === "function") {
+      return delegate.findUnique({ where: { id: eventId } });
+    }
+    return { id: eventId, ...data };
+  }
+
+  if (typeof delegate.create === "function") {
+    try {
+      await delegate.create({ data });
+    } catch (error: any) {
+      if (error?.code === "P2002") {
+        return null;
+      }
+      throw error;
+    }
+    if (typeof delegate.findUnique === "function") {
+      return delegate.findUnique({ where: { id: eventId } });
+    }
+    return { id: eventId, ...data };
+  }
+
+  throw new Error("EVENTLOG_WRITE_UNAVAILABLE");
 }

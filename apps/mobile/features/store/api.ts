@@ -1,9 +1,11 @@
 import { api, ApiError, unwrapApiResponse } from "../../lib/api";
 import type {
+  StoreBundlesResponse,
   StoreCatalogResponse,
   StoreProductResponse,
   StoreCartResponse,
   StoreShippingMethodsResponse,
+  StoreShippingQuoteResponse,
   StoreCheckoutPayload,
   StoreCheckoutPrefill,
   StoreCheckoutResponse,
@@ -25,7 +27,16 @@ export async function fetchStoreCatalog(username: string): Promise<StoreCatalogR
   }
   const params = new URLSearchParams({ username: username.trim() });
   const response = await api.request<unknown>(`/api/public/store/catalog?${params.toString()}`);
-  return unwrapApiResponse<StoreCatalogResponse>(response);
+  const payload = unwrapApiResponse<StoreCatalogResponse>(response);
+  if (!payload?.store?.id) return payload;
+
+  // Bundles endpoint is the canonical merchandising feed and may contain fresher visibility filtering.
+  try {
+    const bundles = await fetchStoreBundles(payload.store.id);
+    return { ...payload, bundles: bundles.items ?? payload.bundles };
+  } catch {
+    return payload;
+  }
 }
 
 export async function fetchStoreProduct(username: string, slug: string): Promise<StoreProductResponse> {
@@ -144,6 +155,33 @@ export async function fetchStoreShippingMethods(input: {
   });
   const response = await api.request<unknown>(`/api/public/store/shipping/methods?${params.toString()}`);
   return unwrapApiResponse<StoreShippingMethodsResponse>(response);
+}
+
+export async function fetchStoreShippingQuote(input: {
+  storeId: number;
+  country: string;
+  subtotalCents: number;
+  methodId?: number | null;
+}): Promise<StoreShippingQuoteResponse> {
+  const safeStoreId = toPositiveInt(input.storeId, "Store");
+  const country = input.country?.trim().toUpperCase();
+  if (!country) throw new ApiError(400, "País inválido.");
+  const params = new URLSearchParams({
+    storeId: String(safeStoreId),
+    country,
+    subtotalCents: String(Math.max(0, Math.floor(input.subtotalCents))),
+  });
+  if (typeof input.methodId === "number" && Number.isFinite(input.methodId) && input.methodId > 0) {
+    params.set("methodId", String(Math.floor(input.methodId)));
+  }
+  const response = await api.request<unknown>(`/api/public/store/shipping/quote?${params.toString()}`);
+  return unwrapApiResponse<StoreShippingQuoteResponse>(response);
+}
+
+export async function fetchStoreBundles(storeId: number): Promise<StoreBundlesResponse> {
+  const safeStoreId = toPositiveInt(storeId, "Store");
+  const response = await api.request<unknown>(`/api/public/store/bundles?storeId=${safeStoreId}`);
+  return unwrapApiResponse<StoreBundlesResponse>(response);
 }
 
 export async function fetchStoreCheckoutPrefill(storeId: number): Promise<StoreCheckoutPrefill> {

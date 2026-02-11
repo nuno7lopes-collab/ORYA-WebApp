@@ -48,7 +48,8 @@ if (isDev && baseUrlRaw.includes("orya.pt")) {
 }
 const baseUrl = baseUrlRaw.replace(/\/+$/, "");
 const verbose = process.env.CRON_VERBOSE === "1" || process.env.CRON_VERBOSE === "true";
-const maxConcurrencyRaw = Number(process.env.CRON_MAX_CONCURRENCY || "0");
+const defaultMaxConcurrency = process.env.NODE_ENV === "development" ? "2" : "0";
+const maxConcurrencyRaw = Number(process.env.CRON_MAX_CONCURRENCY || defaultMaxConcurrency);
 const maxConcurrency =
   Number.isFinite(maxConcurrencyRaw) && maxConcurrencyRaw > 0 ? maxConcurrencyRaw : Number.POSITIVE_INFINITY;
 
@@ -95,7 +96,8 @@ function getInterval(name, fallback) {
 const jitterPct = Number(process.env.CRON_JITTER_PCT || "0.1");
 const jitterMs = Number(process.env.CRON_JITTER_MS || "0");
 const maxBackoffMs = Number(process.env.CRON_MAX_BACKOFF_MS || "60000");
-const startJitterMs = Number(process.env.CRON_START_JITTER_MS || "1000");
+const startJitterMs = Number(process.env.CRON_START_JITTER_MS || "15000");
+const startSpreadMs = Number(process.env.CRON_START_SPREAD_MS || "20000");
 
 function applyJitter(delayMs) {
   if (jitterMs > 0) {
@@ -107,9 +109,15 @@ function applyJitter(delayMs) {
   return delayMs;
 }
 
-function getStartDelay(intervalMs) {
-  const base = Math.min(Math.max(startJitterMs, 0), intervalMs);
-  return base > 0 ? Math.floor(Math.random() * base) : 0;
+function getStartDelay(intervalMs, index, totalJobs) {
+  const jitterWindow = Math.min(Math.max(startJitterMs, 0), intervalMs);
+  const jitterDelay = jitterWindow > 0 ? Math.floor(Math.random() * jitterWindow) : 0;
+  const spreadWindow = Math.min(Math.max(startSpreadMs, 0), intervalMs);
+  const spreadDelay =
+    totalJobs > 1 && spreadWindow > 0
+      ? Math.floor((spreadWindow * index) / (totalJobs - 1))
+      : 0;
+  return jitterDelay + spreadDelay;
 }
 
 const jobs = [
@@ -227,7 +235,15 @@ if (enabledJobs.length === 0) {
 
 let stopped = false;
 
-async function waitForServer(url, maxWaitMs) {
+function resolveWaitTarget(base, maybePath) {
+  const raw = (maybePath || "").trim();
+  if (!raw) return base;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  const normalizedPath = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${base}${normalizedPath}`;
+}
+
+async function waitForServer(url, maxWaitMs, headers) {
   if (!maxWaitMs || maxWaitMs <= 0) return true;
   const startedAt = Date.now();
   let attempt = 0;
@@ -236,7 +252,11 @@ async function waitForServer(url, maxWaitMs) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1500);
-      await fetch(url, { signal: controller.signal });
+      await fetch(url, {
+        signal: controller.signal,
+        headers,
+        redirect: "manual",
+      });
       clearTimeout(timeout);
       return true;
     } catch (err) {
@@ -294,7 +314,7 @@ function makeRunner(job) {
     }
   };
 
-  const initialDelay = getStartDelay(job.intervalMs);
+  const initialDelay = getStartDelay(job.intervalMs, job.startIndex, job.totalJobs);
   if (initialDelay > 0) {
     setTimeout(run, initialDelay);
   } else {
@@ -303,21 +323,30 @@ function makeRunner(job) {
 }
 
 async function start() {
-  const waitMs = Number(process.env.CRON_WAIT_MS || "5000");
+  const waitMs = Number(process.env.CRON_WAIT_MS || "30000");
+  const waitPath = process.env.CRON_WAIT_PATH || "/api/internal/ping";
+  const waitUrl = resolveWaitTarget(baseUrl, waitPath);
+  const waitHeaders = secret ? { "X-ORYA-CRON-SECRET": secret } : undefined;
   console.log("[cron-loop] Base URL:", baseUrl);
+  console.log("[cron-loop] Wait URL:", waitUrl);
   console.log(
     "[cron-loop] Jobs:",
     enabledJobs.map((job) => `${job.name}(${job.method} ${job.path} @${job.intervalMs}ms)`).join(", "),
   );
   console.log(`[cron-loop] Waiting for server: ${waitMs}ms max`);
-  const ready = await waitForServer(baseUrl, waitMs);
+  const ready = await waitForServer(waitUrl, waitMs, waitHeaders);
   if (!ready) {
     console.log("[cron-loop] Server not ready within wait window, starting anyway.");
   }
 
-  for (const job of enabledJobs) {
-    makeRunner(job);
-  }
+  const totalJobs = enabledJobs.length;
+  enabledJobs.forEach((job, index) => {
+    makeRunner({
+      ...job,
+      startIndex: index,
+      totalJobs,
+    });
+  });
 }
 
 start();

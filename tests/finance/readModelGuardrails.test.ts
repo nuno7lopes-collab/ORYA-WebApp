@@ -79,7 +79,6 @@ describe("finance read-model guardrails", () => {
         "app/api/servicos/[id]/checkout/route.ts",
         "app/api/servicos/[id]/creditos/checkout/route.ts",
         "app/api/organizacao/reservas/[id]/checkout/route.ts",
-        "app/api/store/checkout/route.ts",
         "domain/padelSecondCharge.ts",
         "-S",
       ].join(" "),

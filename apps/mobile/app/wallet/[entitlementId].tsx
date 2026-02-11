@@ -21,7 +21,7 @@ import { GlassPill } from "../../components/liquid/GlassPill";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useWalletDetail } from "../../features/wallet/hooks";
-import { ApiError } from "../../lib/api";
+import { ApiError, api, unwrapApiResponse } from "../../lib/api";
 import { getMobileEnv } from "../../lib/env";
 import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
@@ -296,6 +296,19 @@ export default function WalletDetailScreen() {
   };
 
   const [pairingAction, setPairingAction] = useState<"accept" | "decline" | null>(null);
+  const [resaleAction, setResaleAction] = useState<"list" | "cancel" | null>(null);
+  const [localResaleId, setLocalResaleId] = useState<string | null>(null);
+  const resaleInfo = data?.resale ?? null;
+  const activeResaleId = localResaleId ?? resaleInfo?.activeResaleId ?? null;
+  const canListResale = Boolean(resaleInfo?.ticketId && resaleInfo?.canList && !activeResaleId);
+  const canCancelResale = Boolean(resaleInfo?.ticketId && (resaleInfo?.canCancel || activeResaleId));
+  const suggestedResaleCents = useMemo(() => {
+    const paid = data?.payment?.totalPaidCents ?? 0;
+    if (Number.isFinite(paid) && paid > 0) {
+      return Math.max(100, Math.round(paid * 0.9));
+    }
+    return 1500;
+  }, [data?.payment?.totalPaidCents]);
 
   const handleAcceptInvite = async () => {
     if (!data?.pairing?.id) return;
@@ -329,6 +342,50 @@ export default function WalletDetailScreen() {
       pathname: "/event/[slug]",
       params: { slug: data.event.slug, pairingId: String(data.pairing.id) },
     });
+  };
+
+  const handleListResale = async () => {
+    if (!resaleInfo?.ticketId) return;
+    setResaleAction("list");
+    try {
+      const response = await api.request<unknown>("/api/tickets/resale/list", {
+        method: "POST",
+        body: JSON.stringify({
+          ticketId: resaleInfo.ticketId,
+          price: suggestedResaleCents,
+        }),
+      });
+      const payload = unwrapApiResponse<{ resaleId?: string }>(response);
+      if (payload?.resaleId) {
+        setLocalResaleId(payload.resaleId);
+      }
+      await refetch();
+      Alert.alert("Revenda", "Bilhete listado para revenda.");
+    } catch (err) {
+      Alert.alert("Revenda", getUserFacingError(err, "Não foi possível listar o bilhete."));
+    } finally {
+      setResaleAction(null);
+    }
+  };
+
+  const handleCancelResale = async () => {
+    if (!activeResaleId) return;
+    setResaleAction("cancel");
+    try {
+      await api.request<unknown>("/api/tickets/resale/cancel", {
+        method: "POST",
+        body: JSON.stringify({
+          resaleId: activeResaleId,
+        }),
+      });
+      setLocalResaleId(null);
+      await refetch();
+      Alert.alert("Revenda", "Revenda cancelada.");
+    } catch (err) {
+      Alert.alert("Revenda", getUserFacingError(err, "Não foi possível cancelar a revenda."));
+    } finally {
+      setResaleAction(null);
+    }
   };
 
   return (
@@ -574,6 +631,52 @@ export default function WalletDetailScreen() {
                         >
                           <Text className="text-white text-xs font-semibold">
                             Pagar inscrição
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                </GlassCard>
+              ) : null}
+
+              {resaleInfo?.ticketId ? (
+                <GlassCard intensity={46} className="mb-4">
+                  <View className="gap-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-white text-sm font-semibold">Revenda</Text>
+                      <GlassPill label={activeResaleId ? "LISTED" : "OFF"} variant="muted" />
+                    </View>
+                    <Text className="text-white/60 text-xs">
+                      Preço sugerido: {formatMoney(suggestedResaleCents, data.payment?.currency ?? "EUR")}
+                    </Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {canListResale ? (
+                        <Pressable
+                          onPress={handleListResale}
+                          disabled={resaleAction !== null}
+                          className="rounded-full border border-emerald-300/35 bg-emerald-400/15 px-4 py-2"
+                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Listar para revenda"
+                          accessibilityState={{ disabled: resaleAction !== null }}
+                        >
+                          <Text className="text-emerald-100 text-xs font-semibold">
+                            {resaleAction === "list" ? "A listar..." : "Listar para revenda"}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      {canCancelResale ? (
+                        <Pressable
+                          onPress={handleCancelResale}
+                          disabled={resaleAction !== null || !activeResaleId}
+                          className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancelar revenda"
+                          accessibilityState={{ disabled: resaleAction !== null || !activeResaleId }}
+                        >
+                          <Text className="text-white/85 text-xs font-semibold">
+                            {resaleAction === "cancel" ? "A cancelar..." : "Cancelar revenda"}
                           </Text>
                         </Pressable>
                       ) : null}

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { OrganizationMemberRole } from "@prisma/client";
 import ChatPreviewClient from "./preview/ChatPreviewClient";
 import ChatInternoClient from "./ChatInternoClient";
+import ChannelRequestsPanel from "./ChannelRequestsPanel";
 import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 export default async function OrganizationChatPage({
@@ -97,7 +98,16 @@ export default async function OrganizationChatPage({
 
   return (
     <div className={cn("h-full min-h-0 w-full text-white")}>
-      {showInterno ? <ChatInternoClient /> : <ChatPreviewClient />}
+      {showInterno ? (
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          <ChannelRequestsPanel />
+          <div className="min-h-0 flex-1">
+            <ChatInternoClient />
+          </div>
+        </div>
+      ) : (
+        <ChatPreviewClient />
+      )}
     </div>
   );
 }

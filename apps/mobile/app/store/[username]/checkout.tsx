@@ -18,6 +18,7 @@ import {
   useStoreCheckoutMutation,
   useStoreCheckoutPrefill,
   useStoreShippingMethods,
+  useStoreShippingQuote,
   useStoreTotals,
 } from "../../../features/store/hooks";
 import { getStoreErrorMessage } from "../../../features/store/errors";
@@ -109,6 +110,13 @@ export default function StoreCheckoutScreen() {
     storeId,
     country,
     subtotalCents: totals.subtotalCents,
+    enabled: Boolean(country && totals.requiresShipping),
+  });
+  const shippingQuote = useStoreShippingQuote({
+    storeId,
+    country,
+    subtotalCents: totals.subtotalCents,
+    methodId: selectedShippingMethodId,
     enabled: Boolean(country && totals.requiresShipping),
   });
 
@@ -389,6 +397,19 @@ export default function StoreCheckoutScreen() {
                           </Pressable>
                         );
                       })}
+                    {shippingQuote.data?.quote ? (
+                      <View className="mt-2 rounded-xl border border-white/12 bg-white/5 px-3 py-2">
+                        <Text className="text-white/65 text-xs">
+                          Estimativa atual:{" "}
+                          <Text className="font-semibold text-white">
+                            {formatMoney(
+                              shippingQuote.data.quote.shippingCents,
+                              cart.data?.cart.currency ?? "EUR",
+                            )}
+                          </Text>
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
                 ) : (
                   <Text className="mt-4 text-xs text-white/60">
@@ -406,6 +427,14 @@ export default function StoreCheckoutScreen() {
                   {formatMoney(totals.subtotalCents, cart.data?.cart.currency ?? "EUR")}
                 </Text>
               </View>
+              {totals.requiresShipping && shippingQuote.data?.quote ? (
+                <View className="mt-2 flex-row items-center justify-between">
+                  <Text className="text-white/70 text-xs">Envio (estimativa)</Text>
+                  <Text className="text-white text-sm font-semibold">
+                    {formatMoney(shippingQuote.data.quote.shippingCents, cart.data?.cart.currency ?? "EUR")}
+                  </Text>
+                </View>
+              ) : null}
               <View className="mt-3">
                 <TextInput
                   value={notes}

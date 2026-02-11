@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  fetchPublicTournamentPulse,
   fetchMyPairings,
   fetchOpenPairings,
   fetchPadelMatches,
@@ -103,3 +104,12 @@ export const usePadelRankings = (
     staleTime: 60_000,
   });
 };
+
+export const usePublicTournamentPulse = (enabled = true) =>
+  useQuery({
+    queryKey: ["padel", "tournaments", "public-pulse"],
+    queryFn: () => fetchPublicTournamentPulse(),
+    enabled,
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
+  });

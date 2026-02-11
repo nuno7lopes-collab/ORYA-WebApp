@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchProfileAgenda, fetchProfileSummary, fetchPublicProfile, fetchPublicProfileEvents } from "./api";
+import {
+  fetchProfileAgenda,
+  fetchProfileSummary,
+  fetchPublicOrganizationAgenda,
+  fetchPublicProfile,
+  fetchPublicProfileEvents,
+} from "./api";
 
 export const useProfileSummary = (
   enabled = true,
@@ -49,5 +55,17 @@ export const usePublicProfileEvents = (
     queryFn: () => fetchPublicProfileEvents(username ?? "", accessToken),
     enabled: enabled && Boolean(username),
     staleTime: 1000 * 60,
+    refetchOnWindowFocus: false,
+  });
+
+export const usePublicOrganizationAgenda = (
+  organizationId: number | null,
+  enabled = true,
+) =>
+  useQuery({
+    queryKey: ["profile", "public", "agenda", organizationId ?? null],
+    queryFn: () => fetchPublicOrganizationAgenda(organizationId ?? 0),
+    enabled: enabled && typeof organizationId === "number" && organizationId > 0,
+    staleTime: 1000 * 45,
     refetchOnWindowFocus: false,
   });

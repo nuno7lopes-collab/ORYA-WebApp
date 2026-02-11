@@ -4,7 +4,6 @@ import { execSync } from "node:child_process";
 const TOMBSTONE_ALLOWLIST = [
   "app/api/me/store/",
   "app/api/organizacao/loja/",
-  "app/api/store/",
 ];
 
 const STORE_DOMAIN_PATHS = [

@@ -87,6 +87,7 @@ export default function AdminEventosPage() {
   const [hasMore, setHasMore] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [purgingIds, setPurgingIds] = useState<Set<number>>(new Set());
+  const [statusUpdatingIds, setStatusUpdatingIds] = useState<Set<number>>(new Set());
 
   async function loadEvents(opts?: {
     search?: string;
@@ -188,6 +189,47 @@ export default function AdminEventosPage() {
       setErrorMsg("Erro inesperado ao apagar o evento.");
     } finally {
       setPurgingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(ev.id);
+        return next;
+      });
+    }
+  }
+
+  async function handleUpdateEventStatus(ev: AdminEventItem, nextStatus: "DRAFT" | "PUBLISHED" | "CANCELLED") {
+    if (ev.status === nextStatus) return;
+    const confirmText =
+      nextStatus === "CANCELLED"
+        ? `Confirmas cancelar o evento "${ev.title || "Evento sem título"}"?`
+        : `Confirmas atualizar o estado para ${statusLabel(nextStatus)}?`;
+    if (!window.confirm(confirmText)) return;
+
+    setStatusUpdatingIds((prev) => new Set(prev).add(ev.id));
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/admin/eventos/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: ev.id, status: nextStatus }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string; event?: { status?: string } }
+        | null;
+      if (!res.ok || !json?.ok) {
+        setErrorMsg(json?.error || "Não foi possível atualizar estado do evento.");
+        return;
+      }
+
+      setEvents((prev) =>
+        prev.map((item) =>
+          item.id === ev.id ? { ...item, status: json.event?.status ?? nextStatus } : item,
+        ),
+      );
+    } catch (err) {
+      console.error("[admin/eventos] update-status error:", err);
+      setErrorMsg("Erro inesperado ao atualizar estado.");
+    } finally {
+      setStatusUpdatingIds((prev) => {
         const next = new Set(prev);
         next.delete(ev.id);
         return next;
@@ -361,6 +403,36 @@ export default function AdminEventosPage() {
                               >
                                 Ver público
                               </Link>
+                            )}
+                            {ev.status !== "PUBLISHED" && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateEventStatus(ev, "PUBLISHED")}
+                                disabled={statusUpdatingIds.has(ev.id)}
+                                className="admin-button-secondary px-3 py-1 text-[10px] disabled:opacity-60"
+                              >
+                                {statusUpdatingIds.has(ev.id) ? "A atualizar..." : "Publicar"}
+                              </button>
+                            )}
+                            {ev.status !== "DRAFT" && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateEventStatus(ev, "DRAFT")}
+                                disabled={statusUpdatingIds.has(ev.id)}
+                                className="admin-button-secondary px-3 py-1 text-[10px] disabled:opacity-60"
+                              >
+                                {statusUpdatingIds.has(ev.id) ? "A atualizar..." : "Rascunho"}
+                              </button>
+                            )}
+                            {ev.status !== "CANCELLED" && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateEventStatus(ev, "CANCELLED")}
+                                disabled={statusUpdatingIds.has(ev.id)}
+                                className="rounded-full border border-amber-300/40 px-3 py-1 text-[10px] text-amber-100 hover:bg-amber-500/10 disabled:opacity-60"
+                              >
+                                {statusUpdatingIds.has(ev.id) ? "A atualizar..." : "Cancelar"}
+                              </button>
                             )}
                             <button
                               type="button"

@@ -80,3 +80,12 @@ export type PublicProfileEvents = {
     canView: boolean;
   };
 };
+
+export type PublicOrganizationAgendaItem = {
+  id: string;
+  title: string;
+  startsAt: string;
+  endsAt: string | null;
+  sourceType: string;
+  status: string;
+};

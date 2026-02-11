@@ -84,6 +84,12 @@ export type WalletDetail = {
     canPay: boolean;
     userSlotRole: string | null;
   } | null;
+  resale?: {
+    ticketId: string | null;
+    activeResaleId: string | null;
+    canList: boolean;
+    canCancel: boolean;
+  } | null;
   audit?: {
     updatedAt?: string | null;
     createdAt?: string | null;

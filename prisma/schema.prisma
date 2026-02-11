@@ -123,7 +123,6 @@ model Profile {
   chatUserBlocks                                                  ChatUserBlock[]         @relation("ChatUserBlockBlocker")
   chatUserBlockedBy                                               ChatUserBlock[]         @relation("ChatUserBlockBlocked")
   chatUserPresence                                                ChatUserPresence?        @relation("ChatUserPresenceUser")
-  store                                                            Store?
   storeCarts                                                       StoreCart[]
   storeOrders                                                      StoreOrder[]
   storeDigitalGrants                                               StoreDigitalGrant[]

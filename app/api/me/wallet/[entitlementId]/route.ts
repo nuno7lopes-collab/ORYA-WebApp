@@ -7,7 +7,7 @@ import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import crypto from "crypto";
 import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
-import { PadelRegistrationStatus } from "@prisma/client";
+import { PadelRegistrationStatus, ResaleStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { isWalletPassEnabled } from "@/lib/wallet/pass";
@@ -155,6 +155,29 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     refundedAt: Date | null;
     reason: string | null;
   } = null;
+  let resaleSummary: null | {
+    ticketId: string | null;
+    activeResaleId: string | null;
+    canList: boolean;
+    canCancel: boolean;
+  } = null;
+
+  if (ent.ticketId) {
+    const activeResale = await prisma.ticketResale.findFirst({
+      where: {
+        ticketId: ent.ticketId,
+        sellerUserId: userId,
+        status: ResaleStatus.LISTED,
+      },
+      select: { id: true },
+    });
+    resaleSummary = {
+      ticketId: ent.ticketId,
+      activeResaleId: activeResale?.id ?? null,
+      canList: ent.status === "ACTIVE" && !consumedAt,
+      canCancel: Boolean(activeResale?.id),
+    };
+  }
 
   if (ent.eventId && ent.purchaseId) {
     let resolvedPairingId: number | null = null;
@@ -325,6 +348,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     qrToken,
     pairing: pairingSummary,
     pairingActions,
+    resale: resaleSummary,
     payment: paymentBreakdown,
     refund: refundSummary,
     event: event?.slug

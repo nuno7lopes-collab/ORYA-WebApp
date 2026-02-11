@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    exclude: [...configDefaults.exclude, "apps/mobile/__tests__/**", "apps/mobile/node_modules/**"],
   },
   resolve: {
     alias: [

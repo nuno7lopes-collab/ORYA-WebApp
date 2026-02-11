@@ -5,6 +5,7 @@ import {
   addStoreCartItem,
   createStoreCheckout,
   createStoreDigitalDownload,
+  fetchStoreBundles,
   fetchStoreCart,
   fetchStoreCatalog,
   fetchStoreCheckoutPrefill,
@@ -14,6 +15,7 @@ import {
   fetchStorePurchases,
   fetchStorePurchaseReceiptUrl,
   fetchStoreShippingMethods,
+  fetchStoreShippingQuote,
   removeStoreBundle,
   removeStoreCartItem,
   updateStoreBundle,
@@ -142,6 +144,51 @@ export function useStoreShippingMethods(input: {
       input.storeId > 0 &&
       Boolean(input.country && input.country.trim().length > 0),
     staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useStoreShippingQuote(input: {
+  storeId: number | null;
+  country: string | null;
+  subtotalCents: number;
+  methodId?: number | null;
+  enabled?: boolean;
+}) {
+  const enabled = input.enabled !== false;
+  return useQuery({
+    queryKey: [
+      "store",
+      "shipping",
+      "quote",
+      input.storeId ?? "unknown",
+      input.country ?? "none",
+      input.subtotalCents,
+      input.methodId ?? "default",
+    ],
+    queryFn: () =>
+      fetchStoreShippingQuote({
+        storeId: input.storeId ?? 0,
+        country: input.country ?? "",
+        subtotalCents: input.subtotalCents,
+        methodId: input.methodId ?? null,
+      }),
+    enabled:
+      enabled &&
+      typeof input.storeId === "number" &&
+      input.storeId > 0 &&
+      Boolean(input.country && input.country.trim().length > 0),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useStoreBundles(storeId: number | null, enabled = true) {
+  return useQuery({
+    queryKey: ["store", "bundles", storeId ?? "unknown"],
+    queryFn: () => fetchStoreBundles(storeId ?? 0),
+    enabled: enabled && typeof storeId === "number" && storeId > 0,
+    staleTime: 20_000,
     refetchOnWindowFocus: false,
   });
 }

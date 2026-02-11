@@ -162,6 +162,15 @@ function runCmd(command) {
   }
 }
 
+function commandExists(command) {
+  if (!command) return false;
+  const checkCmd =
+    process.platform === "win32"
+      ? `where ${command}`
+      : `command -v ${command}`;
+  return Boolean(runCmd(checkCmd));
+}
+
 function isPidAlive(pid) {
   if (!Number.isFinite(pid)) return false;
   try {
@@ -417,14 +426,24 @@ if (nextPort !== baseNextPort) {
 }
 process.env.NEXT_PORT = String(nextPort);
 process.env.PORT = String(nextPort);
+const internalHost = process.env.DEV_ALL_INTERNAL_HOST || "127.0.0.1";
+const internalBaseUrlDefault = `http://${internalHost}:${nextPort}`;
+const publicBaseUrlDefault = `http://${publicHost}:${nextPort}`;
 if (!process.env.ORYA_BASE_URL) {
-  process.env.ORYA_BASE_URL = `http://${publicHost}:${nextPort}`;
+  // Internal services should use loopback to avoid LAN hop latency in local dev.
+  process.env.ORYA_BASE_URL = internalBaseUrlDefault;
 }
 if (!process.env.WORKER_BASE_URL) {
   process.env.WORKER_BASE_URL = process.env.ORYA_BASE_URL;
 }
 if (!process.env.NEXT_PUBLIC_BASE_URL) {
-  process.env.NEXT_PUBLIC_BASE_URL = process.env.ORYA_BASE_URL;
+  // Keep a public URL for browser clients on LAN devices.
+  process.env.NEXT_PUBLIC_BASE_URL = publicBaseUrlDefault;
+}
+if (process.env.ORYA_BASE_URL !== process.env.NEXT_PUBLIC_BASE_URL) {
+  console.log(
+    `[dev-all] Internal base URL: ${process.env.ORYA_BASE_URL}. Public base URL: ${process.env.NEXT_PUBLIC_BASE_URL}.`,
+  );
 }
 
 const baseChatWsPort = Number(process.env.CHAT_WS_PORT || 4001);
@@ -468,9 +487,45 @@ function startDeferredServices() {
   const startStripe = parseBool(process.env.START_STRIPE, true);
   const startCron = parseBool(process.env.START_CRON, true);
   const redisPort = process.env.REDIS_PORT || "6379";
+  const localRedisUrl = `redis://127.0.0.1:${redisPort}`;
+  const hasRedisBinary = commandExists(redisCmd);
+  const hasExplicitRedisUrl = Boolean(process.env.REDIS_URL);
+  let canLaunchLocalRedis = false;
 
-  if (startRedis && !process.env.REDIS_URL) {
-    process.env.REDIS_URL = `redis://127.0.0.1:${redisPort}`;
+  if (startRedis && !hasExplicitRedisUrl) {
+    if (hasRedisBinary) {
+      process.env.REDIS_URL = localRedisUrl;
+      canLaunchLocalRedis = true;
+    } else {
+      console.log("[dev-all] redis-server not found. Chat WS will run without Redis pub/sub.");
+    }
+  } else if (startRedis && process.env.REDIS_URL === localRedisUrl) {
+    canLaunchLocalRedis = hasRedisBinary;
+    if (!canLaunchLocalRedis) {
+      console.log("[dev-all] REDIS_URL points to local redis, but redis-server binary is missing.");
+      delete process.env.REDIS_URL;
+    }
+  }
+
+  if (canLaunchLocalRedis) {
+    children.push(run("redis", redisCmd, ["--port", redisPort]));
+  }
+
+  if (startChatWs) {
+    const hasRedisUrl = Boolean(process.env.REDIS_URL);
+    const chatWsEnv = {
+      CHAT_POLLING_ONLY: "0",
+      NEXT_PUBLIC_CHAT_POLLING_ONLY: "0",
+      ...(hasRedisUrl ? { REDIS_URL: process.env.REDIS_URL } : {}),
+    };
+    if (!hasRedisUrl) {
+      console.log("[dev-all] chat-ws running without Redis pub/sub (Redis unavailable).");
+    }
+    children.push(run("chat-ws", npmCmd, ["run", "chat:ws"], chatWsEnv));
+  }
+
+  if (startWorker) {
+    children.push(run("worker", npmCmd, ["run", "worker"]));
   }
 
   if (startCron) {
@@ -480,29 +535,17 @@ function startDeferredServices() {
       cronSkip.add("operations");
     }
     const cronEnv = {
+      ...(!process.env.CRON_WAIT_MS ? { CRON_WAIT_MS: "30000" } : {}),
       ...(cronSkip.size > 0 ? { CRON_SKIP: Array.from(cronSkip).join(",") } : {}),
       ...(process.env.DEV_ALL_CRON_MAX_CONCURRENCY
         ? { CRON_MAX_CONCURRENCY: process.env.DEV_ALL_CRON_MAX_CONCURRENCY }
-        : {}),
+        : !process.env.CRON_MAX_CONCURRENCY
+          ? { CRON_MAX_CONCURRENCY: "2" }
+          : {}),
+      ...(!process.env.CRON_START_JITTER_MS ? { CRON_START_JITTER_MS: "15000" } : {}),
+      ...(!process.env.CRON_WAIT_PATH ? { CRON_WAIT_PATH: "/api/internal/ping" } : {}),
     };
     children.push(run("cron", npmCmd, ["run", "cron:local"], cronEnv));
-  }
-
-  if (startWorker) {
-    children.push(run("worker", npmCmd, ["run", "worker"]));
-  }
-
-  if (startRedis) {
-    children.push(run("redis", redisCmd, ["--port", redisPort]));
-  }
-
-  if (startChatWs) {
-    const chatWsEnv = {
-      CHAT_POLLING_ONLY: "0",
-      NEXT_PUBLIC_CHAT_POLLING_ONLY: "0",
-      ...(process.env.REDIS_URL ? { REDIS_URL: process.env.REDIS_URL } : {}),
-    };
-    children.push(run("chat-ws", npmCmd, ["run", "chat:ws"], chatWsEnv));
   }
 
   if (startStripe) {

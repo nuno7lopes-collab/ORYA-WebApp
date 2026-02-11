@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import * as ts from "typescript";
 
 type UsageEntry = {
   route: string;
@@ -15,6 +16,8 @@ type ApiEntry = {
   uiStatus: "covered" | "orphan" | "exempt";
 };
 
+type StringMap = Map<string, string[]>;
+
 const ROOT = process.cwd();
 const API_ROOT = path.join(ROOT, "app", "api");
 const REPORT_DIR = path.join(ROOT, "reports");
@@ -22,6 +25,7 @@ const CSV_PATH = path.join(REPORT_DIR, "api_ui_coverage.csv");
 const ORPHANS_PATH = path.join(REPORT_DIR, "api_orphans.md");
 const PLAN_PATH = path.join(ROOT, "docs", "ssot_registry.md");
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
+const MAX_EXPR_CANDIDATES = 24;
 
 const MISSING_API_ALLOWLIST = new Set([
   "/api/organizacao",
@@ -82,12 +86,18 @@ function apiRouteFromFile(filePath: string) {
 
 function normalizeEndpoint(raw: string) {
   let endpoint = raw.trim();
+  const apiIndex = endpoint.indexOf("/api/");
+  if (apiIndex > 0) endpoint = endpoint.slice(apiIndex);
+  endpoint = endpoint.split("#")[0];
   endpoint = endpoint.split("?")[0];
   endpoint = endpoint.replace(/\$\{[^}]+\}/g, "[param]");
   endpoint = endpoint.replace(/\[[^/]+\]/g, "[param]");
-  endpoint = endpoint.replace(/([^/])\[param\]$/g, "$1");
-  endpoint = normalizeRoutePath(endpoint);
+  // Template concatenations that append query fragments can leak as "...list[param]".
+  // Keep path params ("/[param]") but drop inline suffix noise ("list[param]").
+  endpoint = endpoint.replace(/([^/])(?:\[param\])+$/g, "$1");
+  endpoint = endpoint.replace(/([^/])(?:\[param\])+(?=\/)/g, "$1");
   endpoint = endpoint.replace(/\/+/g, "/");
+  endpoint = normalizeRoutePath(endpoint);
   if (endpoint.length > 1 && endpoint.endsWith("/")) endpoint = endpoint.slice(0, -1);
   return endpoint;
 }
@@ -104,37 +114,258 @@ function isUiExempt(route: string) {
   return type === "internal" || type === "cron" || type === "webhook";
 }
 
+function unique(values: string[]) {
+  return Array.from(new Set(values));
+}
+
+function compact(values: string[]) {
+  return values
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .slice(0, MAX_EXPR_CANDIDATES);
+}
+
+function mergeTemplateFragments(left: string[], right: string[]) {
+  const combined: string[] = [];
+  for (const l of left) {
+    for (const r of right) {
+      combined.push(`${l}${r}`);
+      if (combined.length >= MAX_EXPR_CANDIDATES) {
+        return unique(compact(combined));
+      }
+    }
+  }
+  return unique(compact(combined));
+}
+
+function getCalleeName(node: ts.Expression): string | null {
+  if (ts.isIdentifier(node)) return node.text;
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  return null;
+}
+
+function expressionToTemplates(expr: ts.Expression, vars: StringMap, depth = 0): string[] {
+  if (depth > 7) return [];
+
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+    return [expr.text];
+  }
+
+  if (ts.isTemplateExpression(expr)) {
+    let current = [expr.head.text];
+    for (const span of expr.templateSpans) {
+      const spanValues = expressionToTemplates(span.expression, vars, depth + 1);
+      const resolved = spanValues.length > 0 ? spanValues : ["[param]"];
+      current = mergeTemplateFragments(current, resolved);
+      current = mergeTemplateFragments(current, [span.literal.text]);
+    }
+    return unique(compact(current));
+  }
+
+  if (ts.isParenthesizedExpression(expr)) {
+    return expressionToTemplates(expr.expression, vars, depth + 1);
+  }
+
+  if (ts.isIdentifier(expr)) {
+    return vars.get(expr.text) ?? [];
+  }
+
+  if (ts.isConditionalExpression(expr)) {
+    return unique(
+      compact([
+        ...expressionToTemplates(expr.whenTrue, vars, depth + 1),
+        ...expressionToTemplates(expr.whenFalse, vars, depth + 1),
+      ]),
+    );
+  }
+
+  if (
+    ts.isBinaryExpression(expr) &&
+    expr.operatorToken.kind === ts.SyntaxKind.PlusToken
+  ) {
+    const left = expressionToTemplates(expr.left, vars, depth + 1);
+    const right = expressionToTemplates(expr.right, vars, depth + 1);
+    if (left.length === 0 && right.length === 0) return [];
+    if (left.length === 0) return right.map((entry) => `[param]${entry}`);
+    if (right.length === 0) return left.map((entry) => `${entry}[param]`);
+    return mergeTemplateFragments(left, right);
+  }
+
+  if (ts.isCallExpression(expr)) {
+    const calleeName = getCalleeName(expr.expression);
+    if (calleeName === "String" && expr.arguments.length > 0) {
+      const resolved = expressionToTemplates(expr.arguments[0], vars, depth + 1);
+      return resolved.length > 0 ? resolved : ["[param]"];
+    }
+    if (calleeName === "encodeURIComponent" && expr.arguments.length > 0) {
+      const resolved = expressionToTemplates(expr.arguments[0], vars, depth + 1);
+      return resolved.length > 0 ? resolved.map((entry) => encodeURIComponent(entry)) : ["[param]"];
+    }
+    return [];
+  }
+
+  if (ts.isNewExpression(expr)) {
+    const calleeName = getCalleeName(expr.expression);
+    if (calleeName === "URL" && expr.arguments?.length) {
+      return expressionToTemplates(expr.arguments[0], vars, depth + 1);
+    }
+    return [];
+  }
+
+  return [];
+}
+
+function endpointFromTemplate(candidate: string): string | null {
+  if (!candidate.includes("/api/")) return null;
+  const normalized = normalizeEndpoint(candidate);
+  if (!normalized.startsWith("/api/")) return null;
+  return normalized;
+}
+
+function captureCallExpressionEndpoints(
+  node: ts.CallExpression,
+  vars: StringMap,
+  output: Set<string>,
+) {
+  const calleeName = getCalleeName(node.expression);
+  if (!calleeName) return;
+  const looksLikeApiInvoker =
+    calleeName === "fetch" ||
+    calleeName === "request" ||
+    calleeName === "get" ||
+    calleeName === "post" ||
+    calleeName === "put" ||
+    calleeName === "patch" ||
+    calleeName === "delete";
+  if (!looksLikeApiInvoker) return;
+  if (node.arguments.length === 0) return;
+
+  const values = expressionToTemplates(node.arguments[0], vars);
+  for (const value of values) {
+    const endpoint = endpointFromTemplate(value);
+    if (!endpoint) continue;
+    output.add(endpoint);
+  }
+}
+
+function captureNewUrlEndpoints(
+  node: ts.NewExpression,
+  vars: StringMap,
+  output: Set<string>,
+) {
+  const calleeName = getCalleeName(node.expression);
+  if (calleeName !== "URL" || !node.arguments?.length) return;
+  const values = expressionToTemplates(node.arguments[0], vars);
+  for (const value of values) {
+    const endpoint = endpointFromTemplate(value);
+    if (!endpoint) continue;
+    output.add(endpoint);
+  }
+}
+
+function buildStringMap(sourceFile: ts.SourceFile): StringMap {
+  const vars: StringMap = new Map();
+
+  const pass = () => {
+    const visit = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        const values = expressionToTemplates(node.initializer, vars);
+        const endpoints = values
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0);
+        if (endpoints.length > 0) {
+          vars.set(node.name.text, unique(compact(endpoints)));
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  };
+
+  pass();
+  pass();
+  pass();
+  return vars;
+}
+
 function extractFrontendUsage() {
   const files: string[] = [];
   for (const root of UI_ROOTS) {
     if (!fs.existsSync(root)) continue;
     files.push(...listFiles(root));
   }
+
   const codeFiles = files.filter((file) => /\.(ts|tsx|js|jsx)$/.test(file));
   const usage = new Map<string, Set<string>>();
-  const apiRegex = /["'`](\/api\/[^"'`\s]+)["'`]/g;
+  const fallbackRegex = /["'`]([^"'`\s]*\/api\/[^"'`\s]*)["'`]/g;
 
   for (const file of codeFiles) {
     if (file.includes(`${path.sep}app${path.sep}api${path.sep}`)) continue;
+
     const content = fs.readFileSync(file, "utf8");
+    const relativeFile = path.relative(ROOT, file);
+    const sourceFile = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const vars = buildStringMap(sourceFile);
+    const endpoints = new Set<string>();
+
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        captureCallExpressionEndpoints(node, vars, endpoints);
+      } else if (ts.isNewExpression(node)) {
+        captureNewUrlEndpoints(node, vars, endpoints);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+
     let match: RegExpExecArray | null;
-    apiRegex.lastIndex = 0;
-    while ((match = apiRegex.exec(content))) {
-      const endpoint = normalizeEndpoint(match[1]);
+    fallbackRegex.lastIndex = 0;
+    while ((match = fallbackRegex.exec(content))) {
+      const endpoint = endpointFromTemplate(match[1]);
+      if (!endpoint) continue;
+      endpoints.add(endpoint);
+    }
+
+    for (const endpoint of endpoints) {
       if (!endpoint.startsWith("/api/")) continue;
       if (!usage.has(endpoint)) usage.set(endpoint, new Set());
-      usage.get(endpoint)?.add(path.relative(ROOT, file));
+      usage.get(endpoint)?.add(relativeFile);
     }
   }
+
   return usage;
 }
 
 function buildUsageEntries(usage: Map<string, Set<string>>): UsageEntry[] {
   return Array.from(usage.entries()).map(([route, files]) => ({
     route,
-    segments: route.split("/"),
+    segments: route.split("/").filter(Boolean),
     files: Array.from(files).sort(),
   }));
+}
+
+function segmentsMatch(routeSegments: string[], usageSegments: string[]) {
+  if (usageSegments.length !== routeSegments.length) return false;
+  for (let i = 0; i < routeSegments.length; i += 1) {
+    const usageSeg = usageSegments[i];
+    const routeSeg = routeSegments[i];
+    if (usageSeg !== "[param]" && usageSeg !== routeSeg) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function prefixSegmentsMatch(routeSegments: string[], usageSegments: string[]) {
+  if (usageSegments.length > routeSegments.length) return false;
+  for (let i = 0; i < usageSegments.length; i += 1) {
+    const usageSeg = usageSegments[i];
+    const routeSeg = routeSegments[i];
+    if (usageSeg !== "[param]" && usageSeg !== routeSeg) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function matchUsageFiles(
@@ -146,20 +377,11 @@ function matchUsageFiles(
   const direct = usage.get(normalized);
   if (direct && direct.size > 0) return Array.from(direct).sort();
 
-  const routeSegments = normalized.split("/");
+  const routeSegments = normalized.split("/").filter(Boolean);
   const matches = new Set<string>();
+
   for (const entry of usageEntries) {
-    if (entry.segments.length !== routeSegments.length) continue;
-    let ok = true;
-    for (let i = 0; i < routeSegments.length; i += 1) {
-      const usageSeg = entry.segments[i];
-      const routeSeg = routeSegments[i];
-      if (usageSeg !== "[param]" && usageSeg !== routeSeg) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) {
+    if (segmentsMatch(routeSegments, entry.segments) || prefixSegmentsMatch(routeSegments, entry.segments)) {
       for (const file of entry.files) matches.add(file);
     }
   }
@@ -171,6 +393,18 @@ function matchesEndpointPattern(pattern: string, candidate: string) {
   const patternParts = pattern.split("/").filter(Boolean);
   const candidateParts = candidate.split("/").filter(Boolean);
   if (patternParts.length !== candidateParts.length) return false;
+  for (let i = 0; i < patternParts.length; i += 1) {
+    const part = patternParts[i];
+    if (part === "[param]") continue;
+    if (part !== candidateParts[i]) return false;
+  }
+  return true;
+}
+
+function matchesEndpointPrefix(pattern: string, candidate: string) {
+  const patternParts = pattern.split("/").filter(Boolean);
+  const candidateParts = candidate.split("/").filter(Boolean);
+  if (patternParts.length > candidateParts.length) return false;
   for (let i = 0; i < patternParts.length; i += 1) {
     const part = patternParts[i];
     if (part === "[param]") continue;
@@ -234,7 +468,10 @@ function main() {
   const missingApi: Array<{ endpoint: string; files: string[] }> = [];
   for (const [endpoint, files] of usage.entries()) {
     if (apiRoutesNormalized.includes(endpoint)) continue;
-    const matched = apiRoutesNormalized.some((candidate) => matchesEndpointPattern(endpoint, candidate));
+    const matched = apiRoutesNormalized.some(
+      (candidate) =>
+        matchesEndpointPattern(endpoint, candidate) || matchesEndpointPrefix(endpoint, candidate),
+    );
     if (!matched) {
       if (MISSING_API_ALLOWLIST.has(endpoint)) continue;
       missingApi.push({ endpoint, files: Array.from(files).sort() });

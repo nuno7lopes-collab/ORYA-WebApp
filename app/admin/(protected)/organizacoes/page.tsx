@@ -346,6 +346,7 @@ export default function AdminOrganizacoesPage() {
   const [selectedOrgId, setSelectedOrgId] = useState<number | string | null>(null);
   const [updatingId, setUpdatingId] = useState<number | string | null>(null);
   const [updatingEmailId, setUpdatingEmailId] = useState<number | string | null>(null);
+  const [updatingPaymentsModeId, setUpdatingPaymentsModeId] = useState<number | string | null>(null);
   const [refreshingPayments, setRefreshingPayments] = useState(false);
   const [actionError, setActionError] = useState<
     { scope: string; code?: string | null; requestId?: string | null } | null
@@ -786,6 +787,68 @@ export default function AdminOrganizacoesPage() {
       });
     } finally {
       setUpdatingEmailId(null);
+    }
+  }
+
+  async function updatePaymentsMode(
+    organizationId: number | string,
+    paymentsMode: "PLATFORM" | "CONNECT",
+  ) {
+    const modeLabel = paymentsMode === "PLATFORM" ? "Pagamentos ORYA" : "Pagamentos Connect";
+    if (!window.confirm(`Confirmas alterar o modo de pagamentos para "${modeLabel}"?`)) {
+      return;
+    }
+    try {
+      setUpdatingPaymentsModeId(organizationId);
+      setActionError(null);
+      const requestId = makeRequestId();
+      const res = await fetch("/api/admin/organizacoes/update-payments-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
+        body: JSON.stringify({ organizationId, paymentsMode }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            error?: string;
+            requestId?: string | null;
+            organization?: { id: number | string; orgType?: string | null };
+          }
+        | null;
+      if (!res.ok || !data?.ok) {
+        const code = data?.error ?? "INTERNAL_ERROR";
+        const resolvedRequestId = data?.requestId ?? requestId;
+        logAdminError("update-payments-mode", code);
+        setActionError({ scope: "payments", code, requestId: resolvedRequestId });
+        recordLastAction(organizationId, "Atualizar modo de pagamentos", "ERROR", {
+          code,
+          requestId: resolvedRequestId,
+        });
+        return;
+      }
+      const nextOrgType =
+        data.organization?.orgType ?? (paymentsMode === "PLATFORM" ? "PLATFORM" : "EXTERNAL");
+      setOrganizations((prev) =>
+        prev.map((org) =>
+          String(org.id) === String(organizationId)
+            ? {
+                ...org,
+                orgType: nextOrgType,
+              }
+            : org,
+        ),
+      );
+      recordLastAction(organizationId, "Atualizar modo de pagamentos", "OK", {
+        requestId: data?.requestId ?? requestId,
+      });
+    } catch (err) {
+      logAdminError("update-payments-mode", "INTERNAL_ERROR");
+      setActionError({ scope: "payments", code: "INTERNAL_ERROR" });
+      recordLastAction(organizationId, "Atualizar modo de pagamentos", "ERROR", {
+        code: "INTERNAL_ERROR",
+      });
+    } finally {
+      setUpdatingPaymentsModeId(null);
     }
   }
 
@@ -1416,10 +1479,20 @@ export default function AdminOrganizacoesPage() {
                       </button>
                       <button
                         type="button"
-                        disabled
-                        className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-white/40"
+                        disabled={updatingPaymentsModeId === selectedOrganization.id}
+                        onClick={() =>
+                          updatePaymentsMode(
+                            selectedOrganization.id,
+                            selectedOrganization.orgType === "PLATFORM" ? "CONNECT" : "PLATFORM",
+                          )
+                        }
+                        className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-white/70 hover:bg-white/10 disabled:opacity-50"
                       >
-                        Bloquear payouts (breve)
+                        {updatingPaymentsModeId === selectedOrganization.id
+                          ? "A atualizar…"
+                          : selectedOrganization.orgType === "PLATFORM"
+                            ? "Mudar para Connect"
+                            : "Mudar para ORYA"}
                       </button>
                     </div>
                     {actionError?.scope === "payments" && (
