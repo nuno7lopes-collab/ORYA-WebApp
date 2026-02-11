@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
-import { publishChatEvent } from "@/lib/chat/redis";
+import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ADMIN_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN"]);
@@ -86,6 +86,9 @@ async function _POST(req: NextRequest, context: { params: { requestId: string } 
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
+    }
+    if (isChatRedisUnavailableError(err)) {
+      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/chat/channel-requests/[id]/approve error:", err);
     return jsonWrap({ ok: false, error: "Erro ao aprovar pedido." }, { status: 500 });

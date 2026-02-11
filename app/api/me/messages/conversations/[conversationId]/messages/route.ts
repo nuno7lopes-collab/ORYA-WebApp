@@ -7,7 +7,12 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
-import { publishChatEvent, isChatRedisAvailable, isChatUserOnline } from "@/lib/chat/redis";
+import {
+  isChatRedisAvailable,
+  isChatRedisUnavailableError,
+  isChatUserOnline,
+  publishChatEvent,
+} from "@/lib/chat/redis";
 import { enqueueNotification } from "@/domain/notifications/outbox";
 import crypto from "crypto";
 import { ChatConversationContextType, Prisma } from "@prisma/client";
@@ -476,6 +481,9 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ error: "UNAUTHENTICATED" }, { status: 401 });
+    }
+    if (isChatRedisUnavailableError(err)) {
+      return jsonWrap({ error: err.code }, { status: 503 });
     }
     console.error("[api/me/messages/conversations/messages][post] error", err);
     return jsonWrap({ error: "Erro ao enviar mensagem." }, { status: 500 });

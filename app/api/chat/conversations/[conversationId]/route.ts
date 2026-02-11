@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
-import { publishChatEvent } from "@/lib/chat/redis";
+import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _PATCH(req: NextRequest, context: { params: { conversationId: string } }) {
@@ -71,6 +71,9 @@ async function _PATCH(req: NextRequest, context: { params: { conversationId: str
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
+    }
+    if (isChatRedisUnavailableError(err)) {
+      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("PATCH /api/chat/conversations/[id] error:", err);
     return jsonWrap({ ok: false, error: "Erro ao atualizar conversa." }, { status: 500 });

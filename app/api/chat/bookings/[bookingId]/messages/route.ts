@@ -8,7 +8,12 @@ import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
-import { publishChatEvent, isChatRedisAvailable, isChatUserOnline } from "@/lib/chat/redis";
+import {
+  isChatRedisAvailable,
+  isChatRedisUnavailableError,
+  isChatUserOnline,
+  publishChatEvent,
+} from "@/lib/chat/redis";
 import { enqueueNotification } from "@/domain/notifications/outbox";
 import { OrganizationMemberRole } from "@prisma/client";
 import crypto from "crypto";
@@ -357,6 +362,9 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
+    }
+    if (isChatRedisUnavailableError(err)) {
+      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/chat/bookings/messages error:", err);
     return jsonWrap({ ok: false, error: "Erro ao enviar mensagem." }, { status: 500 });

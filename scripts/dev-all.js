@@ -467,6 +467,11 @@ function startDeferredServices() {
   const startRedis = parseBool(process.env.START_REDIS, true);
   const startStripe = parseBool(process.env.START_STRIPE, true);
   const startCron = parseBool(process.env.START_CRON, true);
+  const redisPort = process.env.REDIS_PORT || "6379";
+
+  if (startRedis && !process.env.REDIS_URL) {
+    process.env.REDIS_URL = `redis://127.0.0.1:${redisPort}`;
+  }
 
   if (startCron) {
     const cronSkip = new Set(parseList(process.env.CRON_SKIP));
@@ -487,17 +492,17 @@ function startDeferredServices() {
     children.push(run("worker", npmCmd, ["run", "worker"]));
   }
 
+  if (startRedis) {
+    children.push(run("redis", redisCmd, ["--port", redisPort]));
+  }
+
   if (startChatWs) {
     const chatWsEnv = {
       CHAT_POLLING_ONLY: "0",
       NEXT_PUBLIC_CHAT_POLLING_ONLY: "0",
+      ...(process.env.REDIS_URL ? { REDIS_URL: process.env.REDIS_URL } : {}),
     };
     children.push(run("chat-ws", npmCmd, ["run", "chat:ws"], chatWsEnv));
-  }
-
-  if (startRedis) {
-    const redisPort = process.env.REDIS_PORT || "6379";
-    children.push(run("redis", redisCmd, ["--port", redisPort]));
   }
 
   if (startStripe) {

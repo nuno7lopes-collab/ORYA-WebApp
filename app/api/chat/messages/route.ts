@@ -11,7 +11,12 @@ import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatPollingOnly, isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
-import { publishChatEvent, isChatRedisAvailable, isChatUserOnline } from "@/lib/chat/redis";
+import {
+  isChatRedisAvailable,
+  isChatRedisUnavailableError,
+  isChatUserOnline,
+  publishChatEvent,
+} from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   CHAT_MAX_ATTACHMENT_BYTES,
@@ -558,6 +563,12 @@ async function _POST(req: NextRequest) {
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
+    }
+    if (isChatRedisUnavailableError(err)) {
+      return jsonWrap(
+        { ok: false, error: err.code },
+        { status: 503 },
+      );
     }
     console.error("POST /api/chat/messages error:", err);
     return jsonWrap({ ok: false, error: "Erro ao enviar mensagem." }, { status: 500 });

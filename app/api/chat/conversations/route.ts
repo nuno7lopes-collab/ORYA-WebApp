@@ -8,7 +8,7 @@ import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
-import { publishChatEvent } from "@/lib/chat/redis";
+import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseLimit(value: string | null) {
@@ -207,6 +207,9 @@ async function _GET(req: NextRequest) {
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
+    if (isChatRedisUnavailableError(err)) {
+      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
+    }
     console.error("GET /api/chat/conversations error:", err);
     return jsonWrap({ ok: false, error: "Erro ao carregar conversas." }, { status: 500 });
   }
@@ -326,6 +329,9 @@ async function _POST(req: NextRequest) {
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
+    }
+    if (isChatRedisUnavailableError(err)) {
+      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/chat/conversations error:", err);
     return jsonWrap({ ok: false, error: "Erro ao criar conversa." }, { status: 500 });

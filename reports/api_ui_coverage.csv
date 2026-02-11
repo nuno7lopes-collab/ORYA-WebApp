@@ -2,66 +2,74 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/address/autocomplete,app/api/address/autocomplete/route.ts,public,covered,2,apps/mobile/features/discover/location.ts; lib/geo/client.ts
 /api/address/details,app/api/address/details/route.ts,public,covered,2,apps/mobile/features/discover/location.ts; lib/geo/client.ts
 /api/address/reverse,app/api/address/reverse/route.ts,public,covered,1,lib/geo/client.ts
-/api/admin/config/platform-email,app/api/admin/config/platform-email/route.ts,public,covered,3,app/admin/config/platform-email/page.tsx; app/admin/organizacoes/page.tsx; app/admin/settings/page.tsx
+/api/admin/audit/list,app/api/admin/audit/list/route.ts,public,orphan,0,
+/api/admin/config/platform-email,app/api/admin/config/platform-email/route.ts,public,covered,3,app/admin/(protected)/config/platform-email/page.tsx; app/admin/(protected)/organizacoes/page.tsx; app/admin/(protected)/settings/page.tsx
 /api/admin/data/purge,app/api/admin/data/purge/route.ts,public,covered,1,app/admin/components/AdminDataPurgeTools.tsx
-/api/admin/eventos/list,app/api/admin/eventos/list/route.ts,public,covered,1,app/admin/eventos/page.tsx
-/api/admin/eventos/purge,app/api/admin/eventos/purge/route.ts,public,covered,1,app/admin/eventos/page.tsx
+/api/admin/eventos/list,app/api/admin/eventos/list/route.ts,public,covered,1,app/admin/(protected)/eventos/page.tsx
+/api/admin/eventos/purge,app/api/admin/eventos/purge/route.ts,public,covered,1,app/admin/(protected)/eventos/page.tsx
 /api/admin/eventos/update-status,app/api/admin/eventos/update-status/route.ts,public,orphan,0,
-/api/admin/fees,app/api/admin/fees/route.ts,public,covered,1,app/admin/settings/page.tsx
-/api/admin/infra/alerts/status,app/api/admin/infra/alerts/status/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/cost/summary,app/api/admin/infra/cost/summary/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/deploy,app/api/admin/infra/deploy/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/hard-pause,app/api/admin/infra/hard-pause/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/migrate,app/api/admin/infra/migrate/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/mode,app/api/admin/infra/mode/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/resume,app/api/admin/infra/resume/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/rotate-secrets,app/api/admin/infra/rotate-secrets/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/soft-pause,app/api/admin/infra/soft-pause/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/start,app/api/admin/infra/start/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/status,app/api/admin/infra/status/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/infra/usage/summary,app/api/admin/infra/usage/summary/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/mfa/enroll,app/api/admin/mfa/enroll/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/mfa/reset,app/api/admin/mfa/reset/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/mfa/session,app/api/admin/mfa/session/route.ts,public,covered,1,app/admin/components/AdminLayout.tsx
-/api/admin/mfa/status,app/api/admin/mfa/status/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/mfa/verify,app/api/admin/mfa/verify/route.ts,public,covered,1,app/admin/infra/InfraClient.tsx
-/api/admin/ops/analytics-rollups,app/api/admin/ops/analytics-rollups/route.ts,public,covered,1,app/admin/organizacoes/page.tsx
-/api/admin/organizacoes/event-log,app/api/admin/organizacoes/event-log/route.ts,public,covered,1,app/admin/organizacoes/page.tsx
-/api/admin/organizacoes/list,app/api/admin/organizacoes/list/route.ts,public,covered,1,app/admin/organizacoes/page.tsx
-/api/admin/organizacoes/refresh-payments-status,app/api/admin/organizacoes/refresh-payments-status/route.ts,public,covered,1,app/admin/organizacoes/page.tsx
+/api/admin/fees,app/api/admin/fees/route.ts,public,covered,1,app/admin/(protected)/settings/page.tsx
+/api/admin/infra/alerts/status,app/api/admin/infra/alerts/status/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/cost/summary,app/api/admin/infra/cost/summary/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/deploy,app/api/admin/infra/deploy/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/hard-pause,app/api/admin/infra/hard-pause/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/migrate,app/api/admin/infra/migrate/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/mode,app/api/admin/infra/mode/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/resume,app/api/admin/infra/resume/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/rotate-secrets,app/api/admin/infra/rotate-secrets/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/soft-pause,app/api/admin/infra/soft-pause/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/start,app/api/admin/infra/start/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/status,app/api/admin/infra/status/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/infra/usage/summary,app/api/admin/infra/usage/summary/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
+/api/admin/mfa/enroll,app/api/admin/mfa/enroll/route.ts,public,covered,2,app/admin/(protected)/infra/InfraClient.tsx; app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/mfa/reset,app/api/admin/mfa/reset/route.ts,public,covered,2,app/admin/(protected)/infra/InfraClient.tsx; app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/mfa/session,app/api/admin/mfa/session/route.ts,public,covered,2,app/admin/components/AdminLayout.tsx; app/login/page.tsx
+/api/admin/mfa/status,app/api/admin/mfa/status/route.ts,public,covered,3,app/admin/(protected)/infra/InfraClient.tsx; app/admin/(protected)/settings/page.tsx; app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/mfa/verify,app/api/admin/mfa/verify/route.ts,public,covered,2,app/admin/(protected)/infra/InfraClient.tsx; app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/ops/analytics-rollups,app/api/admin/ops/analytics-rollups/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
+/api/admin/organizacoes/event-log,app/api/admin/organizacoes/event-log/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
+/api/admin/organizacoes/list,app/api/admin/organizacoes/list/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
+/api/admin/organizacoes/refresh-payments-status,app/api/admin/organizacoes/refresh-payments-status/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
 /api/admin/organizacoes/update-payments-mode,app/api/admin/organizacoes/update-payments-mode/route.ts,public,orphan,0,
-/api/admin/organizacoes/update-status,app/api/admin/organizacoes/update-status/route.ts,public,covered,1,app/admin/organizacoes/page.tsx
-/api/admin/organizacoes/verify-platform-email,app/api/admin/organizacoes/verify-platform-email/route.ts,public,covered,1,app/admin/organizacoes/page.tsx
-/api/admin/payments/dispute,app/api/admin/payments/dispute/route.ts,public,covered,1,app/admin/finance/page.tsx
+/api/admin/organizacoes/update-status,app/api/admin/organizacoes/update-status/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
+/api/admin/organizacoes/verify-platform-email,app/api/admin/organizacoes/verify-platform-email/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
+/api/admin/payments/dispute,app/api/admin/payments/dispute/route.ts,public,covered,1,app/admin/(protected)/finance/page.tsx
 /api/admin/payments/export,app/api/admin/payments/export/route.ts,public,covered,1,app/admin/components/AdminTopActions.tsx
-/api/admin/payments/list,app/api/admin/payments/list/route.ts,public,covered,1,app/admin/finance/page.tsx
-/api/admin/payments/overview,app/api/admin/payments/overview/route.ts,public,covered,1,app/admin/finance/page.tsx
-/api/admin/payments/refund,app/api/admin/payments/refund/route.ts,public,covered,2,app/admin/finance/page.tsx; app/admin/tickets/page.tsx
-/api/admin/payments/reprocess,app/api/admin/payments/reprocess/route.ts,public,covered,2,app/admin/components/PaymentTools.tsx; app/admin/finance/page.tsx
+/api/admin/payments/list,app/api/admin/payments/list/route.ts,public,covered,1,app/admin/(protected)/finance/page.tsx
+/api/admin/payments/overview,app/api/admin/payments/overview/route.ts,public,covered,1,app/admin/(protected)/finance/page.tsx
+/api/admin/payments/refund,app/api/admin/payments/refund/route.ts,public,covered,2,app/admin/(protected)/finance/page.tsx; app/admin/(protected)/tickets/page.tsx
+/api/admin/payments/reprocess,app/api/admin/payments/reprocess/route.ts,public,covered,2,app/admin/(protected)/finance/page.tsx; app/admin/components/PaymentTools.tsx
 /api/admin/payouts/[id],app/api/admin/payouts/[id]/route.ts,public,orphan,0,
 /api/admin/payouts/[id]/block,app/api/admin/payouts/[id]/block/route.ts,public,orphan,0,
 /api/admin/payouts/[id]/cancel,app/api/admin/payouts/[id]/cancel/route.ts,public,orphan,0,
 /api/admin/payouts/[id]/force-release,app/api/admin/payouts/[id]/force-release/route.ts,public,orphan,0,
 /api/admin/payouts/[id]/unblock,app/api/admin/payouts/[id]/unblock/route.ts,public,orphan,0,
 /api/admin/payouts/list,app/api/admin/payouts/list/route.ts,public,orphan,0,
-/api/admin/refunds/list,app/api/admin/refunds/list/route.ts,public,covered,1,app/admin/finance/page.tsx
-/api/admin/refunds/retry,app/api/admin/refunds/retry/route.ts,public,covered,1,app/admin/finance/page.tsx
+/api/admin/refunds/list,app/api/admin/refunds/list/route.ts,public,covered,1,app/admin/(protected)/finance/page.tsx
+/api/admin/refunds/retry,app/api/admin/refunds/retry/route.ts,public,covered,1,app/admin/(protected)/finance/page.tsx
 /api/admin/tickets/export,app/api/admin/tickets/export/route.ts,public,covered,1,app/admin/components/AdminTopActions.tsx
-/api/admin/tickets/list,app/api/admin/tickets/list/route.ts,public,covered,1,app/admin/tickets/page.tsx
+/api/admin/tickets/list,app/api/admin/tickets/list/route.ts,public,covered,1,app/admin/(protected)/tickets/page.tsx
 /api/admin/users/purge-pending,app/api/admin/users/purge-pending/route.ts,public,orphan,0,
 /api/admin/utilizadores/list,app/api/admin/utilizadores/list/route.ts,public,orphan,0,
-/api/admin/utilizadores/manage,app/api/admin/utilizadores/manage/route.ts,public,covered,1,app/admin/utilizadores/UsersTableClient.tsx
+/api/admin/utilizadores/manage,app/api/admin/utilizadores/manage/route.ts,public,covered,1,app/admin/(protected)/utilizadores/UsersTableClient.tsx
 /api/auth/apple/link,app/api/auth/apple/link/route.ts,public,covered,1,app/auth/callback/page.tsx
-/api/auth/check-email,app/api/auth/check-email/route.ts,public,covered,1,apps/mobile/app/auth/email.tsx
+/api/auth/check-email,app/api/auth/check-email/route.ts,public,orphan,0,
 /api/auth/clear,app/api/auth/clear/route.ts,public,orphan,0,
 /api/auth/login,app/api/auth/login/route.ts,public,covered,2,app/components/autenticação/AuthModal.tsx; app/components/checkout/AuthWall.tsx
-/api/auth/logout,app/api/auth/logout/route.ts,public,covered,4,app/admin/components/AdminLayout.tsx; app/components/Navbar.tsx; app/me/settings/page.tsx; app/organizacao/OrganizationTopBar.tsx
+/api/auth/logout,app/api/auth/logout/route.ts,public,covered,5,app/admin/components/AdminLayout.tsx; app/admin/forbidden/ForbiddenClient.tsx; app/components/Navbar.tsx; app/me/settings/page.tsx; app/organizacao/OrganizationTopBar.tsx
 /api/auth/me,app/api/auth/me/route.ts,public,covered,2,app/components/autenticação/AuthModal.tsx; app/hooks/useUser.ts
 /api/auth/password/reset-request,app/api/auth/password/reset-request/route.ts,public,covered,1,app/components/autenticação/AuthModal.tsx
 /api/auth/refresh,app/api/auth/refresh/route.ts,public,covered,2,app/components/autenticação/AuthModal.tsx; app/components/checkout/AuthWall.tsx
 /api/auth/send-otp,app/api/auth/send-otp/route.ts,public,covered,2,app/components/autenticação/AuthModal.tsx; app/components/checkout/AuthWall.tsx
 /api/chat/attachments/presign,app/api/chat/attachments/presign/route.ts,public,covered,2,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx; app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
 /api/chat/blocks,app/api/chat/blocks/route.ts,public,covered,1,app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+/api/chat/bookings/[bookingId]/messages,app/api/chat/bookings/[bookingId]/messages/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/page.tsx
+/api/chat/channel-requests,app/api/chat/channel-requests/route.ts,public,orphan,0,
+/api/chat/channel-requests/[requestId]/approve,app/api/chat/channel-requests/[requestId]/approve/route.ts,public,orphan,0,
+/api/chat/channel-requests/[requestId]/reject,app/api/chat/channel-requests/[requestId]/reject/route.ts,public,orphan,0,
+/api/chat/contact-requests,app/api/chat/contact-requests/route.ts,public,covered,1,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
+/api/chat/contact-requests/[requestId]/approve,app/api/chat/contact-requests/[requestId]/approve/route.ts,public,covered,1,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
+/api/chat/contact-requests/[requestId]/reject,app/api/chat/contact-requests/[requestId]/reject/route.ts,public,covered,1,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
 /api/chat/conversations,app/api/chat/conversations/route.ts,public,covered,2,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx; app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
 /api/chat/conversations/[conversationId],app/api/chat/conversations/[conversationId]/route.ts,public,covered,1,app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
 /api/chat/conversations/[conversationId]/leave,app/api/chat/conversations/[conversationId]/leave/route.ts,public,covered,1,app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
@@ -77,6 +85,8 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/chat/search,app/api/chat/search/route.ts,public,covered,1,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
 /api/chat/threads,app/api/chat/threads/route.ts,public,covered,1,apps/mobile/features/chat/api.ts
 /api/chat/threads/[threadId]/messages,app/api/chat/threads/[threadId]/messages/route.ts,public,covered,1,apps/mobile/features/chat/api.ts
+/api/chat/threads/[threadId]/messages/[messageId],app/api/chat/threads/[threadId]/messages/[messageId]/route.ts,public,covered,1,apps/mobile/features/chat/api.ts
+/api/chat/threads/[threadId]/notifications,app/api/chat/threads/[threadId]/notifications/route.ts,public,covered,1,apps/mobile/features/chat/api.ts
 /api/chat/threads/event,app/api/chat/threads/event/route.ts,public,covered,1,apps/mobile/features/chat/api.ts
 /api/checkout/resale,app/api/checkout/resale/route.ts,public,covered,1,app/resale/[id]/page.tsx
 /api/checkout/status,app/api/checkout/status/route.ts,public,covered,2,app/components/checkout/Step3Sucesso.tsx; apps/mobile/features/checkout/api.ts
@@ -84,13 +94,14 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/cobrancas/[token]/checkout,app/api/cobrancas/[token]/checkout/route.ts,public,covered,1,app/cobrancas/[token]/ChargeClient.tsx
 /api/convites/[token],app/api/convites/[token]/route.ts,public,covered,1,app/convites/[token]/InviteClient.tsx
 /api/convites/[token]/checkout,app/api/convites/[token]/checkout/route.ts,public,covered,1,app/convites/[token]/InviteClient.tsx
+/api/crm/engagement,app/api/crm/engagement/route.ts,public,covered,2,app/components/crm/CrmEngagementTracker.tsx; apps/mobile/lib/crm.ts
 /api/cron/bookings/cleanup,app/api/cron/bookings/cleanup/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/chat/maintenance,app/api/cron/chat/maintenance/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/creditos/expire,app/api/cron/creditos/expire/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/crm/campanhas,app/api/cron/crm/campanhas/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/crm/rebuild,app/api/cron/crm/rebuild/route.ts,cron,exempt,1,lib/cron/jobs.ts
+/api/cron/entitlements/qr-cleanup,app/api/cron/entitlements/qr-cleanup/route.ts,cron,exempt,0,
 /api/cron/loyalty/expire,app/api/cron/loyalty/expire/route.ts,cron,exempt,1,lib/cron/jobs.ts
-/api/cron/notifications/weekly-digest,app/api/cron/notifications/weekly-digest/route.ts,cron,exempt,0,
 /api/cron/operations,app/api/cron/operations/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/padel/expire,app/api/cron/padel/expire/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/padel/matchmaking,app/api/cron/padel/matchmaking/route.ts,cron,exempt,1,lib/cron/jobs.ts
@@ -99,10 +110,11 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/cron/padel/tournament-eve,app/api/cron/padel/tournament-eve/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/padel/waitlist,app/api/cron/padel/waitlist/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/cron/payouts/release,app/api/cron/payouts/release/route.ts,cron,exempt,1,lib/cron/jobs.ts
+/api/cron/repair-usernames,app/api/cron/repair-usernames/route.ts,cron,exempt,0,
 /api/cron/reservations/cleanup,app/api/cron/reservations/cleanup/route.ts,cron,exempt,1,lib/cron/jobs.ts
 /api/email/verified,app/api/email/verified/route.ts,public,orphan,0,
-/api/eventos/[slug]/invite-token,app/api/eventos/[slug]/invite-token/route.ts,public,covered,1,app/eventos/[slug]/InviteGateClient.tsx
-/api/eventos/[slug]/invites/check,app/api/eventos/[slug]/invites/check/route.ts,public,covered,1,app/eventos/[slug]/InviteGateClient.tsx
+/api/eventos/[slug]/invite-token,app/api/eventos/[slug]/invite-token/route.ts,public,covered,2,app/eventos/[slug]/InviteGateClient.tsx; apps/mobile/app/event/[slug].tsx
+/api/eventos/[slug]/invites/check,app/api/eventos/[slug]/invites/check/route.ts,public,covered,2,app/eventos/[slug]/InviteGateClient.tsx; apps/mobile/app/event/[slug].tsx
 /api/eventos/[slug]/public,app/api/eventos/[slug]/public/route.ts,public,covered,1,apps/mobile/features/events/api.ts
 /api/eventos/[slug]/resales,app/api/eventos/[slug]/resales/route.ts,public,orphan,0,
 /api/eventos/list,app/api/eventos/list/route.ts,public,covered,1,apps/mobile/features/agora/api.ts
@@ -111,7 +123,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/events/favorites/notify,app/api/events/favorites/notify/route.ts,public,covered,1,apps/mobile/features/favorites/api.ts
 /api/events/favorites/toggle,app/api/events/favorites/toggle/route.ts,public,covered,1,apps/mobile/features/favorites/api.ts
 /api/explorar/eventos/[slug],app/api/explorar/eventos/[slug]/route.ts,public,orphan,0,
-/api/explorar/list,app/api/explorar/list/route.ts,public,covered,3,app/components/Navbar.tsx; app/explorar/_components/ExplorarContent.tsx; apps/mobile/features/discover/api.ts
+/api/explorar/list,app/api/explorar/list/route.ts,public,covered,3,app/components/Navbar.tsx; app/descobrir/_explorar/ExplorarContent.tsx; apps/mobile/features/discover/api.ts
 /api/geo/autocomplete,app/api/geo/autocomplete/route.ts,public,orphan,0,
 /api/geo/details,app/api/geo/details/route.ts,public,orphan,0,
 /api/geo/reverse,app/api/geo/reverse/route.ts,public,orphan,0,
@@ -129,6 +141,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/internal/ops/health,app/api/internal/ops/health/route.ts,internal,exempt,0,
 /api/internal/ops/outbox/replay,app/api/internal/ops/outbox/replay/route.ts,internal,exempt,0,
 /api/internal/ops/outbox/summary,app/api/internal/ops/outbox/summary/route.ts,internal,exempt,0,
+/api/internal/ops/padel/cleanup,app/api/internal/ops/padel/cleanup/route.ts,internal,exempt,0,
 /api/internal/ops/padel/integrity,app/api/internal/ops/padel/integrity/route.ts,internal,exempt,0,
 /api/internal/ops/slo,app/api/internal/ops/slo/route.ts,internal,exempt,0,
 /api/internal/outbox/dlq,app/api/internal/outbox/dlq/route.ts,internal,exempt,0,
@@ -148,46 +161,63 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/me/agenda,app/api/me/agenda/route.ts,public,covered,5,app/agora/page.tsx; app/components/home/HomePersonalized.tsx; app/me/carteira/WalletHubClient.tsx; app/me/page.tsx; apps/mobile/features/profile/api.ts
 /api/me/claim-guest,app/api/me/claim-guest/route.ts,public,covered,2,app/auth/callback/page.tsx; app/hooks/useUser.ts
 /api/me/consents,app/api/me/consents/route.ts,public,covered,2,app/me/settings/page.tsx; apps/mobile/features/settings/api.ts
-/api/me/contact-phone,app/api/me/contact-phone/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; apps/mobile/features/settings/api.ts
+/api/me/contact-phone,app/api/me/contact-phone/route.ts,public,covered,3,app/[username]/_components/ReservasBookingClient.tsx; apps/mobile/app/service/[id]/booking.tsx; apps/mobile/features/settings/api.ts
 /api/me/creditos,app/api/me/creditos/route.ts,public,orphan,0,
 /api/me/dsar/export,app/api/me/dsar/export/route.ts,public,orphan,0,
+/api/me/events/signals,app/api/me/events/signals/route.ts,public,covered,1,apps/mobile/features/events/signals.ts
 /api/me/inscricoes,app/api/me/inscricoes/route.ts,public,orphan,0,
 /api/me/inscricoes/[id],app/api/me/inscricoes/[id]/route.ts,public,orphan,0,
 /api/me/location/consent,app/api/me/location/consent/route.ts,public,covered,1,apps/mobile/features/onboarding/api.ts
 /api/me/loyalty/carteira,app/api/me/loyalty/carteira/route.ts,public,orphan,0,
 /api/me/loyalty/recompensas,app/api/me/loyalty/recompensas/route.ts,public,covered,1,app/me/carteira/WalletHubClient.tsx
 /api/me/loyalty/recompensas/[rewardId]/resgatar,app/api/me/loyalty/recompensas/[rewardId]/resgatar/route.ts,public,covered,1,app/me/carteira/WalletHubClient.tsx
-/api/me/notifications,app/api/me/notifications/route.ts,public,orphan,0,
+/api/me/messages/bookings/[bookingId]/messages,app/api/me/messages/bookings/[bookingId]/messages/route.ts,public,orphan,0,
+/api/me/messages/conversations/[conversationId]/messages,app/api/me/messages/conversations/[conversationId]/messages/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/conversations/[conversationId]/messages/[messageId],app/api/me/messages/conversations/[conversationId]/messages/[messageId]/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/conversations/[conversationId]/notifications,app/api/me/messages/conversations/[conversationId]/notifications/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/conversations/[conversationId]/read,app/api/me/messages/conversations/[conversationId]/read/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/inbox,app/api/me/messages/inbox/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/invites,app/api/me/messages/invites/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/invites/[inviteId]/accept,app/api/me/messages/invites/[inviteId]/accept/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/requests,app/api/me/messages/requests/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/requests/[requestId]/accept,app/api/me/messages/requests/[requestId]/accept/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/messages/requests/[requestId]/decline,app/api/me/messages/requests/[requestId]/decline/route.ts,public,covered,1,apps/mobile/features/messages/api.ts
+/api/me/notifications,app/api/me/notifications/route.ts,public,covered,2,app/social/page.tsx; apps/mobile/features/notifications/api.ts
 /api/me/notifications/[id]/read,app/api/me/notifications/[id]/read/route.ts,public,orphan,0,
-/api/me/notifications/feed,app/api/me/notifications/feed/route.ts,public,covered,1,apps/mobile/features/notifications/api.ts
+/api/me/notifications/feed,app/api/me/notifications/feed/route.ts,public,covered,5,app/components/Navbar.tsx; app/components/mobile/MobileTopBar.tsx; app/components/notifications/NotificationBell.tsx; app/social/page.tsx; apps/mobile/features/notifications/api.ts
 /api/me/notifications/mute,app/api/me/notifications/mute/route.ts,public,covered,1,apps/mobile/features/notifications/api.ts
 /api/me/purchases,app/api/me/purchases/route.ts,public,covered,1,app/me/compras/page.tsx
-/api/me/push-tokens,app/api/me/push-tokens/route.ts,public,covered,3,apps/mobile/app/notifications/index.tsx; apps/mobile/app/settings/index.tsx; apps/mobile/components/notifications/PushGate.tsx
+/api/me/purchases/store,app/api/me/purchases/store/route.ts,public,orphan,0,
+/api/me/purchases/store/[orderId],app/api/me/purchases/store/[orderId]/route.ts,public,orphan,0,
+/api/me/purchases/store/[orderId]/invoice,app/api/me/purchases/store/[orderId]/invoice/route.ts,public,orphan,0,
+/api/me/purchases/store/[orderId]/receipt,app/api/me/purchases/store/[orderId]/receipt/route.ts,public,orphan,0,
+/api/me/push-tokens,app/api/me/push-tokens/route.ts,public,covered,2,apps/mobile/app/settings/index.tsx; apps/mobile/components/notifications/PushGate.tsx
 /api/me/reservas,app/api/me/reservas/route.ts,public,covered,1,app/me/reservas/page.tsx
-/api/me/reservas/[id],app/api/me/reservas/[id]/route.ts,public,covered,1,app/[username]/_components/ReservasBookingClient.tsx
+/api/me/reservas/[id],app/api/me/reservas/[id]/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; apps/mobile/app/checkout/index.tsx
 /api/me/reservas/[id]/calendar.ics,app/api/me/reservas/[id]/calendar.ics/route.ts,public,orphan,0,
 /api/me/reservas/[id]/cancel,app/api/me/reservas/[id]/cancel/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; app/me/reservas/page.tsx
 /api/me/reservas/[id]/cancel/preview,app/api/me/reservas/[id]/cancel/preview/route.ts,public,covered,1,app/me/reservas/page.tsx
 /api/me/reservas/[id]/invites,app/api/me/reservas/[id]/invites/route.ts,public,covered,1,app/me/reservas/page.tsx
 /api/me/reservas/[id]/reschedule,app/api/me/reservas/[id]/reschedule/route.ts,public,covered,1,app/me/reservas/page.tsx
+/api/me/reservas/[id]/reschedule/respond,app/api/me/reservas/[id]/reschedule/respond/route.ts,public,covered,1,app/me/reservas/page.tsx
 /api/me/reservas/[id]/review,app/api/me/reservas/[id]/review/route.ts,public,covered,1,app/me/reservas/page.tsx
 /api/me/reservas/[id]/split,app/api/me/reservas/[id]/split/route.ts,public,covered,1,app/me/reservas/page.tsx
 /api/me/settings/delete,app/api/me/settings/delete/route.ts,public,covered,2,app/me/settings/page.tsx; apps/mobile/app/settings/index.tsx
 /api/me/settings/delete/cancel,app/api/me/settings/delete/cancel/route.ts,public,orphan,0,
 /api/me/settings/email,app/api/me/settings/email/route.ts,public,covered,2,app/me/settings/page.tsx; apps/mobile/features/settings/api.ts
 /api/me/settings/save,app/api/me/settings/save/route.ts,public,covered,2,app/me/settings/page.tsx; apps/mobile/features/settings/api.ts
-/api/me/store,app/api/me/store/route.ts,public,covered,1,app/me/loja/page.tsx
-/api/me/store/bundles,app/api/me/store/bundles/route.ts,public,covered,1,app/me/loja/page.tsx
+/api/me/store,app/api/me/store/route.ts,public,orphan,0,
+/api/me/store/bundles,app/api/me/store/bundles/route.ts,public,orphan,0,
 /api/me/store/bundles/[id],app/api/me/store/bundles/[id]/route.ts,public,orphan,0,
 /api/me/store/bundles/[id]/items,app/api/me/store/bundles/[id]/items/route.ts,public,orphan,0,
 /api/me/store/bundles/[id]/items/[itemId],app/api/me/store/bundles/[id]/items/[itemId]/route.ts,public,orphan,0,
-/api/me/store/categories,app/api/me/store/categories/route.ts,public,covered,1,app/me/loja/page.tsx
+/api/me/store/categories,app/api/me/store/categories/route.ts,public,orphan,0,
 /api/me/store/categories/[id],app/api/me/store/categories/[id]/route.ts,public,orphan,0,
-/api/me/store/orders,app/api/me/store/orders/route.ts,public,covered,1,app/me/loja/page.tsx
+/api/me/store/orders,app/api/me/store/orders/route.ts,public,orphan,0,
 /api/me/store/orders/[orderId],app/api/me/store/orders/[orderId]/route.ts,public,orphan,0,
 /api/me/store/orders/[orderId]/shipments,app/api/me/store/orders/[orderId]/shipments/route.ts,public,orphan,0,
-/api/me/store/overview,app/api/me/store/overview/route.ts,public,covered,1,app/me/loja/page.tsx
-/api/me/store/products,app/api/me/store/products/route.ts,public,covered,1,app/me/loja/page.tsx
+/api/me/store/overview,app/api/me/store/overview/route.ts,public,orphan,0,
+/api/me/store/products,app/api/me/store/products/route.ts,public,orphan,0,
 /api/me/store/products/[id],app/api/me/store/products/[id]/route.ts,public,orphan,0,
 /api/me/store/products/[id]/digital-assets,app/api/me/store/products/[id]/digital-assets/route.ts,public,orphan,0,
 /api/me/store/products/[id]/digital-assets/[assetId],app/api/me/store/products/[id]/digital-assets/[assetId]/route.ts,public,orphan,0,
@@ -206,7 +236,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/me/store/shipments/[shipmentId],app/api/me/store/shipments/[shipmentId]/route.ts,public,orphan,0,
 /api/me/store/shipping/methods/[methodId],app/api/me/store/shipping/methods/[methodId]/route.ts,public,orphan,0,
 /api/me/store/shipping/methods/[methodId]/tiers,app/api/me/store/shipping/methods/[methodId]/tiers/route.ts,public,orphan,0,
-/api/me/store/shipping/settings,app/api/me/store/shipping/settings/route.ts,public,covered,1,app/me/loja/page.tsx
+/api/me/store/shipping/settings,app/api/me/store/shipping/settings/route.ts,public,orphan,0,
 /api/me/store/shipping/tiers/[tierId],app/api/me/store/shipping/tiers/[tierId]/route.ts,public,orphan,0,
 /api/me/store/shipping/zones,app/api/me/store/shipping/zones/route.ts,public,orphan,0,
 /api/me/store/shipping/zones/[zoneId],app/api/me/store/shipping/zones/[zoneId]/route.ts,public,orphan,0,
@@ -214,10 +244,42 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/me/wallet,app/api/me/wallet/route.ts,public,covered,3,app/components/checkout/Step3Sucesso.tsx; app/components/wallet/useWallet.ts; apps/mobile/features/wallet/api.ts
 /api/me/wallet/[entitlementId],app/api/me/wallet/[entitlementId]/route.ts,public,covered,2,app/me/bilhetes/[id]/TicketDetailClient.tsx; apps/mobile/features/wallet/api.ts
 /api/me/wallet/[entitlementId]/pass,app/api/me/wallet/[entitlementId]/pass/route.ts,public,orphan,0,
-/api/notifications,app/api/notifications/route.ts,public,covered,4,app/components/Navbar.tsx; app/components/mobile/MobileTopBar.tsx; app/components/notifications/NotificationBell.tsx; app/social/page.tsx
 /api/notifications/mark-click,app/api/notifications/mark-click/route.ts,public,covered,2,app/components/notifications/NotificationBell.tsx; app/social/page.tsx
 /api/notifications/mark-read,app/api/notifications/mark-read/route.ts,public,covered,3,app/components/notifications/NotificationBell.tsx; app/social/page.tsx; apps/mobile/features/notifications/api.ts
 /api/notifications/prefs,app/api/notifications/prefs/route.ts,public,covered,3,app/me/settings/page.tsx; apps/mobile/app/settings/index.tsx; apps/mobile/features/settings/api.ts
+/api/org/[orgId]/store,app/api/org/[orgId]/store/route.ts,public,covered,1,app/org/[orgId]/loja/page.tsx
+/api/org/[orgId]/store/bundles,app/api/org/[orgId]/store/bundles/route.ts,public,orphan,0,
+/api/org/[orgId]/store/bundles/[id],app/api/org/[orgId]/store/bundles/[id]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/bundles/[id]/items,app/api/org/[orgId]/store/bundles/[id]/items/route.ts,public,orphan,0,
+/api/org/[orgId]/store/bundles/[id]/items/[itemId],app/api/org/[orgId]/store/bundles/[id]/items/[itemId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/categories,app/api/org/[orgId]/store/categories/route.ts,public,orphan,0,
+/api/org/[orgId]/store/categories/[id],app/api/org/[orgId]/store/categories/[id]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/orders,app/api/org/[orgId]/store/orders/route.ts,public,orphan,0,
+/api/org/[orgId]/store/orders/[orderId],app/api/org/[orgId]/store/orders/[orderId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/orders/[orderId]/shipments,app/api/org/[orgId]/store/orders/[orderId]/shipments/route.ts,public,orphan,0,
+/api/org/[orgId]/store/overview,app/api/org/[orgId]/store/overview/route.ts,public,orphan,0,
+/api/org/[orgId]/store/preview,app/api/org/[orgId]/store/preview/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products,app/api/org/[orgId]/store/products/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id],app/api/org/[orgId]/store/products/[id]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/digital-assets,app/api/org/[orgId]/store/products/[id]/digital-assets/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/digital-assets/[assetId],app/api/org/[orgId]/store/products/[id]/digital-assets/[assetId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/images,app/api/org/[orgId]/store/products/[id]/images/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/images/[imageId],app/api/org/[orgId]/store/products/[id]/images/[imageId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/options,app/api/org/[orgId]/store/products/[id]/options/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/options/[optionId],app/api/org/[orgId]/store/products/[id]/options/[optionId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/options/[optionId]/values,app/api/org/[orgId]/store/products/[id]/options/[optionId]/values/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId],app/api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/variants,app/api/org/[orgId]/store/products/[id]/variants/route.ts,public,orphan,0,
+/api/org/[orgId]/store/products/[id]/variants/[variantId],app/api/org/[orgId]/store/products/[id]/variants/[variantId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/settings,app/api/org/[orgId]/store/settings/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipments/[shipmentId],app/api/org/[orgId]/store/shipments/[shipmentId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipping/methods/[methodId],app/api/org/[orgId]/store/shipping/methods/[methodId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipping/methods/[methodId]/tiers,app/api/org/[orgId]/store/shipping/methods/[methodId]/tiers/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipping/settings,app/api/org/[orgId]/store/shipping/settings/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipping/tiers/[tierId],app/api/org/[orgId]/store/shipping/tiers/[tierId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipping/zones,app/api/org/[orgId]/store/shipping/zones/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipping/zones/[zoneId],app/api/org/[orgId]/store/shipping/zones/[zoneId]/route.ts,public,orphan,0,
+/api/org/[orgId]/store/shipping/zones/[zoneId]/methods,app/api/org/[orgId]/store/shipping/zones/[zoneId]/methods/route.ts,public,orphan,0,
 /api/organizacao/agenda,app/api/organizacao/agenda/route.ts,public,orphan,0,
 /api/organizacao/agenda/soft-blocks,app/api/organizacao/agenda/soft-blocks/route.ts,public,orphan,0,
 /api/organizacao/analytics/dimensoes,app/api/organizacao/analytics/dimensoes/route.ts,public,orphan,0,
@@ -263,20 +325,20 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/inscricoes/[id]/export,app/api/organizacao/inscricoes/[id]/export/route.ts,public,covered,1,app/organizacao/(dashboard)/inscricoes/[id]/page.tsx
 /api/organizacao/inscricoes/[id]/submissions,app/api/organizacao/inscricoes/[id]/submissions/route.ts,public,covered,1,app/organizacao/(dashboard)/inscricoes/[id]/page.tsx
 /api/organizacao/inscricoes/[id]/summary,app/api/organizacao/inscricoes/[id]/summary/route.ts,public,covered,1,app/organizacao/(dashboard)/inscricoes/[id]/page.tsx
-/api/organizacao/invites,app/api/organizacao/invites/route.ts,public,covered,1,app/convites/organizacoes/OrganizationInvitesClient.tsx
-/api/organizacao/loja,app/api/organizacao/loja/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
-/api/organizacao/loja/bundles,app/api/organizacao/loja/bundles/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
+/api/organizacao/invites,app/api/organizacao/invites/route.ts,public,covered,2,app/convites/organizacoes/OrganizationInvitesClient.tsx; apps/mobile/features/notifications/api.ts
+/api/organizacao/loja,app/api/organizacao/loja/route.ts,public,orphan,0,
+/api/organizacao/loja/bundles,app/api/organizacao/loja/bundles/route.ts,public,orphan,0,
 /api/organizacao/loja/bundles/[id],app/api/organizacao/loja/bundles/[id]/route.ts,public,orphan,0,
 /api/organizacao/loja/bundles/[id]/items,app/api/organizacao/loja/bundles/[id]/items/route.ts,public,orphan,0,
 /api/organizacao/loja/bundles/[id]/items/[itemId],app/api/organizacao/loja/bundles/[id]/items/[itemId]/route.ts,public,orphan,0,
-/api/organizacao/loja/categories,app/api/organizacao/loja/categories/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
+/api/organizacao/loja/categories,app/api/organizacao/loja/categories/route.ts,public,orphan,0,
 /api/organizacao/loja/categories/[id],app/api/organizacao/loja/categories/[id]/route.ts,public,orphan,0,
-/api/organizacao/loja/orders,app/api/organizacao/loja/orders/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
+/api/organizacao/loja/orders,app/api/organizacao/loja/orders/route.ts,public,orphan,0,
 /api/organizacao/loja/orders/[orderId],app/api/organizacao/loja/orders/[orderId]/route.ts,public,orphan,0,
 /api/organizacao/loja/orders/[orderId]/shipments,app/api/organizacao/loja/orders/[orderId]/shipments/route.ts,public,orphan,0,
-/api/organizacao/loja/overview,app/api/organizacao/loja/overview/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
+/api/organizacao/loja/overview,app/api/organizacao/loja/overview/route.ts,public,orphan,0,
 /api/organizacao/loja/preview,app/api/organizacao/loja/preview/route.ts,public,covered,1,app/organizacao/OrganizationPublicProfilePanel.tsx
-/api/organizacao/loja/products,app/api/organizacao/loja/products/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
+/api/organizacao/loja/products,app/api/organizacao/loja/products/route.ts,public,orphan,0,
 /api/organizacao/loja/products/[id],app/api/organizacao/loja/products/[id]/route.ts,public,orphan,0,
 /api/organizacao/loja/products/[id]/digital-assets,app/api/organizacao/loja/products/[id]/digital-assets/route.ts,public,orphan,0,
 /api/organizacao/loja/products/[id]/digital-assets/[assetId],app/api/organizacao/loja/products/[id]/digital-assets/[assetId]/route.ts,public,orphan,0,
@@ -288,11 +350,11 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId],app/api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId]/route.ts,public,orphan,0,
 /api/organizacao/loja/products/[id]/variants,app/api/organizacao/loja/products/[id]/variants/route.ts,public,orphan,0,
 /api/organizacao/loja/products/[id]/variants/[variantId],app/api/organizacao/loja/products/[id]/variants/[variantId]/route.ts,public,orphan,0,
-/api/organizacao/loja/settings,app/api/organizacao/loja/settings/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
+/api/organizacao/loja/settings,app/api/organizacao/loja/settings/route.ts,public,orphan,0,
 /api/organizacao/loja/shipments/[shipmentId],app/api/organizacao/loja/shipments/[shipmentId]/route.ts,public,orphan,0,
 /api/organizacao/loja/shipping/methods/[methodId],app/api/organizacao/loja/shipping/methods/[methodId]/route.ts,public,orphan,0,
 /api/organizacao/loja/shipping/methods/[methodId]/tiers,app/api/organizacao/loja/shipping/methods/[methodId]/tiers/route.ts,public,orphan,0,
-/api/organizacao/loja/shipping/settings,app/api/organizacao/loja/shipping/settings/route.ts,public,covered,1,app/organizacao/(dashboard)/loja/page.tsx
+/api/organizacao/loja/shipping/settings,app/api/organizacao/loja/shipping/settings/route.ts,public,orphan,0,
 /api/organizacao/loja/shipping/tiers/[tierId],app/api/organizacao/loja/shipping/tiers/[tierId]/route.ts,public,orphan,0,
 /api/organizacao/loja/shipping/zones,app/api/organizacao/loja/shipping/zones/route.ts,public,orphan,0,
 /api/organizacao/loja/shipping/zones/[zoneId],app/api/organizacao/loja/shipping/zones/[zoneId]/route.ts,public,orphan,0,
@@ -307,11 +369,11 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/organizations/[id],app/api/organizacao/organizations/[id]/route.ts,public,covered,1,app/organizacao/(dashboard)/settings/page.tsx
 /api/organizacao/organizations/leave,app/api/organizacao/organizations/leave/route.ts,public,covered,1,app/organizacao/(dashboard)/staff/page.tsx
 /api/organizacao/organizations/members,app/api/organizacao/organizations/members/route.ts,public,covered,7,app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx; app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/reservas/profissionais/page.tsx; app/organizacao/(dashboard)/staff/page.tsx; app/organizacao/DashboardClient.tsx; app/organizacao/promo/PromoCodesClient.tsx
-/api/organizacao/organizations/members/invites,app/api/organizacao/organizations/members/invites/route.ts,public,covered,3,app/convites/organizacoes/OrganizationInvitesClient.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/staff/page.tsx
+/api/organizacao/organizations/members/invites,app/api/organizacao/organizations/members/invites/route.ts,public,covered,5,app/convites/organizacoes/OrganizationInvitesClient.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/staff/page.tsx; app/social/page.tsx; apps/mobile/features/notifications/api.ts
 /api/organizacao/organizations/members/permissions,app/api/organizacao/organizations/members/permissions/route.ts,public,covered,1,app/organizacao/(dashboard)/staff/page.tsx
 /api/organizacao/organizations/owner/confirm,app/api/organizacao/organizations/owner/confirm/route.ts,public,orphan,0,
 /api/organizacao/organizations/owner/transfer,app/api/organizacao/organizations/owner/transfer/route.ts,public,covered,1,app/organizacao/(dashboard)/staff/page.tsx
-/api/organizacao/organizations/settings/official-email,app/api/organizacao/organizations/settings/official-email/route.ts,public,covered,2,app/organizacao/(dashboard)/settings/page.tsx; app/organizacao/OrganizationDashboardShell.tsx
+/api/organizacao/organizations/settings/official-email,app/api/organizacao/organizations/settings/official-email/route.ts,public,covered,1,app/organizacao/(dashboard)/settings/page.tsx
 /api/organizacao/organizations/settings/official-email/confirm,app/api/organizacao/organizations/settings/official-email/confirm/route.ts,public,covered,1,app/organizacao/(dashboard)/settings/verify/page.tsx
 /api/organizacao/organizations/switch,app/api/organizacao/organizations/switch/route.ts,public,covered,5,app/convites/organizacoes/OrganizationInvitesClient.tsx; app/organizacao/OrganizationDashboardShell.tsx; app/organizacao/OrganizationTopBar.tsx; app/organizacao/organizations/OrganizationsHubClient.tsx; components/organization/BecomeOrganizationForm.tsx
 /api/organizacao/padel/analytics,app/api/organizacao/padel/analytics/route.ts,public,covered,1,app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
@@ -361,6 +423,9 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/servicos/[id],app/api/organizacao/servicos/[id]/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/[id]/page.tsx
 /api/organizacao/servicos/[id]/addons,app/api/organizacao/servicos/[id]/addons/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/[id]/page.tsx
 /api/organizacao/servicos/[id]/addons/[addonId],app/api/organizacao/servicos/[id]/addons/[addonId]/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/[id]/page.tsx
+/api/organizacao/servicos/[id]/class-series,app/api/organizacao/servicos/[id]/class-series/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/[id]/page.tsx
+/api/organizacao/servicos/[id]/class-series/[seriesId],app/api/organizacao/servicos/[id]/class-series/[seriesId]/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/[id]/page.tsx
+/api/organizacao/servicos/[id]/class-sessions,app/api/organizacao/servicos/[id]/class-sessions/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/[id]/page.tsx
 /api/organizacao/servicos/[id]/disponibilidade,app/api/organizacao/servicos/[id]/disponibilidade/route.ts,public,orphan,0,
 /api/organizacao/servicos/[id]/disponibilidade/[availabilityId],app/api/organizacao/servicos/[id]/disponibilidade/[availabilityId]/route.ts,public,orphan,0,
 /api/organizacao/servicos/[id]/packages,app/api/organizacao/servicos/[id]/packages/route.ts,public,covered,1,app/organizacao/(dashboard)/reservas/[id]/page.tsx
@@ -392,8 +457,8 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/padel/calendar,app/api/padel/calendar/route.ts,public,covered,1,app/organizacao/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/calendar/auto-schedule,app/api/padel/calendar/auto-schedule/route.ts,public,covered,1,app/organizacao/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/categories/my,app/api/padel/categories/my/route.ts,public,covered,4,app/organizacao/(dashboard)/eventos/EventEditClient.tsx; app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
-/api/padel/clubs,app/api/padel/clubs/route.ts,public,covered,5,app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/padel/PadelHubSection.tsx; app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx; app/organizacao/(dashboard)/reservas/page.tsx
-/api/padel/clubs/[id]/courts,app/api/padel/clubs/[id]/courts/route.ts,public,covered,4,app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx; app/organizacao/(dashboard)/reservas/page.tsx
+/api/padel/clubs,app/api/padel/clubs/route.ts,public,covered,6,app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/padel/PadelHubSection.tsx; app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx; app/organizacao/(dashboard)/reservas/[id]/page.tsx; app/organizacao/(dashboard)/reservas/page.tsx
+/api/padel/clubs/[id]/courts,app/api/padel/clubs/[id]/courts/route.ts,public,covered,5,app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx; app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx; app/organizacao/(dashboard)/reservas/[id]/page.tsx; app/organizacao/(dashboard)/reservas/page.tsx
 /api/padel/clubs/[id]/staff,app/api/padel/clubs/[id]/staff/route.ts,public,covered,2,app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/community/posts,app/api/padel/community/posts/route.ts,public,covered,1,app/organizacao/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/community/posts/[id]/comments,app/api/padel/community/posts/[id]/comments/route.ts,public,orphan,0,
@@ -401,21 +466,23 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/padel/discover,app/api/padel/discover/route.ts,public,orphan,0,
 /api/padel/event-categories,app/api/padel/event-categories/route.ts,public,covered,2,app/organizacao/(dashboard)/eventos/EventEditClient.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/live,app/api/padel/live/route.ts,public,covered,7,app/eventos/[slug]/PadelPublicTablesClient.tsx; app/eventos/[slug]/monitor/PadelMonitorClient.tsx; app/eventos/[slug]/score/PadelScoreboardClient.tsx; app/widgets/padel/bracket/BracketWidgetClient.tsx; app/widgets/padel/calendar/CalendarWidgetClient.tsx; app/widgets/padel/next/NextMatchesWidgetClient.tsx; app/widgets/padel/standings/StandingsWidgetClient.tsx
-/api/padel/matches,app/api/padel/matches/route.ts,public,covered,7,app/eventos/[slug]/EventLiveClient.tsx; app/eventos/[slug]/PadelPublicTablesClient.tsx; app/eventos/[slug]/monitor/PadelMonitorClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/widgets/padel/bracket/BracketWidgetClient.tsx; app/widgets/padel/calendar/CalendarWidgetClient.tsx; app/widgets/padel/next/NextMatchesWidgetClient.tsx
+/api/padel/matches,app/api/padel/matches/route.ts,public,covered,8,app/eventos/[slug]/EventLiveClient.tsx; app/eventos/[slug]/PadelPublicTablesClient.tsx; app/eventos/[slug]/monitor/PadelMonitorClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/widgets/padel/bracket/BracketWidgetClient.tsx; app/widgets/padel/calendar/CalendarWidgetClient.tsx; app/widgets/padel/next/NextMatchesWidgetClient.tsx; apps/mobile/features/tournaments/api.ts
 /api/padel/matches/[id]/delay,app/api/padel/matches/[id]/delay/route.ts,public,covered,2,app/eventos/[slug]/monitor/PadelMonitorClient.tsx; app/organizacao/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/matches/[id]/dispute,app/api/padel/matches/[id]/dispute/route.ts,public,covered,3,app/[username]/padel/PadelDisputeButton.tsx; app/eventos/[slug]/EventLiveClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 /api/padel/matches/[id]/undo,app/api/padel/matches/[id]/undo/route.ts,public,covered,1,app/eventos/[slug]/EventLiveClient.tsx
 /api/padel/matches/[id]/walkover,app/api/padel/matches/[id]/walkover/route.ts,public,orphan,0,
 /api/padel/matches/assign,app/api/padel/matches/assign/route.ts,public,covered,1,app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 /api/padel/matches/generate,app/api/padel/matches/generate/route.ts,public,covered,1,app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+/api/padel/me/matches,app/api/padel/me/matches/route.ts,public,orphan,0,
+/api/padel/me/summary,app/api/padel/me/summary/route.ts,public,covered,1,apps/mobile/features/tournaments/api.ts
 /api/padel/onboarding,app/api/padel/onboarding/route.ts,public,covered,3,app/me/page.tsx; app/onboarding/padel/page.tsx; apps/mobile/features/onboarding/api.ts
 /api/padel/ops/summary,app/api/padel/ops/summary/route.ts,public,covered,1,app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-/api/padel/pairings,app/api/padel/pairings/route.ts,public,covered,4,app/components/checkout/Step1Bilhete.tsx; app/eventos/[slug]/EventPageClient.tsx; app/eventos/[slug]/PadelSignupInline.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-/api/padel/pairings/[id]/accept,app/api/padel/pairings/[id]/accept/route.ts,public,orphan,0,
+/api/padel/pairings,app/api/padel/pairings/route.ts,public,covered,5,app/components/checkout/Step1Bilhete.tsx; app/eventos/[slug]/EventPageClient.tsx; app/eventos/[slug]/PadelSignupInline.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; apps/mobile/features/tournaments/api.ts
+/api/padel/pairings/[id]/accept,app/api/padel/pairings/[id]/accept/route.ts,public,covered,1,apps/mobile/features/tournaments/api.ts
 /api/padel/pairings/[id]/assume,app/api/padel/pairings/[id]/assume/route.ts,public,orphan,0,
 /api/padel/pairings/[id]/cancel,app/api/padel/pairings/[id]/cancel/route.ts,public,orphan,0,
-/api/padel/pairings/[id]/checkout,app/api/padel/pairings/[id]/checkout/route.ts,public,orphan,0,
-/api/padel/pairings/[id]/decline,app/api/padel/pairings/[id]/decline/route.ts,public,orphan,0,
+/api/padel/pairings/[id]/checkout,app/api/padel/pairings/[id]/checkout/route.ts,public,covered,1,apps/mobile/features/checkout/api.ts
+/api/padel/pairings/[id]/decline,app/api/padel/pairings/[id]/decline/route.ts,public,covered,1,apps/mobile/features/tournaments/api.ts
 /api/padel/pairings/[id]/invite,app/api/padel/pairings/[id]/invite/route.ts,public,orphan,0,
 /api/padel/pairings/[id]/public,app/api/padel/pairings/[id]/public/route.ts,public,orphan,0,
 /api/padel/pairings/[id]/regularize,app/api/padel/pairings/[id]/regularize/route.ts,public,orphan,0,
@@ -424,15 +491,15 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/padel/pairings/claim/[token],app/api/padel/pairings/claim/[token]/route.ts,public,covered,1,app/eventos/[slug]/EventPageClient.tsx
 /api/padel/pairings/invite-status,app/api/padel/pairings/invite-status/route.ts,public,covered,2,app/components/notifications/PairingInviteCard.tsx; app/me/bilhetes/[id]/TicketDetailClient.tsx
 /api/padel/pairings/my,app/api/padel/pairings/my/route.ts,public,orphan,0,
-/api/padel/pairings/open,app/api/padel/pairings/open/route.ts,public,covered,1,app/explorar/_components/ExplorarContent.tsx
+/api/padel/pairings/open,app/api/padel/pairings/open/route.ts,public,covered,2,app/descobrir/_explorar/ExplorarContent.tsx; apps/mobile/features/tournaments/api.ts
 /api/padel/pairings/swap/confirm/[token],app/api/padel/pairings/swap/confirm/[token]/route.ts,public,orphan,0,
 /api/padel/players,app/api/padel/players/route.ts,public,covered,1,app/organizacao/(dashboard)/padel/PadelHubSection.tsx
 /api/padel/public/calendar,app/api/padel/public/calendar/route.ts,public,covered,1,app/eventos/[slug]/calendario/page.tsx
 /api/padel/public/clubs,app/api/padel/public/clubs/route.ts,public,covered,1,app/organizacao/(dashboard)/eventos/novo/page.tsx
-/api/padel/public/open-pairings,app/api/padel/public/open-pairings/route.ts,public,covered,1,app/padel/duplas/PadelOpenPairingsClient.tsx
+/api/padel/public/open-pairings,app/api/padel/public/open-pairings/route.ts,public,covered,2,app/padel/duplas/PadelOpenPairingsClient.tsx; apps/mobile/features/tournaments/api.ts
 /api/padel/rankings,app/api/padel/rankings/route.ts,public,covered,1,app/padel/rankings/PadelRankingsClient.tsx
 /api/padel/rulesets,app/api/padel/rulesets/route.ts,public,covered,3,app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
-/api/padel/standings,app/api/padel/standings/route.ts,public,covered,3,app/eventos/[slug]/PadelPublicTablesClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/widgets/padel/standings/StandingsWidgetClient.tsx
+/api/padel/standings,app/api/padel/standings/route.ts,public,covered,4,app/eventos/[slug]/PadelPublicTablesClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/widgets/padel/standings/StandingsWidgetClient.tsx; apps/mobile/features/tournaments/api.ts
 /api/padel/teams,app/api/padel/teams/route.ts,public,covered,1,app/organizacao/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/teams/[id]/members,app/api/padel/teams/[id]/members/route.ts,public,orphan,0,
 /api/padel/teams/entries,app/api/padel/teams/entries/route.ts,public,covered,1,app/organizacao/(dashboard)/padel/PadelHubClient.tsx
@@ -450,14 +517,15 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/qr/[token],app/api/qr/[token]/route.ts,public,covered,3,app/components/tickets/TicketCard.tsx; app/components/tickets/TicketLiveQr.tsx; app/components/tickets/TicketQrBox.tsx
 /api/search,app/api/search/route.ts,public,covered,1,lib/globalSearch.ts
 /api/servicos/[id],app/api/servicos/[id]/route.ts,public,covered,1,apps/mobile/features/services/api.ts
-/api/servicos/[id]/calendario,app/api/servicos/[id]/calendario/route.ts,public,covered,1,app/[username]/_components/ReservasBookingClient.tsx
-/api/servicos/[id]/checkout,app/api/servicos/[id]/checkout/route.ts,public,covered,1,app/[username]/_components/ReservasBookingClient.tsx
+/api/servicos/[id]/booking-status,app/api/servicos/[id]/booking-status/route.ts,public,orphan,0,
+/api/servicos/[id]/calendario,app/api/servicos/[id]/calendario/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; apps/mobile/app/service/[id]/booking.tsx
+/api/servicos/[id]/checkout,app/api/servicos/[id]/checkout/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; apps/mobile/app/checkout/index.tsx
 /api/servicos/[id]/creditos,app/api/servicos/[id]/creditos/route.ts,public,orphan,0,
 /api/servicos/[id]/creditos/checkout,app/api/servicos/[id]/creditos/checkout/route.ts,public,orphan,0,
 /api/servicos/[id]/disponibilidade,app/api/servicos/[id]/disponibilidade/route.ts,public,orphan,0,
-/api/servicos/[id]/reservar,app/api/servicos/[id]/reservar/route.ts,public,covered,1,app/[username]/_components/ReservasBookingClient.tsx
-/api/servicos/[id]/slots,app/api/servicos/[id]/slots/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; app/me/reservas/page.tsx
-/api/servicos/list,app/api/servicos/list/route.ts,public,covered,3,app/explorar/_components/ExplorarContent.tsx; app/servicos/page.tsx; apps/mobile/features/discover/api.ts
+/api/servicos/[id]/reservar,app/api/servicos/[id]/reservar/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; apps/mobile/app/service/[id]/booking.tsx
+/api/servicos/[id]/slots,app/api/servicos/[id]/slots/route.ts,public,covered,3,app/[username]/_components/ReservasBookingClient.tsx; app/me/reservas/page.tsx; apps/mobile/app/service/[id]/booking.tsx
+/api/servicos/list,app/api/servicos/list/route.ts,public,covered,3,app/descobrir/_explorar/ExplorarContent.tsx; app/servicos/page.tsx; apps/mobile/features/discover/api.ts
 /api/social/feed,app/api/social/feed/route.ts,public,covered,1,apps/mobile/features/social/api.ts
 /api/social/follow,app/api/social/follow/route.ts,public,covered,5,app/[username]/FollowClient.tsx; app/components/Navbar.tsx; app/rede/page.tsx; app/social/page.tsx; apps/mobile/features/network/api.ts
 /api/social/follow-organization,app/api/social/follow-organization/route.ts,public,covered,5,app/components/Navbar.tsx; app/components/profile/OrganizationFollowClient.tsx; app/eventos/[slug]/EventLiveClient.tsx; app/social/page.tsx; apps/mobile/features/network/api.ts
@@ -499,6 +567,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/tournaments/[id]/structure,app/api/tournaments/[id]/structure/route.ts,public,orphan,0,
 /api/tournaments/list,app/api/tournaments/list/route.ts,public,orphan,0,
 /api/upload,app/api/upload/route.ts,public,covered,10,app/components/profile/ProfileHeader.tsx; app/organizacao/(dashboard)/eventos/EventEditClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/reservas/[id]/page.tsx; app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx; app/organizacao/(dashboard)/treinadores/page.tsx; app/organizacao/OrganizationPublicProfilePanel.tsx; components/store/StoreProductImagesPanel.tsx; components/store/StoreProductsPanel.tsx
+/api/upload/delete,app/api/upload/delete/route.ts,public,orphan,0,
 /api/username/check,app/api/username/check/route.ts,public,covered,5,app/components/autenticação/AuthModal.tsx; app/components/checkout/AuthWall.tsx; app/onboarding/perfil/page.tsx; app/organizacao/organizations/OrganizationsHubClient.tsx; components/organization/BecomeOrganizationForm.tsx
 /api/users/search,app/api/users/search/route.ts,public,covered,5,app/components/Navbar.tsx; app/components/checkout/Step1Bilhete.tsx; app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx; app/social/page.tsx; apps/mobile/features/search/api.ts
 /api/webhooks/stripe,app/api/webhooks/stripe/route.ts,webhook,exempt,0,

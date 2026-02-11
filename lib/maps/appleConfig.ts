@@ -8,9 +8,9 @@ export type AppleMapsConfig = {
 
 export function getAppleMapsConfig(options?: { allowMissingInDev?: boolean }) {
   const teamId = process.env.APPLE_MAPS_TEAM_ID ?? process.env.APPLE_SIGNIN_TEAM_ID;
-  const keyId = process.env.APPLE_MAPS_KEY_ID ?? process.env.MAPKIT_JS_KEY_ID;
-  const privateKeyBase64 = process.env.APPLE_MAPS_PRIVATE_KEY_BASE64 ?? process.env.MAPKIT_JS_PRIVATE_KEY_BASE64;
-  const origin = process.env.APPLE_MAPS_ORIGIN ?? process.env.MAPKIT_JS_ORIGIN ?? null;
+  const keyId = process.env.APPLE_MAPS_KEY_ID;
+  const privateKeyBase64 = process.env.APPLE_MAPS_PRIVATE_KEY_BASE64;
+  const origin = process.env.APPLE_MAPS_ORIGIN ?? null;
   const ttlRaw = process.env.APPLE_MAPS_TOKEN_TTL_SECONDS;
   const ttlSeconds = Number(ttlRaw || 900);
 

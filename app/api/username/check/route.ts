@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { checkUsernameAvailability } from "@/lib/globalUsernames";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
-import { rateLimit } from "@/lib/auth/rateLimit";
+import { isRateLimitBackendUnavailableError, rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(req: NextRequest) {
@@ -12,12 +12,27 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "Pedido não autorizado." }, { status: 403 });
     }
 
-    const limiter = await rateLimit(req, {
-      windowMs: 5 * 60 * 1000,
-      max: 120,
-      keyPrefix: "username:check:ip",
-      requireDistributed: true,
-    });
+    let limiter;
+    try {
+      limiter = await rateLimit(req, {
+        windowMs: 5 * 60 * 1000,
+        max: 120,
+        keyPrefix: "username:check:ip",
+        requireDistributed: true,
+      });
+    } catch (err) {
+      if (isRateLimitBackendUnavailableError(err)) {
+        return jsonWrap(
+          {
+            ok: false,
+            errorCode: err.code,
+            error: "Serviço de proteção temporariamente indisponível.",
+          },
+          { status: 503 },
+        );
+      }
+      throw err;
+    }
     if (!limiter.allowed) {
       return jsonWrap(
         { ok: false, error: "Muitas verificações. Tenta novamente dentro de alguns minutos." },

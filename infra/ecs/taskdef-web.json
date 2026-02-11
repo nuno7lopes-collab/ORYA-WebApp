@@ -27,6 +27,7 @@
         {"name": "NEXT_PUBLIC_BASE_URL", "valueFrom": "{{orya/prod/app:NEXT_PUBLIC_BASE_URL}}"},
         {"name": "NEXT_PUBLIC_APP_ENV", "valueFrom": "{{orya/prod/app:NEXT_PUBLIC_APP_ENV}}"},
         {"name": "ORYA_CRON_SECRET", "valueFrom": "{{orya/prod/app:ORYA_CRON_SECRET}}"},
+        {"name": "REDIS_URL", "valueFrom": "{{orya/prod/app:REDIS_URL}}"},
         {"name": "SUPABASE_URL", "valueFrom": "{{orya/prod/supabase:SUPABASE_URL}}"},
         {"name": "NEXT_PUBLIC_SUPABASE_URL", "valueFrom": "{{orya/prod/supabase:NEXT_PUBLIC_SUPABASE_URL}}"},
         {"name": "SUPABASE_ANON_KEY", "valueFrom": "{{orya/prod/supabase:SUPABASE_ANON_KEY}}"},

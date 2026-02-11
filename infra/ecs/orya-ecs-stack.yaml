@@ -517,6 +517,8 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXT_PUBLIC_APP_ENV::"
             - Name: ORYA_CRON_SECRET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ORYA_CRON_SECRET::"
+            - Name: REDIS_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:REDIS_URL::"
             - Name: QR_SECRET_KEY
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:QR_SECRET_KEY::"
             - Name: INTERNAL_SECRET_HEADER
@@ -525,14 +527,6 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ICS_SECRET_KEY::"
             - Name: PWA_MANIFEST_URL
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:PWA_MANIFEST_URL::"
-            - Name: MAPKIT_JS_KEY_ID
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAPKIT_JS_KEY_ID::"
-            - Name: MAPKIT_JS_ORIGIN
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAPKIT_JS_ORIGIN::"
-            - Name: MAPKIT_JS_PRIVATE_KEY_BASE64
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAPKIT_JS_PRIVATE_KEY_BASE64::"
-            - Name: MAP_PROVIDER
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MAP_PROVIDER::"
             - Name: CLOUDWATCH_LOG_GROUP
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:CLOUDWATCH_LOG_GROUP::"
             - Name: CLOUDWATCH_LOG_RETENTION_DAYS
@@ -551,10 +545,6 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ALERTS_SNS_TOPIC_ARN::"
             - Name: S3_SECRETS_BUCKET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:S3_SECRETS_BUCKET::"
-            - Name: NEXTAUTH_SECRET
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXTAUTH_SECRET::"
-            - Name: NEXTAUTH_URL
-              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:NEXTAUTH_URL::"
             - Name: SUPABASE_URL
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_URL::"
             - Name: SUPABASE_SERVICE_ROLE
@@ -680,6 +670,8 @@ Resources:
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:APP_ENV::"
             - Name: ORYA_CRON_SECRET
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:ORYA_CRON_SECRET::"
+            - Name: REDIS_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:REDIS_URL::"
             - Name: SUPABASE_URL
               ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_URL::"
             - Name: SUPABASE_SERVICE_ROLE

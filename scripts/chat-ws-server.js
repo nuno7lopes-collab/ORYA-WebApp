@@ -5,8 +5,8 @@ const { WebSocketServer } = require("ws");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
-const { createClient } = require("@supabase/supabase-js");
-const { Redis } = require("@upstash/redis");
+const { createClient: createSupabaseClient } = require("@supabase/supabase-js");
+const { createClient: createRedisClient } = require("redis");
 
 const CHAT_EVENTS_CHANNEL = "chat:events";
 const PRESENCE_KEY_PREFIX = "chat:presence:";
@@ -56,6 +56,13 @@ if (pollingOnly) {
   process.exit(0);
 }
 
+const redisUrl = process.env.REDIS_URL ? String(process.env.REDIS_URL).trim() : "";
+const redisConfigured = redisUrl.length > 0;
+if (process.env.NODE_ENV === "production" && !redisConfigured) {
+  console.error("[chat-ws] REDIS_URL em falta em produção.");
+  process.exit(1);
+}
+
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const databaseUrl = process.env.DATABASE_URL;
@@ -70,7 +77,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
@@ -84,14 +91,61 @@ const pool = new Pool({
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-function getRedis() {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  return Redis.fromEnv();
+let redisPublisher = null;
+let redisSubscriber = null;
+let redisConnectPromise = null;
+
+async function closeRedisClients() {
+  const clients = [redisSubscriber, redisPublisher].filter(Boolean);
+  redisSubscriber = null;
+  redisPublisher = null;
+  await Promise.all(
+    clients.map(async (client) => {
+      try {
+        if (client.isOpen) await client.quit();
+      } catch {
+        if (client.isOpen) client.destroy();
+      }
+    }),
+  );
 }
 
-const redis = getRedis();
+async function ensureRedisClients() {
+  if (!redisConfigured) return false;
+  if (redisPublisher && redisSubscriber && redisPublisher.isOpen && redisSubscriber.isOpen) {
+    return true;
+  }
+  if (!redisConnectPromise) {
+    redisConnectPromise = (async () => {
+      const publisher = createRedisClient({ url: redisUrl });
+      const subscriber = createRedisClient({ url: redisUrl });
+      publisher.on("error", (err) => console.warn("[chat-ws][redis:publisher] error", err));
+      subscriber.on("error", (err) => console.warn("[chat-ws][redis:subscriber] error", err));
+      await publisher.connect();
+      await subscriber.connect();
+      await subscriber.subscribe(CHAT_EVENTS_CHANNEL, (message) => {
+        if (!message) return;
+        try {
+          handleIncomingEvent(JSON.parse(message));
+        } catch {
+          // ignore malformed payloads
+        }
+      });
+      redisPublisher = publisher;
+      redisSubscriber = subscriber;
+      return true;
+    })()
+      .catch(async (err) => {
+        await closeRedisClients();
+        console.warn("[chat-ws] falha a inicializar redis", err);
+        return false;
+      })
+      .finally(() => {
+        redisConnectPromise = null;
+      });
+  }
+  return redisConnectPromise;
+}
 
 const connections = new Map();
 const conversationConnections = new Map();
@@ -190,21 +244,21 @@ async function getConversationIds(userId, organizationId, scope) {
 }
 
 async function setPresenceOnline(userId) {
-  if (!redis) return;
-  await redis.set(`${PRESENCE_KEY_PREFIX}${userId}`, "1", { ex: PRESENCE_TTL_SECONDS });
+  if (!(await ensureRedisClients()) || !redisPublisher) return;
+  await redisPublisher.set(`${PRESENCE_KEY_PREFIX}${userId}`, "1", { EX: PRESENCE_TTL_SECONDS });
 }
 
 async function setPresenceOffline(userId) {
-  if (!redis) return;
-  await redis.del(`${PRESENCE_KEY_PREFIX}${userId}`);
+  if (!(await ensureRedisClients()) || !redisPublisher) return;
+  await redisPublisher.del(`${PRESENCE_KEY_PREFIX}${userId}`);
 }
 
 async function updateLastSeen(userId) {
-  if (!redis) return;
+  if (!(await ensureRedisClients()) || !redisPublisher) return;
   const debounceKey = `${LAST_SEEN_DEBOUNCE_PREFIX}${userId}`;
-  const already = await redis.exists(debounceKey);
+  const already = await redisPublisher.exists(debounceKey);
   if (already) return;
-  await redis.set(debounceKey, "1", { ex: LAST_SEEN_DEBOUNCE_SECONDS });
+  await redisPublisher.set(debounceKey, "1", { EX: LAST_SEEN_DEBOUNCE_SECONDS });
   await prisma.chatUserPresence.upsert({
     where: { userId },
     create: { userId, lastSeenAt: new Date() },
@@ -213,12 +267,16 @@ async function updateLastSeen(userId) {
 }
 
 async function publishEvent(event) {
-  if (!redis) {
+  if (!redisConfigured) {
     handleIncomingEvent(event);
     return;
   }
   try {
-    await redis.publish(CHAT_EVENTS_CHANNEL, JSON.stringify(event));
+    if (!(await ensureRedisClients()) || !redisPublisher) {
+      handleIncomingEvent(event);
+      return;
+    }
+    await redisPublisher.publish(CHAT_EVENTS_CHANNEL, JSON.stringify(event));
   } catch (err) {
     console.warn("[chat-ws] falha ao publicar evento", err);
   }
@@ -283,18 +341,12 @@ async function syncMembership(ws, state) {
   state.conversations = nextSet;
 }
 
-if (redis) {
-  const subscriber = redis.subscribe(CHAT_EVENTS_CHANNEL);
-  subscriber.on("message", ({ message }) => {
-    if (!message) return;
-    if (typeof message === "string") {
-      try {
-        handleIncomingEvent(JSON.parse(message));
-      } catch {
-        return;
-      }
-    } else {
-      handleIncomingEvent(message);
+if (redisConfigured) {
+  ensureRedisClients().then((ok) => {
+    if (ok) return;
+    if (process.env.NODE_ENV === "production") {
+      console.error("[chat-ws] Redis indisponível em produção.");
+      process.exit(1);
     }
   });
 }
@@ -387,13 +439,13 @@ wss.on("connection", async (ws, req) => {
       const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : null;
       if (!conversationId || !state.conversations.has(conversationId)) return;
 
-      if (redis) {
+      if (await ensureRedisClients()) {
         if (payload.type === "typing:start") {
-          await redis.set(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`, "1", {
-            ex: TYPING_TTL_SECONDS,
+          await redisPublisher.set(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`, "1", {
+            EX: TYPING_TTL_SECONDS,
           });
         } else {
-          await redis.del(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`);
+          await redisPublisher.del(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`);
         }
       }
 
@@ -437,3 +489,12 @@ wss.on("connection", async (ws, req) => {
 });
 
 console.log(`[chat-ws] WebSocket gateway a correr na porta ${port}`);
+
+const shutdownSignals = ["SIGINT", "SIGTERM"];
+for (const signal of shutdownSignals) {
+  process.on(signal, () => {
+    closeRedisClients()
+      .catch(() => {})
+      .finally(() => process.exit(0));
+  });
+}

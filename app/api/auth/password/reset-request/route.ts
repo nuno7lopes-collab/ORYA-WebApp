@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/emailClient";
 import { env } from "@/lib/env";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
-import { rateLimit } from "@/lib/auth/rateLimit";
+import { isRateLimitBackendUnavailableError, rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -64,12 +64,28 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    const ipLimiter = await rateLimit(req, {
-      windowMs: 10 * 60 * 1000,
-      max: 20,
-      keyPrefix: "auth:reset-password:ip",
-      requireDistributed: true,
-    });
+    let ipLimiter;
+    try {
+      ipLimiter = await rateLimit(req, {
+        windowMs: 10 * 60 * 1000,
+        max: 20,
+        keyPrefix: "auth:reset-password:ip",
+        requireDistributed: true,
+      });
+    } catch (err) {
+      if (isRateLimitBackendUnavailableError(err)) {
+        return jsonWrap(
+          {
+            ok: false,
+            errorCode: err.code,
+            message: "Serviço de proteção temporariamente indisponível.",
+            retryable: true,
+          },
+          { status: 503 }
+        );
+      }
+      throw err;
+    }
     if (!ipLimiter.allowed) {
       return jsonWrap(
         {
@@ -82,13 +98,29 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    const limiter = await rateLimit(req, {
-      windowMs: 10 * 60 * 1000,
-      max: 5,
-      keyPrefix: "auth:reset-password",
-      identifier: rawEmail,
-      requireDistributed: true,
-    });
+    let limiter;
+    try {
+      limiter = await rateLimit(req, {
+        windowMs: 10 * 60 * 1000,
+        max: 5,
+        keyPrefix: "auth:reset-password",
+        identifier: rawEmail,
+        requireDistributed: true,
+      });
+    } catch (err) {
+      if (isRateLimitBackendUnavailableError(err)) {
+        return jsonWrap(
+          {
+            ok: false,
+            errorCode: err.code,
+            message: "Serviço de proteção temporariamente indisponível.",
+            retryable: true,
+          },
+          { status: 503 }
+        );
+      }
+      throw err;
+    }
     if (!limiter.allowed) {
       return jsonWrap(
         {

@@ -45,9 +45,8 @@ Arquivo.zip
 .cache/
 .expo/
 .tmp/
-
-# nested web app artifacts
-/web/.next/
+.dev-all.lock
+.vercel/
 
 # typescript
 *.tsbuildinfo
