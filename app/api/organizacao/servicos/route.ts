@@ -155,7 +155,7 @@ async function _POST(req: NextRequest) {
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return fail(403, writeAccess.error);
+      return fail(403, writeAccess.errorCode);
     }
 
     await ensureDefaultPolicies(prisma, organization.id);

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logError } from "@/lib/observability/logger";
 import { AnalyticsDimensionKey, AnalyticsMetricKey, EntitlementType, OrganizationStatus, OrgType, Prisma as PrismaTypes } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
+import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 100;
@@ -104,26 +105,38 @@ async function _GET(req: NextRequest) {
         stripePayoutsEnabled: true,
         officialEmail: true,
         officialEmailVerifiedAt: true,
-        members: {
-          where: { role: "OWNER" },
-          take: 1,
-          select: {
-            user: {
-              select: {
-                id: true,
-                username: true,
-                fullName: true,
-                users: { select: { email: true } },
-              },
-            },
-          },
-        },
       },
     });
 
     const hasMore = organizations.length > limit;
     const slice = organizations.slice(0, limit);
     const nextCursor = hasMore && slice.length > 0 ? encodeCursor(slice[slice.length - 1]) : null;
+
+    const ownerUserIdByOrgId = new Map<number, string>();
+    for (const org of slice) {
+      const owners = await listEffectiveOrganizationMembers({
+        organizationId: org.id,
+        roles: ["OWNER"],
+      });
+      const ownerUserId = owners[0]?.userId ?? null;
+      if (ownerUserId) {
+        ownerUserIdByOrgId.set(org.id, ownerUserId);
+      }
+    }
+    const ownerUserIds = Array.from(new Set(ownerUserIdByOrgId.values()));
+    const ownerProfiles = ownerUserIds.length
+      ? await prisma.profile.findMany({
+          where: { id: { in: ownerUserIds } },
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            users: { select: { email: true } },
+          },
+        })
+      : [];
+    const ownerProfileById = new Map(ownerProfiles.map((profile) => [profile.id, profile]));
+
     const orgIds = slice.map((org) => org.id);
     const eventsCounts = orgIds.length
       ? await prisma.event.groupBy({
@@ -159,7 +172,7 @@ async function _GET(req: NextRequest) {
     const revenueMap = new Map(revenueRows.map((row) => [row.organization_id, Number(row.total ?? 0)]));
 
     const normalized = slice.map((org) => {
-      const ownerUser = org.members[0]?.user ?? null;
+      const ownerUser = ownerProfileById.get(ownerUserIdByOrgId.get(org.id) ?? "") ?? null;
       return {
         id: org.id,
         publicName: org.publicName,

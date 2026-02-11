@@ -10,7 +10,7 @@ describe("response headers", () => {
     expect(headers.get("x-orya-request-id")).toBe("req_123");
     expect(headers.get("x-correlation-id")).toBe("corr_456");
     expect(headers.get("x-orya-correlation-id")).toBe("corr_456");
-    expect(headers.get("x-org-id")).toBe("42");
+    expect(headers.get("x-orya-org-id")).toBe("42");
   });
 
   it("getRequestContext prefers x-orya-* headers over x-*", () => {
@@ -19,7 +19,7 @@ describe("response headers", () => {
       "x-orya-request-id": "req_primary",
       "x-correlation-id": "corr_fallback",
       "x-orya-correlation-id": "corr_primary",
-      "x-org-id": "7",
+      "x-orya-org-id": "7",
     });
     const ctx = getRequestContext({ headers });
 
@@ -39,7 +39,7 @@ describe("response headers", () => {
   });
 
   it("getRequestContext prefers explicit orgId option over header", () => {
-    const headers = new Headers({ "x-org-id": "5" });
+    const headers = new Headers({ "x-orya-org-id": "5" });
     const ctx = getRequestContext({ headers }, { orgId: 12 });
 
     expect(ctx.orgId).toBe(12);

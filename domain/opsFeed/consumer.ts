@@ -1,5 +1,6 @@
 import { Prisma, type SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 
 export const OPS_FEED_EVENT_TYPES = new Set([
   "booking.created",
@@ -33,10 +34,9 @@ async function maybePostOpsMessage(params: {
   eventType: string;
   createdAt: Date;
 }) {
-  const orgMembers = await prisma.organizationMember.findMany({
-    where: { organizationId: params.organizationId, role: { in: CHAT_ORG_ROLES as any } },
-    select: { userId: true, role: true },
-    orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+  const orgMembers = await listEffectiveOrganizationMembers({
+    organizationId: params.organizationId,
+    roles: [...CHAT_ORG_ROLES],
   });
   const fallbackSender = orgMembers[0]?.userId ?? null;
   if (!fallbackSender) return;

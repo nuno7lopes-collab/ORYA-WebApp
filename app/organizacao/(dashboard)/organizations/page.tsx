@@ -5,7 +5,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import OrganizationsHubClient from "../../organizations/OrganizationsHubClient";
 import { cookies } from "next/headers";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
-import { Prisma } from "@prisma/client";
+import { OrganizationStatus, Prisma } from "@prisma/client";
+import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,27 +37,24 @@ export default async function OrganizationsHubPage() {
 
   let orgs: OrgPayload[] = [];
 
-  const memberships = await prisma.organizationMember.findMany({
-    where: { userId: user.id },
-    include: { organization: true },
-    orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+  const memberships = await listEffectiveOrganizationMembershipsForUser({
+    userId: user.id,
+    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
 
-  orgs = memberships
-    .filter((m) => m.organization)
-    .map((m) => ({
-      organizationId: m.organizationId,
-      role: m.role,
-      lastUsedAt: m.lastUsedAt ? m.lastUsedAt.toISOString() : null,
-      organization: {
-        id: m.organization!.id,
-        username: m.organization!.username,
-        publicName: m.organization!.publicName,
-        businessName: m.organization!.businessName,
-        entityType: m.organization!.entityType,
-        status: m.organization!.status,
-      },
-    }));
+  orgs = memberships.map((m) => ({
+    organizationId: m.organizationId,
+    role: m.role,
+    lastUsedAt: null,
+    organization: {
+      id: m.organization.id,
+      username: m.organization.username,
+      publicName: m.organization.publicName,
+      businessName: m.organization.businessName,
+      entityType: m.organization.entityType,
+      status: m.organization.status,
+    },
+  }));
 
   // Se não houver nenhuma organização, envia para o onboarding
   if (orgs.length === 0) {

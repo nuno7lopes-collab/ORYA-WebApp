@@ -34,7 +34,6 @@ import {
   EventAccessMode,
   InviteIdentityMatch,
   CheckinMethod,
-  OrganizationMemberRole,
   OrganizationModule,
   OrganizationStatus,
   PadelPreferredSide,
@@ -46,7 +45,6 @@ import {
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { createClient, type User } from "@supabase/supabase-js";
-import { normalizeEndsAt } from "../lib/events/schedule";
 
 const loadEnvFile = (file: string) => {
   if (!fs.existsSync(file)) return;
@@ -710,7 +708,6 @@ async function clearSeedData() {
   }
 
   if (orgIds.length > 0) {
-    await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
     await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
   }
 
@@ -751,6 +748,48 @@ async function clearSeedData() {
       }
     }
   }
+}
+
+async function ensureOwnerGroupMembership(organizationId: number, userId: string) {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { groupId: true },
+  });
+  if (!org?.groupId) {
+    throw new Error(`Organizacao ${organizationId} sem groupId.`);
+  }
+
+  const existing = await prisma.organizationGroupMember.findFirst({
+    where: { groupId: org.groupId, userId },
+    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true },
+  });
+
+  if (existing?.id) {
+    await prisma.organizationGroupMember.update({
+      where: { id: existing.id },
+      data: {
+        role: "OWNER",
+        scopeAllOrgs: existing.scopeAllOrgs,
+        scopeOrgIds: existing.scopeAllOrgs
+          ? []
+          : Array.from(new Set([...(existing.scopeOrgIds ?? []), organizationId])),
+      },
+    });
+    await prisma.organizationGroupMemberOrganizationOverride.deleteMany({
+      where: { groupMemberId: existing.id, organizationId },
+    });
+    return;
+  }
+
+  await prisma.organizationGroupMember.create({
+    data: {
+      groupId: org.groupId,
+      userId,
+      role: "OWNER",
+      scopeAllOrgs: false,
+      scopeOrgIds: [organizationId],
+    },
+  });
 }
 
 async function main() {
@@ -930,16 +969,7 @@ async function main() {
 
     const owner = users[i % users.length];
     if (owner) {
-      await prisma.organizationMember.upsert({
-        where: { organizationId_userId: { organizationId: organization.id, userId: owner.id } },
-        update: { role: OrganizationMemberRole.OWNER },
-        create: {
-          env: seedEnv,
-          organizationId: organization.id,
-          userId: owner.id,
-          role: OrganizationMemberRole.OWNER,
-        },
-      });
+      await ensureOwnerGroupMembership(organization.id, owner.id);
     }
 
     organizations.push({ id: organization.id, username: organization.username ?? username });
@@ -965,7 +995,6 @@ async function main() {
     const owner = users[(i + 2) % users.length];
     const theme = pick(EVENT_THEMES, i);
     const { start, end, key } = resolveTimeWindow(i, now);
-    const normalizedEnd = normalizeEndsAt(start, end);
     const status = resolveEventStatus(i, key);
     const accessMode = resolveAccessMode(i);
     const isPorto = portoIndices.has(i);
@@ -992,7 +1021,7 @@ async function main() {
         organizationId: org.id,
         ownerUserId: owner?.id ?? users[0].id,
         startsAt: start,
-        endsAt: normalizedEnd,
+        endsAt: end,
         addressId,
         coverImageUrl: theme.cover,
         pricingMode,
@@ -1138,7 +1167,7 @@ async function main() {
       id: event.id,
       templateType: theme.templateType,
       startsAt: start,
-      endsAt: normalizedEnd,
+      endsAt: end,
       addressId,
       timeKey: key,
     });

@@ -14,6 +14,7 @@ export async function createNotification(input: CreateNotificationInput) {
   const {
     userId,
     type,
+    dedupeKey: dedupeKeyOverride = null,
     title,
     body,
     payload,
@@ -28,7 +29,10 @@ export async function createNotification(input: CreateNotificationInput) {
     inviteId = null,
   } = input;
 
-  const dedupeKey = buildDedupe([type, userId, organizationId, eventId, ticketId, inviteId, fromUserId]);
+  const dedupeKey =
+    typeof dedupeKeyOverride === "string" && dedupeKeyOverride.trim().length > 0
+      ? dedupeKeyOverride.trim()
+      : buildDedupe([type, userId, organizationId, eventId, ticketId, inviteId, fromUserId]);
   const sanitizedCta = safeCtaUrl(ctaUrl);
   const payloadJson: Prisma.InputJsonValue = {
     title: title ?? null,

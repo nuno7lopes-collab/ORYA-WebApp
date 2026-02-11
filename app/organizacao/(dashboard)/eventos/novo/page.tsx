@@ -22,12 +22,22 @@ import type { Prisma } from "@prisma/client";
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
+import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
+import {
+  MAX_RECENT_LOCATIONS,
+  RECENT_LOCATION_KEY,
+  distanceKm,
+  formatDistanceLabel,
+  isFiniteCoordinate,
+  rankLocationSuggestions,
+  sanitizeRecentLocation,
+} from "@/lib/geo/locationUx";
 
 type TicketTypeRow = {
   name: string;
@@ -309,17 +319,16 @@ export function NewOrganizationEventPage({
   const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
   const [locationSearchLoading, setLocationSearchLoading] = useState(false);
   const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
+  const [locationBiasError, setLocationBiasError] = useState<string | null>(null);
   const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
-  const [locationConfirmed, setLocationConfirmed] = useState(false);
   const [locationProviderId, setLocationProviderId] = useState<string | null>(null);
   const [locationAddressId, setLocationAddressId] = useState<string | null>(null);
   const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(null);
-  const [locationSourceProvider, setLocationSourceProvider] = useState<string | null>(null);
-  const [locationConfidenceScore, setLocationConfidenceScore] = useState<number | null>(null);
-  const [locationValidationStatus, setLocationValidationStatus] = useState<string | null>(null);
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
-  const [locationTbd, setLocationTbd] = useState(false);
+  const [locationBias, setLocationBias] = useState<{ lat: number; lng: number } | null>(null);
+  const [requestingLocationBias, setRequestingLocationBias] = useState(false);
+  const [recentLocationItems, setRecentLocationItems] = useState<GeoAutocompleteItem[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([]);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -332,7 +341,6 @@ export function NewOrganizationEventPage({
   const [schedulePopover, setSchedulePopover] = useState<
     "startDate" | "startTime" | "endDate" | "endTime" | null
   >(null);
-  const [showLocationModal, setShowLocationModal] = useState(false);
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [showCoverModal, setShowCoverModal] = useState(false);
   const [startDateInput, setStartDateInput] = useState("");
@@ -405,7 +413,7 @@ export function NewOrganizationEventPage({
   const startTimeInputRef = useRef<HTMLDivElement | null>(null);
   const endDateInputRef = useRef<HTMLDivElement | null>(null);
   const endTimeInputRef = useRef<HTMLDivElement | null>(null);
-  const locationModalRef = useRef<HTMLDivElement | null>(null);
+  const locationSectionRef = useRef<HTMLDivElement | null>(null);
   const locationSearchRef = useRef<HTMLInputElement | null>(null);
   const descriptionModalRef = useRef<HTMLDivElement | null>(null);
   const coverModalRef = useRef<HTMLDivElement | null>(null);
@@ -1058,14 +1066,25 @@ export function NewOrganizationEventPage({
     setLocationFormattedAddress(resolved.formatted || null);
     setLocationLat(typeof club.addressRef?.latitude === "number" ? club.addressRef?.latitude ?? null : null);
     setLocationLng(typeof club.addressRef?.longitude === "number" ? club.addressRef?.longitude ?? null : null);
-    setLocationSourceProvider(club.addressRef?.sourceProvider ?? null);
-    setLocationConfidenceScore(
-      typeof club.addressRef?.confidenceScore === "number" ? club.addressRef?.confidenceScore ?? null : null,
-    );
-    setLocationValidationStatus(club.addressRef?.validationStatus ?? null);
     setLocationQuery(composed || "");
-    setLocationConfirmed(Boolean(club.addressId));
   }, [selectedPreset, selectedPadelClubId, padelClubs?.items]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(RECENT_LOCATION_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const safe = parsed
+        .map((entry) => sanitizeRecentLocation(entry))
+        .filter((entry): entry is GeoAutocompleteItem => Boolean(entry))
+        .slice(0, MAX_RECENT_LOCATIONS);
+      setRecentLocationItems(safe);
+    } catch {
+      // ignore parse/storage failures
+    }
+  }, []);
 
   useEffect(() => {
     const query = locationQuery.trim();
@@ -1082,9 +1101,10 @@ export function NewOrganizationEventPage({
     locationSearchTimeout.current = setTimeout(async () => {
       setLocationSearchLoading(true);
       try {
-        const items = await fetchGeoAutocomplete(query);
+        const items = await fetchGeoAutocomplete(query, locationBias ?? undefined);
         if (locationSearchSeq.current === seq) {
-          setLocationSuggestions(items);
+          const ranked = rankLocationSuggestions(items, query, locationBias);
+          setLocationSuggestions(ranked);
         }
       } catch (err) {
         console.warn("[eventos/novo] autocomplete falhou", err);
@@ -1104,17 +1124,48 @@ export function NewOrganizationEventPage({
         clearTimeout(locationSearchTimeout.current);
       }
     };
-  }, [locationQuery]);
+  }, [locationQuery, locationBias]);
+
+  const rememberRecentLocation = (item: GeoAutocompleteItem) => {
+    setRecentLocationItems((prev) => {
+      const next = [item, ...prev.filter((entry) => entry.providerId !== item.providerId)].slice(0, MAX_RECENT_LOCATIONS);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(RECENT_LOCATION_KEY, JSON.stringify(next));
+        } catch {
+          // ignore storage failures
+        }
+      }
+      return next;
+    });
+  };
+
+  const requestLocationBias = () => {
+    if (requestingLocationBias) return;
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setLocationBiasError("Este browser não suporta geolocalização.");
+      return;
+    }
+    setRequestingLocationBias(true);
+    setLocationBiasError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocationBias({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setRequestingLocationBias(false);
+      },
+      () => {
+        setLocationBiasError("Não foi possível obter a tua localização.");
+        setRequestingLocationBias(false);
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+  };
 
   const applyGeoDetails = (details: GeoDetailsItem | null, fallbackName?: string | null) => {
     if (!details) return;
-    setLocationFormattedAddress(details.formattedAddress || locationFormattedAddress);
+    const resolvedLabel = details.formattedAddress || details.name || fallbackName || null;
+    setLocationFormattedAddress(resolvedLabel);
     setLocationAddressId(details.addressId ?? null);
-    setLocationSourceProvider(details.sourceProvider ?? null);
-    setLocationConfidenceScore(
-      typeof details.confidenceScore === "number" ? details.confidenceScore : null,
-    );
-    setLocationValidationStatus(details.validationStatus ?? null);
     if (details.providerId) {
       setLocationProviderId(details.providerId);
     }
@@ -1122,25 +1173,22 @@ export function NewOrganizationEventPage({
       setLocationLat(details.lat);
       setLocationLng(details.lng);
     }
-    const nextLabel = details.formattedAddress || details.name || fallbackName || "";
+    const nextLabel = resolvedLabel || "";
     if (nextLabel) setLocationQuery(nextLabel);
   };
 
   const handleSelectGeoSuggestion = async (item: GeoAutocompleteItem) => {
-    setLocationTbd(false);
     setLocationProviderId(item.providerId);
     setLocationAddressId(null);
-    setLocationSourceProvider(item.sourceProvider ?? null);
-    setLocationConfidenceScore(null);
-    setLocationValidationStatus(null);
     activeProviderRef.current = item.providerId;
     setLocationLat(item.lat);
     setLocationLng(item.lng);
     setLocationQuery(item.label);
     setLocationFormattedAddress(item.label);
     setLocationSearchError(null);
+    setLocationBiasError(null);
     setShowLocationSuggestions(false);
-    setLocationConfirmed(false);
+    rememberRecentLocation(item);
 
     const seq = ++locationDetailsSeq.current;
     setLocationDetailsLoading(true);
@@ -1152,8 +1200,17 @@ export function NewOrganizationEventPage({
       if (locationDetailsSeq.current !== seq) return;
       if (activeProviderRef.current !== item.providerId) return;
       applyGeoDetails(details, item.name || item.label);
-      if (details?.formattedAddress) {
-        setLocationQuery(details.formattedAddress);
+      if (details) {
+        rememberRecentLocation({
+          providerId: details.providerId || item.providerId,
+          label: details.formattedAddress || details.name || item.label,
+          name: details.name || item.name,
+          city: details.city || item.city,
+          address: details.formattedAddress || details.address || item.address,
+          lat: isFiniteCoordinate(details.lat) ? details.lat : item.lat,
+          lng: isFiniteCoordinate(details.lng) ? details.lng : item.lng,
+          sourceProvider: details.sourceProvider || item.sourceProvider || "APPLE_MAPS",
+        });
       }
     } catch (err) {
       console.warn("[eventos/novo] detalhes falharam", err);
@@ -1162,25 +1219,6 @@ export function NewOrganizationEventPage({
         setLocationDetailsLoading(false);
       }
     }
-  };
-
-  const markLocationTbd = () => {
-    setLocationTbd(true);
-    setLocationQuery("");
-    setLocationProviderId(null);
-    setLocationAddressId(null);
-    setLocationSourceProvider(null);
-    setLocationConfidenceScore(null);
-    setLocationValidationStatus(null);
-    activeProviderRef.current = null;
-    setLocationFormattedAddress(null);
-    setLocationLat(null);
-    setLocationLng(null);
-    setLocationQuery("");
-    setLocationSuggestions([]);
-    setLocationSearchLoading(false);
-    setLocationSearchError(null);
-    setLocationConfirmed(true);
   };
 
   const baseInputClasses =
@@ -1862,25 +1900,6 @@ export function NewOrganizationEventPage({
       : "Convite"
     : "Público";
 
-  const locationSummary = useMemo(() => {
-    if (locationFormattedAddress) return locationFormattedAddress;
-    const trimmed = locationQuery.trim();
-    return trimmed || "Localização";
-  }, [locationFormattedAddress, locationQuery]);
-  const locationProviderLabel = useMemo(() => {
-    if (!locationSourceProvider) return null;
-    return locationSourceProvider === "APPLE_MAPS" ? "Apple Maps" : locationSourceProvider;
-  }, [locationSourceProvider]);
-  const locationValidationLabel = useMemo(() => {
-    if (!locationValidationStatus) return null;
-    if (locationValidationStatus === "VERIFIED") return "Verificada";
-    if (locationValidationStatus === "NORMALIZED") return "Normalizada";
-    if (locationValidationStatus === "RAW") return "Bruta";
-    return locationValidationStatus;
-  }, [locationValidationStatus]);
-
-  const buildLocationFormattedAddress = () =>
-    locationFormattedAddress || locationQuery.trim();
   const descriptionSummary = useMemo(() => {
     const trimmed = description.trim();
     if (!trimmed) return "Descrição";
@@ -1978,11 +1997,8 @@ export function NewOrganizationEventPage({
     if (!endsAt) {
       issues.push({ field: "endsAt", message: "Data/hora de fim obrigatória." });
     }
-    if (!locationTbd && !locationProviderId) {
-      issues.push({ field: "location", message: "Seleciona uma sugestão de localização." });
-    }
-    if (!locationTbd && locationProviderId && !locationConfirmed) {
-      issues.push({ field: "location", message: "Confirma a localização antes de guardar." });
+    if (!locationAddressId) {
+      issues.push({ field: "location", message: "Seleciona uma morada válida da lista de sugestões." });
     }
     if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
       issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
@@ -2134,8 +2150,12 @@ export function NewOrganizationEventPage({
       return;
     }
     if (field === "location") {
-      setShowLocationModal(true);
-      setPendingFocusField(field);
+      if (locationSectionRef.current) {
+        locationSectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      setTimeout(() => {
+        locationSearchRef.current?.focus({ preventScroll: true });
+      }, 120);
       return;
     }
     if (field === "title") {
@@ -2170,12 +2190,6 @@ export function NewOrganizationEventPage({
       return;
     }
 
-    if (pendingFocusField === "location" && showLocationModal) {
-      locationSearchRef.current?.focus({ preventScroll: true });
-      setPendingFocusField(null);
-      return;
-    }
-
     if (pendingFocusField === "description" && showDescriptionModal) {
       const focusable = descriptionModalRef.current?.querySelector("textarea,input,button,select") as HTMLElement | null;
       if (focusable) {
@@ -2187,7 +2201,6 @@ export function NewOrganizationEventPage({
     pendingFocusField,
     isTicketsModalOpen,
     schedulePopover,
-    showLocationModal,
     showDescriptionModal,
   ]);
 
@@ -2206,7 +2219,6 @@ export function NewOrganizationEventPage({
   const isAnyModalOpen =
     isTicketsModalOpen ||
     showLiveHubModal ||
-    showLocationModal ||
     showDescriptionModal ||
     showCoverModal ||
     showCoverCropModal;
@@ -2255,10 +2267,10 @@ export function NewOrganizationEventPage({
   }, [startsAt]);
 
   useEffect(() => {
-    if (locationProviderId && locationConfirmed) {
+    if (locationAddressId) {
       clearErrorsForFields(["location"]);
     }
-  }, [locationProviderId, locationConfirmed]);
+  }, [locationAddressId]);
 
   useEffect(() => {
     if (endsAt && startsAt && new Date(endsAt).getTime() > new Date(startsAt).getTime()) {
@@ -2422,9 +2434,9 @@ export function NewOrganizationEventPage({
         requiresEntitlementForEntry: false,
         checkinMethods: selectedPreset === "padel" ? ["QR_REGISTRATION"] : ["QR_TICKET"],
       };
-      const resolvedAddressId = locationTbd ? null : locationAddressId;
-      if (!locationTbd && !resolvedAddressId) {
-        setErrorMessage("Seleciona uma morada normalizada antes de criar o evento.");
+      const resolvedAddressId = locationAddressId;
+      if (!resolvedAddressId) {
+        setErrorMessage("Seleciona uma morada válida antes de criar o evento.");
         return;
       }
       const selectedCourtsPayload =
@@ -2536,7 +2548,6 @@ export function NewOrganizationEventPage({
     setShowTicketsModal(false);
     setShowLiveHubModal(false);
     setSchedulePopover(null);
-    setShowLocationModal(false);
     setShowDescriptionModal(false);
     setShowCoverModal(false);
     setShowLocationSuggestions(false);
@@ -2556,14 +2567,12 @@ export function NewOrganizationEventPage({
     setLocationAddressId(null);
     activeProviderRef.current = null;
     setLocationFormattedAddress(null);
-    setLocationSourceProvider(null);
-    setLocationConfidenceScore(null);
-    setLocationValidationStatus(null);
     setLocationSearchError(null);
+    setLocationBiasError(null);
     setLocationLat(null);
     setLocationLng(null);
-    setLocationTbd(false);
-    setLocationConfirmed(false);
+    setLocationBias(null);
+    setRequestingLocationBias(false);
     setTicketTypes([]);
     setIsFreeEvent(false);
     setFreeTicketName(freeTicketPlaceholder);
@@ -3089,66 +3098,116 @@ export function NewOrganizationEventPage({
     });
   };
 
-  const renderLocationPanel = () => (
-    <div className="space-y-4 animate-fade-slide">
-      <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label className={labelClass}>Local / Morada</label>
-          <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-            <button
-              type="button"
-              onClick={markLocationTbd}
-              className="rounded-full border border-white/15 px-3 py-1 hover:border-white/40"
-            >
-              Local a anunciar
-            </button>
-          </div>
-        </div>
+  const renderLocationPanel = () => {
+    const trimmedQuery = locationQuery.trim();
+    const waitingForTyping = trimmedQuery.length < 2;
+    const selectedLabel = locationFormattedAddress || locationQuery || "Local selecionado";
+    const selectedDistance =
+      locationBias && isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng)
+        ? formatDistanceLabel(distanceKm(locationBias, { lat: locationLat, lng: locationLng }))
+        : null;
 
-        <div className="space-y-3">
-            <div className="relative overflow-visible">
-                <input
-                  type="text"
-                  ref={locationSearchRef}
-                  value={locationQuery}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setLocationQuery(next);
-                    setLocationTbd(false);
-                    setLocationSearchError(null);
-                    if (locationProviderId) {
-                      setLocationProviderId(null);
-                      setLocationAddressId(null);
-                      setLocationSourceProvider(null);
-                      setLocationConfidenceScore(null);
-                      setLocationValidationStatus(null);
-                      activeProviderRef.current = null;
-                      setLocationFormattedAddress(null);
-                      setLocationLat(null);
-                      setLocationLng(null);
-                      setLocationConfirmed(false);
-                    }
-                    setShowLocationSuggestions(true);
-                  }}
-                onFocus={() => setShowLocationSuggestions(true)}
-                onBlur={() => {
-                  if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
-                  suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
-                }}
-                aria-invalid={Boolean(fieldErrors.location)}
-                className={inputClass(Boolean(fieldErrors.location))}
-                placeholder="Procura um local ou morada"
-              />
-              {showLocationSuggestions && (
-                <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
-                  {locationSearchLoading ? (
-                    <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar…</div>
-                    ) : locationSearchError ? (
-                      <div className="px-3 py-2 text-sm text-amber-100">{locationSearchError}</div>
-                    ) : locationSuggestions.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
+    return (
+      <div className="space-y-4 animate-fade-slide">
+        <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3">
+          <div className="space-y-1">
+            <label className={labelClass}>Local / Morada</label>
+            <p className="text-[11px] text-white/60">
+              Escreve pelo menos 2 caracteres e escolhe uma sugestão. O evento requer uma morada válida.
+            </p>
+          </div>
+
+          <div className="relative overflow-visible">
+            <input
+              type="text"
+              ref={locationSearchRef}
+              value={locationQuery}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLocationQuery(next);
+                setLocationSearchError(null);
+                setLocationBiasError(null);
+                if (locationProviderId || locationAddressId) {
+                  setLocationProviderId(null);
+                  setLocationAddressId(null);
+                  activeProviderRef.current = null;
+                  setLocationFormattedAddress(null);
+                  setLocationLat(null);
+                  setLocationLng(null);
+                }
+                setShowLocationSuggestions(true);
+              }}
+              onFocus={() => setShowLocationSuggestions(true)}
+              onBlur={() => {
+                if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
+                suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
+              }}
+              aria-invalid={Boolean(fieldErrors.location)}
+              className={inputClass(Boolean(fieldErrors.location))}
+              placeholder="Procura uma morada, rua, cidade ou espaço"
+            />
+
+            {showLocationSuggestions && (
+              <div className="mt-2 w-full max-h-72 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
+                {waitingForTyping ? (
+                  <div className="space-y-3 px-3 py-3">
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Sugestões</p>
+                      <p className="text-[12px] text-white/70">Começa a escrever para procurar locais.</p>
+                    </div>
+                    {recentLocationItems.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-white/55">Recentes</p>
+                        {recentLocationItems.map((suggestion) => (
+                          <button
+                            key={`recent-${suggestion.providerId}`}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handleSelectGeoSuggestion(suggestion)}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/8 px-2 py-2 text-left hover:bg-white/8"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-white">{suggestion.label}</p>
+                              <p className="text-[11px] text-white/60">{suggestion.city || suggestion.address || "—"}</p>
+                            </div>
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">Recente</span>
+                          </button>
+                        ))}
+                      </div>
                     ) : (
-                    locationSuggestions.map((suggestion) => (
+                      <p className="text-[12px] text-white/55">Sem localizações recentes nesta conta/dispositivo.</p>
+                    )}
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={requestLocationBias}
+                      disabled={requestingLocationBias}
+                      className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/80 hover:border-white/40 disabled:opacity-60"
+                    >
+                      {requestingLocationBias
+                        ? "A obter localização atual..."
+                        : locationBias
+                          ? "Localização atual ativa"
+                          : "Usar localização atual para melhorar sugestões"}
+                    </button>
+                    {locationBiasError && <p className="text-[11px] text-amber-100">{locationBiasError}</p>}
+                  </div>
+                ) : locationSearchLoading ? (
+                  <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar...</div>
+                ) : locationSearchError ? (
+                  <div className="px-3 py-2 text-sm text-amber-100">{locationSearchError}</div>
+                ) : locationSuggestions.length === 0 ? (
+                  <div className="space-y-1 px-3 py-2 text-sm text-white/65">
+                    <p>Sem sugestões para este texto.</p>
+                    <p className="text-[12px] text-white/50">Tenta rua + cidade, por exemplo: "Rua de Ceuta Porto".</p>
+                  </div>
+                ) : (
+                  locationSuggestions.map((suggestion) => {
+                    const suggestionDistance =
+                      locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
+                        ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
+                        : null;
+                    return (
                       <button
                         key={suggestion.providerId}
                         type="button"
@@ -3156,97 +3215,59 @@ export function NewOrganizationEventPage({
                         onClick={() => handleSelectGeoSuggestion(suggestion)}
                         className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
                       >
-                        <div className="flex w-full items-center justify-between gap-3">
-                          <span className="font-semibold text-white">{suggestion.label}</span>
-                          <div className="flex items-center gap-2 text-[12px] text-white/65">
-                            <span>{suggestion.city || "—"}</span>
-                            {suggestion.sourceProvider === "APPLE_MAPS" && (
-                              <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
-                                Apple
-                              </span>
-                            )}
+                        <div className="flex w-full items-start justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <span className="block font-semibold text-white">{suggestion.label}</span>
+                            <span className="block text-[12px] text-white/60">
+                              {suggestion.address || suggestion.city || "Morada sem detalhe"}
+                            </span>
                           </div>
+                          {suggestionDistance && (
+                            <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
+                              {suggestionDistance}
+                            </span>
+                          )}
                         </div>
                       </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-            {locationProviderId && (
-              <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
-                <div className="flex items-center justify-between gap-3">
-                  <span>{locationFormattedAddress || locationQuery || "Local selecionado"}</span>
-                  {locationDetailsLoading && <span className="text-[10px] uppercase tracking-[0.2em]">A validar…</span>}
-                </div>
-                {locationLat !== null && locationLng !== null && (
-                  <p className="mt-1 text-[11px] text-white/55">
-                    {locationLat.toFixed(5)}, {locationLng.toFixed(5)}
-                  </p>
-                )}
-                {(locationProviderLabel || locationConfidenceScore !== null || locationValidationLabel) && (
-                  <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
-                    {locationProviderLabel && (
-                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
-                        {locationProviderLabel}
-                      </span>
-                    )}
-                    {locationConfidenceScore !== null && (
-                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
-                        Confiança {Math.round(locationConfidenceScore)}%
-                      </span>
-                    )}
-                    {locationValidationLabel && (
-                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/70">
-                        {locationValidationLabel}
-                      </span>
-                    )}
-                  </div>
+                    );
+                  })
                 )}
               </div>
             )}
-            {locationProviderId && (
-              <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                {locationConfirmed ? (
-                  <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-emerald-50">
-                    Local confirmado
-                  </span>
-                ) : (
-                  <span className="rounded-full border border-amber-300/40 bg-amber-400/10 px-3 py-1 text-amber-50">
-                    Confirmação pendente
-                  </span>
-                )}
-                {!locationConfirmed && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLocationFormattedAddress(buildLocationFormattedAddress());
-                      setLocationConfirmed(true);
-                    }}
-                    disabled={locationDetailsLoading}
-                    className="rounded-full border border-white/15 px-3 py-1 text-white/80 hover:border-white/40 disabled:opacity-60"
-                  >
-                    Confirmar local
-                  </button>
-                )}
-              </div>
-            )}
-            {locationProviderId && (
-              <div className="text-[11px] text-white/60">
-                {locationConfirmed ? "Confirmado" : "Confirma o endereço antes de guardar."}
-              </div>
-            )}
-        </div>
+          </div>
 
-        {locationError && (
-          <p className={errorTextClass}>
-            <span aria-hidden>⚠️</span>
-            {locationError}
-          </p>
-        )}
+          {(locationProviderId || locationAddressId || locationFormattedAddress) && (
+            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/75">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-white">{selectedLabel}</p>
+                  <p className="text-[11px] text-white/55">
+                    {locationDetailsLoading ? "A validar morada..." : "Morada selecionada."}
+                  </p>
+                </div>
+                {selectedDistance && (
+                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
+                    {selectedDistance}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng) && (
+            <AppleLocationMapPreview lat={locationLat} lng={locationLng} label={selectedLabel} />
+          )}
+
+          {locationError && (
+            <p className={errorTextClass}>
+              <span aria-hidden>⚠️</span>
+              {locationError}
+            </p>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderTicketsPanel = () => (
     <div className="space-y-5 animate-fade-slide">
@@ -3704,57 +3725,6 @@ export function NewOrganizationEventPage({
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
                   {renderLiveHubPanel()}
-                </div>
-              </div>
-            </div>
-          </div>,
-          portalRoot,
-        )
-      : null;
-
-  const closeLocationModal = () => {
-    setShowLocationModal(false);
-    setShowLocationSuggestions(false);
-  };
-
-  const locationModal =
-    showLocationModal && portalRoot
-      ? createPortal(
-          <div className={MODAL_SHELL_CLASS}>
-            <div
-              className={MODAL_OVERLAY_CLASS}
-              onClick={closeLocationModal}
-              aria-hidden
-            />
-            <div
-              className={MODAL_CONTENT_WRAP_CLASS}
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  closeLocationModal();
-                }
-              }}
-            >
-              <div
-                className={`flex w-full max-w-3xl max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS}`}
-                role="dialog"
-                aria-modal="true"
-                aria-label="Localização"
-              >
-                <div className={MODAL_HEADER_CLASS}>
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Localização</p>
-                    <p className="text-sm font-semibold text-white">Cidade & morada</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeLocationModal}
-                    className={`${CTA_PRIMARY} px-3 py-1 text-[12px]`}
-                  >
-                    Concluir
-                  </button>
-                </div>
-                <div ref={locationModalRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
-                  {renderLocationPanel()}
                 </div>
               </div>
             </div>
@@ -4385,18 +4355,9 @@ export function NewOrganizationEventPage({
               </div>
 
               <div className="grid gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowLocationModal(true)}
-                  className="group flex w-full items-start gap-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition hover:border-white/25 hover:bg-white/8"
-                >
-                  <div className="space-y-1">
-                    <p className="text-[12px] text-white/80">Localização</p>
-                    <p className="text-[11px] text-white/55">{locationSummary}</p>
-                    {locationError && <p className="text-[10px] text-pink-200">{locationError}</p>}
-                  </div>
-                </button>
-
+                <div ref={locationSectionRef}>
+                  {renderLocationPanel()}
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowDescriptionModal(true)}
@@ -4973,7 +4934,7 @@ export function NewOrganizationEventPage({
           </section>
 
           <div className="flex flex-col items-center gap-2 pt-2">
-            <p className="text-[11px] text-white/60">Obrigatório: título, data, cidade.</p>
+            <p className="text-[11px] text-white/60">Obrigatório: título, data e morada válida.</p>
             {submitDisabledReason && (
               <p className="text-[10px] text-white/45">{submitDisabledReason}</p>
             )}
@@ -5014,7 +4975,6 @@ export function NewOrganizationEventPage({
 
         {ticketsModal}
         {liveHubModal}
-        {locationModal}
         {descriptionModal}
         {coverModal}
       </div>

@@ -34,7 +34,7 @@ import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
 import { shouldEmitSearchIndexUpdate } from "@/domain/searchIndex/triggers";
 import { normalizeInterestIds } from "@/lib/ranking/interests";
-import { buildDefaultEndsAt, isEndsAtAfterStart } from "@/lib/events/schedule";
+import { isEndsAtAfterStart } from "@/lib/events/schedule";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const canonicalize = (value: unknown): unknown => {
@@ -378,6 +378,9 @@ async function _POST(req: NextRequest) {
     if (!event) {
       return fail(404, "Evento não encontrado.");
     }
+    if (!event.endsAt || Number.isNaN(event.endsAt.getTime())) {
+      return fail(409, "Evento inválido: data/hora de fim em falta. Corrige o schedule.");
+    }
 
     const isAdmin = Array.isArray(profile.roles) ? profile.roles.includes("admin") : false;
 
@@ -413,8 +416,8 @@ async function _POST(req: NextRequest) {
         return respondError(
           ctx,
           {
-            errorCode: emailGate.error ?? "FORBIDDEN",
-            message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+            errorCode: emailGate.errorCode ?? "FORBIDDEN",
+            message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
             retryable: false,
             details: emailGate,
           },
@@ -537,12 +540,10 @@ async function _POST(req: NextRequest) {
       const nextStartsAt = (dataUpdate.startsAt ?? event.startsAt) as Date;
       const currentEndsAt = (dataUpdate.endsAt ?? event.endsAt) as Date | null;
       if (!currentEndsAt || Number.isNaN(currentEndsAt.getTime())) {
-        dataUpdate.endsAt = buildDefaultEndsAt(nextStartsAt);
-      } else if (!isEndsAtAfterStart(nextStartsAt, currentEndsAt)) {
-        if (dataUpdate.endsAt) {
-          return fail(400, "A data/hora de fim tem de ser depois do início.");
-        }
-        dataUpdate.endsAt = buildDefaultEndsAt(nextStartsAt);
+        return fail(400, "Data/hora de fim é obrigatória.");
+      }
+      if (!isEndsAtAfterStart(nextStartsAt, currentEndsAt)) {
+        return fail(400, "A data/hora de fim tem de ser depois do início.");
       }
     }
     if (addressIdInput !== undefined) {
@@ -755,7 +756,10 @@ async function _POST(req: NextRequest) {
       if (searchIndexRelevantUpdate && event.organizationId && eventLogId) {
         const nextTitle = (dataUpdate.title ?? event.title) as string;
         const nextStartsAt = (dataUpdate.startsAt ?? event.startsAt) as Date;
-        const nextEndsAt = (dataUpdate.endsAt ?? event.endsAt ?? event.startsAt) as Date;
+        const nextEndsAt = (dataUpdate.endsAt ?? event.endsAt) as Date | null;
+        if (!nextEndsAt || Number.isNaN(nextEndsAt.getTime())) {
+          throw new Error("EVENT_ENDS_AT_REQUIRED");
+        }
         const nextStatus =
           typeof dataUpdate.status === "string" ? dataUpdate.status : (event.status as string);
         const nextInterestTags = Array.isArray(dataUpdate.interestTags)

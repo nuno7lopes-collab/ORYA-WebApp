@@ -86,7 +86,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return fail(403, writeAccess.error);
+      return fail(403, writeAccess.errorCode);
     }
 
     const service = await prisma.service.findFirst({

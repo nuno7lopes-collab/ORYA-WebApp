@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { DsarCaseStatus, DsarCaseType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 
 const DSAR_DUE_DAYS = 30;
 
@@ -43,23 +44,8 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    const memberships = await prisma.organizationMember.findMany({
-      where: { userId: user.id },
-      select: {
-        organizationId: true,
-        role: true,
-        rolePack: true,
-        createdAt: true,
-        organization: {
-          select: {
-            id: true,
-            publicName: true,
-            businessName: true,
-            username: true,
-            status: true,
-          },
-        },
-      },
+    const memberships = await listEffectiveOrganizationMembershipsForUser({
+      userId: user.id,
     });
 
     const tickets = await prisma.ticket.findMany({

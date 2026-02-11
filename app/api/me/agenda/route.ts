@@ -8,6 +8,8 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { PUBLIC_EVENT_STATUSES } from "@/domain/events/publicStatus";
 import { isPublicEventCardComplete } from "@/domain/events/publicEventCard";
 import { resolveEventLocation } from "@/lib/location/eventLocation";
+import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
+import { OrganizationStatus } from "@prisma/client";
 
 type AgendaItem = {
   id: string;
@@ -303,41 +305,44 @@ async function _GET(req: NextRequest) {
       }),
     ]);
 
-    const staffEvents = await prisma.event.findMany({
-      where: {
-        isDeleted: false,
-        status: { in: PUBLIC_EVENT_STATUSES },
-        startsAt: { lte: end },
-        endsAt: { gte: start },
-        organization: {
-          status: "ACTIVE",
-          members: {
-            some: {
-              userId,
-              role: { in: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] },
+    const staffMemberships = await listEffectiveOrganizationMembershipsForUser({
+      userId,
+      roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+      allowedStatuses: [OrganizationStatus.ACTIVE],
+    });
+    const staffOrganizationIds = Array.from(
+      new Set(staffMemberships.map((membership) => membership.organizationId)),
+    );
+
+    const staffEvents = staffOrganizationIds.length
+      ? await prisma.event.findMany({
+          where: {
+            isDeleted: false,
+            status: { in: PUBLIC_EVENT_STATUSES },
+            startsAt: { lte: end },
+            endsAt: { gte: start },
+            organizationId: { in: staffOrganizationIds },
+          },
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            startsAt: true,
+            endsAt: true,
+            status: true,
+            templateType: true,
+            coverImageUrl: true,
+            addressRef: {
+              select: {
+                formattedAddress: true,
+                canonical: true,
+                latitude: true,
+                longitude: true,
+              },
             },
           },
-        },
-      },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        startsAt: true,
-        endsAt: true,
-        status: true,
-        templateType: true,
-        coverImageUrl: true,
-        addressRef: {
-          select: {
-            formattedAddress: true,
-            canonical: true,
-            latitude: true,
-            longitude: true,
-          },
-        },
-      },
-    });
+        })
+      : [];
 
     const eventMap = new Map<number, { priority: number; item: AgendaItem }>();
 

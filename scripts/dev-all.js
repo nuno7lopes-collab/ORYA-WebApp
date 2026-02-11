@@ -514,8 +514,6 @@ function startDeferredServices() {
   if (startChatWs) {
     const hasRedisUrl = Boolean(process.env.REDIS_URL);
     const chatWsEnv = {
-      CHAT_POLLING_ONLY: "0",
-      NEXT_PUBLIC_CHAT_POLLING_ONLY: "0",
       ...(hasRedisUrl ? { REDIS_URL: process.env.REDIS_URL } : {}),
     };
     if (!hasRedisUrl) {

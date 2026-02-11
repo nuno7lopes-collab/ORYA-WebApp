@@ -1,7 +1,6 @@
 import { EventPricingMode } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
-import { normalizeEndsAt } from "@/lib/events/schedule";
 
 export type PublicEventCard = {
   id: number;
@@ -140,12 +139,13 @@ const resolveEventDates = (
 ) => {
   const start =
     startsAt instanceof Date ? startsAt : startsAt ? new Date(startsAt) : null;
+  const parsedEnd = endsAt instanceof Date ? endsAt : endsAt ? new Date(endsAt) : null;
+  const validEnd =
+    parsedEnd && !Number.isNaN(parsedEnd.getTime()) ? parsedEnd : null;
   if (!start || Number.isNaN(start.getTime())) {
-    const end = endsAt instanceof Date ? endsAt : endsAt ? new Date(endsAt) : null;
-    return { start: null, end: end && !Number.isNaN(end.getTime()) ? end : null };
+    return { start: null, end: validEnd };
   }
-  const endRaw = endsAt instanceof Date ? endsAt : endsAt ? new Date(endsAt) : null;
-  const end = normalizeEndsAt(start, endRaw);
+  const end = validEnd && validEnd.getTime() > start.getTime() ? validEnd : null;
   return { start, end };
 };
 
@@ -189,11 +189,15 @@ export function resolvePublicEventStatus(event: {
         : null;
   const endDateRaw =
     event.endsAt instanceof Date ? event.endsAt : event.endsAt ? new Date(event.endsAt) : null;
+  const validEndDate =
+    endDateRaw && !Number.isNaN(endDateRaw.getTime()) ? endDateRaw : null;
   const endDate =
     startDate && !Number.isNaN(startDate.getTime())
-      ? normalizeEndsAt(startDate, endDateRaw).getTime()
-      : endDateRaw && !Number.isNaN(endDateRaw.getTime())
-        ? endDateRaw.getTime()
+      ? validEndDate && validEndDate.getTime() > startDate.getTime()
+        ? validEndDate.getTime()
+        : null
+      : validEndDate
+        ? validEndDate.getTime()
         : null;
 
   if (endDate && endDate < now) return "PAST";

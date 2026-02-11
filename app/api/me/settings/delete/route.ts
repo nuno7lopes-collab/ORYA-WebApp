@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { DsarCaseStatus, DsarCaseType } from "@prisma/client";
+import {
+  countEffectiveOrganizationMembersByRole,
+  listEffectiveOrganizationMembershipsForUser,
+} from "@/lib/organizationMembers";
 
 async function _POST() {
   try {
@@ -19,23 +23,24 @@ async function _POST() {
     }
 
     // Verificar se o utilizador é owner único de alguma organização
-    const ownerMemberships = await prisma.organizationMember.findMany({
-      where: { userId: user.id, role: "OWNER" },
-      include: { organization: true },
+    const ownerMemberships = await listEffectiveOrganizationMembershipsForUser({
+      userId: user.id,
+      roles: ["OWNER"],
     });
 
     const blockedOrgs: string[] = [];
     for (const mem of ownerMemberships) {
-      if (!mem.organization) continue;
-      const otherOwners = await prisma.organizationMember.count({
-        where: {
-          organizationId: mem.organizationId,
-          role: "OWNER",
-          userId: { not: user.id },
-        },
+      const otherOwners = await countEffectiveOrganizationMembersByRole({
+        organizationId: mem.organizationId,
+        role: "OWNER",
+        excludeUserId: user.id,
       });
       if (otherOwners === 0) {
-        blockedOrgs.push(mem.organization.publicName || mem.organization.businessName || `Organização #${mem.organizationId}`);
+        blockedOrgs.push(
+          mem.organization.publicName ||
+            mem.organization.businessName ||
+            `Organização #${mem.organizationId}`,
+        );
       }
     }
 

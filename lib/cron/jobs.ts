@@ -15,13 +15,6 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/operations",
   },
   {
-    key: "chat-maintenance",
-    envIntervalMs: "CRON_CHAT_INTERVAL_MS",
-    defaultIntervalMs: 60_000,
-    method: "GET",
-    endpoint: "/api/cron/chat/maintenance",
-  },
-  {
     key: "bookings-cleanup",
     envIntervalMs: "CRON_BOOKINGS_INTERVAL_MS",
     defaultIntervalMs: 60_000,

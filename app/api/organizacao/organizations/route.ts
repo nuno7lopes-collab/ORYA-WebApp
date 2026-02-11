@@ -17,16 +17,106 @@ import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 async function _GET() {
   try {
     const user = await requireUser();
+    const [profile, groupMemberships] = await Promise.all([
+      prisma.profile.findUnique({
+        where: { id: user.id },
+        select: { activeOrganizationId: true },
+      }),
+      prisma.organizationGroupMember.findMany({
+        where: { userId: user.id },
+        select: {
+          id: true,
+          role: true,
+          rolePack: true,
+          scopeAllOrgs: true,
+          scopeOrgIds: true,
+          createdAt: true,
+          group: {
+            select: {
+              organizations: {
+                select: {
+                  id: true,
+                  publicName: true,
+                  username: true,
+                  businessName: true,
+                  entityType: true,
+                  status: true,
+                  primaryModule: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
-    const memberships = await prisma.organizationMember.findMany({
-      where: { userId: user.id },
-      include: { organization: true },
-      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
-    });
+    const groupMemberIds = groupMemberships.map((m) => m.id);
+    const overrides =
+      groupMemberIds.length > 0
+        ? await prisma.organizationGroupMemberOrganizationOverride.findMany({
+            where: { groupMemberId: { in: groupMemberIds } },
+            select: {
+              groupMemberId: true,
+              organizationId: true,
+              roleOverride: true,
+              revokedAt: true,
+            },
+          })
+        : [];
+    const overrideByKey = new Map(
+      overrides.map((entry) => [`${entry.groupMemberId}:${entry.organizationId}`, entry] as const),
+    );
 
-    const organizationIds = (memberships || [])
-      .map((m) => m.organizationId)
-      .filter((id): id is number => typeof id === "number");
+    const itemsByOrganization = new Map<
+      number,
+      {
+        organizationId: number;
+        role: string;
+        lastUsedAt: Date | null;
+        createdAt: Date;
+        organization: {
+          id: number;
+          publicName: string;
+          username: string | null;
+          businessName: string | null;
+          entityType: string | null;
+          status: string;
+          primaryModule: string;
+          modules: string[];
+        };
+      }
+    >();
+    for (const membership of groupMemberships) {
+      const organizations = membership.group?.organizations ?? [];
+      for (const org of organizations) {
+        const scopeOk = membership.scopeAllOrgs || (membership.scopeOrgIds ?? []).includes(org.id);
+        if (!scopeOk) continue;
+        const override = overrideByKey.get(`${membership.id}:${org.id}`);
+        if (override?.revokedAt) continue;
+        const role = override?.roleOverride ?? membership.role;
+        const existing = itemsByOrganization.get(org.id);
+        if (!existing) {
+          itemsByOrganization.set(org.id, {
+            organizationId: org.id,
+            role,
+            lastUsedAt: profile?.activeOrganizationId === org.id ? new Date() : null,
+            createdAt: membership.createdAt,
+            organization: {
+              id: org.id,
+              publicName: org.publicName,
+              username: org.username,
+              businessName: org.businessName,
+              entityType: org.entityType,
+              status: org.status,
+              primaryModule: (org as { primaryModule?: string | null }).primaryModule ?? DEFAULT_PRIMARY_MODULE,
+              modules: [],
+            },
+          });
+        }
+      }
+    }
+
+    const organizationIds = Array.from(itemsByOrganization.keys());
 
     const modulesRows =
       organizationIds.length > 0
@@ -47,34 +137,24 @@ async function _GET() {
       }
     }
 
-    const items = (memberships || [])
-      .filter((m) => m.organization)
-      .map((m) => ({
-        organizationId: m.organizationId,
-        role: m.role,
-        lastUsedAt: (m as { lastUsedAt?: Date | null }).lastUsedAt ?? null,
+    const items = Array.from(itemsByOrganization.values())
+      .map((item) => ({
+        ...item,
         organization: {
-          id: m.organization!.id,
-          publicName: m.organization!.publicName,
-          username: m.organization!.username,
-          businessName: m.organization!.businessName,
-          entityType: m.organization!.entityType,
-          status: m.organization!.status,
-          primaryModule:
-            (m.organization as { primaryModule?: string | null }).primaryModule ??
-            DEFAULT_PRIMARY_MODULE,
-          modules: modulesByOrganization.get(m.organizationId) ?? [],
+          ...item.organization,
+          modules: modulesByOrganization.get(item.organizationId) ?? [],
         },
-      }));
+      }))
+      .sort((a, b) => {
+        const aActive = a.organizationId === profile?.activeOrganizationId ? 1 : 0;
+        const bActive = b.organizationId === profile?.activeOrganizationId ? 1 : 0;
+        if (aActive !== bActive) return bActive - aActive;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      })
+      .map(({ createdAt, ...item }) => item);
 
     return jsonWrap({ ok: true, items }, { status: 200 });
   } catch (err: unknown) {
-    if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021") {
-      return jsonWrap(
-        { ok: false, error: "Base de dados sem tabela organization_members. Corre as migrations." },
-        { status: 500 },
-      );
-    }
     console.error("[organização/organizations][GET]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
@@ -213,11 +293,6 @@ async function _POST(req: NextRequest) {
         ownerId: created.id,
         tx,
       });
-      await tx.organizationMember.upsert({
-        where: { organizationId_userId: { organizationId: created.id, userId: user.id } },
-        update: { role: OrganizationMemberRole.OWNER },
-        create: { organizationId: created.id, userId: user.id, role: OrganizationMemberRole.OWNER },
-      });
       await ensureGroupMemberForOrg({
         organizationId: created.id,
         userId: user.id,
@@ -257,12 +332,6 @@ async function _POST(req: NextRequest) {
       return jsonWrap(
         { ok: false, error: "Este @ já está a ser usado — escolhe outro.", code: "USERNAME_TAKEN" },
         { status: 409 },
-      );
-    }
-    if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021") {
-      return jsonWrap(
-        { ok: false, error: "Base de dados sem tabela organization_members. Corre as migrations." },
-        { status: 500 },
       );
     }
     console.error("[organização/organizations][POST]", err);

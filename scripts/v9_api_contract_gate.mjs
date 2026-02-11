@@ -29,12 +29,17 @@ for (const file of files) {
   const content = fs.readFileSync(file, "utf8");
   const rel = path.relative(ROOT, file);
 
+  // Some routes are thin adapters that delegate directly to canonical handlers
+  // where envelope helpers are enforced.
+  const delegatesToCanonicalHandler = /from\s+["']@\/lib\/messages\/handlers\//.test(content);
+
   const hasEnvelopeHelper =
     /withApiEnvelope\s*\(/.test(content) ||
     /respondOk\s*\(/.test(content) ||
     /respondError\s*\(/.test(content) ||
     /respondPlainText\s*\(/.test(content) ||
-    /jsonWrap\s*\(/.test(content);
+    /jsonWrap\s*\(/.test(content) ||
+    delegatesToCanonicalHandler;
 
   if (!hasEnvelopeHelper) {
     missingEnvelope.push(rel);

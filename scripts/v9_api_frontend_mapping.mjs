@@ -4,7 +4,7 @@ import path from "path";
 const ROOT = process.cwd();
 const API_ROOT = path.join(ROOT, "app", "api");
 const USAGE_PATH = path.join(ROOT, "reports", "v9_inventory_frontend_api_usage.md");
-const PLAN_PATH = path.join(ROOT, "docs", "ssot_registry.md");
+const P0_MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.json");
 const OUT_CSV = path.join(ROOT, "reports", "v9_api_frontend_mapping.csv");
 const OUT_REPORT = path.join(ROOT, "reports", "v9_api_frontend_mapping_report.md");
 
@@ -53,21 +53,21 @@ function parseFrontendUsage(mdText) {
   return usage;
 }
 
-function parsePlanRoutes(planText) {
-  const lines = planText.split(/\r?\n/);
+function parseP0ManifestRoutes() {
+  if (!fs.existsSync(P0_MANIFEST_PATH)) return [];
+  let manifest = null;
+  try {
+    manifest = JSON.parse(fs.readFileSync(P0_MANIFEST_PATH, "utf8"));
+  } catch {
+    return [];
+  }
   const paths = new Set();
-  let inSection = false;
-  for (const line of lines) {
-    if (/^##\s+P0 endpoints/i.test(line) || line.includes("P0 endpoints")) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^##\s+/.test(line)) break;
-    if (!inSection) continue;
-    const matches = line.matchAll(/app\/api\/[^\s`]+\/route\.ts/g);
-    for (const match of matches) {
-      paths.add(match[0]);
-    }
+  const entries = Array.isArray(manifest?.endpoints) ? manifest.endpoints : [];
+  for (const entry of entries) {
+    if (typeof entry !== "string") continue;
+    const value = entry.trim();
+    if (!/^app\/api\/.+\/route\.(ts|tsx|js|jsx)$/.test(value)) continue;
+    paths.add(value);
   }
   return Array.from(paths.values());
 }
@@ -129,8 +129,7 @@ for (const file of routeFiles) {
 const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n") + "\n";
 fs.writeFileSync(OUT_CSV, csv, "utf8");
 
-const planText = fs.existsSync(PLAN_PATH) ? fs.readFileSync(PLAN_PATH, "utf8") : "";
-const planPaths = parsePlanRoutes(planText);
+const planPaths = parseP0ManifestRoutes();
 const internalOnly = [];
 const externalOnly = [];
 const missingUi = [];
@@ -164,7 +163,7 @@ const reportLines = [
   "## External/Webhook endpoints (no UI required)",
   ...(externalOnly.length ? externalOnly.map((route) => `- ${route}`) : ["- none"]),
   "",
-  "## Endpoints referenced in ssot_registry (P0 list) without frontend usage",
+  "## Endpoints referenced in p0_endpoints manifest without frontend usage",
   "- Nota: lista calculada por strings `/api/...` no frontend; endpoints aqui podem ser mobile/server-only.",
   ...(missingUi.length ? missingUi.map((route) => `- ${route}`) : ["- none"]),
   "",

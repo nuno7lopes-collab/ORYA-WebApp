@@ -21,7 +21,6 @@ import {
   EventStatus,
   EventPricingMode,
   EventTemplateType,
-  OrganizationMemberRole,
   OrganizationModule,
   OrganizationStatus,
   PrismaClient,
@@ -268,7 +267,6 @@ async function clearSeedData() {
   }
 
   if (orgIds.length > 0) {
-    await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
     await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
   }
 
@@ -294,6 +292,48 @@ async function clearSeedData() {
       }
     }
   }
+}
+
+async function ensureOwnerGroupMembership(organizationId: number, userId: string) {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { groupId: true },
+  });
+  if (!org?.groupId) {
+    throw new Error(`Organizacao ${organizationId} sem groupId.`);
+  }
+
+  const existing = await prisma.organizationGroupMember.findFirst({
+    where: { groupId: org.groupId, userId },
+    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true },
+  });
+
+  if (existing?.id) {
+    await prisma.organizationGroupMember.update({
+      where: { id: existing.id },
+      data: {
+        role: "OWNER",
+        scopeAllOrgs: existing.scopeAllOrgs,
+        scopeOrgIds: existing.scopeAllOrgs
+          ? []
+          : Array.from(new Set([...(existing.scopeOrgIds ?? []), organizationId])),
+      },
+    });
+    await prisma.organizationGroupMemberOrganizationOverride.deleteMany({
+      where: { groupMemberId: existing.id, organizationId },
+    });
+    return;
+  }
+
+  await prisma.organizationGroupMember.create({
+    data: {
+      groupId: org.groupId,
+      userId,
+      role: "OWNER",
+      scopeAllOrgs: false,
+      scopeOrgIds: [organizationId],
+    },
+  });
 }
 
 async function main() {
@@ -409,16 +449,7 @@ async function main() {
 
     const owner = users[i % users.length];
     if (owner) {
-      await prisma.organizationMember.upsert({
-        where: { organizationId_userId: { organizationId: organization.id, userId: owner.id } },
-        update: { role: OrganizationMemberRole.OWNER },
-        create: {
-          env: seedEnv,
-          organizationId: organization.id,
-          userId: owner.id,
-          role: OrganizationMemberRole.OWNER,
-        },
-      });
+      await ensureOwnerGroupMembership(organization.id, owner.id);
     }
 
     organizations.push({ id: organization.id, username: organization.username ?? username });

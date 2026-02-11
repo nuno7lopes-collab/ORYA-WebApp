@@ -1,8 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
-  CORE_ORGANIZATION_MODULES,
-  OPERATION_MODULES,
   ORGANIZATION_MODULES,
   resolvePrimaryModule,
   type OrganizationModule,
@@ -36,15 +34,8 @@ export async function getOrganizationActiveModules(
     .filter((module) => module.length > 0 && moduleSet.has(module));
 
   const resolvedPrimary = resolvePrimaryModule(primaryModule ?? null, normalizedModules);
-  const activeSet = new Set<OrganizationModule>([
-    ...CORE_ORGANIZATION_MODULES,
-    ...OPERATION_MODULES,
-    resolvedPrimary,
-  ]);
-
-  normalizedModules.forEach((module) => {
-    activeSet.add(module as OrganizationModule);
-  });
+  const activeSet = new Set<OrganizationModule>();
+  normalizedModules.forEach((module) => activeSet.add(module as OrganizationModule));
 
   return {
     activeModules: Array.from(activeSet),

@@ -18,6 +18,7 @@ import {
 import { isValidWebsite } from "@/lib/validation/organization";
 import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { AddressSourceProvider } from "@prisma/client";
+import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 
 type OrganizationPayload = {
   entityType?: string | null;
@@ -302,20 +303,6 @@ async function _POST(req: NextRequest) {
         }
       }
 
-      await tx.organizationMember.upsert({
-        where: {
-          organizationId_userId: {
-            organizationId: nextOrganization.id,
-            userId: profile.id,
-          },
-        },
-        update: { role: "OWNER" },
-        create: {
-          organizationId: nextOrganization.id,
-          userId: profile.id,
-          role: "OWNER",
-        },
-      });
       await ensureGroupMemberForOrg({
         organizationId: nextOrganization.id,
         userId: profile.id,
@@ -391,18 +378,22 @@ async function _POST(req: NextRequest) {
 async function _DELETE(_req: NextRequest) {
   try {
     const user = await requireUser();
-
-    await prisma.organization.deleteMany({
-      where: {
-        status: "PENDING",
-        members: {
-          some: {
-            userId: user.id,
-            role: "OWNER",
-          },
-        },
-      },
+    const ownerMemberships = await listEffectiveOrganizationMembershipsForUser({
+      userId: user.id,
+      roles: ["OWNER"],
     });
+    const pendingOrganizationIds = ownerMemberships
+      .filter((membership) => membership.organization.status === "PENDING")
+      .map((membership) => membership.organizationId);
+
+    if (pendingOrganizationIds.length > 0) {
+      await prisma.organization.deleteMany({
+        where: {
+          status: "PENDING",
+          id: { in: pendingOrganizationIds },
+        },
+      });
+    }
 
     return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {

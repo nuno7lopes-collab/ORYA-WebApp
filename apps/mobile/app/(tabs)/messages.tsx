@@ -175,16 +175,17 @@ export default function MessagesTabScreen() {
           const isMuted =
             Boolean(item.mutedUntil) && new Date(item.mutedUntil ?? "").getTime() > now;
           const openThread = () => {
-            if (isEvent && item.threadId && item.event) {
+            if (isEvent && item.conversationId && item.event) {
               router.push({
                 pathname: "/messages/[threadId]",
                 params: {
-                  threadId: item.threadId,
+                  threadId: item.conversationId,
                   eventId: String(item.event.id),
                   title: item.title,
                   coverImageUrl: item.imageUrl ?? "",
                   startsAt: item.event.startsAt ?? "",
                   endsAt: item.event.endsAt ?? "",
+                  slug: item.event.slug ?? "",
                   source: "event",
                 },
               });

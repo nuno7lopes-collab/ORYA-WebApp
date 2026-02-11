@@ -1,13 +1,14 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-11T12:05:29.340Z
+Generated: 2026-02-11T18:41:24.403Z
 CSV: reports/api_ui_coverage.csv
 
 ## Summary
-- API routes total: 566
-- Covered by UI: 520
+- API routes total: 547
+- Covered by UI: 448
 - Orphan (no UI): 0
-- Exempt (internal/cron/webhook): 46
+- Orphan allowlisted: 55
+- Exempt (internal/cron/webhook): 44
 - UI endpoints missing API: 0
 
 ## UI endpoints missing API routes
@@ -16,9 +17,65 @@ CSV: reports/api_ui_coverage.csv
 ## API routes without UI usage (excluding internal/cron/webhook)
 - none
 
+## API orphan allowlist matches
+- /api/organizacao/agenda (app/api/organizacao/agenda/route.ts)
+- /api/organizacao/agenda/soft-blocks (app/api/organizacao/agenda/soft-blocks/route.ts)
+- /api/organizacao/analytics/dimensoes (app/api/organizacao/analytics/dimensoes/route.ts)
+- /api/organizacao/analytics/overview (app/api/organizacao/analytics/overview/route.ts)
+- /api/organizacao/become (app/api/organizacao/become/route.ts)
+- /api/organizacao/consentimentos (app/api/organizacao/consentimentos/route.ts)
+- /api/organizacao/events/[id]/invite-token (app/api/organizacao/events/[id]/invite-token/route.ts)
+- /api/organizacao/faturacao (app/api/organizacao/faturacao/route.ts)
+- /api/organizacao/finance/exports/fees (app/api/organizacao/finance/exports/fees/route.ts)
+- /api/organizacao/finance/exports/ledger (app/api/organizacao/finance/exports/ledger/route.ts)
+- /api/organizacao/finance/exports/payouts (app/api/organizacao/finance/exports/payouts/route.ts)
+- /api/organizacao/finance/invoicing (app/api/organizacao/finance/invoicing/route.ts)
+- /api/organizacao/loja (app/api/organizacao/loja/route.ts)
+- /api/organizacao/loja/bundles (app/api/organizacao/loja/bundles/route.ts)
+- /api/organizacao/loja/bundles/[id] (app/api/organizacao/loja/bundles/[id]/route.ts)
+- /api/organizacao/loja/bundles/[id]/items (app/api/organizacao/loja/bundles/[id]/items/route.ts)
+- /api/organizacao/loja/bundles/[id]/items/[itemId] (app/api/organizacao/loja/bundles/[id]/items/[itemId]/route.ts)
+- /api/organizacao/loja/categories (app/api/organizacao/loja/categories/route.ts)
+- /api/organizacao/loja/categories/[id] (app/api/organizacao/loja/categories/[id]/route.ts)
+- /api/organizacao/loja/orders (app/api/organizacao/loja/orders/route.ts)
+- /api/organizacao/loja/orders/[orderId] (app/api/organizacao/loja/orders/[orderId]/route.ts)
+- /api/organizacao/loja/orders/[orderId]/shipments (app/api/organizacao/loja/orders/[orderId]/shipments/route.ts)
+- /api/organizacao/loja/overview (app/api/organizacao/loja/overview/route.ts)
+- /api/organizacao/loja/preview (app/api/organizacao/loja/preview/route.ts)
+- /api/organizacao/loja/products (app/api/organizacao/loja/products/route.ts)
+- /api/organizacao/loja/products/[id] (app/api/organizacao/loja/products/[id]/route.ts)
+- /api/organizacao/loja/products/[id]/digital-assets (app/api/organizacao/loja/products/[id]/digital-assets/route.ts)
+- /api/organizacao/loja/products/[id]/digital-assets/[assetId] (app/api/organizacao/loja/products/[id]/digital-assets/[assetId]/route.ts)
+- /api/organizacao/loja/products/[id]/images (app/api/organizacao/loja/products/[id]/images/route.ts)
+- /api/organizacao/loja/products/[id]/images/[imageId] (app/api/organizacao/loja/products/[id]/images/[imageId]/route.ts)
+- /api/organizacao/loja/products/[id]/options (app/api/organizacao/loja/products/[id]/options/route.ts)
+- /api/organizacao/loja/products/[id]/options/[optionId] (app/api/organizacao/loja/products/[id]/options/[optionId]/route.ts)
+- /api/organizacao/loja/products/[id]/options/[optionId]/values (app/api/organizacao/loja/products/[id]/options/[optionId]/values/route.ts)
+- /api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId] (app/api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId]/route.ts)
+- /api/organizacao/loja/products/[id]/variants (app/api/organizacao/loja/products/[id]/variants/route.ts)
+- /api/organizacao/loja/products/[id]/variants/[variantId] (app/api/organizacao/loja/products/[id]/variants/[variantId]/route.ts)
+- /api/organizacao/loja/settings (app/api/organizacao/loja/settings/route.ts)
+- /api/organizacao/loja/shipments/[shipmentId] (app/api/organizacao/loja/shipments/[shipmentId]/route.ts)
+- /api/organizacao/loja/shipping/methods/[methodId] (app/api/organizacao/loja/shipping/methods/[methodId]/route.ts)
+- /api/organizacao/loja/shipping/methods/[methodId]/tiers (app/api/organizacao/loja/shipping/methods/[methodId]/tiers/route.ts)
+- /api/organizacao/loja/shipping/settings (app/api/organizacao/loja/shipping/settings/route.ts)
+- /api/organizacao/loja/shipping/tiers/[tierId] (app/api/organizacao/loja/shipping/tiers/[tierId]/route.ts)
+- /api/organizacao/loja/shipping/zones (app/api/organizacao/loja/shipping/zones/route.ts)
+- /api/organizacao/loja/shipping/zones/[zoneId] (app/api/organizacao/loja/shipping/zones/[zoneId]/route.ts)
+- /api/organizacao/loja/shipping/zones/[zoneId]/methods (app/api/organizacao/loja/shipping/zones/[zoneId]/methods/route.ts)
+- /api/organizacao/ops/feed (app/api/organizacao/ops/feed/route.ts)
+- /api/organizacao/padel/courts (app/api/organizacao/padel/courts/route.ts)
+- /api/organizacao/payouts/settings (app/api/organizacao/payouts/settings/route.ts)
+- /api/organizacao/tournaments/[id] (app/api/organizacao/tournaments/[id]/route.ts)
+- /api/organizacao/tournaments/[id]/matches/[matchId]/edit (app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts)
+- /api/organizacao/tournaments/[id]/matches/[matchId]/notify (app/api/organizacao/tournaments/[id]/matches/[matchId]/notify/route.ts)
+- /api/organizacao/tournaments/[id]/matches/schedule (app/api/organizacao/tournaments/[id]/matches/schedule/route.ts)
+- /api/organizacao/tournaments/[id]/structure (app/api/organizacao/tournaments/[id]/structure/route.ts)
+- /api/organizacao/tournaments/list (app/api/organizacao/tournaments/list/route.ts)
+- /api/organizacao/venues/recent (app/api/organizacao/venues/recent/route.ts)
+
 ## Exempt routes (internal/cron/webhook)
 - /api/cron/bookings/cleanup (app/api/cron/bookings/cleanup/route.ts)
-- /api/cron/chat/maintenance (app/api/cron/chat/maintenance/route.ts)
 - /api/cron/creditos/expire (app/api/cron/creditos/expire/route.ts)
 - /api/cron/crm/campanhas (app/api/cron/crm/campanhas/route.ts)
 - /api/cron/crm/rebuild (app/api/cron/crm/rebuild/route.ts)
@@ -36,7 +93,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/cron/reservations/cleanup (app/api/cron/reservations/cleanup/route.ts)
 - /api/internal/analytics/rollup (app/api/internal/analytics/rollup/route.ts)
 - /api/internal/audit (app/api/internal/audit/route.ts)
-- /api/internal/chat/backfill (app/api/internal/chat/backfill/route.ts)
 - /api/internal/checkin/consume (app/api/internal/checkin/consume/route.ts)
 - /api/internal/checkout/timeline (app/api/internal/checkout/timeline/route.ts)
 - /api/internal/crm/ingest (app/api/internal/crm/ingest/route.ts)
@@ -64,20 +120,11 @@ CSV: reports/api_ui_coverage.csv
 - /api/stripe/webhook (app/api/stripe/webhook/route.ts)
 - /api/webhooks/stripe (app/api/webhooks/stripe/route.ts)
 
-## P0 endpoints coverage (docs/ssot_registry.md)
-- Total: 62
+## P0 endpoints coverage (scripts/manifests/p0_endpoints.json)
+- Total: 33
 
 ### P0 missing files
-- app/api/store/checkout/route.ts
-- app/api/store/checkout/prefill/route.ts
-- app/api/admin/payouts/list/route.ts
-- app/api/admin/payouts/[id]/route.ts
-- app/api/admin/payouts/[id]/block/route.ts
-- app/api/admin/payouts/[id]/unblock/route.ts
-- app/api/admin/payouts/[id]/cancel/route.ts
-- app/api/admin/payouts/[id]/force-release/route.ts
-- app/api/**/route.ts
-- app/api/store/orders/invoice/route.ts
+- none
 
 ### P0 exempt (internal/cron/webhook)
 - /api/organizacao/payouts/webhook (app/api/organizacao/payouts/webhook/route.ts)
@@ -94,11 +141,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/cron/payouts/release (app/api/cron/payouts/release/route.ts)
 - /api/stripe/webhook (app/api/stripe/webhook/route.ts)
 - /api/webhooks/stripe (app/api/webhooks/stripe/route.ts)
-- /api/internal/public-api/keys (app/api/internal/public-api/keys/route.ts)
-- /api/cron/padel/expire (app/api/cron/padel/expire/route.ts)
-- /api/internal/notifications/sweep (app/api/internal/notifications/sweep/route.ts)
-- /api/cron/loyalty/expire (app/api/cron/loyalty/expire/route.ts)
-- /api/cron/chat/maintenance (app/api/cron/chat/maintenance/route.ts)
 
 ### P0 covered by UI
 - /api/payments/intent (files: app/components/checkout/Step2Pagamento.tsx, apps/mobile/features/checkout/api.ts)
@@ -118,22 +160,7 @@ CSV: reports/api_ui_coverage.csv
 - /api/organizacao/payouts/status (files: app/organizacao/DashboardClient.tsx)
 - /api/organizacao/payouts/list (files: app/organizacao/pagamentos/PayoutsPanel.tsx)
 - /api/organizacao/payouts/summary (files: app/organizacao/DashboardClient.tsx)
-- /api/organizacao/payouts/settings (files: lib/organizationId.ts)
 - /api/organizacao/payouts/connect (files: app/organizacao/DashboardClient.tsx)
-- /api/public/agenda (files: apps/mobile/features/profile/api.ts)
-- /api/organizacao/checkin (files: app/components/checkin/CheckinScanner.tsx)
-- /api/padel/pairings (files: app/components/checkout/Step1Bilhete.tsx, app/eventos/[slug]/EventPageClient.tsx, app/eventos/[slug]/PadelSignupInline.tsx, app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, apps/mobile/features/tournaments/api.ts)
-- /api/padel/calendar (files: app/organizacao/(dashboard)/padel/PadelHubClient.tsx)
-- /api/me/store/purchases/[orderId]/invoice (files: apps/mobile/features/profile/api.ts)
-- /api/me/location/consent (files: apps/mobile/features/onboarding/api.ts)
-- /api/explorar/list (files: app/components/Navbar.tsx, app/descobrir/_explorar/ExplorarContent.tsx, apps/mobile/features/discover/api.ts)
-- /api/eventos/list (files: apps/mobile/features/agora/api.ts)
-- /api/me/events/signals (files: apps/mobile/features/events/signals.ts)
-- /api/upload (files: app/components/profile/ProfileHeader.tsx, app/organizacao/(dashboard)/eventos/EventEditClient.tsx, app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, app/organizacao/(dashboard)/eventos/novo/page.tsx, app/organizacao/(dashboard)/reservas/[id]/page.tsx, app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx, app/organizacao/(dashboard)/treinadores/page.tsx, app/organizacao/OrganizationPublicProfilePanel.tsx, apps/mobile/lib/upload.ts, components/store/StoreProductImagesPanel.tsx, components/store/StoreProductsPanel.tsx)
-- /api/upload/delete (files: app/components/profile/ProfileHeader.tsx, app/organizacao/(dashboard)/eventos/EventEditClient.tsx, app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, app/organizacao/(dashboard)/eventos/novo/page.tsx, app/organizacao/(dashboard)/reservas/[id]/page.tsx, app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx, app/organizacao/(dashboard)/treinadores/page.tsx, app/organizacao/OrganizationPublicProfilePanel.tsx, apps/mobile/lib/upload.ts, components/store/StoreProductImagesPanel.tsx, components/store/StoreProductsPanel.tsx)
-- /api/chat/messages (files: app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx, app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts)
-- /api/me/store/products/[id]/digital-assets (files: apps/mobile/features/profile/api.ts)
-- /api/organizacao/loja/products/[id]/digital-assets (files: lib/organizationId.ts)
 
 ### P0 missing UI usage
-- none
+- /api/organizacao/payouts/settings (app/api/organizacao/payouts/settings/route.ts)

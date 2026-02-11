@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 
 const WATCH_DIRS = ["domain/outbox/", "app/api/internal/"];
-const REQUIRED_DOCS = ["docs/blueprint.md", "docs/ssot_registry.md"];
+const REQUIRED_DOCS = ["docs/ssot_registry.md", "docs/planning_registry.md"];
 
 function runGit(cmd) {
   return execSync(cmd, { encoding: "utf8" }).trim();

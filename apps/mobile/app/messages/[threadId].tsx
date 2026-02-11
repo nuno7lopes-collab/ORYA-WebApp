@@ -25,9 +25,6 @@ import { Image } from "expo-image";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
-import { fetchChatMessages, sendChatMessage, muteEventThread, undoEventMessage } from "../../features/chat/api";
-import { useEventChatThread } from "../../features/chat/hooks";
-import type { ChatMessage } from "../../features/chat/types";
 import {
   fetchConversationMessages,
   sendConversationMessage,
@@ -40,7 +37,6 @@ import { getUserFacingError } from "../../lib/errors";
 import { getMobileEnv } from "../../lib/env";
 import { formatTime } from "../../lib/formatters";
 
-const POLL_INTERVAL_MS = 6000;
 const WS_PING_INTERVAL_MS = 25000;
 const UNDO_WINDOW_MS = 2 * 60 * 1000;
 const WS_PROTOCOL_BASE = "orya-chat.v1";
@@ -60,13 +56,6 @@ type UnifiedMessage = {
   } | null;
 };
 
-const resolveStatusLabel = (status: string | null | undefined, t: (key: string) => string) => {
-  if (status === "OPEN") return t("messages:status.open");
-  if (status === "ANNOUNCEMENTS") return t("messages:status.announcements");
-  if (status === "READ_ONLY") return t("messages:status.readOnly");
-  return t("messages:status.closed");
-};
-
 const resolveChatError = (err: unknown, fallback: string, t: (key: string) => string) => {
   const message = err instanceof Error ? err.message : String(err ?? "");
   if (message.includes("READ_ONLY")) return t("messages:thread.errors.readOnly");
@@ -75,17 +64,7 @@ const resolveChatError = (err: unknown, fallback: string, t: (key: string) => st
   return getUserFacingError(err, fallback);
 };
 
-const toUnified = (message: ChatMessage | ConversationMessage): UnifiedMessage => {
-  if ("kind" in message) {
-    return {
-      id: message.id,
-      body: message.body ?? null,
-      kind: message.kind,
-      createdAt: message.createdAt,
-      deletedAt: message.deletedAt ?? null,
-      sender: message.sender,
-    };
-  }
+const toUnified = (message: ConversationMessage): UnifiedMessage => {
   return {
     id: message.id,
     body: message.body ?? null,
@@ -93,28 +72,6 @@ const toUnified = (message: ChatMessage | ConversationMessage): UnifiedMessage =
     deletedAt: message.deletedAt ?? null,
     sender: message.sender,
   };
-};
-
-const mergeMessages = (prev: UnifiedMessage[], incoming: UnifiedMessage[]) => {
-  if (!incoming.length) return prev;
-  const map = new Map(prev.map((item) => [item.id, item]));
-  let changed = false;
-  incoming.forEach((item) => {
-    const existing = map.get(item.id);
-    if (!existing) {
-      map.set(item.id, item);
-      changed = true;
-      return;
-    }
-    if (item.deletedAt && !existing.deletedAt) {
-      map.set(item.id, { ...existing, deletedAt: item.deletedAt, body: null });
-      changed = true;
-    }
-  });
-  if (!changed) return prev;
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  );
 };
 
 const buildWsBaseUrl = () => {
@@ -137,6 +94,7 @@ export default function ChatThreadScreen() {
   const params = useLocalSearchParams<{
     threadId?: string | string[];
     eventId?: string | string[];
+    slug?: string | string[];
     title?: string | string[];
     coverImageUrl?: string | string[];
     startsAt?: string | string[];
@@ -162,9 +120,12 @@ export default function ChatThreadScreen() {
   );
   const eventIdRaw = Array.isArray(params.eventId) ? params.eventId[0] : params.eventId;
   const eventId = eventIdRaw ? Number(eventIdRaw) : null;
+  const eventSlug = useMemo(
+    () => (Array.isArray(params.slug) ? params.slug[0] : params.slug) ?? null,
+    [params.slug],
+  );
   const source = Array.isArray(params.source) ? params.source[0] : params.source;
   const isEvent = source === "event" || Boolean(eventId);
-  const isConversation = !isEvent;
 
   const nextRoute = useMemo(() => (threadId ? `/messages/${threadId}` : "/messages"), [threadId]);
   const openAuth = useCallback(() => {
@@ -178,11 +139,8 @@ export default function ChatThreadScreen() {
     [router],
   );
 
-  const threadQuery = useEventChatThread(eventId, Boolean(isEvent && eventId && accessToken), accessToken);
-
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
-  const [latestCursor, setLatestCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [sending, setSending] = useState(false);
@@ -197,8 +155,8 @@ export default function ChatThreadScreen() {
 
   const eventTitle = useMemo(() => {
     const raw = Array.isArray(params.title) ? params.title[0] : params.title;
-    return raw ?? threadQuery.data?.event.title ?? t("messages:thread.eventTitleFallback");
-  }, [params.title, threadQuery.data?.event.title, t]);
+    return raw ?? t("messages:thread.eventTitleFallback");
+  }, [params.title, t]);
 
   const conversationTitle = useMemo(() => {
     const raw = Array.isArray(params.title) ? params.title[0] : params.title;
@@ -214,42 +172,34 @@ export default function ChatThreadScreen() {
 
   const coverImageUrl = useMemo(() => {
     const raw = Array.isArray(params.coverImageUrl) ? params.coverImageUrl[0] : params.coverImageUrl;
-    return raw ?? threadQuery.data?.event.coverImageUrl ?? null;
-  }, [params.coverImageUrl, threadQuery.data?.event.coverImageUrl]);
+    return raw ?? null;
+  }, [params.coverImageUrl]);
 
-  const statusLabel = resolveStatusLabel(threadQuery.data?.thread.status, t);
-  const canPost = isEvent ? Boolean(threadQuery.data?.canPost) : Boolean(conversationCanPost);
+  const canPost = Boolean(conversationCanPost);
+  const statusLabel = canPost ? t("messages:status.open") : t("messages:status.readOnly");
 
   const loadInitial = useCallback(async () => {
     if (!threadId || !accessToken) return;
     setLoading(true);
     setError(null);
     try {
-      if (isEvent) {
-        const response = await fetchChatMessages(threadId, { limit: 40 }, accessToken);
-        setMessages(response.items?.map(toUnified) ?? []);
-        setCursor(response.nextCursor ?? null);
-        setLatestCursor(response.latestCursor ?? null);
-      } else {
-        const response = await fetchConversationMessages(threadId, { limit: 40 }, accessToken);
-        setConversation(response.conversation ?? null);
-        setMembers(response.members ?? []);
-        setConversationCanPost(Boolean(response.canPost));
-        setConversationReadOnlyReason(response.readOnlyReason ?? null);
-        setMessages(response.items?.map(toUnified) ?? []);
-        setCursor(response.nextCursor ?? null);
-        setLatestCursor(response.latestCursor ?? null);
-        const lastMessage = response.items?.[response.items.length - 1];
-        if (lastMessage?.id) {
-          await markConversationRead(threadId, lastMessage.id, accessToken).catch(() => null);
-        }
+      const response = await fetchConversationMessages(threadId, { limit: 40 }, accessToken);
+      setConversation(response.conversation ?? null);
+      setMembers(response.members ?? []);
+      setConversationCanPost(Boolean(response.canPost));
+      setConversationReadOnlyReason(response.readOnlyReason ?? null);
+      setMessages(response.items?.map(toUnified) ?? []);
+      setCursor(response.nextCursor ?? null);
+      const lastMessage = response.items?.[response.items.length - 1];
+      if (lastMessage?.id) {
+        await markConversationRead(threadId, lastMessage.id, accessToken).catch(() => null);
       }
     } catch (err) {
       setError(resolveChatError(err, t("messages:thread.errors.load"), t));
     } finally {
       setLoading(false);
     }
-  }, [accessToken, isEvent, threadId]);
+  }, [accessToken, threadId, t]);
 
   useEffect(() => {
     if (!threadId || !accessToken) return;
@@ -260,68 +210,20 @@ export default function ChatThreadScreen() {
     if (!threadId || !accessToken || !cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      if (isEvent) {
-        const response = await fetchChatMessages(threadId, { limit: 40, cursor }, accessToken);
-        if (response.items?.length) {
-          setMessages((prev) => [...response.items.map(toUnified), ...prev]);
-        }
-        setCursor(response.nextCursor ?? null);
-      } else {
-        const response = await fetchConversationMessages(threadId, { limit: 40, cursor }, accessToken);
-        if (response.items?.length) {
-          setMessages((prev) => [...response.items.map(toUnified), ...prev]);
-        }
-        setCursor(response.nextCursor ?? null);
+      const response = await fetchConversationMessages(threadId, { limit: 40, cursor }, accessToken);
+      if (response.items?.length) {
+        setMessages((prev) => [...response.items.map(toUnified), ...prev]);
       }
+      setCursor(response.nextCursor ?? null);
     } catch (err) {
       setError(resolveChatError(err, t("messages:thread.errors.loadMore"), t));
     } finally {
       setLoadingMore(false);
     }
-  }, [accessToken, cursor, isEvent, loadingMore, threadId]);
+  }, [accessToken, cursor, loadingMore, threadId, t]);
 
   useEffect(() => {
-    if (!threadId || !accessToken) return;
-    const interval = setInterval(async () => {
-      try {
-        if (isEvent) {
-          const response = await fetchChatMessages(
-            threadId,
-            latestCursor ? { after: latestCursor } : { limit: 12 },
-            accessToken,
-          );
-          if (response.items?.length) {
-            setMessages((prev) => mergeMessages(prev, response.items.map(toUnified)));
-          }
-          if (response.latestCursor) {
-            setLatestCursor(response.latestCursor);
-          }
-        } else {
-          const response = await fetchConversationMessages(
-            threadId,
-            latestCursor ? { after: latestCursor } : { limit: 12 },
-            accessToken,
-          );
-          if (response.items?.length) {
-            setMessages((prev) => mergeMessages(prev, response.items.map(toUnified)));
-            const last = response.items[response.items.length - 1];
-            if (last?.id) {
-              await markConversationRead(threadId, last.id, accessToken).catch(() => null);
-            }
-          }
-          if (response.latestCursor) {
-            setLatestCursor(response.latestCursor);
-          }
-        }
-      } catch {
-        // silent polling failure
-      }
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [accessToken, isEvent, latestCursor, threadId]);
-
-  useEffect(() => {
-    if (!isConversation || !accessToken || !threadId) return;
+    if (!accessToken || !threadId) return;
     const wsBase = buildWsBaseUrl();
     if (!wsBase) return;
     const stopWsPing = () => {
@@ -395,7 +297,7 @@ export default function ChatThreadScreen() {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [accessToken, isConversation, threadId]);
+  }, [accessToken, threadId]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -408,13 +310,8 @@ export default function ChatThreadScreen() {
     if (!body) return;
     setSending(true);
     try {
-      if (isEvent) {
-        const message = await sendChatMessage(threadId, body, accessToken);
-        setMessages((prev) => [...prev, toUnified(message)]);
-      } else {
-        const response = await sendConversationMessage(threadId, body, undefined, accessToken);
-        setMessages((prev) => [...prev, toUnified(response.item)]);
-      }
+      const response = await sendConversationMessage(threadId, body, undefined, accessToken);
+      setMessages((prev) => [...prev, toUnified(response.item)]);
       setInput("");
       setAutoScroll(true);
     } catch (err) {
@@ -422,7 +319,7 @@ export default function ChatThreadScreen() {
     } finally {
       setSending(false);
     }
-  }, [accessToken, input, isEvent, sending, threadId]);
+  }, [accessToken, input, sending, threadId, t]);
 
   const handleUndo = useCallback(
     async (messageId: string, createdAt: string) => {
@@ -432,11 +329,7 @@ export default function ChatThreadScreen() {
         return;
       }
       try {
-        if (isEvent) {
-          await undoEventMessage(threadId, messageId, accessToken);
-        } else {
-          await undoConversationMessage(threadId, messageId, accessToken);
-        }
+        await undoConversationMessage(threadId, messageId, accessToken);
         setMessages((prev) =>
           prev.map((item) =>
             item.id === messageId
@@ -451,7 +344,7 @@ export default function ChatThreadScreen() {
         );
       }
     },
-    [accessToken, isEvent, t, threadId],
+    [accessToken, t, threadId],
   );
 
   const handleScroll = useCallback(
@@ -477,13 +370,8 @@ export default function ChatThreadScreen() {
       onPress: async () => {
         const until = new Date(preset.value).toISOString();
         try {
-          if (isEvent) {
-            const res = await muteEventThread(threadId, until, accessToken);
-            setMutedUntil(res.mutedUntil ?? until);
-          } else {
-            const res = await muteConversation(threadId, until, accessToken);
-            setMutedUntil(res.mutedUntil ?? until);
-          }
+          const res = await muteConversation(threadId, until, accessToken);
+          setMutedUntil(res.mutedUntil ?? until);
         } catch (err) {
           Alert.alert(
             t("settings:sections.notifications.title"),
@@ -498,13 +386,8 @@ export default function ChatThreadScreen() {
         text: t("messages:thread.mute.remove"),
         onPress: async () => {
           try {
-            if (isEvent) {
-              const res = await muteEventThread(threadId, null, accessToken);
-              setMutedUntil(res.mutedUntil ?? null);
-            } else {
-              const res = await muteConversation(threadId, null, accessToken);
-              setMutedUntil(res.mutedUntil ?? null);
-            }
+            const res = await muteConversation(threadId, null, accessToken);
+            setMutedUntil(res.mutedUntil ?? null);
           } catch (err) {
             Alert.alert(
               t("settings:sections.notifications.title"),
@@ -519,7 +402,7 @@ export default function ChatThreadScreen() {
       ...buttons,
       { text: t("common:actions.cancel"), style: "cancel" },
     ]);
-  }, [accessToken, isEvent, mutedUntil, t, threadId]);
+  }, [accessToken, mutedUntil, t, threadId]);
 
   if (!session?.user?.id) {
     return (
@@ -631,12 +514,12 @@ export default function ChatThreadScreen() {
                   </Text>
                   <Text className="text-white/60 text-xs mt-1">{statusLabel}</Text>
                 </View>
-                {threadQuery.data?.event.slug ? (
+                {eventSlug ? (
                   <Pressable
                     onPress={() =>
                       router.push({
                         pathname: "/event/[slug]",
-                        params: { slug: threadQuery.data?.event.slug ?? "", source: "messages" },
+                        params: { slug: eventSlug, source: "messages" },
                       })
                     }
                     className="rounded-full border border-white/15 px-3 py-1"
@@ -850,11 +733,7 @@ export default function ChatThreadScreen() {
             paddingTop: 8,
           }}
         >
-          {isEvent && threadQuery.isError && !threadQuery.data ? (
-            <Text className="text-white/60 text-xs text-center">
-              {t("messages:thread.errors.participantsOnly")}
-            </Text>
-          ) : canPost ? (
+          {canPost ? (
             <View className="flex-row items-end gap-2">
               <TextInput
                 value={input}
@@ -884,9 +763,7 @@ export default function ChatThreadScreen() {
             </View>
           ) : (
             <Text className="text-white/60 text-xs text-center">
-              {conversationReadOnlyReason ||
-              threadQuery.data?.thread.status === "READ_ONLY" ||
-              threadQuery.data?.thread.status === "CLOSED"
+              {conversationReadOnlyReason
                 ? t("messages:thread.readOnly.footer")
                 : t("messages:thread.readOnly.announcementsOnly")}
             </Text>

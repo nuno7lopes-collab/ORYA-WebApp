@@ -27,9 +27,8 @@ import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { getUserFacingError } from "../../lib/errors";
 import { acceptInvite, declineInvite } from "../../features/tournaments/api";
-import { useMessageInvites } from "../../features/messages/hooks";
+import { useMessageInvites, useMessagesInbox } from "../../features/messages/hooks";
 import { acceptMessageInvite } from "../../features/messages/api";
-import { useEventChatThread } from "../../features/chat/hooks";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
@@ -200,8 +199,16 @@ export default function WalletDetailScreen() {
   const eventId = data?.event?.id ?? null;
   const canOpenEventChat = Boolean(eventId && data?.consumedAt && session?.user?.id);
   const inviteQuery = useMessageInvites(eventId, canOpenEventChat, accessToken);
-  const eventChatQuery = useEventChatThread(eventId, canOpenEventChat, accessToken);
+  const inboxQuery = useMessagesInbox(canOpenEventChat, accessToken);
   const pendingInvite = inviteQuery.data?.items?.[0] ?? null;
+  const eventConversation = useMemo(() => {
+    if (!eventId) return null;
+    return (
+      inboxQuery.data?.items?.find(
+        (item) => item.kind === "EVENT" && item.event?.id === eventId && item.conversationId,
+      ) ?? null
+    );
+  }, [eventId, inboxQuery.data?.items]);
   const updatedLabel = formatRelativeTime(data?.audit?.updatedAt);
   const consumedAtLabel = formatShortDate(data?.consumedAt);
   const title = data?.snapshot.title ?? (data ? typeLabel(data.type) : "");
@@ -236,16 +243,18 @@ export default function WalletDetailScreen() {
     if (!pendingInvite || !accessToken || !eventId) return;
     try {
       const result = await acceptMessageInvite(pendingInvite.id, accessToken);
-      await Promise.all([inviteQuery.refetch(), eventChatQuery.refetch()]);
-      if (result?.threadId) {
+      await Promise.all([inviteQuery.refetch(), inboxQuery.refetch()]);
+      const conversationId = result?.conversationId ?? pendingInvite.conversationId ?? null;
+      if (conversationId) {
         router.push({
           pathname: "/messages/[threadId]",
           params: {
-            threadId: result.threadId,
+            threadId: conversationId,
             eventId: String(eventId),
             title: data?.snapshot?.title ?? "",
             coverImageUrl: data?.snapshot?.coverUrl ?? "",
             source: "event",
+            slug: data?.event?.slug ?? "",
           },
         });
       }
@@ -550,17 +559,18 @@ export default function WalletDetailScreen() {
                       </Pressable>
                     </View>
                   </GlassCard>
-                ) : eventChatQuery.data?.thread?.id ? (
+                ) : eventConversation?.conversationId ? (
                   <Pressable
                     onPress={() =>
                       router.push({
                         pathname: "/messages/[threadId]",
                         params: {
-                          threadId: eventChatQuery.data.thread.id,
+                          threadId: eventConversation.conversationId,
                           eventId: String(eventId ?? ""),
                           title: data?.snapshot?.title ?? "",
                           coverImageUrl: data?.snapshot?.coverUrl ?? "",
                           source: "event",
+                          slug: data?.event?.slug ?? "",
                         },
                       })
                     }

@@ -81,7 +81,7 @@ async function _POST(req: NextRequest) {
       organizationId: transfer.organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     if (transfer.status === "CONFIRMED") {
@@ -98,7 +98,11 @@ async function _POST(req: NextRequest) {
     const now = new Date();
     if (transfer.expiresAt && transfer.expiresAt.getTime() < now.getTime()) {
       await prisma.$transaction(async (tx) => {
-        await ownerTransferModel.update({
+        const ownerTransferTx = (tx as any).organizationOwnerTransfer;
+        if (!ownerTransferTx?.update) {
+          throw new Error("OWNER_TRANSFER_UNAVAILABLE");
+        }
+        await ownerTransferTx.update({
           where: { id: transfer.id },
           data: { status: "EXPIRED", cancelledAt: now },
         });
@@ -157,7 +161,11 @@ async function _POST(req: NextRequest) {
     });
     if (!fromMembership || fromMembership.role !== OrganizationMemberRole.OWNER) {
       await prisma.$transaction(async (tx) => {
-        await ownerTransferModel.update({
+        const ownerTransferTx = (tx as any).organizationOwnerTransfer;
+        if (!ownerTransferTx?.update) {
+          throw new Error("OWNER_TRANSFER_UNAVAILABLE");
+        }
+        await ownerTransferTx.update({
           where: { id: transfer.id },
           data: { status: "CANCELLED", cancelledAt: now },
         });
@@ -217,7 +225,11 @@ async function _POST(req: NextRequest) {
     const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? null;
 
     await prisma.$transaction(async (tx) => {
-      await ownerTransferModel.update({
+      const ownerTransferTx = (tx as any).organizationOwnerTransfer;
+      if (!ownerTransferTx?.update) {
+        throw new Error("OWNER_TRANSFER_UNAVAILABLE");
+      }
+      await ownerTransferTx.update({
         where: { id: transfer.id },
         data: { status: "CONFIRMED", confirmedAt: now },
       });

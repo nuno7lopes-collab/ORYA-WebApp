@@ -5,6 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser, getActiveOrganizationIdForUser } from "@/lib/organizationContext";
 import { OrganizationStatus, Prisma } from "@prisma/client";
 import { resolveOrganizationIdForUi } from "@/lib/organizationId";
+import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 
 export type DashboardAccessResult = {
   userId: string;
@@ -22,7 +23,11 @@ export async function ensureDashboardAccess(): Promise<DashboardAccessResult> {
     redirect("/login");
   }
 
-  const membershipCount = await prisma.organizationMember.count({ where: { userId: user.id } });
+  const memberships = await listEffectiveOrganizationMembershipsForUser({
+    userId: user.id,
+    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
+  });
+  const membershipCount = memberships.length;
 
   if (membershipCount === 0) {
     const profile = await prisma.profile.findUnique({

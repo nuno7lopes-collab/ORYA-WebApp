@@ -21,7 +21,7 @@ export type OfficialEmailGateResult =
   | { ok: true }
   | {
       ok: false;
-      error: OfficialEmailGateErrorCode;
+      errorCode: OfficialEmailGateErrorCode;
       message: string;
       email: string | null;
       verifyUrl: string;
@@ -35,7 +35,7 @@ export type KillSwitchGateResult =
   | { ok: true }
   | {
       ok: false;
-      error: "KILL_SWITCH_ACTIVE";
+      errorCode: "KILL_SWITCH_ACTIVE";
       message: string;
       requestId: string;
       correlationId: string;
@@ -45,7 +45,7 @@ export type StripeGateResult =
   | { ok: true }
   | {
       ok: false;
-      error: "STRIPE_REQUIRED";
+      errorCode: "STRIPE_REQUIRED";
       message: string;
     };
 
@@ -92,7 +92,7 @@ export function ensureOrganizationEmailVerified(
   if (!email) {
     return {
       ok: false,
-      error: "OFFICIAL_EMAIL_REQUIRED",
+      errorCode: "OFFICIAL_EMAIL_REQUIRED",
       message: "Email oficial obrigatório para esta ação.",
       email: null,
       verifyUrl,
@@ -105,7 +105,7 @@ export function ensureOrganizationEmailVerified(
   if (!org.officialEmailVerifiedAt) {
     return {
       ok: false,
-      error: "OFFICIAL_EMAIL_NOT_VERIFIED",
+      errorCode: "OFFICIAL_EMAIL_NOT_VERIFIED",
       message: "Email oficial por verificar para esta ação.",
       email,
       verifyUrl,
@@ -125,7 +125,7 @@ export async function requireOfficialEmailVerified(params: {
   actorUserId?: string | null;
   requestId?: string;
   correlationId?: string;
-}): Promise<OfficialEmailGateResult | { ok: false; error: "ORGANIZATION_NOT_FOUND"; message: string }> {
+}): Promise<OfficialEmailGateResult | { ok: false; errorCode: "ORGANIZATION_NOT_FOUND"; message: string }> {
   const { organizationId, organization, reasonCode, requestId, correlationId } = params;
   const org =
     organization ??
@@ -134,7 +134,7 @@ export async function requireOfficialEmailVerified(params: {
       select: { officialEmail: true, officialEmailVerifiedAt: true },
     }));
   if (!org) {
-    return { ok: false, error: "ORGANIZATION_NOT_FOUND", message: "Organização não encontrada." };
+    return { ok: false, errorCode: "ORGANIZATION_NOT_FOUND", message: "Organização não encontrada." };
   }
   return ensureOrganizationEmailVerified(org, {
     reasonCode,
@@ -160,7 +160,7 @@ export function ensureStripeReadyForServices(org: OrganizationWriteContext): Acc
   if (isStripeReady(org, requireStripe)) {
     return { ok: true };
   }
-  return { ok: false, error: "STRIPE_REQUIRED", message: "Stripe obrigatório para criar serviços." };
+  return { ok: false, errorCode: "STRIPE_REQUIRED", message: "Stripe obrigatório para criar serviços." };
 }
 
 export function ensureOrganizationWriteAccess(
@@ -180,7 +180,7 @@ export function ensureOrganizationWriteAccess(
       const { requestId, correlationId } = resolveGateContext(opts);
       return {
         ok: false,
-        error: "KILL_SWITCH_ACTIVE",
+        errorCode: "KILL_SWITCH_ACTIVE",
         message: "A organização está em modo restrito.",
         requestId,
         correlationId,

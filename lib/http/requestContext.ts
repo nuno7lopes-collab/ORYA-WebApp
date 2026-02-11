@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import {
   CORRELATION_ID_HEADER,
   ORYA_CORRELATION_ID_HEADER,
+  ORYA_ORG_ID_HEADER,
   ORYA_REQUEST_ID_HEADER,
   REQUEST_ID_HEADER,
 } from "@/lib/http/headers";
@@ -75,7 +76,7 @@ export function resolveRequestContext(
   const correlationId =
     pickHeader(headers, [ORYA_CORRELATION_ID_HEADER, CORRELATION_ID_HEADER]) ?? requestId;
   const orgId =
-    typeof opts?.orgId === "number" ? opts.orgId : normalizeOrgId(headers.get("x-org-id"));
+    typeof opts?.orgId === "number" ? opts.orgId : normalizeOrgId(headers.get(ORYA_ORG_ID_HEADER));
 
   return { requestId, correlationId, orgId: orgId ?? null };
 }
@@ -108,7 +109,7 @@ export function buildResponseHeaders(ctx: RequestContext, existing?: HeadersInit
   headers.set(REQUEST_ID_HEADER, ctx.requestId);
   headers.set(CORRELATION_ID_HEADER, ctx.correlationId);
   if (ctx.orgId !== null) {
-    headers.set("x-org-id", String(ctx.orgId));
+    headers.set(ORYA_ORG_ID_HEADER, String(ctx.orgId));
   }
   return headers;
 }

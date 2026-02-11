@@ -71,8 +71,6 @@ model Profile {
   scheduleDelaysCreated                                               ScheduleDelay[]          @relation("ScheduleDelayCreatedBy")
   eventInvitesSent                                                 EventInvite[]           @relation("EventInviteInviter")
   eventInvitesReceived                                             EventInvite[]           @relation("EventInviteTarget")
-  organization_members_organization_members_invited_by_user_idToprofiles OrganizationMember[]       @relation("organization_members_invited_by_user_idToprofiles")
-  organizationMembers                                                 OrganizationMember[]
   organizationGroupMembers                                            OrganizationGroupMember[]
   organizationMemberPermissions                                       OrganizationMemberPermission[]
   userActivities                                                   UserActivity[]
@@ -234,7 +232,6 @@ model Organization {
   notifications           Notification[]                  @relation("NotificationOrganization")
   notificationMutes       NotificationMute[]
   memberInvites           OrganizationMemberInvite[]
-  members                 OrganizationMember[]
   memberPermissions       OrganizationMemberPermission[]
   organizationModules     OrganizationModuleEntry[]
   organizationForms       OrganizationForm[]
@@ -1318,6 +1315,9 @@ model ChatConversation {
   title           String?
   description     String?
   createdByUserId String?              @map("created_by_user_id") @db.Uuid
+  openAt          DateTime?            @map("open_at") @db.Timestamptz(6)
+  readOnlyAt      DateTime?            @map("read_only_at") @db.Timestamptz(6)
+  closeAt         DateTime?            @map("close_at") @db.Timestamptz(6)
   createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   lastMessageAt   DateTime?            @map("last_message_at") @db.Timestamptz(6)
@@ -1346,6 +1346,9 @@ model ChatConversationMember {
   userId            String                   @map("user_id") @db.Uuid
   role              ChatConversationMemberRole @default(MEMBER)
   joinedAt          DateTime                 @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt            DateTime?                @map("left_at") @db.Timestamptz(6)
+  accessRevokedAt   DateTime?                @map("access_revoked_at") @db.Timestamptz(6)
+  bannedAt          DateTime?                @map("banned_at") @db.Timestamptz(6)
   mutedUntil        DateTime?                @map("muted_until") @db.Timestamptz(6)
   notifLevel        ChatConversationNotificationLevel @default(ALL) @map("notif_level")
   lastReadMessageId String?                  @map("last_read_message_id") @db.Uuid
@@ -1369,7 +1372,7 @@ model ChatConversationMessage {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   conversationId  String    @map("conversation_id") @db.Uuid
   organizationId  Int?      @map("organization_id")
-  senderId        String    @map("sender_id") @db.Uuid
+  senderId        String?   @map("sender_id") @db.Uuid
   body            String?   @db.Text
   clientMessageId String    @map("client_message_id")
   kind            ChatConversationMessageKind @default(TEXT)
@@ -1380,7 +1383,7 @@ model ChatConversationMessage {
   replyToId       String?   @map("reply_to_id") @db.Uuid
 
   conversation ChatConversation       @relation("ChatConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       Profile                @relation("ChatConversationMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  sender       Profile?               @relation("ChatConversationMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
   replyTo      ChatConversationMessage? @relation("ChatConversationMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies      ChatConversationMessage[] @relation("ChatConversationMessageReplies")
   attachments  ChatConversationAttachment[]
@@ -1547,6 +1550,46 @@ model ChatChannelRequest {
   @@schema("app_v3")
 }
 
+model ChatAccessGrant {
+  env                  String                     @default("prod")
+  id                   String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind                 ChatAccessGrantKind
+  status               ChatAccessGrantStatus      @default(PENDING)
+  contextType          ChatConversationContextType? @map("context_type")
+  contextId            String?                    @map("context_id") @db.Text
+  conversationId       String?                    @map("conversation_id") @db.Uuid
+  organizationId       Int?                       @map("organization_id")
+  requesterId          String?                    @map("requester_id") @db.Uuid
+  targetUserId         String?                    @map("target_user_id") @db.Uuid
+  targetOrganizationId Int?                       @map("target_organization_id")
+  eventId              Int?                       @map("event_id")
+  entitlementId        String?                    @map("entitlement_id") @db.Uuid
+  threadId             String?                    @map("thread_id") @db.Uuid
+  title                String?
+  sourceTable          String?                    @map("source_table")
+  sourceId             String?                    @map("source_id") @db.Uuid
+  expiresAt            DateTime?                  @map("expires_at") @db.Timestamptz(6)
+  resolvedAt           DateTime?                  @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId     String?                    @map("resolved_by_user_id") @db.Uuid
+  acceptedAt           DateTime?                  @map("accepted_at") @db.Timestamptz(6)
+  declinedAt           DateTime?                  @map("declined_at") @db.Timestamptz(6)
+  cancelledAt          DateTime?                  @map("cancelled_at") @db.Timestamptz(6)
+  revokedAt            DateTime?                  @map("revoked_at") @db.Timestamptz(6)
+  metadata             Json?                      @default("{}")
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status], map: "chat_access_grants_status_idx")
+  @@index([kind, status], map: "chat_access_grants_kind_status_idx")
+  @@index([requesterId, status], map: "chat_access_grants_requester_status_idx")
+  @@index([targetUserId, status], map: "chat_access_grants_target_user_status_idx")
+  @@index([targetOrganizationId, status], map: "chat_access_grants_target_org_status_idx")
+  @@index([contextType, contextId], map: "chat_access_grants_context_idx")
+  @@unique([sourceTable, sourceId], map: "chat_access_grants_source_unique")
+  @@map("chat_access_grants")
+  @@schema("app_v3")
+}
+
 model MatchNotification {
   env                     String                         @default("prod")
   id        Int      @id @default(autoincrement())
@@ -1593,30 +1636,6 @@ model EmailOutbox {
   @@index([purchaseId], map: "email_outbox_purchase_idx")
   @@index([recipient], map: "email_outbox_recipient_idx")
   @@map("email_outbox")
-  @@schema("app_v3")
-}
-
-model OrganizationMember {
-  env                     String                         @default("prod")
-  id                                                      String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId                                             Int                 @map("organization_id")
-  userId                                                  String              @map("user_id") @db.Uuid
-  role                                                    OrganizationMemberRole
-  rolePack                                                OrganizationRolePack? @map("role_pack")
-  invitedByUserId                                         String?             @map("invited_by_user_id") @db.Uuid
-  createdAt                                               DateTime?           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                                               DateTime?           @default(now()) @map("updated_at") @db.Timestamptz(6)
-  lastUsedAt                                              DateTime?           @map("last_used_at") @db.Timestamptz(6)
-  profiles_organization_members_invited_by_user_idToprofiles Profile?            @relation("organization_members_invited_by_user_idToprofiles", fields: [invitedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  organization                                               Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user                                                    Profile             @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([organizationId, userId], map: "organization_members_org_user_uniq")
-  @@unique([organizationId, userId], map: "organization_members_org_user_uq")
-  @@index([organizationId, role], map: "organization_members_org_role_idx")
-  @@index([userId], map: "organization_members_user_idx")
-  @@index([userId, lastUsedAt(sort: Desc), createdAt], map: "organization_members_user_last_used_idx")
-  @@map("organization_members")
   @@schema("app_v3")
 }
 
@@ -5061,6 +5080,29 @@ enum ChatConversationNotificationLevel {
 enum ChatConversationMessageKind {
   TEXT
   SYSTEM
+  ANNOUNCEMENT
+
+  @@schema("app_v3")
+}
+
+enum ChatAccessGrantKind {
+  EVENT_INVITE
+  USER_DM_REQUEST
+  ORG_CONTACT_REQUEST
+  SERVICE_REQUEST
+  CHANNEL_CREATE_REQUEST
+
+  @@schema("app_v3")
+}
+
+enum ChatAccessGrantStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+  REVOKED
+  AUTO_ACCEPTED
 
   @@schema("app_v3")
 }

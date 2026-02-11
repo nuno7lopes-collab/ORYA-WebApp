@@ -62,7 +62,7 @@ async function _PATCH(req: NextRequest) {
     }
     const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "USERNAME" });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     await prisma.$transaction(async (tx) => {

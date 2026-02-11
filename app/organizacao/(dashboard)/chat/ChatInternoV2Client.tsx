@@ -83,7 +83,7 @@ type ConversationItem = {
 };
 
 type ContactRequest = {
-  id: string;
+  grantId: string;
   contextType: "ORG_CONTACT" | "SERVICE";
   contextId: string | null;
   createdAt: string;
@@ -93,11 +93,6 @@ type ContactRequest = {
     username: string | null;
     avatarUrl: string | null;
   };
-  service?: {
-    id: number;
-    title: string | null;
-    coverImageUrl: string | null;
-  } | null;
 };
 
 type ConversationListItem = { type: "conversation"; key: string; conversation: ConversationItem };
@@ -630,7 +625,7 @@ export default function ChatInternoV2Client() {
       }
 
       try {
-        const url = await buildChatUrl("/api/chat/conversations");
+        const url = await buildChatUrl("/api/messages/conversations");
         if (incremental && lastConversationSyncRef.current) {
           url.searchParams.set("updatedAfter", lastConversationSyncRef.current);
         }
@@ -668,8 +663,31 @@ export default function ChatInternoV2Client() {
     setContactRequestsError(null);
     setContactRequestsLoading(true);
     try {
-      const data = await fetchChat<{ ok: boolean; items: ContactRequest[] }>("/api/chat/contact-requests");
-      setContactRequests(data.items ?? []);
+      const data = await fetchChat<{
+        ok: boolean;
+        items: Array<{
+          id: string;
+          kind: "ORG_CONTACT_REQUEST" | "SERVICE_REQUEST";
+          contextType?: "ORG_CONTACT" | "SERVICE" | string | null;
+          contextId: string | null;
+          createdAt: string;
+          requester: ContactRequest["requester"] | null;
+        }>;
+      }>("/api/messages/grants?kind=ORG_CONTACT_REQUEST,SERVICE_REQUEST&status=PENDING");
+      setContactRequests(
+        (data.items ?? [])
+          .filter((item) => item.requester)
+          .map((item) => ({
+            grantId: item.id,
+            contextType:
+              item.contextType === "ORG_CONTACT" || item.kind === "ORG_CONTACT_REQUEST"
+                ? "ORG_CONTACT"
+                : "SERVICE",
+            contextId: item.contextId ?? null,
+            createdAt: item.createdAt,
+            requester: item.requester!,
+          })),
+      );
     } catch (err) {
       setContactRequestsError(err instanceof Error ? err.message : "Erro ao carregar pedidos.");
     } finally {
@@ -678,9 +696,9 @@ export default function ChatInternoV2Client() {
   }, [fetchChat]);
 
   const handleApproveContactRequest = useCallback(
-    async (requestId: string) => {
+    async (grantId: string) => {
       try {
-        await fetchChat(`/api/chat/contact-requests/${requestId}/approve`, { method: "POST" });
+        await fetchChat(`/api/messages/grants/${grantId}/accept`, { method: "POST" });
         await Promise.all([loadContactRequests(), loadConversations()]);
       } catch (err) {
         setContactRequestsError(err instanceof Error ? err.message : "Erro ao aprovar pedido.");
@@ -690,9 +708,9 @@ export default function ChatInternoV2Client() {
   );
 
   const handleRejectContactRequest = useCallback(
-    async (requestId: string) => {
+    async (grantId: string) => {
       try {
-        await fetchChat(`/api/chat/contact-requests/${requestId}/reject`, { method: "POST" });
+        await fetchChat(`/api/messages/grants/${grantId}/decline`, { method: "POST" });
         await loadContactRequests();
       } catch (err) {
         setContactRequestsError(err instanceof Error ? err.message : "Erro ao rejeitar pedido.");
@@ -770,7 +788,7 @@ export default function ChatInternoV2Client() {
       setMessagesError(null);
 
       try {
-        const url = await buildChatUrl(`/api/chat/conversations/${conversationId}/messages`);
+        const url = await buildChatUrl(`/api/messages/conversations/${conversationId}/messages`);
         if (cursor) url.searchParams.set("cursor", cursor);
         if (after) url.searchParams.set("after", after);
         if (around) url.searchParams.set("around", around);
@@ -877,7 +895,7 @@ export default function ChatInternoV2Client() {
     const conversationId = activeConversation.id;
     readDebounceRef.current = setTimeout(async () => {
       try {
-        const url = await buildChatUrl(`/api/chat/conversations/${conversationId}/read`);
+        const url = await buildChatUrl(`/api/messages/conversations/${conversationId}/read`);
         const res = await fetch(url.pathname + url.search, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1389,7 +1407,7 @@ export default function ChatInternoV2Client() {
         ),
       );
       try {
-        const res = await fetchChat<{ ok: boolean; message: Message }>("/api/chat/messages", {
+        const res = await fetchChat<{ ok: boolean; message: Message }>("/api/messages/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1625,7 +1643,7 @@ export default function ChatInternoV2Client() {
               path: string;
               bucket: string;
               url: string;
-            }>("/api/chat/attachments/presign", {
+            }>("/api/messages/attachments/presign", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ type, mime: file.type, size: file.size, metadata: { name: file.name } }),
@@ -1659,7 +1677,7 @@ export default function ChatInternoV2Client() {
         preparedAttachments = uploads;
       }
 
-      const res = await fetchChat<{ ok: boolean; message: Message }>("/api/chat/messages", {
+      const res = await fetchChat<{ ok: boolean; message: Message }>("/api/messages/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1813,7 +1831,7 @@ export default function ChatInternoV2Client() {
         payload.title = channelTitle.trim();
         payload.memberIds = selectedMemberIds;
       }
-      const res = await fetchChat<{ ok: boolean; conversation: ConversationItem }>("/api/chat/conversations", {
+      const res = await fetchChat<{ ok: boolean; conversation: ConversationItem }>("/api/messages/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1837,7 +1855,7 @@ export default function ChatInternoV2Client() {
     const confirmed = window.confirm("Remover esta mensagem?");
     if (!confirmed) return;
     try {
-      const res = await fetchChat<{ ok: boolean; deletedAt: string }>(`/api/chat/messages/${messageId}`, {
+      const res = await fetchChat<{ ok: boolean; deletedAt: string }>(`/api/messages/messages/${messageId}`, {
         method: "DELETE",
       });
       if (res?.deletedAt) {
@@ -1853,7 +1871,7 @@ export default function ChatInternoV2Client() {
     const existingReaction = (message.reactions ?? []).find((reaction) => reaction.userId === user.id) ?? null;
     const hasReacted = existingReaction?.emoji === emoji;
     try {
-      await fetchChat(`/api/chat/messages/${message.id}/reactions`, {
+      await fetchChat(`/api/messages/messages/${message.id}/reactions`, {
         method: hasReacted ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emoji }),
@@ -1896,7 +1914,7 @@ export default function ChatInternoV2Client() {
     if (!searchQuery.trim() || !activeConversation?.id) return;
     setSearchLoading(true);
     try {
-      const url = await buildChatUrl("/api/chat/search");
+      const url = await buildChatUrl("/api/messages/search");
       url.searchParams.set("query", searchQuery.trim());
       url.searchParams.set("conversationId", activeConversation.id);
       const data = await fetcher<{ ok: boolean; items: SearchResult[] }>(url.pathname + url.search);
@@ -1936,7 +1954,7 @@ export default function ChatInternoV2Client() {
     if (!activeConversation?.id) return;
     try {
       const res = await fetchChat<{ ok: boolean; notifLevel: string; mutedUntil: string | null }>(
-        `/api/chat/conversations/${activeConversation.id}/notifications`,
+        `/api/messages/conversations/${activeConversation.id}/notifications`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -2107,13 +2125,13 @@ export default function ChatInternoV2Client() {
                   (request.requester.username ? `@${request.requester.username}` : "Cliente");
                 const subtitle =
                   request.contextType === "SERVICE"
-                    ? request.service?.title
-                      ? `Serviço · ${request.service.title}`
+                    ? request.contextId
+                      ? `Serviço #${request.contextId}`
                       : "Serviço"
                     : "Pedido geral";
                 return (
                   <div
-                    key={request.id}
+                    key={request.grantId}
                     className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2"
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -2125,14 +2143,14 @@ export default function ChatInternoV2Client() {
                         <button
                           type="button"
                           className={cn(CTA_PRIMARY, "h-7 px-2 text-[10px]")}
-                          onClick={() => handleApproveContactRequest(request.id)}
+                          onClick={() => handleApproveContactRequest(request.grantId)}
                         >
                           Aprovar
                         </button>
                         <button
                           type="button"
                           className={cn(CTA_GHOST, "h-7 px-2 text-[10px]")}
-                          onClick={() => handleRejectContactRequest(request.id)}
+                          onClick={() => handleRejectContactRequest(request.grantId)}
                         >
                           Rejeitar
                         </button>

@@ -29,6 +29,7 @@ export type MessageInviteStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED"
 export type MessageInvite = {
   id: string;
   threadId: string;
+  conversationId?: string | null;
   status: MessageInviteStatus;
   expiresAt: string;
   event: {
@@ -51,6 +52,7 @@ export type MessageInvitesResponse = {
 export type MessageInviteAcceptResponse = {
   invite: Pick<MessageInvite, "id" | "threadId" | "status" | "expiresAt">;
   threadId: string;
+  conversationId?: string | null;
 };
 
 export type MessageRequest = {

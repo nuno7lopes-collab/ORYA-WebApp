@@ -59,7 +59,7 @@ Deploy this app on AWS (for example, App Runner/ECS + ALB/CloudFront), and keep 
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
-## API response envelope (Blueprint v9)
+## API response envelope (SSOT)
 
 JSON routes must return a single envelope:
 

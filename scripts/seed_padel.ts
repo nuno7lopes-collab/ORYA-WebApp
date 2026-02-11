@@ -29,7 +29,6 @@ import {
   PayoutMode,
   Prisma,
   PrismaClient,
-  OrganizationMemberRole,
   ResaleMode,
   padel_format,
 } from "@prisma/client";
@@ -590,16 +589,40 @@ async function main() {
     throw new Error(ORG_ID ? `Organizacao nao encontrada para ORG_ID=${ORG_ID}.` : "Organizacao nao encontrada.");
   }
 
-  const memberExists = await prisma.organizationMember.findFirst({
-    where: { organizationId: organization.id, userId },
+  const orgGroup = await prisma.organization.findUnique({
+    where: { id: organization.id },
+    select: { groupId: true },
   });
-  if (!memberExists) {
-    await prisma.organizationMember.create({
+  if (!orgGroup?.groupId) {
+    throw new Error(`Organizacao ${organization.id} sem groupId.`);
+  }
+
+  const existingGroupMember = await prisma.organizationGroupMember.findFirst({
+    where: { groupId: orgGroup.groupId, userId },
+    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true },
+  });
+  if (existingGroupMember?.id) {
+    await prisma.organizationGroupMember.update({
+      where: { id: existingGroupMember.id },
       data: {
-        organizationId: organization.id,
+        role: "OWNER",
+        scopeAllOrgs: existingGroupMember.scopeAllOrgs,
+        scopeOrgIds: existingGroupMember.scopeAllOrgs
+          ? []
+          : Array.from(new Set([...(existingGroupMember.scopeOrgIds ?? []), organization.id])),
+      },
+    });
+    await prisma.organizationGroupMemberOrganizationOverride.deleteMany({
+      where: { groupMemberId: existingGroupMember.id, organizationId: organization.id },
+    });
+  } else {
+    await prisma.organizationGroupMember.create({
+      data: {
+        groupId: orgGroup.groupId,
         userId,
-        role: OrganizationMemberRole.OWNER,
-        invitedByUserId: userId,
+        role: "OWNER",
+        scopeAllOrgs: false,
+        scopeOrgIds: [organization.id],
       },
     });
   }

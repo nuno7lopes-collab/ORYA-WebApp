@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -179,10 +180,11 @@ async function _PATCH(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
-    const targetMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: targetUserId } },
+    const targetMembership = await getEffectiveOrganizationMember({
+      organizationId,
+      userId: targetUserId,
     });
     if (!targetMembership) {
       return fail(404, "NOT_MEMBER");

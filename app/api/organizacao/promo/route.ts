@@ -6,6 +6,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationModule } from "@prisma/client";
+import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
 import crypto from "crypto";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -122,11 +123,11 @@ async function _GET(req: NextRequest) {
       const message =
         "message" in emailGate && typeof emailGate.message === "string"
           ? emailGate.message
-          : emailGate.error ?? "Sem permissões.";
+          : emailGate.errorCode ?? "Sem permissões.";
       return respondError(
         ctx,
         {
-          errorCode: emailGate.error ?? "FORBIDDEN",
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
           message,
           retryable: false,
           details: emailGate,
@@ -319,11 +320,11 @@ async function _POST(req: NextRequest) {
       const message =
         "message" in emailGate && typeof emailGate.message === "string"
           ? emailGate.message
-          : emailGate.error ?? "Sem permissões.";
+          : emailGate.errorCode ?? "Sem permissões.";
       return respondError(
         ctx,
         {
-          errorCode: emailGate.error ?? "FORBIDDEN",
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
           message,
           retryable: false,
           details: emailGate,
@@ -423,11 +424,9 @@ async function _POST(req: NextRequest) {
 
     let resolvedPromoterId: string | null = null;
     if (typeof promoterUserId === "string") {
-      const promoterMember = await prisma.organizationMember.findUnique({
-        where: {
-          organizationId_userId: { organizationId: orgCtx.organization.id, userId: promoterUserId },
-        },
-        select: { role: true },
+      const promoterMember = await getEffectiveOrganizationMember({
+        organizationId: orgCtx.organization.id,
+        userId: promoterUserId,
       });
       if (!promoterMember || promoterMember.role !== "PROMOTER") {
         return fail(ctx, 400, "Promoter inválido.");
@@ -498,11 +497,11 @@ async function _PATCH(req: NextRequest) {
       const message =
         "message" in emailGate && typeof emailGate.message === "string"
           ? emailGate.message
-          : emailGate.error ?? "Sem permissões.";
+          : emailGate.errorCode ?? "Sem permissões.";
       return respondError(
         ctx,
         {
-          errorCode: emailGate.error ?? "FORBIDDEN",
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
           message,
           retryable: false,
           details: emailGate,
@@ -635,11 +634,9 @@ async function _PATCH(req: NextRequest) {
     if (typeof name === "string") dataUpdate.name = name.trim() || null;
     if (typeof description === "string") dataUpdate.description = description.trim() || null;
     if (typeof promoterUserId === "string") {
-      const promoterMember = await prisma.organizationMember.findUnique({
-        where: {
-          organizationId_userId: { organizationId: orgCtx.organization.id, userId: promoterUserId },
-        },
-        select: { role: true },
+      const promoterMember = await getEffectiveOrganizationMember({
+        organizationId: orgCtx.organization.id,
+        userId: promoterUserId,
       });
       if (!promoterMember || promoterMember.role !== "PROMOTER") {
         return fail(ctx, 400, "Promoter inválido.");

@@ -10,6 +10,7 @@ import { OrganizationMemberRole, OrganizationModule, PadelTournamentRole, Source
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
 
 const READ_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const WRITE_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -157,9 +158,9 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "USER_NOT_FOUND" }, { status: 404 });
   }
 
-  const member = await prisma.organizationMember.findFirst({
-    where: { organizationId: organization.id, userId: targetUserId },
-    select: { id: true },
+  const member = await getEffectiveOrganizationMember({
+    organizationId: organization.id,
+    userId: targetUserId,
   });
   if (!member) {
     return jsonWrap({ ok: false, error: "USER_NOT_MEMBER" }, { status: 400 });

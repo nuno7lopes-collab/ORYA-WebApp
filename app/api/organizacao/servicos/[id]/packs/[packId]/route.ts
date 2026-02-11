@@ -89,7 +89,7 @@ async function _PATCH(
       requireStripeForServices: true,
     });
     if (!writeAccess.ok) {
-      return fail(403, writeAccess.error);
+      return fail(403, writeAccess.errorCode);
     }
 
     const pack = await prisma.servicePack.findFirst({

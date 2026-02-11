@@ -35,7 +35,13 @@ vi.mock("@/lib/prisma", () => {
   const internalChatMessage = {
     create: vi.fn(async () => ({})),
   };
-  const organizationMember = {
+  const organization = {
+    findUnique: vi.fn(async () => ({ groupId: 1 })),
+  };
+  const organizationGroupMember = {
+    findMany: vi.fn(async () => []),
+  };
+  const organizationGroupMemberOrganizationOverride = {
     findMany: vi.fn(async () => []),
   };
   const prisma = {
@@ -43,7 +49,9 @@ vi.mock("@/lib/prisma", () => {
     activityFeedItem,
     internalChatChannel,
     internalChatMessage,
-    organizationMember,
+    organization,
+    organizationGroupMember,
+    organizationGroupMemberOrganizationOverride,
   };
   return { prisma };
 });
@@ -59,7 +67,9 @@ describe("ops feed consumer", () => {
     prismaMock.activityFeedItem["create"].mockClear();
     prismaMock.internalChatChannel.findFirst.mockClear();
     prismaMock.internalChatMessage.create.mockClear();
-    prismaMock.organizationMember.findMany.mockClear();
+    prismaMock.organization.findUnique.mockClear();
+    prismaMock.organizationGroupMember.findMany.mockClear();
+    prismaMock.organizationGroupMemberOrganizationOverride.findMany.mockClear();
   });
 
   it("dedupe: mesmo eventId não duplica item", async () => {

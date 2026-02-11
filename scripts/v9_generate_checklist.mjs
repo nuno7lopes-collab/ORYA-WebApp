@@ -2,8 +2,7 @@ import fs from "node:fs";
 
 const sources = [
   { path: "docs/ssot_registry.md", label: "ssot_registry" },
-  { path: "docs/blueprint.md", label: "blueprint" },
-  { path: "docs/envs_required.md", label: "envs_required" },
+  { path: "docs/planning_registry.md", label: "planning_registry" },
 ];
 
 function detectStatus(line) {

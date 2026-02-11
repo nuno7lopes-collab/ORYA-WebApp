@@ -12,6 +12,7 @@ import { OrganizationLangSetter } from "../OrganizationLangSetter";
 import { OrganizationStatus } from "@prisma/client";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
+import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 
 type OrganizationSwitcherOption = {
   organizationId: number;
@@ -59,10 +60,9 @@ export default async function OrganizationDashboardLayout({ children }: { childr
       ...ORG_CONTEXT_UI,
       includeOrganizationFields: "settings",
     });
-    const membershipsPromise = prisma.organizationMember.findMany({
-      where: { userId: user.id },
-      include: { organization: true },
-      orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
+    const membershipsPromise = listEffectiveOrganizationMembershipsForUser({
+      userId: user.id,
+      allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
     });
 
     const [profileResult, activeOrgResult, membershipsResult] = await Promise.allSettled([
@@ -111,37 +111,28 @@ export default async function OrganizationDashboardLayout({ children }: { childr
 
     if (membershipsResult.status === "fulfilled") {
       orgOptions = membershipsResult.value
-        .filter((m) => m.organization)
         .map((m) => ({
           organizationId: m.organizationId,
           role: m.role,
           organization: {
-            id: m.organization!.id,
-            username: m.organization!.username,
-            publicName: m.organization!.publicName,
-            businessName: m.organization!.businessName,
-            entityType: m.organization!.entityType,
-            organizationKind: (m.organization as { organizationKind?: string | null }).organizationKind ?? null,
-            primaryModule: (m.organization as { primaryModule?: string | null }).primaryModule ?? null,
-            status: m.organization!.status,
-            brandingAvatarUrl: (m.organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
-            brandingPrimaryColor: (m.organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
-            brandingSecondaryColor: (m.organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
-            language: (m.organization as { language?: string | null }).language ?? null,
-            officialEmail: (m.organization as { officialEmail?: string | null }).officialEmail ?? null,
-            officialEmailVerifiedAt: (m.organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+            id: m.organization.id,
+            username: m.organization.username,
+            publicName: m.organization.publicName,
+            businessName: m.organization.businessName,
+            entityType: m.organization.entityType,
+            organizationKind: m.organization.organizationKind ?? null,
+            primaryModule: m.organization.primaryModule ?? null,
+            status: m.organization.status,
+            brandingAvatarUrl: m.organization.brandingAvatarUrl ?? null,
+            brandingPrimaryColor: m.organization.brandingPrimaryColor ?? null,
+            brandingSecondaryColor: m.organization.brandingSecondaryColor ?? null,
+            language: m.organization.language ?? null,
+            officialEmail: m.organization.officialEmail ?? null,
+            officialEmailVerifiedAt: m.organization.officialEmailVerifiedAt ?? null,
           },
         }));
     } else {
-      const msg =
-        typeof membershipsResult.reason === "object" &&
-        membershipsResult.reason &&
-        "message" in membershipsResult.reason
-          ? String((membershipsResult.reason as { message?: unknown }).message)
-          : "";
-      if (!(msg.includes("does not exist") || msg.includes("organization_members"))) {
-        throw membershipsResult.reason;
-      }
+      throw membershipsResult.reason;
     }
   }
 

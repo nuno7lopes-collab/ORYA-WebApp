@@ -528,7 +528,7 @@ export function useChatPreviewData() {
       setLoadingConversations(true);
       setConversationsError(null);
       try {
-        const url = new URL("/api/chat/conversations", window.location.origin);
+        const url = new URL("/api/messages/conversations", window.location.origin);
         if (incremental && lastConversationSyncRef.current) {
           url.searchParams.set("updatedAfter", lastConversationSyncRef.current);
         }
@@ -560,7 +560,7 @@ export function useChatPreviewData() {
   const createConversation = useCallback(
     async (payload: CreateConversationPayload) => {
       const data = await fetcher<{ ok: boolean; conversation?: { id?: string | null } | null }>(
-        "/api/chat/conversations",
+        "/api/messages/conversations",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -609,7 +609,7 @@ export function useChatPreviewData() {
       }
       setMessagesErrorByConversation((prev) => ({ ...prev, [conversationId]: null }));
       try {
-        const url = new URL(`/api/chat/conversations/${conversationId}/messages`, window.location.origin);
+        const url = new URL(`/api/messages/conversations/${conversationId}/messages`, window.location.origin);
         if (cursor) url.searchParams.set("cursor", cursor);
         if (includeMembers === false) {
           url.searchParams.set("includeMembers", "0");
@@ -671,7 +671,7 @@ export function useChatPreviewData() {
       if (lastAttempt && lastAttempt.id === lastMessage.id && now - lastAttempt.ts < 1500) return;
       lastReadAttemptRef.current[conversationId] = { id: lastMessage.id, ts: now };
       try {
-        const res = await fetch(`/api/chat/conversations/${conversationId}/read`, {
+        const res = await fetch(`/api/messages/conversations/${conversationId}/read`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lastReadMessageId: lastMessage.id }),
@@ -1155,7 +1155,7 @@ export function useChatPreviewData() {
                 path: string;
                 bucket: string;
                 url: string;
-              }>("/api/chat/attachments/presign", {
+              }>("/api/messages/attachments/presign", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ type, mime: file.type, size: file.size, metadata: { name: file.name } }),
@@ -1188,7 +1188,7 @@ export function useChatPreviewData() {
           preparedAttachments = uploads;
         }
 
-        const res = await fetcher<{ ok: boolean; message: Message }>("/api/chat/messages", {
+        const res = await fetcher<{ ok: boolean; message: Message }>("/api/messages/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1247,7 +1247,7 @@ export function useChatPreviewData() {
   const editMessage = useCallback(async (messageId: string, body: string) => {
     if (!messageId || !body.trim()) return;
     try {
-      const res = await fetcher<{ ok: boolean; message: Message }>(`/api/chat/messages/${messageId}`, {
+      const res = await fetcher<{ ok: boolean; message: Message }>(`/api/messages/messages/${messageId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body }),
@@ -1302,7 +1302,7 @@ export function useChatPreviewData() {
       mutedUntil: string | null;
     }) => {
       const res = await fetcher<{ ok: boolean; notifLevel: string; mutedUntil: string | null }>(
-        `/api/chat/conversations/${conversationId}/notifications`,
+        `/api/messages/conversations/${conversationId}/notifications`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -1329,7 +1329,7 @@ export function useChatPreviewData() {
       title: string;
     }) => {
       const res = await fetcher<{ ok: boolean; conversation?: { id: string; title: string | null } }>(
-        `/api/chat/conversations/${conversationId}`,
+        `/api/messages/conversations/${conversationId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -1347,7 +1347,7 @@ export function useChatPreviewData() {
 
   const leaveConversation = useCallback(
     async (conversationId: string) => {
-      await fetcher<{ ok: boolean }>(`/api/chat/conversations/${conversationId}/leave`, {
+      await fetcher<{ ok: boolean }>(`/api/messages/conversations/${conversationId}/leave`, {
         method: "POST",
       });
       const currentActive = activeConversationIdRef.current;
@@ -1395,7 +1395,7 @@ export function useChatPreviewData() {
 
   const toggleBlockUser = useCallback(
     async ({ userId, shouldBlock }: { userId: string; shouldBlock: boolean }) => {
-      await fetcher<{ ok: boolean }>(`/api/chat/blocks`, {
+      await fetcher<{ ok: boolean }>(`/api/messages/blocks`, {
         method: shouldBlock ? "POST" : "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
@@ -1412,7 +1412,7 @@ export function useChatPreviewData() {
   const deleteMessage = useCallback(async (messageId: string) => {
     if (!messageId) return;
     try {
-      const res = await fetcher<{ ok: boolean; deletedAt: string }>(`/api/chat/messages/${messageId}`, {
+      const res = await fetcher<{ ok: boolean; deletedAt: string }>(`/api/messages/messages/${messageId}`, {
         method: "DELETE",
       });
       if (!res?.deletedAt) return;
@@ -1437,7 +1437,7 @@ export function useChatPreviewData() {
       const existing = message?.reactions?.find((reaction) => reaction.userId === viewerId) ?? null;
       const hasReacted = existing?.emoji === emoji;
       try {
-        await fetcher(`/api/chat/messages/${messageId}/reactions`, {
+        await fetcher(`/api/messages/messages/${messageId}/reactions`, {
           method: hasReacted ? "DELETE" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ emoji }),
@@ -1480,7 +1480,7 @@ export function useChatPreviewData() {
   const togglePin = useCallback(async (conversationId: string, messageId: string, isPinned: boolean) => {
     if (!conversationId || !messageId) return;
     try {
-      await fetcher(`/api/chat/messages/${messageId}/pins`, {
+      await fetcher(`/api/messages/messages/${messageId}/pins`, {
         method: isPinned ? "DELETE" : "POST",
       });
       setMessagesByConversation((prev) => {

@@ -2,26 +2,35 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const requireAdminUser = vi.hoisted(() => vi.fn());
+const listEffectiveOrganizationMembers = vi.hoisted(() => vi.fn());
 const prisma = vi.hoisted(() => ({
   organization: {
     findMany: vi.fn(),
+    findUnique: vi.fn(),
   },
   event: {
     groupBy: vi.fn(),
+  },
+  profile: {
+    findMany: vi.fn(),
   },
   $queryRaw: vi.fn(),
 }));
 
 vi.mock("@/lib/admin/auth", () => ({ requireAdminUser }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
+vi.mock("@/lib/organizationMembers", () => ({ listEffectiveOrganizationMembers }));
 
 let GET: typeof import("@/app/api/admin/organizacoes/list/route").GET;
 
 beforeEach(async () => {
   requireAdminUser.mockReset();
   prisma.organization.findMany.mockReset();
+  prisma.organization.findUnique.mockReset();
   prisma.event.groupBy.mockReset();
+  prisma.profile.findMany.mockReset();
   prisma.$queryRaw.mockReset();
+  listEffectiveOrganizationMembers.mockReset();
   vi.resetModules();
   GET = (await import("@/app/api/admin/organizacoes/list/route")).GET;
 });
@@ -52,7 +61,6 @@ describe("admin organizations list route", () => {
         stripePayoutsEnabled: null,
         officialEmail: null,
         officialEmailVerifiedAt: null,
-        members: [],
       },
       {
         id: 1,
@@ -65,9 +73,10 @@ describe("admin organizations list route", () => {
         stripePayoutsEnabled: null,
         officialEmail: null,
         officialEmailVerifiedAt: null,
-        members: [],
       },
     ]);
+    listEffectiveOrganizationMembers.mockResolvedValue([]);
+    prisma.profile.findMany.mockResolvedValue([]);
     prisma.event.groupBy.mockResolvedValue([]);
     prisma.$queryRaw.mockResolvedValue([]);
 

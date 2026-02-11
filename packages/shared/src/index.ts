@@ -6,3 +6,4 @@ export * from "./ui/tokens";
 export * from "./i18n";
 export * from "./usernamePolicy";
 export * from "./interests";
+export * from "./messagesContracts";

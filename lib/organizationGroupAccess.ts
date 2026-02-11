@@ -122,6 +122,72 @@ export async function ensureGroupMemberForOrg(params: {
   });
 }
 
+export async function setGroupMemberRoleForOrg(params: {
+  organizationId: number;
+  userId: string;
+  role: OrganizationMemberRole;
+  rolePack?: OrganizationRolePack | null;
+  client?: Prisma.TransactionClient;
+}) {
+  const { organizationId, userId, role, rolePack, client } = params;
+  const db = client ?? prisma;
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { groupId: true },
+  });
+  if (!org?.groupId) {
+    throw new Error("ORG_GROUP_NOT_FOUND");
+  }
+
+  const targetGroup = await findGroupMemberByUser({
+    db,
+    groupId: org.groupId,
+    userId,
+    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
+  });
+
+  if (!targetGroup) {
+    await ensureGroupMemberForOrg({
+      organizationId,
+      userId,
+      role,
+      rolePack,
+      client,
+    });
+    return;
+  }
+
+  const scopeOrgIds = targetGroup.scopeOrgIds ?? [];
+  const hasMultipleScopes = targetGroup.scopeAllOrgs || scopeOrgIds.length > 1;
+  if (hasMultipleScopes) {
+    if (targetGroup.role === role) {
+      await db.organizationGroupMemberOrganizationOverride.deleteMany({
+        where: { groupMemberId: targetGroup.id, organizationId },
+      });
+      return;
+    }
+    const updated = await db.organizationGroupMemberOrganizationOverride.updateMany({
+      where: { groupMemberId: targetGroup.id, organizationId },
+      data: { roleOverride: role, revokedAt: null },
+    });
+    if (updated.count === 0) {
+      await db.organizationGroupMemberOrganizationOverride.createMany({
+        data: [{ groupMemberId: targetGroup.id, organizationId, roleOverride: role }],
+        skipDuplicates: true,
+      });
+    }
+    return;
+  }
+
+  await db.organizationGroupMember.update({
+    where: { id: targetGroup.id },
+    data: { role, ...(rolePack !== undefined ? { rolePack } : {}) },
+  });
+  await db.organizationGroupMemberOrganizationOverride.deleteMany({
+    where: { groupMemberId: targetGroup.id, organizationId },
+  });
+}
+
 export async function revokeGroupMemberForOrg(params: {
   organizationId: number;
   userId: string;

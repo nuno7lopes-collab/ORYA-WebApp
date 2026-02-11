@@ -1,6 +1,7 @@
 import { OrganizationMemberRole, Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { ensureGroupMemberForOrg, setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
+import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 
 type TxLike = Prisma.TransactionClient | PrismaClient;
 
@@ -15,28 +16,27 @@ export async function setSoleOwner(
   userId: string,
   invitedByUserId?: string | null,
 ) {
-  await client.organizationMember.upsert({
-    where: { organizationId_userId: { organizationId, userId } },
-    update: { role: OrganizationMemberRole.OWNER },
-    create: {
-      organizationId,
-      userId,
-      role: OrganizationMemberRole.OWNER,
-      invitedByUserId: invitedByUserId ?? undefined,
-    },
-  });
-
-  await client.organizationMember.updateMany({
-    where: { organizationId, role: OrganizationMemberRole.OWNER, userId: { not: userId } },
-    data: { role: OrganizationMemberRole.CO_OWNER },
-  });
-
   await ensureGroupMemberForOrg({
     organizationId,
     userId,
     role: OrganizationMemberRole.OWNER,
     client,
   });
+
+  const previousOwners = await listEffectiveOrganizationMembers({
+    organizationId,
+    client,
+    roles: [OrganizationMemberRole.OWNER],
+  });
+  for (const owner of previousOwners) {
+    if (owner.userId === userId) continue;
+    await setGroupMemberRoleForOrg({
+      organizationId,
+      userId: owner.userId,
+      role: OrganizationMemberRole.CO_OWNER,
+      client,
+    });
+  }
 }
 
 /**

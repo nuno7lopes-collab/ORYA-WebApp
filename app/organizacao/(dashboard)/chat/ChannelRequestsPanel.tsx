@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ChannelRequestItem = {
-  id: string;
+  grantId: string;
   title: string;
   createdAt: string;
   requester: {
@@ -15,7 +15,17 @@ type ChannelRequestItem = {
 };
 
 type ChannelRequestsResponse =
-  | { ok: true; items: ChannelRequestItem[] }
+  | {
+      ok: true;
+      items: Array<{
+        id: string;
+        kind: string;
+        status: string;
+        title: string | null;
+        createdAt: string;
+        requester: ChannelRequestItem["requester"] | null;
+      }>;
+    }
   | { ok: false; error?: string };
 
 function requesterLabel(item: ChannelRequestItem) {
@@ -36,7 +46,10 @@ export default function ChannelRequestsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/chat/channel-requests?limit=20", { cache: "no-store" });
+      const res = await fetch(
+        "/api/messages/grants?kind=CHANNEL_CREATE_REQUEST&status=PENDING",
+        { cache: "no-store" },
+      );
       const json = (await res.json().catch(() => null)) as ChannelRequestsResponse | null;
       if (res.status === 403) {
         setForbidden(true);
@@ -47,7 +60,14 @@ export default function ChannelRequestsPanel() {
         setError((json && "error" in json ? json.error : null) || "Não foi possível carregar pedidos.");
         return;
       }
-      setItems(json.items ?? []);
+      setItems(
+        (json.items ?? []).map((item) => ({
+          grantId: item.id,
+          title: item.title?.trim() || "Novo canal",
+          createdAt: item.createdAt,
+          requester: item.requester,
+        })),
+      );
     } catch (err) {
       console.error("[chat/channel-requests] load failed:", err);
       setError("Erro inesperado ao carregar pedidos.");
@@ -61,11 +81,15 @@ export default function ChannelRequestsPanel() {
   }, [load]);
 
   const handleDecision = useCallback(
-    async (requestId: string, action: "approve" | "reject") => {
-      setPendingId(requestId);
+    async (grantId: string, action: "approve" | "reject") => {
+      setPendingId(grantId);
       setError(null);
       try {
-        const res = await fetch(`/api/chat/channel-requests/${requestId}/${action}`, {
+        const endpoint =
+          action === "approve"
+            ? `/api/messages/grants/${grantId}/accept`
+            : `/api/messages/grants/${grantId}/decline`;
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
@@ -73,7 +97,7 @@ export default function ChannelRequestsPanel() {
         if (!res.ok || !json?.ok) {
           throw new Error(json?.error || "Falha ao processar pedido.");
         }
-        setItems((prev) => prev.filter((entry) => entry.id !== requestId));
+        setItems((prev) => prev.filter((entry) => entry.grantId !== grantId));
       } catch (err) {
         console.error("[chat/channel-requests] decision failed:", err);
         setError(err instanceof Error ? err.message : "Erro inesperado.");
@@ -133,7 +157,7 @@ export default function ChannelRequestsPanel() {
       {!loading && hasItems ? (
         <div className="mt-3 grid gap-2">
           {items.map((item) => (
-            <div key={item.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+            <div key={item.grantId} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-[12px] font-medium text-white">{item.title}</p>
@@ -144,16 +168,16 @@ export default function ChannelRequestsPanel() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={pendingId === item.id}
-                    onClick={() => void handleDecision(item.id, "approve")}
+                    disabled={pendingId === item.grantId}
+                    onClick={() => void handleDecision(item.grantId, "approve")}
                     className="rounded-full border border-emerald-300/40 px-2.5 py-1 text-[10px] text-emerald-100 hover:bg-emerald-500/10 disabled:opacity-50"
                   >
                     Aprovar
                   </button>
                   <button
                     type="button"
-                    disabled={pendingId === item.id}
-                    onClick={() => void handleDecision(item.id, "reject")}
+                    disabled={pendingId === item.grantId}
+                    onClick={() => void handleDecision(item.grantId, "reject")}
                     className="rounded-full border border-red-400/40 px-2.5 py-1 text-[10px] text-red-100 hover:bg-red-500/10 disabled:opacity-50"
                   >
                     Rejeitar

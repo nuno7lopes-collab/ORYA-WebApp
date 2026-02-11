@@ -61,16 +61,16 @@ async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
     const message =
       "message" in emailGate && typeof emailGate.message === "string"
         ? emailGate.message
-        : emailGate.error ?? "Sem permissões.";
+        : emailGate.errorCode ?? "Sem permissões.";
     return respondError(
       ctx,
       {
-        errorCode: emailGate.error ?? "FORBIDDEN",
+        errorCode: emailGate.errorCode ?? "FORBIDDEN",
         message,
         retryable: false,
         details: emailGate,
       },
-      { status: emailGate.error === "ORGANIZATION_NOT_FOUND" ? 404 : 403 },
+      { status: emailGate.errorCode === "ORGANIZATION_NOT_FOUND" ? 404 : 403 },
     );
   }
 

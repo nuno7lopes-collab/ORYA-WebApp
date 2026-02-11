@@ -8,7 +8,8 @@ import { canManageMembers, isOrgOwner as hasOrgOwnerAccess } from "@/lib/organiz
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule } from "@prisma/client";
 import { ensureUserIsOrganization, setSoleOwner } from "@/lib/organizationRoles";
-import { ensureGroupMemberForOrg, resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { resolveGroupMemberForOrg, setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
+import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
 import { sendEmail } from "@/lib/emailClient";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
@@ -350,7 +351,7 @@ async function _POST(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const resolved = await resolveUserIdentifier(identifier);
@@ -362,8 +363,9 @@ async function _POST(req: NextRequest) {
 
     // Bloquear convites para quem já é membro
     if (targetUserId) {
-      const existingMember = await prisma.organizationMember.findUnique({
-        where: { organizationId_userId: { organizationId, userId: targetUserId } },
+      const existingMember = await getEffectiveOrganizationMember({
+        organizationId,
+        userId: targetUserId,
       });
       if (existingMember) {
         return fail(400, "Utilizador já é membro desta organização.");
@@ -602,7 +604,7 @@ async function _PATCH(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const viewerProfile = await prisma.profile.findUnique({
@@ -648,8 +650,10 @@ async function _PATCH(req: NextRequest) {
         }
 
         const role = invite.role as OrganizationMemberRole;
-        const currentMember = await tx.organizationMember.findUnique({
-          where: { organizationId_userId: { organizationId, userId: user.id } },
+        const currentMember = await getEffectiveOrganizationMember({
+          organizationId,
+          userId: user.id,
+          client: tx,
         });
 
         if (currentMember) {
@@ -690,17 +694,7 @@ async function _PATCH(req: NextRequest) {
           if (role === "OWNER") {
             await setSoleOwner(tx, organizationId, user.id, invite.invitedByUserId);
           } else {
-            await tx.organizationMember.upsert({
-              where: { organizationId_userId: { organizationId, userId: user.id } },
-              update: { role },
-              create: {
-                organizationId,
-                userId: user.id,
-                role,
-                invitedByUserId: invite.invitedByUserId,
-              },
-            });
-            await ensureGroupMemberForOrg({
+            await setGroupMemberRoleForOrg({
               organizationId,
               userId: user.id,
               role,

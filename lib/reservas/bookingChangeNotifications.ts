@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType, OrganizationMemberRole } from "@prisma/client";
+import { listEffectiveOrganizationMemberUserIdsByRoles } from "@/lib/organizationMembers";
 
 type BookingChangeResponseStatus = "ACCEPTED" | "DECLINED";
 
@@ -24,11 +25,11 @@ const roleAllowlist: OrganizationMemberRole[] = [
 export async function notifyOrganizationBookingChangeResponse(params: BookingChangeResponseNotifyParams) {
   try {
     const { organizationId, bookingId, requestId, status, proposedStartsAt, priceDeltaCents, actorUserId } = params;
-    const members = await prisma.organizationMember.findMany({
-      where: { organizationId, role: { in: roleAllowlist } },
-      select: { userId: true },
+    const members = await listEffectiveOrganizationMemberUserIdsByRoles({
+      organizationId,
+      roles: roleAllowlist,
     });
-    const recipients = Array.from(new Set(members.map((m) => m.userId))).filter(
+    const recipients = Array.from(new Set(members)).filter(
       (userId) => userId && userId !== actorUserId,
     );
     if (recipients.length === 0) return;

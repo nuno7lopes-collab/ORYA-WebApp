@@ -8,6 +8,7 @@ import {
   type ModuleAccessLevel,
 } from "@/lib/organizationRbac";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organizationModules";
 import type {
   OrganizationMemberRole,
   OrganizationModule,
@@ -19,6 +20,16 @@ type PrismaClientLike = Prisma.TransactionClient | typeof prisma;
 
 function getPermissionModel(client: PrismaClientLike) {
   return client.organizationMemberPermission;
+}
+
+async function isOrganizationModuleEnabled(params: {
+  organizationId: number;
+  moduleKey: OrganizationModule;
+  client?: Prisma.TransactionClient;
+}) {
+  const { organizationId, moduleKey, client } = params;
+  const { activeModules } = await getOrganizationActiveModules(organizationId, null, client ?? prisma);
+  return hasAnyActiveModule(activeModules, [moduleKey]);
 }
 
 export async function getMemberPermissionOverrides(
@@ -64,6 +75,10 @@ export async function ensureMemberModuleAccess(input: {
   if (!membership) {
     return { ok: false as const, error: "Sem permissoes." };
   }
+  const moduleEnabled = await isOrganizationModuleEnabled({ organizationId, moduleKey, client });
+  if (!moduleEnabled) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
   const overrides = await getMemberPermissionOverrides(organizationId, userId, client);
   const access = resolveMemberModuleAccess({
     role: membership.role ?? role,
@@ -88,6 +103,10 @@ export async function ensureGroupMemberModuleAccess(input: {
   const membership =
     input.membership ?? (await resolveGroupMemberForOrg({ organizationId, userId, client }));
   if (!membership) {
+    return { ok: false as const, error: "Sem permissoes." };
+  }
+  const moduleEnabled = await isOrganizationModuleEnabled({ organizationId, moduleKey, client });
+  if (!moduleEnabled) {
     return { ok: false as const, error: "Sem permissoes." };
   }
   const overrides = await getMemberPermissionOverrides(organizationId, userId, client);

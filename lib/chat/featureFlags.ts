@@ -16,12 +16,3 @@ const chatV2Enabled = parseBoolean(
 export function isChatV2Enabled() {
   return chatV2Enabled;
 }
-
-const chatPollingOnly = parseBoolean(
-  process.env.CHAT_POLLING_ONLY ?? process.env.NEXT_PUBLIC_CHAT_POLLING_ONLY,
-  false,
-);
-
-export function isChatPollingOnly() {
-  return chatPollingOnly;
-}

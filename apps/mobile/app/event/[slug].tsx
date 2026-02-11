@@ -36,9 +36,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
-import { useChatThreads } from "../../features/chat/hooks";
 import { acceptMessageInvite } from "../../features/messages/api";
-import { useMessageInvites } from "../../features/messages/hooks";
+import { useMessageInvites, useMessagesInbox } from "../../features/messages/hooks";
 import { useProfileSummary } from "../../features/profile/hooks";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
@@ -700,7 +699,7 @@ export default function EventDetail() {
     return null;
   }, [data, location, t]);
 
-  const chatThreadsQuery = useChatThreads(Boolean(session?.user?.id), accessToken);
+  const inboxQuery = useMessagesInbox(Boolean(session?.user?.id), accessToken);
   const inviteQuery = useMessageInvites(
     data?.id ?? null,
     Boolean(session?.user?.id && data?.id),
@@ -710,8 +709,12 @@ export default function EventDetail() {
   const eventChatThread = useMemo(() => {
     const eventId = data?.id ?? null;
     if (!eventId) return null;
-    return chatThreadsQuery.data?.items?.find((item) => item.event.id === eventId) ?? null;
-  }, [chatThreadsQuery.data?.items, data?.id]);
+    return (
+      inboxQuery.data?.items?.find(
+        (item) => item.kind === "EVENT" && item.event?.id === eventId && item.conversationId,
+      ) ?? null
+    );
+  }, [data?.id, inboxQuery.data?.items]);
 
   const padelEventId = data?.id ?? null;
   const padelEnabled = isPadelEvent && Boolean(padelEventId);
@@ -737,17 +740,19 @@ export default function EventDetail() {
     setInviteAccepting(true);
     try {
       const result = await acceptMessageInvite(pendingInvite.id, accessToken);
-      await Promise.all([chatThreadsQuery.refetch(), inviteQuery.refetch()]);
-      if (result?.threadId && data?.id) {
+      await Promise.all([inboxQuery.refetch(), inviteQuery.refetch()]);
+      const conversationId = result?.conversationId ?? pendingInvite.conversationId ?? null;
+      if (conversationId && data?.id) {
         router.push({
           pathname: "/messages/[threadId]",
           params: {
-            threadId: result.threadId,
+            threadId: conversationId,
             eventId: String(data.id),
             title: data.title ?? "",
             coverImageUrl: data.coverImageUrl ?? "",
             startsAt: data.startsAt ?? "",
             endsAt: data.endsAt ?? "",
+            slug: data.slug ?? "",
           },
         });
       }
@@ -1359,7 +1364,7 @@ export default function EventDetail() {
                           </Text>
                         </Pressable>
                       </View>
-                    ) : chatThreadsQuery.isLoading || inviteQuery.isLoading ? (
+                    ) : inboxQuery.isLoading || inviteQuery.isLoading ? (
                       <Text className="text-white/60 text-sm">{t("events:detail.chatLoading")}</Text>
                     ) : eventChatThread ? (
                       <Pressable
@@ -1367,12 +1372,13 @@ export default function EventDetail() {
                           router.push({
                             pathname: "/messages/[threadId]",
                             params: {
-                              threadId: eventChatThread.threadId,
+                              threadId: eventChatThread.conversationId ?? "",
                               eventId: String(data?.id ?? ""),
                               title: data?.title ?? "",
                               coverImageUrl: data?.coverImageUrl ?? "",
                               startsAt: data?.startsAt ?? "",
                               endsAt: data?.endsAt ?? "",
+                              slug: data?.slug ?? "",
                             },
                           })
                         }
@@ -1403,7 +1409,7 @@ export default function EventDetail() {
                           </Text>
                           </Pressable>
                         </View>
-                    ) : chatThreadsQuery.isError || !eventChatThread ? (
+                    ) : inboxQuery.isError || !eventChatThread ? (
                       <Text className="text-white/60 text-sm">
                         {t("messages:thread.errors.participantsOnly")}
                       </Text>

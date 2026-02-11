@@ -2,8 +2,9 @@ import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { clearUsernameForOwner } from "@/lib/globalUsernames";
-import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -67,10 +68,10 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
       const message =
         "message" in emailGate && typeof emailGate.message === "string"
           ? emailGate.message
-          : emailGate.error ?? "Sem permissões.";
+          : emailGate.errorCode ?? "Sem permissões.";
       return respondError(
         ctx,
-        { errorCode: emailGate.error ?? "FORBIDDEN", message, retryable: false, details: emailGate },
+        { errorCode: emailGate.errorCode ?? "FORBIDDEN", message, retryable: false, details: emailGate },
         { status: 403 },
       );
     }
@@ -86,12 +87,24 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
       return fail(400, "Não é possível apagar: existem bilhetes vendidos nesta organização.");
     }
 
-    // Soft delete simples: marcar como SUSPENDED, libertar username e limpar memberships
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: { status: "SUSPENDED", username: null },
+    // Soft delete simples: marcar como SUSPENDED, libertar username e limpar memberships efetivos.
+    await prisma.$transaction(async (tx) => {
+      await tx.organization.update({
+        where: { id: organizationId },
+        data: { status: "SUSPENDED", username: null },
+      });
+      const currentMembers = await listEffectiveOrganizationMembers({
+        organizationId,
+        client: tx,
+      });
+      for (const currentMember of currentMembers) {
+        await revokeGroupMemberForOrg({
+          organizationId,
+          userId: currentMember.userId,
+          client: tx,
+        });
+      }
     });
-    await prisma.organizationMember.deleteMany({ where: { organizationId } });
     await clearUsernameForOwner({ ownerType: "organization", ownerId: organizationId });
 
     return respondOk(ctx, {}, { status: 200 });

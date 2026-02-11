@@ -47,18 +47,6 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
     }
 
-    // Guardar cookie com org atual + atualizar lastUsedAt
-    try {
-      await prisma.organizationMember.updateMany({
-        where: { organizationId: resolvedId, userId: user.id },
-        data: { lastUsedAt: new Date() },
-      });
-    } catch (err: unknown) {
-      if (!(typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021")) {
-        throw err;
-      }
-    }
-
     const result = await setActiveOrganizationForUser({
       userId: user.id,
       organizationId: resolvedId,
@@ -82,12 +70,6 @@ async function _POST(req: NextRequest) {
     });
     return res;
   } catch (err: unknown) {
-    if (typeof err === "object" && err && "code" in err && (err as { code?: string }).code === "P2021") {
-      return jsonWrap(
-        { ok: false, error: "Base de dados sem tabela organization_members. Corre as migrations." },
-        { status: 500 },
-      );
-    }
     console.error("[organização/organizations/switch][POST]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

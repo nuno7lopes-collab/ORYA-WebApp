@@ -6,7 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { createNotification } from "@/lib/notifications";
-import { ensureGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
+import { getEffectiveOrganizationMember, listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -59,8 +60,8 @@ async function _GET(req: NextRequest) {
       return respondError(
         ctx,
         {
-          errorCode: emailGate.error ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
           retryable: false,
           details: emailGate,
         },
@@ -80,15 +81,18 @@ async function _GET(req: NextRequest) {
       return fail(ctx, 403, "FORBIDDEN");
     }
 
-    const trainerMembers = await prisma.organizationMember.findMany({
-      where: { organizationId: organization.id, role: OrganizationMemberRole.TRAINER },
-      include: {
-        user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
-      },
-      orderBy: { createdAt: "desc" },
+    const trainerMembers = await listEffectiveOrganizationMembers({
+      organizationId: organization.id,
+      roles: [OrganizationMemberRole.TRAINER],
     });
-
     const trainerUserIds = trainerMembers.map((m) => m.userId);
+    const users = trainerUserIds.length
+      ? await prisma.profile.findMany({
+          where: { id: { in: trainerUserIds }, isDeleted: false },
+          select: { id: true, fullName: true, username: true, avatarUrl: true },
+        })
+      : [];
+    const userById = new Map(users.map((entry) => [entry.id, entry]));
     const trainerProfiles = trainerUserIds.length
       ? await prisma.trainerProfile.findMany({
           where: { organizationId: organization.id, userId: { in: trainerUserIds } },
@@ -99,11 +103,12 @@ async function _GET(req: NextRequest) {
 
     const items = trainerMembers.map((member) => {
       const profile = profileByUser.get(member.userId) ?? null;
+      const userProfile = userById.get(member.userId);
       return {
         userId: member.userId,
-        fullName: member.user?.fullName ?? null,
-        username: member.user?.username ?? null,
-        avatarUrl: member.user?.avatarUrl ?? null,
+        fullName: userProfile?.fullName ?? null,
+        username: userProfile?.username ?? null,
+        avatarUrl: userProfile?.avatarUrl ?? null,
         isPublished: profile?.isPublished ?? false,
         reviewStatus: profile?.reviewStatus ?? TrainerProfileReviewStatus.DRAFT,
         reviewNote: profile?.reviewNote ?? null,
@@ -162,8 +167,9 @@ async function _PATCH(req: NextRequest) {
       return fail(ctx, 403, "FORBIDDEN");
     }
 
-    const trainerMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId: organization.id, userId: targetUserId } },
+    const trainerMembership = await getEffectiveOrganizationMember({
+      organizationId: organization.id,
+      userId: targetUserId,
     });
 
     if (!trainerMembership || trainerMembership.role !== OrganizationMemberRole.TRAINER) {
@@ -309,8 +315,9 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 404, "USERNAME_NOT_FOUND");
     }
 
-    const existingMember = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId: organization.id, userId: targetProfile.id } },
+    const existingMember = await getEffectiveOrganizationMember({
+      organizationId: organization.id,
+      userId: targetProfile.id,
     });
 
     let assignedTrainerRole = false;
@@ -320,75 +327,22 @@ async function _POST(req: NextRequest) {
       OrganizationMemberRole.ADMIN,
     ];
     if (!existingMember) {
-      await prisma.organizationMember.create({
-        data: {
-          organizationId: organization.id,
-          userId: targetProfile.id,
-          role: OrganizationMemberRole.TRAINER,
-        },
+      await setGroupMemberRoleForOrg({
+        organizationId: organization.id,
+        userId: targetProfile.id,
+        role: OrganizationMemberRole.TRAINER,
       });
       assignedTrainerRole = true;
     } else if (
       existingMember.role !== OrganizationMemberRole.TRAINER &&
       !protectedRoles.includes(existingMember.role)
     ) {
-      await prisma.organizationMember.update({
-        where: { organizationId_userId: { organizationId: organization.id, userId: targetProfile.id } },
-        data: { role: OrganizationMemberRole.TRAINER },
+      await setGroupMemberRoleForOrg({
+        organizationId: organization.id,
+        userId: targetProfile.id,
+        role: OrganizationMemberRole.TRAINER,
       });
       assignedTrainerRole = true;
-    }
-
-    if (assignedTrainerRole) {
-      const org = await prisma.organization.findUnique({
-        where: { id: organization.id },
-        select: { groupId: true },
-      });
-      if (!org?.groupId) {
-        throw new Error("ORG_GROUP_NOT_FOUND");
-      }
-
-      const targetGroup = await prisma.organizationGroupMember.findFirst({
-        where: { groupId: org.groupId, userId: targetProfile.id },
-        select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
-      });
-
-      if (!targetGroup) {
-        await ensureGroupMemberForOrg({
-          organizationId: organization.id,
-          userId: targetProfile.id,
-          role: OrganizationMemberRole.TRAINER,
-        });
-      } else {
-        const scopeOrgIds = targetGroup.scopeOrgIds ?? [];
-        const hasMultipleScopes = targetGroup.scopeAllOrgs || scopeOrgIds.length > 1;
-        if (hasMultipleScopes && targetGroup.role !== OrganizationMemberRole.TRAINER) {
-          const updated = await prisma.organizationGroupMemberOrganizationOverride.updateMany({
-            where: { groupMemberId: targetGroup.id, organizationId: organization.id },
-            data: { roleOverride: OrganizationMemberRole.TRAINER, revokedAt: null },
-          });
-          if (updated.count === 0) {
-            await prisma.organizationGroupMemberOrganizationOverride.createMany({
-              data: [
-                {
-                  groupMemberId: targetGroup.id,
-                  organizationId: organization.id,
-                  roleOverride: OrganizationMemberRole.TRAINER,
-                },
-              ],
-              skipDuplicates: true,
-            });
-          }
-        } else {
-          await prisma.organizationGroupMember.update({
-            where: { id: targetGroup.id },
-            data: { role: OrganizationMemberRole.TRAINER },
-          });
-          await prisma.organizationGroupMemberOrganizationOverride.deleteMany({
-            where: { groupMemberId: targetGroup.id, organizationId: organization.id },
-          });
-        }
-      }
     }
 
     const profile = await prisma.trainerProfile.upsert({

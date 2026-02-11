@@ -90,7 +90,7 @@ async function _POST(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const resolved = await resolveUserIdentifier(targetRaw);
@@ -110,13 +110,17 @@ async function _POST(req: NextRequest) {
     let transfer;
     try {
       transfer = await prisma.$transaction(async (tx) => {
+        const ownerTransferTx = (tx as any).organizationOwnerTransfer;
+        if (!ownerTransferTx?.create) {
+          throw new Error("OWNER_TRANSFER_UNAVAILABLE");
+        }
         // Cancela pedidos pendentes anteriores
-        await ownerTransferModel.updateMany({
+        await ownerTransferTx.updateMany({
           where: { organizationId, status: "PENDING" },
           data: { status: "CANCELLED", cancelledAt: new Date(now) },
         });
 
-        const created = await ownerTransferModel.create({
+        const created = await ownerTransferTx.create({
           data: {
             organizationId,
             fromUserId: user.id,

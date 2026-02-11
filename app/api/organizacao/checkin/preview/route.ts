@@ -128,12 +128,12 @@ async function _POST(req: NextRequest) {
 
   const access = await ensureCheckinAccess(userId, eventId);
   if (!access.ok) {
-    if ("error" in access) {
+    if ("errorCode" in access) {
       return respondError(
         ctx,
         {
-          errorCode: access.error ?? "FORBIDDEN",
-          message: access.message ?? access.error ?? "Sem permissões.",
+          errorCode: access.errorCode ?? "FORBIDDEN",
+          message: access.message ?? access.errorCode ?? "Sem permissões.",
           retryable: false,
           details: access as Record<string, unknown>,
         },

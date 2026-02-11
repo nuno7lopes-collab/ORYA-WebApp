@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const ROOT = process.cwd();
-const PLAN_PATH = path.join(ROOT, "docs", "ssot_registry.md");
+const P0_MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.json");
 
 const ALLOW_PLAIN_TEXT = new Set([
   "app/api/stripe/webhook/route.ts",
@@ -10,22 +10,25 @@ const ALLOW_PLAIN_TEXT = new Set([
   "app/api/organizacao/payouts/webhook/route.ts",
 ]);
 
-function extractP0Routes(planText) {
-  const lines = planText.split(/\r?\n/);
+function extractP0Routes() {
+  if (!fs.existsSync(P0_MANIFEST_PATH)) {
+    console.error("Missing scripts/manifests/p0_endpoints.json");
+    process.exit(1);
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(P0_MANIFEST_PATH, "utf8"));
+  } catch (error) {
+    console.error(`Invalid scripts/manifests/p0_endpoints.json: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+  const list = Array.isArray(manifest?.endpoints) ? manifest.endpoints : [];
   const paths = new Set();
-  let inSection = false;
-
-  for (const line of lines) {
-    if (/^##\s+P0 endpoints/i.test(line) || line.includes("P0 endpoints")) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^##\s+/.test(line)) break;
-    if (!inSection) continue;
-    const matches = line.matchAll(/app\/api\/[^\s`]+\/route\.ts/g);
-    for (const match of matches) {
-      paths.add(match[0]);
-    }
+  for (const entry of list) {
+    if (typeof entry !== "string") continue;
+    const value = entry.trim();
+    if (!/^app\/api\/.+\/route\.(ts|tsx|js|jsx)$/.test(value)) continue;
+    paths.add(value);
   }
   return Array.from(paths.values());
 }
@@ -89,16 +92,10 @@ function objectHasErrorFields(objText) {
   return /errorCode\s*:|error\s*:|code\s*:|message\s*:/.test(objText);
 }
 
-if (!fs.existsSync(PLAN_PATH)) {
-  console.error("Missing docs/ssot_registry.md");
-  process.exit(1);
-}
-
-const planText = fs.readFileSync(PLAN_PATH, "utf8");
-const p0Paths = extractP0Routes(planText);
+const p0Paths = extractP0Routes();
 
 if (p0Paths.length === 0) {
-  console.error("P0 error envelope gate: no P0 endpoints found in docs/ssot_registry.md");
+  console.error("P0 error envelope gate: no P0 endpoints found in scripts/manifests/p0_endpoints.json");
   process.exit(1);
 }
 

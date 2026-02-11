@@ -50,20 +50,60 @@ async function _POST(req: NextRequest) {
         const chargesEnabled = Boolean(account.charges_enabled);
         const payoutsEnabled = Boolean(account.payouts_enabled);
 
-        await prisma.organization.updateMany({
-          where: organizationIdNumber
-            ? { id: organizationIdNumber }
-            : { stripeAccountId: account.id },
+        const mappedOrganization = organizationIdNumber
+          ? await prisma.organization.findUnique({
+              where: { id: organizationIdNumber },
+              select: { id: true, stripeAccountId: true },
+            })
+          : await prisma.organization.findFirst({
+              where: { stripeAccountId: account.id },
+              select: { id: true, stripeAccountId: true },
+            });
+
+        if (!mappedOrganization) {
+          logError("stripe.connect.webhook.organization_not_found", null, {
+            requestId: ctx.requestId,
+            organizationId: organizationIdNumber,
+            accountId: account.id,
+          });
+          return respondPlainText(ctx, "Organization mapping not found", { status: 422 });
+        }
+
+        if (
+          organizationIdNumber &&
+          mappedOrganization.stripeAccountId &&
+          mappedOrganization.stripeAccountId !== account.id
+        ) {
+          logError("stripe.connect.webhook.account_mismatch", null, {
+            requestId: ctx.requestId,
+            organizationId: mappedOrganization.id,
+            accountId: account.id,
+            mappedAccountId: mappedOrganization.stripeAccountId,
+          });
+          return respondPlainText(ctx, "Account mapping mismatch", { status: 409 });
+        }
+
+        const updated = await prisma.organization.updateMany({
+          where: { id: mappedOrganization.id },
           data: {
             stripeChargesEnabled: chargesEnabled,
             stripePayoutsEnabled: payoutsEnabled,
             stripeAccountId: account.id,
           },
         });
+        if (updated.count !== 1) {
+          logError("stripe.connect.webhook.update_failed", null, {
+            requestId: ctx.requestId,
+            organizationId: mappedOrganization.id,
+            accountId: account.id,
+            updateCount: updated.count,
+          });
+          return respondPlainText(ctx, "Organization update failed", { status: 500 });
+        }
 
         logInfo("stripe.connect.webhook.account_updated", {
           requestId: ctx.requestId,
-          organizationId: organizationIdNumber,
+          organizationId: mappedOrganization.id,
           accountId: account.id,
           chargesEnabled,
           payoutsEnabled,
@@ -80,6 +120,7 @@ async function _POST(req: NextRequest) {
     }
   } catch (err) {
     logError("stripe.connect.webhook.processing_failed", err, { requestId: ctx.requestId });
+    return respondPlainText(ctx, "Webhook processing failed", { status: 500 });
   }
 
   return respondOk(ctx, { received: true }, { status: 200 });

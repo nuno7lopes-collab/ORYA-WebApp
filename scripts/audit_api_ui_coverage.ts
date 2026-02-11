@@ -23,13 +23,18 @@ const API_ROOT = path.join(ROOT, "app", "api");
 const REPORT_DIR = path.join(ROOT, "reports");
 const CSV_PATH = path.join(REPORT_DIR, "api_ui_coverage.csv");
 const ORPHANS_PATH = path.join(REPORT_DIR, "api_orphans.md");
-const PLAN_PATH = path.join(ROOT, "docs", "ssot_registry.md");
+const P0_MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.json");
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 const MAX_EXPR_CANDIDATES = 24;
 
 const MISSING_API_ALLOWLIST = new Set([
   "/api/organizacao",
 ]);
+
+const ORPHAN_API_ALLOWLIST = new Set<string>([]);
+const ORPHAN_API_ALLOWLIST_PREFIXES = [
+  "/api/organizacao/",
+];
 
 const UI_ROOTS = [
   path.join(ROOT, "app"),
@@ -112,6 +117,11 @@ function routeType(route: string) {
 function isUiExempt(route: string) {
   const type = routeType(route);
   return type === "internal" || type === "cron" || type === "webhook";
+}
+
+function isOrphanAllowlisted(route: string) {
+  if (ORPHAN_API_ALLOWLIST.has(route)) return true;
+  return ORPHAN_API_ALLOWLIST_PREFIXES.some((prefix) => route.startsWith(prefix));
 }
 
 function unique(values: string[]) {
@@ -297,7 +307,7 @@ function extractFrontendUsage() {
 
   const codeFiles = files.filter((file) => /\.(ts|tsx|js|jsx)$/.test(file));
   const usage = new Map<string, Set<string>>();
-  const fallbackRegex = /["'`]([^"'`\s]*\/api\/[^"'`\s]*)["'`]/g;
+  const fallbackRegex = /["'`]((?:https?:\/\/[^"'`\s]+)?\/api\/[^"'`\s]*)["'`]/g;
 
   for (const file of codeFiles) {
     if (file.includes(`${path.sep}app${path.sep}api${path.sep}`)) continue;
@@ -421,22 +431,23 @@ function csvEscape(value: unknown) {
   return str;
 }
 
-function extractP0Routes(planText: string) {
-  const lines = planText.split(/\r?\n/);
+function extractP0RoutesFromManifest() {
+  if (!fs.existsSync(P0_MANIFEST_PATH)) return [];
+  let manifest: unknown = null;
+  try {
+    manifest = JSON.parse(fs.readFileSync(P0_MANIFEST_PATH, "utf8"));
+  } catch {
+    return [];
+  }
+  const entries = Array.isArray((manifest as { endpoints?: unknown[] })?.endpoints)
+    ? ((manifest as { endpoints: unknown[] }).endpoints ?? [])
+    : [];
   const paths = new Set<string>();
-  let inSection = false;
-
-  for (const line of lines) {
-    if (/^##\\s+P0 endpoints/i.test(line) || line.includes("P0 endpoints")) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^##\\s+/.test(line)) break;
-    if (!inSection) continue;
-    const matches = line.matchAll(/app\/api\/[^\s`]+\/route\.ts/g);
-    for (const match of matches) {
-      paths.add(match[0]);
-    }
+  for (const entry of entries) {
+    if (typeof entry !== "string") continue;
+    const value = entry.trim();
+    if (!/^app\/api\/.+\/route\.(ts|tsx|js|jsx)$/.test(value)) continue;
+    paths.add(value);
   }
   return Array.from(paths.values());
 }
@@ -479,7 +490,9 @@ function main() {
   }
   missingApi.sort((a, b) => a.endpoint.localeCompare(b.endpoint));
 
-  const orphanApi = apiEntries.filter((entry) => entry.uiStatus === "orphan");
+  const orphanApiAll = apiEntries.filter((entry) => entry.uiStatus === "orphan");
+  const orphanApiAllowed = orphanApiAll.filter((entry) => isOrphanAllowlisted(entry.route));
+  const orphanApi = orphanApiAll.filter((entry) => !isOrphanAllowlisted(entry.route));
   const exemptApi = apiEntries.filter((entry) => entry.uiStatus === "exempt");
   const coveredApi = apiEntries.filter((entry) => entry.uiStatus === "covered");
 
@@ -515,6 +528,7 @@ function main() {
     `- API routes total: ${apiEntries.length}`,
     `- Covered by UI: ${coveredApi.length}`,
     `- Orphan (no UI): ${orphanApi.length}`,
+    `- Orphan allowlisted: ${orphanApiAllowed.length}`,
     `- Exempt (internal/cron/webhook): ${exemptApi.length}`,
     `- UI endpoints missing API: ${missingApi.length}`,
     "",
@@ -528,6 +542,11 @@ function main() {
       ? orphanApi.map((entry) => `- ${entry.route} (${entry.file})`)
       : ["- none"]),
     "",
+    "## API orphan allowlist matches",
+    ...(orphanApiAllowed.length
+      ? orphanApiAllowed.map((entry) => `- ${entry.route} (${entry.file})`)
+      : ["- none"]),
+    "",
     "## Exempt routes (internal/cron/webhook)",
     ...(exemptApi.length
       ? exemptApi.map((entry) => `- ${entry.route} (${entry.file})`)
@@ -535,9 +554,8 @@ function main() {
     "",
   ];
 
-  if (fs.existsSync(PLAN_PATH)) {
-    const planText = fs.readFileSync(PLAN_PATH, "utf8");
-    const p0Paths = extractP0Routes(planText);
+  const p0Paths = extractP0RoutesFromManifest();
+  if (p0Paths.length > 0) {
     const p0Entries = p0Paths.map((relPath) => {
       const absPath = path.join(ROOT, relPath);
       const exists = fs.existsSync(absPath);
@@ -556,7 +574,7 @@ function main() {
       (entry) => entry.exists && !entry.exempt && entry.uiFiles.length === 0,
     );
 
-    reportLines.push("## P0 endpoints coverage (docs/ssot_registry.md)");
+    reportLines.push("## P0 endpoints coverage (scripts/manifests/p0_endpoints.json)");
     reportLines.push(`- Total: ${p0Entries.length}`);
     reportLines.push("");
     reportLines.push("### P0 missing files");

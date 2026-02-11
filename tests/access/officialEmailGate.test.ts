@@ -11,7 +11,7 @@ describe("ensureOrganizationEmailVerified", () => {
     const result = ensureOrganizationEmailVerified({ officialEmail: null, officialEmailVerifiedAt: null });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBe("OFFICIAL_EMAIL_REQUIRED");
+      expect(result.errorCode).toBe("OFFICIAL_EMAIL_REQUIRED");
       expect(result.email).toBeNull();
       expect(result.verifyUrl).toContain("/organizacao/settings");
       expect(result.nextStepUrl).toContain("/organizacao/settings");
@@ -27,7 +27,7 @@ describe("ensureOrganizationEmailVerified", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBe("OFFICIAL_EMAIL_NOT_VERIFIED");
+      expect(result.errorCode).toBe("OFFICIAL_EMAIL_NOT_VERIFIED");
       expect(result.email).toBe("team@example.com");
       expect(result.requestId).toBeTruthy();
       expect(result.correlationId).toBeTruthy();

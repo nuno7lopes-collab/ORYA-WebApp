@@ -44,20 +44,6 @@ function loadEnv() {
 
 loadEnv();
 
-function parseBool(value, fallback) {
-  if (value === undefined) return fallback;
-  return !["0", "false", "no"].includes(String(value).toLowerCase());
-}
-
-const pollingOnly = parseBool(
-  process.env.CHAT_POLLING_ONLY ?? process.env.NEXT_PUBLIC_CHAT_POLLING_ONLY,
-  false,
-);
-if (pollingOnly) {
-  console.log("[chat-ws] CHAT_POLLING_ONLY ativo; a ignorar WS server.");
-  process.exit(0);
-}
-
 const redisUrl = process.env.REDIS_URL ? String(process.env.REDIS_URL).trim() : "";
 const redisConfigured = redisUrl.length > 0;
 if (process.env.NODE_ENV === "production" && !redisConfigured) {
@@ -222,26 +208,79 @@ async function validateToken(token) {
   }
 }
 
+async function listEffectiveOrgMemberships(userId) {
+  if (!userId) return [];
+
+  const groupMembers = await prisma.organizationGroupMember.findMany({
+    where: { userId },
+    select: {
+      id: true,
+      role: true,
+      scopeAllOrgs: true,
+      scopeOrgIds: true,
+      createdAt: true,
+      group: {
+        select: {
+          organizations: {
+            select: { id: true },
+            orderBy: { id: "asc" },
+          },
+        },
+      },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (!groupMembers.length) return [];
+
+  const overrides = await prisma.organizationGroupMemberOrganizationOverride.findMany({
+    where: { groupMemberId: { in: groupMembers.map((member) => member.id) } },
+    select: {
+      groupMemberId: true,
+      organizationId: true,
+      roleOverride: true,
+      revokedAt: true,
+    },
+  });
+  const overrideByMemberOrg = new Map(
+    overrides.map((entry) => [`${entry.groupMemberId}:${entry.organizationId}`, entry]),
+  );
+
+  const memberships = [];
+  for (const member of groupMembers) {
+    const scopeOrgIds = member.scopeOrgIds || [];
+    for (const organization of member.group.organizations) {
+      const scopeOk = member.scopeAllOrgs || scopeOrgIds.includes(organization.id);
+      if (!scopeOk) continue;
+      const override = overrideByMemberOrg.get(`${member.id}:${organization.id}`);
+      if (override && override.revokedAt) continue;
+      memberships.push({
+        organizationId: organization.id,
+        role: (override && override.roleOverride) || member.role,
+      });
+    }
+  }
+
+  return memberships;
+}
+
 async function resolveOrganizationId(userId, orgIdFromQuery, cookieHeader) {
   if (orgIdFromQuery) return orgIdFromQuery;
   const cookies = parseCookies(cookieHeader);
   const cookieOrgId = Number(cookies.orya_organization || "");
   if (cookieOrgId) return cookieOrgId;
 
-  const membership = await prisma.organizationMember.findFirst({
-    where: { userId, role: { in: Array.from(ALLOWED_ROLES) } },
-    orderBy: [{ lastUsedAt: "desc" }, { createdAt: "asc" }],
-    select: { organizationId: true },
-  });
+  const memberships = await listEffectiveOrgMemberships(userId);
+  const membership = memberships.find((entry) => ALLOWED_ROLES.has(entry.role));
   return membership?.organizationId ?? null;
 }
 
 async function ensureOrgAccess(userId, organizationId) {
   if (!organizationId) return null;
-  const membership = await prisma.organizationMember.findFirst({
-    where: { userId, organizationId, role: { in: Array.from(ALLOWED_ROLES) } },
-    select: { organizationId: true },
-  });
+  const memberships = await listEffectiveOrgMemberships(userId);
+  const membership =
+    memberships.find(
+      (entry) => entry.organizationId === organizationId && ALLOWED_ROLES.has(entry.role),
+    ) ?? null;
   if (!membership) return null;
 
   const moduleEnabled = await prisma.organizationModuleEntry.findFirst({

@@ -8,7 +8,12 @@ import { setSoleOwner } from "@/lib/organizationRoles";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { ensureGroupMemberForOrg, resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { resolveGroupMemberForOrg, revokeGroupMemberForOrg, setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
+import {
+  countEffectiveOrganizationMembersByRole,
+  getEffectiveOrganizationMember,
+  listEffectiveOrganizationMembers,
+} from "@/lib/organizationMembers";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -82,10 +87,11 @@ async function _GET(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
 
-    const members = await prisma.organizationMember.findMany({
-      where: { organizationId, user: { isDeleted: false } },
-      include: {
-        user: {
+    const members = await listEffectiveOrganizationMembers({ organizationId });
+    const visibleMembers = members.filter((member) => member.userId);
+    const users = visibleMembers.length
+      ? await prisma.profile.findMany({
+          where: { id: { in: visibleMembers.map((member) => member.userId) }, isDeleted: false },
           select: {
             id: true,
             fullName: true,
@@ -93,23 +99,22 @@ async function _GET(req: NextRequest) {
             avatarUrl: true,
             visibility: true,
           },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-      take: limit,
-    });
+        })
+      : [];
+    const userById = new Map(users.map((item) => [item.id, item]));
 
-    const items = members.map((m) => {
+    const items = visibleMembers.slice(0, limit).map((m) => {
+      const profile = userById.get(m.userId);
       return {
         userId: m.userId,
         role: m.role,
-        invitedByUserId: m.invitedByUserId,
+        invitedByUserId: null,
         createdAt: m.createdAt,
-        fullName: m.user && "fullName" in m.user ? (m.user as { fullName?: string | null }).fullName ?? null : null,
-        username: m.user && "username" in m.user ? (m.user as { username?: string | null }).username ?? null : null,
-        avatarUrl: m.user && "avatarUrl" in m.user ? (m.user as { avatarUrl?: string | null }).avatarUrl ?? null : null,
+        fullName: profile?.fullName ?? null,
+        username: profile?.username ?? null,
+        avatarUrl: profile?.avatarUrl ?? null,
         email: null,
-        visibility: (m.user as { visibility?: string | null })?.visibility ?? "PUBLIC",
+        visibility: profile?.visibility ?? "PUBLIC",
       };
     });
 
@@ -169,7 +174,7 @@ async function _PATCH(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
@@ -189,8 +194,9 @@ async function _PATCH(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
 
-    const targetMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: targetUserId } },
+    const targetMembership = await getEffectiveOrganizationMember({
+      organizationId,
+      userId: targetUserId,
     });
     if (!targetMembership) {
       return fail(404, "NOT_MEMBER");
@@ -207,12 +213,10 @@ async function _PATCH(req: NextRequest) {
     }
 
     if (targetMembership.role === "OWNER" && role !== "OWNER") {
-      const otherOwners = await prisma.organizationMember.count({
-        where: {
-          organizationId,
-          role: "OWNER",
-          userId: { not: targetUserId },
-        },
+      const otherOwners = await countEffectiveOrganizationMembersByRole({
+        organizationId,
+        role: "OWNER",
+        excludeUserId: targetUserId,
       });
       if (otherOwners === 0) {
         return fail(400, "Não podes remover o último Owner.");
@@ -238,8 +242,10 @@ async function _PATCH(req: NextRequest) {
 
     // Bloqueia que o único owner se despromova a si próprio
     if (targetMembership.role === "OWNER" && targetUserId === user.id && role !== "OWNER") {
-      const otherOwners = await prisma.organizationMember.count({
-        where: { organizationId, role: "OWNER", userId: { not: user.id } },
+      const otherOwners = await countEffectiveOrganizationMembersByRole({
+        organizationId,
+        role: "OWNER",
+        excludeUserId: user.id,
       });
       if (otherOwners === 0) {
         return fail(400, "Garante outro Owner antes de descer o teu papel.");
@@ -247,61 +253,12 @@ async function _PATCH(req: NextRequest) {
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.organizationMember.update({
-        where: { organizationId_userId: { organizationId, userId: targetUserId } },
-        data: { role: role as OrganizationMemberRole },
+      await setGroupMemberRoleForOrg({
+        organizationId,
+        userId: targetUserId,
+        role: role as OrganizationMemberRole,
+        client: tx,
       });
-
-      const org = await tx.organization.findUnique({
-        where: { id: organizationId },
-        select: { groupId: true },
-      });
-      if (!org?.groupId) {
-        throw new Error("ORG_GROUP_NOT_FOUND");
-      }
-
-      const targetGroup = await tx.organizationGroupMember.findFirst({
-        where: { groupId: org.groupId, userId: targetUserId },
-        select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
-      });
-
-      if (!targetGroup) {
-        await ensureGroupMemberForOrg({
-          organizationId,
-          userId: targetUserId,
-          role: role as OrganizationMemberRole,
-          client: tx,
-        });
-      } else {
-        const scopeOrgIds = targetGroup.scopeOrgIds ?? [];
-        const hasMultipleScopes = targetGroup.scopeAllOrgs || scopeOrgIds.length > 1;
-        if (hasMultipleScopes && targetGroup.role !== role) {
-          const updated = await tx.organizationGroupMemberOrganizationOverride.updateMany({
-            where: { groupMemberId: targetGroup.id, organizationId },
-            data: { roleOverride: role as OrganizationMemberRole, revokedAt: null },
-          });
-          if (updated.count === 0) {
-            await tx.organizationGroupMemberOrganizationOverride.createMany({
-              data: [
-                {
-                  groupMemberId: targetGroup.id,
-                  organizationId,
-                  roleOverride: role as OrganizationMemberRole,
-                },
-              ],
-              skipDuplicates: true,
-            });
-          }
-        } else {
-          await tx.organizationGroupMember.update({
-            where: { id: targetGroup.id },
-            data: { role: role as OrganizationMemberRole },
-          });
-          await tx.organizationGroupMemberOrganizationOverride.deleteMany({
-            where: { groupMemberId: targetGroup.id, organizationId },
-          });
-        }
-      }
     });
 
     if (targetMembership.role === "OWNER" && role !== "OWNER") {
@@ -381,7 +338,7 @@ async function _DELETE(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
@@ -401,8 +358,9 @@ async function _DELETE(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
 
-    const targetMembership = await prisma.organizationMember.findUnique({
-      where: { organizationId_userId: { organizationId, userId: targetUserId } },
+    const targetMembership = await getEffectiveOrganizationMember({
+      organizationId,
+      userId: targetUserId,
     });
     if (!targetMembership) {
       return fail(404, "NOT_MEMBER");
@@ -419,24 +377,19 @@ async function _DELETE(req: NextRequest) {
         return fail(403, "ONLY_OWNER_CAN_REMOVE_OWNER");
       }
 
-      const otherOwners = await prisma.organizationMember.count({
-        where: {
-          organizationId,
-          role: "OWNER",
-          userId: { not: targetUserId },
-        },
+      const otherOwners = await countEffectiveOrganizationMembersByRole({
+        organizationId,
+        role: "OWNER",
+        excludeUserId: targetUserId,
       });
       if (otherOwners === 0) {
         return fail(400, "Não podes remover o último Owner.");
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.organizationMember.delete({
-        where: { organizationId_userId: { organizationId, userId: targetUserId } },
-      });
-      await revokeGroupMemberForOrg({ organizationId, userId: targetUserId, client: tx });
-    });
+    await prisma.$transaction(async (tx) =>
+      revokeGroupMemberForOrg({ organizationId, userId: targetUserId, client: tx }),
+    );
 
     if (targetMembership.role === "OWNER") {
       await recordOrganizationAuditSafe({

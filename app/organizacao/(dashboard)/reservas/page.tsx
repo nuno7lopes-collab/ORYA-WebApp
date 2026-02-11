@@ -674,10 +674,10 @@ export default function ReservasDashboardPage() {
     setChatSending(true);
     setChatError(null);
     try {
-      const response = await fetch(`/api/chat/bookings/${drawerBooking.id}/messages`, {
+      const response = await fetch("/api/messages/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: chatDraft.trim() }),
+        body: JSON.stringify({ bookingId: drawerBooking.id, body: chatDraft.trim() }),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {

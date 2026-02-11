@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { ensureEventThread } from "@/lib/chat/threads";
 
 const INVITE_WINDOW_HOURS = 24;
 
@@ -11,6 +10,21 @@ export function computeInviteExpiry(endsAt?: Date | null, startsAt?: Date | null
   const base = endsAt ?? startsAt ?? null;
   if (!base) return null;
   return addHours(base, INVITE_WINDOW_HOURS);
+}
+
+function normalizeStatus(status: string) {
+  const normalized = status.toUpperCase();
+  if (["PENDING", "ACCEPTED", "DECLINED", "CANCELLED", "EXPIRED", "REVOKED", "AUTO_ACCEPTED"].includes(normalized)) {
+    return normalized as
+      | "PENDING"
+      | "ACCEPTED"
+      | "DECLINED"
+      | "CANCELLED"
+      | "EXPIRED"
+      | "REVOKED"
+      | "AUTO_ACCEPTED";
+  }
+  return "PENDING" as const;
 }
 
 export async function ensureEventChatInvite(input: {
@@ -51,58 +65,75 @@ export async function ensureEventChatInvite(input: {
     return { ok: false as const, reason: "EXPIRED" };
   }
 
-  await ensureEventThread(input.eventId);
-  const thread = await prisma.chatThread.findFirst({
-    where: { entityType: "EVENT", entityId: input.eventId },
+  const conversation = await prisma.chatConversation.findFirst({
+    where: {
+      contextType: "EVENT",
+      contextId: String(input.eventId),
+    },
     select: { id: true },
   });
-  if (!thread) {
-    return { ok: false as const, reason: "THREAD_NOT_FOUND" };
-  }
 
-  const existing = await prisma.chatEventInvite.findFirst({
-    where: { eventId: input.eventId, entitlementId },
-    select: { id: true, status: true, userId: true },
+  const existing = await prisma.chatAccessGrant.findFirst({
+    where: {
+      kind: "EVENT_INVITE",
+      eventId: input.eventId,
+      entitlementId,
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      status: true,
+      threadId: true,
+    },
   });
 
   if (existing) {
-    const nextStatus =
-      existing.status === "EXPIRED" && expiresAt > now ? "PENDING" : existing.status;
-    await prisma.chatEventInvite.update({
+    const currentStatus = normalizeStatus(existing.status);
+    const nextStatus = currentStatus === "EXPIRED" && expiresAt > now ? "PENDING" : currentStatus;
+
+    await prisma.chatAccessGrant.update({
       where: { id: existing.id },
       data: {
-        expiresAt,
         status: nextStatus,
+        targetUserId: ownerUserId ?? undefined,
+        expiresAt,
+        conversationId: conversation?.id ?? undefined,
+        threadId: existing.threadId ?? conversation?.id ?? undefined,
         updatedAt: now,
-        userId: existing.userId ?? ownerUserId ?? undefined,
       },
     });
+
     return {
       ok: true as const,
       inviteId: existing.id,
-      threadId: thread.id,
+      threadId: existing.threadId ?? conversation?.id ?? null,
       expiresAt,
       created: false as const,
       status: nextStatus,
     };
   }
 
-  const invite = await prisma.chatEventInvite.create({
+  const grant = await prisma.chatAccessGrant.create({
     data: {
-      threadId: thread.id,
+      kind: "EVENT_INVITE",
+      status: "PENDING",
+      contextType: "EVENT",
+      contextId: String(input.eventId),
       eventId: input.eventId,
       entitlementId,
-      userId: ownerUserId,
+      targetUserId: ownerUserId,
+      conversationId: conversation?.id ?? null,
+      threadId: conversation?.id ?? null,
       expiresAt,
-      status: "PENDING",
+      metadata: { canonical: true },
     },
-    select: { id: true },
+    select: { id: true, threadId: true },
   });
 
   return {
     ok: true as const,
-    inviteId: invite.id,
-    threadId: thread.id,
+    inviteId: grant.id,
+    threadId: grant.threadId ?? conversation?.id ?? null,
     expiresAt,
     created: true as const,
     status: "PENDING" as const,

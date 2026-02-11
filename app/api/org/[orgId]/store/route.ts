@@ -89,7 +89,7 @@ async function _GET(req: NextRequest) {
 
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return fail(403, emailGate.error);
+      return fail(403, emailGate.errorCode);
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
@@ -151,7 +151,7 @@ async function _POST(req: NextRequest) {
 
     const emailGate = ensureOrganizationEmailVerified(organization);
     if (!emailGate.ok) {
-      return fail(403, emailGate.error);
+      return fail(403, emailGate.errorCode);
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {

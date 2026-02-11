@@ -50,8 +50,8 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ customerId: s
       return respondError(
         ctx,
         {
-          errorCode: emailGate.error ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
           retryable: false,
           details: emailGate,
         },

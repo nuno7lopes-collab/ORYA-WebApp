@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchMessagesInbox, fetchMessageInvites, fetchMessageRequests } from "./api";
+import {
+  fetchMessagesInbox,
+  fetchMessageInvites,
+  fetchMessageRequests,
+} from "./api";
 
 export const useMessagesInbox = (enabled = true, accessToken?: string | null) =>
   useQuery({

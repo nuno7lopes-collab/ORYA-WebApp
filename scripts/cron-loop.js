@@ -128,12 +128,6 @@ const jobs = [
     intervalMs: getInterval("CRON_OPERATIONS_INTERVAL_MS", 3000),
   },
   {
-    name: "chat-maintenance",
-    method: "GET",
-    path: "/api/cron/chat/maintenance",
-    intervalMs: getInterval("CRON_CHAT_INTERVAL_MS", 60000),
-  },
-  {
     name: "bookings-cleanup",
     method: "GET",
     path: "/api/cron/bookings/cleanup",

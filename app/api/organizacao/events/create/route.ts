@@ -22,7 +22,7 @@ import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
 import { createTournamentForEvent } from "@/domain/tournaments/commands";
 import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
 import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
-import { buildDefaultEndsAt, isEndsAtAfterStart } from "@/lib/events/schedule";
+import { isEndsAtAfterStart } from "@/lib/events/schedule";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { normalizeInterestIds } from "@/lib/ranking/interests";
@@ -254,8 +254,8 @@ async function _POST(req: NextRequest) {
       return respondError(
         ctx,
         {
-          errorCode: emailGate.error ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.error ?? "Sem permissões.",
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
           retryable: false,
           details: emailGate,
         },
@@ -334,12 +334,14 @@ async function _POST(req: NextRequest) {
       return fail(400, "Data/hora de início inválida.");
     }
 
-    // endsAt é obrigatório; se o utilizador não mandar, usamos startsAt + 5h.
     const endsAtParsed = parseDate(endsAtRaw);
-    if (endsAtParsed && !isEndsAtAfterStart(startsAt, endsAtParsed)) {
+    if (!endsAtParsed) {
+      return fail(400, "Data/hora de fim é obrigatória.");
+    }
+    if (!isEndsAtAfterStart(startsAt, endsAtParsed)) {
       return fail(400, "A data/hora de fim tem de ser depois do início.");
     }
-    const endsAt = endsAtParsed ?? buildDefaultEndsAt(startsAt);
+    const endsAt = endsAtParsed;
 
     const padelRequested = Boolean(body.padel) || templateTypeRaw === "PADEL";
     const templateTypeFromBody =

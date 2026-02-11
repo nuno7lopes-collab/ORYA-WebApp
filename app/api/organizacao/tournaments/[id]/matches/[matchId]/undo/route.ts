@@ -58,7 +58,7 @@ async function _POST(_req: NextRequest, { params }: { params: Promise<{ id: stri
   }
 
   const organizationRole = await getOrganizationRole(data.user.id, match.stage.tournament.eventId);
-  if (organizationRole && typeof organizationRole === "object" && "error" in organizationRole) {
+  if (organizationRole && typeof organizationRole === "object" && "errorCode" in organizationRole) {
     return jsonWrap(organizationRole, { status: organizationRole.status ?? 403 });
   }
   const liveOperatorRoles: OrganizationMemberRole[] = [

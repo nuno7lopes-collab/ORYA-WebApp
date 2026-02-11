@@ -91,12 +91,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const authorized = await ensureOrganizationAccess(authData.user.id, tournament.eventId);
   if (authorized !== true) {
-    if (authorized && typeof authorized === "object" && "error" in authorized) {
+    if (authorized && typeof authorized === "object" && "errorCode" in authorized) {
       return respondError(
         ctx,
         {
-          errorCode: authorized.error ?? "FORBIDDEN",
-          message: authorized.message ?? authorized.error ?? "Sem permissões.",
+          errorCode: authorized.errorCode ?? "FORBIDDEN",
+          message: authorized.message ?? authorized.errorCode ?? "Sem permissões.",
           retryable: false,
           details: authorized,
         },

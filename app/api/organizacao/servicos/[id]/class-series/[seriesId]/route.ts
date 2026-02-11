@@ -122,7 +122,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (!reservasAccess.ok) return fail(403, reservasAccess.error ?? "Reservas indisponíveis.");
 
     const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: true });
-    if (!writeAccess.ok) return fail(403, writeAccess.error ?? "Operação indisponível.");
+    if (!writeAccess.ok) return fail(403, writeAccess.errorCode ?? "Operação indisponível.");
 
     const series = await prisma.classSeries.findFirst({
       where: { id: seriesId, serviceId, organizationId: organization.id },
@@ -307,7 +307,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     if (!reservasAccess.ok) return fail(403, reservasAccess.error ?? "Reservas indisponíveis.");
 
     const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: true });
-    if (!writeAccess.ok) return fail(403, writeAccess.error ?? "Operação indisponível.");
+    if (!writeAccess.ok) return fail(403, writeAccess.errorCode ?? "Operação indisponível.");
 
     const series = await prisma.classSeries.findFirst({
       where: { id: seriesId, serviceId, organizationId: organization.id },

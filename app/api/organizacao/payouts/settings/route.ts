@@ -66,7 +66,7 @@ async function _POST(req: NextRequest) {
       return respondError(
         ctx,
         {
-          errorCode: emailGate.error ?? "OFFICIAL_EMAIL_REQUIRED",
+          errorCode: emailGate.errorCode ?? "OFFICIAL_EMAIL_REQUIRED",
           message: emailGate.message ?? "Email oficial obrigatório.",
           retryable: false,
           details: emailGate,

@@ -8,6 +8,7 @@ import {
   resolveOrganizationIdForUi,
   resolveOrganizationIdFromParams,
 } from "@/lib/organizationIdUtils";
+import { ORYA_ORG_ID_HEADER } from "@/lib/http/headers";
 
 export const ORGANIZATION_COOKIE_NAME = "orya_organization";
 
@@ -58,14 +59,11 @@ export function resolveOrganizationIdFromRequest(
 
   const resolved = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   if (resolved) return resolved;
-  const allowFallback = typeof options?.allowFallback === "boolean" ? options.allowFallback : null;
-  if (allowFallback === true) {
-    return parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value);
-  }
-  if (allowFallback === false) return null;
-  const method = req.method?.toUpperCase() ?? "";
-  const isOrgApi = req.nextUrl.pathname.startsWith("/api/organizacao");
-  if ((method === "GET" || method === "HEAD") && isOrgApi) {
+
+  const headerOrgId = parseOrganizationId(req.headers.get(ORYA_ORG_ID_HEADER));
+  if (headerOrgId) return headerOrgId;
+
+  if (options?.allowFallback) {
     return parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value);
   }
   return null;
@@ -115,13 +113,13 @@ function logOrgIdIssue(context: OrgIdLogContext) {
 
 export function requireOrganizationIdFromRequest(params: {
   req: NextRequest;
-  paramName?: string;
   actorId?: string | null;
 }): { ok: true; organizationId: number } | { ok: false; response: NextResponse } {
-  const { req, paramName = "organizationId", actorId = null } = params;
-  const raw = req.nextUrl.searchParams.get(paramName);
-  const organizationId = parseOrganizationId(raw);
+  const { req, actorId = null } = params;
+  const organizationId = resolveOrganizationIdFromRequest(req, { allowFallback: false });
   if (!organizationId) {
+    const raw =
+      req.nextUrl.searchParams.get("organizationId") ?? req.headers.get(ORYA_ORG_ID_HEADER) ?? null;
     const reason = raw ? "invalid_orgId_in_request" : "missing_orgId_in_request";
     logOrgIdIssue({
       reason,

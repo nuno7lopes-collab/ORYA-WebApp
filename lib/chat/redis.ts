@@ -1,5 +1,4 @@
 import { CHAT_EVENTS_CHANNEL, CHAT_PRESENCE_KEY_PREFIX } from "@/lib/chat/constants";
-import { isChatPollingOnly } from "@/lib/chat/featureFlags";
 import { getRedisCommandClient, getRedisPublisherClient, isRedisConfigured } from "@/lib/redis/client";
 
 export type ChatEvent = {
@@ -21,11 +20,10 @@ export function isChatRedisUnavailableError(err: unknown): err is ChatRedisUnava
 }
 
 function shouldFailFast() {
-  return process.env.NODE_ENV === "production" && !isChatPollingOnly();
+  return process.env.NODE_ENV === "production";
 }
 
 function requireChatRedisConfig() {
-  if (isChatPollingOnly()) return false;
   if (isRedisConfigured()) return true;
   if (shouldFailFast()) {
     throw new ChatRedisUnavailableError("CHAT_REDIS_CONFIG_MISSING");

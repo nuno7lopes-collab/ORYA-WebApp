@@ -166,7 +166,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (!reservasAccess.ok) return fail(403, reservasAccess.error ?? "Reservas indisponíveis.");
 
     const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: true });
-    if (!writeAccess.ok) return fail(403, writeAccess.error ?? "Operação indisponível.");
+    if (!writeAccess.ok) return fail(403, writeAccess.errorCode ?? "Operação indisponível.");
 
     const service = await prisma.service.findFirst({
       where: { id: serviceId, organizationId: organization.id },

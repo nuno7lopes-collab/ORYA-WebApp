@@ -12,6 +12,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { logError } from "@/lib/observability/logger";
 import { recordSearchIndexOrgStatusOutbox } from "@/domain/searchIndex/outbox";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { listEffectiveOrganizationMemberUserIdsByRoles } from "@/lib/organizationMembers";
 
 // Tipos de estados permitidos para organizações (ajusta se o enum tiver outros valores)
 const ALLOWED_STATUSES = ["PENDING", "ACTIVE", "SUSPENDED"] as const;
@@ -168,23 +169,23 @@ async function _POST(req: NextRequest) {
     });
 
     // Se aprovado (ACTIVE), adicionar role organization ao profile
-    const ownerMembers =
+    const ownerUserIds =
       normalizedStatus === "ACTIVE"
-        ? await prisma.organizationMember.findMany({
-            where: { organizationId: updated.id, role: { in: ["OWNER", "CO_OWNER"] } },
-            select: { userId: true },
+        ? await listEffectiveOrganizationMemberUserIdsByRoles({
+            organizationId: updated.id,
+            roles: ["OWNER", "CO_OWNER"],
           })
         : [];
-    if (ownerMembers.length > 0) {
-      for (const owner of ownerMembers) {
+    if (ownerUserIds.length > 0) {
+      for (const ownerUserId of ownerUserIds) {
         const profile = await prisma.profile.findUnique({
-          where: { id: owner.userId },
+          where: { id: ownerUserId },
           select: { roles: true },
         });
         const roles = Array.isArray(profile?.roles) ? profile?.roles : [];
         if (!roles.includes("organization")) {
           await prisma.profile.update({
-            where: { id: owner.userId },
+            where: { id: ownerUserId },
             data: { roles: [...roles, "organization"] },
           });
         }
@@ -199,7 +200,7 @@ async function _POST(req: NextRequest) {
         publicName: updated.publicName,
         fromStatus: organization.status,
         toStatus: updated.status,
-        ownerUserIds: ownerMembers.map((member) => member.userId),
+        ownerUserIds,
       },
     });
 
@@ -211,7 +212,7 @@ async function _POST(req: NextRequest) {
           status: updated.status,
           publicName: updated.publicName,
           changed: true,
-          ownerUserIds: ownerMembers.map((member) => member.userId),
+          ownerUserIds,
         },
       },
       { status: 200 },

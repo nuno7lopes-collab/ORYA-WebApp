@@ -28,6 +28,7 @@ export type DedupeKey = string;
 export type CreateNotificationInput = {
   userId: string;
   type: import("@prisma/client").NotificationType;
+  dedupeKey?: string | null;
   title?: string | null;
   body?: string | null;
   payload?: NotificationPayload | null;

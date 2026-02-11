@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { countEffectiveOrganizationMembersByRole } from "@/lib/organizationMembers";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -65,28 +66,23 @@ async function _POST(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.error ?? "FORBIDDEN", message: emailGate.message ?? emailGate.error ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     if (membership.role === "OWNER") {
-      const otherOwners = await prisma.organizationMember.count({
-        where: {
-          organizationId,
-          role: "OWNER",
-          userId: { not: user.id },
-        },
+      const otherOwners = await countEffectiveOrganizationMembersByRole({
+        organizationId,
+        role: "OWNER",
+        excludeUserId: user.id,
       });
       if (otherOwners === 0) {
         return fail(400, "És o último Owner desta organização. Transfere a propriedade antes de sair.");
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.organizationMember.delete({
-        where: { organizationId_userId: { organizationId, userId: user.id } },
-      });
-      await revokeGroupMemberForOrg({ organizationId, userId: user.id, client: tx });
-    });
+    await prisma.$transaction(async (tx) =>
+      revokeGroupMemberForOrg({ organizationId, userId: user.id, client: tx }),
+    );
 
     return respondOk(ctx, {}, { status: 200 });
   } catch (err) {

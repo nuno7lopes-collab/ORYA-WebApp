@@ -82,7 +82,6 @@ export const ENV_MODELS = new Set([
   'OrganizationGroup',
   'OrganizationGroupMember',
   'OrganizationGroupMemberOrganizationOverride',
-  'OrganizationMember',
   'OrganizationMemberInvite',
   'OrganizationMemberPermission',
   'OrganizationModuleEntry',

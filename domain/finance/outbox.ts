@@ -20,6 +20,7 @@ import { upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 import { shouldNotify, createNotification } from "@/lib/notifications";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { listEffectiveOrganizationMemberUserIdsByRoles } from "@/lib/organizationMembers";
 
 export async function handleFinanceOutboxEvent(params: {
   eventType: string;
@@ -811,11 +812,10 @@ async function processPadelFreeCheckout(data: FreeCheckoutPayload & { purchaseId
 
 async function notifyOrganizationOwners(input: { organizationId: number; eventId: number; eventTitle: string }) {
   try {
-    const ownerMembers = await prisma.organizationMember.findMany({
-      where: { organizationId: input.organizationId, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
-      select: { userId: true },
+    const uniqOwners = await listEffectiveOrganizationMemberUserIdsByRoles({
+      organizationId: input.organizationId,
+      roles: ["OWNER", "CO_OWNER", "ADMIN"],
     });
-    const uniqOwners = Array.from(new Set(ownerMembers.map((m) => m.userId)));
     await Promise.all(
       uniqOwners.map((uid) =>
         (async () => {

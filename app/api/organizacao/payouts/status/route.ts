@@ -8,6 +8,7 @@ import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { createNotification, shouldNotify } from "@/lib/notifications";
+import { listEffectiveOrganizationMemberUserIdsByRoles } from "@/lib/organizationMembers";
 import { NotificationType } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -95,14 +96,19 @@ async function _GET(req: NextRequest) {
 
     // Notificar owner/admin se estado mudou para attention
     if (status === "INCOMPLETE" && requirements_due && requirements_due.length > 0) {
-      const owners = await prisma.organizationMember.findMany({
-        where: { organizationId: organization.id, role: { in: ["OWNER", "CO_OWNER", "ADMIN"] } },
-        select: { userId: true },
+      const statusFingerprint = [
+        account.id,
+        charges_enabled ? "1" : "0",
+        payouts_enabled ? "1" : "0",
+        [...requirements_due].sort().join(","),
+      ].join("|");
+      const recipients = await listEffectiveOrganizationMemberUserIdsByRoles({
+        organizationId: organization.id,
+        roles: ["OWNER", "CO_OWNER", "ADMIN"],
       });
-      const uniq = Array.from(new Set(owners.map((o) => o.userId)));
       const financeHref = appendOrganizationIdToHref("/organizacao/analyze?section=financas", organization.id);
       await Promise.all(
-        uniq.map(async (uid) => {
+        recipients.map(async (uid) => {
           if (!(await shouldNotify(uid, NotificationType.STRIPE_STATUS))) return;
           await createNotification({
             userId: uid,
@@ -111,6 +117,8 @@ async function _GET(req: NextRequest) {
             body: "Faltam dados no Stripe para ativar pagamentos/payouts.",
             ctaUrl: financeHref,
             ctaLabel: "Rever Stripe",
+            organizationId: organization.id,
+            dedupeKey: `notification:STRIPE_STATUS:${uid}:${organization.id}:${statusFingerprint}`,
             payload: { requirements_due },
           });
         }),
