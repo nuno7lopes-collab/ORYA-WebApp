@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -79,6 +79,7 @@ export default function SearchScreen() {
   const [query, setQuery] = useState(initialQuery);
   const [activeTab, setActiveTab] = useState<SearchTabKey>("all");
   const [serviceKindFilter, setServiceKindFilter] = useState<string | null>(null);
+  const previousResultCountRef = useRef(0);
   const debounced = useDebouncedValue(query, 280);
   const handleBack = useCallback(() => {
     safeBack(router, navigation, "/(tabs)/index");
@@ -121,7 +122,12 @@ export default function SearchScreen() {
 
   useEffect(() => {
     const total = offers.length + users.length + organizations.length;
-    if (total <= 24) {
+    const previousTotal = previousResultCountRef.current;
+    previousResultCountRef.current = total;
+    if (Platform.OS !== "ios") return;
+    if (previousTotal === 0 || total === 0) return;
+    const delta = Math.abs(total - previousTotal);
+    if (delta > 0 && delta <= 6) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     }
   }, [offers.length, users.length, organizations.length]);

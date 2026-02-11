@@ -1061,6 +1061,7 @@ model Notification {
 
   @@index([userId, createdAt])
   @@index([userId, readAt])
+  @@index([userId, type, fromUserId], map: "notifications_user_type_sender_idx")
   @@index([fromUserId])
   @@index([organizationId])
   @@index([eventId])
@@ -1804,6 +1805,7 @@ model Event {
   @@index([type, status])
   @@index([ownerUserId])
   @@index([organizationId])
+  @@index([organizationId, status, isDeleted, createdAt(sort: Desc)], map: "events_org_status_deleted_created_idx")
   @@index([addressId], map: "events_address_idx")
   @@map("events")
   @@schema("app_v3")
@@ -1961,6 +1963,7 @@ model Ticket {
   @@unique([purchaseId, ticketTypeId, emissionIndex], map: "tickets_purchase_ticket_idx")
   @@index([eventId])
   @@index([userId])
+  @@index([userId, status, eventId], map: "tickets_user_status_event_idx")
   @@index([ticketTypeId])
   @@index([stripePaymentIntentId], map: "tickets_stripe_intent_idx")
   @@index([saleSummaryId], map: "tickets_sale_summary_idx")
@@ -5363,7 +5366,6 @@ enum EventTemplateType {
 
 enum LocationSource {
   APPLE_MAPS
-  OSM
   MANUAL
 
   @@schema("app_v3")
@@ -5634,8 +5636,6 @@ enum ResaleMode {
 
 enum AddressSourceProvider {
   APPLE_MAPS
-  OSM_PHOTON
-  OSM_NOMINATIM
   MANUAL
 
   @@schema("app_v3")

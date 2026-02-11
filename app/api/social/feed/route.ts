@@ -46,12 +46,10 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
-  const orgFollows = await prisma.organization_follows.findMany({
+  const followedOrganizationsCount = await prisma.organization_follows.count({
     where: { follower_id: user.id },
-    select: { organization_id: true },
   });
-  const orgIds = orgFollows.map((row) => row.organization_id);
-  if (orgIds.length === 0) {
+  if (followedOrganizationsCount === 0) {
     return jsonWrap(
       { ok: true, items: [], pagination: { nextCursor: null, hasMore: false } },
       { status: 200 },
@@ -60,10 +58,14 @@ async function _GET(req: NextRequest) {
 
   const events = await prisma.event.findMany({
     where: {
-      organizationId: { in: orgIds },
+      organization: {
+        status: "ACTIVE",
+        organization_follows_organization_follows_organization_idToorganizations: {
+          some: { follower_id: user.id },
+        },
+      },
       status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
       isDeleted: false,
-      organization: { status: "ACTIVE" },
     },
     orderBy: { createdAt: "desc" },
     take: limit + 1,

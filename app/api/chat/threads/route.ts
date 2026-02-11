@@ -1,13 +1,13 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
+import { ensureEventThreads } from "@/lib/chat/threads";
 
 async function _GET(req: NextRequest) {
   try {
@@ -35,54 +35,54 @@ async function _GET(req: NextRequest) {
         },
       },
       select: { eventId: true },
+      distinct: ["eventId"],
     });
     const eventIds = Array.from(new Set(acceptedInvites.map((invite) => invite.eventId).filter(Boolean))) as number[];
     if (eventIds.length === 0) {
       return jsonWrap({ items: [] }, { status: 200 });
     }
 
-    for (const eventId of eventIds) {
-      await prisma.$executeRaw(Prisma.sql`SELECT app_v3.chat_ensure_event_thread(${eventId})`);
-    }
+    await ensureEventThreads(eventIds);
 
-    const threads = await prisma.chatThread.findMany({
-      where: {
-        entityType: "EVENT",
-        entityId: { in: eventIds },
-      },
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        status: true,
-        entityId: true,
-        messages: {
-          take: 1,
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            body: true,
-            createdAt: true,
-            kind: true,
-            user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+    const [threads, events] = await Promise.all([
+      prisma.chatThread.findMany({
+        where: {
+          entityType: "EVENT",
+          entityId: { in: eventIds },
+        },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          status: true,
+          entityId: true,
+          messages: {
+            take: 1,
+            orderBy: { createdAt: "desc" },
+            select: {
+              id: true,
+              body: true,
+              createdAt: true,
+              kind: true,
+              user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+            },
           },
         },
-      },
-    });
-
-    const events = await prisma.event.findMany({
-      where: { id: { in: eventIds }, isDeleted: false },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        startsAt: true,
-        endsAt: true,
-        coverImageUrl: true,
-        addressId: true,
-        addressRef: { select: { formattedAddress: true, canonical: true } },
-        status: true,
-      },
-    });
+      }),
+      prisma.event.findMany({
+        where: { id: { in: eventIds }, isDeleted: false },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          startsAt: true,
+          endsAt: true,
+          coverImageUrl: true,
+          addressId: true,
+          addressRef: { select: { formattedAddress: true, canonical: true } },
+          status: true,
+        },
+      }),
+    ]);
     const eventMap = new Map(events.map((event) => [event.id, event]));
     const items = threads
       .map((thread) => {

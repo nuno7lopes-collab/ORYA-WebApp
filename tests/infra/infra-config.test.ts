@@ -29,6 +29,16 @@ test("CloudFormation uses cost-first defaults", () => {
   expect(template).toContain("CreateALB");
 });
 
+test("infra templates expose only canonical admin MFA break-glass secret", () => {
+  const stack = read("infra/ecs/orya-ecs-stack.yaml");
+  const taskdef = read("infra/ecs/taskdef-web.json");
+
+  expect(stack).toContain("ADMIN_MFA_BREAK_GLASS_TOKEN");
+  expect(taskdef).toContain("ADMIN_MFA_BREAK_GLASS_TOKEN");
+  expect(stack).not.toContain("ADMIN_BREAK_GLASS_TOKEN");
+  expect(taskdef).not.toContain("ADMIN_BREAK_GLASS_TOKEN");
+});
+
 test("Admin infra UI exists", () => {
   expect(existsSync(path.join(root, "app/admin/(protected)/infra/page.tsx"))).toBe(true);
   expect(existsSync(path.join(root, "app/api/admin/infra/status/route.ts"))).toBe(true);

@@ -153,7 +153,7 @@ export default function MfaChallengeClient({
           "Content-Type": "application/json",
           "x-orya-mfa-break-glass": breakGlassToken.trim(),
         },
-        body: JSON.stringify({ breakGlassToken: breakGlassToken.trim() }),
+        body: JSON.stringify({}),
       });
       const json = (await res.json().catch(() => null)) as ApiEnvelope<MfaEnrollPayload> | null;
       if (!json || !json.ok) {

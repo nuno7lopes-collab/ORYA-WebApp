@@ -476,7 +476,6 @@ export default function StorefrontCheckoutClient({
     setShippingAddressLoading(true);
     try {
       const details = await fetchGeoDetails(item.providerId, {
-        sourceProvider: item.sourceProvider ?? null,
         lat: item.lat,
         lng: item.lng,
       });
@@ -512,7 +511,6 @@ export default function StorefrontCheckoutClient({
     setBillingAddressLoading(true);
     try {
       const details = await fetchGeoDetails(item.providerId, {
-        sourceProvider: item.sourceProvider ?? null,
         lat: item.lat,
         lng: item.lng,
       });

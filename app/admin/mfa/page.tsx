@@ -13,9 +13,13 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type AdminMfaPageProps = {
-  searchParams?: {
-    redirectTo?: string;
-  };
+  searchParams?:
+    | Promise<{
+        redirectTo?: string | string[];
+      }>
+    | {
+        redirectTo?: string | string[];
+      };
 };
 
 export default async function AdminMfaPage({ searchParams }: AdminMfaPageProps) {
@@ -27,8 +31,11 @@ export default async function AdminMfaPage({ searchParams }: AdminMfaPageProps) 
     redirect("/login?redirectTo=/admin/mfa");
   }
 
-  const params = searchParams ?? {};
-  const redirectTo = sanitizeRedirectPath(params.redirectTo, "/admin");
+  const params = (await searchParams) ?? {};
+  const redirectToInput = Array.isArray(params.redirectTo)
+    ? params.redirectTo[0]
+    : params.redirectTo;
+  const redirectTo = sanitizeRedirectPath(redirectToInput, "/admin");
   const host = await readAdminHost();
   const required = shouldRequireAdminMfa(host);
   if (!required) {

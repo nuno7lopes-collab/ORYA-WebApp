@@ -71,7 +71,7 @@ Roles: Eng Lead, Product, Ops, Security, Legal/Compliance
 - Ledger append‑only: tipos explícitos `PROCESSOR_FEES_FINAL` e `PROCESSOR_FEES_ADJUSTMENT`; net final = soma de entries por payment.
 - Entitlements: `policyVersionApplied` alinhado e obrigatório para entitlements ligados a eventos.
 - Contratos: Finanças passa a usar `customerIdentityId` (Identity SSOT) e snapshot fields alinhados.
-- Address: removido conflito D11 vs D17 (Apple-first com fallback OSM).
+- Address: removido conflito D11 vs D17 (Apple Maps como provider único).
 - Domínio: mapa declarado “não exaustivo” + entidades mínimas adicionadas (Promoções/Notificações/Perfil/Pesquisa).
 - Revenda: removidas referências a estado `USED`; consumo é metadata (`consumedAt`).
 - Ticket: adicionado estado `DISPUTED` ao enum mínimo para consistência com chargebacks.
@@ -948,7 +948,7 @@ Fase 2/3 (fan‑out real / múltiplos serviços):
 ⸻
 
 
-D11) Moradas — Address Service (SSOT) + provider Apple-first com fallback
+D11) Moradas — Address Service (SSOT) + Apple Maps como provider único
 
 > **FECHADO (SSOT):** Todos os módulos consomem e escrevem moradas **apenas** via Address Service. Nunca há “moradas por módulo”.
 
@@ -959,14 +959,13 @@ Regra
   - `formattedAddress` (para UI)
   - `canonical` (estruturado: `countryCode` ISO‑3166‑1, region, locality, postalCode, street, number, etc.)
   - `geo` (lat, lng)
-  - `sourceProvider` (ex.: `APPLE_MAPS` / `OSM_PHOTON` / `OSM_NOMINATIM`)
+  - `sourceProvider` (ex.: `APPLE_MAPS` / `MANUAL`)
   - `sourceProviderPlaceId` (quando existir)
   - `confidenceScore` + `validationStatus` (`RAW | NORMALIZED | VERIFIED`)
 - Nunca há “moradas locais” por módulo. Só referências a `addressId`.
 
 Provider (decisão v9)
-- **Primário (qualidade):** Apple Maps (autocomplete + geocode) via server token.
-- **Fallback (custo zero):** Photon (autocomplete) + Nominatim (geocode/reverse), com cache agressivo.
+- **Provider único:** Apple Maps (autocomplete + geocode/reverse) via server token.
 - Regra: o client **não** usa providers como fonte de verdade; tudo passa pelo Address Service (protege keys, rate limits e consistência).
 - Exceção permitida: reverse geocode **no device** apenas como hint de UX (não é SSOT). A normalização e persistência continuam no backend.
 
@@ -975,8 +974,8 @@ Proteções (obrigatório)
 - Cache em 2 níveis:
   - Redis (TTL curto) por query (autocomplete) e por placeId/geo (geocode)
   - cache persistente por `addressId` (TTL longo) e dedupe por canonical+geo
-- Circuit breaker por provider:
-  - se Apple falhar acima de `errorRateThreshold` (ex.: 20% em 2 min) → **fallback automático** para OSM por `cooldownMinutes` (ex.: 10)
+- Circuit breaker do provider Apple:
+  - se Apple falhar acima de `errorRateThreshold` (ex.: 20% em 2 min) → entrar em `cooldownMinutes` (ex.: 10)
   - durante cooldown, re-test Apple em background (probe) e só volta quando estabilizar
 - Quotas “hard” por organização e por módulo:
   - ao exceder quota → degrade gracioso (só `resolvePlace` por placeId já em cache; sem autocomplete novo)
@@ -986,7 +985,7 @@ Implementação (o que fazer)
 1) AddressNormalizeJob
 - Quando Address Service recebe input manual/autocomplete:
   - parse + normaliza (libpostal + regras internas)
-  - geocode (Apple ou fallback)
+  - geocode (Apple)
   - grava `canonical+geo+confidence`
 
 2) Deduplication
@@ -1113,8 +1112,8 @@ V2 (só se fizer sentido e sem custo extra)
 		–	check-in / Apple Wallet add / compra rápida (Apple Pay)
 		–	ativação por QR/NFC no recinto
 	•	MapKit / Apple Maps:
-		–	alinha com D11: Apple é o provider primário no Address Service; OSM (Photon/Nominatim) é o fallback.
-		–	se houver limites/termos que afectem o autocomplete, o Address Service aplica rate limits, cache e fallback automático.
+		–	alinha com D11: Apple é o provider único no Address Service.
+		–	se houver limites/termos que afectem o autocomplete, o Address Service aplica rate limits, cache e cooldown controlado.
 
 Key management
 	•	Certificados/keys Apple (APNs, Pass Type ID) vivem em AWS Secrets Manager + rotação.
@@ -3383,6 +3382,8 @@ Faz
 	•	canais cliente‑profissional com admins invisíveis ao cliente
 	•	identidade do remetente: profissional visível ao cliente; admins falam por defeito como “Organização”
 	•	pesquisa, mentions e histórico
+	•	realtime WS com auth por subprotocol (`orya-chat.v1` + `orya-chat.auth.<token>`), sem token em query string
+	•	semântica commit-first: persistência da mensagem é SSOT; pub/sub/push é best-effort pós-commit
 
 Fase 1
 	•	histórico + pesquisa obrigatórios
@@ -3405,6 +3406,10 @@ Faz
 	•	notificações em todas as mensagens por defeito, com opção de silenciar
 	•	conteúdo texto apenas na Fase 1
 	•	“anular envio” até 2 minutos
+	•	envio idempotente por `clientMessageId` + dedupe no servidor
+	•	presença realtime exige heartbeat (`ping/pong`) compatível com TTL
+
+Contrato detalhado e normativo: `docs/chat_messaging_contracts.md`.
 
 ⸻
 
@@ -5504,6 +5509,7 @@ Este apêndice é o resumo operacional canónico. Conteúdo detalhado histórico
 
 ### Handshake / Verificações (OPERACIONAL)
 - Chat V2 usa `organizationId` do contexto server; sem fallback a `/api/organizacao/me`.
+- Mensagens com anexos exigem metadata canónica (`path`, `bucket`, `checksumSha256` SHA-256 hex 64), sem fallback server-side.
 
 ### Auditoria v10 (Resumo)
 - Envelope canónico aplicado em rotas críticas.

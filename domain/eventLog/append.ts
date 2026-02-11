@@ -67,7 +67,6 @@ export async function appendEventLog(
       skipDuplicates?: boolean;
     }) => Promise<{ count: number }>;
     create?: (args: { data: Prisma.EventLogCreateManyInput }) => Promise<{ id: string }>;
-    findUnique?: (args: { where: { id: string } }) => Promise<unknown>;
   };
 
   if (typeof delegate.createMany === "function") {
@@ -76,10 +75,7 @@ export async function appendEventLog(
       skipDuplicates: true,
     });
     if (result.count === 0) return null;
-    if (typeof delegate.findUnique === "function") {
-      return delegate.findUnique({ where: { id: eventId } });
-    }
-    return { id: eventId, ...data };
+    return { id: eventId };
   }
 
   if (typeof delegate.create === "function") {
@@ -91,10 +87,7 @@ export async function appendEventLog(
       }
       throw error;
     }
-    if (typeof delegate.findUnique === "function") {
-      return delegate.findUnique({ where: { id: eventId } });
-    }
-    return { id: eventId, ...data };
+    return { id: eventId };
   }
 
   throw new Error("EVENTLOG_WRITE_UNAVAILABLE");

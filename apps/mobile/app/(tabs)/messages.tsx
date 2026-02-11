@@ -16,6 +16,7 @@ import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TopTicketsButton } from "../../components/navigation/TopTicketsButton";
 import { SafeFlashList } from "../../components/lists/SafeFlashList";
 import { formatDate } from "../../lib/formatters";
+import { useIsFocused } from "@react-navigation/native";
 
 export default function MessagesTabScreen() {
   const { t } = useTranslation();
@@ -27,9 +28,10 @@ export default function MessagesTabScreen() {
     router.push({ pathname: "/auth", params: { next: "/messages" } });
   };
   const { session } = useAuth();
+  const isFocused = useIsFocused();
   const accessToken = session?.access_token ?? null;
-  const inboxQuery = useMessagesInbox(Boolean(session?.user?.id), accessToken);
-  const requestsQuery = useMessageRequests(Boolean(session?.user?.id), accessToken);
+  const inboxQuery = useMessagesInbox(Boolean(session?.user?.id) && isFocused, accessToken);
+  const requestsQuery = useMessageRequests(Boolean(session?.user?.id) && isFocused, accessToken);
   const items = inboxQuery.data?.items ?? [];
   const requestsCount = requestsQuery.data?.items?.length ?? 0;
   const [now, setNow] = useState(0);

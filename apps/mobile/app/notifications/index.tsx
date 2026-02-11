@@ -17,7 +17,12 @@ import { Ionicons } from "../../components/icons/Ionicons";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { useAuth } from "../../lib/auth";
 import { safeBack } from "../../lib/navigation";
-import { useNotificationsFeed, notificationsKeys } from "../../features/notifications/hooks";
+import {
+  invalidateNotificationsAll,
+  invalidateNotificationsUnread,
+  notificationsKeys,
+  useNotificationsFeed,
+} from "../../features/notifications/hooks";
 import type {
   AggregatedNotificationItem,
   NotificationAction,
@@ -188,6 +193,7 @@ export default function NotificationsScreen() {
     () => feed.data?.pages.flatMap((page) => page.items) ?? [],
     [feed.data?.pages],
   );
+  const hasUnreadItems = useMemo(() => items.some((item) => !item.isRead), [items]);
 
   const showSkeleton = feed.isLoading && items.length === 0;
   const backButton = (
@@ -353,6 +359,7 @@ export default function NotificationsScreen() {
 
   const handleMarkTabRead = useCallback(async () => {
     if (!session?.user?.id) return;
+    if (!hasUnreadItems) return;
     const now = Date.now();
     if (lastMarkedRef.current && now - lastMarkedRef.current < 5000) {
       return;
@@ -362,13 +369,12 @@ export default function NotificationsScreen() {
     markTabReadOptimistic();
     try {
       await markAllNotificationsRead(session?.access_token ?? null);
+      invalidateNotificationsUnread(queryClient);
     } catch {
-      // ignore
-    } finally {
-      queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-      queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+      invalidateNotificationsAll(queryClient);
+      invalidateNotificationsUnread(queryClient);
     }
-  }, [markTabReadOptimistic, queryClient, session?.access_token, session?.user?.id]);
+  }, [hasUnreadItems, markTabReadOptimistic, queryClient, session?.access_token, session?.user?.id]);
 
   const handlePressNotification = useCallback(
     async (item: AggregatedNotificationItem) => {
@@ -387,7 +393,7 @@ export default function NotificationsScreen() {
       if (!item.isRead) {
         markItemReadOptimistic(item.id);
         markNotificationRead(item.id, session?.access_token ?? null).catch(() => {
-          queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+          invalidateNotificationsAll(queryClient);
         });
       }
     },
@@ -411,8 +417,8 @@ export default function NotificationsScreen() {
                 session?.access_token ?? null,
               );
               removeMutedFromCache({ organizationId: item.organizationId });
-              queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-              queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+              invalidateNotificationsAll(queryClient);
+              invalidateNotificationsUnread(queryClient);
               try {
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               } catch {
@@ -436,8 +442,8 @@ export default function NotificationsScreen() {
                 session?.access_token ?? null,
               );
               removeMutedFromCache({ eventId: item.eventId });
-              queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-              queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+              invalidateNotificationsAll(queryClient);
+              invalidateNotificationsUnread(queryClient);
               try {
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               } catch {
@@ -461,9 +467,9 @@ export default function NotificationsScreen() {
     (item: AggregatedNotificationItem) => {
       if (!item?.id) return;
       removeNotificationFromCache(item.id);
-      queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+      invalidateNotificationsUnread(queryClient);
       deleteNotification(item.id, session?.access_token ?? null).catch(() => {
-        queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+        invalidateNotificationsAll(queryClient);
         Alert.alert("Não foi possível", "Tenta novamente.");
       });
     },
@@ -560,50 +566,49 @@ export default function NotificationsScreen() {
         if (action.type === "accept_follow") {
           const requestId = Number(action.payload?.requestId);
           if (Number.isFinite(requestId)) {
-            await acceptFollowRequest(requestId);
             setNotificationStatusLabel(item, "Aceite");
+            await acceptFollowRequest(requestId);
           }
         } else if (action.type === "decline_follow") {
           const requestId = Number(action.payload?.requestId);
           if (Number.isFinite(requestId)) {
-            await declineFollowRequest(requestId);
             setNotificationStatusLabel(item, "Recusado");
+            await declineFollowRequest(requestId);
           }
         } else if (action.type === "follow_back") {
           const userId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
           if (userId) {
             const isFollowing = followOverrides[userId] === true;
+            setFollowOverride(userId, !isFollowing);
             if (isFollowing) {
               await unfollowUser(userId);
-              setFollowOverride(userId, false);
             } else {
               await followUser(userId);
-              setFollowOverride(userId, true);
             }
           }
         } else if (action.type === "accept_org_invite") {
           const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
           if (inviteId) {
-            await respondOrganizationInvite(inviteId, "ACCEPT", session?.access_token ?? null);
             setNotificationStatusLabel(item, "Aceite");
+            await respondOrganizationInvite(inviteId, "ACCEPT", session?.access_token ?? null);
           }
         } else if (action.type === "decline_org_invite") {
           const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
           if (inviteId) {
-            await respondOrganizationInvite(inviteId, "DECLINE", session?.access_token ?? null);
             setNotificationStatusLabel(item, "Recusado");
+            await respondOrganizationInvite(inviteId, "DECLINE", session?.access_token ?? null);
           }
         } else if (action.type === "accept_pairing_invite") {
           const pairingId = Number(action.payload?.pairingId);
           if (Number.isFinite(pairingId)) {
-            await acceptPairingInvite(pairingId);
             setNotificationStatusLabel(item, "Aceite");
+            await acceptPairingInvite(pairingId);
           }
         } else if (action.type === "decline_pairing_invite") {
           const pairingId = Number(action.payload?.pairingId);
           if (Number.isFinite(pairingId)) {
-            await declinePairingInvite(pairingId);
             setNotificationStatusLabel(item, "Recusado");
+            await declinePairingInvite(pairingId);
           }
         } else if (action.type === "open") {
           const url = typeof action.payload?.url === "string" ? action.payload.url : null;
@@ -621,14 +626,15 @@ export default function NotificationsScreen() {
         }
 
         markItemReadOptimistic(item.id);
-        queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-        queryClient.invalidateQueries({ queryKey: notificationsKeys.unread() });
+        invalidateNotificationsUnread(queryClient);
         try {
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch {
           // ignore
         }
       } catch (err) {
+        invalidateNotificationsAll(queryClient);
+        invalidateNotificationsUnread(queryClient);
         Alert.alert("Não foi possível", "Queres tentar novamente?", [
           { text: "Cancelar", style: "cancel" },
           { text: "Tentar", onPress: () => handleAction(item, action) },
@@ -655,10 +661,6 @@ export default function NotificationsScreen() {
       handleMarkTabRead();
     }, [handleMarkTabRead]),
   );
-
-  useEffect(() => {
-    handleMarkTabRead();
-  }, [handleMarkTabRead]);
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {

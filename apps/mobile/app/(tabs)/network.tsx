@@ -95,7 +95,7 @@ export default function NetworkScreen() {
   }, [socialFeed, suggestions]);
 
   useEffect(() => {
-    if (isFocused) setDataReady(true);
+    setDataReady(isFocused);
   }, [isFocused]);
 
   const renderItem = useCallback(

@@ -72,11 +72,11 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 403, "IP_NOT_ALLOWED", "IP não permitido para reset de 2FA.");
     }
 
-    const body = (await req.json().catch(() => null)) as { code?: string; breakGlassToken?: string } | null;
+    const body = (await req.json().catch(() => null)) as { code?: string } | null;
 
     const breakGlassToken = process.env.ADMIN_MFA_BREAK_GLASS_TOKEN;
-    const headerToken = req.headers.get("x-orya-break-glass") || req.headers.get("x-orya-mfa-break-glass");
-    const providedBreakGlass = (headerToken || body?.breakGlassToken || "").trim();
+    const headerToken = req.headers.get("x-orya-mfa-break-glass");
+    const providedBreakGlass = (headerToken || "").trim();
     const useBreakGlass = Boolean(breakGlassToken && providedBreakGlass && providedBreakGlass === breakGlassToken);
 
     if (providedBreakGlass && !breakGlassToken) {

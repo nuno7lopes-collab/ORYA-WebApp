@@ -21,11 +21,11 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/admin/infra/start,app/api/admin/infra/start/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
 /api/admin/infra/status,app/api/admin/infra/status/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
 /api/admin/infra/usage/summary,app/api/admin/infra/usage/summary/route.ts,public,covered,1,app/admin/(protected)/infra/InfraClient.tsx
-/api/admin/mfa/enroll,app/api/admin/mfa/enroll/route.ts,public,covered,2,app/admin/(protected)/infra/InfraClient.tsx; app/admin/mfa/MfaChallengeClient.tsx
-/api/admin/mfa/reset,app/api/admin/mfa/reset/route.ts,public,covered,2,app/admin/(protected)/infra/InfraClient.tsx; app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/mfa/enroll,app/api/admin/mfa/enroll/route.ts,public,covered,1,app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/mfa/reset,app/api/admin/mfa/reset/route.ts,public,covered,1,app/admin/mfa/MfaChallengeClient.tsx
 /api/admin/mfa/session,app/api/admin/mfa/session/route.ts,public,covered,2,app/admin/components/AdminLayout.tsx; app/login/page.tsx
-/api/admin/mfa/status,app/api/admin/mfa/status/route.ts,public,covered,3,app/admin/(protected)/infra/InfraClient.tsx; app/admin/(protected)/settings/page.tsx; app/admin/mfa/MfaChallengeClient.tsx
-/api/admin/mfa/verify,app/api/admin/mfa/verify/route.ts,public,covered,2,app/admin/(protected)/infra/InfraClient.tsx; app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/mfa/status,app/api/admin/mfa/status/route.ts,public,covered,2,app/admin/(protected)/settings/page.tsx; app/admin/mfa/MfaChallengeClient.tsx
+/api/admin/mfa/verify,app/api/admin/mfa/verify/route.ts,public,covered,1,app/admin/mfa/MfaChallengeClient.tsx
 /api/admin/ops/analytics-rollups,app/api/admin/ops/analytics-rollups/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
 /api/admin/organizacoes/event-log,app/api/admin/organizacoes/event-log/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx
 /api/admin/organizacoes/list,app/api/admin/organizacoes/list/route.ts,public,covered,1,app/admin/(protected)/organizacoes/page.tsx

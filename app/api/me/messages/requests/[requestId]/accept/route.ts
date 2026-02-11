@@ -6,6 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { Prisma } from "@prisma/client";
+
+function buildDmContextId(userA: string, userB: string) {
+  return [userA, userB].sort().join(":");
+}
 
 async function _POST(req: NextRequest, context: { params: { requestId: string } }) {
   try {
@@ -26,25 +31,25 @@ async function _POST(req: NextRequest, context: { params: { requestId: string } 
       return jsonWrap({ error: "REQUEST_NOT_FOUND" }, { status: 404 });
     }
 
+    const dmContextId = buildDmContextId(user.id, request.requesterId);
     const existing = await prisma.chatConversation.findFirst({
       where: {
         organizationId: null,
         contextType: "USER_DM",
-        members: {
-          every: { userId: { in: [user.id, request.requesterId] } },
-          some: { userId: request.requesterId },
-        },
+        contextId: dmContextId,
       },
       select: { id: true },
     });
 
-    const conversation = existing
-      ? existing
-      : await prisma.chatConversation.create({
+    let conversation = existing;
+    if (!conversation) {
+      try {
+        conversation = await prisma.chatConversation.create({
           data: {
             organizationId: null,
             type: "DIRECT",
             contextType: "USER_DM",
+            contextId: dmContextId,
             createdByUserId: request.requesterId,
             members: {
               create: [
@@ -55,6 +60,20 @@ async function _POST(req: NextRequest, context: { params: { requestId: string } 
           },
           select: { id: true },
         });
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) {
+          throw err;
+        }
+        const existingAfterConflict = await prisma.chatConversation.findFirst({
+          where: { organizationId: null, contextType: "USER_DM", contextId: dmContextId },
+          select: { id: true },
+        });
+        if (!existingAfterConflict) {
+          throw err;
+        }
+        conversation = existingAfterConflict;
+      }
+    }
 
     await prisma.chatConversationRequest.update({
       where: { id: request.id },

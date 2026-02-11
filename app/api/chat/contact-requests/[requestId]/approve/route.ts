@@ -7,7 +7,7 @@ import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ADMIN_ROLES = new Set<OrganizationMemberRole>([
@@ -157,29 +157,48 @@ async function _POST(req: NextRequest, context: { params: { requestId: string } 
         return jsonWrap({ ok: false, error: "NO_MEMBERS" }, { status: 400 });
       }
 
-      const conversation = await prisma.chatConversation.create({
-        data: {
-          organizationId: organization.id,
-          type: "CHANNEL",
-          contextType: request.contextType,
-          contextId: request.contextId ?? null,
-          customerId: request.requesterId,
-          professionalId,
-          title,
-          createdByUserId: user.id,
-          members: {
-            create: Array.from(memberMap.values()).map((entry) => ({
-              userId: entry.userId,
-              role: entry.role,
-              organizationId: entry.organizationId,
-              displayAs: entry.displayAs,
-              hiddenFromCustomer: entry.hiddenFromCustomer,
-            })),
+      try {
+        const conversation = await prisma.chatConversation.create({
+          data: {
+            organizationId: organization.id,
+            type: "CHANNEL",
+            contextType: request.contextType,
+            contextId: request.contextId ?? null,
+            customerId: request.requesterId,
+            professionalId,
+            title,
+            createdByUserId: user.id,
+            members: {
+              create: Array.from(memberMap.values()).map((entry) => ({
+                userId: entry.userId,
+                role: entry.role,
+                organizationId: entry.organizationId,
+                displayAs: entry.displayAs,
+                hiddenFromCustomer: entry.hiddenFromCustomer,
+              })),
+            },
           },
-        },
-        select: { id: true },
-      });
-      conversationId = conversation.id;
+          select: { id: true },
+        });
+        conversationId = conversation.id;
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) {
+          throw err;
+        }
+        const existingAfterConflict = await prisma.chatConversation.findFirst({
+          where: {
+            organizationId: organization.id,
+            contextType: request.contextType,
+            contextId: request.contextId ?? null,
+            customerId: request.requesterId,
+          },
+          select: { id: true },
+        });
+        if (!existingAfterConflict) {
+          throw err;
+        }
+        conversationId = existingAfterConflict.id;
+      }
     }
 
     await prisma.chatConversationRequest.update({

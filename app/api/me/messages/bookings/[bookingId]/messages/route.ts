@@ -9,12 +9,12 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
 import {
   isChatRedisAvailable,
-  isChatRedisUnavailableError,
   isChatUserOnline,
   publishChatEvent,
 } from "@/lib/chat/redis";
 import { enqueueNotification } from "@/domain/notifications/outbox";
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 
 const ADMIN_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN"]);
 
@@ -222,40 +222,71 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
         });
       }
 
-      conversation = await prisma.chatConversation.create({
-        data: {
-          organizationId: booking.organizationId,
-          type: "CHANNEL",
-          contextType: "BOOKING",
-          contextId: String(booking.id),
-          customerId: user.id,
-          professionalId,
-          title: customerLabel,
-          createdByUserId: user.id,
-          members: {
-            create: Array.from(memberMap.values()).map((entry) => ({
-              userId: entry.userId,
-              role: entry.role,
-              organizationId: entry.organizationId,
-              displayAs: entry.displayAs,
-              hiddenFromCustomer: entry.hiddenFromCustomer,
-            })),
-          },
-        },
-        include: {
-          organization: {
-            select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
-          },
-          members: {
-            select: {
-              userId: true,
-              displayAs: true,
-              hiddenFromCustomer: true,
-              user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+      try {
+        conversation = await prisma.chatConversation.create({
+          data: {
+            organizationId: booking.organizationId,
+            type: "CHANNEL",
+            contextType: "BOOKING",
+            contextId: String(booking.id),
+            customerId: user.id,
+            professionalId,
+            title: customerLabel,
+            createdByUserId: user.id,
+            members: {
+              create: Array.from(memberMap.values()).map((entry) => ({
+                userId: entry.userId,
+                role: entry.role,
+                organizationId: entry.organizationId,
+                displayAs: entry.displayAs,
+                hiddenFromCustomer: entry.hiddenFromCustomer,
+              })),
             },
           },
-        },
-      });
+          include: {
+            organization: {
+              select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
+            },
+            members: {
+              select: {
+                userId: true,
+                displayAs: true,
+                hiddenFromCustomer: true,
+                user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+              },
+            },
+          },
+        });
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) {
+          throw err;
+        }
+        const existing = await prisma.chatConversation.findFirst({
+          where: {
+            organizationId: booking.organizationId,
+            contextType: "BOOKING",
+            contextId: String(booking.id),
+            customerId: user.id,
+          },
+          include: {
+            organization: {
+              select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
+            },
+            members: {
+              select: {
+                userId: true,
+                displayAs: true,
+                hiddenFromCustomer: true,
+                user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+              },
+            },
+          },
+        });
+        if (!existing) {
+          throw err;
+        }
+        conversation = existing;
+      }
     }
 
     const clientMessageId =
@@ -283,25 +314,31 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
     const viewerIsCustomer = conversation.customerId === user.id;
     const members = conversation.members;
 
-    await publishChatEvent({
-      type: "message:new",
-      organizationId: conversation.organizationId ?? undefined,
-      conversationId: conversation.id,
-      message: {
-        id: message.id,
+    const warnings: string[] = [];
+    try {
+      await publishChatEvent({
+        type: "message:new",
+        organizationId: conversation.organizationId ?? undefined,
         conversationId: conversation.id,
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        deletedAt: null,
-        sender: mapSenderDisplay({
-          senderId: message.senderId,
-          members,
-          viewerIsCustomer,
-          viewerId: user.id,
-          organization: conversation.organization ?? organization,
-        }),
-      },
-    });
+        message: {
+          id: message.id,
+          conversationId: conversation.id,
+          body: message.body,
+          createdAt: message.createdAt.toISOString(),
+          deletedAt: null,
+          sender: mapSenderDisplay({
+            senderId: message.senderId,
+            members,
+            viewerIsCustomer,
+            viewerId: user.id,
+            organization: conversation.organization ?? organization,
+          }),
+        },
+      });
+    } catch (err) {
+      warnings.push("REALTIME_DEGRADED");
+      console.warn("[api/me/messages/bookings/messages][post] realtime degraded", err);
+    }
 
     const recipients = await prisma.chatConversationMember.findMany({
       where: { conversationId: conversation.id, userId: { not: user.id } },
@@ -311,25 +348,32 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
     const now = new Date();
     const preview = body.length > 160 ? `${body.slice(0, 157)}…` : body;
 
-    if (isChatRedisAvailable()) {
-      for (const recipient of recipients) {
-        if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
-        const online = await isChatUserOnline(recipient.userId);
-        if (online) continue;
-        await enqueueNotification({
-          dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
-          userId: recipient.userId,
-          notificationType: "CHAT_MESSAGE",
-          payload: {
-            conversationId: conversation.id,
-            messageId: message.id,
-            senderId: user.id,
-            preview,
-            organizationId: conversation.organizationId ?? null,
-            contextType: conversation.contextType,
-          },
-        });
+    try {
+      if (isChatRedisAvailable()) {
+        for (const recipient of recipients) {
+          if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
+          const online = await isChatUserOnline(recipient.userId);
+          if (online) continue;
+          await enqueueNotification({
+            dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
+            userId: recipient.userId,
+            notificationType: "CHAT_MESSAGE",
+            payload: {
+              conversationId: conversation.id,
+              messageId: message.id,
+              senderId: user.id,
+              preview,
+              organizationId: conversation.organizationId ?? null,
+              contextType: conversation.contextType,
+            },
+          });
+        }
       }
+    } catch (err) {
+      if (!warnings.includes("REALTIME_DEGRADED")) {
+        warnings.push("REALTIME_DEGRADED");
+      }
+      console.warn("[api/me/messages/bookings/messages][post] offline notifications degraded", err);
     }
 
     return jsonWrap({
@@ -347,13 +391,11 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
           organization: conversation.organization ?? organization,
         }),
       },
+      ...(warnings.length ? { warnings } : {}),
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ error: "UNAUTHENTICATED" }, { status: 401 });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ error: err.code }, { status: 503 });
     }
     console.error("[api/me/messages/bookings/messages][post] error", err);
     return jsonWrap({ error: "Erro ao enviar mensagem." }, { status: 500 });

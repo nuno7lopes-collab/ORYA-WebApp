@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { ensureEventThread } from "@/lib/chat/threads";
 
 const INVITE_WINDOW_HOURS = 24;
 
@@ -51,7 +51,7 @@ export async function ensureEventChatInvite(input: {
     return { ok: false as const, reason: "EXPIRED" };
   }
 
-  await prisma.$executeRaw(Prisma.sql`SELECT app_v3.chat_ensure_event_thread(${input.eventId})`);
+  await ensureEventThread(input.eventId);
   const thread = await prisma.chatThread.findFirst({
     where: { entityType: "EVENT", entityId: input.eventId },
     select: { id: true },

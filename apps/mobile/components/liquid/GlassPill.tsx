@@ -1,6 +1,6 @@
 import { BlurView } from "expo-blur";
 import { PropsWithChildren } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
 
 type GlassPillProps = PropsWithChildren<{
@@ -28,12 +28,20 @@ const variants: Record<NonNullable<GlassPillProps["variant"]>, { bg: string; bor
 
 export function GlassPill({ label, variant = "neutral", children }: GlassPillProps) {
   const palette = variants[variant];
+  const shouldBlur = Platform.OS === "ios";
   return (
     <View style={[styles.shell, { borderColor: palette.border, backgroundColor: palette.bg }]}>
-      <BlurView intensity={40} tint="dark" style={styles.blur}>
-        {children}
-        <Text style={[styles.text, { color: palette.text }]}>{label}</Text>
-      </BlurView>
+      {shouldBlur ? (
+        <BlurView intensity={40} tint="dark" style={styles.blur}>
+          {children}
+          <Text style={[styles.text, { color: palette.text }]}>{label}</Text>
+        </BlurView>
+      ) : (
+        <View style={styles.blur}>
+          {children}
+          <Text style={[styles.text, { color: palette.text }]}>{label}</Text>
+        </View>
+      )}
     </View>
   );
 }

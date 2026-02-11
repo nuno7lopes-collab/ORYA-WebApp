@@ -1,10 +1,10 @@
 import type { GeoDetailsItem, GeoProvider, GeoAutocompleteItem } from "./types";
-import { mintAppleMapsToken } from "@/lib/maps/appleToken";
+import { mintAppleMapsAccessToken } from "@/lib/maps/appleToken";
 
 const APPLE_ENDPOINT = "https://maps-api.apple.com/v1";
 
 async function appleFetch<T>(url: string): Promise<T> {
-  const { token } = mintAppleMapsToken();
+  const { token } = await mintAppleMapsAccessToken();
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,

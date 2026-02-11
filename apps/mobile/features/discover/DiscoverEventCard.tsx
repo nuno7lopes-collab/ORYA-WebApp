@@ -2,7 +2,7 @@ import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, InteractionManager, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "../../components/icons/Ionicons";
@@ -18,6 +18,9 @@ import { EventFeedbackSheet } from "../../components/events/EventFeedbackSheet";
 import { sendEventSignal } from "../events/signals";
 import { formatCurrency, formatDate, formatRelativeDay, formatRelativeHours, formatTime } from "../../lib/formatters";
 import { formatDistanceKm } from "../../lib/geo";
+
+const USE_GLASS_BLUR = Platform.OS === "ios";
+const CARD_IMAGE_TRANSITION_MS = Platform.OS === "android" ? 110 : 170;
 
 type Props = {
   item: PublicEventCard | DiscoverServiceCard;
@@ -418,13 +421,16 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
         active = false;
       };
     }
-    getDominantTint(coverImage, tintSeed)
-      .then((resolved) => {
-        if (active) setTint(resolved);
-      })
-      .catch(() => undefined);
+    const task = InteractionManager.runAfterInteractions(() => {
+      getDominantTint(coverImage, tintSeed)
+        .then((resolved) => {
+          if (active) setTint(resolved);
+        })
+        .catch(() => undefined);
+    });
     return () => {
       active = false;
+      task?.cancel?.();
     };
   }, [coverImage, fallbackTint, tintSeed]);
 
@@ -434,25 +440,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
       useNativeDriver: true,
       friction: 7,
     }).start();
-
-    if (router?.prefetch) {
-      router.prefetch(linkHref);
-    }
-
-    if (!isService && event?.slug) {
-      queryClient.prefetchQuery({
-        queryKey: ["event-detail", event.slug],
-        queryFn: () => fetchEventDetail(event.slug),
-      });
-    }
-
-    if (isService && service?.id) {
-      queryClient.prefetchQuery({
-        queryKey: ["service-detail", String(service.id)],
-        queryFn: () => fetchServiceDetail(String(service.id)),
-      });
-    }
-  }, [event?.slug, isService, linkHref, queryClient, router, scale, service?.id]);
+  }, [scale]);
 
   const onPressOut = useCallback(() => {
     Animated.spring(scale, {
@@ -462,21 +450,40 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
     }).start();
   }, [scale]);
 
+  const handlePress = useCallback(() => {
+    if (!isService && event?.id) {
+      sendEventSignal({ eventId: event.id, signalType: "CLICK" });
+    }
+
+    // Warm the destination off the critical touch path.
+    InteractionManager.runAfterInteractions(() => {
+      router?.prefetch?.(linkHref);
+      if (!isService && event?.slug) {
+        queryClient.prefetchQuery({
+          queryKey: ["event-detail", event.slug],
+          queryFn: () => fetchEventDetail(event.slug),
+        });
+      }
+      if (isService && service?.id) {
+        queryClient.prefetchQuery({
+          queryKey: ["service-detail", String(service.id)],
+          queryFn: () => fetchServiceDetail(String(service.id)),
+        });
+      }
+    });
+  }, [event?.id, event?.slug, isService, linkHref, queryClient, router, service?.id]);
+
   return (
     <>
       <Link href={linkHref} asChild push>
         <Pressable
           onPressIn={onPressIn}
           onPressOut={onPressOut}
-          onPress={() => {
-            if (!isService && event?.id) {
-              sendEventSignal({ eventId: event.id, signalType: "CLICK" });
-            }
-          }}
+          onPress={handlePress}
           onLongPress={() => {
             if (!isService && event) setFeedbackVisible(true);
           }}
-          delayLongPress={320}
+          delayLongPress={260}
           android_ripple={{ color: "rgba(255,255,255,0.08)" }}
           accessibilityRole="button"
           accessibilityLabel={isService ? `Abrir serviço ${title}` : `Abrir evento ${title}`}
@@ -502,23 +509,33 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                       source={{ uri: coverImage }}
                       style={StyleSheet.absoluteFill}
                       contentFit="cover"
-                      transition={220}
+                      transition={CARD_IMAGE_TRANSITION_MS}
                       cachePolicy="memory-disk"
                       priority={isFeatured ? "high" : "normal"}
                     />
-                    <MaskedView
-                      style={[styles.bottomMask, { height: overlayHeight }]}
-                      maskElement={
-                        <LinearGradient
-                          colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 0, y: 1 }}
-                          style={StyleSheet.absoluteFill}
-                        />
-                      }
-                    >
-                      <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-                    </MaskedView>
+                    {USE_GLASS_BLUR ? (
+                      <MaskedView
+                        style={[styles.bottomMask, { height: overlayHeight }]}
+                        maskElement={
+                          <LinearGradient
+                            colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        }
+                      >
+                        <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFill} />
+                      </MaskedView>
+                    ) : (
+                      <LinearGradient
+                        colors={["rgba(8,10,16,0.04)", "rgba(8,10,16,0.3)"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={[styles.bottomMask, styles.bottomMaskFallback, { height: overlayHeight }]}
+                        pointerEvents="none"
+                      />
+                    )}
                     <LinearGradient
                       colors={[
                         withAlpha(tint, 0.05),
@@ -648,6 +665,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  bottomMaskFallback: {
+    opacity: 0.95,
   },
   bottomGradient: {
     position: "absolute",

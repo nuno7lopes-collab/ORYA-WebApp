@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { useMemo, useRef } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens } from "@orya/shared";
@@ -11,6 +12,8 @@ import { useNotificationsUnread } from "../../features/notifications/hooks";
 import { useAuth } from "../../lib/auth";
 import type { TopBarScrollState } from "./useTopBarScroll";
 import { TOP_APP_HEADER_HEIGHT } from "./topBarTokens";
+
+const USE_GLASS_BLUR = Platform.OS === "ios";
 
 type TopAppHeaderVariant = "brand" | "title" | "custom";
 
@@ -41,10 +44,14 @@ export function TopAppHeader({
 }: TopAppHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const isFocused = useIsFocused();
   const { session } = useAuth();
+  const renderNotifications = showNotifications ?? variant === "brand";
+  const renderMessages = showMessages ?? variant === "brand";
   const unreadQuery = useNotificationsUnread(
     session?.access_token ?? null,
     session?.user?.id ?? null,
+    renderNotifications && Boolean(session?.user?.id) && isFocused,
   );
   const unreadCount = unreadQuery.data?.unreadCount ?? 0;
   const showBadge = unreadCount > 0;
@@ -52,8 +59,6 @@ export function TopAppHeader({
   const defaultTranslate = useRef(new Animated.Value(0)).current;
   const translateY = scrollState?.translateY ?? defaultTranslate;
   const isElevated = scrollState?.isElevated ?? false;
-  const renderNotifications = showNotifications ?? variant === "brand";
-  const renderMessages = showMessages ?? variant === "brand";
 
   const containerStyle = useMemo(
     () => [
@@ -166,7 +171,16 @@ export function TopAppHeader({
 
   return (
     <Animated.View style={containerStyle} pointerEvents="box-none">
-      <BlurView tint="dark" intensity={blurIntensity} style={StyleSheet.absoluteFill} />
+      {USE_GLASS_BLUR ? (
+        <BlurView tint="dark" intensity={blurIntensity} style={StyleSheet.absoluteFill} />
+      ) : (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            isElevated ? styles.blurFallbackElevated : styles.blurFallback,
+          ]}
+        />
+      )}
       <LinearGradient
         colors={["rgba(20, 28, 44, 0.35)", "rgba(8, 12, 20, 0.16)", "rgba(8, 12, 20, 0.0)"]}
         start={{ x: 0, y: 0 }}
@@ -217,6 +231,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
+  },
+  blurFallback: {
+    backgroundColor: "rgba(6, 10, 18, 0.74)",
+  },
+  blurFallbackElevated: {
+    backgroundColor: "rgba(6, 10, 18, 0.9)",
   },
   inner: {
     height: TOP_APP_HEADER_HEIGHT,

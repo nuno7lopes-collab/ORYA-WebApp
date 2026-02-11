@@ -1,7 +1,6 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -9,6 +8,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { OrganizationMemberRole } from "@prisma/client";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
+import { ensureEventThread } from "@/lib/chat/threads";
 
 const CHAT_ORG_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -123,7 +123,7 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ error: "NOT_FOUND" }, { status: 404 });
     }
 
-    await prisma.$executeRaw(Prisma.sql`SELECT app_v3.chat_ensure_event_thread(${event.id})`);
+    await ensureEventThread(event.id);
 
     const thread = await prisma.chatThread.findFirst({
       where: {

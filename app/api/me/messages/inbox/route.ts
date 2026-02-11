@@ -8,6 +8,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
+import { ensureEventThreads } from "@/lib/chat/threads";
 
 const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.USER_DM,
@@ -121,104 +122,7 @@ async function _GET(req: NextRequest) {
       email: user.email ?? null,
     });
 
-    const acceptedInvites = ownerClauses.length
-      ? await prisma.chatEventInvite.findMany({
-          where: {
-            status: "ACCEPTED",
-            userId: user.id,
-            entitlement: {
-              status: "ACTIVE",
-              OR: ownerClauses,
-              checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
-            },
-          },
-          select: { eventId: true },
-        })
-      : [];
-
-    const eventIds = Array.from(new Set(acceptedInvites.map((invite) => invite.eventId).filter(Boolean))) as number[];
-
-    if (eventIds.length) {
-      for (const eventId of eventIds) {
-        await prisma.$executeRaw(Prisma.sql`SELECT app_v3.chat_ensure_event_thread(${eventId})`);
-      }
-    }
-
-    const threads = eventIds.length
-      ? await prisma.chatThread.findMany({
-          where: { entityType: "EVENT", entityId: { in: eventIds } },
-          select: {
-            id: true,
-            status: true,
-            entityId: true,
-            messages: {
-              take: 1,
-              orderBy: { createdAt: "desc" },
-              select: { id: true, body: true, createdAt: true, kind: true, deletedAt: true },
-            },
-          },
-        })
-      : [];
-
-    const threadIds = threads.map((thread) => thread.id);
-    const threadMutes =
-      threadIds.length > 0
-        ? await prisma.chatMember.findMany({
-            where: { threadId: { in: threadIds }, userId: user.id },
-            select: { threadId: true, mutedUntil: true },
-          })
-        : [];
-    const threadMuteMap = new Map(
-      threadMutes.map((row) => [row.threadId, row.mutedUntil ? row.mutedUntil.toISOString() : null]),
-    );
-
-    const events = eventIds.length
-      ? await prisma.event.findMany({
-          where: { id: { in: eventIds }, isDeleted: false },
-          select: {
-            id: true,
-            slug: true,
-            title: true,
-            startsAt: true,
-            endsAt: true,
-            coverImageUrl: true,
-            addressId: true,
-            addressRef: { select: { formattedAddress: true, canonical: true } },
-            status: true,
-          },
-        })
-      : [];
-    const eventMap = new Map(events.map((event) => [event.id, event]));
-
-    const eventItems = threads
-      .map((thread) => {
-        const event = eventMap.get(thread.entityId);
-        if (!event) return null;
-        const lastMessage = thread.messages[0] ?? null;
-        const lastBody = lastMessage?.deletedAt ? null : lastMessage?.body;
-        return {
-          id: `event:${thread.id}`,
-          kind: "EVENT" as const,
-          threadId: thread.id,
-          status: thread.status,
-          title: event.title,
-          subtitle: event.addressRef?.formattedAddress ?? null,
-          imageUrl: event.coverImageUrl ?? null,
-          lastMessageAt: lastMessage?.createdAt?.toISOString() ?? event.startsAt?.toISOString() ?? null,
-          lastMessage: lastMessage ? { id: lastMessage.id, body: lastBody, createdAt: lastMessage.createdAt.toISOString() } : null,
-          unreadCount: 0,
-          mutedUntil: threadMuteMap.get(thread.id) ?? null,
-          event: {
-            id: event.id,
-            slug: event.slug,
-            startsAt: event.startsAt ? event.startsAt.toISOString() : null,
-            endsAt: event.endsAt ? event.endsAt.toISOString() : null,
-          },
-        };
-      })
-      .filter(Boolean) as Array<Record<string, unknown>>;
-
-    const memberships = await prisma.chatConversationMember.findMany({
+    const membershipsPromise = prisma.chatConversationMember.findMany({
       where: {
         userId: user.id,
         conversation: { contextType: { in: B2C_CONTEXT_TYPES } },
@@ -255,6 +159,105 @@ async function _GET(req: NextRequest) {
       },
       orderBy: { conversation: { lastMessageAt: "desc" } },
     });
+
+    const acceptedInvites = ownerClauses.length
+      ? await prisma.chatEventInvite.findMany({
+          where: {
+            status: "ACCEPTED",
+            userId: user.id,
+            entitlement: {
+              status: "ACTIVE",
+              OR: ownerClauses,
+              checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
+            },
+          },
+          select: { eventId: true },
+          distinct: ["eventId"],
+        })
+      : [];
+
+    const eventIds = Array.from(new Set(acceptedInvites.map((invite) => invite.eventId).filter(Boolean))) as number[];
+
+    if (eventIds.length) {
+      await ensureEventThreads(eventIds);
+    }
+
+    const [threads, events] = await Promise.all([
+      eventIds.length
+        ? prisma.chatThread.findMany({
+            where: { entityType: "EVENT", entityId: { in: eventIds } },
+            select: {
+              id: true,
+              status: true,
+              entityId: true,
+              messages: {
+                take: 1,
+                orderBy: { createdAt: "desc" },
+                select: { id: true, body: true, createdAt: true, kind: true, deletedAt: true },
+              },
+            },
+          })
+        : Promise.resolve([]),
+      eventIds.length
+        ? prisma.event.findMany({
+            where: { id: { in: eventIds }, isDeleted: false },
+            select: {
+              id: true,
+              slug: true,
+              title: true,
+              startsAt: true,
+              endsAt: true,
+              coverImageUrl: true,
+              addressId: true,
+              addressRef: { select: { formattedAddress: true, canonical: true } },
+              status: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const threadIds = threads.map((thread) => thread.id);
+    const threadMutes =
+      threadIds.length > 0
+        ? await prisma.chatMember.findMany({
+            where: { threadId: { in: threadIds }, userId: user.id },
+            select: { threadId: true, mutedUntil: true },
+          })
+        : [];
+    const threadMuteMap = new Map(
+      threadMutes.map((row) => [row.threadId, row.mutedUntil ? row.mutedUntil.toISOString() : null]),
+    );
+    const eventMap = new Map(events.map((event) => [event.id, event]));
+
+    const eventItems = threads
+      .map((thread) => {
+        const event = eventMap.get(thread.entityId);
+        if (!event) return null;
+        const lastMessage = thread.messages[0] ?? null;
+        const lastBody = lastMessage?.deletedAt ? null : lastMessage?.body;
+        return {
+          id: `event:${thread.id}`,
+          kind: "EVENT" as const,
+          threadId: thread.id,
+          status: thread.status,
+          title: event.title,
+          subtitle: event.addressRef?.formattedAddress ?? null,
+          imageUrl: event.coverImageUrl ?? null,
+          lastMessageAt: lastMessage?.createdAt?.toISOString() ?? event.startsAt?.toISOString() ?? null,
+          lastMessage: lastMessage ? { id: lastMessage.id, body: lastBody, createdAt: lastMessage.createdAt.toISOString() } : null,
+          unreadCount: 0,
+          mutedUntil: threadMuteMap.get(thread.id) ?? null,
+          event: {
+            id: event.id,
+            slug: event.slug,
+            startsAt: event.startsAt ? event.startsAt.toISOString() : null,
+            endsAt: event.endsAt ? event.endsAt.toISOString() : null,
+          },
+        };
+      })
+      .filter(Boolean) as Array<Record<string, unknown>>;
+
+    const memberships = await membershipsPromise;
 
     const conversationIds = memberships.map((entry) => entry.conversation.id);
     const unreadRows =

@@ -11,6 +11,7 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { computeBlobSha256Hex } from "@/lib/chat/attachmentChecksum";
 import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { formatDateTime } from "@/lib/i18n";
@@ -29,6 +30,8 @@ const TYPING_IDLE_MS = 1400;
 const TYPING_TTL_MS = 8000;
 const MAX_COMMANDS = 5;
 const EMOJI_CHOICES = ["👍", "❤️", "😂", "🎯", "👏", "😅"];
+const WS_PROTOCOL_BASE = "orya-chat.v1";
+const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
 
 type Reaction = {
   messageId: string;
@@ -1197,10 +1200,12 @@ export default function ChatInternoV2Client() {
     }
 
     const wsUrl = new URL(wsBaseUrl);
-    wsUrl.searchParams.set("token", token);
     wsUrl.searchParams.set("organizationId", String(orgId));
 
-    const ws = new WebSocket(wsUrl.toString());
+    const ws = new WebSocket(wsUrl.toString(), [
+      WS_PROTOCOL_BASE,
+      `${WS_AUTH_PROTOCOL_PREFIX}${token}`,
+    ]);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -1612,6 +1617,7 @@ export default function ChatInternoV2Client() {
               : file.type.startsWith("video/")
                 ? "VIDEO"
                 : "FILE";
+            const checksumSha256 = await computeBlobSha256Hex(file);
             const presign = await fetchChat<{
               ok: boolean;
               uploadUrl: string;
@@ -1644,6 +1650,7 @@ export default function ChatInternoV2Client() {
                 name: file.name,
                 path: presign.path,
                 bucket: presign.bucket,
+                checksumSha256,
               },
             };
           }),

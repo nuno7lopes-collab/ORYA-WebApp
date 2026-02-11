@@ -41,7 +41,10 @@ import { getMobileEnv } from "../../lib/env";
 import { formatTime } from "../../lib/formatters";
 
 const POLL_INTERVAL_MS = 6000;
+const WS_PING_INTERVAL_MS = 25000;
 const UNDO_WINDOW_MS = 2 * 60 * 1000;
+const WS_PROTOCOL_BASE = "orya-chat.v1";
+const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
 
 type UnifiedMessage = {
   id: string;
@@ -151,6 +154,7 @@ export default function ChatThreadScreen() {
   const scrollRef = useRef<ScrollView | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const wsReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const threadId = useMemo(
     () => (Array.isArray(params.threadId) ? params.threadId[0] : params.threadId) ?? "",
@@ -320,17 +324,31 @@ export default function ChatThreadScreen() {
     if (!isConversation || !accessToken || !threadId) return;
     const wsBase = buildWsBaseUrl();
     if (!wsBase) return;
+    const stopWsPing = () => {
+      if (wsPingRef.current) clearInterval(wsPingRef.current);
+      wsPingRef.current = null;
+    };
 
     const connect = () => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
       const wsUrl = new URL(wsBase);
-      wsUrl.searchParams.set("token", accessToken);
       wsUrl.searchParams.set("scope", "b2c");
-      const ws = new WebSocket(wsUrl.toString());
+      const ws = new WebSocket(wsUrl.toString(), [
+        WS_PROTOCOL_BASE,
+        `${WS_AUTH_PROTOCOL_PREFIX}${accessToken}`,
+      ]);
       wsRef.current = ws;
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "conversation:sync" }));
+        stopWsPing();
+        wsPingRef.current = setInterval(() => {
+          try {
+            ws.send(JSON.stringify({ type: "ping" }));
+          } catch {
+            // ignore
+          }
+        }, WS_PING_INTERVAL_MS);
       };
 
       ws.onmessage = (event) => {
@@ -363,6 +381,7 @@ export default function ChatThreadScreen() {
       };
 
       ws.onclose = () => {
+        stopWsPing();
         wsRef.current = null;
         if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
         wsReconnectRef.current = setTimeout(connect, 2000);
@@ -371,6 +390,7 @@ export default function ChatThreadScreen() {
 
     connect();
     return () => {
+      stopWsPing();
       if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
       wsRef.current?.close();
       wsRef.current = null;
@@ -392,7 +412,7 @@ export default function ChatThreadScreen() {
         const message = await sendChatMessage(threadId, body, accessToken);
         setMessages((prev) => [...prev, toUnified(message)]);
       } else {
-        const response = await sendConversationMessage(threadId, body, accessToken);
+        const response = await sendConversationMessage(threadId, body, undefined, accessToken);
         setMessages((prev) => [...prev, toUnified(response.item)]);
       }
       setInput("");

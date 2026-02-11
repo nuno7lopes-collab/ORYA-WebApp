@@ -174,7 +174,6 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     setAddressLoading(true);
     try {
       const details = await fetchGeoDetails(item.providerId, {
-        sourceProvider: item.sourceProvider ?? null,
         lat: item.lat,
         lng: item.lng,
       });

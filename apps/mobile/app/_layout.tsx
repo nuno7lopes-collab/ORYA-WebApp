@@ -27,11 +27,17 @@ LogBox.ignoreLogs([
   "SafeAreaView has been deprecated",
   "SafeAreaView has been deprecated and will be removed in a future release",
   "SafeAreaView is deprecated",
+  "SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead.",
+  "SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/th3rdwave/react-native-safe-area-context",
   "Please use 'react-native-safe-area-context' instead",
   "WebCrypto API is not supported",
   "expo-notifications: Android Push notifications",
   "`expo-notifications` functionality is not fully supported in Expo Go",
 ]);
+
+const NAV_DURATION_FAST = 200;
+const NAV_DURATION_STANDARD = 220;
+const NAV_DURATION_EMPHASIS = 240;
 
 export default function RootLayout() {
   perfMark("app_boot");
@@ -56,7 +62,7 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setFontTimeout(true), 2000);
+    const timer = setTimeout(() => setFontTimeout(true), 1500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -114,7 +120,7 @@ export default function RootLayout() {
                       name="event/[slug]"
                       options={{
                         animation: "fade_from_bottom",
-                        animationDuration: 420,
+                        animationDuration: NAV_DURATION_EMPHASIS,
                         gestureEnabled: true,
                       }}
                     />
@@ -122,7 +128,7 @@ export default function RootLayout() {
                       name="service/[id]"
                       options={{
                         animation: "fade_from_bottom",
-                        animationDuration: 420,
+                        animationDuration: NAV_DURATION_EMPHASIS,
                         gestureEnabled: true,
                       }}
                     />
@@ -130,7 +136,7 @@ export default function RootLayout() {
                       name="service/[id]/booking"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 380,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -138,7 +144,7 @@ export default function RootLayout() {
                       name="padel/index"
                       options={{
                         animation: "fade_from_bottom",
-                        animationDuration: 380,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -146,7 +152,7 @@ export default function RootLayout() {
                       name="checkout/index"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 380,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -154,7 +160,7 @@ export default function RootLayout() {
                       name="store/[username]/index"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 360,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -162,7 +168,7 @@ export default function RootLayout() {
                       name="store/[username]/product/[slug]"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 360,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -170,7 +176,7 @@ export default function RootLayout() {
                       name="store/[username]/cart"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 360,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -178,7 +184,7 @@ export default function RootLayout() {
                       name="store/[username]/checkout"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 360,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -186,7 +192,7 @@ export default function RootLayout() {
                       name="store/[username]/success"
                       options={{
                         animation: "fade_from_bottom",
-                        animationDuration: 320,
+                        animationDuration: NAV_DURATION_FAST,
                         gestureEnabled: true,
                       }}
                     />
@@ -194,7 +200,7 @@ export default function RootLayout() {
                       name="store/purchases/index"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 360,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -202,7 +208,7 @@ export default function RootLayout() {
                       name="store/purchases/[orderId]"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 360,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />
@@ -210,7 +216,7 @@ export default function RootLayout() {
                       name="store/downloads"
                       options={{
                         animation: "slide_from_right",
-                        animationDuration: 360,
+                        animationDuration: NAV_DURATION_STANDARD,
                         gestureEnabled: true,
                       }}
                     />

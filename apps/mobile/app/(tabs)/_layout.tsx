@@ -1,7 +1,7 @@
 import { Redirect, withLayoutContext } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 import { FloatingTabBar, TAB_BAR_HEIGHT } from "../../components/navigation/FloatingTabBar";
 import { getOnboardingDone } from "../../lib/onboardingState";
@@ -194,7 +194,7 @@ export default function TabsLayout() {
       <ExpoTopTabs
         tabBarPosition="bottom"
         swipeEnabled={!isBlocked}
-        animationEnabled
+        animationEnabled={Platform.OS === "ios"}
         backBehavior="history"
         initialRouteName="agora"
         tabBar={renderTabBar}
@@ -204,7 +204,7 @@ export default function TabsLayout() {
           tabBarIndicatorStyle: { height: 0 },
           tabBarStyle: { backgroundColor: "transparent" },
           lazy: true,
-          lazyPreloadDistance: 1,
+          lazyPreloadDistance: 0,
           lazyPlaceholder: renderLazyPlaceholder,
         }}
       >

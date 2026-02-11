@@ -6,7 +6,6 @@ import { getGeoResolver } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
 import { upsertAddressFromGeoDetails } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { AddressSourceProvider } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -28,15 +27,6 @@ const resolveLang = (req: NextRequest) => {
   return header.split(",")[0]?.trim() || "pt-PT";
 };
 
-const parseSourceProvider = (raw: string | null) => {
-  if (!raw) return null;
-  const normalized = raw.trim().toUpperCase();
-  if (normalized === AddressSourceProvider.APPLE_MAPS) {
-    return AddressSourceProvider.APPLE_MAPS;
-  }
-  return null;
-};
-
 async function _GET(req: NextRequest) {
   const providerId = req.nextUrl.searchParams.get("providerId")?.trim() ?? "";
   if (!providerId) {
@@ -55,12 +45,11 @@ async function _GET(req: NextRequest) {
   }
 
   const lang = resolveLang(req);
-  const sourceProvider = parseSourceProvider(req.nextUrl.searchParams.get("sourceProvider"));
   const latParam = req.nextUrl.searchParams.get("lat");
   const lngParam = req.nextUrl.searchParams.get("lng");
   const lat = latParam ? Number(latParam) : null;
   const lng = lngParam ? Number(lngParam) : null;
-  const cacheKey = buildCacheKey(["address-details", providerId, lang, sourceProvider ?? "", lat, lng]);
+  const cacheKey = buildCacheKey(["address-details", providerId, lang, lat, lng]);
   const cached = getCache<Record<string, unknown>>(cacheKey);
   if (cached) {
     return jsonWrap({ ok: true, item: cached }, { headers: { "Cache-Control": "public, max-age=600" } });
@@ -68,7 +57,7 @@ async function _GET(req: NextRequest) {
 
   const resolver = getGeoResolver();
   try {
-    const resolvedDetails = await resolver.details({ providerId, lang, sourceProvider, lat, lng });
+    const resolvedDetails = await resolver.details({ providerId, lang, lat, lng });
     let item = resolvedDetails.data;
     let providerSource = resolvedDetails.sourceProvider;
     if (!item && Number.isFinite(lat ?? NaN) && Number.isFinite(lng ?? NaN)) {
@@ -76,7 +65,6 @@ async function _GET(req: NextRequest) {
         lat: lat as number,
         lng: lng as number,
         lang,
-        sourceProvider: sourceProvider ?? providerSource,
       });
       item = reverseResolved.data;
       providerSource = reverseResolved.sourceProvider;

@@ -19,7 +19,6 @@ type GeoResolver = {
   details: (args: {
     providerId: string;
     lang?: string;
-    sourceProvider?: AddressSourceProvider | null;
     lat?: number | null;
     lng?: number | null;
   }) => Promise<GeoResolved<GeoDetailsItem | null>>;
@@ -27,7 +26,6 @@ type GeoResolver = {
     lat: number;
     lng: number;
     lang?: string;
-    sourceProvider?: AddressSourceProvider | null;
   }) => Promise<GeoResolved<GeoDetailsItem | null>>;
 };
 
@@ -51,8 +49,6 @@ const appleHealth: ProviderHealth = {
 };
 
 let resolver: GeoResolver | null = null;
-
-const isLegacyOsmProviderId = (value: string) => /^[NWR]\\d+$/i.test(value.trim());
 
 const hasAppleConfig = () => {
   try {
@@ -126,15 +122,7 @@ export function getGeoResolver(): GeoResolver {
       }
     },
     details: async (args) => {
-      const explicitSource = args.sourceProvider ?? null;
       const providerId = args.providerId;
-      if (
-        explicitSource === AddressSourceProvider.OSM_NOMINATIM ||
-        explicitSource === AddressSourceProvider.OSM_PHOTON ||
-        isLegacyOsmProviderId(providerId)
-      ) {
-        throw new Error("APPLE_MAPS_ONLY");
-      }
       assertAppleAvailable();
       const apple = getAppleProvider();
       try {
@@ -147,10 +135,6 @@ export function getGeoResolver(): GeoResolver {
       }
     },
     reverse: async (args) => {
-      const explicitSource = args.sourceProvider ?? null;
-      if (explicitSource === AddressSourceProvider.OSM_NOMINATIM || explicitSource === AddressSourceProvider.OSM_PHOTON) {
-        throw new Error("APPLE_MAPS_ONLY");
-      }
       assertAppleAvailable();
       const apple = getAppleProvider();
       try {

@@ -2,7 +2,7 @@ import { Link, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View, InteractionManager } from "react-native";
+import { Animated, Pressable, StyleSheet, Text, View, InteractionManager, Platform } from "react-native";
 import { BlurView } from "expo-blur";
 import { PublicEventCard, tokens, useTranslation } from "@orya/shared";
 import { FavoriteToggle } from "./FavoriteToggle";
@@ -13,6 +13,9 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { EventFeedbackSheet } from "./EventFeedbackSheet";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
+
+const USE_GLASS_BLUR = Platform.OS === "ios";
+const CARD_IMAGE_TRANSITION_MS = Platform.OS === "android" ? 110 : 170;
 
 type EventCardSquareProps = {
   event: PublicEventCard;
@@ -270,11 +273,13 @@ export const EventCardSquare = memo(function EventCardSquare({
             Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
           }}
           onPress={() => {
-            sendEventSignal({ eventId: event.id, signalType: "CLICK" });
-            router.prefetch?.(linkHref);
+            InteractionManager.runAfterInteractions(() => {
+              sendEventSignal({ eventId: event.id, signalType: "CLICK" });
+              router.prefetch?.(linkHref);
+            });
           }}
           onLongPress={() => setFeedbackVisible(true)}
-          delayLongPress={320}
+          delayLongPress={260}
           accessibilityRole="button"
           accessibilityLabel={`Abrir evento ${event.title}`}
         >
@@ -291,25 +296,35 @@ export const EventCardSquare = memo(function EventCardSquare({
                     source={{ uri: cover }}
                     style={StyleSheet.absoluteFill}
                     contentFit="cover"
-                    transition={220}
+                    transition={CARD_IMAGE_TRANSITION_MS}
                     cachePolicy="memory-disk"
                   />
                 ) : (
                   <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(255,255,255,0.06)" }]} />
                 )}
-                <MaskedView
-                  style={[styles.bottomMask, { height: overlayHeight }]}
-                  maskElement={
-                    <LinearGradient
-                      colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={StyleSheet.absoluteFill}
-                    />
-                  }
-                >
-                  <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
-                </MaskedView>
+                {USE_GLASS_BLUR ? (
+                  <MaskedView
+                    style={[styles.bottomMask, { height: overlayHeight }]}
+                    maskElement={
+                      <LinearGradient
+                        colors={["rgba(0,0,0,0)", "rgba(0,0,0,1)"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                    }
+                  >
+                    <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFill} />
+                  </MaskedView>
+                ) : (
+                  <LinearGradient
+                    colors={["rgba(8,10,16,0.04)", "rgba(8,10,16,0.3)"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={[styles.bottomMask, styles.bottomMaskFallback, { height: overlayHeight }]}
+                    pointerEvents="none"
+                  />
+                )}
                 <LinearGradient
                   colors={[
                     withAlpha(tint, 0.0),
@@ -407,6 +422,9 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: tokens.radius.xl,
     borderBottomRightRadius: tokens.radius.xl,
     overflow: "hidden",
+  },
+  bottomMaskFallback: {
+    opacity: 0.95,
   },
   bottomGradient: {
     position: "absolute",

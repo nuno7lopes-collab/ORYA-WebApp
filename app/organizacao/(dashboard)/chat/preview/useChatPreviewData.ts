@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { computeBlobSha256Hex } from "@/lib/chat/attachmentChecksum";
 import { useUser } from "@/app/hooks/useUser";
 import { getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
 import type {
@@ -24,6 +25,8 @@ import type {
 
 const WS_PING_INTERVAL_MS = 25000;
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+const WS_PROTOCOL_BASE = "orya-chat.v1";
+const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
 
 type PendingMessage = {
   id: string;
@@ -1021,10 +1024,12 @@ export function useChatPreviewData() {
     }
 
     const wsUrl = new URL(wsBaseUrl);
-    wsUrl.searchParams.set("token", token);
     wsUrl.searchParams.set("organizationId", String(orgId));
 
-    const ws = new WebSocket(wsUrl.toString());
+    const ws = new WebSocket(wsUrl.toString(), [
+      WS_PROTOCOL_BASE,
+      `${WS_AUTH_PROTOCOL_PREFIX}${token}`,
+    ]);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -1142,6 +1147,7 @@ export function useChatPreviewData() {
                 : file.type.startsWith("video/")
                   ? "VIDEO"
                   : "FILE";
+              const checksumSha256 = await computeBlobSha256Hex(file);
               const presign = await fetcher<{
                 ok: boolean;
                 uploadUrl: string;
@@ -1174,6 +1180,7 @@ export function useChatPreviewData() {
                   name: file.name,
                   path: presign.path,
                   bucket: presign.bucket,
+                  checksumSha256,
                 },
               };
             }),

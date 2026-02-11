@@ -211,8 +211,26 @@ export async function fetchStorePurchases(input: {
   params.set("limit", String(Math.max(1, Math.min(60, input.limit ?? 20))));
   if (input.cursor) params.set("cursor", input.cursor);
   if (input.status) params.set("status", input.status);
-  const response = await api.request<unknown>(`/api/me/purchases/store?${params.toString()}`);
-  return unwrapApiResponse<StorePurchasesResponse>(response);
+  const result = await api.requestRaw<unknown>(`/api/me/purchases/store?${params.toString()}`);
+
+  if (result.ok) {
+    return unwrapApiResponse<StorePurchasesResponse>(result.data);
+  }
+
+  const payload = (result.data ?? {}) as {
+    errorCode?: string;
+    message?: string;
+    error?: string;
+  };
+  const message = payload.message || payload.error || result.errorText || "Erro ao carregar compras.";
+  if (result.status === 403 && (payload.errorCode === "FORBIDDEN" || message.includes("Loja desativada"))) {
+    return {
+      items: [],
+      nextCursor: null,
+    };
+  }
+
+  throw new ApiError(result.status, message);
 }
 
 export async function fetchStorePurchase(orderId: number): Promise<StorePurchaseDetail> {

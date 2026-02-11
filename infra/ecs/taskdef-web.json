@@ -56,9 +56,9 @@
         {"name": "APNS_PRIVATE_KEY_BASE64", "valueFrom": "{{orya/prod/apple:APNS_PRIVATE_KEY_BASE64}}"},
         {"name": "APNS_TOPIC", "valueFrom": "{{orya/prod/apple:APNS_TOPIC}}"},
         {"name": "ADMIN_TOTP_ENCRYPTION_KEY", "valueFrom": "{{orya/prod/app:ADMIN_TOTP_ENCRYPTION_KEY}}"},
+        {"name": "ADMIN_MFA_BREAK_GLASS_TOKEN", "valueFrom": "{{orya/prod/app:ADMIN_MFA_BREAK_GLASS_TOKEN}}"},
         {"name": "ADMIN_USER_IDS", "valueFrom": "{{orya/prod/app:ADMIN_USER_IDS}}"},
         {"name": "ADMIN_ACTION_IP_ALLOWLIST", "valueFrom": "{{orya/prod/app:ADMIN_ACTION_IP_ALLOWLIST}}"},
-        {"name": "ADMIN_BREAK_GLASS_TOKEN", "valueFrom": "{{orya/prod/app:ADMIN_BREAK_GLASS_TOKEN}}"},
         {"name": "ADMIN_MFA_REQUIRED", "valueFrom": "{{orya/prod/app:ADMIN_MFA_REQUIRED}}"},
         {"name": "INFRA_READ_ONLY", "valueFrom": "{{orya/prod/app:INFRA_READ_ONLY}}"}
       ],

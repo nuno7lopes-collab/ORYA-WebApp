@@ -116,7 +116,6 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     setAddressLoading(true);
     try {
       const details = await fetchGeoDetails(item.providerId, {
-        sourceProvider: item.sourceProvider ?? null,
         lat: item.lat,
         lng: item.lng,
       });

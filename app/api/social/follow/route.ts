@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -52,15 +52,20 @@ async function _POST(req: NextRequest) {
         },
       });
 
-      if (await shouldNotify(targetUserId, NotificationType.FOLLOW_REQUEST)) {
-        await createNotification({
-          userId: targetUserId,
-          type: NotificationType.FOLLOW_REQUEST,
-          title: "Novo pedido para seguir",
-          body: "Tens um novo pedido para seguir o teu perfil.",
-          fromUserId: user.id,
-        });
-      }
+      void (async () => {
+        try {
+          if (!(await shouldNotify(targetUserId, NotificationType.FOLLOW_REQUEST))) return;
+          await createNotification({
+            userId: targetUserId,
+            type: NotificationType.FOLLOW_REQUEST,
+            title: "Novo pedido para seguir",
+            body: "Tens um novo pedido para seguir o teu perfil.",
+            fromUserId: user.id,
+          });
+        } catch (err) {
+          console.warn("[social/follow][request-notify]", err);
+        }
+      })();
     }
 
     return jsonWrap({ ok: true, status: "REQUESTED" }, { status: 200 });
@@ -84,7 +89,9 @@ async function _POST(req: NextRequest) {
     where: { requester_id: user.id, target_id: targetUserId },
   });
 
-  await notifyNewFollower({ targetUserId, followerUserId: user.id });
+  void notifyNewFollower({ targetUserId, followerUserId: user.id }).catch((err) => {
+    console.warn("[social/follow][notify-new-follower]", err);
+  });
 
   return jsonWrap({ ok: true, status: "FOLLOWING" }, { status: 200 });
 }

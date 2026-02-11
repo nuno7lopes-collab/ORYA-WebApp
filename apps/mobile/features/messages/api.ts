@@ -102,15 +102,20 @@ export const fetchConversationMessages = async (
 export const sendConversationMessage = async (
   conversationId: string,
   body: string,
+  clientMessageId?: string,
   accessToken?: string | null,
 ): Promise<ConversationMessageSendResponse> => {
+  const resolvedClientMessageId =
+    typeof clientMessageId === "string" && clientMessageId.trim().length > 0
+      ? clientMessageId.trim()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
   const response = await api.requestWithAccessToken<unknown>(
     `/api/me/messages/conversations/${encodeURIComponent(conversationId)}/messages`,
     accessToken,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, clientMessageId: resolvedClientMessageId }),
     },
   );
   return unwrapApiResponse<ConversationMessageSendResponse>(response);

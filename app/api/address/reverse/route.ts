@@ -6,7 +6,6 @@ import { getGeoResolver } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
 import { upsertAddressFromGeoDetails } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { AddressSourceProvider } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -49,12 +48,7 @@ async function _GET(req: NextRequest) {
   }
 
   const lang = resolveLang(req);
-  const sourceProviderParam = req.nextUrl.searchParams.get("sourceProvider");
-  const sourceProvider =
-    sourceProviderParam?.trim().toUpperCase() === AddressSourceProvider.APPLE_MAPS
-      ? AddressSourceProvider.APPLE_MAPS
-      : null;
-  const cacheKey = buildCacheKey(["address-reverse", lat.toFixed(6), lng.toFixed(6), lang, sourceProvider ?? ""]);
+  const cacheKey = buildCacheKey(["address-reverse", lat.toFixed(6), lng.toFixed(6), lang]);
   const cached = getCache(cacheKey);
   if (cached) {
     return jsonWrap({ ok: true, item: cached }, { headers: { "Cache-Control": "public, max-age=600" } });
@@ -62,7 +56,7 @@ async function _GET(req: NextRequest) {
 
   const resolver = getGeoResolver();
   try {
-    const resolved = await resolver.reverse({ lat, lng, lang, sourceProvider: sourceProvider ?? undefined });
+    const resolved = await resolver.reverse({ lat, lng, lang });
     const item = resolved.data;
     if (!item) {
       return jsonWrap({ ok: false, error: "Localização não encontrada." }, { status: 404 });

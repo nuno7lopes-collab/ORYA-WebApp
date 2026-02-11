@@ -51,6 +51,7 @@ const WRAPPER_PADDING = 12;
 const TRACK_PADDING_X = 0;
 const TRACK_PADDING_Y = 0;
 const BUBBLE_GAP = 2;
+const USE_REALTIME_BLUR = Platform.OS === "ios";
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 type FloatingTabBarProps = {
@@ -58,6 +59,34 @@ type FloatingTabBarProps = {
   onSelect: (key: TabKey) => void;
   pagerProgress?: Animated.Value | Animated.AnimatedInterpolation<number>;
 };
+
+function GlassLayer({
+  tint,
+  intensity,
+  fallbackColor,
+  colors,
+}: {
+  tint: "light" | "dark";
+  intensity: number;
+  fallbackColor: string;
+  colors: [string, string] | [string, string, string];
+}) {
+  return (
+    <>
+      {USE_REALTIME_BLUR ? (
+        <BlurView tint={tint} intensity={intensity} style={StyleSheet.absoluteFill} />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: fallbackColor }]} />
+      )}
+      <LinearGradient
+        colors={colors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </>
+  );
+}
 
 export function FloatingTabBar({ activeKey, onSelect, pagerProgress }: FloatingTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -365,12 +394,11 @@ export function FloatingTabBar({ activeKey, onSelect, pagerProgress }: FloatingT
       <View style={[styles.row, { width: rowWidth }]}>
         <View style={[styles.leftPill, { flex: 1 }]}>
           <View pointerEvents="none" style={styles.pillFillWrap}>
-            <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
-            <LinearGradient
+            <GlassLayer
+              tint="dark"
+              intensity={50}
+              fallbackColor="rgba(10, 15, 24, 0.88)"
               colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
             />
           </View>
           <View style={styles.pillBorder} pointerEvents="none" />
@@ -407,12 +435,11 @@ export function FloatingTabBar({ activeKey, onSelect, pagerProgress }: FloatingT
                   >
                     <Animated.View style={[styles.bubble, { transform: [{ scale: bubbleScale }] }]}>
                       <View pointerEvents="none" style={styles.bubbleFillWrap}>
-                        <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
-                        <LinearGradient
+                        <GlassLayer
+                          tint="light"
+                          intensity={16}
+                          fallbackColor="rgba(255,255,255,0.18)"
                           colors={["rgba(255,255,255,0.36)", "rgba(255,255,255,0.18)", "rgba(255,255,255,0.06)"]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={StyleSheet.absoluteFill}
                         />
                       </View>
                     </Animated.View>
@@ -478,12 +505,11 @@ export function FloatingTabBar({ activeKey, onSelect, pagerProgress }: FloatingT
         >
           <View style={styles.rightCircle}>
             <View pointerEvents="none" style={styles.rightFillWrap}>
-              <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
-              <LinearGradient
+              <GlassLayer
+                tint="dark"
+                intensity={50}
+                fallbackColor="rgba(10, 15, 24, 0.88)"
                 colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
               />
             </View>
             <View style={styles.rightBorder} pointerEvents="none" />
@@ -499,12 +525,11 @@ export function FloatingTabBar({ activeKey, onSelect, pagerProgress }: FloatingT
                 ]}
               >
                 <View pointerEvents="none" style={styles.bubbleFillWrap}>
-                  <BlurView tint="light" intensity={16} style={StyleSheet.absoluteFill} />
-                  <LinearGradient
+                  <GlassLayer
+                    tint="light"
+                    intensity={16}
+                    fallbackColor="rgba(255,255,255,0.18)"
                     colors={["rgba(255,255,255,0.36)", "rgba(255,255,255,0.18)", "rgba(255,255,255,0.06)"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFill}
                   />
                 </View>
               </Animated.View>

@@ -49,12 +49,12 @@ export const NetworkPeopleDeck = memo(function NetworkPeopleDeck({
   const handleSwipe = useCallback(
     (action: "follow" | "dismiss") => {
       if (!current) return;
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         if (action === "follow") {
           onFollow(current.id);
         }
         onDismiss(current.id);
-      }, 160);
+      });
     },
     [current, onDismiss, onFollow],
   );

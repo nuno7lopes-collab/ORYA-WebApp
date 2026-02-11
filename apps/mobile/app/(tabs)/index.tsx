@@ -38,6 +38,11 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+const animateLayout = () => {
+  if (Platform.OS !== "ios") return;
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+};
+
 type DiscoverListItem =
   | { kind: "skeleton"; key: string }
   | { kind: "offer"; offer: DiscoverOfferCard };
@@ -81,6 +86,7 @@ export default function DiscoverScreen() {
   const hiddenTagSet = useMemo(() => new Set(hiddenTags), [hiddenTags]);
   const searchInputRef = useRef<TextInput>(null);
   const searchParamsAppliedRef = useRef(false);
+  const previousItemsLengthRef = useRef(0);
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 280);
   const debouncedCity = useDebouncedValue(city, 320);
   const shouldFetchLocation = dataReady && locationSource === "NONE";
@@ -318,15 +324,17 @@ export default function DiscoverScreen() {
   }, [city, dateFilter, locationLabel]);
 
   useEffect(() => {
-    if (Platform.OS === "android" || Platform.OS === "ios") {
-      if (items.length <= 24) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      }
+    const previousLength = previousItemsLengthRef.current;
+    previousItemsLengthRef.current = items.length;
+    if (previousLength === 0 || items.length === 0) return;
+    const delta = Math.abs(items.length - previousLength);
+    if (delta > 0 && delta <= 6) {
+      animateLayout();
     }
   }, [items.length]);
 
   useEffect(() => {
-    if (isFocused) setDataReady(true);
+    setDataReady(isFocused);
   }, [isFocused]);
 
   useEffect(() => {
@@ -367,7 +375,7 @@ export default function DiscoverScreen() {
     const query = typeof params.q === "string" ? params.q.trim() : "";
     if (shouldOpen || query) {
       searchParamsAppliedRef.current = true;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      animateLayout();
       setSearchOpen(true);
       if (query) setSearchQuery(query);
       router.setParams({ search: undefined, q: undefined });
@@ -381,7 +389,7 @@ export default function DiscoverScreen() {
   }, [searchOpen]);
 
   const handleCancelSearch = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    animateLayout();
     setSearchOpen(false);
     setSearchQuery("");
     searchInputRef.current?.blur();
@@ -389,7 +397,7 @@ export default function DiscoverScreen() {
 
   const handleOpenSearch = useCallback(() => {
     if (searchOpen) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    animateLayout();
     setSearchOpen(true);
   }, [searchOpen]);
 

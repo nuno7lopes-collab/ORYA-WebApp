@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { tokens, useTranslation } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
@@ -25,6 +25,7 @@ const MAP_BUTTON_SIZE = 44;
 const MAP_ICON_SIZE = 20;
 const MAP_ICON_NUDGE_Y = -1;
 const MAP_ICON_BOX = 26;
+const USE_GLASS_BLUR = Platform.OS === "ios";
 
 export default function AgoraScreen() {
   const { t } = useTranslation();
@@ -36,6 +37,7 @@ export default function AgoraScreen() {
     items,
     isLoading,
     isError,
+    isFetching,
     isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
@@ -55,6 +57,8 @@ export default function AgoraScreen() {
   const [hiddenTags, setHiddenTags] = useState<string[]>([]);
   const hiddenTagSet = useMemo(() => new Set(hiddenTags), [hiddenTags]);
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const lastFocusRefetchAtRef = useRef(0);
+  const didHandleInitialFocusRef = useRef(false);
 
   const showSkeleton = isLoading && items.length === 0;
   const handleRefresh = useCallback(() => {
@@ -123,14 +127,23 @@ export default function AgoraScreen() {
 
 
   useEffect(() => {
-    if (isFocused) setDataReady(true);
+    setDataReady(isFocused);
   }, [isFocused]);
 
   useEffect(() => {
-    if (isFocused) {
+    if (!isFocused) return;
+    if (!didHandleInitialFocusRef.current) {
+      didHandleInitialFocusRef.current = true;
+      lastFocusRefetchAtRef.current = Date.now();
+      return;
+    }
+    if (isFetching) return;
+    const now = Date.now();
+    if (now - lastFocusRefetchAtRef.current > 45_000) {
+      lastFocusRefetchAtRef.current = now;
       refetch();
     }
-  }, [isFocused, refetch]);
+  }, [isFetching, isFocused, refetch]);
 
   useEffect(() => {
     if (!isError) return;
@@ -257,7 +270,11 @@ export default function AgoraScreen() {
             >
               <View style={styles.mapCircle}>
                 <View pointerEvents="none" style={styles.mapFillWrap}>
-                  <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+                  {USE_GLASS_BLUR ? (
+                    <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+                  ) : (
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(10, 15, 24, 0.88)" }]} />
+                  )}
                   <LinearGradient
                     colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
                     start={{ x: 0, y: 0 }}

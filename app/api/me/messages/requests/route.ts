@@ -11,6 +11,10 @@ import { ChatConversationContextType, Prisma } from "@prisma/client";
 const USER_DM_CONTEXT_ID = "USER_DM";
 const ORG_CONTACT_CONTEXT_ID = "ORG_CONTACT";
 
+function buildDmContextId(userA: string, userB: string) {
+  return [userA, userB].sort().join(":");
+}
+
 async function hasMutualFollow(userId: string, targetUserId: string) {
   const [a, b] = await Promise.all([
     prisma.follows.findFirst({ where: { follower_id: userId, following_id: targetUserId }, select: { follower_id: true } }),
@@ -85,6 +89,7 @@ async function _POST(req: NextRequest) {
     }
 
     if (targetUserId) {
+      const dmContextId = buildDmContextId(user.id, targetUserId);
       const block = await prisma.chatUserBlock.findFirst({
         where: {
           OR: [
@@ -102,10 +107,7 @@ async function _POST(req: NextRequest) {
         where: {
           organizationId: null,
           contextType: ChatConversationContextType.USER_DM,
-          members: {
-            every: { userId: { in: [user.id, targetUserId] } },
-            some: { userId: targetUserId },
-          },
+          contextId: dmContextId,
         },
         select: { id: true },
       });
@@ -115,21 +117,41 @@ async function _POST(req: NextRequest) {
 
       const mutual = await hasMutualFollow(user.id, targetUserId);
       if (mutual) {
-        const conversation = await prisma.chatConversation.create({
-          data: {
-            organizationId: null,
-            type: "DIRECT",
-            contextType: ChatConversationContextType.USER_DM,
-            createdByUserId: user.id,
-            members: {
-              create: [
-                { userId: user.id, role: "MEMBER" },
-                { userId: targetUserId, role: "MEMBER" },
-              ],
+        let conversation: { id: string } | null = null;
+        try {
+          conversation = await prisma.chatConversation.create({
+            data: {
+              organizationId: null,
+              type: "DIRECT",
+              contextType: ChatConversationContextType.USER_DM,
+              contextId: dmContextId,
+              createdByUserId: user.id,
+              members: {
+                create: [
+                  { userId: user.id, role: "MEMBER" },
+                  { userId: targetUserId, role: "MEMBER" },
+                ],
+              },
             },
-          },
-          select: { id: true },
-        });
+            select: { id: true },
+          });
+        } catch (err) {
+          if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) {
+            throw err;
+          }
+          const existingAfterConflict = await prisma.chatConversation.findFirst({
+            where: {
+              organizationId: null,
+              contextType: ChatConversationContextType.USER_DM,
+              contextId: dmContextId,
+            },
+            select: { id: true },
+          });
+          if (!existingAfterConflict) {
+            throw err;
+          }
+          conversation = existingAfterConflict;
+        }
         return jsonWrap({ ok: true, conversationId: conversation.id });
       }
 
@@ -163,21 +185,50 @@ async function _POST(req: NextRequest) {
 
           if (inverse) {
             const now = new Date();
-            const conversation = await tx.chatConversation.create({
-              data: {
+            let conversation = await tx.chatConversation.findFirst({
+              where: {
                 organizationId: null,
-                type: "DIRECT",
                 contextType: ChatConversationContextType.USER_DM,
-                createdByUserId: user.id,
-                members: {
-                  create: [
-                    { userId: user.id, role: "MEMBER" },
-                    { userId: targetUserId, role: "MEMBER" },
-                  ],
-                },
+                contextId: dmContextId,
               },
               select: { id: true },
             });
+            if (!conversation) {
+              try {
+                conversation = await tx.chatConversation.create({
+                  data: {
+                    organizationId: null,
+                    type: "DIRECT",
+                    contextType: ChatConversationContextType.USER_DM,
+                    contextId: dmContextId,
+                    createdByUserId: user.id,
+                    members: {
+                      create: [
+                        { userId: user.id, role: "MEMBER" },
+                        { userId: targetUserId, role: "MEMBER" },
+                      ],
+                    },
+                  },
+                  select: { id: true },
+                });
+              } catch (err) {
+                if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) {
+                  throw err;
+                }
+                const existingAfterConflict = await tx.chatConversation.findFirst({
+                  where: {
+                    organizationId: null,
+                    contextType: ChatConversationContextType.USER_DM,
+                    contextId: dmContextId,
+                  },
+                  select: { id: true },
+                });
+                if (!existingAfterConflict) {
+                  throw err;
+                }
+                conversation = existingAfterConflict;
+              }
+            }
 
             await tx.chatConversationRequest.update({
               where: { id: inverse.id },
@@ -219,6 +270,17 @@ async function _POST(req: NextRequest) {
         });
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          const existingConversation = await prisma.chatConversation.findFirst({
+            where: {
+              organizationId: null,
+              contextType: ChatConversationContextType.USER_DM,
+              contextId: dmContextId,
+            },
+            select: { id: true },
+          });
+          if (existingConversation) {
+            return jsonWrap({ ok: true, conversationId: existingConversation.id });
+          }
           const existingPending = await prisma.chatConversationRequest.findFirst({
             where: {
               requesterId: user.id,

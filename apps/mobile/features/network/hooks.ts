@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   acceptFollowRequest,
   declineFollowRequest,
@@ -20,6 +20,17 @@ const searchUsersKey = ["search", "users"];
 const searchOrgsKey = ["search", "orgs"];
 const publicProfileKey = ["profile", "public"];
 const publicProfileEventsKey = ["profile", "public", "events"];
+const socialFeedKey = ["social", "feed"];
+const SOCIAL_FEED_INVALIDATE_DELAY_MS = 450;
+let socialFeedInvalidateTimer: ReturnType<typeof setTimeout> | null = null;
+
+const scheduleSocialFeedInvalidation = (client: QueryClient) => {
+  if (socialFeedInvalidateTimer) return;
+  socialFeedInvalidateTimer = setTimeout(() => {
+    socialFeedInvalidateTimer = null;
+    void client.invalidateQueries({ queryKey: socialFeedKey });
+  }, SOCIAL_FEED_INVALIDATE_DELAY_MS);
+};
 
 export const useNetworkSuggestions = (enabled = true) =>
   useQuery({
@@ -106,13 +117,19 @@ export const useNetworkActions = () => {
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
 
   const follow = useMutation({
-    mutationFn: async (targetUserId: string) => {
+    mutationFn: (targetUserId: string) => followUser(targetUserId),
+    onMutate: (targetUserId: string) => {
       setPendingUserId(targetUserId);
-      return followUser(targetUserId);
+      updateUserCaches(client, targetUserId, "REQUESTED");
+    },
+    onError: () => {
+      client.invalidateQueries({ queryKey: suggestionsKey });
+      client.invalidateQueries({ queryKey: searchUsersKey });
+      client.invalidateQueries({ queryKey: publicProfileKey });
     },
     onSuccess: (status, targetUserId) => {
       updateUserCaches(client, targetUserId, status);
-      client.invalidateQueries({ queryKey: ["social", "feed"] });
+      scheduleSocialFeedInvalidation(client);
       if (status === "FOLLOWING") {
         client.invalidateQueries({ queryKey: publicProfileEventsKey });
       }
@@ -123,13 +140,19 @@ export const useNetworkActions = () => {
   });
 
   const unfollow = useMutation({
-    mutationFn: async (targetUserId: string) => {
+    mutationFn: (targetUserId: string) => unfollowUser(targetUserId),
+    onMutate: (targetUserId: string) => {
       setPendingUserId(targetUserId);
-      return unfollowUser(targetUserId);
+      updateUserCaches(client, targetUserId, "NONE");
+    },
+    onError: () => {
+      client.invalidateQueries({ queryKey: suggestionsKey });
+      client.invalidateQueries({ queryKey: searchUsersKey });
+      client.invalidateQueries({ queryKey: publicProfileKey });
     },
     onSuccess: (_, targetUserId) => {
       updateUserCaches(client, targetUserId, "NONE");
-      client.invalidateQueries({ queryKey: ["social", "feed"] });
+      scheduleSocialFeedInvalidation(client);
     },
     onSettled: () => {
       setPendingUserId(null);
@@ -160,9 +183,15 @@ export const useFollowRequestActions = () => {
 
   const accept = useMutation({
     mutationFn: async (requestId: number) => {
-      setPendingRequestId(requestId);
       await acceptFollowRequest(requestId);
       return requestId;
+    },
+    onMutate: (requestId: number) => {
+      setPendingRequestId(requestId);
+      removeFromCache(requestId);
+    },
+    onError: () => {
+      client.invalidateQueries({ queryKey: followRequestsKey });
     },
     onSuccess: (requestId) => {
       removeFromCache(requestId);
@@ -175,9 +204,15 @@ export const useFollowRequestActions = () => {
 
   const decline = useMutation({
     mutationFn: async (requestId: number) => {
-      setPendingRequestId(requestId);
       await declineFollowRequest(requestId);
       return requestId;
+    },
+    onMutate: (requestId: number) => {
+      setPendingRequestId(requestId);
+      removeFromCache(requestId);
+    },
+    onError: () => {
+      client.invalidateQueries({ queryKey: followRequestsKey });
     },
     onSuccess: (requestId) => {
       removeFromCache(requestId);
@@ -241,13 +276,20 @@ export const useOrganizationFollowActions = () => {
 
   const follow = useMutation({
     mutationFn: async (organizationId: number) => {
-      setPendingOrgId(organizationId);
       await followOrganization(organizationId);
       return organizationId;
     },
+    onMutate: (organizationId: number) => {
+      setPendingOrgId(organizationId);
+      applyOrganizationStatus(organizationId, true);
+    },
+    onError: () => {
+      client.invalidateQueries({ queryKey: searchOrgsKey });
+      client.invalidateQueries({ queryKey: publicProfileKey });
+    },
     onSuccess: (organizationId) => {
       applyOrganizationStatus(organizationId, true);
-      client.invalidateQueries({ queryKey: ["social", "feed"] });
+      scheduleSocialFeedInvalidation(client);
       client.invalidateQueries({ queryKey: publicProfileEventsKey });
     },
     onSettled: () => {
@@ -257,13 +299,20 @@ export const useOrganizationFollowActions = () => {
 
   const unfollow = useMutation({
     mutationFn: async (organizationId: number) => {
-      setPendingOrgId(organizationId);
       await unfollowOrganization(organizationId);
       return organizationId;
     },
+    onMutate: (organizationId: number) => {
+      setPendingOrgId(organizationId);
+      applyOrganizationStatus(organizationId, false);
+    },
+    onError: () => {
+      client.invalidateQueries({ queryKey: searchOrgsKey });
+      client.invalidateQueries({ queryKey: publicProfileKey });
+    },
     onSuccess: (organizationId) => {
       applyOrganizationStatus(organizationId, false);
-      client.invalidateQueries({ queryKey: ["social", "feed"] });
+      scheduleSocialFeedInvalidation(client);
     },
     onSettled: () => {
       setPendingOrgId(null);

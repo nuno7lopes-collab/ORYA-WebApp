@@ -39,6 +39,10 @@ const toApiPaymentMethod = (method: CheckoutMethod): "card" | "mbway" => {
 
 const CHECKOUT_CONFIG_ERROR = "CONFIG_STRIPE_KEY_MISSING: Stripe publishable key em falta para pagamentos.";
 const CHECKOUT_AUTOPOLL_TIMEOUT_MS = 20_000;
+const BOOKING_POLL_INTERVAL_MS = 1200;
+const CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS = 1500;
+const CHECKOUT_POLL_INTERVAL_PENDING_MS = 4000;
+const CHECKOUT_SETTLEMENT_POLL_MS = 1200;
 
 const isPaymentSettled = (status?: string | null) => status === "PAID" || status === "SUCCEEDED";
 
@@ -270,7 +274,7 @@ export default function CheckoutScreen() {
       const status = await fetchBookingStatus();
       if (status === "CONFIRMED") return;
       if (status && ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(status)) return;
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, BOOKING_POLL_INTERVAL_MS));
     }
     setBookingTimedOut(true);
     trackEvent("booking_confirm_timeout", {
@@ -331,7 +335,10 @@ export default function CheckoutScreen() {
       });
       return;
     }
-    const intervalMs = checkoutStatus.status === "REQUIRES_ACTION" ? 2000 : 6000;
+    const intervalMs =
+      checkoutStatus.status === "REQUIRES_ACTION"
+        ? CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS
+        : CHECKOUT_POLL_INTERVAL_PENDING_MS;
     const timer = setTimeout(() => {
       runStatusCheck();
     }, intervalMs);
@@ -549,7 +556,7 @@ export default function CheckoutScreen() {
         isCheckoutPollingState(latestStatus.status) &&
         Date.now() - pollStartedAt < CHECKOUT_AUTOPOLL_TIMEOUT_MS
       ) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, CHECKOUT_SETTLEMENT_POLL_MS));
         latestStatus = await runStatusCheck({
           purchaseId,
           paymentIntentId,

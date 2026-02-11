@@ -48,15 +48,13 @@ function resolveDomains() {
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
-    const admin = await requireAdminUser();
+    const admin = await requireAdminUser({ req });
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
     const body = (await req.json().catch(() => null)) as
       | {
           mode?: string;
           targetEnv?: string;
           confirmProd?: string;
-          mfaCode?: string;
-          recoveryCode?: string;
         }
       | null;
 
@@ -71,8 +69,6 @@ async function _POST(req: NextRequest) {
       admin,
       targetEnv,
       confirmProd: body?.confirmProd,
-      mfaCode: body?.mfaCode,
-      recoveryCode: body?.recoveryCode,
       ipAllowlist,
     });
     if (!guard.ok) {

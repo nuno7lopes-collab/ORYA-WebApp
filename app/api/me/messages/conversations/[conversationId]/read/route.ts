@@ -31,32 +31,64 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
         userId: user.id,
         conversation: { contextType: { in: B2C_CONTEXT_TYPES } },
       },
-      select: { conversationId: true, userId: true },
+      select: {
+        conversationId: true,
+        userId: true,
+        lastReadMessage: { select: { id: true, createdAt: true } },
+      },
     });
 
     if (!member) {
       return jsonWrap({ error: "FORBIDDEN" }, { status: 403 });
     }
 
-    let resolvedMessageId = messageId;
-    if (!resolvedMessageId) {
+    let resolvedMessage:
+      | {
+          id: string;
+          createdAt: Date;
+        }
+      | null = null;
+
+    if (messageId) {
+      resolvedMessage = await prisma.chatConversationMessage.findFirst({
+        where: { id: messageId, conversationId },
+        select: { id: true, createdAt: true },
+      });
+      if (!resolvedMessage) {
+        return jsonWrap({ error: "INVALID_MESSAGE" }, { status: 400 });
+      }
+    } else {
       const latest = await prisma.chatConversationMessage.findFirst({
         where: { conversationId, deletedAt: null, replyToId: null },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: { id: true },
+        select: { id: true, createdAt: true },
       });
-      resolvedMessageId = latest?.id ?? null;
+      resolvedMessage = latest ?? null;
+    }
+
+    const current = member.lastReadMessage;
+    if (current && resolvedMessage) {
+      const currentTime = current.createdAt.getTime();
+      const nextTime = resolvedMessage.createdAt.getTime();
+      const shouldAdvance = nextTime > currentTime || (nextTime === currentTime && resolvedMessage.id >= current.id);
+      if (!shouldAdvance) {
+        return jsonWrap({ ok: true, updated: false, lastReadMessageId: current.id });
+      }
     }
 
     await prisma.chatConversationMember.update({
       where: { conversationId_userId: { conversationId, userId: user.id } },
       data: {
-        lastReadMessageId: resolvedMessageId,
-        lastReadAt: new Date(),
+        lastReadMessageId: resolvedMessage?.id ?? null,
+        lastReadAt: resolvedMessage?.createdAt ?? new Date(),
       },
     });
 
-    return jsonWrap({ ok: true, lastReadMessageId: resolvedMessageId });
+    return jsonWrap({
+      ok: true,
+      updated: true,
+      lastReadMessageId: resolvedMessage?.id ?? null,
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ error: "UNAUTHENTICATED" }, { status: 401 });

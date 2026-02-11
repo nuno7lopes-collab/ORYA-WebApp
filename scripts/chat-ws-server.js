@@ -12,6 +12,8 @@ const CHAT_EVENTS_CHANNEL = "chat:events";
 const PRESENCE_KEY_PREFIX = "chat:presence:";
 const TYPING_KEY_PREFIX = "chat:typing:";
 const LAST_SEEN_DEBOUNCE_PREFIX = "chat:last_seen_debounce:";
+const WS_PROTOCOL_BASE = "orya-chat.v1";
+const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
 
 const PRESENCE_TTL_SECONDS = Number(process.env.CHAT_PRESENCE_TTL_SECONDS || 60);
 const TYPING_TTL_SECONDS = Number(process.env.CHAT_TYPING_TTL_SECONDS || 5);
@@ -189,6 +191,26 @@ function parseCookies(cookieHeader) {
   }, {});
 }
 
+function parseProtocolHeader(headerValue) {
+  if (!headerValue) return [];
+  const raw = Array.isArray(headerValue) ? headerValue.join(",") : String(headerValue);
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function extractTokenFromProtocols(headerValue) {
+  const protocols = parseProtocolHeader(headerValue);
+  for (const protocol of protocols) {
+    if (protocol.startsWith(WS_AUTH_PROTOCOL_PREFIX)) {
+      const token = protocol.slice(WS_AUTH_PROTOCOL_PREFIX.length).trim();
+      if (token) return token;
+    }
+  }
+  return null;
+}
+
 async function validateToken(token) {
   if (!token) return null;
   try {
@@ -353,137 +375,164 @@ if (redisConfigured) {
 
 const port = Number(process.env.CHAT_WS_PORT || 4001);
 const host = process.env.CHAT_WS_HOST || "127.0.0.1";
-const wss = new WebSocketServer({ port, host });
+const wss = new WebSocketServer({
+  port,
+  host,
+  handleProtocols: (protocols) => {
+    if (!protocols || protocols.size === 0) return undefined;
+    if (protocols.has(WS_PROTOCOL_BASE)) return WS_PROTOCOL_BASE;
+    const first = protocols.values().next().value;
+    return first || false;
+  },
+});
 
-wss.on("connection", async (ws, req) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-  const token = url.searchParams.get("token") || url.searchParams.get("access_token");
-  const orgIdParam = Number(url.searchParams.get("organizationId") || "");
-  const scopeParam = url.searchParams.get("scope");
-  const forceB2C = scopeParam === "b2c";
+wss.on("connection", (ws, req) => {
+  (async () => {
+    const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    const tokenFromProtocol = extractTokenFromProtocols(req.headers["sec-websocket-protocol"]);
+    const token = tokenFromProtocol;
+    const orgIdParam = Number(url.searchParams.get("organizationId") || "");
+    const scopeParam = url.searchParams.get("scope");
+    const forceB2C = scopeParam === "b2c";
 
-  const user = await validateToken(token);
-  if (!user) {
-    ws.close(4001, "UNAUTHENTICATED");
-    return;
-  }
-
-  const organizationId = forceB2C ? null : await resolveOrganizationId(user.id, orgIdParam || null, req.headers.cookie);
-  const scope = organizationId ? "org" : "b2c";
-
-  if (scope === "org") {
-    const membership = await ensureOrgAccess(user.id, organizationId);
-    if (!membership) {
-      ws.close(4003, "FORBIDDEN");
+    const user = await validateToken(token);
+    if (!user) {
+      ws.close(4001, "UNAUTHENTICATED");
       return;
     }
-  }
 
-  const conversationIds = await getConversationIds(user.id, organizationId, scope);
-  const state = {
-    userId: user.id,
-    organizationId,
-    conversations: new Set(conversationIds),
-    token,
-    authTimer: null,
-    scope,
-  };
+    const organizationId = forceB2C ? null : await resolveOrganizationId(user.id, orgIdParam || null, req.headers.cookie);
+    const scope = organizationId ? "org" : "b2c";
 
-  connections.set(ws, state);
-  if (organizationId) {
-    addToMap(organizationConnections, organizationId, ws);
-  }
-  addToMap(userConnections, user.id, ws);
-  for (const convoId of conversationIds) {
-    addToMap(conversationConnections, convoId, ws);
-  }
+    if (scope === "org") {
+      const membership = await ensureOrgAccess(user.id, organizationId);
+      if (!membership) {
+        ws.close(4003, "FORBIDDEN");
+        return;
+      }
+    }
 
-  await setPresenceOnline(user.id);
-  if (organizationId) {
-    await publishEvent({
-      type: "presence:update",
-      organizationId,
+    const conversationIds = await getConversationIds(user.id, organizationId, scope);
+    const state = {
       userId: user.id,
-      status: "online",
-    });
-  }
+      organizationId,
+      conversations: new Set(conversationIds),
+      token,
+      authTimer: null,
+      scope,
+    };
 
-  state.authTimer = setInterval(async () => {
-    const valid = await validateToken(state.token);
-    if (!valid) {
-      ws.close(4001, "AUTH_EXPIRED");
+    connections.set(ws, state);
+    if (organizationId) {
+      addToMap(organizationConnections, organizationId, ws);
     }
-  }, AUTH_RECHECK_MS);
-
-  ws.on("message", async (data) => {
-    let payload;
-    try {
-      payload = JSON.parse(data.toString());
-    } catch {
-      return;
-    }
-    if (!payload || typeof payload !== "object") return;
-
-    if (payload.type === "ping") {
-      await setPresenceOnline(state.userId);
-      ws.send(JSON.stringify({ type: "pong" }));
-      return;
+    addToMap(userConnections, user.id, ws);
+    for (const convoId of conversationIds) {
+      addToMap(conversationConnections, convoId, ws);
     }
 
-    if (payload.type === "conversation:sync") {
-      await syncMembership(ws, state);
-      return;
-    }
-
-    if (payload.type === "typing:start" || payload.type === "typing:stop") {
-      const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : null;
-      if (!conversationId || !state.conversations.has(conversationId)) return;
-
-      if (await ensureRedisClients()) {
-        if (payload.type === "typing:start") {
-          await redisPublisher.set(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`, "1", {
-            EX: TYPING_TTL_SECONDS,
-          });
-        } else {
-          await redisPublisher.del(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`);
-        }
-      }
-
+    await setPresenceOnline(user.id);
+    if (organizationId) {
       await publishEvent({
-        type: payload.type,
-        organizationId: state.organizationId,
-        conversationId,
-        userId: state.userId,
+        type: "presence:update",
+        organizationId,
+        userId: user.id,
+        status: "online",
       });
-      return;
-    }
-  });
-
-  ws.on("close", async () => {
-    connections.delete(ws);
-    if (state.organizationId) {
-      removeFromMap(organizationConnections, state.organizationId, ws);
-    }
-    removeFromMap(userConnections, state.userId, ws);
-    for (const convoId of state.conversations) {
-      removeFromMap(conversationConnections, convoId, ws);
     }
 
-    if (state.authTimer) clearInterval(state.authTimer);
-
-    const remaining = userConnections.get(state.userId);
-    if (!remaining || remaining.size === 0) {
-      await setPresenceOffline(state.userId);
-      await updateLastSeen(state.userId);
-      if (state.organizationId) {
-        await publishEvent({
-          type: "presence:update",
-          organizationId: state.organizationId,
-          userId: state.userId,
-          status: "offline",
-          lastSeenAt: new Date().toISOString(),
-        });
+    state.authTimer = setInterval(async () => {
+      const valid = await validateToken(state.token);
+      if (!valid) {
+        ws.close(4001, "AUTH_EXPIRED");
       }
+    }, AUTH_RECHECK_MS);
+
+    ws.on("message", (data) => {
+      (async () => {
+        let payload;
+        try {
+          payload = JSON.parse(data.toString());
+        } catch {
+          return;
+        }
+        if (!payload || typeof payload !== "object") return;
+
+        if (payload.type === "ping") {
+          await setPresenceOnline(state.userId);
+          ws.send(JSON.stringify({ type: "pong" }));
+          return;
+        }
+
+        if (payload.type === "conversation:sync") {
+          await syncMembership(ws, state);
+          return;
+        }
+
+        if (payload.type === "typing:start" || payload.type === "typing:stop") {
+          const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : null;
+          if (!conversationId || !state.conversations.has(conversationId)) return;
+
+          if (await ensureRedisClients()) {
+            if (payload.type === "typing:start") {
+              await redisPublisher.set(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`, "1", {
+                EX: TYPING_TTL_SECONDS,
+              });
+            } else {
+              await redisPublisher.del(`${TYPING_KEY_PREFIX}${conversationId}:${state.userId}`);
+            }
+          }
+
+          await publishEvent({
+            type: payload.type,
+            organizationId: state.organizationId,
+            conversationId,
+            userId: state.userId,
+          });
+          return;
+        }
+      })().catch((err) => {
+        console.warn("[chat-ws] erro a processar mensagem", err);
+      });
+    });
+
+    ws.on("close", () => {
+      (async () => {
+        connections.delete(ws);
+        if (state.organizationId) {
+          removeFromMap(organizationConnections, state.organizationId, ws);
+        }
+        removeFromMap(userConnections, state.userId, ws);
+        for (const convoId of state.conversations) {
+          removeFromMap(conversationConnections, convoId, ws);
+        }
+
+        if (state.authTimer) clearInterval(state.authTimer);
+
+        const remaining = userConnections.get(state.userId);
+        if (!remaining || remaining.size === 0) {
+          await setPresenceOffline(state.userId);
+          await updateLastSeen(state.userId);
+          if (state.organizationId) {
+            await publishEvent({
+              type: "presence:update",
+              organizationId: state.organizationId,
+              userId: state.userId,
+              status: "offline",
+              lastSeenAt: new Date().toISOString(),
+            });
+          }
+        }
+      })().catch((err) => {
+        console.warn("[chat-ws] erro a fechar conexão", err);
+      });
+    });
+  })().catch((err) => {
+    console.error("[chat-ws] erro na conexão", err);
+    try {
+      ws.close(1011, "INTERNAL_ERROR");
+    } catch {
+      // ignore close failures
     }
   });
 });

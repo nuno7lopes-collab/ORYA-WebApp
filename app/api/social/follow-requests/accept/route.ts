@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -49,15 +49,20 @@ async function _POST(req: NextRequest) {
     });
   });
 
-  if (await shouldNotify(request.requester_id, NotificationType.FOLLOW_ACCEPT)) {
-    await createNotification({
-      userId: request.requester_id,
-      type: NotificationType.FOLLOW_ACCEPT,
-      title: "Pedido aceite",
-      body: "O teu pedido para seguir foi aceite.",
-      fromUserId: user.id,
-    });
-  }
+  void (async () => {
+    try {
+      if (!(await shouldNotify(request.requester_id, NotificationType.FOLLOW_ACCEPT))) return;
+      await createNotification({
+        userId: request.requester_id,
+        type: NotificationType.FOLLOW_ACCEPT,
+        title: "Pedido aceite",
+        body: "O teu pedido para seguir foi aceite.",
+        fromUserId: user.id,
+      });
+    } catch (err) {
+      console.warn("[social/follow-requests/accept][notify]", err);
+    }
+  })();
 
   return jsonWrap({ ok: true }, { status: 200 });
 }

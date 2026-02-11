@@ -21,10 +21,9 @@ export async function fetchGeoAutocomplete(query: string, opts?: { lat?: number;
 
 export async function fetchGeoDetails(
   providerId: string,
-  opts?: { sourceProvider?: string | null; lat?: number | null; lng?: number | null }
+  opts?: { lat?: number | null; lng?: number | null }
 ) {
   const params = new URLSearchParams({ providerId });
-  if (opts?.sourceProvider) params.set("sourceProvider", opts.sourceProvider);
   if (Number.isFinite(opts?.lat ?? NaN) && Number.isFinite(opts?.lng ?? NaN)) {
     params.set("lat", String(opts?.lat));
     params.set("lng", String(opts?.lng));

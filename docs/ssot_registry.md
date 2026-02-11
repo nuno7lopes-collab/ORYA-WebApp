@@ -478,7 +478,7 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 ---
 
 ## Chat/Mensagens (SSOT)
-**Fonte:** `docs/blueprint.md` (D1.1 + D1.2 + 9.14 + 9.15)
+**Fonte:** `docs/blueprint.md` (D1.1 + D1.2 + 9.14 + 9.15), `docs/chat_messaging_contracts.md`
 
 **Contrato SSOT**
 - Chat de evento/reserva (B2C) é armazenado em `chat_threads` + `chat_messages`.
@@ -497,11 +497,19 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 - Chat interno V1 (internal_chat_* e /api/organizacao/chat/canais) foi removido.
 - Notificações e silêncio são por conversa (default ligado).
 - Texto apenas na Fase 1; “anular envio” até 2 minutos.
+- WS auth: token sensível **não** pode ir em query string; canónico via `Sec-WebSocket-Protocol`.
+- Escrita de mensagem é **commit-first**: falha de realtime/push pós-commit não converte envio em erro.
+- Envio B2C de mensagem exige `clientMessageId` para idempotência.
+- `lastReadMessageId` deve pertencer à conversa e só pode avançar (monotónico).
+- `DELETE` de reação é idempotente (reação inexistente não é erro).
+- Unicidade de conversa por contexto/par é obrigatória ao nível de DB.
+- Mensagens com anexos exigem `metadata.path`, `metadata.bucket` e `metadata.checksumSha256` (SHA-256 hex 64).
 
 **Estado:** PARTIAL
 **Evidência:** `prisma/schema.prisma` (chat_*),
 `app/api/chat/*`, `app/api/chat/threads/*`, `app/api/cron/chat/maintenance/route.ts`,
-`apps/mobile/features/chat/*`, `apps/mobile/app/(tabs)/messages.tsx`.
+`apps/mobile/features/chat/*`, `apps/mobile/app/(tabs)/messages.tsx`,
+`docs/chat_messaging_contracts.md`.
 
 ---
 

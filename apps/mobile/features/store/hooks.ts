@@ -206,6 +206,7 @@ export function useStorePurchases(enabled = true) {
     enabled,
     staleTime: 20_000,
     refetchOnWindowFocus: false,
+    retry: false,
   });
 }
 

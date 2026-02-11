@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
+import { Prisma } from "@prisma/client";
 
 async function _GET(req: NextRequest) {
   const startedAt = new Date();
@@ -13,11 +14,7 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 
-    const now = new Date();
-
-    const threadIds: string[] = [];
-
-    await prisma.$executeRaw`
+    const updatedThreads = await prisma.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`
       UPDATE app_v3.chat_threads
       SET status = (
         CASE
@@ -36,9 +33,13 @@ async function _GET(req: NextRequest) {
           ELSE 'CLOSED'
         END
       )::app_v3."ChatThreadStatus"
-    `;
+      RETURNING id, status::text
+    `);
 
-    const expiredIds: string[] = [];
+    const threadIds = updatedThreads.map((row) => row.id);
+    const expiredIds = updatedThreads
+      .filter((row) => row.status === "CLOSED")
+      .map((row) => row.id);
 
     await recordCronHeartbeat("chat-maintenance", { status: "SUCCESS", startedAt });
     return jsonWrap({

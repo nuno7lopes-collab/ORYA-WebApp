@@ -138,8 +138,8 @@ async function _DELETE(req: NextRequest, context: { params: { messageId: string 
       return jsonWrap({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
     }
 
-    await prisma.chatMessageReaction.delete({
-      where: { messageId_userId_emoji: { messageId, userId: user.id, emoji } },
+    await prisma.chatMessageReaction.deleteMany({
+      where: { messageId, userId: user.id, emoji },
     });
 
     const reactions = await prisma.chatMessageReaction.findMany({

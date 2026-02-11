@@ -4,7 +4,11 @@ import { useAuth } from "../../lib/auth";
 import { registerForPushToken } from "../../lib/push";
 import { api } from "../../lib/api";
 import { useQueryClient } from "@tanstack/react-query";
-import { notificationsKeys, useNotificationsUnread } from "../../features/notifications/hooks";
+import {
+  invalidateNotificationsAll,
+  invalidateNotificationsUnread,
+  useNotificationsUnread,
+} from "../../features/notifications/hooks";
 import { useRouter } from "expo-router";
 import { openNotificationLink } from "../../lib/notifications";
 
@@ -119,7 +123,7 @@ export function PushGate() {
       .then((Notifications) => {
         if (!active) return;
         receiveSub = Notifications.addNotificationReceivedListener(() => {
-          queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+          invalidateNotificationsUnread(queryClient);
         });
 
         responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -127,7 +131,8 @@ export function PushGate() {
           const deepLink = typeof data?.deepLink === "string" ? data.deepLink : null;
           const ctaUrl = typeof data?.ctaUrl === "string" ? data.ctaUrl : null;
           openNotificationLink(router, deepLink ?? ctaUrl ?? null).catch(() => undefined);
-          queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+          invalidateNotificationsAll(queryClient);
+          invalidateNotificationsUnread(queryClient);
         });
 
         Notifications.getLastNotificationResponseAsync()

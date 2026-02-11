@@ -36,6 +36,12 @@ export default function PublicProfileScreen() {
   const canView = privacy?.canView ?? true;
   const eventsEnabled = Boolean(username) && profileQuery.isSuccess && canView;
   const eventsQuery = usePublicProfileEvents(username, accessToken, eventsEnabled);
+  const data = profileQuery.data ?? null;
+  const profile = data?.profile ?? null;
+  const isUser = data?.type === "user";
+  const profileId = profile?.id ?? null;
+  const organizationIdRaw = !isUser && profileId ? Number(profileId) : null;
+  const organizationId = Number.isFinite(organizationIdRaw ?? NaN) ? (organizationIdRaw as number) : null;
   const publicAgendaQuery = usePublicOrganizationAgenda(
     !isUser && organizationId ? organizationId : null,
     Boolean(!isUser && organizationId && canView),
@@ -49,15 +55,9 @@ export default function PublicProfileScreen() {
   const [followingOpen, setFollowingOpen] = useState(false);
   const viewSentRef = useRef(false);
 
-  const data = profileQuery.data ?? null;
-  const profile = data?.profile ?? null;
-  const isUser = data?.type === "user";
   const isSelf = Boolean(data?.isSelf);
   const isLocked = Boolean(privacy?.isPrivate && !canView);
-  const profileId = profile?.id ?? null;
   const userProfileId = isUser && profileId ? String(profileId) : null;
-  const organizationIdRaw = !isUser && profileId ? Number(profileId) : null;
-  const organizationId = Number.isFinite(organizationIdRaw ?? NaN) ? (organizationIdRaw as number) : null;
   const coverUrl = profile?.coverUrl ?? null;
   const avatarUrl = profile?.avatarUrl ?? null;
   const canOpenFollowers = Boolean(profileId);
@@ -100,13 +100,17 @@ export default function PublicProfileScreen() {
     accessToken,
     Boolean(followingOpen && isUser && userProfileId),
   );
+  const pendingUserFollow = Boolean(isUser && userProfileId && userActions.pendingUserId === userProfileId);
+  const pendingOrgFollow = Boolean(!isUser && organizationId && orgActions.pendingOrgId === organizationId);
+  const followPending = pendingUserFollow || pendingOrgFollow;
 
   const followLabel = useMemo(() => {
+    if (followPending) return "A atualizar...";
     if (!data?.viewer) return "Seguir";
     if (data.viewer.isRequested) return "Pedido enviado";
     if (data.viewer.isFollowing) return "A seguir";
     return "Seguir";
-  }, [data?.viewer]);
+  }, [data?.viewer, followPending]);
 
   useEffect(() => {
     if (!accessToken || viewSentRef.current) return;
@@ -127,6 +131,7 @@ export default function PublicProfileScreen() {
   const handleFollowPress = () => {
     if (!data || !profile) return;
     if (isSelf) return;
+    if (followPending) return;
     if (isUser) {
       const userId = String(profile.id);
       if (data.viewer?.isFollowing || data.viewer?.isRequested) {
@@ -195,6 +200,7 @@ export default function PublicProfileScreen() {
             {!isSelf ? (
               <Pressable
                 onPress={handleFollowPress}
+                disabled={followPending}
                 className={
                   data?.viewer?.isFollowing || data?.viewer?.isRequested
                     ? "rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
@@ -202,7 +208,11 @@ export default function PublicProfileScreen() {
                 }
                 accessibilityRole="button"
                 accessibilityLabel={followLabel}
-                accessibilityState={{ selected: Boolean(data?.viewer?.isFollowing || data?.viewer?.isRequested) }}
+                accessibilityState={{
+                  disabled: followPending,
+                  selected: Boolean(data?.viewer?.isFollowing || data?.viewer?.isRequested),
+                }}
+                style={{ opacity: followPending ? 0.7 : 1 }}
               >
                 <Text
                   className={

@@ -13,8 +13,11 @@ export function mapGeoError(err: unknown, fallback: string): GeoErrorResponse {
   if (message.includes("APPLE_MAPS_COOLDOWN")) {
     return { status: 503, message: "Apple Maps temporariamente indisponível. Tenta novamente em instantes." };
   }
-  if (message.includes("APPLE_MAPS_ONLY")) {
-    return { status: 400, message: "Esta operação só suporta Apple Maps." };
+  if (message.startsWith("APPLE_MAPS_ERROR:401:")) {
+    return {
+      status: 502,
+      message: "Apple Maps não autorizado. Verifica TEAM_ID, KEY_ID, PRIVATE_KEY e ORIGIN da Apple Maps.",
+    };
   }
   if (message.startsWith("APPLE_MAPS_ERROR:")) {
     return { status: 502, message: "Apple Maps indisponível neste momento." };

@@ -6,13 +6,6 @@ import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import type { RequestContext } from "@/lib/http/requestContext";
-import { verifyMfaCode } from "@/lib/admin/mfa";
-import {
-  readAdminHost,
-  readMfaSessionCookie,
-  shouldRequireAdminMfa,
-  verifyMfaSession,
-} from "@/lib/admin/mfaSession";
 import type { Prisma } from "@prisma/client";
 
 const execFileAsync = promisify(execFile);
@@ -106,8 +99,6 @@ export async function requireInfraAction(params: {
   admin: AdminUser;
   targetEnv: TargetEnv;
   confirmProd?: unknown;
-  mfaCode?: string | null;
-  recoveryCode?: string | null;
   ipAllowlist?: string[];
 }) {
   if (process.env.INFRA_READ_ONLY !== "false") {
@@ -119,31 +110,10 @@ export async function requireInfraAction(params: {
     return { ok: false as const, status: 403, error: confirmError, message: "Confirmação PROD necessária." };
   }
 
-  const breakGlass = process.env.ADMIN_BREAK_GLASS_TOKEN;
-  const headerBreakGlass = params.req.headers.get("x-orya-break-glass");
-  const bypassAllowlist = breakGlass && headerBreakGlass === breakGlass;
-
   const allowlist = params.ipAllowlist ?? parseAllowlist(process.env.ADMIN_ACTION_IP_ALLOWLIST);
   const clientIp = getClientIp(params.req);
-  if (!bypassAllowlist && !isIpAllowed(clientIp, allowlist)) {
+  if (!isIpAllowed(clientIp, allowlist)) {
     return { ok: false as const, status: 403, error: "IP_NOT_ALLOWED", message: "IP não permitido." };
-  }
-
-  const host = await readAdminHost(params.req);
-  const requiresMfa = shouldRequireAdminMfa(host);
-  if (requiresMfa) {
-    const token = await readMfaSessionCookie(params.req);
-    const session = verifyMfaSession(token, params.admin.userId);
-    if (!session.ok) {
-      const mfaResult = await verifyMfaCode({
-        userId: params.admin.userId,
-        code: params.mfaCode,
-        recoveryCode: params.recoveryCode,
-      });
-      if (!mfaResult.ok) {
-        return { ok: false as const, status: 401, error: mfaResult.error, message: "2FA inválido." };
-      }
-    }
   }
 
   return { ok: true as const };

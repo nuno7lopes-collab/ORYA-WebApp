@@ -2,7 +2,6 @@ export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import crypto from "crypto";
 import { MediaOwnerType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -13,7 +12,6 @@ import { isChatPollingOnly, isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import {
   isChatRedisAvailable,
-  isChatRedisUnavailableError,
   isChatUserOnline,
   publishChatEvent,
 } from "@/lib/chat/redis";
@@ -124,14 +122,6 @@ function normalizeAttachments(raw: unknown) {
   return { ok: true as const, items: typed };
 }
 
-async function computeChecksumFromStorage(bucket: string, objectPath: string): Promise<string | null> {
-  const downloaded = await supabaseAdmin.storage.from(bucket).download(objectPath);
-  if (downloaded.error || !downloaded.data) return null;
-  const buffer = Buffer.from(await downloaded.data.arrayBuffer());
-  if (!buffer.byteLength) return null;
-  return crypto.createHash("sha256").update(buffer).digest("hex");
-}
-
 async function prepareAttachmentAssets(items: NormalizedAttachment[]) {
   if (items.length === 0) {
     return { ok: true as const, items: [] as PreparedAttachmentAsset[] };
@@ -151,10 +141,9 @@ async function prepareAttachmentAssets(items: NormalizedAttachment[]) {
         : process.env.CHAT_ATTACHMENTS_BUCKET ?? env.uploadsBucket ?? "uploads";
     const checksumRaw =
       typeof metadata.checksumSha256 === "string" && metadata.checksumSha256.trim()
-        ? metadata.checksumSha256.trim()
+        ? metadata.checksumSha256.trim().toLowerCase()
         : null;
-    const checksumSha256 = checksumRaw ?? (await computeChecksumFromStorage(bucket, objectPath));
-    if (!checksumSha256) {
+    if (!checksumRaw || !/^[a-f0-9]{64}$/.test(checksumRaw)) {
       return { ok: false as const, error: "ATTACHMENT_CHECKSUM_FAILED" };
     }
     const originalFilename =
@@ -166,7 +155,7 @@ async function prepareAttachmentAssets(items: NormalizedAttachment[]) {
     prepared.push({
       bucket,
       objectPath,
-      checksumSha256,
+      checksumSha256: checksumRaw,
       mimeType: entry.mime,
       sizeBytes: entry.size,
       originalFilename,
@@ -511,12 +500,18 @@ async function _POST(req: NextRequest) {
     const messageWithUrls = await resolveMessageAttachments(message);
     const messageForBroadcast = mapSenderForB2C(messageWithUrls, member);
 
-    await publishChatEvent({
-      type: "message:new",
-      organizationId: organization.id,
-      conversationId,
-      message: messageForBroadcast,
-    });
+    const warnings: string[] = [];
+    try {
+      await publishChatEvent({
+        type: "message:new",
+        organizationId: organization.id,
+        conversationId,
+        message: messageForBroadcast,
+      });
+    } catch (err) {
+      warnings.push("REALTIME_DEGRADED");
+      console.warn("[chat] falha a publicar mensagem em realtime", err);
+    }
 
     const recipients = await prisma.chatConversationMember.findMany({
       where: {
@@ -531,44 +526,53 @@ async function _POST(req: NextRequest) {
       buildPreview(message.body ?? null) || (message.attachments.length ? "Anexo" : "");
 
     if (isChatPollingOnly()) {
-      return jsonWrap({ ok: true, message: messageForBroadcast });
+      return jsonWrap({
+        ok: true,
+        message: messageForBroadcast,
+        ...(warnings.length ? { warnings } : {}),
+      });
     }
 
-    if (!isChatRedisAvailable()) {
-      console.warn("[chat] redis indisponível; a ignorar notificações offline.");
-    } else {
-      for (const recipient of recipients) {
-        if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
-        const online = await isChatUserOnline(recipient.userId);
-        if (online) continue;
-        await enqueueNotification({
-          dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
-          userId: recipient.userId,
-          notificationType: "CHAT_MESSAGE",
-          payload: {
-            conversationId,
-            messageId: message.id,
-            senderId: user.id,
-            preview,
-            organizationId: organization.id,
-          },
-        });
+    try {
+      if (!isChatRedisAvailable()) {
+        console.warn("[chat] redis indisponível; a ignorar notificações offline.");
+      } else {
+        for (const recipient of recipients) {
+          if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
+          const online = await isChatUserOnline(recipient.userId);
+          if (online) continue;
+          await enqueueNotification({
+            dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
+            userId: recipient.userId,
+            notificationType: "CHAT_MESSAGE",
+            payload: {
+              conversationId,
+              messageId: message.id,
+              senderId: user.id,
+              preview,
+              organizationId: organization.id,
+            },
+          });
+        }
       }
+    } catch (err) {
+      if (!warnings.includes("REALTIME_DEGRADED")) {
+        warnings.push("REALTIME_DEGRADED");
+      }
+      console.warn("[chat] falha em notificações offline", err);
     }
 
-    return jsonWrap({ ok: true, message: messageForBroadcast });
+    return jsonWrap({
+      ok: true,
+      message: messageForBroadcast,
+      ...(warnings.length ? { warnings } : {}),
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap(
-        { ok: false, error: err.code },
-        { status: 503 },
-      );
     }
     console.error("POST /api/chat/messages error:", err);
     return jsonWrap({ ok: false, error: "Erro ao enviar mensagem." }, { status: 500 });

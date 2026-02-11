@@ -9,12 +9,10 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
 import {
   isChatRedisAvailable,
-  isChatRedisUnavailableError,
   isChatUserOnline,
   publishChatEvent,
 } from "@/lib/chat/redis";
 import { enqueueNotification } from "@/domain/notifications/outbox";
-import crypto from "crypto";
 import { ChatConversationContextType, Prisma } from "@prisma/client";
 
 const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
@@ -384,55 +382,80 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
     }
 
     const clientMessageId =
-      typeof payload?.clientMessageId === "string" && payload.clientMessageId.trim().length > 0
-        ? payload.clientMessageId.trim()
-        : crypto.randomUUID();
+      typeof payload?.clientMessageId === "string" ? payload.clientMessageId.trim() : "";
+    if (!clientMessageId) {
+      return jsonWrap({ error: "INVALID_CLIENT_MESSAGE_ID" }, { status: 400 });
+    }
 
-    const message = await prisma.chatConversationMessage.create({
-      data: {
+    const messageSelect = {
+      id: true,
+      body: true,
+      createdAt: true,
+      deletedAt: true,
+      senderId: true,
+    } as const;
+
+    const uniqueWhere = {
+      conversationId_senderId_clientMessageId: {
         conversationId,
-        organizationId: conversation.organizationId,
         senderId: user.id,
-        body,
         clientMessageId,
-        kind: "TEXT",
       },
-      select: {
-        id: true,
-        body: true,
-        createdAt: true,
-        deletedAt: true,
-        senderId: true,
-      },
+    };
+
+    let message = await prisma.chatConversationMessage.findUnique({
+      where: uniqueWhere,
+      select: messageSelect,
     });
 
-    await prisma.chatConversation.update({
-      where: { id: conversationId },
-      data: { lastMessageAt: message.createdAt, lastMessageId: message.id },
-    });
+    if (!message) {
+      try {
+        message = await prisma.$transaction(async (tx) => {
+          const created = await tx.chatConversationMessage.create({
+            data: {
+              conversationId,
+              organizationId: conversation.organizationId,
+              senderId: user.id,
+              body,
+              clientMessageId,
+              kind: "TEXT",
+            },
+            select: messageSelect,
+          });
+
+          await tx.chatConversation.update({
+            where: { id: conversationId },
+            data: { lastMessageAt: created.createdAt, lastMessageId: created.id },
+          });
+
+          await tx.chatConversationMember.update({
+            where: { conversationId_userId: { conversationId, userId: user.id } },
+            data: { lastReadMessageId: created.id, lastReadAt: created.createdAt },
+          });
+
+          return created;
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          message = await prisma.chatConversationMessage.findUnique({
+            where: uniqueWhere,
+            select: messageSelect,
+          });
+          if (!message) {
+            return jsonWrap({ error: "DUPLICATE_MESSAGE" }, { status: 409 });
+          }
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!message) {
+      return jsonWrap({ error: "MESSAGE_NOT_CREATED" }, { status: 500 });
+    }
 
     const viewerIsCustomer = conversation.customerId === user.id;
     const members = conversation.members;
-
-    await publishChatEvent({
-      type: "message:new",
-      organizationId: conversation.organizationId ?? undefined,
-      conversationId,
-      message: {
-        id: message.id,
-        conversationId,
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        deletedAt: null,
-        sender: mapSenderDisplay({
-          senderId: message.senderId,
-          members,
-          viewerIsCustomer,
-          viewerId: user.id,
-          organization: conversation.organization,
-        }),
-      },
-    });
 
     const recipients = await prisma.chatConversationMember.findMany({
       where: { conversationId, userId: { not: user.id } },
@@ -441,26 +464,59 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
 
     const now = new Date();
     const preview = body.length > 160 ? `${body.slice(0, 157)}…` : body;
+    const warnings: string[] = [];
 
-    if (isChatRedisAvailable()) {
-      for (const recipient of recipients) {
-        if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
-        const online = await isChatUserOnline(recipient.userId);
-        if (online) continue;
-        await enqueueNotification({
-          dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
-          userId: recipient.userId,
-          notificationType: "CHAT_MESSAGE",
-          payload: {
-            conversationId,
-            messageId: message.id,
-            senderId: user.id,
-            preview,
-            organizationId: conversation.organizationId ?? null,
-            contextType: conversation.contextType,
-          },
-        });
+    try {
+      await publishChatEvent({
+        type: "message:new",
+        organizationId: conversation.organizationId ?? undefined,
+        conversationId,
+        message: {
+          id: message.id,
+          conversationId,
+          body: message.body,
+          createdAt: message.createdAt.toISOString(),
+          deletedAt: null,
+          sender: mapSenderDisplay({
+            senderId: message.senderId,
+            members,
+            viewerIsCustomer,
+            viewerId: user.id,
+            organization: conversation.organization,
+          }),
+        },
+      });
+    } catch (err) {
+      warnings.push("REALTIME_DEGRADED");
+      console.warn("[api/me/messages/conversations/messages][post] realtime degraded", err);
+    }
+
+    try {
+      if (isChatRedisAvailable()) {
+        for (const recipient of recipients) {
+          if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
+          const online = await isChatUserOnline(recipient.userId);
+          if (online) continue;
+          await enqueueNotification({
+            dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
+            userId: recipient.userId,
+            notificationType: "CHAT_MESSAGE",
+            payload: {
+              conversationId,
+              messageId: message.id,
+              senderId: user.id,
+              preview,
+              organizationId: conversation.organizationId ?? null,
+              contextType: conversation.contextType,
+            },
+          });
+        }
       }
+    } catch (err) {
+      if (!warnings.includes("REALTIME_DEGRADED")) {
+        warnings.push("REALTIME_DEGRADED");
+      }
+      console.warn("[api/me/messages/conversations/messages][post] offline notifications degraded", err);
     }
 
     return jsonWrap({
@@ -477,13 +533,11 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
           organization: conversation.organization,
         }),
       },
+      ...(warnings.length ? { warnings } : {}),
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ error: "UNAUTHENTICATED" }, { status: 401 });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ error: err.code }, { status: 503 });
     }
     console.error("[api/me/messages/conversations/messages][post] error", err);
     return jsonWrap({ error: "Erro ao enviar mensagem." }, { status: 500 });

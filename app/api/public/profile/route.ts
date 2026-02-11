@@ -144,7 +144,7 @@ async function _GET(req: NextRequest) {
   const resolved = await resolveUsernameOwner(username, {
     includeDeletedUser: false,
     requireActiveOrganization: true,
-    backfillGlobalUsername: true,
+    backfillGlobalUsername: false,
   });
 
   if (resolved?.ownerType === "user") {
