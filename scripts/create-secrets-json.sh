@@ -111,6 +111,17 @@ for path, value in paths:
     # Fallback for non-string values
     value_by_key[env_key] = str(value)
 
+# Backward compatibility for renamed admin hard-cut token.
+# Some older secret bundles still use ADMIN_BREAK_GLASS_TOKEN.
+# If the new key is missing, mirror the legacy value into the new key
+# so ECS task definitions that expect ADMIN_MFA_BREAK_GLASS_TOKEN do not fail.
+legacy_break_glass_key = "ADMIN_BREAK_GLASS_TOKEN"
+new_break_glass_key = "ADMIN_MFA_BREAK_GLASS_TOKEN"
+legacy_break_glass_value = value_by_key.get(legacy_break_glass_key)
+if new_break_glass_key not in value_by_key and isinstance(legacy_break_glass_value, str) and legacy_break_glass_value.strip():
+    value_by_key[new_break_glass_key] = legacy_break_glass_value
+    missing_keys.discard(new_break_glass_key)
+
 SUPABASE_KEYS = {
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE",

@@ -435,7 +435,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const lastEventCategories = useRef<string[]>([]);
   const [hydratedFromParams, setHydratedFromParams] = useState(false);
 
-  // City via geolocation + Mapbox (opcional)
+  // City via geolocation (opcional)
   // Geolocation desativada para evitar preencher com valores inválidos
 
   const effectiveMaxParam = priceMax >= 100 ? null : priceMax;

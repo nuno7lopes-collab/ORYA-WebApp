@@ -35,7 +35,7 @@ describe("apple-token endpoint", () => {
     expect(json.result.token.split(".").length).toBe(3);
   });
 
-  it("dev sem credenciais devolve fallback", async () => {
+  it("dev sem credenciais devolve estado apple não configurado", async () => {
     process.env.NODE_ENV = "development";
     delete process.env.APPLE_MAPS_TEAM_ID;
     delete process.env.APPLE_MAPS_KEY_ID;
@@ -45,7 +45,7 @@ describe("apple-token endpoint", () => {
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(json.ok).toBe(true);
-    expect(json.result.provider).toBe("osm");
+    expect(json.result.provider).toBe("apple_maps_unconfigured");
   });
 
   it("prod sem credenciais falha", async () => {
