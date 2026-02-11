@@ -1,10 +1,12 @@
-import { createClient, type RedisClientType } from "redis";
+import { createClient } from "redis";
+
+type AnyRedisClient = ReturnType<typeof createClient>;
 
 type RedisRole = "commands" | "publisher" | "subscriber";
 
 type RedisHandle = {
-  client: RedisClientType | null;
-  connecting: Promise<RedisClientType> | null;
+  client: AnyRedisClient | null;
+  connecting: Promise<AnyRedisClient> | null;
 };
 
 const redisHandles: Record<RedisRole, RedisHandle> = {
@@ -49,8 +51,10 @@ async function getRoleClient(role: RedisRole) {
   if (!handle.client) {
     handle.client = createRoleClient(role);
   }
-
   const client = handle.client;
+  if (!client) {
+    throw new Error("REDIS_CLIENT_INIT_FAILED");
+  }
   if (client.isOpen) {
     return client;
   }

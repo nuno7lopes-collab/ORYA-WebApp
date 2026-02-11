@@ -145,7 +145,7 @@ async function _GET(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/products/[id]/options/[optionId]/values error:", err);
+    console.error("GET /api/org/[orgId]/store/products/[id]/options/[optionId]/values error:", err);
     return fail(500, "Erro ao carregar valores.");
   }
 }
@@ -238,7 +238,7 @@ async function _POST(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/products/[id]/options/[optionId]/values error:", err);
+    console.error("POST /api/org/[orgId]/store/products/[id]/options/[optionId]/values error:", err);
     return fail(500, "Erro ao criar valor.");
   }
 }

@@ -172,7 +172,9 @@ export default function OrganizationTopBar({
     }
     if (pathname?.startsWith("/organizacao/scan")) return setApp("Check-in", "CHECKIN");
     if (pathname?.startsWith("/organizacao/crm")) return setApp("CRM", "CRM");
-    if (pathname?.startsWith("/organizacao/loja")) return setApp("Loja", "LOJA");
+    if (pathname?.startsWith("/organizacao/loja") || pathname?.startsWith("/org/")) {
+      if (pathname?.includes("/loja")) return setApp("Loja", "LOJA");
+    }
     if (pathname?.startsWith("/organizacao/staff") || pathname?.startsWith("/organizacao/treinadores")) {
       return setApp("Equipa", "STAFF");
     }
@@ -282,7 +284,10 @@ export default function OrganizationTopBar({
     return "overview";
   }, [activeObjective, moduleState.primary, pathname, searchParams]);
   const isDashboardOverview = pathname === "/organizacao" && (!searchParams?.get("tab") || searchParams?.get("tab") === "overview");
-  const isStoreRoute = pathname?.startsWith("/organizacao/loja");
+  const isStoreRoute = Boolean(
+    pathname?.startsWith("/organizacao/loja") ||
+      (pathname?.startsWith("/org/") && pathname?.includes("/loja")),
+  );
   const isCrmRoute = pathname?.startsWith("/organizacao/crm");
 
   const objectiveModules = useMemo(() => {
@@ -543,7 +548,7 @@ export default function OrganizationTopBar({
           <div className="order-3 flex w-full min-w-0 items-center gap-2 lg:order-none lg:flex-1">
             {isStoreRoute ? (
               <StoreAdminSubnav
-                baseHref="/organizacao/loja"
+                baseHref={activeOrg?.id ? `/org/${activeOrg.id}/loja` : "/organizacao/organizations"}
                 variant="topbar"
                 className="w-full max-w-full"
               />

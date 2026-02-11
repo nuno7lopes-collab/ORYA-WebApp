@@ -642,6 +642,10 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
 
           const delegate = (client as any)[model] as Record<string, (...input: any[]) => Promise<any>> | undefined;
           if (!delegate) return query(args);
+          const columns = await resolveModelColumns(client, model);
+          if (columns && !columns.has("env")) {
+            return query(args);
+          }
 
           const safeArgs = (args ?? {}) as Record<string, unknown>;
           const executeReadWithEventFallback = async (

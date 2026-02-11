@@ -137,7 +137,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/bundles/[id]/items error:", err);
+    console.error("GET /api/org/[orgId]/store/bundles/[id]/items error:", err);
     return fail(500, "Erro ao carregar items.");
   }
 }
@@ -229,7 +229,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/bundles/[id]/items error:", err);
+    console.error("POST /api/org/[orgId]/store/bundles/[id]/items error:", err);
     return fail(500, "Erro ao criar item.");
   }
 }

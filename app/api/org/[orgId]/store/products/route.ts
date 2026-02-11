@@ -6,7 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { OrganizationMemberRole, StoreProductStatus, StoreStockPolicy } from "@prisma/client";
+import { normalizeStoreVisibility } from "@/lib/store/visibility";
+import { OrganizationMemberRole, StoreStockPolicy, StoreVisibility } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -32,8 +33,7 @@ const createProductSchema = z.object({
   requiresShipping: z.boolean().optional(),
   stockPolicy: z.nativeEnum(StoreStockPolicy).optional(),
   stockQty: z.number().int().nonnegative().optional().nullable(),
-  status: z.nativeEnum(StoreProductStatus).optional(),
-  isVisible: z.boolean().optional(),
+  visibility: z.nativeEnum(StoreVisibility).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).optional(),
 });
 
@@ -123,8 +123,7 @@ async function _GET(req: NextRequest) {
         compareAtPriceCents: true,
         currency: true,
         sku: true,
-        status: true,
-        isVisible: true,
+        visibility: true,
         categoryId: true,
         requiresShipping: true,
         stockPolicy: true,
@@ -137,7 +136,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/products error:", err);
+    console.error("GET /api/org/[orgId]/store/products error:", err);
     return fail(500, "Erro ao carregar produtos.");
   }
 }
@@ -210,8 +209,9 @@ async function _POST(req: NextRequest) {
         requiresShipping: payload.requiresShipping ?? true,
         stockPolicy: payload.stockPolicy ?? StoreStockPolicy.NONE,
         stockQty: payload.stockQty ?? null,
-        status: payload.status ?? StoreProductStatus.ACTIVE,
-        isVisible: payload.isVisible ?? true,
+        visibility: normalizeStoreVisibility({
+          visibility: payload.visibility ?? null,
+        }),
         tags: payload.tags ?? [],
       },
       select: {
@@ -224,8 +224,7 @@ async function _POST(req: NextRequest) {
         compareAtPriceCents: true,
         currency: true,
         sku: true,
-        status: true,
-        isVisible: true,
+        visibility: true,
         categoryId: true,
         requiresShipping: true,
         stockPolicy: true,
@@ -238,7 +237,7 @@ async function _POST(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/products error:", err);
+    console.error("POST /api/org/[orgId]/store/products error:", err);
     return fail(500, "Erro ao criar produto.");
   }
 }

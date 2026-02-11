@@ -691,7 +691,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const [storeProducts, storeProductsCount] = storePublic && storeId !== null
       ? await Promise.all([
           prisma.storeProduct.findMany({
-            where: { storeId, status: "ACTIVE", isVisible: true },
+            where: { storeId, visibility: "PUBLIC" },
             orderBy: [{ createdAt: "desc" }],
             take: 8,
             select: {
@@ -710,7 +710,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             },
           }),
           prisma.storeProduct.count({
-            where: { storeId, status: "ACTIVE", isVisible: true },
+            where: { storeId, visibility: "PUBLIC" },
           }),
         ])
       : [[], 0];

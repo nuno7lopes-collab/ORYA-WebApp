@@ -159,7 +159,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/categories/[id] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/categories/[id] error:", err);
     return fail(500, "Erro ao atualizar categoria.");
   }
 }
@@ -213,7 +213,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/categories/[id] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/categories/[id] error:", err);
     return fail(500, "Erro ao remover categoria.");
   }
 }

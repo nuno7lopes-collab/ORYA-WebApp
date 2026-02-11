@@ -71,7 +71,7 @@ export default function StorefrontDownloadsClient({
     setLoadingAuth(true);
     setAuthError(null);
     try {
-      const res = await fetch(`/api/store/digital/grants?storeId=${storeId}`, { cache: "no-store" });
+      const res = await fetch(`/api/public/store/digital/grants?storeId=${storeId}`, { cache: "no-store" });
       if (res.status === 401) {
         setAuthState("unauth");
         return;
@@ -101,7 +101,7 @@ export default function StorefrontDownloadsClient({
     setLoadingGuest(true);
     setGuestError(null);
     try {
-      const res = await fetch(`/api/store/digital/lookup?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/digital/lookup?storeId=${storeId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -125,7 +125,7 @@ export default function StorefrontDownloadsClient({
     setDownloadingId(`auth-${grantId}-${assetId}`);
     setAuthError(null);
     try {
-      const res = await fetch("/api/store/digital/download", {
+      const res = await fetch("/api/public/store/digital/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ grantId, assetId }),
@@ -147,7 +147,7 @@ export default function StorefrontDownloadsClient({
     setGuestError(null);
     try {
       const params = new URLSearchParams({ token, assetId: String(assetId) });
-      const res = await fetch(`/api/store/digital/download?${params.toString()}`);
+      const res = await fetch(`/api/public/store/digital/download?${params.toString()}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !json?.url) {
         throw new Error(json?.error || "Erro ao preparar download.");

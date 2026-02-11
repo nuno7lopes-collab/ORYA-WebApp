@@ -109,7 +109,7 @@ export default function StorefrontCartClient({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/store/cart?storeId=${storeId}`, { cache: "no-store" });
+      const res = await fetch(`/api/public/store/cart?storeId=${storeId}`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao carregar carrinho.");
@@ -129,7 +129,7 @@ export default function StorefrontCartClient({
       params.set("storeId", String(storeId));
       params.set("limit", "3");
       if (exclude.length) params.set("exclude", exclude.join(","));
-      const res = await fetch(`/api/store/recommendations?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/public/store/recommendations?${params.toString()}`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) return;
       setRecommendations(Array.isArray(json.items) ? json.items : []);
@@ -161,7 +161,7 @@ export default function StorefrontCartClient({
     setSavingId(`item-${item.id}`);
     setError(null);
     try {
-      const res = await fetch(`/api/store/cart/items/${item.id}?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/cart/items/${item.id}?storeId=${storeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ quantity: nextQuantity }),
@@ -183,7 +183,7 @@ export default function StorefrontCartClient({
     setSavingId(`bundle-${bundleKey}`);
     setError(null);
     try {
-      const res = await fetch(`/api/store/cart/bundles/${bundleKey}?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/cart/bundles/${bundleKey}?storeId=${storeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ quantity: nextQuantity }),
@@ -205,7 +205,7 @@ export default function StorefrontCartClient({
     setSavingId(`item-${itemId}`);
     setError(null);
     try {
-      const res = await fetch(`/api/store/cart/items/${itemId}?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/cart/items/${itemId}?storeId=${storeId}`, {
         method: "DELETE",
       });
       const json = await res.json().catch(() => null);
@@ -225,7 +225,7 @@ export default function StorefrontCartClient({
     setSavingId(`bundle-${bundleKey}`);
     setError(null);
     try {
-      const res = await fetch(`/api/store/cart/bundles/${bundleKey}?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/cart/bundles/${bundleKey}?storeId=${storeId}`, {
         method: "DELETE",
       });
       const json = await res.json().catch(() => null);

@@ -6,7 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { OrganizationMemberRole, StoreProductStatus } from "@prisma/client";
+import { OrganizationMemberRole, StoreVisibility } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -88,8 +88,7 @@ async function _GET(req: NextRequest) {
       prisma.storeProduct.findMany({
         where: {
           storeId: context.store.id,
-          status: StoreProductStatus.ACTIVE,
-          isVisible: true,
+          visibility: StoreVisibility.PUBLIC,
         },
         orderBy: [{ createdAt: "desc" }],
         take: 8,
@@ -150,7 +149,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/overview error:", err);
+    console.error("GET /api/org/[orgId]/store/overview error:", err);
     return fail(500, "Erro ao carregar resumo.");
   }
 }

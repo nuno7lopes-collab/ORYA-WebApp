@@ -400,9 +400,7 @@ model AdminMfa {
 model Store {
   env                     String                         @default("prod")
   id                         Int              @id @default(autoincrement())
-  ownerType                  StoreOwnerType   @map("owner_type")
-  ownerOrganizationId        Int?             @map("owner_organization_id")
-  ownerUserId                String?          @map("owner_user_id") @db.Uuid
+  ownerOrganizationId        Int              @map("owner_organization_id")
   status                     StoreStatus      @default(CLOSED)
   showOnProfile              Boolean          @default(false) @map("show_on_profile")
   catalogLocked              Boolean          @default(true) @map("catalog_locked")
@@ -414,12 +412,10 @@ model Store {
   privacyPolicy              String?          @map("privacy_policy")
   termsUrl                   String?          @map("terms_url")
   freeShippingThresholdCents Int?             @map("free_shipping_threshold_cents")
-  shippingMode               StoreShippingMode @default(FLAT) @map("shipping_mode")
   createdAt                  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                  DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization? @relation(fields: [ownerOrganizationId], references: [id], onDelete: Cascade)
-  ownerUser    Profile?      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [ownerOrganizationId], references: [id], onDelete: Cascade)
   categories   StoreCategory[]
   products     StoreProduct[]
   bundles      StoreBundle[]
@@ -428,8 +424,6 @@ model Store {
   shippingZones StoreShippingZone[]
 
   @@unique([ownerOrganizationId], map: "stores_owner_org_unique")
-  @@unique([ownerUserId], map: "stores_owner_user_unique")
-  @@index([ownerType], map: "stores_owner_type_idx")
   @@map("stores")
   @@schema("app_v3")
 }
@@ -464,8 +458,7 @@ model StoreProduct {
   slug                 String
   shortDescription     String?             @map("short_description")
   description          String?
-  status               StoreProductStatus  @default(DRAFT)
-  isVisible            Boolean             @default(false) @map("is_visible")
+  visibility           StoreVisibility     @default(HIDDEN)
   priceCents           Int                 @map("price_cents")
   compareAtPriceCents  Int?                @map("compare_at_price_cents")
   currency             String              @default("EUR")
@@ -491,7 +484,7 @@ model StoreProduct {
   @@unique([storeId, slug], map: "store_products_store_slug_unique")
   @@index([storeId], map: "store_products_store_idx")
   @@index([categoryId], map: "store_products_category_idx")
-  @@index([status], map: "store_products_status_idx")
+  @@index([visibility], map: "store_products_visibility_idx")
   @@map("store_products")
   @@schema("app_v3")
 }
@@ -623,8 +616,7 @@ model StoreBundle {
   pricingMode StoreBundlePricingMode @map("pricing_mode")
   priceCents  Int?                 @map("price_cents")
   percentOff  Int?                 @map("percent_off")
-  status      StoreBundleStatus    @default(DRAFT)
-  isVisible   Boolean              @default(false) @map("is_visible")
+  visibility  StoreVisibility      @default(HIDDEN)
   createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   store       Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -5474,17 +5466,10 @@ model AnalyticsRollup {
   @@schema("app_v3")
 }
 
-enum StoreOwnerType {
-  ORG
-  PROFILE
-
-  @@schema("app_v3")
-}
-
 enum StoreStatus {
   DRAFT
   CLOSED
-  OPEN
+  ACTIVE
 
   @@schema("app_v3")
 }
@@ -5496,9 +5481,9 @@ enum StoreShippingMode {
   @@schema("app_v3")
 }
 
-enum StoreProductStatus {
-  DRAFT
-  ACTIVE
+enum StoreVisibility {
+  PUBLIC
+  HIDDEN
   ARCHIVED
 
   @@schema("app_v3")
@@ -5530,14 +5515,6 @@ enum StoreBundlePricingMode {
 enum EventPricingMode {
   STANDARD
   FREE_ONLY
-
-  @@schema("app_v3")
-}
-
-enum StoreBundleStatus {
-  DRAFT
-  ACTIVE
-  ARCHIVED
 
   @@schema("app_v3")
 }

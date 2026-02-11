@@ -88,7 +88,7 @@ export default async function StoreProductPage({ params }: PageProps) {
   }
 
   const product = await prisma.storeProduct.findFirst({
-    where: { storeId: store.id, slug, status: "ACTIVE", isVisible: true },
+    where: { storeId: store.id, slug, visibility: "PUBLIC" },
     select: {
       id: true,
       name: true,

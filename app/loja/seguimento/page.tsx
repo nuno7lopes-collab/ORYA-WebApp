@@ -128,7 +128,7 @@ export default function StoreOrderTrackingPage() {
     setError(null);
     setOrder(null);
     try {
-      const res = await fetch("/api/store/orders/lookup", {
+      const res = await fetch("/api/public/store/orders/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderNumber, email }),
@@ -149,7 +149,7 @@ export default function StoreOrderTrackingPage() {
     setInvoiceLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/store/orders/invoice", {
+      const res = await fetch("/api/public/store/orders/invoice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderNumber, email }),
@@ -178,7 +178,7 @@ export default function StoreOrderTrackingPage() {
     setReceiptLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/store/orders/receipt", {
+      const res = await fetch("/api/public/store/orders/receipt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderNumber, email }),

@@ -187,10 +187,10 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/me/notifications/feed,app/api/me/notifications/feed/route.ts,public,covered,5,app/components/Navbar.tsx; app/components/mobile/MobileTopBar.tsx; app/components/notifications/NotificationBell.tsx; app/social/page.tsx; apps/mobile/features/notifications/api.ts
 /api/me/notifications/mute,app/api/me/notifications/mute/route.ts,public,covered,1,apps/mobile/features/notifications/api.ts
 /api/me/purchases,app/api/me/purchases/route.ts,public,covered,1,app/me/compras/page.tsx
-/api/me/purchases/store,app/api/me/purchases/store/route.ts,public,orphan,0,
-/api/me/purchases/store/[orderId],app/api/me/purchases/store/[orderId]/route.ts,public,orphan,0,
-/api/me/purchases/store/[orderId]/invoice,app/api/me/purchases/store/[orderId]/invoice/route.ts,public,orphan,0,
-/api/me/purchases/store/[orderId]/receipt,app/api/me/purchases/store/[orderId]/receipt/route.ts,public,orphan,0,
+/api/me/purchases/store,app/api/me/purchases/store/route.ts,public,covered,3,app/me/carteira/WalletHubClient.tsx; app/me/compras/loja/page.tsx; apps/mobile/features/store/api.ts
+/api/me/purchases/store/[orderId],app/api/me/purchases/store/[orderId]/route.ts,public,covered,2,app/me/compras/loja/[orderId]/page.tsx; apps/mobile/features/store/api.ts
+/api/me/purchases/store/[orderId]/invoice,app/api/me/purchases/store/[orderId]/invoice/route.ts,public,covered,2,app/me/compras/loja/[orderId]/page.tsx; app/me/compras/loja/page.tsx
+/api/me/purchases/store/[orderId]/receipt,app/api/me/purchases/store/[orderId]/receipt/route.ts,public,covered,3,app/me/compras/loja/[orderId]/page.tsx; app/me/compras/loja/page.tsx; apps/mobile/features/store/api.ts
 /api/me/push-tokens,app/api/me/push-tokens/route.ts,public,covered,2,apps/mobile/app/settings/index.tsx; apps/mobile/components/notifications/PushGate.tsx
 /api/me/reservas,app/api/me/reservas/route.ts,public,covered,1,app/me/reservas/page.tsx
 /api/me/reservas/[id],app/api/me/reservas/[id]/route.ts,public,covered,2,app/[username]/_components/ReservasBookingClient.tsx; apps/mobile/app/checkout/index.tsx
@@ -229,10 +229,10 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/me/store/products/[id]/options/[optionId]/values/[valueId],app/api/me/store/products/[id]/options/[optionId]/values/[valueId]/route.ts,public,orphan,0,
 /api/me/store/products/[id]/variants,app/api/me/store/products/[id]/variants/route.ts,public,orphan,0,
 /api/me/store/products/[id]/variants/[variantId],app/api/me/store/products/[id]/variants/[variantId]/route.ts,public,orphan,0,
-/api/me/store/purchases,app/api/me/store/purchases/route.ts,public,covered,2,app/me/carteira/WalletHubClient.tsx; app/me/compras/loja/page.tsx
-/api/me/store/purchases/[orderId],app/api/me/store/purchases/[orderId]/route.ts,public,covered,1,app/me/compras/loja/[orderId]/page.tsx
-/api/me/store/purchases/[orderId]/invoice,app/api/me/store/purchases/[orderId]/invoice/route.ts,public,covered,2,app/me/compras/loja/[orderId]/page.tsx; app/me/compras/loja/page.tsx
-/api/me/store/purchases/[orderId]/receipt,app/api/me/store/purchases/[orderId]/receipt/route.ts,public,covered,2,app/me/compras/loja/[orderId]/page.tsx; app/me/compras/loja/page.tsx
+/api/me/store/purchases,app/api/me/store/purchases/route.ts,public,orphan,0,
+/api/me/store/purchases/[orderId],app/api/me/store/purchases/[orderId]/route.ts,public,orphan,0,
+/api/me/store/purchases/[orderId]/invoice,app/api/me/store/purchases/[orderId]/invoice/route.ts,public,orphan,0,
+/api/me/store/purchases/[orderId]/receipt,app/api/me/store/purchases/[orderId]/receipt/route.ts,public,orphan,0,
 /api/me/store/shipments/[shipmentId],app/api/me/store/shipments/[shipmentId]/route.ts,public,orphan,0,
 /api/me/store/shipping/methods/[methodId],app/api/me/store/shipping/methods/[methodId]/route.ts,public,orphan,0,
 /api/me/store/shipping/methods/[methodId]/tiers,app/api/me/store/shipping/methods/[methodId]/tiers/route.ts,public,orphan,0,
@@ -258,7 +258,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/org/[orgId]/store/orders/[orderId],app/api/org/[orgId]/store/orders/[orderId]/route.ts,public,orphan,0,
 /api/org/[orgId]/store/orders/[orderId]/shipments,app/api/org/[orgId]/store/orders/[orderId]/shipments/route.ts,public,orphan,0,
 /api/org/[orgId]/store/overview,app/api/org/[orgId]/store/overview/route.ts,public,orphan,0,
-/api/org/[orgId]/store/preview,app/api/org/[orgId]/store/preview/route.ts,public,orphan,0,
+/api/org/[orgId]/store/preview,app/api/org/[orgId]/store/preview/route.ts,public,covered,1,app/organizacao/OrganizationPublicProfilePanel.tsx
 /api/org/[orgId]/store/products,app/api/org/[orgId]/store/products/route.ts,public,orphan,0,
 /api/org/[orgId]/store/products/[id],app/api/org/[orgId]/store/products/[id]/route.ts,public,orphan,0,
 /api/org/[orgId]/store/products/[id]/digital-assets,app/api/org/[orgId]/store/products/[id]/digital-assets/route.ts,public,orphan,0,
@@ -337,7 +337,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/loja/orders/[orderId],app/api/organizacao/loja/orders/[orderId]/route.ts,public,orphan,0,
 /api/organizacao/loja/orders/[orderId]/shipments,app/api/organizacao/loja/orders/[orderId]/shipments/route.ts,public,orphan,0,
 /api/organizacao/loja/overview,app/api/organizacao/loja/overview/route.ts,public,orphan,0,
-/api/organizacao/loja/preview,app/api/organizacao/loja/preview/route.ts,public,covered,1,app/organizacao/OrganizationPublicProfilePanel.tsx
+/api/organizacao/loja/preview,app/api/organizacao/loja/preview/route.ts,public,orphan,0,
 /api/organizacao/loja/products,app/api/organizacao/loja/products/route.ts,public,orphan,0,
 /api/organizacao/loja/products/[id],app/api/organizacao/loja/products/[id]/route.ts,public,orphan,0,
 /api/organizacao/loja/products/[id]/digital-assets,app/api/organizacao/loja/products/[id]/digital-assets/route.ts,public,orphan,0,
@@ -514,6 +514,25 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/public/agenda,app/api/public/agenda/route.ts,public,orphan,0,
 /api/public/profile,app/api/public/profile/route.ts,public,covered,1,apps/mobile/features/profile/api.ts
 /api/public/profile/events,app/api/public/profile/events/route.ts,public,covered,1,apps/mobile/features/profile/api.ts
+/api/public/store/bundles,app/api/public/store/bundles/route.ts,public,orphan,0,
+/api/public/store/cart,app/api/public/store/cart/route.ts,public,covered,4,apps/mobile/features/store/api.ts; components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx; components/storefront/StorefrontCheckoutClient.tsx
+/api/public/store/cart/bundles,app/api/public/store/cart/bundles/route.ts,public,covered,2,apps/mobile/features/store/api.ts; components/storefront/StorefrontBundleCard.tsx
+/api/public/store/cart/bundles/[bundleKey],app/api/public/store/cart/bundles/[bundleKey]/route.ts,public,covered,3,apps/mobile/features/store/api.ts; components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx
+/api/public/store/cart/items,app/api/public/store/cart/items/route.ts,public,covered,3,apps/mobile/features/store/api.ts; components/storefront/StorefrontCartOverlay.tsx; components/storefront/StorefrontProductClient.tsx
+/api/public/store/cart/items/[itemId],app/api/public/store/cart/items/[itemId]/route.ts,public,covered,3,apps/mobile/features/store/api.ts; components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx
+/api/public/store/catalog,app/api/public/store/catalog/route.ts,public,covered,1,apps/mobile/features/store/api.ts
+/api/public/store/checkout,app/api/public/store/checkout/route.ts,public,covered,2,apps/mobile/features/store/api.ts; components/storefront/StorefrontCheckoutClient.tsx
+/api/public/store/checkout/prefill,app/api/public/store/checkout/prefill/route.ts,public,covered,2,apps/mobile/features/store/api.ts; components/storefront/StorefrontCheckoutClient.tsx
+/api/public/store/digital/download,app/api/public/store/digital/download/route.ts,public,covered,3,app/me/compras/loja/page.tsx; apps/mobile/features/store/api.ts; components/storefront/StorefrontDownloadsClient.tsx
+/api/public/store/digital/grants,app/api/public/store/digital/grants/route.ts,public,covered,2,app/me/compras/loja/page.tsx; components/storefront/StorefrontDownloadsClient.tsx
+/api/public/store/digital/lookup,app/api/public/store/digital/lookup/route.ts,public,covered,1,components/storefront/StorefrontDownloadsClient.tsx
+/api/public/store/orders/invoice,app/api/public/store/orders/invoice/route.ts,public,covered,1,app/loja/seguimento/page.tsx
+/api/public/store/orders/lookup,app/api/public/store/orders/lookup/route.ts,public,covered,1,app/loja/seguimento/page.tsx
+/api/public/store/orders/receipt,app/api/public/store/orders/receipt/route.ts,public,covered,1,app/loja/seguimento/page.tsx
+/api/public/store/product,app/api/public/store/product/route.ts,public,covered,1,apps/mobile/features/store/api.ts
+/api/public/store/recommendations,app/api/public/store/recommendations/route.ts,public,covered,2,components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx
+/api/public/store/shipping/methods,app/api/public/store/shipping/methods/route.ts,public,covered,2,apps/mobile/features/store/api.ts; components/storefront/StorefrontCheckoutClient.tsx
+/api/public/store/shipping/quote,app/api/public/store/shipping/quote/route.ts,public,orphan,0,
 /api/qr/[token],app/api/qr/[token]/route.ts,public,covered,3,app/components/tickets/TicketCard.tsx; app/components/tickets/TicketLiveQr.tsx; app/components/tickets/TicketQrBox.tsx
 /api/search,app/api/search/route.ts,public,covered,1,lib/globalSearch.ts
 /api/servicos/[id],app/api/servicos/[id]/route.ts,public,covered,1,apps/mobile/features/services/api.ts
@@ -542,21 +561,21 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/social/unfollow,app/api/social/unfollow/route.ts,public,covered,5,app/[username]/FollowClient.tsx; app/components/Navbar.tsx; app/rede/page.tsx; app/social/page.tsx; apps/mobile/features/network/api.ts
 /api/social/unfollow-organization,app/api/social/unfollow-organization/route.ts,public,covered,5,app/components/Navbar.tsx; app/components/profile/OrganizationFollowClient.tsx; app/eventos/[slug]/EventLiveClient.tsx; app/social/page.tsx; apps/mobile/features/network/api.ts
 /api/store/bundles,app/api/store/bundles/route.ts,public,orphan,0,
-/api/store/cart,app/api/store/cart/route.ts,public,covered,3,components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx; components/storefront/StorefrontCheckoutClient.tsx
-/api/store/cart/bundles,app/api/store/cart/bundles/route.ts,public,covered,1,components/storefront/StorefrontBundleCard.tsx
-/api/store/cart/bundles/[bundleKey],app/api/store/cart/bundles/[bundleKey]/route.ts,public,covered,2,components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx
-/api/store/cart/items,app/api/store/cart/items/route.ts,public,covered,2,components/storefront/StorefrontCartOverlay.tsx; components/storefront/StorefrontProductClient.tsx
-/api/store/cart/items/[itemId],app/api/store/cart/items/[itemId]/route.ts,public,covered,2,components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx
-/api/store/checkout,app/api/store/checkout/route.ts,public,covered,1,components/storefront/StorefrontCheckoutClient.tsx
-/api/store/checkout/prefill,app/api/store/checkout/prefill/route.ts,public,covered,1,components/storefront/StorefrontCheckoutClient.tsx
-/api/store/digital/download,app/api/store/digital/download/route.ts,public,covered,2,app/me/compras/loja/page.tsx; components/storefront/StorefrontDownloadsClient.tsx
-/api/store/digital/grants,app/api/store/digital/grants/route.ts,public,covered,2,app/me/compras/loja/page.tsx; components/storefront/StorefrontDownloadsClient.tsx
-/api/store/digital/lookup,app/api/store/digital/lookup/route.ts,public,covered,1,components/storefront/StorefrontDownloadsClient.tsx
-/api/store/orders/invoice,app/api/store/orders/invoice/route.ts,public,covered,1,app/loja/seguimento/page.tsx
-/api/store/orders/lookup,app/api/store/orders/lookup/route.ts,public,covered,1,app/loja/seguimento/page.tsx
-/api/store/orders/receipt,app/api/store/orders/receipt/route.ts,public,covered,1,app/loja/seguimento/page.tsx
-/api/store/recommendations,app/api/store/recommendations/route.ts,public,covered,2,components/storefront/StorefrontCartClient.tsx; components/storefront/StorefrontCartOverlay.tsx
-/api/store/shipping/methods,app/api/store/shipping/methods/route.ts,public,covered,1,components/storefront/StorefrontCheckoutClient.tsx
+/api/store/cart,app/api/store/cart/route.ts,public,orphan,0,
+/api/store/cart/bundles,app/api/store/cart/bundles/route.ts,public,orphan,0,
+/api/store/cart/bundles/[bundleKey],app/api/store/cart/bundles/[bundleKey]/route.ts,public,orphan,0,
+/api/store/cart/items,app/api/store/cart/items/route.ts,public,orphan,0,
+/api/store/cart/items/[itemId],app/api/store/cart/items/[itemId]/route.ts,public,orphan,0,
+/api/store/checkout,app/api/store/checkout/route.ts,public,orphan,0,
+/api/store/checkout/prefill,app/api/store/checkout/prefill/route.ts,public,orphan,0,
+/api/store/digital/download,app/api/store/digital/download/route.ts,public,orphan,0,
+/api/store/digital/grants,app/api/store/digital/grants/route.ts,public,orphan,0,
+/api/store/digital/lookup,app/api/store/digital/lookup/route.ts,public,orphan,0,
+/api/store/orders/invoice,app/api/store/orders/invoice/route.ts,public,orphan,0,
+/api/store/orders/lookup,app/api/store/orders/lookup/route.ts,public,orphan,0,
+/api/store/orders/receipt,app/api/store/orders/receipt/route.ts,public,orphan,0,
+/api/store/recommendations,app/api/store/recommendations/route.ts,public,orphan,0,
+/api/store/shipping/methods,app/api/store/shipping/methods/route.ts,public,orphan,0,
 /api/store/shipping/quote,app/api/store/shipping/quote/route.ts,public,orphan,0,
 /api/stripe/webhook,app/api/stripe/webhook/route.ts,webhook,exempt,0,
 /api/tickets/resale/cancel,app/api/tickets/resale/cancel/route.ts,public,orphan,0,

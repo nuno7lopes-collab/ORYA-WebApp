@@ -57,7 +57,6 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
           supportEmail: true,
           supportPhone: true,
           organization: { select: { username: true, publicName: true, businessName: true } },
-          ownerUser: { select: { username: true, fullName: true } },
         },
       },
       addresses: {
@@ -178,7 +177,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
-    console.error("GET /api/me/store/purchases/[orderId]/invoice error:", err);
+    console.error("GET /api/me/purchases/store/[orderId]/invoice error:", err);
     return jsonWrap({ ok: false, error: "Erro ao gerar fatura." }, { status: 500 });
   }
 }

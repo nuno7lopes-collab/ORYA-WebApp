@@ -213,7 +213,7 @@ export default function StorefrontProductClient({
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/store/cart/items?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/cart/items?storeId=${storeId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -59,7 +59,7 @@ export default function StoreActivationCard({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status: "OPEN",
+          status: "ACTIVE",
           catalogLocked: false,
           checkoutEnabled: true,
           showOnProfile: nextPublic,

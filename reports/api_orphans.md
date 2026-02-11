@@ -1,12 +1,12 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-11T00:15:51.339Z
+Generated: 2026-02-11T10:21:00.995Z
 CSV: reports/api_ui_coverage.csv
 
 ## Summary
-- API routes total: 576
-- Covered by UI: 335
-- Orphan (no UI): 195
+- API routes total: 595
+- Covered by UI: 337
+- Orphan (no UI): 212
 - Exempt (internal/cron/webhook): 46
 - UI endpoints missing API: 0
 
@@ -46,10 +46,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/me/loyalty/carteira (app/api/me/loyalty/carteira/route.ts)
 - /api/me/messages/bookings/[bookingId]/messages (app/api/me/messages/bookings/[bookingId]/messages/route.ts)
 - /api/me/notifications/[id]/read (app/api/me/notifications/[id]/read/route.ts)
-- /api/me/purchases/store (app/api/me/purchases/store/route.ts)
-- /api/me/purchases/store/[orderId] (app/api/me/purchases/store/[orderId]/route.ts)
-- /api/me/purchases/store/[orderId]/invoice (app/api/me/purchases/store/[orderId]/invoice/route.ts)
-- /api/me/purchases/store/[orderId]/receipt (app/api/me/purchases/store/[orderId]/receipt/route.ts)
 - /api/me/reservas/[id]/calendar.ics (app/api/me/reservas/[id]/calendar.ics/route.ts)
 - /api/me/settings/delete/cancel (app/api/me/settings/delete/cancel/route.ts)
 - /api/me/store (app/api/me/store/route.ts)
@@ -75,6 +71,10 @@ CSV: reports/api_ui_coverage.csv
 - /api/me/store/products/[id]/options/[optionId]/values/[valueId] (app/api/me/store/products/[id]/options/[optionId]/values/[valueId]/route.ts)
 - /api/me/store/products/[id]/variants (app/api/me/store/products/[id]/variants/route.ts)
 - /api/me/store/products/[id]/variants/[variantId] (app/api/me/store/products/[id]/variants/[variantId]/route.ts)
+- /api/me/store/purchases (app/api/me/store/purchases/route.ts)
+- /api/me/store/purchases/[orderId] (app/api/me/store/purchases/[orderId]/route.ts)
+- /api/me/store/purchases/[orderId]/invoice (app/api/me/store/purchases/[orderId]/invoice/route.ts)
+- /api/me/store/purchases/[orderId]/receipt (app/api/me/store/purchases/[orderId]/receipt/route.ts)
 - /api/me/store/shipments/[shipmentId] (app/api/me/store/shipments/[shipmentId]/route.ts)
 - /api/me/store/shipping/methods/[methodId] (app/api/me/store/shipping/methods/[methodId]/route.ts)
 - /api/me/store/shipping/methods/[methodId]/tiers (app/api/me/store/shipping/methods/[methodId]/tiers/route.ts)
@@ -94,7 +94,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/org/[orgId]/store/orders/[orderId] (app/api/org/[orgId]/store/orders/[orderId]/route.ts)
 - /api/org/[orgId]/store/orders/[orderId]/shipments (app/api/org/[orgId]/store/orders/[orderId]/shipments/route.ts)
 - /api/org/[orgId]/store/overview (app/api/org/[orgId]/store/overview/route.ts)
-- /api/org/[orgId]/store/preview (app/api/org/[orgId]/store/preview/route.ts)
 - /api/org/[orgId]/store/products (app/api/org/[orgId]/store/products/route.ts)
 - /api/org/[orgId]/store/products/[id] (app/api/org/[orgId]/store/products/[id]/route.ts)
 - /api/org/[orgId]/store/products/[id]/digital-assets (app/api/org/[orgId]/store/products/[id]/digital-assets/route.ts)
@@ -139,6 +138,7 @@ CSV: reports/api_ui_coverage.csv
 - /api/organizacao/loja/orders/[orderId] (app/api/organizacao/loja/orders/[orderId]/route.ts)
 - /api/organizacao/loja/orders/[orderId]/shipments (app/api/organizacao/loja/orders/[orderId]/shipments/route.ts)
 - /api/organizacao/loja/overview (app/api/organizacao/loja/overview/route.ts)
+- /api/organizacao/loja/preview (app/api/organizacao/loja/preview/route.ts)
 - /api/organizacao/loja/products (app/api/organizacao/loja/products/route.ts)
 - /api/organizacao/loja/products/[id] (app/api/organizacao/loja/products/[id]/route.ts)
 - /api/organizacao/loja/products/[id]/digital-assets (app/api/organizacao/loja/products/[id]/digital-assets/route.ts)
@@ -192,11 +192,28 @@ CSV: reports/api_ui_coverage.csv
 - /api/padel/teams/[id]/members (app/api/padel/teams/[id]/members/route.ts)
 - /api/platform/fees (app/api/platform/fees/route.ts)
 - /api/public/agenda (app/api/public/agenda/route.ts)
+- /api/public/store/bundles (app/api/public/store/bundles/route.ts)
+- /api/public/store/shipping/quote (app/api/public/store/shipping/quote/route.ts)
 - /api/servicos/[id]/booking-status (app/api/servicos/[id]/booking-status/route.ts)
 - /api/servicos/[id]/creditos (app/api/servicos/[id]/creditos/route.ts)
 - /api/servicos/[id]/creditos/checkout (app/api/servicos/[id]/creditos/checkout/route.ts)
 - /api/servicos/[id]/disponibilidade (app/api/servicos/[id]/disponibilidade/route.ts)
 - /api/store/bundles (app/api/store/bundles/route.ts)
+- /api/store/cart (app/api/store/cart/route.ts)
+- /api/store/cart/bundles (app/api/store/cart/bundles/route.ts)
+- /api/store/cart/bundles/[bundleKey] (app/api/store/cart/bundles/[bundleKey]/route.ts)
+- /api/store/cart/items (app/api/store/cart/items/route.ts)
+- /api/store/cart/items/[itemId] (app/api/store/cart/items/[itemId]/route.ts)
+- /api/store/checkout (app/api/store/checkout/route.ts)
+- /api/store/checkout/prefill (app/api/store/checkout/prefill/route.ts)
+- /api/store/digital/download (app/api/store/digital/download/route.ts)
+- /api/store/digital/grants (app/api/store/digital/grants/route.ts)
+- /api/store/digital/lookup (app/api/store/digital/lookup/route.ts)
+- /api/store/orders/invoice (app/api/store/orders/invoice/route.ts)
+- /api/store/orders/lookup (app/api/store/orders/lookup/route.ts)
+- /api/store/orders/receipt (app/api/store/orders/receipt/route.ts)
+- /api/store/recommendations (app/api/store/recommendations/route.ts)
+- /api/store/shipping/methods (app/api/store/shipping/methods/route.ts)
 - /api/store/shipping/quote (app/api/store/shipping/quote/route.ts)
 - /api/tickets/resale/cancel (app/api/tickets/resale/cancel/route.ts)
 - /api/tickets/resale/list (app/api/tickets/resale/list/route.ts)
@@ -291,8 +308,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/checkout/resale (files: app/resale/[id]/page.tsx)
 - /api/convites/[token]/checkout (files: app/convites/[token]/InviteClient.tsx)
 - /api/cobrancas/[token]/checkout (files: app/cobrancas/[token]/ChargeClient.tsx)
-- /api/store/checkout (files: components/storefront/StorefrontCheckoutClient.tsx)
-- /api/store/checkout/prefill (files: components/storefront/StorefrontCheckoutClient.tsx)
 - /api/servicos/[id]/checkout (files: app/[username]/_components/ReservasBookingClient.tsx, apps/mobile/app/checkout/index.tsx)
 - /api/organizacao/reservas/[id]/checkout (files: app/organizacao/(dashboard)/reservas/page.tsx)
 - /api/padel/pairings/[id]/checkout (files: apps/mobile/features/checkout/api.ts)
@@ -309,8 +324,6 @@ CSV: reports/api_ui_coverage.csv
 - /api/organizacao/checkin (files: app/components/checkin/CheckinScanner.tsx)
 - /api/padel/pairings (files: app/components/checkout/Step1Bilhete.tsx, app/eventos/[slug]/EventPageClient.tsx, app/eventos/[slug]/PadelSignupInline.tsx, app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, apps/mobile/features/tournaments/api.ts)
 - /api/padel/calendar (files: app/organizacao/(dashboard)/padel/PadelHubClient.tsx)
-- /api/me/store/purchases/[orderId]/invoice (files: app/me/compras/loja/[orderId]/page.tsx, app/me/compras/loja/page.tsx)
-- /api/store/orders/invoice (files: app/loja/seguimento/page.tsx)
 - /api/me/location/consent (files: apps/mobile/features/onboarding/api.ts)
 - /api/explorar/list (files: app/components/Navbar.tsx, app/descobrir/_explorar/ExplorarContent.tsx, apps/mobile/features/discover/api.ts)
 - /api/eventos/list (files: apps/mobile/features/agora/api.ts)
@@ -319,6 +332,8 @@ CSV: reports/api_ui_coverage.csv
 - /api/chat/messages (files: app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx, app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts)
 
 ### P0 missing UI usage
+- /api/store/checkout (app/api/store/checkout/route.ts)
+- /api/store/checkout/prefill (app/api/store/checkout/prefill/route.ts)
 - /api/organizacao/payouts/settings (app/api/organizacao/payouts/settings/route.ts)
 - /api/admin/payouts/list (app/api/admin/payouts/list/route.ts)
 - /api/admin/payouts/[id] (app/api/admin/payouts/[id]/route.ts)
@@ -327,6 +342,8 @@ CSV: reports/api_ui_coverage.csv
 - /api/admin/payouts/[id]/cancel (app/api/admin/payouts/[id]/cancel/route.ts)
 - /api/admin/payouts/[id]/force-release (app/api/admin/payouts/[id]/force-release/route.ts)
 - /api/public/agenda (app/api/public/agenda/route.ts)
+- /api/me/store/purchases/[orderId]/invoice (app/api/me/store/purchases/[orderId]/invoice/route.ts)
+- /api/store/orders/invoice (app/api/store/orders/invoice/route.ts)
 - /api/upload/delete (app/api/upload/delete/route.ts)
 - /api/me/store/products/[id]/digital-assets (app/api/me/store/products/[id]/digital-assets/route.ts)
 - /api/organizacao/loja/products/[id]/digital-assets (app/api/organizacao/loja/products/[id]/digital-assets/route.ts)

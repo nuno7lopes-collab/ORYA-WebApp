@@ -59,6 +59,7 @@ export default function PublicProfileScreen() {
   const canOpenFollowers = Boolean(profileId);
   const canOpenFollowing = Boolean(isUser);
   const topBarTitle = profile?.username ? `@${profile.username}` : profile?.fullName ?? "Perfil";
+  const organizationStoreHref = !isUser && profile?.username ? `/store/${profile.username}` : null;
   const backButton = (
     <Pressable
       onPress={() => safeBack(router, navigation, "/(tabs)/network")}
@@ -208,6 +209,17 @@ export default function PublicProfileScreen() {
                 >
                   {followLabel}
                 </Text>
+              </Pressable>
+            ) : null}
+
+            {organizationStoreHref ? (
+              <Pressable
+                onPress={() => router.push(organizationStoreHref)}
+                className="rounded-2xl border border-emerald-300/40 bg-emerald-400/15 px-4 py-3"
+                accessibilityRole="button"
+                accessibilityLabel="Ver loja"
+              >
+                <Text className="text-emerald-100 text-sm font-semibold text-center">Ver loja</Text>
               </Pressable>
             ) : null}
 

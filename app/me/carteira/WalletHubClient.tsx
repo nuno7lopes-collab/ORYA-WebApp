@@ -100,7 +100,7 @@ export default function WalletHubClient() {
     fetcher,
   );
   const { data: storePurchasesData } = useSWR<StorePurchaseResponse>(
-    user ? "/api/me/store/purchases?limit=4" : null,
+    user ? "/api/me/purchases/store?limit=4" : null,
     fetcher,
   );
   const [redeemingRewardId, setRedeemingRewardId] = useState<string | null>(null);

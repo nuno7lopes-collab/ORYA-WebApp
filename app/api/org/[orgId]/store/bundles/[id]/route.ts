@@ -6,7 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { OrganizationMemberRole, StoreBundlePricingMode, StoreBundleStatus } from "@prisma/client";
+import { normalizeStoreVisibility } from "@/lib/store/visibility";
+import { OrganizationMemberRole, StoreBundlePricingMode, StoreVisibility } from "@prisma/client";
 import { z } from "zod";
 import { computeBundleTotals } from "@/lib/store/bundles";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -28,8 +29,7 @@ const updateBundleSchema = z
     pricingMode: z.nativeEnum(StoreBundlePricingMode).optional(),
     priceCents: z.number().int().nonnegative().optional().nullable(),
     percentOff: z.number().int().min(1).max(100).optional().nullable(),
-    status: z.nativeEnum(StoreBundleStatus).optional(),
-    isVisible: z.boolean().optional(),
+    visibility: z.nativeEnum(StoreVisibility).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Sem dados." });
 
@@ -162,8 +162,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       pricingMode?: StoreBundlePricingMode;
       priceCents?: number | null;
       percentOff?: number | null;
-      status?: StoreBundleStatus;
-      isVisible?: boolean;
+      visibility?: StoreVisibility;
     } = {};
 
     if (payload.name) data.name = payload.name.trim();
@@ -185,8 +184,11 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (payload.pricingMode) data.pricingMode = payload.pricingMode;
     if (payload.priceCents !== undefined) data.priceCents = payload.priceCents ?? null;
     if (payload.percentOff !== undefined) data.percentOff = payload.percentOff ?? null;
-    if (payload.status) data.status = payload.status;
-    if (payload.isVisible !== undefined) data.isVisible = payload.isVisible;
+    if (payload.visibility !== undefined) {
+      data.visibility = normalizeStoreVisibility({
+        visibility: payload.visibility ?? null,
+      });
+    }
 
     const nextPricingMode = data.pricingMode ?? existing.pricingMode;
     const nextPriceCents =
@@ -209,10 +211,9 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       data.priceCents = null;
     }
 
-    const nextStatus = data.status ?? existing.status;
-    const nextVisible = data.isVisible ?? existing.isVisible;
+    const nextVisibility = data.visibility ?? existing.visibility;
     const pricingSnapshot = await loadBundlePricing(context.store.id, bundleId.id);
-    if ((nextStatus === StoreBundleStatus.ACTIVE || nextVisible) && pricingSnapshot.itemCount < 2) {
+    if (nextVisibility === StoreVisibility.PUBLIC && pricingSnapshot.itemCount < 2) {
       return fail(409, "Adiciona pelo menos 2 produtos ao bundle antes de ativar ou mostrar na loja.");
     }
     if (pricingSnapshot.itemCount >= 2) {
@@ -238,8 +239,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         pricingMode: true,
         priceCents: true,
         percentOff: true,
-        status: true,
-        isVisible: true,
+        visibility: true,
       },
     });
 
@@ -248,7 +248,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/bundles/[id] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/bundles/[id] error:", err);
     return fail(500, "Erro ao atualizar bundle.");
   }
 }
@@ -303,7 +303,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/bundles/[id] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/bundles/[id] error:", err);
     return fail(500, "Erro ao remover bundle.");
   }
 }

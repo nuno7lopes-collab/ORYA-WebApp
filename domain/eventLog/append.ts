@@ -44,27 +44,28 @@ export async function appendEventLog(
     throw new Error("EVENTLOG_SOURCE_REF_INVALID");
   }
 
-  try {
-    return await tx.eventLog.create({
-      data: {
-        id: eventId,
-        organizationId: input.organizationId,
-        eventType: input.eventType,
-        eventVersion,
-        idempotencyKey,
-        payload: input.payload ?? {},
-        actorUserId: input.actorUserId ?? null,
-        sourceType: normalizedSourceType ?? null,
-        sourceId: normalizedSourceType ? input.sourceId ?? null : null,
-        subjectType,
-        subjectId,
-        correlationId,
-        causationId,
-        createdAt: input.createdAt ?? new Date(),
-      },
-    });
-  } catch (err: any) {
-    if (err?.code === "P2002") return null;
-    throw err;
-  }
+  const data: Prisma.EventLogCreateManyInput = {
+    id: eventId,
+    organizationId: input.organizationId,
+    eventType: input.eventType,
+    eventVersion,
+    idempotencyKey,
+    payload: input.payload ?? {},
+    actorUserId: input.actorUserId ?? null,
+    sourceType: normalizedSourceType ?? null,
+    sourceId: normalizedSourceType ? input.sourceId ?? null : null,
+    subjectType,
+    subjectId,
+    correlationId,
+    causationId,
+    createdAt: input.createdAt ?? new Date(),
+  };
+
+  const result = await tx.eventLog.createMany({
+    data: [data],
+    skipDuplicates: true,
+  });
+  if (result.count === 0) return null;
+
+  return tx.eventLog.findUnique({ where: { id: eventId } });
 }

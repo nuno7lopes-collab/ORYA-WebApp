@@ -129,7 +129,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/products/[id]/images error:", err);
+    console.error("GET /api/org/[orgId]/store/products/[id]/images error:", err);
     return fail(500, "Erro ao carregar imagens.");
   }
 }
@@ -223,7 +223,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/products/[id]/images error:", err);
+    console.error("POST /api/org/[orgId]/store/products/[id]/images error:", err);
     return fail(500, "Erro ao criar imagem.");
   }
 }

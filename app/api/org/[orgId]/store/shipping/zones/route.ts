@@ -112,7 +112,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/shipping/zones error:", err);
+    console.error("GET /api/org/[orgId]/store/shipping/zones error:", err);
     return fail(500, "Erro ao carregar zonas.");
   }
 }
@@ -188,7 +188,7 @@ async function _POST(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/shipping/zones error:", err);
+    console.error("POST /api/org/[orgId]/store/shipping/zones error:", err);
     return fail(500, "Erro ao criar zona.");
   }
 }

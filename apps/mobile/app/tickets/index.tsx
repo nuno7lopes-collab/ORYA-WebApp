@@ -7,6 +7,8 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { useWalletFeed } from "../../features/wallet/hooks";
 import { WalletEntitlementCard } from "../../features/wallet/WalletEntitlementCard";
 import { WalletEntitlement } from "../../features/wallet/types";
+import { useStorePurchases } from "../../features/store/hooks";
+import type { StorePurchaseListItem } from "../../features/store/types";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
@@ -23,7 +25,13 @@ type TicketsScreenProps = {
 type WalletListItem =
   | { kind: "skeleton"; key: string }
   | { kind: "entitlement"; entitlement: WalletEntitlement }
+  | { kind: "store-order"; order: StorePurchaseListItem }
   | { kind: "section"; key: string; label: string };
+
+const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
+  return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
+};
 
 export default function TicketsScreen({ showBackButton = true }: TicketsScreenProps) {
   const router = useRouter();
@@ -31,15 +39,18 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const [dataReady, setDataReady] = useState(false);
-  const [mode, setMode] = useState<"upcoming" | "history">("upcoming");
-  const feed = useWalletFeed(mode, dataReady);
+  const [mode, setMode] = useState<"upcoming" | "history" | "store">("upcoming");
+  const walletMode = mode === "history" ? "history" : "upcoming";
+  const feed = useWalletFeed(walletMode, dataReady && mode !== "store");
+  const storePurchases = useStorePurchases(dataReady && mode === "store");
   const topPadding = useTopHeaderPadding(12);
   const topBar = useTopBarScroll();
-  const items = useMemo(
-    () => feed.data?.pages.flatMap((page) => page.items) ?? [],
-    [feed.data?.pages],
-  );
-  const showSkeleton = feed.isLoading && items.length === 0;
+  const ticketItems = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data?.pages]);
+  const storeItems = storePurchases.data?.items ?? [];
+  const showSkeleton =
+    mode === "store"
+      ? storePurchases.isLoading && storeItems.length === 0
+      : feed.isLoading && ticketItems.length === 0;
   const listData: WalletListItem[] = useMemo(() => {
     if (showSkeleton) {
       return Array.from({ length: 3 }, (_, index) => ({
@@ -47,20 +58,56 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
         key: `wallet-skeleton-${index}`,
       }));
     }
-    if (items.length === 0) return [];
-    return items.map((entitlement) => ({ kind: "entitlement", entitlement }));
-  }, [items, showSkeleton]);
-  const emptyLabel =
-    mode === "upcoming" ? "Sem bilhetes ativos neste momento." : "Sem bilhetes no histórico.";
+    if (mode === "store") {
+      if (storeItems.length === 0) return [];
+      return storeItems.map((order) => ({ kind: "store-order", order }));
+    }
+    if (ticketItems.length === 0) return [];
+    return ticketItems.map((entitlement) => ({ kind: "entitlement", entitlement }));
+  }, [mode, showSkeleton, storeItems, ticketItems]);
+  const emptyLabel = mode === "upcoming"
+    ? "Sem bilhetes ativos neste momento."
+    : mode === "history"
+      ? "Sem bilhetes no histórico."
+      : "Sem compras da Loja.";
 
   const handleRefresh = useCallback(() => {
+    if (mode === "store") {
+      storePurchases.refetch();
+      return;
+    }
     feed.refetch();
-  }, [feed]);
+  }, [feed, mode, storePurchases]);
 
   const renderItem = useCallback(
     ({ item }: { item: WalletListItem }) => {
       if (item.kind === "skeleton") {
         return <GlassSkeleton className="mb-4" height={198} />;
+      }
+      if (item.kind === "store-order") {
+        const order = item.order;
+        return (
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: "/store/purchases/[orderId]", params: { orderId: String(order.id) } })
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Ver compra da loja"
+            className="mb-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4"
+          >
+            <View className="flex-row items-center justify-between gap-2">
+              <Text className="text-white text-sm font-semibold">{order.store.displayName}</Text>
+              <Text className="text-white/65 text-xs">{order.status}</Text>
+            </View>
+            <Text className="mt-1 text-white/65 text-xs">{order.orderNumber ?? `#${order.id}`}</Text>
+            <View className="mt-3 flex-row items-center justify-between">
+              <Text className="text-white/60 text-xs">{new Date(order.createdAt).toLocaleString("pt-PT")}</Text>
+              <Text className="text-white text-sm font-semibold">
+                {formatMoney(order.totalCents, order.currency)}
+              </Text>
+            </View>
+          </Pressable>
+        );
       }
       const entitlementId = item.entitlement.entitlementId;
       const openEntitlement = () => {
@@ -85,6 +132,7 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
 
   const keyExtractor = useCallback((item: WalletListItem) => {
     if (item.kind === "skeleton") return item.key;
+    if (item.kind === "store-order") return `store-${item.order.id}`;
     return item.entitlement.entitlementId;
   }, []);
 
@@ -128,7 +176,7 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
         data={listData}
         keyExtractor={keyExtractor}
         onRefresh={handleRefresh}
-        refreshing={feed.isFetching}
+        refreshing={mode === "store" ? storePurchases.isFetching : feed.isFetching}
         onScroll={topBar.onScroll}
         onScrollEndDrag={topBar.onScrollEndDrag}
         onMomentumScrollEnd={topBar.onMomentumScrollEnd}
@@ -141,7 +189,7 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
         ListHeaderComponent={
           <View style={{ paddingBottom: 8 }}>
             <View className="mb-3 flex-row rounded-full border border-white/15 bg-white/5 p-1">
-              {(["upcoming", "history"] as const).map((option) => (
+              {(["upcoming", "history", "store"] as const).map((option) => (
                 <Pressable
                   key={option}
                   onPress={() => setMode(option)}
@@ -149,24 +197,28 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
                     mode === option ? "bg-white/90" : "bg-transparent"
                   }`}
                   accessibilityRole="button"
-                  accessibilityLabel={option === "upcoming" ? "Ativos" : "Histórico"}
+                  accessibilityLabel={option === "upcoming" ? "Ativos" : option === "history" ? "Histórico" : "Loja"}
                 >
                   <Text
                     className={`text-center text-xs font-semibold ${
                       mode === option ? "text-[#0b101a]" : "text-white/70"
                     }`}
                   >
-                    {option === "upcoming" ? "Ativos" : "Histórico"}
+                    {option === "upcoming" ? "Ativos" : option === "history" ? "Histórico" : "Loja"}
                   </Text>
                 </Pressable>
               ))}
             </View>
-            {feed.isError ? (
+            {(mode === "store" ? storePurchases.isError : feed.isError) ? (
               <GlassSurface intensity={52} padding={16}>
-                <Text className="mb-3 text-sm text-red-300">Não foi possível carregar a carteira.</Text>
+                <Text className="mb-3 text-sm text-red-300">
+                  {mode === "store"
+                    ? "Não foi possível carregar compras da Loja."
+                    : "Não foi possível carregar a carteira."}
+                </Text>
                 <Pressable
                   className="rounded-xl bg-white/10 px-4 py-3"
-                  onPress={() => feed.refetch()}
+                  onPress={() => (mode === "store" ? storePurchases.refetch() : feed.refetch())}
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"
                   accessibilityLabel="Tentar novamente"
@@ -180,7 +232,9 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
         renderItem={renderItem}
         ListFooterComponent={
           <View className="pt-1">
-            {!showSkeleton && !feed.isError && items.length === 0 ? (
+            {!showSkeleton &&
+            !(mode === "store" ? storePurchases.isError : feed.isError) &&
+            (mode === "store" ? storeItems.length === 0 : ticketItems.length === 0) ? (
               <GlassSurface intensity={45} padding={16}>
                 <Text className="text-sm text-white/65">{emptyLabel}</Text>
                 <Pressable
@@ -196,7 +250,7 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
                 </Pressable>
               </GlassSurface>
             ) : null}
-            {feed.hasNextPage ? (
+            {mode !== "store" && feed.hasNextPage ? (
               <Pressable
                 className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                 onPress={() => feed.fetchNextPage()}

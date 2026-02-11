@@ -343,8 +343,7 @@ type StorePreviewProduct = {
   priceCents: number;
   currency: string;
   slug: string;
-  status: string;
-  isVisible: boolean;
+  visibility: "PUBLIC" | "HIDDEN" | "ARCHIVED";
   imageUrl: string | null;
 };
 
@@ -353,8 +352,10 @@ type StorePreviewResponse = {
   store?: {
     id: number;
     status: string;
-    showOnProfile: boolean | null;
-    catalogLocked: boolean | null;
+    showOnProfile?: boolean | null;
+    catalogLocked?: boolean | null;
+    checkoutEnabled?: boolean | null;
+    resolvedState?: "DISABLED" | "HIDDEN" | "LOCKED" | "CHECKOUT_DISABLED" | "ACTIVE";
     currency: string;
   };
   counts?: {
@@ -583,10 +584,9 @@ export default function OrganizationPublicProfilePanel({
     shouldLoadReviews ? "/api/organizacao/avaliacoes" : null,
     fetcher,
   );
-  const { data: storePreviewData } = useSWR<StorePreviewResponse>(
-    shouldLoadStore ? "/api/organizacao/loja/preview" : null,
-    fetcher,
-  );
+  const storePreviewEndpoint =
+    shouldLoadStore && organization?.id ? `/api/org/${organization.id}/store/preview` : null;
+  const { data: storePreviewData } = useSWR<StorePreviewResponse>(storePreviewEndpoint, fetcher);
   const formsList = useMemo<FormPreview[]>(() => {
     const items = formsData?.items ?? [];
     return items
@@ -631,11 +631,14 @@ export default function OrganizationPublicProfilePanel({
   const storeDraftProducts = storePreview?.draftProducts ?? [];
   const storePublicCount = storePreview?.counts?.public ?? 0;
   const storeDraftCount = storePreview?.counts?.draft ?? 0;
-  const storeStatus = storePreview?.store?.status ?? null;
-  const storeShowOnProfile = Boolean(storePreview?.store?.showOnProfile);
-  const storeLocked = Boolean(storePreview?.store?.catalogLocked);
-  const storeIsOpen = storeStatus === "OPEN";
-  const storeIsPublic = storeIsOpen && storeShowOnProfile;
+  const storeResolvedState = storePreview?.store?.resolvedState ?? "DISABLED";
+  const storeIsOpen = storeResolvedState !== "DISABLED";
+  const storeShowOnProfile = storeResolvedState !== "DISABLED" && storeResolvedState !== "HIDDEN";
+  const storeLocked = storeResolvedState === "LOCKED";
+  const storeIsPublic =
+    storeResolvedState === "ACTIVE" ||
+    storeResolvedState === "CHECKOUT_DISABLED" ||
+    storeResolvedState === "LOCKED";
   const storePublicHref = organization?.username ? `/${organization.username}/loja` : null;
   const agendaEvents = useMemo<AgendaEvent[]>(() => {
     const items = events ?? [];
@@ -1383,6 +1386,10 @@ export default function OrganizationPublicProfilePanel({
       ? "A loja esta fechada. Abre-a para aparecer no perfil."
       : !storeShowOnProfile
         ? "A loja esta escondida no perfil publico."
+        : storeResolvedState === "LOCKED"
+          ? "Catalogo bloqueado. A loja aparece, mas sem checkout."
+          : storeResolvedState === "CHECKOUT_DISABLED"
+            ? "Checkout desativado. A loja aparece, mas sem concluir compra."
         : null;
 
   const storeModuleContent = showStoreModule ? (
@@ -1512,7 +1519,7 @@ export default function OrganizationPublicProfilePanel({
         ) : null}
         {canEdit && (
           <Link
-            href="/organizacao/loja?view=catalog&sub=products"
+            href={organization?.id ? `/org/${organization.id}/loja?view=catalog&sub=products` : "/organizacao/organizations"}
             className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/80"
           >
             Gerir produtos

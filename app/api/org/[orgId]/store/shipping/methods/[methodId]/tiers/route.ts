@@ -134,7 +134,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ methodId: 
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/shipping/methods/[methodId]/tiers error:", err);
+    console.error("GET /api/org/[orgId]/store/shipping/methods/[methodId]/tiers error:", err);
     return fail(500, "Erro ao carregar tiers.");
   }
 }
@@ -228,7 +228,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ methodId:
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/shipping/methods/[methodId]/tiers error:", err);
+    console.error("POST /api/org/[orgId]/store/shipping/methods/[methodId]/tiers error:", err);
     return fail(500, "Erro ao criar tier.");
   }
 }

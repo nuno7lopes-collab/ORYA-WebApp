@@ -21,8 +21,7 @@ type ProductItem = {
   compareAtPriceCents: number | null;
   currency: string;
   sku: string | null;
-  status: string;
-  isVisible: boolean;
+  visibility: "PUBLIC" | "HIDDEN" | "ARCHIVED";
   categoryId: number | null;
   requiresShipping: boolean;
   stockPolicy: string;
@@ -300,7 +299,7 @@ export default function StoreProductsPanel({
     compareAtPrice: formatPriceForInput(item.compareAtPriceCents),
     stockTracked: item.stockPolicy === "TRACKED",
     stockQty: item.stockQty !== null && item.stockQty !== undefined ? String(item.stockQty) : "",
-    publish: item.isVisible,
+    publish: item.visibility === "PUBLIC",
     sizeSelections: buildSizeSelections(),
     personalizationEnabled: false,
     personalizationLabel: "",
@@ -526,8 +525,7 @@ export default function StoreProductsPanel({
         requiresShipping: form.productType === "physical",
         stockPolicy: form.stockTracked ? "TRACKED" : "NONE",
         stockQty,
-        status: form.publish ? "ACTIVE" : "DRAFT",
-        isVisible: form.publish,
+        visibility: form.publish ? "PUBLIC" : "HIDDEN",
       },
     };
   };
@@ -834,13 +832,12 @@ export default function StoreProductsPanel({
     if (!canEdit) return;
     setSavingId(item.id);
     setError(null);
-    const nextVisible = !item.isVisible;
-    const nextStatus = nextVisible && item.status === "DRAFT" ? "ACTIVE" : item.status;
+    const nextVisibility = item.visibility === "PUBLIC" ? "HIDDEN" : "PUBLIC";
     try {
       const res = await fetch(`${endpointBase}/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isVisible: nextVisible, status: nextStatus }),
+        body: JSON.stringify({ visibility: nextVisibility }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
@@ -1463,11 +1460,15 @@ export default function StoreProductsPanel({
             <tbody>
               {filteredItems.map((item) => {
                 const statusLabel =
-                  item.status === "ACTIVE" ? "Ativo" : item.status === "ARCHIVED" ? "Arquivado" : "Rascunho";
+                  item.visibility === "PUBLIC"
+                    ? "Ativo"
+                    : item.visibility === "ARCHIVED"
+                      ? "Arquivado"
+                      : "Oculto";
                 const statusTone =
-                  item.status === "ACTIVE"
+                  item.visibility === "PUBLIC"
                     ? "bg-emerald-500/20 text-emerald-100"
-                    : item.status === "ARCHIVED"
+                    : item.visibility === "ARCHIVED"
                       ? "bg-rose-500/20 text-rose-100"
                       : "bg-white/10 text-white/70";
                 const stockLabel =
@@ -1500,12 +1501,12 @@ export default function StoreProductsPanel({
                       <label className="inline-flex items-center gap-2 text-xs text-white/70">
                         <input
                           type="checkbox"
-                          checked={item.isVisible}
+                          checked={item.visibility === "PUBLIC"}
                           onChange={() => handleToggleVisibility(item)}
                           disabled={!canEdit || savingId !== null}
                           className="accent-[#6BFFFF]"
                         />
-                        {item.isVisible ? "Sim" : "Nao"}
+                        {item.visibility === "PUBLIC" ? "Sim" : "Nao"}
                       </label>
                     </td>
                     <td className="px-4 py-3 text-right">

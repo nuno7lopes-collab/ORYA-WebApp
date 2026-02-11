@@ -13,8 +13,7 @@ type BundleItem = {
   pricingMode: string;
   priceCents: number | null;
   percentOff: number | null;
-  status: string;
-  isVisible: boolean;
+  visibility: "PUBLIC" | "HIDDEN" | "ARCHIVED";
 };
 
 type BundlePricingItem = {
@@ -36,12 +35,11 @@ type BundleFormState = {
   pricingMode: string;
   price: string;
   percentOff: string;
-  status: string;
-  isVisible: boolean;
+  visibility: "PUBLIC" | "HIDDEN" | "ARCHIVED";
 };
 
 const PRICING_MODES = ["FIXED", "PERCENT_DISCOUNT"] as const;
-const STATUSES = ["DRAFT", "ACTIVE", "ARCHIVED"] as const;
+const VISIBILITIES = ["PUBLIC", "HIDDEN", "ARCHIVED"] as const;
 
 function createEmptyForm(): BundleFormState {
   return {
@@ -51,8 +49,7 @@ function createEmptyForm(): BundleFormState {
     pricingMode: "FIXED",
     price: "",
     percentOff: "",
-    status: "DRAFT",
-    isVisible: false,
+    visibility: "HIDDEN",
   };
 }
 
@@ -125,7 +122,7 @@ export default function StoreBundlesPanel({
   const bundleHasMinimumItems = bundleItems.length >= 2;
   const bundlePriceValid =
     bundleItems.length === 0 ? true : bundleTotals !== null && bundleTotals.totalCents < bundleBaseCents;
-  const publishIntent = form.status === "ACTIVE" || form.isVisible;
+  const publishIntent = form.visibility === "PUBLIC";
   const publishValid = !publishIntent || (bundleHasMinimumItems && bundlePriceValid);
   const canSubmit = nameValid && priceValid && bundlePriceValid && publishValid;
 
@@ -191,8 +188,7 @@ export default function StoreBundlesPanel({
       pricingMode: item.pricingMode,
       price: formatCurrencyInput(item.priceCents),
       percentOff: item.percentOff !== null && item.percentOff !== undefined ? String(item.percentOff) : "",
-      status: item.status,
-      isVisible: item.isVisible,
+      visibility: item.visibility,
     });
     setModalError(null);
     setModalOpen(true);
@@ -255,8 +251,7 @@ export default function StoreBundlesPanel({
         pricingMode: form.pricingMode,
         priceCents: form.pricingMode === "FIXED" ? priceCents : null,
         percentOff: form.pricingMode === "PERCENT_DISCOUNT" ? percentOff : null,
-        status: form.status,
-        isVisible: form.isVisible,
+        visibility: form.visibility,
       },
     };
   };
@@ -498,30 +493,27 @@ export default function StoreBundlesPanel({
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs text-white/70">
-            Status {renderBadge("Opcional", "optional")}
+            Visibilidade {renderBadge("Opcional", "optional")}
             <select
-              value={form.status}
-              onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
+              value={form.visibility}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  visibility: e.target.value as BundleFormState["visibility"],
+                }))
+              }
               className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
             >
-              {STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
+              {VISIBILITIES.map((visibility) => (
+                <option key={visibility} value={visibility}>
+                  {visibility}
                 </option>
               ))}
             </select>
           </label>
-          <label className="inline-flex items-center gap-2 text-xs text-white/70">
-            <input
-              type="checkbox"
-              checked={form.isVisible}
-              onChange={(e) => setForm((prev) => ({ ...prev, isVisible: e.target.checked }))}
-              className="accent-[#6BFFFF]"
-            />
-            <span>
-              Visivel na loja {renderBadge("Opcional", "optional")}
-            </span>
-          </label>
+          <div className="flex items-center text-xs text-white/65">
+            `PUBLIC` aparece no catálogo; `HIDDEN` e `ARCHIVED` ficam fora da loja pública.
+          </div>
         </div>
       </div>
 
@@ -621,17 +613,17 @@ export default function StoreBundlesPanel({
                   <td className="px-4 py-3">
                     <span
                       className={`rounded-full px-2 py-1 text-[11px] ${
-                        item.status === "ACTIVE"
+                        item.visibility === "PUBLIC"
                           ? "bg-emerald-500/20 text-emerald-100"
-                          : item.status === "ARCHIVED"
+                          : item.visibility === "ARCHIVED"
                             ? "bg-rose-500/20 text-rose-100"
                             : "bg-white/10 text-white/70"
                       }`}
                     >
-                      {item.status}
+                      {item.visibility}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-white/70">{item.isVisible ? "Sim" : "Nao"}</td>
+                  <td className="px-4 py-3 text-xs text-white/70">{item.visibility === "PUBLIC" ? "Sim" : "Nao"}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <button

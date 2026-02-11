@@ -108,7 +108,7 @@ export default async function PublicStorePage({ params }: PageProps) {
   const products =
     storePublic && store && !store.catalogLocked
       ? await prisma.storeProduct.findMany({
-          where: { storeId: store.id, status: "ACTIVE", isVisible: true },
+          where: { storeId: store.id, visibility: "PUBLIC" },
           orderBy: [{ createdAt: "desc" }],
           select: {
             id: true,
@@ -129,7 +129,7 @@ export default async function PublicStorePage({ params }: PageProps) {
   const bundles =
     storePublic && store && !store.catalogLocked
       ? await prisma.storeBundle.findMany({
-          where: { storeId: store.id, status: "ACTIVE", isVisible: true },
+          where: { storeId: store.id, visibility: "PUBLIC" },
           orderBy: [{ createdAt: "desc" }],
           select: {
             id: true,
@@ -151,8 +151,7 @@ export default async function PublicStorePage({ params }: PageProps) {
                     slug: true,
                     priceCents: true,
                     currency: true,
-                    status: true,
-                    isVisible: true,
+                    visibility: true,
                     images: {
                       select: { url: true, altText: true, isPrimary: true, sortOrder: true },
                       orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
@@ -171,8 +170,7 @@ export default async function PublicStorePage({ params }: PageProps) {
     if (!bundle.items.length) return acc;
     const hasInvalid = bundle.items.some(
       (item) =>
-        item.product.status !== "ACTIVE" ||
-        !item.product.isVisible ||
+        item.product.visibility !== "PUBLIC" ||
         item.product.currency !== store?.currency ||
         (item.variant && !item.variant.isActive),
     );

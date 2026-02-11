@@ -172,7 +172,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ orderId: 
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/orders/[orderId]/shipments error:", err);
+    console.error("POST /api/org/[orgId]/store/orders/[orderId]/shipments error:", err);
     return fail(500, "Erro ao criar envio.");
   }
 }

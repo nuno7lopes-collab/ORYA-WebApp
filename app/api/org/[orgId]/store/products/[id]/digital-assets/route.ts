@@ -170,7 +170,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/products/[id]/digital-assets error:", err);
+    console.error("GET /api/org/[orgId]/store/products/[id]/digital-assets error:", err);
     return fail(500, "Erro ao carregar ficheiros.");
   }
 }
@@ -257,7 +257,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const bucket = env.uploadsBucket || "uploads";
     const ensured = await ensureBucketExists(bucket);
     if (!ensured.ok) {
-      console.error("[POST /api/organizacao/loja/products/[id]/digital-assets] ensure bucket error", ensured.error);
+      console.error("[POST /api/org/[orgId]/store/products/[id]/digital-assets] ensure bucket error", ensured.error);
       return fail(500, "Storage indisponivel.");
     }
     const uploadRes = await supabaseAdmin.storage.from(bucket).upload(objectPath, buffer, {
@@ -267,7 +267,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     });
 
     if (uploadRes.error) {
-      console.error("[POST /api/organizacao/loja/products/[id]/digital-assets] upload error", uploadRes.error);
+      console.error("[POST /api/org/[orgId]/store/products/[id]/digital-assets] upload error", uploadRes.error);
       return fail(500, "Erro ao fazer upload.");
     }
 
@@ -338,7 +338,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/products/[id]/digital-assets error:", err);
+    console.error("POST /api/org/[orgId]/store/products/[id]/digital-assets error:", err);
     return fail(500, "Erro ao criar ficheiro.");
   }
 }

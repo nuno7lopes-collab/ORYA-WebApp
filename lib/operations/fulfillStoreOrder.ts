@@ -285,7 +285,6 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
               supportEmail: true,
               supportPhone: true,
               organization: { select: { username: true, publicName: true, businessName: true } },
-              ownerUser: { select: { username: true, fullName: true } },
             },
           },
           lines: {
@@ -299,13 +298,10 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
 
       if (orderDetail?.customerEmail) {
         const org = orderDetail.store.organization;
-        const owner = orderDetail.store.ownerUser;
         const storeName =
           org?.publicName ||
           org?.businessName ||
           org?.username ||
-          owner?.fullName ||
-          owner?.username ||
           `Loja ${orderDetail.store.id}`;
         const totalLabel = new Intl.NumberFormat("pt-PT", {
           style: "currency",

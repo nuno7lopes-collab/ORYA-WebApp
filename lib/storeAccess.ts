@@ -24,7 +24,7 @@ export function isStoreDigitalEnabled() {
 }
 
 export function resolveStoreState(store: StoreLike): StoreResolvedState {
-  if (!store || store.status !== StoreStatus.OPEN) return "DISABLED";
+  if (!store || store.status !== StoreStatus.ACTIVE) return "DISABLED";
   if (!store.showOnProfile) return "HIDDEN";
   if (store.catalogLocked) return "LOCKED";
   if (!store.checkoutEnabled) return "CHECKOUT_DISABLED";
@@ -35,11 +35,15 @@ export function isStoreOpen(store: StoreLike) {
   return resolveStoreState(store) !== "DISABLED";
 }
 
-export function isStorePublic(store: StoreLike) {
+export function isPublicStore(store: StoreLike) {
   const state = resolveStoreState(store);
   return state === "LOCKED" || state === "CHECKOUT_DISABLED" || state === "ACTIVE";
 }
 
-export function canCheckoutStore(store: StoreLike) {
+export function canCheckout(store: StoreLike) {
   return resolveStoreState(store) === "ACTIVE";
 }
+
+// Backwards-compatible aliases for existing imports.
+export const isStorePublic = isPublicStore;
+export const canCheckoutStore = canCheckout;

@@ -129,7 +129,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ tierId: st
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/shipping/tiers/[tierId] error:", err);
+    console.error("GET /api/org/[orgId]/store/shipping/tiers/[tierId] error:", err);
     return fail(500, "Erro ao carregar tier.");
   }
 }
@@ -234,7 +234,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ tierId: 
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/shipping/tiers/[tierId] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/shipping/tiers/[tierId] error:", err);
     return fail(500, "Erro ao atualizar tier.");
   }
 }
@@ -286,7 +286,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ tierId:
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/shipping/tiers/[tierId] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/shipping/tiers/[tierId] error:", err);
     return fail(500, "Erro ao remover tier.");
   }
 }

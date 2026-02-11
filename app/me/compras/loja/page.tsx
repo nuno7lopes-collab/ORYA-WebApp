@@ -179,7 +179,7 @@ export default function StoreDownloadsPage() {
       setOrdersLoading(true);
       setOrdersError(null);
       try {
-        const res = await fetch("/api/me/store/purchases", { cache: "no-store" });
+        const res = await fetch("/api/me/purchases/store", { cache: "no-store" });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) {
           throw new Error(json?.error || "Erro ao carregar compras da loja.");
@@ -199,7 +199,7 @@ export default function StoreDownloadsPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/store/digital/grants", { cache: "no-store" });
+        const res = await fetch("/api/public/store/digital/grants", { cache: "no-store" });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) {
           throw new Error(json?.error || "Erro ao carregar downloads.");
@@ -218,7 +218,7 @@ export default function StoreDownloadsPage() {
     setReceiptLoadingId(orderId);
     setOrdersError(null);
     try {
-      const res = await fetch(`/api/me/store/purchases/${orderId}/receipt`, { cache: "no-store" });
+      const res = await fetch(`/api/me/purchases/store/${orderId}/receipt`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !json?.url) {
         throw new Error(json?.error || "Recibo indisponivel.");
@@ -235,7 +235,7 @@ export default function StoreDownloadsPage() {
     setInvoiceLoadingId(orderId);
     setOrdersError(null);
     try {
-      const res = await fetch(`/api/me/store/purchases/${orderId}/invoice`, { cache: "no-store" });
+      const res = await fetch(`/api/me/purchases/store/${orderId}/invoice`, { cache: "no-store" });
       if (!res.ok) {
         const json = await res.json().catch(() => null);
         throw new Error(json?.error || "Fatura indisponivel.");
@@ -260,7 +260,7 @@ export default function StoreDownloadsPage() {
     setDownloadingId(`${grantId}-${assetId}`);
     setError(null);
     try {
-      const res = await fetch("/api/store/digital/download", {
+      const res = await fetch("/api/public/store/digital/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ grantId, assetId }),

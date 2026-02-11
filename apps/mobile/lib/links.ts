@@ -101,6 +101,37 @@ export const resolveMobileLink = (
   if (path === "/convites/organizacoes") {
     return buildNative(path, search, source);
   }
+  if (path.startsWith("/store/")) {
+    return buildNative(path, search, source);
+  }
+  if (path === "/me/compras/loja") {
+    return buildNative("/store/purchases", "", source);
+  }
+  if (parts[0] === "me" && parts[1] === "compras" && parts[2] === "loja" && parts[3]) {
+    return buildNative(`/store/purchases/${parts[3]}`, "", source);
+  }
+  if (parts.length >= 2 && parts[1] === "loja" && parts[0]) {
+    const username = parts[0];
+    if (parts.length === 2) {
+      return buildNative(`/store/${username}`, search, source);
+    }
+    if (parts[2] === "produto" && parts[3]) {
+      return buildNative(`/store/${username}/product/${parts[3]}`, search, source);
+    }
+    if (parts[2] === "carrinho") {
+      return buildNative(`/store/${username}/cart`, search, source);
+    }
+    if (parts[2] === "checkout") {
+      return buildNative(`/store/${username}/checkout`, search, source);
+    }
+    if (parts[2] === "descargas") {
+      return buildNative("/store/downloads", search, source);
+    }
+    if (parts[2] === "sucesso") {
+      return buildNative(`/store/${username}/success`, search, source);
+    }
+    return buildNative(`/store/${username}`, search, source);
+  }
   if (path === "/social") {
     const tab = url.searchParams.get("tab");
     if (tab === "notifications") {
@@ -137,6 +168,7 @@ export const resolveMobileLink = (
     "service",
     "chat",
     "api",
+    "store",
   ]);
   if (parts.length === 1 && parts[0] && !reserved.has(parts[0])) {
     return buildNative(`/${parts[0]}`, search, source);

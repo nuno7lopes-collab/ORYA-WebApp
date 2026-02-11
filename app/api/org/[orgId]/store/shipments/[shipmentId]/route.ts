@@ -184,7 +184,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ shipment
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/shipments/[shipmentId] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/shipments/[shipmentId] error:", err);
     return fail(500, "Erro ao atualizar envio.");
   }
 }
@@ -235,7 +235,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ shipmen
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/shipments/[shipmentId] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/shipments/[shipmentId] error:", err);
     return fail(500, "Erro ao remover envio.");
   }
 }

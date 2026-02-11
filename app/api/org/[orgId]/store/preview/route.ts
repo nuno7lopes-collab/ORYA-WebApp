@@ -5,8 +5,8 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
-import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { OrganizationMemberRole, StoreProductStatus } from "@prisma/client";
+import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { OrganizationMemberRole, StoreVisibility } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -24,8 +24,7 @@ type PreviewProduct = {
   priceCents: number;
   currency: string;
   slug: string;
-  status: StoreProductStatus;
-  isVisible: boolean;
+  visibility: StoreVisibility;
   imageUrl: string | null;
 };
 
@@ -77,7 +76,14 @@ async function _GET(req: NextRequest) {
 
     const store = await prisma.store.findFirst({
       where: { ownerOrganizationId: organization.id },
-      select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+      select: {
+        id: true,
+        status: true,
+        showOnProfile: true,
+        catalogLocked: true,
+        checkoutEnabled: true,
+        currency: true,
+      },
     });
 
     if (!store) {
@@ -87,16 +93,16 @@ async function _GET(req: NextRequest) {
     const [totalCount, publicCount, draftCount, publicItems, draftItems] = await Promise.all([
       prisma.storeProduct.count({ where: { storeId: store.id } }),
       prisma.storeProduct.count({
-        where: { storeId: store.id, status: StoreProductStatus.ACTIVE, isVisible: true },
+        where: { storeId: store.id, visibility: StoreVisibility.PUBLIC },
       }),
       prisma.storeProduct.count({
         where: {
           storeId: store.id,
-          OR: [{ status: { not: StoreProductStatus.ACTIVE } }, { isVisible: false }],
+          visibility: { not: StoreVisibility.PUBLIC },
         },
       }),
       prisma.storeProduct.findMany({
-        where: { storeId: store.id, status: StoreProductStatus.ACTIVE, isVisible: true },
+        where: { storeId: store.id, visibility: StoreVisibility.PUBLIC },
         orderBy: [{ createdAt: "desc" }],
         take: 4,
         select: {
@@ -105,8 +111,7 @@ async function _GET(req: NextRequest) {
           priceCents: true,
           currency: true,
           slug: true,
-          status: true,
-          isVisible: true,
+          visibility: true,
           images: {
             select: { url: true, isPrimary: true, sortOrder: true },
             orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
@@ -117,7 +122,7 @@ async function _GET(req: NextRequest) {
       prisma.storeProduct.findMany({
         where: {
           storeId: store.id,
-          OR: [{ status: { not: StoreProductStatus.ACTIVE } }, { isVisible: false }],
+          visibility: { not: StoreVisibility.PUBLIC },
         },
         orderBy: [{ createdAt: "desc" }],
         take: 4,
@@ -127,8 +132,7 @@ async function _GET(req: NextRequest) {
           priceCents: true,
           currency: true,
           slug: true,
-          status: true,
-          isVisible: true,
+          visibility: true,
           images: {
             select: { url: true, isPrimary: true, sortOrder: true },
             orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
@@ -144,12 +148,17 @@ async function _GET(req: NextRequest) {
       priceCents: product.priceCents,
       currency: product.currency,
       slug: product.slug,
-      status: product.status,
-      isVisible: product.isVisible,
+      visibility: product.visibility,
       imageUrl: product.images[0]?.url ?? null,
     });
 
-    return respondOk(ctx, {store,
+    return respondOk(ctx, {
+      store: store
+        ? {
+            ...store,
+            resolvedState: resolveStoreState(store),
+          }
+        : null,
       counts: {
         total: totalCount,
         public: publicCount,
@@ -162,7 +171,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/preview error:", err);
+    console.error("GET /api/org/[orgId]/store/preview error:", err);
     return fail(500, "Erro ao carregar loja.");
   }
 }

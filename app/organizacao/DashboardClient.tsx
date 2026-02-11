@@ -2079,7 +2079,9 @@ function OrganizacaoPageInner({
           : "locked",
         href: canAccessLoja
           ? isLojaActive
-            ? "/organizacao/loja"
+            ? organization?.id
+              ? `/org/${organization.id}/loja`
+              : "/organizacao/organizations"
             : modulesSetupHref
           : undefined,
         eyebrow: "Crescimento",
@@ -2108,6 +2110,7 @@ function OrganizacaoPageInner({
       canUseCrm,
       canUseChatInterno,
       modulesSetupHref,
+      organization?.id,
     ],
   );
   const activeDashboardModules = useMemo(

@@ -7,7 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { OrganizationMemberRole, StoreOwnerType, StoreStatus } from "@prisma/client";
+import { OrganizationMemberRole, StoreStatus } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -114,7 +114,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
     }
-    console.error("GET /api/organizacao/loja error:", err);
+    console.error("GET /api/org/[orgId]/store error:", err);
     return fail(500, "Erro ao carregar loja.");
   }
 }
@@ -177,7 +177,6 @@ async function _POST(req: NextRequest) {
 
     const created = await prisma.store.create({
       data: {
-        ownerType: StoreOwnerType.ORG,
         ownerOrganizationId: organization.id,
         status: StoreStatus.CLOSED,
         catalogLocked: true,
@@ -201,7 +200,7 @@ async function _POST(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
     }
-    console.error("POST /api/organizacao/loja error:", err);
+    console.error("POST /api/org/[orgId]/store error:", err);
     return fail(500, "Erro ao criar loja.");
   }
 }
@@ -280,7 +279,7 @@ async function _PATCH(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja error:", err);
+    console.error("PATCH /api/org/[orgId]/store error:", err);
     return fail(500, "Erro ao atualizar loja.");
   }
 }

@@ -124,7 +124,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ zoneId: st
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/shipping/zones/[zoneId] error:", err);
+    console.error("GET /api/org/[orgId]/store/shipping/zones/[zoneId] error:", err);
     return fail(500, "Erro ao carregar zona.");
   }
 }
@@ -222,7 +222,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ zoneId: 
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/shipping/zones/[zoneId] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/shipping/zones/[zoneId] error:", err);
     return fail(500, "Erro ao atualizar zona.");
   }
 }
@@ -273,7 +273,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ zoneId:
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/shipping/zones/[zoneId] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/shipping/zones/[zoneId] error:", err);
     return fail(500, "Erro ao remover zona.");
   }
 }

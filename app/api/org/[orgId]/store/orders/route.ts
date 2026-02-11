@@ -140,7 +140,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/orders error:", err);
+    console.error("GET /api/org/[orgId]/store/orders error:", err);
     return fail(500, "Erro ao carregar encomendas.");
   }
 }

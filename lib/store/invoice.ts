@@ -22,7 +22,6 @@ type InvoiceOrder = {
     supportEmail: string | null;
     supportPhone: string | null;
     organization: { username: string | null; publicName: string | null; businessName: string | null } | null;
-    ownerUser: { username: string | null; fullName: string | null } | null;
   };
   addresses: Array<{
     addressType: StoreAddressType;
@@ -145,13 +144,10 @@ export async function buildStoreInvoicePdf(order: InvoiceOrder) {
 
   const store = order.store;
   const org = store.organization;
-  const owner = store.ownerUser;
   const storeName =
     org?.publicName ||
     org?.businessName ||
     org?.username ||
-    owner?.fullName ||
-    owner?.username ||
     `Loja ${store.id}`;
 
   const billing = order.addresses.find((address) => address.addressType === StoreAddressType.BILLING);

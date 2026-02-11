@@ -171,7 +171,7 @@ async function _PATCH(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/products/[id]/digital-assets/[assetId] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/products/[id]/digital-assets/[assetId] error:", err);
     return fail(500, "Erro ao atualizar ficheiro.");
   }
 }
@@ -241,7 +241,7 @@ async function _DELETE(
     const bucket = env.uploadsBucket || "uploads";
     const removal = await supabaseAdmin.storage.from(bucket).remove([asset.storagePath]);
     if (removal.error) {
-      console.warn("[DELETE /api/organizacao/loja/products/[id]/digital-assets/[assetId]] remove error", removal.error);
+      console.warn("[DELETE /api/org/[orgId]/store/products/[id]/digital-assets/[assetId]] remove error", removal.error);
     }
 
     await prisma.$transaction(async (tx) => {
@@ -271,7 +271,7 @@ async function _DELETE(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/products/[id]/digital-assets/[assetId] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/products/[id]/digital-assets/[assetId] error:", err);
     return fail(500, "Erro ao remover ficheiro.");
   }
 }

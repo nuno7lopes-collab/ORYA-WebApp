@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 
 type ShippingSettings = {
   freeShippingThresholdCents: number | null;
-  shippingMode: "FLAT" | "VALUE_TIERS";
 };
 
 type ZoneItem = {
@@ -261,7 +260,6 @@ export default function StoreShippingSettingsPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           freeShippingThresholdCents: freeShippingThresholdCents ?? null,
-          shippingMode: "FLAT",
         }),
       });
       const json = await res.json().catch(() => null);

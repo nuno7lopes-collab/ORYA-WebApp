@@ -141,7 +141,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/settings error:", err);
+    console.error("GET /api/org/[orgId]/store/settings error:", err);
     return fail(500, "Erro ao carregar definicoes.");
   }
 }
@@ -225,7 +225,7 @@ async function _PATCH(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/settings error:", err);
+    console.error("PATCH /api/org/[orgId]/store/settings error:", err);
     return fail(500, "Erro ao atualizar definicoes.");
   }
 }

@@ -6,7 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { OrganizationMemberRole, StoreProductStatus, StoreStockPolicy } from "@prisma/client";
+import { normalizeStoreVisibility } from "@/lib/store/visibility";
+import { OrganizationMemberRole, StoreStockPolicy, StoreVisibility } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -33,8 +34,7 @@ const updateProductSchema = z
     requiresShipping: z.boolean().optional(),
     stockPolicy: z.nativeEnum(StoreStockPolicy).optional(),
     stockQty: z.number().int().nonnegative().optional().nullable(),
-    status: z.nativeEnum(StoreProductStatus).optional(),
-    isVisible: z.boolean().optional(),
+    visibility: z.nativeEnum(StoreVisibility).optional(),
     tags: z.array(z.string().trim().min(1).max(40)).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Sem dados." });
@@ -142,8 +142,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       requiresShipping?: boolean;
       stockPolicy?: StoreStockPolicy;
       stockQty?: number | null;
-      status?: StoreProductStatus;
-      isVisible?: boolean;
+      visibility?: StoreVisibility;
       tags?: string[];
     } = {};
 
@@ -165,8 +164,11 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (payload.requiresShipping !== undefined) data.requiresShipping = payload.requiresShipping;
     if (payload.stockPolicy !== undefined) data.stockPolicy = payload.stockPolicy;
     if (payload.stockQty !== undefined) data.stockQty = payload.stockQty ?? null;
-    if (payload.status !== undefined) data.status = payload.status;
-    if (payload.isVisible !== undefined) data.isVisible = payload.isVisible;
+    if (payload.visibility !== undefined) {
+      data.visibility = normalizeStoreVisibility({
+        visibility: payload.visibility ?? null,
+      });
+    }
     if (payload.tags) data.tags = payload.tags;
 
     if (data.categoryId) {
@@ -199,8 +201,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         compareAtPriceCents: true,
         currency: true,
         sku: true,
-        status: true,
-        isVisible: true,
+        visibility: true,
         categoryId: true,
         requiresShipping: true,
         stockPolicy: true,
@@ -213,7 +214,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/products/[id] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/products/[id] error:", err);
     return fail(500, "Erro ao atualizar produto.");
   }
 }
@@ -267,7 +268,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/products/[id] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/products/[id] error:", err);
     return fail(500, "Erro ao remover produto.");
   }
 }

@@ -68,7 +68,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
-    console.error("GET /api/me/store/purchases/[orderId]/receipt error:", err);
+    console.error("GET /api/me/purchases/store/[orderId]/receipt error:", err);
     return jsonWrap({ ok: false, error: "Erro ao obter recibo." }, { status: 500 });
   }
 }

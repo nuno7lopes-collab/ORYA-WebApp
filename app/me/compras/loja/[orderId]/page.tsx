@@ -121,7 +121,7 @@ export default function StoreOrderDetailPage({ params }: { params: Promise<{ ord
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/me/store/purchases/${resolvedParams.orderId}`, { cache: "no-store" });
+        const res = await fetch(`/api/me/purchases/store/${resolvedParams.orderId}`, { cache: "no-store" });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) {
           throw new Error(json?.error || "Erro ao carregar encomenda.");
@@ -141,7 +141,7 @@ export default function StoreOrderDetailPage({ params }: { params: Promise<{ ord
     setReceiptLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/me/store/purchases/${order.id}/receipt`, { cache: "no-store" });
+      const res = await fetch(`/api/me/purchases/store/${order.id}/receipt`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !json?.url) {
         throw new Error(json?.error || "Recibo indisponivel.");
@@ -159,7 +159,7 @@ export default function StoreOrderDetailPage({ params }: { params: Promise<{ ord
     setInvoiceLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/me/store/purchases/${order.id}/invoice`, { cache: "no-store" });
+      const res = await fetch(`/api/me/purchases/store/${order.id}/invoice`, { cache: "no-store" });
       if (!res.ok) {
         const json = await res.json().catch(() => null);
         throw new Error(json?.error || "Fatura indisponivel.");

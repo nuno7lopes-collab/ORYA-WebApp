@@ -275,7 +275,7 @@ export default function StorefrontCheckoutClient({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/store/cart?storeId=${storeId}`, { cache: "no-store" });
+      const res = await fetch(`/api/public/store/cart?storeId=${storeId}`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao carregar carrinho.");
@@ -314,7 +314,7 @@ export default function StorefrontCheckoutClient({
         country,
         subtotalCents: String(subtotalCents),
       });
-      const res = await fetch(`/api/store/shipping/methods?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/public/store/shipping/methods?${params.toString()}`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao carregar metodos.");
@@ -340,7 +340,7 @@ export default function StorefrontCheckoutClient({
     if (prefillLoaded) return;
     const loadPrefill = async () => {
       try {
-        const res = await fetch(`/api/store/checkout/prefill?storeId=${storeId}`, { cache: "no-store" });
+        const res = await fetch(`/api/public/store/checkout/prefill?storeId=${storeId}`, { cache: "no-store" });
         const json = (await res.json().catch(() => null)) as CheckoutPrefillResponse | null;
         if (!res.ok || !json?.ok) {
           setPrefillLoaded(true);
@@ -572,7 +572,7 @@ export default function StorefrontCheckoutClient({
     setError(null);
     setPromoError(null);
     try {
-      const res = await fetch(`/api/store/checkout?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/checkout?storeId=${storeId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

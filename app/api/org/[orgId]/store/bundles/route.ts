@@ -6,7 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { OrganizationMemberRole, StoreBundlePricingMode, StoreBundleStatus } from "@prisma/client";
+import { normalizeStoreVisibility } from "@/lib/store/visibility";
+import { OrganizationMemberRole, StoreBundlePricingMode, StoreVisibility } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -27,8 +28,7 @@ const createBundleSchema = z
     pricingMode: z.nativeEnum(StoreBundlePricingMode),
     priceCents: z.number().int().nonnegative().optional().nullable(),
     percentOff: z.number().int().min(1).max(100).optional().nullable(),
-    status: z.nativeEnum(StoreBundleStatus).optional(),
-    isVisible: z.boolean().optional(),
+    visibility: z.nativeEnum(StoreVisibility).optional(),
   })
   .refine(
     (data) =>
@@ -123,8 +123,7 @@ async function _GET(req: NextRequest) {
         pricingMode: true,
         priceCents: true,
         percentOff: true,
-        status: true,
-        isVisible: true,
+        visibility: true,
       },
     });
 
@@ -133,7 +132,7 @@ async function _GET(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/bundles error:", err);
+    console.error("GET /api/org/[orgId]/store/bundles error:", err);
     return fail(500, "Erro ao carregar bundles.");
   }
 }
@@ -180,7 +179,10 @@ async function _POST(req: NextRequest) {
     if (!slug) {
       return fail(400, "Slug invalido.");
     }
-    if (payload.status === StoreBundleStatus.ACTIVE || payload.isVisible) {
+    const resolvedVisibility = normalizeStoreVisibility({
+      visibility: payload.visibility ?? null,
+    });
+    if (resolvedVisibility === StoreVisibility.PUBLIC) {
       return fail(409, "Adiciona pelo menos 2 produtos ao bundle antes de ativar ou mostrar na loja.");
     }
 
@@ -202,8 +204,7 @@ async function _POST(req: NextRequest) {
         priceCents: payload.pricingMode === StoreBundlePricingMode.FIXED ? payload.priceCents ?? 0 : null,
         percentOff:
           payload.pricingMode === StoreBundlePricingMode.PERCENT_DISCOUNT ? payload.percentOff ?? 0 : null,
-        status: payload.status ?? StoreBundleStatus.DRAFT,
-        isVisible: payload.isVisible ?? false,
+        visibility: resolvedVisibility,
       },
       select: {
         id: true,
@@ -213,8 +214,7 @@ async function _POST(req: NextRequest) {
         pricingMode: true,
         priceCents: true,
         percentOff: true,
-        status: true,
-        isVisible: true,
+        visibility: true,
       },
     });
 
@@ -223,7 +223,7 @@ async function _POST(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("POST /api/organizacao/loja/bundles error:", err);
+    console.error("POST /api/org/[orgId]/store/bundles error:", err);
     return fail(500, "Erro ao criar bundle.");
   }
 }

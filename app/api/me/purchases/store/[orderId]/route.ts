@@ -24,18 +24,14 @@ function buildStoreLabel(store: {
   supportEmail: string | null;
   supportPhone: string | null;
   organization: { username: string | null; publicName: string | null; businessName: string | null } | null;
-  ownerUser: { username: string | null; fullName: string | null } | null;
 }) {
   const org = store.organization;
-  const owner = store.ownerUser;
   const displayName =
     org?.publicName ||
     org?.businessName ||
     org?.username ||
-    owner?.fullName ||
-    owner?.username ||
     `Loja ${store.id}`;
-  const username = org?.username || owner?.username || null;
+  const username = org?.username || null;
   return {
     id: store.id,
     displayName,
@@ -107,7 +103,6 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
             supportEmail: true,
             supportPhone: true,
             organization: { select: { username: true, publicName: true, businessName: true } },
-            ownerUser: { select: { username: true, fullName: true } },
           },
         },
         shippingZone: { select: { name: true } },
@@ -322,7 +317,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "Nao autenticado." }, { status: 401 });
     }
-    console.error("GET /api/me/store/purchases/[orderId] error:", err);
+    console.error("GET /api/me/purchases/store/[orderId] error:", err);
     return jsonWrap({ ok: false, error: "Erro ao carregar encomenda." }, { status: 500 });
   }
 }

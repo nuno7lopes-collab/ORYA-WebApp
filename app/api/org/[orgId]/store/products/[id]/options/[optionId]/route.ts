@@ -186,7 +186,7 @@ async function _PATCH(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/products/[id]/options/[optionId] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/products/[id]/options/[optionId] error:", err);
     return fail(500, "Erro ao atualizar opcao.");
   }
 }
@@ -257,7 +257,7 @@ async function _DELETE(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/products/[id]/options/[optionId] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/products/[id]/options/[optionId] error:", err);
     return fail(500, "Erro ao remover opcao.");
   }
 }

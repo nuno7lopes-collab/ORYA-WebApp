@@ -180,7 +180,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ orderId: s
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("GET /api/organizacao/loja/orders/[orderId] error:", err);
+    console.error("GET /api/org/[orgId]/store/orders/[orderId] error:", err);
     return fail(500, "Erro ao carregar encomenda.");
   }
 }
@@ -251,7 +251,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ orderId:
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/orders/[orderId] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/orders/[orderId] error:", err);
     return fail(500, "Erro ao atualizar encomenda.");
   }
 }

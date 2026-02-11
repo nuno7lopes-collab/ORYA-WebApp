@@ -1648,9 +1648,13 @@ export default function PadelHubClient({
       { label: "Reservas", href: "/organizacao/reservas", desc: "Agenda, aulas e bookings." },
       { label: "CRM", href: "/organizacao/crm/clientes", desc: "Clientes, tags e segmentos." },
       { label: "Treinadores", href: "/organizacao/treinadores", desc: "Perfis públicos e gestão." },
-      { label: "Loja", href: "/organizacao/loja", desc: "Produtos e stock." },
+      {
+        label: "Loja",
+        href: organizationId ? `/org/${organizationId}/loja` : "/organizacao/organizations",
+        desc: "Produtos e stock.",
+      },
     ];
-  }, [toolMode]);
+  }, [organizationId, toolMode]);
 
   const trainers = trainersRes?.items ?? [];
   const trainersError = trainersRes?.ok === false ? trainersRes.error || "Erro ao carregar treinadores." : null;

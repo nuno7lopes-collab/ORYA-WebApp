@@ -1,8 +1,0 @@
-app = "orya-ops-worker"
-primary_region = "ams"
-
-[build]
-  dockerfile = "Dockerfile.worker"
-
-[processes]
-  worker = "node operations-loop.js"

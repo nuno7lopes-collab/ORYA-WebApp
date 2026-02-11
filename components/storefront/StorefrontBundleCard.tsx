@@ -47,7 +47,7 @@ export default function StorefrontBundleCard({ storeId, bundle }: StorefrontBund
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/store/cart/bundles?storeId=${storeId}`, {
+      const res = await fetch(`/api/public/store/cart/bundles?storeId=${storeId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bundleId: bundle.id, quantity: 1 }),

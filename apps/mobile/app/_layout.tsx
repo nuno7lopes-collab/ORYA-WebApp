@@ -150,6 +150,70 @@ export default function RootLayout() {
                         gestureEnabled: true,
                       }}
                     />
+                    <Stack.Screen
+                      name="store/[username]/index"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 360,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="store/[username]/product/[slug]"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 360,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="store/[username]/cart"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 360,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="store/[username]/checkout"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 360,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="store/[username]/success"
+                      options={{
+                        animation: "fade_from_bottom",
+                        animationDuration: 320,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="store/purchases/index"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 360,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="store/purchases/[orderId]"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 360,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="store/downloads"
+                      options={{
+                        animation: "slide_from_right",
+                        animationDuration: 360,
+                        gestureEnabled: true,
+                      }}
+                    />
                   </Stack>
                 </TabSwipeProvider>
               </AuthProvider>

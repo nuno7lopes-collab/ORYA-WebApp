@@ -184,7 +184,7 @@ async function _PATCH(
       return fail(401, "Nao autenticado.");
     }
     console.error(
-      "PATCH /api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId] error:",
+      "PATCH /api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId] error:",
       err,
     );
     return fail(500, "Erro ao atualizar valor.");
@@ -271,7 +271,7 @@ async function _DELETE(
       return fail(401, "Nao autenticado.");
     }
     console.error(
-      "DELETE /api/organizacao/loja/products/[id]/options/[optionId]/values/[valueId] error:",
+      "DELETE /api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId] error:",
       err,
     );
     return fail(500, "Erro ao remover valor.");

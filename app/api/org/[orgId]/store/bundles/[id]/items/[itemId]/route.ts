@@ -194,7 +194,7 @@ async function _PATCH(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("PATCH /api/organizacao/loja/bundles/[id]/items/[itemId] error:", err);
+    console.error("PATCH /api/org/[orgId]/store/bundles/[id]/items/[itemId] error:", err);
     return fail(500, "Erro ao atualizar item.");
   }
 }
@@ -262,7 +262,7 @@ async function _DELETE(
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
     }
-    console.error("DELETE /api/organizacao/loja/bundles/[id]/items/[itemId] error:", err);
+    console.error("DELETE /api/org/[orgId]/store/bundles/[id]/items/[itemId] error:", err);
     return fail(500, "Erro ao remover item.");
   }
 }
