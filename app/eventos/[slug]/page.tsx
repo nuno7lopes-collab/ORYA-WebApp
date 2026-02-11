@@ -31,6 +31,7 @@ import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { EventAccessMode } from "@prisma/client";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { resolveLocale, t } from "@/lib/i18n";
+import CrmEngagementTracker from "@/app/components/crm/CrmEngagementTracker";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -795,6 +796,14 @@ export default async function EventPage({
       className="relative min-h-screen w-full overflow-hidden text-white"
       style={backgroundVars}
     >
+      {user?.id && event.organizationId ? (
+        <CrmEngagementTracker
+          type="EVENT_VIEWED"
+          eventId={event.id}
+          organizationId={event.organizationId}
+          enabled
+        />
+      ) : null}
       <CheckoutProvider>
         {hasCover && <EventBackgroundTuner targetId="event-page" defaults={backgroundDefaults} />}
         {hasCover && (

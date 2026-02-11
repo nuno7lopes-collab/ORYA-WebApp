@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
-const serviceFindFirst = vi.fn();
-const prismaMock = {
-  service: {
-    findFirst: serviceFindFirst,
-  },
-};
+const mocks = vi.hoisted(() => ({
+  serviceFindFirst: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => ({
-  prisma: prismaMock,
+  prisma: {
+    service: {
+      findFirst: mocks.serviceFindFirst,
+    },
+  },
 }));
 
 vi.mock("@/lib/reservas/serviceAssignment", () => ({
@@ -50,7 +52,7 @@ describe("service calendar window", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-02-10T10:00:00Z"));
-    serviceFindFirst.mockResolvedValue({
+    mocks.serviceFindFirst.mockResolvedValue({
       id: 1,
       kind: "COURT",
       durationMinutes: 60,
@@ -73,12 +75,12 @@ describe("service calendar window", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    serviceFindFirst.mockReset();
+    mocks.serviceFindFirst.mockReset();
   });
 
   it("bloqueia meses fora da janela (mês atual + 3)", async () => {
     const res = await CalendarGet(
-      new Request("http://localhost/api/servicos/1/calendario?month=2026-06"),
+      new NextRequest("http://localhost/api/servicos/1/calendario?month=2026-06"),
       { params: Promise.resolve({ id: "1" }) },
     );
 
@@ -90,7 +92,7 @@ describe("service calendar window", () => {
 
   it("bloqueia dias fora da janela", async () => {
     const res = await SlotsGet(
-      new Request("http://localhost/api/servicos/1/slots?day=2026-06-01"),
+      new NextRequest("http://localhost/api/servicos/1/slots?day=2026-06-01"),
       { params: Promise.resolve({ id: "1" }) },
     );
 

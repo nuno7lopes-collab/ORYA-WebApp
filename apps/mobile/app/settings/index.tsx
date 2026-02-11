@@ -58,18 +58,18 @@ export default function SettingsScreen() {
   const privacyUrl = `${baseUrl}/privacidade`;
   const manifest = (Constants as any)?.manifest as { version?: string } | undefined;
   const version = Constants.expoConfig?.version ?? manifest?.version ?? "1.0.0";
-  const deletePhrase = t("settings.session.deletePhrase");
+  const deletePhrase = t("settings:session.deletePhrase");
   const deletePhraseUpper = deletePhrase.toUpperCase();
   const languageOptions: { value: Locale; label: string }[] = [
-    { value: "pt-PT", label: t("settings.language.pt-PT") },
-    { value: "en-US", label: t("settings.language.en-US") },
-    { value: "es-ES", label: t("settings.language.es-ES") },
+    { value: "pt-PT", label: t("settings:language.pt-PT") },
+    { value: "en-US", label: t("settings:language.en-US") },
+    { value: "es-ES", label: t("settings:language.es-ES") },
   ];
   const backButton = (
     <Pressable
       onPress={() => safeBack(router, navigation, "/(tabs)/profile")}
       accessibilityRole="button"
-      accessibilityLabel={t("common.actions.back")}
+      accessibilityLabel={t("common:actions.back")}
       style={({ pressed }) => [
         {
           width: tokens.layout.touchTarget,
@@ -239,7 +239,7 @@ export default function SettingsScreen() {
   const handleEmailSave = async () => {
     const normalized = email.trim().toLowerCase();
     if (!normalized || !normalized.includes("@")) {
-      setEmailMessage(t("settings.messages.invalidEmail"));
+      setEmailMessage(t("settings:messages.invalidEmail"));
       return;
     }
     setEmailSaving(true);
@@ -247,10 +247,10 @@ export default function SettingsScreen() {
     try {
       const nextEmail = await updateEmail(normalized, accessToken);
       setEmail(nextEmail);
-      setEmailMessage(t("settings.messages.emailUpdated"));
+      setEmailMessage(t("settings:messages.emailUpdated"));
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
     } catch {
-      setEmailMessage(t("settings.messages.emailUpdateFailed"));
+      setEmailMessage(t("settings:messages.emailUpdateFailed"));
     } finally {
       setEmailSaving(false);
     }
@@ -260,7 +260,7 @@ export default function SettingsScreen() {
     if (resetting) return;
     const normalized = email.trim().toLowerCase();
     if (!normalized || !normalized.includes("@")) {
-      setEmailMessage(t("settings.messages.resetInvalidEmail"));
+      setEmailMessage(t("settings:messages.resetInvalidEmail"));
       return;
     }
     setResetting(true);
@@ -269,9 +269,9 @@ export default function SettingsScreen() {
       await supabase.auth.resetPasswordForEmail(normalized, {
         redirectTo: Linking.createURL("auth/callback"),
       });
-      setEmailMessage(t("settings.messages.resetSent"));
+      setEmailMessage(t("settings:messages.resetSent"));
     } catch {
-      setEmailMessage(t("settings.messages.resetFailed"));
+      setEmailMessage(t("settings:messages.resetFailed"));
     } finally {
       setResetting(false);
     }
@@ -284,7 +284,7 @@ export default function SettingsScreen() {
       await updateSettings({ visibility }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
     } catch {
-      Alert.alert(t("common.labels.error"), t("settings.messages.privacySaveFailed"));
+      Alert.alert(t("common:labels.error"), t("settings:messages.privacySaveFailed"));
     } finally {
       setSavingVisibility(false);
     }
@@ -297,7 +297,7 @@ export default function SettingsScreen() {
       await updateSettings({ favouriteCategories: interests }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
     } catch {
-      Alert.alert(t("common.labels.error"), t("settings.messages.interestsSaveFailed"));
+      Alert.alert(t("common:labels.error"), t("settings:messages.interestsSaveFailed"));
     } finally {
       setSavingInterests(false);
     }
@@ -315,7 +315,7 @@ export default function SettingsScreen() {
       });
       prefsQuery.refetch();
     } catch {
-      Alert.alert(t("common.labels.error"), t("settings.messages.notificationsSaveFailed"));
+      Alert.alert(t("common:labels.error"), t("settings:messages.notificationsSaveFailed"));
     } finally {
       setSavingNotifications(false);
     }
@@ -349,7 +349,7 @@ export default function SettingsScreen() {
       await updateConsent(organizationId, type, granted, accessToken);
     } catch {
       setConsents(previous);
-      setConsentError(t("settings.messages.consentSaveFailed"));
+      setConsentError(t("settings:messages.consentSaveFailed"));
     } finally {
       setConsentSaving((prev) => ({ ...prev, [key]: false }));
     }
@@ -360,7 +360,7 @@ export default function SettingsScreen() {
       await supabase.auth.signOut();
       router.replace({ pathname: "/auth", params: { next: "/settings" } });
     } catch {
-      Alert.alert(t("common.labels.error"), t("settings.messages.logoutFailed"));
+      Alert.alert(t("common:labels.error"), t("settings:messages.logoutFailed"));
     }
   };
 
@@ -372,7 +372,7 @@ export default function SettingsScreen() {
       await supabase.auth.signOut();
       router.replace({ pathname: "/auth", params: { next: "/settings" } });
     } catch {
-      Alert.alert(t("common.labels.error"), t("settings.messages.deleteFailed"));
+      Alert.alert(t("common:labels.error"), t("settings:messages.deleteFailed"));
     } finally {
       setDeleting(false);
     }
@@ -380,7 +380,7 @@ export default function SettingsScreen() {
 
   return (
     <LiquidBackground>
-      <TopAppHeader scrollState={topBar} variant="title" title={t("settings.title")} leftSlot={backButton} />
+      <TopAppHeader scrollState={topBar} variant="title" title={t("settings:title")} leftSlot={backButton} />
       <ScrollView
         contentContainerStyle={[
           styles.container,
@@ -393,39 +393,39 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <SettingsSection
-          title={t("settings.sections.account.title")}
-          subtitle={t("settings.sections.account.subtitle")}
+          title={t("settings:sections.account.title")}
+          subtitle={t("settings:sections.account.subtitle")}
         >
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>{t("settings.fields.email")}</Text>
+            <Text style={styles.fieldLabel}>{t("settings:fields.email")}</Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder={t("settings.fields.emailPlaceholder")}
+              placeholder={t("settings:fields.emailPlaceholder")}
               placeholderTextColor="rgba(255,255,255,0.4)"
               keyboardType="email-address"
               autoCapitalize="none"
               style={styles.input}
-              accessibilityLabel={t("settings.fields.email")}
+              accessibilityLabel={t("settings:fields.email")}
             />
           </View>
           {emailMessage ? <Text style={styles.helperText}>{emailMessage}</Text> : null}
           <View style={styles.rowButtons}>
             <SettingsButton
-              label={t("settings.account.updateEmail")}
+              label={t("settings:account.updateEmail")}
               onPress={handleEmailSave}
               disabled={!emailDirty || emailSaving}
               loading={emailSaving}
-              loadingLabel={t("settings.account.updating")}
+              loadingLabel={t("settings:account.updating")}
               variant="primary"
               style={{ flex: 1 }}
             />
             <SettingsButton
-              label={resetting ? t("settings.account.sending") : t("settings.account.resetPassword")}
+              label={resetting ? t("settings:account.sending") : t("settings:account.resetPassword")}
               onPress={handlePasswordReset}
               disabled={resetting}
               loading={resetting}
-              loadingLabel={t("settings.account.sending")}
+              loadingLabel={t("settings:account.sending")}
               variant="secondary"
               style={{ flex: 1 }}
             />
@@ -433,14 +433,14 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title={t("settings.sections.privacy.title")}
-          subtitle={t("settings.sections.privacy.subtitle")}
+          title={t("settings:sections.privacy.title")}
+          subtitle={t("settings:sections.privacy.subtitle")}
         >
           <View style={styles.optionRow}>
             {([
-              { key: "PUBLIC", label: t("settings.privacy.public") },
-              { key: "FOLLOWERS", label: t("settings.privacy.followers") },
-              { key: "PRIVATE", label: t("settings.privacy.private") },
+              { key: "PUBLIC", label: t("settings:privacy.public") },
+              { key: "FOLLOWERS", label: t("settings:privacy.followers") },
+              { key: "PRIVATE", label: t("settings:privacy.private") },
             ] as { key: Visibility; label: string }[]).map((option) => {
               const active = visibility === option.key;
               return (
@@ -464,7 +464,7 @@ export default function SettingsScreen() {
             })}
           </View>
           <SettingsButton
-            label={t("settings.privacy.save")}
+            label={t("settings:privacy.save")}
             onPress={handleSaveVisibility}
             disabled={!visibilityDirty || savingVisibility}
             loading={savingVisibility}
@@ -474,19 +474,19 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title={t("settings.sections.interests.title")}
-          subtitle={t("settings.sections.interests.subtitle")}
+          title={t("settings:sections.interests.title")}
+          subtitle={t("settings:sections.interests.subtitle")}
         >
           <View style={styles.interestGrid}>
             {INTEREST_OPTIONS.map((interest) => {
               const active = interests.includes(interest.id);
-              const interestLabel = t(`common.interests.${interest.id}`);
+              const interestLabel = t(`common:interests.${interest.id}`);
               return (
                 <Pressable
                   key={interest.id}
                   onPress={() => toggleInterest(interest.id)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${t("common.labels.interests")} ${interestLabel}`}
+                  accessibilityLabel={`${t("common:labels.interests")} ${interestLabel}`}
                   accessibilityState={{ selected: active }}
                   style={[
                     styles.interestChip,
@@ -501,10 +501,10 @@ export default function SettingsScreen() {
             })}
           </View>
           <Text style={styles.helperText}>
-            {t("settings.interests.selectedCount", { count: interests.length })}
+            {t("settings:interests.selectedCount", { count: interests.length })}
           </Text>
           <SettingsButton
-            label={t("settings.interests.save")}
+            label={t("settings:interests.save")}
             onPress={handleSaveInterests}
             disabled={!interestsDirty || savingInterests}
             loading={savingInterests}
@@ -514,18 +514,18 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title={t("settings.sections.notifications.title")}
-          subtitle={t("settings.sections.notifications.subtitle")}
+          title={t("settings:sections.notifications.title")}
+          subtitle={t("settings:sections.notifications.subtitle")}
         >
           {prefsQuery.isLoading ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color="rgba(255,255,255,0.7)" />
-              <Text style={styles.helperText}>{t("settings.notifications.loading")}</Text>
+              <Text style={styles.helperText}>{t("settings:notifications.loading")}</Text>
             </View>
           ) : (
             <View style={styles.stack}>
               <SettingsToggle
-                label={t("settings.notifications.social")}
+                label={t("settings:notifications.social")}
                 value={notificationPrefs.allowSocialNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -536,7 +536,7 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label={t("settings.notifications.events")}
+                label={t("settings:notifications.events")}
                 value={notificationPrefs.allowEventNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -547,7 +547,7 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label={t("settings.notifications.system")}
+                label={t("settings:notifications.system")}
                 value={notificationPrefs.allowSystemNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -558,7 +558,7 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label={t("settings.notifications.marketing")}
+                label={t("settings:notifications.marketing")}
                 value={notificationPrefs.allowMarketingNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({
@@ -569,14 +569,14 @@ export default function SettingsScreen() {
                 }
               />
               <SettingsToggle
-                label={t("settings.notifications.sales")}
+                label={t("settings:notifications.sales")}
                 value={notificationPrefs.allowSalesAlerts}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({ ...prev, allowSalesAlerts: next }))
                 }
               />
               <SettingsToggle
-                label={t("settings.notifications.news")}
+                label={t("settings:notifications.news")}
                 value={notificationPrefs.allowEmailNotifications}
                 onValueChange={(next) =>
                   setNotificationPrefs((prev) => ({ ...prev, allowEmailNotifications: next }))
@@ -586,25 +586,25 @@ export default function SettingsScreen() {
           )}
           <View style={styles.pushRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.pushTitle}>{t("settings.notifications.pushTitle")}</Text>
-              <Text style={styles.helperText}>{t("settings.notifications.pushSubtitle")}</Text>
+              <Text style={styles.pushTitle}>{t("settings:notifications.pushTitle")}</Text>
+              <Text style={styles.helperText}>{t("settings:notifications.pushSubtitle")}</Text>
             </View>
             {pushStatus === "granted" ? (
               <View style={styles.pushBadge}>
-                <Text style={styles.pushBadgeText}>{t("settings.notifications.pushActive")}</Text>
+                <Text style={styles.pushBadgeText}>{t("settings:notifications.pushActive")}</Text>
               </View>
             ) : pushStatus === "unavailable" ? (
               <View style={styles.pushBadgeMuted}>
                 <Text style={styles.pushBadgeTextMuted}>
-                  {t("settings.notifications.pushUnavailable")}
+                  {t("settings:notifications.pushUnavailable")}
                 </Text>
               </View>
             ) : (
               <SettingsButton
                 label={
                   pushStatus === "denied"
-                    ? t("settings.notifications.pushOpenSettings")
-                    : t("settings.notifications.pushEnable")
+                    ? t("settings:notifications.pushOpenSettings")
+                    : t("settings:notifications.pushEnable")
                 }
                 onPress={handlePushPermission}
                 loading={pushBusy}
@@ -614,7 +614,7 @@ export default function SettingsScreen() {
             )}
           </View>
           <SettingsButton
-            label={t("settings.notifications.save")}
+            label={t("settings:notifications.save")}
             onPress={handleSaveNotifications}
             disabled={!notificationsDirty || savingNotifications}
             loading={savingNotifications}
@@ -624,8 +624,8 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title={t("settings.sections.language.title")}
-          subtitle={t("settings.sections.language.subtitle")}
+          title={t("settings:sections.language.title")}
+          subtitle={t("settings:sections.language.subtitle")}
         >
           <View style={styles.stack}>
             {languageOptions.map((option) => {
@@ -648,17 +648,17 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title={t("settings.consents.title")}
-          subtitle={t("settings.consents.subtitle")}
+          title={t("settings:consents.title")}
+          subtitle={t("settings:consents.subtitle")}
         >
           {consentError ? <Text style={styles.errorText}>{consentError}</Text> : null}
           {consentsQuery.isLoading ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color="rgba(255,255,255,0.7)" />
-              <Text style={styles.helperText}>{t("settings.consents.loading")}</Text>
+              <Text style={styles.helperText}>{t("settings:consents.loading")}</Text>
             </View>
           ) : consents.length === 0 ? (
-            <Text style={styles.helperText}>{t("settings.consents.empty")}</Text>
+            <Text style={styles.helperText}>{t("settings:consents.empty")}</Text>
           ) : (
             <View style={styles.stack}>
               {consents.map((item) => {
@@ -666,7 +666,7 @@ export default function SettingsScreen() {
                   item.organization.publicName ||
                   item.organization.businessName ||
                   item.organization.username ||
-                  t("settings.consents.orgFallback");
+                  t("settings:consents.orgFallback");
                 const orgUsername = item.organization.username ?? null;
                 return (
                   <View key={item.organization.id} style={styles.consentCard}>
@@ -679,7 +679,7 @@ export default function SettingsScreen() {
                       disabled={!orgUsername}
                       style={styles.consentHeader}
                       accessibilityRole="button"
-                      accessibilityLabel={t("settings.consents.openOrg", { name: orgName })}
+                      accessibilityLabel={t("settings:consents.openOrg", { name: orgName })}
                       accessibilityState={{ disabled: !orgUsername }}
                     >
                       {item.organization.brandingAvatarUrl ? (
@@ -696,10 +696,10 @@ export default function SettingsScreen() {
                         const savingKey = `${item.organization.id}:${type}`;
                         const label =
                           type === "MARKETING"
-                            ? t("settings.consents.marketing")
+                            ? t("settings:consents.marketing")
                             : type === "CONTACT_EMAIL"
-                              ? t("settings.consents.contactEmail")
-                              : t("settings.consents.contactSms");
+                              ? t("settings:consents.contactEmail")
+                              : t("settings:consents.contactSms");
                         return (
                           <SettingsToggle
                             key={type}
@@ -721,18 +721,18 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title={t("settings.sections.session.title")}
-          subtitle={t("settings.sections.session.subtitle")}
+          title={t("settings:sections.session.title")}
+          subtitle={t("settings:sections.session.subtitle")}
         >
           <View style={styles.rowButtons}>
             <SettingsButton
-              label={t("settings.session.signOut")}
+              label={t("settings:session.signOut")}
               onPress={handleLogout}
               variant="secondary"
               style={{ flex: 1 }}
             />
             <SettingsButton
-              label={t("settings.session.delete")}
+              label={t("settings:session.delete")}
               onPress={() => setDeleteModalOpen(true)}
               variant="danger"
               style={{ flex: 1 }}
@@ -741,30 +741,30 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection
-          title={t("settings.sections.legal.title")}
-          subtitle={t("settings.sections.legal.subtitle")}
+          title={t("settings:sections.legal.title")}
+          subtitle={t("settings:sections.legal.subtitle")}
         >
           <View style={styles.stack}>
             <Pressable
               style={styles.linkRow}
               onPress={() => Linking.openURL(termsUrl)}
               accessibilityRole="link"
-              accessibilityLabel={t("settings.legal.openTerms")}
+              accessibilityLabel={t("settings:legal.openTerms")}
             >
-              <Text style={styles.linkLabel}>{t("settings.legal.terms")}</Text>
+              <Text style={styles.linkLabel}>{t("settings:legal.terms")}</Text>
               <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
             </Pressable>
             <Pressable
               style={styles.linkRow}
               onPress={() => Linking.openURL(privacyUrl)}
               accessibilityRole="link"
-              accessibilityLabel={t("settings.legal.openPrivacy")}
+              accessibilityLabel={t("settings:legal.openPrivacy")}
             >
-              <Text style={styles.linkLabel}>{t("settings.legal.privacy")}</Text>
+              <Text style={styles.linkLabel}>{t("settings:legal.privacy")}</Text>
               <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
             </Pressable>
             <View style={styles.versionRow}>
-              <Text style={styles.helperText}>{t("settings.legal.version", { version })}</Text>
+              <Text style={styles.helperText}>{t("settings:legal.version", { version })}</Text>
             </View>
           </View>
         </SettingsSection>
@@ -772,16 +772,16 @@ export default function SettingsScreen() {
 
       <SettingsModal
         visible={deleteModalOpen}
-        title={t("settings.session.deleteModalTitle")}
-        subtitle={t("settings.session.deleteModalSubtitle")}
-        confirmLabel={t("settings.session.deleteConfirmLabel")}
-        cancelLabel={t("common.actions.cancel")}
+        title={t("settings:session.deleteModalTitle")}
+        subtitle={t("settings:session.deleteModalSubtitle")}
+        confirmLabel={t("settings:session.deleteConfirmLabel")}
+        cancelLabel={t("common:actions.cancel")}
         onCancel={() => {
           setDeleteModalOpen(false);
           setDeleteConfirm("");
         }}
         onConfirm={handleDeleteAccount}
-        confirmInputLabel={t("settings.session.deleteInputLabel")}
+        confirmInputLabel={t("settings:session.deleteInputLabel")}
         confirmInputValue={deleteConfirm}
         onConfirmInputChange={setDeleteConfirm}
         confirmPlaceholder={deletePhraseUpper}

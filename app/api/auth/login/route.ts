@@ -36,11 +36,30 @@ async function _POST(req: NextRequest) {
   const password = body?.password ?? "";
   const identifier = identifierRaw.trim();
 
+  const ipLimiter = await rateLimit(req, {
+    windowMs: 5 * 60 * 1000,
+    max: 30,
+    keyPrefix: "auth:login:ip",
+    requireDistributed: true,
+  });
+  if (!ipLimiter.allowed) {
+    return jsonWrap(
+      {
+        ok: false,
+        errorCode: "RATE_LIMITED",
+        message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+        retryable: true,
+      },
+      { status: 429, headers: { "Retry-After": String(ipLimiter.retryAfter) } }
+    );
+  }
+
   const limiter = await rateLimit(req, {
     windowMs: 5 * 60 * 1000,
     max: 10,
     keyPrefix: "auth:login",
     identifier,
+    requireDistributed: true,
   });
   if (!limiter.allowed) {
     return jsonWrap(

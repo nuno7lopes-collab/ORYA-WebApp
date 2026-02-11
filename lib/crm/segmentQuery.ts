@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { buildCustomerFilters, normalizeSegmentDefinition } from "@/lib/crm/segments";
+import { buildContactFilters, normalizeSegmentDefinition } from "@/lib/crm/segments";
 import { Prisma } from "@prisma/client";
 
 const MAX_IN_CLAUSE = 5000;
@@ -18,7 +18,7 @@ function unionSets(a: Set<string>, b: Set<string>) {
   return out;
 }
 
-async function resolveInteractionUserIds(params: {
+async function resolveInteractionContactIds(params: {
   organizationId: number;
   rules: Array<{ types: string[]; since?: Date }>;
   logic: "AND" | "OR";
@@ -27,17 +27,17 @@ async function resolveInteractionUserIds(params: {
 
   let currentSet: Set<string> | null = null;
   for (const rule of params.rules) {
-    const userIds = await prisma.crmInteraction.findMany({
+    const contactIds = await prisma.crmInteraction.findMany({
       where: {
         organizationId: params.organizationId,
         type: { in: rule.types as any },
         ...(rule.since ? { occurredAt: { gte: rule.since } } : {}),
       },
-      select: { userId: true },
-      distinct: ["userId"],
+      select: { contactId: true },
+      distinct: ["contactId"],
     });
 
-    const nextSet = new Set(userIds.map((item) => item.userId));
+    const nextSet = new Set(contactIds.map((item) => item.contactId));
     if (!currentSet) {
       currentSet = nextSet;
       continue;
@@ -49,47 +49,47 @@ async function resolveInteractionUserIds(params: {
   return currentSet;
 }
 
-export async function resolveSegmentUserIds(params: {
+export async function resolveSegmentContactIds(params: {
   organizationId: number;
   rules: unknown;
-  maxUsers?: number;
-}): Promise<{ userIds: string[]; total: number; unfiltered: boolean }> {
+  maxContacts?: number;
+}): Promise<{ contactIds: string[]; total: number; unfiltered: boolean }> {
   const definition = normalizeSegmentDefinition(params.rules);
-  const { filters, interactionRules, logic } = buildCustomerFilters(definition, {
+  const { filters, interactionRules, logic } = buildContactFilters(definition, {
     organizationId: params.organizationId,
   });
 
-  const hasCustomerFilters = filters.length > 0;
-  const customerWhere: Prisma.CrmCustomerWhereInput = {
+  const hasContactFilters = filters.length > 0;
+  const contactWhere: Prisma.CrmContactWhereInput = {
     organizationId: params.organizationId,
-    ...(hasCustomerFilters ? { [logic]: filters } : {}),
+    ...(hasContactFilters ? { [logic]: filters } : {}),
   };
 
-  const interactionSet = await resolveInteractionUserIds({
+  const interactionSet = await resolveInteractionContactIds({
     organizationId: params.organizationId,
     rules: interactionRules.map((rule) => ({ types: rule.types, since: rule.since })),
     logic,
   });
 
-  if (!hasCustomerFilters && !interactionSet) {
-    const total = await prisma.crmCustomer.count({ where: { organizationId: params.organizationId } });
-    const take = Math.min(params.maxUsers ?? 200, MAX_IN_CLAUSE);
-    const customers = await prisma.crmCustomer.findMany({
+  if (!hasContactFilters && !interactionSet) {
+    const total = await prisma.crmContact.count({ where: { organizationId: params.organizationId } });
+    const take = Math.min(params.maxContacts ?? 200, MAX_IN_CLAUSE);
+    const contacts = await prisma.crmContact.findMany({
       where: { organizationId: params.organizationId },
-      select: { userId: true },
+      select: { id: true },
       orderBy: [{ lastActivityAt: "desc" }, { createdAt: "desc" }],
       take,
     });
-    return { userIds: customers.map((c) => c.userId), total, unfiltered: true };
+    return { contactIds: contacts.map((c) => c.id), total, unfiltered: true };
   }
 
   let baseSet: Set<string> | null = null;
-  if (hasCustomerFilters) {
-    const base = await prisma.crmCustomer.findMany({
-      where: customerWhere,
-      select: { userId: true },
+  if (hasContactFilters) {
+    const base = await prisma.crmContact.findMany({
+      where: contactWhere,
+      select: { id: true },
     });
-    baseSet = new Set(base.map((item) => item.userId));
+    baseSet = new Set(base.map((item) => item.id));
   }
 
   let finalSet: Set<string> | null = null;
@@ -103,11 +103,35 @@ export async function resolveSegmentUserIds(params: {
     finalSet = unionSets(baseSet ?? new Set(), interactionSet ?? new Set());
   }
 
-  const userIds = Array.from(finalSet ?? []);
-  if (!userIds.length) return { userIds: [], total: 0, unfiltered: false };
+  const contactIds = Array.from(finalSet ?? []);
+  if (!contactIds.length) return { contactIds: [], total: 0, unfiltered: false };
 
-  const total = finalSet ? finalSet.size : userIds.length;
-  const limited = userIds.slice(0, MAX_IN_CLAUSE);
-  const take = Math.min(params.maxUsers ?? 200, limited.length);
-  return { userIds: limited.slice(0, take), total, unfiltered: false };
+  const total = finalSet ? finalSet.size : contactIds.length;
+  const limited = contactIds.slice(0, MAX_IN_CLAUSE);
+  const take = Math.min(params.maxContacts ?? 200, limited.length);
+  return { contactIds: limited.slice(0, take), total, unfiltered: false };
+}
+
+export async function resolveSegmentUserIds(params: {
+  organizationId: number;
+  rules: unknown;
+  maxUsers?: number;
+}): Promise<{ userIds: string[]; total: number; unfiltered: boolean }> {
+  const resolved = await resolveSegmentContactIds({
+    organizationId: params.organizationId,
+    rules: params.rules,
+    maxContacts: params.maxUsers,
+  });
+  if (!resolved.contactIds.length) {
+    return { userIds: [], total: resolved.total, unfiltered: resolved.unfiltered };
+  }
+  const contacts = await prisma.crmContact.findMany({
+    where: { id: { in: resolved.contactIds }, userId: { not: null } },
+    select: { userId: true },
+  });
+  return {
+    userIds: contacts.map((item) => item.userId!).filter(Boolean),
+    total: resolved.total,
+    unfiltered: resolved.unfiltered,
+  };
 }

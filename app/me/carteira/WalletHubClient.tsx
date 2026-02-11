@@ -156,7 +156,7 @@ export default function WalletHubClient() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-[radial-gradient(circle_at_12%_12%,rgba(120,160,255,0.16),transparent_55%),radial-gradient(circle_at_88%_18%,rgba(120,255,214,0.12),transparent_60%),linear-gradient(160deg,#090d1c,#0b0f1f)] text-white">
+      <main className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
         <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col items-center justify-center px-6 text-center">
           <p className="text-[11px] uppercase tracking-[0.4em] text-white/55">Carteira ORYA</p>
           <h1 className="mt-4 text-3xl font-semibold">Entra para veres a tua carteira</h1>
@@ -185,7 +185,7 @@ export default function WalletHubClient() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_12%_12%,rgba(120,160,255,0.16),transparent_55%),radial-gradient(circle_at_88%_18%,rgba(120,255,214,0.12),transparent_60%),linear-gradient(160deg,#080b18,#0c1124)] text-white">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
       <div className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
         <header className="rounded-3xl border border-white/10 bg-white/5 px-6 py-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-center justify-between gap-4">

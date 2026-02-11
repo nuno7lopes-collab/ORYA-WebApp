@@ -145,13 +145,13 @@ export default function AuthGatewayScreen() {
       (reason.includes("host.exp.Exponent") || reason.toLowerCase().includes("unacceptable audience"))
     ) {
       if (showDevHints) {
-        Alert.alert(t("auth.errorGeneric"), t("auth.devAppleHint"));
+        Alert.alert(t("auth:errorGeneric"), t("auth:devAppleHint"));
       } else {
-        Alert.alert(t("auth.errorGeneric"), t("auth.errorRetry"));
+        Alert.alert(t("auth:errorGeneric"), t("auth:errorRetry"));
       }
       return;
     }
-    Alert.alert(t("auth.errorGeneric"), t("auth.errorRetry"));
+    Alert.alert(t("auth:errorGeneric"), t("auth:errorRetry"));
   };
 
   const handleApple = async () => {
@@ -296,45 +296,45 @@ export default function AuthGatewayScreen() {
             <Image source={ORYA_LOGO} style={styles.brandSymbol} contentFit="contain" />
             <Text style={styles.brandWordmark}>ORYA</Text>
           </View>
-          <Text style={styles.title}>{t("auth.heroTitle")}</Text>
-          <Text style={styles.subtitle}>{t("auth.heroSubtitle")}</Text>
+          <Text style={styles.title}>{t("auth:heroTitle")}</Text>
+          <Text style={styles.subtitle}>{t("auth:heroSubtitle")}</Text>
         </View>
 
         <GlassCard style={styles.card}>
           <View style={styles.buttonStack}>
             {appleAvailable ? (
               <AuthButton
-                label={t("auth.apple")}
+                label={t("auth:apple")}
                 variant="apple"
                 onPress={handleApple}
                 loading={busyMethod === "apple"}
                 disabled={Boolean(busyMethod)}
-                accessibilityLabel={t("auth.apple")}
+                accessibilityLabel={t("auth:apple")}
               />
             ) : null}
             <AuthButton
-              label={t("auth.google")}
+              label={t("auth:google")}
               variant="google"
               onPress={handleGoogle}
               loading={busyMethod === "google"}
               disabled={Boolean(busyMethod)}
-              accessibilityLabel={t("auth.google")}
+              accessibilityLabel={t("auth:google")}
             />
           </View>
 
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
-            <Text style={styles.dividerText}>{t("auth.divider")}</Text>
+            <Text style={styles.dividerText}>{t("auth:divider")}</Text>
             <View style={styles.divider} />
           </View>
 
           <AuthButton
-            label={t("auth.emailButton")}
+            label={t("auth:emailButton")}
             variant="email"
             onPress={handleEmail}
             loading={busyMethod === "email"}
             disabled={Boolean(busyMethod)}
-            accessibilityLabel={t("auth.emailButton")}
+            accessibilityLabel={t("auth:emailButton")}
           />
 
           <View style={styles.legal}>
@@ -344,10 +344,10 @@ export default function AuthGatewayScreen() {
           <Pressable
             onPress={() => setHelpVisible(true)}
             accessibilityRole="button"
-            accessibilityLabel={t("auth.help")}
+            accessibilityLabel={t("auth:help")}
             style={styles.helpLink}
           >
-            <Text style={styles.helpText}>{t("auth.help")}</Text>
+            <Text style={styles.helpText}>{t("auth:help")}</Text>
           </Pressable>
         </GlassCard>
 

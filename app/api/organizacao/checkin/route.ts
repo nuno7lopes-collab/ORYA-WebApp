@@ -301,11 +301,12 @@ async function _POST(req: NextRequest) {
       return CheckinResultCode.OK;
     });
 
-    if (result === CheckinResultCode.OK && event?.organizationId && ent.ownerUserId) {
+    if (result === CheckinResultCode.OK && event?.organizationId && (ent.ownerUserId || ent.ownerIdentityId)) {
       try {
         await ingestCrmInteraction({
           organizationId: event.organizationId,
-          userId: ent.ownerUserId,
+          userId: ent.ownerUserId ?? undefined,
+          emailIdentityId: ent.ownerIdentityId ?? undefined,
           type: CrmInteractionType.EVENT_CHECKIN,
           sourceType: CrmInteractionSource.CHECKIN,
           sourceId: ent.id,

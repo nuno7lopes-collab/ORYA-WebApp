@@ -26,6 +26,7 @@
       "done": "Concluído",
       "signIn": "Entrar",
       "share": "Partilhar",
+      "favorite": "Favoritar",
       "accept": "Aceitar",
       "decline": "Recusar",
       "validate": "Validar",
@@ -77,24 +78,25 @@
     "time": {
       "today": "Hoje",
       "tomorrow": "Amanhã",
-      "inDays": "Em {{count}} dias",
-      "inHours": "Em {{count}}h",
+      "inDays": "Em {count} dias",
+      "inHours": "Em {count}h",
       "available": "Disponível",
       "ended": "Já passou",
-      "startsIn": "Em {{value}}",
-      "endsIn": "Termina {{value}}",
+      "startsIn": "Em {value}",
+      "endsIn": "Termina {value}",
       "now": "Agora"
     },
     "price": {
       "free": "Grátis",
-      "from": "Desde {{price}}",
+      "from": "Desde {price}",
       "ticketsSoon": "Bilhetes em breve",
       "soldOut": "Esgotado"
     },
     "units": {
-      "km": "{{value}} km",
+      "km": "{value} km",
       "kmShort": "<1 km",
-      "minutesShort": "{{count}} min"
+      "minutesShort": "{count} min",
+      "hoursShort": "{count} h"
     },
     "empty": {
       "generic": "Sem resultados."
@@ -186,7 +188,7 @@
     },
     "sections": {
       "results": "Resultados",
-      "resultsFor": "Para \"{{query}}\"",
+      "resultsFor": "Para \"{query}\"",
       "forYou": "Para ti"
     },
     "empty": {
@@ -195,7 +197,7 @@
       "noContent": "Nada por aqui ainda",
       "noResultsFilters": "Não há resultados para estes filtros.",
       "noEventsNearby": "Ainda não há eventos por aqui.",
-      "notFound": "Não encontrámos “{{query}}”.",
+      "notFound": "Não encontrámos “{query}”.",
       "loadError": "Não foi possível carregar o feed."
     },
     "cta": {
@@ -204,8 +206,8 @@
       "cancelSearch": "Cancelar pesquisa",
       "clearFilters": "Limpar filtros",
       "seeOnMap": "Ver no mapa",
-      "filterBy": "Filtrar por {{label}}",
-      "removeFilter": "Remover filtro {{label}}"
+      "filterBy": "Filtrar por {label}",
+      "removeFilter": "Remover filtro {label}"
     },
     "filters": {
       "title": "Filtros",
@@ -217,12 +219,12 @@
       "date": "Data",
       "price": "Preço",
       "eventType": "Tipo",
-      "nearbyDistance": "Perto de ti · {{distance}}",
+      "nearbyDistance": "Perto de ti · {distance}",
       "validating": "A validar morada...",
-      "locationCity": "Localização: {{city}}",
+      "locationCity": "Localização: {city}",
       "searching": "A procurar...",
       "noResults": "Sem resultados",
-      "selectLocation": "Selecionar {{label}}",
+      "selectLocation": "Selecionar {label}",
       "suggestionsError": "Falha ao obter sugestões.",
       "validateError": "Não foi possível validar esta morada."
     }
@@ -238,8 +240,8 @@
     "title": "Mensagens",
     "subtitle": "Conversas dos eventos e mensagens diretas.",
     "requests": "Pedidos",
-    "requestsWithCount": "Pedidos ({{count}})",
-    "unreadCount": "{{count}} novas",
+    "requestsWithCount": "Pedidos ({count})",
+    "unreadCount": "{count} novas",
     "lastMessageEmpty": "Sem mensagens por enquanto.",
     "empty": {
       "title": "Ainda não tens mensagens ativas.",
@@ -317,7 +319,9 @@
       "undoPromptBody": "Anular envio?",
       "undoAction": "Anular",
       "messageDeleted": "Mensagem removida",
+      "openProfile": "Abrir perfil",
       "muted": "Silenciado",
+      "unavailable": "Indisponível",
       "empty": "Ainda não há mensagens. Diz olá.",
       "inputPlaceholder": "Escreve uma mensagem",
       "send": "Enviar mensagem"
@@ -326,13 +330,34 @@
   "settings": {
     "title": "Definições",
     "sections": {
-      "account": {"title": "Conta", "subtitle": "Email e recuperação."},
-      "privacy": {"title": "Privacidade", "subtitle": "Controla quem pode ver o teu perfil."},
-      "interests": {"title": "Interesses", "subtitle": "Escolhe até 6 interesses."},
-      "notifications": {"title": "Notificações", "subtitle": "Emails e alertas essenciais."},
-      "language": {"title": "Idioma", "subtitle": "Escolhe o idioma da app."},
-      "session": {"title": "Sessão e conta", "subtitle": "Termina sessão ou elimina a conta."},
-      "legal": {"title": "Legal e app", "subtitle": "Informação legal e versão."}
+      "account": {
+        "title": "Conta",
+        "subtitle": "Email e recuperação."
+      },
+      "privacy": {
+        "title": "Privacidade",
+        "subtitle": "Controla quem pode ver o teu perfil."
+      },
+      "interests": {
+        "title": "Interesses",
+        "subtitle": "Escolhe até 6 interesses."
+      },
+      "notifications": {
+        "title": "Notificações",
+        "subtitle": "Emails e alertas essenciais."
+      },
+      "language": {
+        "title": "Idioma",
+        "subtitle": "Escolhe o idioma da app."
+      },
+      "session": {
+        "title": "Sessão e conta",
+        "subtitle": "Termina sessão ou elimina a conta."
+      },
+      "legal": {
+        "title": "Legal e app",
+        "subtitle": "Informação legal e versão."
+      }
     },
     "fields": {
       "email": "Email",
@@ -345,7 +370,7 @@
       "save": "Guardar privacidade"
     },
     "interests": {
-      "selectedCount": "{{count}}/6 selecionados",
+      "selectedCount": "{count}/6 selecionados",
       "save": "Guardar interesses"
     },
     "notifications": {
@@ -390,7 +415,7 @@
       "loading": "A carregar consentimentos...",
       "empty": "Sem organizações associadas.",
       "orgFallback": "Organização",
-      "openOrg": "Abrir organização {{name}}",
+      "openOrg": "Abrir organização {name}",
       "marketing": "Marketing",
       "contactEmail": "Contacto por email",
       "contactSms": "Contacto por SMS"
@@ -412,7 +437,7 @@
     "legal": {
       "terms": "Termos",
       "privacy": "Política de Privacidade",
-      "version": "Versão {{version}}",
+      "version": "Versão {version}",
       "openTerms": "Abrir termos",
       "openPrivacy": "Abrir política de privacidade"
     },
@@ -425,6 +450,7 @@
   },
   "onboarding": {
     "title": "Vamos começar",
+    "welcomeTitle": "Bem-vindo à ORYA",
     "steps": {
       "basic": "Perfil",
       "interests": "Interesses",
@@ -437,11 +463,13 @@
       "namePlaceholder": "O teu nome",
       "usernameLabel": "Username",
       "usernamePlaceholder": "@teunome",
+      "usernameHint": "3-15 caracteres, letras ou números, opcionalmente _ ou ., sem espaços ou acentos. Algumas palavras estão reservadas.",
       "continue": "Continuar"
     },
     "interests": {
       "title": "O que te interessa?",
       "subtitle": "Escolhe até 6 interesses.",
+      "selectedCount": "{count}/{total} selecionados",
       "continue": "Continuar"
     },
     "padel": {
@@ -449,18 +477,54 @@
       "gender": "Género",
       "level": "Nível",
       "side": "Preferência",
+      "levelOptional": "Nível (opcional)",
+      "levelOption": "Nível {level}",
+      "skip": "Saltar",
+      "genders": {
+        "male": "Masculino",
+        "female": "Feminino"
+      },
+      "sides": {
+        "left": "Esquerda",
+        "right": "Direita",
+        "any": "Qualquer"
+      },
       "continue": "Continuar"
     },
     "location": {
       "title": "Onde estás?",
       "subtitle": "Usamos isto para recomendar eventos perto de ti.",
       "allow": "Permitir localização",
+      "allowShort": "Permitir",
       "skip": "Ignorar por agora",
+      "skipWithout": "Continuar sem localização",
+      "notNow": "Agora não",
       "continue": "Continuar"
+    },
+    "status": {
+      "checking": "A verificar…",
+      "available": "Disponível",
+      "reserved": "Reservado",
+      "taken": "Indisponível",
+      "invalid": "Username inválido.",
+      "error": "Não foi possível verificar agora."
     },
     "errors": {
       "usernameTaken": "Este username já está em uso.",
-      "usernameInvalid": "Este username não é válido."
+      "usernameInvalid": "Este username não é válido.",
+      "usernameReserved": "Este username está reservado.",
+      "usernameInvalidTitle": "Username inválido",
+      "usernameUnavailableTitle": "Username indisponível",
+      "usernameUnavailableBody": "Escolhe outro username para concluir.",
+      "usernameCheckTimeout": "Verificação demorou demasiado. Tenta novamente.",
+      "usernameCheckFailed": "Não foi possível verificar agora.",
+      "profileSaveFailed": "Não foi possível guardar o perfil.",
+      "interestsSaveFailed": "Não foi possível guardar os interesses.",
+      "padelSaveFailed": "Não foi possível guardar o perfil de padel.",
+      "locationFailed": "Não foi possível obter localização agora.",
+      "missingDataTitle": "Faltam dados",
+      "padelMissing": "Seleciona o género e o lado preferido.",
+      "finalizeFailed": "Não foi possível concluir o onboarding. Tenta novamente."
     }
   },
   "events": {
@@ -482,20 +546,220 @@
     "access": {
       "public": "PÚBLICO",
       "invite": "CONVITE",
-      "unlisted": "UNLISTED"
+      "unlisted": "NÃO LISTADO"
     },
     "tickets": {
+      "title": "Bilhetes",
+      "comingSoon": "Bilhetes a publicar brevemente. Ativa notificações para saber quando abrirem.",
+      "selectTicket": "Selecionar {name}",
       "available": "Disponível",
       "closed": "Fechado",
       "upcoming": "Brevemente",
       "soldOut": "Esgotado",
-      "lastSeats": "Últimos {{count}}",
-      "remaining": "{{count}}+ lugares",
+      "lastSeats": "Últimos {count}",
+      "remaining": "{count}+ lugares",
       "freeEntry": "Entrada livre"
     },
     "attendance": {
-      "registered": "{{sold}}/{{total}} inscritos",
-      "registeredPlus": "{{sold}}+ inscritos"
+      "registered": "{sold}/{total} inscritos",
+      "registeredPlus": "{sold}+ inscritos"
+    },
+    "detail": {
+      "fallbackTitle": "Evento",
+      "mainInfo": "Informação principal",
+      "about": "Sobre o evento",
+      "openOrganizer": "Abrir organizador {name}",
+      "organizer": "Organizado por {name}",
+      "chatTitle": "Chat do evento",
+      "chatSigninBody": "Entra para aceder ao chat do evento.",
+      "chatLoading": "A carregar chat...",
+      "chatOpen": "Abrir chat",
+      "chatUnavailable": "Chat indisponível.",
+      "ctaJoin": "Juntar-me",
+      "ctaBuy": "Comprar bilhete",
+      "perPlayer": "por jogador",
+      "vs": "vs",
+      "categoryFallback": "Categoria",
+      "notFound": "Evento não encontrado.",
+      "loadError": "Não foi possível carregar o evento.",
+      "signInToContinue": "Inicia sessão para continuar."
+    },
+    "invite": {
+      "requiredTitle": "Convite obrigatório",
+      "requiredBody": "Este evento é só por convite. Entra e valida o token ou o teu email/username.",
+      "tokenPlaceholder": "Token do convite",
+      "validateToken": "Validar token",
+      "validating": "A validar...",
+      "confirmed": "Convite confirmado",
+      "invalid": "Convite inválido.",
+      "tokenInvalid": "Token inválido.",
+      "tokenNotAllowed": "Este token não é permitido.",
+      "tokenExpired": "Token expirado.",
+      "tokenEmailOnly": "Este token só é válido para email.",
+      "invalidWithReason": "Convite inválido ({reason}).",
+      "identifierPlaceholder": "Email ou username",
+      "validateIdentifier": "Validar email/username",
+      "identifierInvalid": "Email ou username inválido.",
+      "usernameOnly": "Este convite é apenas para username.",
+      "emailOnly": "Este convite é apenas para email.",
+      "usernameNotFound": "Username não encontrado.",
+      "notFound": "Convite não encontrado.",
+      "notFoundWithReason": "Convite não encontrado ({reason}).",
+      "validateFailed": "Não foi possível validar o convite.",
+      "foundSignIn": "Convite encontrado. Entra para continuar.",
+      "checking": "A verificar conta...",
+      "mismatch": "O convite não corresponde à tua conta.",
+      "title": "Convite",
+      "acceptFailed": "Não foi possível aceitar o convite.",
+      "declineFailed": "Não foi possível recusar o convite.",
+      "chatPending": "Tens um convite para o chat deste evento.",
+      "accept": "Aceitar convite",
+      "accepting": "A aceitar...",
+      "acceptChatFailed": "Não foi possível aceitar o convite do chat.",
+      "lockedTickets": "Evento por convite. Entra e valida o token ou o teu email/username para ver os bilhetes."
+    },
+    "padel": {
+      "inviteOnly": "Evento por convite. Entra e usa um convite para continuar.",
+      "summaryTitle": "Resumo do torneio",
+      "statusLabel": "Estado: {status}",
+      "timelineTitle": "Timeline",
+      "categoriesTitle": "Categorias",
+      "categoryLabel": "Categoria {label}",
+      "categorySelect": "Selecionar categoria",
+      "capacityTeams": "{count, plural, one {# equipa} other {# equipas}}",
+      "capacityUnlimited": "Sem limite",
+      "categoryUnavailable": "Indisponível",
+      "registrationSection": "Inscrição",
+      "join": {
+        "invitePartner": "Convidar parceiro",
+        "openPair": "Dupla aberta"
+      },
+      "invitePlaceholder": "Email ou @username do parceiro",
+      "signInToRegister": "Entrar para inscrever",
+      "createPairing": "Criar dupla",
+      "creatingPairing": "A criar dupla...",
+      "openPairingsTitle": "Duplas abertas",
+      "openPairingsLoading": "A carregar duplas abertas...",
+      "openPairingsEmpty": "Sem duplas abertas neste momento.",
+      "openSlots": "{count, plural, one {# vaga} other {# vagas}}",
+      "deadline": "Prazo: {date}",
+      "myPairingTitle": "Minha dupla",
+      "signInToViewPairings": "Inicia sessão para ver as tuas duplas.",
+      "myPairingLoading": "A carregar a tua dupla...",
+      "myPairingEmpty": "Ainda não tens dupla neste torneio.",
+      "completeProfileToAccept": "Completa os dados de Padel para aceitar o convite.",
+      "acceptInvite": "Aceitar convite",
+      "declineInvite": "Recusar convite",
+      "shareInvite": "Partilhar convite",
+      "payRegistration": "Pagar inscrição",
+      "liveTitle": "Live",
+      "standingsLoading": "A carregar standings...",
+      "standingsEmpty": "Sem standings disponíveis.",
+      "groupLabel": "Grupo {group}",
+      "pointsShort": "pts",
+      "winsShort": "V",
+      "lossesShort": "D",
+      "matchesLoading": "A carregar jogos...",
+      "matchesEmpty": "Sem jogos disponíveis.",
+      "matchLabel": "Jogo",
+      "tournamentFallback": "Torneio",
+      "registrationTicketName": "Inscrição",
+      "registrationTitle": "Inscrição",
+      "categoryRequired": "Seleciona uma categoria.",
+      "partnerRequired": "Indica o parceiro para continuar.",
+      "waitlistTitle": "Em lista de espera",
+      "waitlistBody": "A tua inscrição ficou em lista de espera.",
+      "pairingCreatedTitle": "Dupla criada",
+      "pairingCreatedBody": "A tua dupla foi criada com sucesso.",
+      "onboardingRequiredTitle": "Completa o teu perfil",
+      "onboardingRequiredBody": "Termina o onboarding de Padel para continuares.",
+      "pairingCreateFailed": "Não foi possível criar a dupla.",
+      "pairingTitle": "Duplas",
+      "joinSuccess": "Pedido enviado. Vais receber confirmação em breve.",
+      "joinFailed": "Não foi possível juntar-te.",
+      "invalidCategoryPayment": "Categoria inválida para pagamento.",
+      "payment": {
+        "full": "Pagamento total",
+        "split": "Pagamento dividido"
+      },
+      "registration": {
+        "open": "Aberto",
+        "notOpen": "Não aberto",
+        "closed": "Fechado",
+        "started": "Iniciado",
+        "unpublished": "Não publicado",
+        "unavailable": "Indisponível"
+      },
+      "pairing": {
+        "withId": "Dupla {id}",
+        "default": "Dupla"
+      },
+      "hub": {
+        "title": "Padel Hub",
+        "openLabel": "Abrir Padel Hub",
+        "profileTitle": "Perfil Padel",
+        "profileSubtitle": "Resumo do teu perfil competitivo",
+        "playerFallback": "Jogador",
+        "levelLabel": "Nível: {level}",
+        "levelFallback": "Nível por definir",
+        "sideLabel": "Lado: {side}",
+        "sideFallback": "Lado por definir",
+        "clubLabel": "Clube: {club}",
+        "completeProfile": "Completar perfil Padel",
+        "tournamentsCount": "{count, plural, one {# torneio} other {# torneios}}",
+        "winsCount": "{count, plural, one {# vitória} other {# vitórias}}",
+        "lossesCount": "{count, plural, one {# derrota} other {# derrotas}}",
+        "quickActionsTitle": "Ações rápidas",
+        "quickActionsSubtitle": "Reserva um campo, marca uma aula ou explora torneios.",
+        "actionTournaments": "Torneios",
+        "actionReserveCourt": "Reservar campo",
+        "actionBookClass": "Marcar aula",
+        "registrationsTitle": "Inscrições",
+        "registrationsSubtitle": "Duplas e estados recentes",
+        "registrationsEmpty": "Sem inscrições ativas.",
+        "statusPending": "Pendente",
+        "waitlistTitle": "Lista de espera",
+        "waitlistSubtitle": "Aguardando vaga nas categorias.",
+        "matchesTitle": "Próximos jogos",
+        "matchesSubtitle": "Agenda do teu Padel",
+        "matchesEmpty": "Sem jogos agendados.",
+        "matchFallback": "Jogo",
+        "timePending": "Horário por definir",
+        "featuredTitle": "Torneios em destaque",
+        "featuredSubtitle": "Datas e formatos para ti",
+        "pricePending": "Preço por definir",
+        "datePending": "Data por definir",
+        "rankingsTitle": "Rankings",
+        "rankingsSubtitle": "Top 5 do momento",
+        "rankingsEmpty": "Sem rankings disponíveis.",
+        "pointsShort": "{count} pts"
+      },
+      "profile": {
+        "toggleToBase": "Ver perfil base",
+        "toggleToPadel": "Ver perfil Padel",
+        "baseLabel": "Perfil base",
+        "padelLabel": "Perfil Padel",
+        "title": "Perfil Padel",
+        "levelLabel": "Nível: {level}",
+        "levelMissing": "Completa o teu perfil Padel para apareceres nos rankings.",
+        "completeProfile": "Completar perfil Padel",
+        "openHub": "Abrir Padel Hub"
+      }
+    },
+    "payment": {
+      "title": "Pagamento",
+      "startFailed": "Não foi possível iniciar o pagamento."
+    },
+    "checkout": {
+      "summaryTitle": "Resumo da compra",
+      "quantity": "Quantidade",
+      "decreaseQuantity": "Diminuir quantidade",
+      "increaseQuantity": "Aumentar quantidade",
+      "limitPerPerson": "Limite por pessoa: {count}",
+      "total": "Total",
+      "signInToComplete": "Inicia sessão para finalizar a inscrição.",
+      "confirming": "A confirmar...",
+      "completeFailed": "Não foi possível concluir a inscrição."
     }
   },
   "services": {
@@ -503,6 +767,22 @@
       "court": "PADEL",
       "class": "AULA",
       "service": "SERVIÇO"
+    },
+    "detail": {
+      "fallbackTitle": "Serviço",
+      "loading": "A carregar",
+      "notFound": "Serviço não encontrado.",
+      "loadError": "Não foi possível carregar o serviço.",
+      "contactTitle": "Mensagem",
+      "contactSuccess": "Pedido enviado. A organização vai responder em breve.",
+      "contactError": "Não foi possível enviar o pedido.",
+      "instructorFallback": "Instrutor",
+      "policyTitle": "Política",
+      "policyText": "{policy} · Cancelamento até {minutes} min antes.",
+      "packsTitle": "Pacotes",
+      "sessions": "{count} sessões",
+      "contactButton": "Perguntar à organização",
+      "bookNow": "Reservar agora"
     }
   },
   "errors": {

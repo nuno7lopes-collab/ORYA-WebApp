@@ -26,4 +26,12 @@ describe("deriveCheckoutStatusFromPayment", () => {
     });
     expect(status).toBe("PENDING");
   });
+
+  it("maps cancelled payment status to canceled checkout", () => {
+    const status = deriveCheckoutStatusFromPayment({
+      paymentStatus: PaymentStatus.CANCELLED,
+      ledgerEntries: [{ entryType: LedgerEntryType.GROSS }],
+    });
+    expect(status).toBe("CANCELED");
+  });
 });

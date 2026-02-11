@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { normalizeEmail } from "@/lib/utils/email";
 import { CheckinResultCode, Prisma } from "@prisma/client";
+import { getUserIdentityIds as getIdentityIds } from "@/lib/ownership/identity";
 
 export const CHAT_ORG_ROLES = [
   "OWNER",
@@ -35,11 +35,7 @@ export function computeChatAccessCutoffs(endsAt?: Date | null, startsAt?: Date |
 }
 
 export async function getUserIdentityIds(userId: string) {
-  const identities = await prisma.emailIdentity.findMany({
-    where: { userId },
-    select: { id: true },
-  });
-  return identities.map((identity) => identity.id);
+  return getIdentityIds(userId);
 }
 
 export function buildEntitlementOwnerClauses(input: {
@@ -48,15 +44,8 @@ export function buildEntitlementOwnerClauses(input: {
   email?: string | null;
 }): Prisma.EntitlementWhereInput[] {
   const identityIds = input.identityIds ?? [];
-  const emailNormalized = normalizeEmail(input.email ?? null);
-  const ownerClauses: Prisma.EntitlementWhereInput[] = [{ ownerUserId: input.userId }];
-  if (identityIds.length) {
-    ownerClauses.push({ ownerIdentityId: { in: identityIds } });
-  }
-  if (emailNormalized) {
-    ownerClauses.push({ ownerKey: `email:${emailNormalized}` });
-  }
-  return ownerClauses;
+  if (!identityIds.length) return [];
+  return [{ ownerIdentityId: { in: identityIds } }];
 }
 
 export async function getConsumedEntitlementForEvent(input: {
@@ -70,6 +59,7 @@ export async function getConsumedEntitlementForEvent(input: {
     identityIds: input.identityIds,
     email: input.email,
   });
+  if (ownerClauses.length === 0) return null;
 
   return prisma.entitlement.findFirst({
     where: {

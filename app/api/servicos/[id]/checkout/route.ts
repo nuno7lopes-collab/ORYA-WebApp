@@ -10,7 +10,15 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
-import { PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
+import {
+  ConsentStatus,
+  ConsentType,
+  CrmInteractionSource,
+  CrmInteractionType,
+  PaymentStatus,
+  ProcessorFeesStatus,
+  SourceType,
+} from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
@@ -19,6 +27,8 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -47,6 +57,7 @@ async function _POST(
     const guestEmailRaw = typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
     const guestNameRaw = typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
     const guestPhoneRaw = typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
+    const guestConsent = guestInput?.consent === true;
     const guestEmailNormalized = normalizeEmail(guestEmailRaw);
     const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
     const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
@@ -55,6 +66,10 @@ async function _POST(
       typeof payload?.paymentMethod === "string" ? payload.paymentMethod.trim().toLowerCase() : null;
     const paymentMethod: "mbway" | "card" =
       paymentMethodRaw === "card" ? "card" : "mbway";
+    const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
+    const idempotencyKey =
+      (typeof payload?.idempotencyKey === "string" ? payload.idempotencyKey : idempotencyKeyHeader || "").trim() ||
+      null;
     if (!Number.isFinite(bookingId)) {
       return fail("RESERVA_INVALIDA", "Reserva inválida.", 400);
     }
@@ -70,6 +85,13 @@ async function _POST(
     } else {
       if (!guestEmail || !guestNameRaw) {
         return fail("GUEST_REQUIRED", "Nome e email obrigatórios para convidado.", 400);
+      }
+      if (!guestConsent) {
+        return fail(
+          "CONSENT_REQUIRED",
+          "Tens de aceitar a política de privacidade para continuar como convidado.",
+          400,
+        );
       }
       if (!EMAIL_REGEX.test(guestEmailRaw)) {
         return fail("INVALID_GUEST_EMAIL", "Email inválido.", 400);
@@ -149,6 +171,53 @@ async function _POST(
         data: { status: "CANCELLED_BY_CLIENT" },
       });
       return fail("RESERVA_EXPIRADA", "Reserva expirada.", 410);
+    }
+
+    if (!user && guestEmail && guestConsent) {
+      const consentNow = new Date();
+      const consents = [
+        {
+          type: ConsentType.CONTACT_EMAIL,
+          status: ConsentStatus.GRANTED,
+          source: "BOOKING_GUEST",
+          grantedAt: consentNow,
+        },
+        ...(guestPhone
+          ? [
+              {
+                type: ConsentType.CONTACT_SMS,
+                status: ConsentStatus.GRANTED,
+                source: "BOOKING_GUEST",
+                grantedAt: consentNow,
+              },
+            ]
+          : []),
+      ];
+
+      try {
+        await ingestCrmInteraction({
+          organizationId: booking.service.organizationId,
+          userId: null,
+          type: CrmInteractionType.FORM_SUBMITTED,
+          sourceType: CrmInteractionSource.FORM,
+          sourceId: String(booking.id),
+          externalId: `guest-consent:booking:${booking.id}:${guestEmailNormalized ?? guestEmail}`,
+          occurredAt: consentNow,
+          contactEmail: guestEmail,
+          contactPhone: guestPhone || null,
+          displayName: guestNameRaw || null,
+          contactType: "GUEST",
+          legalBasis: "CONSENT",
+          consents,
+          metadata: {
+            bookingId: booking.id,
+            serviceId: booking.serviceId,
+            organizationId: booking.service.organizationId,
+          },
+        });
+      } catch (err) {
+        console.warn("[reservas/checkout] CRM consent ingest failed", err);
+      }
     }
 
     const allowedPaymentMethods = paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);
@@ -269,6 +338,31 @@ async function _POST(
       },
     };
 
+    if (totalCents <= 0) {
+      const freeCheckout = await finalizeFreeServiceBooking({
+        bookingId: booking.id,
+        serviceId: booking.serviceId,
+        organizationId: booking.organizationId,
+        userId: booking.userId ?? user?.id ?? null,
+        guestEmail: booking.guestEmail ?? guestEmailNormalized ?? null,
+        currency,
+        paymentMethod,
+      });
+      return respondOk(ctx, {
+        paymentIntentId: freeCheckout.paymentIntentId,
+        purchaseId: freeCheckout.purchaseId,
+        clientSecret: null,
+        amountCents: 0,
+        currency,
+        cardPlatformFeeCents: 0,
+        cardPlatformFeeBps: 0,
+        paymentMethod,
+        freeCheckout: true,
+        status: "PAID",
+        final: true,
+      });
+    }
+
     let intent;
     try {
       const ensured = await ensurePaymentIntent({
@@ -311,6 +405,7 @@ async function _POST(
           orgType: booking.service.organization.orgType ?? null,
         },
         requireStripe: !isPlatformOrg,
+        clientIdempotencyKey: idempotencyKey,
         resolvedSnapshot,
         buyerIdentityRef: booking.userId ?? null,
         paymentEvent: {
@@ -356,12 +451,16 @@ async function _POST(
 
     return respondOk(ctx, {
       paymentIntentId: intent.id,
+      purchaseId,
       clientSecret: intent.client_secret,
       amountCents: totalCents,
       currency,
       cardPlatformFeeCents,
       cardPlatformFeeBps: paymentMethod === "card" ? ORYA_CARD_FEE_BPS : 0,
       paymentMethod,
+      freeCheckout: false,
+      status: "REQUIRES_ACTION",
+      final: false,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

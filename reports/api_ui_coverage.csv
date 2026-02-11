@@ -225,8 +225,6 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/audit,app/api/organizacao/audit/route.ts,public,covered,1,app/organizacao/(dashboard)/staff/page.tsx
 /api/organizacao/avaliacoes,app/api/organizacao/avaliacoes/route.ts,public,covered,1,app/organizacao/OrganizationPublicProfilePanel.tsx
 /api/organizacao/become,app/api/organizacao/become/route.ts,public,orphan,0,
-/api/organizacao/chat/canais,app/api/organizacao/chat/canais/route.ts,public,orphan,0,
-/api/organizacao/chat/canais/[channelId]/mensagens,app/api/organizacao/chat/canais/[channelId]/mensagens/route.ts,public,orphan,0,
 /api/organizacao/checkin,app/api/organizacao/checkin/route.ts,public,covered,1,app/components/checkin/CheckinScanner.tsx
 /api/organizacao/checkin/preview,app/api/organizacao/checkin/preview/route.ts,public,covered,1,app/components/checkin/CheckinScanner.tsx
 /api/organizacao/club/finance/overview,app/api/organizacao/club/finance/overview/route.ts,public,covered,1,app/organizacao/(dashboard)/clube/caixa/page.tsx
@@ -304,8 +302,6 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/organizacao/loyalty/regras,app/api/organizacao/loyalty/regras/route.ts,public,covered,1,app/organizacao/(dashboard)/crm/loyalty/page.tsx
 /api/organizacao/marketing/overview,app/api/organizacao/marketing/overview/route.ts,public,covered,1,app/organizacao/DashboardClient.tsx
 /api/organizacao/me,app/api/organizacao/me/route.ts,public,covered,12,app/organizacao/(dashboard)/eventos/EventEditClient.tsx; app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/organizacao/(dashboard)/eventos/novo/page.tsx; app/organizacao/(dashboard)/reservas/page.tsx; app/organizacao/(dashboard)/settings/page.tsx; app/organizacao/(dashboard)/staff/page.tsx; app/organizacao/DashboardClient.tsx; app/organizacao/ObjectiveSubnav.tsx; app/organizacao/OrganizationDashboardShell.tsx; app/organizacao/OrganizationPublicProfilePanel.tsx; app/organizacao/OrganizationTopBar.tsx; app/organizacao/pagamentos/FinanceAlertsPanel.tsx
-/api/organizacao/mensagens/broadcast,app/api/organizacao/mensagens/broadcast/route.ts,public,orphan,0,
-/api/organizacao/mensagens/history,app/api/organizacao/mensagens/history/route.ts,public,orphan,0,
 /api/organizacao/ops/feed,app/api/organizacao/ops/feed/route.ts,public,orphan,0,
 /api/organizacao/organizations,app/api/organizacao/organizations/route.ts,public,covered,3,app/me/page.tsx; app/organizacao/organizations/OrganizationsHubClient.tsx; components/organization/BecomeOrganizationForm.tsx
 /api/organizacao/organizations/[id],app/api/organizacao/organizations/[id]/route.ts,public,covered,1,app/organizacao/(dashboard)/settings/page.tsx

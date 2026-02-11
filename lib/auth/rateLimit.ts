@@ -7,15 +7,18 @@ type RateLimitOptions = {
   max: number;
   keyPrefix?: string;
   identifier?: string | null;
+  requireDistributed?: boolean;
 };
 
 type RateLimitResult = {
   allowed: boolean;
   retryAfter: number;
+  backend: "redis" | "memory";
 };
 
 const buckets = new Map<string, number[]>();
 let redisClient: Redis | null | undefined;
+let warnedDistributedFallback = false;
 
 function getRedisClient(): Redis | null {
   if (redisClient !== undefined) return redisClient;
@@ -31,7 +34,7 @@ function getRedisClient(): Redis | null {
 
 export async function rateLimit(
   req: NextRequest,
-  { windowMs, max, keyPrefix = "rl", identifier }: RateLimitOptions
+  { windowMs, max, keyPrefix = "rl", identifier, requireDistributed = false }: RateLimitOptions
 ): Promise<RateLimitResult> {
   const ip = getClientIp(req);
   const keyParts = [keyPrefix, ip];
@@ -50,10 +53,17 @@ export async function rateLimit(
       const limitOk = count <= max;
       const effectiveTtl = ttl > 0 ? ttl : windowMs;
       const retryAfter = limitOk ? 0 : Math.max(1, Math.ceil(effectiveTtl / 1000));
-      return { allowed: limitOk, retryAfter };
+      return { allowed: limitOk, retryAfter, backend: "redis" };
     } catch (err) {
       console.warn("[rateLimit] redis falhou, a usar memória.", err);
     }
+  }
+
+  if (requireDistributed && process.env.NODE_ENV === "production" && !warnedDistributedFallback) {
+    warnedDistributedFallback = true;
+    console.warn(
+      "[rateLimit] fallback para memória em produção (sem Redis distribuído configurado).",
+    );
   }
 
   const now = Date.now();
@@ -67,5 +77,5 @@ export async function rateLimit(
     ? 0
     : Math.max(1, Math.ceil((hits[0] + windowMs - now) / 1000));
 
-  return { allowed: limitOk, retryAfter };
+  return { allowed: limitOk, retryAfter, backend: "memory" };
 }

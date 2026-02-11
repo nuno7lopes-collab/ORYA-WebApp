@@ -4,7 +4,7 @@ import { Alert, Animated, Linking, Platform, Pressable, StyleSheet, Text, View }
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import { ApiError } from "../../lib/api";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
@@ -16,33 +16,41 @@ import { safeBack } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { createMessageRequest } from "../../features/messages/api";
 import { getUserFacingError } from "../../lib/errors";
+import { formatCurrency } from "../../lib/formatters";
 
-const formatPrice = (amountCents: number, currency: string): string => {
-  if (amountCents <= 0) return "Grátis";
+const formatPrice = (
+  amountCents: number,
+  currency: string,
+  t: (key: string) => string,
+): string => {
+  if (amountCents <= 0) return t("common:price.free");
   const amount = amountCents / 100;
-  const normalizedCurrency = currency?.toUpperCase() || "EUR";
-  return `${amount.toFixed(0)} ${normalizedCurrency}`;
+  return formatCurrency(amount, currency?.toUpperCase() || "EUR");
 };
 
-const formatDuration = (durationMinutes: number): string => {
-  if (durationMinutes < 60) return `${durationMinutes} min`;
+const formatDuration = (durationMinutes: number, t: (key: string) => string): string => {
+  if (durationMinutes < 60) return t("common:units.minutesShort", { count: durationMinutes });
   const hours = Math.floor(durationMinutes / 60);
   const minutes = durationMinutes % 60;
-  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+  const hoursLabel = t("common:units.hoursShort", { count: hours });
+  if (!minutes) return hoursLabel;
+  const minutesLabel = t("common:units.minutesShort", { count: minutes });
+  return `${hoursLabel} ${minutesLabel}`;
 };
 
-const kindLabel = (kind: string): string => {
+const kindLabel = (kind: string, t: (key: string) => string): string => {
   switch (kind) {
     case "COURT":
-      return "PADEL";
+      return t("services:kind.court");
     case "CLASS":
-      return "AULA";
+      return t("services:kind.class");
     default:
-      return "SERVIÇO";
+      return t("services:kind.service");
   }
 };
 
 export default function ServiceDetailScreen() {
+  const { t } = useTranslation();
   const {
     id,
     source,
@@ -82,8 +90,8 @@ export default function ServiceDetailScreen() {
     router.push({ pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
   const previewTitle = useMemo(
-    () => (Array.isArray(serviceTitle) ? serviceTitle[0] : serviceTitle) ?? "Serviço",
-    [serviceTitle],
+    () => (Array.isArray(serviceTitle) ? serviceTitle[0] : serviceTitle) ?? t("services:detail.fallbackTitle"),
+    [serviceTitle, t],
   );
   const previewPrice = useMemo(() => {
     if (Array.isArray(servicePriceLabel)) return servicePriceLabel[0];
@@ -97,6 +105,10 @@ export default function ServiceDetailScreen() {
     if (Array.isArray(serviceKind)) return serviceKind[0];
     return serviceKind ?? null;
   }, [serviceKind]);
+  const previewKindLabel = useMemo(
+    () => previewKind ?? t("services:kind.service"),
+    [previewKind, t],
+  );
   const previewOrg = useMemo(() => {
     if (Array.isArray(serviceOrg)) return serviceOrg[0];
     return serviceOrg ?? null;
@@ -150,9 +162,12 @@ export default function ServiceDetailScreen() {
     setContacting(true);
     try {
       await createMessageRequest({ serviceId: data.id }, accessToken);
-      Alert.alert("Mensagem", "Pedido enviado. A organização vai responder em breve.");
+      Alert.alert(t("services:detail.contactTitle"), t("services:detail.contactSuccess"));
     } catch (err) {
-      Alert.alert("Mensagem", getUserFacingError(err, "Não foi possível enviar o pedido."));
+      Alert.alert(
+        t("services:detail.contactTitle"),
+        getUserFacingError(err, t("services:detail.contactError")),
+      );
     } finally {
       setContacting(false);
     }
@@ -216,7 +231,7 @@ export default function ServiceDetailScreen() {
           <Pressable
             onPress={handleBack}
             accessibilityRole="button"
-            accessibilityLabel="Voltar"
+            accessibilityLabel={t("common:actions.back")}
             style={{
               width: tokens.layout.touchTarget,
               height: tokens.layout.touchTarget,
@@ -253,10 +268,10 @@ export default function ServiceDetailScreen() {
                     />
                     <View className="flex-row items-center justify-between px-4 pt-4">
                       <View className="flex-row items-center gap-2">
-                        <GlassPill label={previewKind || "SERVICO"} />
+                        <GlassPill label={previewKindLabel} />
                         {previewDuration ? <GlassPill label={previewDuration} variant="muted" /> : null}
                       </View>
-                      <GlassPill label={previewPrice || "A carregar"} variant="muted" />
+                      <GlassPill label={previewPrice ?? t("services:detail.loading")} variant="muted" />
                     </View>
                     <View className="px-4 pb-4 gap-2">
                       <Text className="text-white text-2xl font-semibold">{previewTitle}</Text>
@@ -270,10 +285,10 @@ export default function ServiceDetailScreen() {
                 <View className="gap-3">
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
-                      <GlassPill label={previewKind || "SERVICO"} />
+                      <GlassPill label={previewKindLabel} />
                       {previewDuration ? <GlassPill label={previewDuration} variant="muted" /> : null}
                     </View>
-                    <GlassPill label={previewPrice || "A carregar"} variant="muted" />
+                    <GlassPill label={previewPrice ?? t("services:detail.loading")} variant="muted" />
                   </View>
 
                   <Text className="text-white text-2xl font-semibold">{previewTitle}</Text>
@@ -312,17 +327,19 @@ export default function ServiceDetailScreen() {
             <GlassCard intensity={52}>
               <Text className="text-red-300 text-sm mb-3">
                 {error instanceof ApiError && error.status === 404
-                  ? "Serviço não encontrado."
-                  : "Não foi possível carregar o serviço."}
+                  ? t("services:detail.notFound")
+                  : t("services:detail.loadError")}
               </Text>
               <Pressable
                 onPress={() => refetch()}
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel="Tentar novamente"
+                accessibilityLabel={t("common:actions.retry")}
               >
-                <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+                <Text className="text-white text-sm font-semibold text-center">
+                  {t("common:actions.retry")}
+                </Text>
               </Pressable>
             </GlassCard>
           </View>
@@ -350,18 +367,18 @@ export default function ServiceDetailScreen() {
                   />
                   <View className="flex-row items-center justify-between px-4 pt-4">
                     <View className="flex-row items-center gap-2">
-                      <GlassPill label={data.categoryTag || kindLabel(data.kind)} />
-                      <GlassPill label={formatDuration(data.durationMinutes)} variant="muted" />
+                      <GlassPill label={data.categoryTag || kindLabel(data.kind, t)} />
+                      <GlassPill label={formatDuration(data.durationMinutes, t)} variant="muted" />
                     </View>
                     <GlassPill
-                      label={formatPrice(data.unitPriceCents, data.currency)}
+                      label={formatPrice(data.unitPriceCents, data.currency, t)}
                       variant={data.unitPriceCents <= 0 ? "accent" : "muted"}
                     />
                   </View>
                   <View className="px-4 pb-4 gap-2">
                     <Text className="text-white text-2xl font-semibold">{data.title || previewTitle}</Text>
                     <Text className="text-white/75 text-sm">
-                      {data.organization.publicName || data.organization.businessName || "ORYA"}
+                      {data.organization.publicName || data.organization.businessName || t("common:appName")}
                     </Text>
                   </View>
                 </View>
@@ -372,10 +389,13 @@ export default function ServiceDetailScreen() {
               <View className="gap-3">
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-2">
-                    <GlassPill label={data.categoryTag || kindLabel(data.kind)} />
-                    <GlassPill label={formatDuration(data.durationMinutes)} variant="muted" />
+                    <GlassPill label={data.categoryTag || kindLabel(data.kind, t)} />
+                    <GlassPill label={formatDuration(data.durationMinutes, t)} variant="muted" />
                   </View>
-                  <GlassPill label={formatPrice(data.unitPriceCents, data.currency)} variant={data.unitPriceCents <= 0 ? "accent" : "muted"} />
+                  <GlassPill
+                    label={formatPrice(data.unitPriceCents, data.currency, t)}
+                    variant={data.unitPriceCents <= 0 ? "accent" : "muted"}
+                  />
                 </View>
 
                 <Text className="text-white text-2xl font-semibold">{data.title || previewTitle}</Text>
@@ -384,7 +404,7 @@ export default function ServiceDetailScreen() {
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="business-outline" size={15} color="rgba(255,255,255,0.65)" />
                   <Text className="text-white/70 text-sm">
-                    {data.organization.publicName || data.organization.businessName || "ORYA"}
+                    {data.organization.publicName || data.organization.businessName || t("common:appName")}
                   </Text>
                 </View>
 
@@ -400,10 +420,12 @@ export default function ServiceDetailScreen() {
                     className="self-start flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2"
                     style={{ minHeight: tokens.layout.touchTarget - 8 }}
                     accessibilityRole="button"
-                    accessibilityLabel="Abrir no mapa"
+                    accessibilityLabel={t("common:actions.openMap")}
                   >
                     <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
-                    <Text className="text-white/80 text-xs font-semibold">Abrir no mapa</Text>
+                    <Text className="text-white/80 text-xs font-semibold">
+                      {t("common:actions.openMap")}
+                    </Text>
                   </Pressable>
                 ) : null}
 
@@ -411,7 +433,9 @@ export default function ServiceDetailScreen() {
                   <View className="flex-row items-center gap-2">
                     <Ionicons name="person-outline" size={15} color="rgba(255,255,255,0.55)" />
                     <Text className="text-white/65 text-sm">
-                      {data.instructor.fullName || data.instructor.username || "Instrutor"}
+                      {data.instructor.fullName ||
+                        data.instructor.username ||
+                        t("services:detail.instructorFallback")}
                     </Text>
                   </View>
                 ) : null}
@@ -421,9 +445,14 @@ export default function ServiceDetailScreen() {
             {data.policy ? (
               <View className="pt-4">
                 <GlassCard intensity={54}>
-                  <Text className="text-white text-sm font-semibold mb-2">Politica</Text>
+                  <Text className="text-white text-sm font-semibold mb-2">
+                    {t("services:detail.policyTitle")}
+                  </Text>
                   <Text className="text-white/70 text-sm">
-                    {data.policy.name} · Cancelamento ate {data.policy.cancellationWindowMinutes} min antes.
+                    {t("services:detail.policyText", {
+                      policy: data.policy.name,
+                      minutes: data.policy.cancellationWindowMinutes,
+                    })}
                   </Text>
                 </GlassCard>
               </View>
@@ -431,17 +460,19 @@ export default function ServiceDetailScreen() {
 
             {data.packs.length > 0 ? (
               <View className="pt-4 gap-3">
-                <Text className="text-white/80 text-sm font-semibold">Pacotes</Text>
+                <Text className="text-white/80 text-sm font-semibold">
+                  {t("services:detail.packsTitle")}
+                </Text>
                 {data.packs.map((pack) => {
                   const amount = pack.packPriceCents / 100;
                   return (
                     <GlassCard key={pack.id} intensity={50}>
                       <View className="flex-row items-center justify-between">
                         <Text className="text-white/80 text-sm">
-                          {pack.label || `${pack.quantity} sessoes`}
+                          {pack.label || t("services:detail.sessions", { count: pack.quantity })}
                         </Text>
                         <GlassPill
-                          label={`${amount.toFixed(0)} ${data.currency.toUpperCase()}`}
+                          label={formatCurrency(amount, data.currency.toUpperCase())}
                           variant={pack.recommended ? "accent" : "muted"}
                         />
                       </View>
@@ -458,11 +489,11 @@ export default function ServiceDetailScreen() {
                 className="rounded-2xl border border-white/15 bg-white/5 px-4 py-4 mb-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel="Perguntar à organização"
+                accessibilityLabel={t("services:detail.contactButton")}
                 accessibilityState={{ disabled: contacting }}
               >
                 <Text className="text-center text-white text-sm font-semibold">
-                  {contacting ? "A enviar..." : "Perguntar à organização"}
+                  {contacting ? t("common:actions.sending") : t("services:detail.contactButton")}
                 </Text>
               </Pressable>
               <Pressable
@@ -473,9 +504,11 @@ export default function ServiceDetailScreen() {
                 className="rounded-2xl bg-white/15 px-4 py-4"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel="Reservar agora"
+                accessibilityLabel={t("services:detail.bookNow")}
               >
-                <Text className="text-center text-white text-sm font-semibold">Reservar agora</Text>
+                <Text className="text-center text-white text-sm font-semibold">
+                  {t("services:detail.bookNow")}
+                </Text>
               </Pressable>
             </View>
           </Animated.ScrollView>

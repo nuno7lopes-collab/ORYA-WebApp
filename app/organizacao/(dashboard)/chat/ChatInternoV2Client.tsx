@@ -352,7 +352,8 @@ function buildConversationTitle(conversation: ConversationItem, viewerId: string
   if (conversation.title) return conversation.title;
   if (conversation.type === "CHANNEL") return "Canal";
   if (conversation.type === "GROUP") return "Grupo";
-  const other = conversation.members.find((member) => member.userId !== viewerId) ?? null;
+  const members = Array.isArray(conversation.members) ? conversation.members : [];
+  const other = members.find((member) => member.userId !== viewerId) ?? null;
   if (!other) return "Conversa";
   return other.fullName?.trim() || (other.username ? `@${other.username}` : "Conversa");
 }
@@ -589,6 +590,35 @@ export default function ChatInternoV2Client() {
     overscan: 8,
   });
 
+  const loadOrganizationId = useCallback(async () => {
+    if (organizationId) return organizationId;
+    if (fallbackOrganizationId) {
+      setOrganizationId(fallbackOrganizationId);
+      return fallbackOrganizationId;
+    }
+    return null;
+  }, [organizationId, fallbackOrganizationId]);
+
+  const buildChatUrl = useCallback(
+    async (path: string) => {
+      const url = new URL(path, window.location.origin);
+      const orgId = organizationId ?? (await loadOrganizationId());
+      if (orgId && !url.searchParams.has("organizationId")) {
+        url.searchParams.set("organizationId", String(orgId));
+      }
+      return url;
+    },
+    [loadOrganizationId, organizationId],
+  );
+
+  const fetchChat = useCallback(
+    async <T,>(path: string, options?: RequestInit): Promise<T> => {
+      const url = await buildChatUrl(path);
+      return fetcher<T>(url.pathname + url.search, options);
+    },
+    [buildChatUrl],
+  );
+
   const loadConversations = useCallback(
     async ({ incremental = false }: { incremental?: boolean } = {}) => {
       setConversationsError(null);
@@ -597,7 +627,7 @@ export default function ChatInternoV2Client() {
       }
 
       try {
-        const url = new URL("/api/chat/conversations", window.location.origin);
+        const url = await buildChatUrl("/api/chat/conversations");
         if (incremental && lastConversationSyncRef.current) {
           url.searchParams.set("updatedAfter", lastConversationSyncRef.current);
         }
@@ -628,54 +658,45 @@ export default function ChatInternoV2Client() {
         setConversationsLoading(false);
       }
     },
-    [activeConversationId],
+    [activeConversationId, buildChatUrl],
   );
 
   const loadContactRequests = useCallback(async () => {
     setContactRequestsError(null);
     setContactRequestsLoading(true);
     try {
-      const data = await fetcher<{ ok: boolean; items: ContactRequest[] }>("/api/chat/contact-requests");
+      const data = await fetchChat<{ ok: boolean; items: ContactRequest[] }>("/api/chat/contact-requests");
       setContactRequests(data.items ?? []);
     } catch (err) {
       setContactRequestsError(err instanceof Error ? err.message : "Erro ao carregar pedidos.");
     } finally {
       setContactRequestsLoading(false);
     }
-  }, []);
+  }, [fetchChat]);
 
   const handleApproveContactRequest = useCallback(
     async (requestId: string) => {
       try {
-        await fetcher(`/api/chat/contact-requests/${requestId}/approve`, { method: "POST" });
+        await fetchChat(`/api/chat/contact-requests/${requestId}/approve`, { method: "POST" });
         await Promise.all([loadContactRequests(), loadConversations()]);
       } catch (err) {
         setContactRequestsError(err instanceof Error ? err.message : "Erro ao aprovar pedido.");
       }
     },
-    [loadContactRequests, loadConversations],
+    [fetchChat, loadContactRequests, loadConversations],
   );
 
   const handleRejectContactRequest = useCallback(
     async (requestId: string) => {
       try {
-        await fetcher(`/api/chat/contact-requests/${requestId}/reject`, { method: "POST" });
+        await fetchChat(`/api/chat/contact-requests/${requestId}/reject`, { method: "POST" });
         await loadContactRequests();
       } catch (err) {
         setContactRequestsError(err instanceof Error ? err.message : "Erro ao rejeitar pedido.");
       }
     },
-    [loadContactRequests],
+    [fetchChat, loadContactRequests],
   );
-
-  const loadOrganizationId = useCallback(async () => {
-    if (organizationId) return organizationId;
-    if (fallbackOrganizationId) {
-      setOrganizationId(fallbackOrganizationId);
-      return fallbackOrganizationId;
-    }
-    return null;
-  }, [organizationId, fallbackOrganizationId]);
 
   const loadDirectory = useCallback(async () => {
     setDirectoryLoading(true);
@@ -746,7 +767,7 @@ export default function ChatInternoV2Client() {
       setMessagesError(null);
 
       try {
-        const url = new URL(`/api/chat/conversations/${conversationId}/messages`, window.location.origin);
+        const url = await buildChatUrl(`/api/chat/conversations/${conversationId}/messages`);
         if (cursor) url.searchParams.set("cursor", cursor);
         if (after) url.searchParams.set("after", after);
         if (around) url.searchParams.set("around", around);
@@ -837,7 +858,7 @@ export default function ChatInternoV2Client() {
         setMessagesLoadingMore(false);
       }
     },
-    [messagesVirtualizer, triggerNewMessageToast],
+    [buildChatUrl, messagesVirtualizer, triggerNewMessageToast],
   );
 
   const scheduleReadReceipt = useCallback(() => {
@@ -853,7 +874,8 @@ export default function ChatInternoV2Client() {
     const conversationId = activeConversation.id;
     readDebounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/chat/conversations/${conversationId}/read`, {
+        const url = await buildChatUrl(`/api/chat/conversations/${conversationId}/read`);
+        const res = await fetch(url.pathname + url.search, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lastReadMessageId: lastMessage.id }),
@@ -872,7 +894,7 @@ export default function ChatInternoV2Client() {
         // ignore
       }
     }, 600);
-  }, [activeConversation?.id, displayMessages]);
+  }, [activeConversation?.id, buildChatUrl, displayMessages]);
 
   const sendWsMessage = useCallback((payload: Record<string, unknown>) => {
     const ws = wsRef.current;
@@ -1082,7 +1104,7 @@ export default function ChatInternoV2Client() {
     setConversations((prev) =>
       prev.map((conv) => ({
         ...conv,
-        members: conv.members.map((member) =>
+        members: (Array.isArray(conv.members) ? conv.members : []).map((member) =>
           member.userId === userId ? { ...member, lastSeenAt: nextLastSeen } : member,
         ),
       })),
@@ -1362,7 +1384,7 @@ export default function ChatInternoV2Client() {
         ),
       );
       try {
-        const res = await fetcher<{ ok: boolean; message: Message }>("/api/chat/messages", {
+        const res = await fetchChat<{ ok: boolean; message: Message }>("/api/chat/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1422,7 +1444,7 @@ export default function ChatInternoV2Client() {
       .forEach((entry) => {
         handleRetryPending(entry);
       });
-  }, [activeConversation?.id, handleRetryPending, isOffline, pendingMessages]);
+  }, [activeConversation?.id, fetchChat, handleRetryPending, isOffline, pendingMessages]);
 
   useEffect(() => {
     if (prependAnchorRef.current === null) return;
@@ -1590,7 +1612,7 @@ export default function ChatInternoV2Client() {
               : file.type.startsWith("video/")
                 ? "VIDEO"
                 : "FILE";
-            const presign = await fetcher<{
+            const presign = await fetchChat<{
               ok: boolean;
               uploadUrl: string;
               uploadToken: string;
@@ -1630,7 +1652,7 @@ export default function ChatInternoV2Client() {
         preparedAttachments = uploads;
       }
 
-      const res = await fetcher<{ ok: boolean; message: Message }>("/api/chat/messages", {
+      const res = await fetchChat<{ ok: boolean; message: Message }>("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1650,7 +1672,7 @@ export default function ChatInternoV2Client() {
       setMessagesError(message);
       throw err;
     }
-  }, []);
+  }, [fetchChat]);
 
   const applySendSuccess = useCallback(
     (clientMessageId: string, message: Message) => {
@@ -1784,7 +1806,7 @@ export default function ChatInternoV2Client() {
         payload.title = channelTitle.trim();
         payload.memberIds = selectedMemberIds;
       }
-      const res = await fetcher<{ ok: boolean; conversation: ConversationItem }>("/api/chat/conversations", {
+      const res = await fetchChat<{ ok: boolean; conversation: ConversationItem }>("/api/chat/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1808,7 +1830,7 @@ export default function ChatInternoV2Client() {
     const confirmed = window.confirm("Remover esta mensagem?");
     if (!confirmed) return;
     try {
-      const res = await fetcher<{ ok: boolean; deletedAt: string }>(`/api/chat/messages/${messageId}`, {
+      const res = await fetchChat<{ ok: boolean; deletedAt: string }>(`/api/chat/messages/${messageId}`, {
         method: "DELETE",
       });
       if (res?.deletedAt) {
@@ -1824,7 +1846,7 @@ export default function ChatInternoV2Client() {
     const existingReaction = (message.reactions ?? []).find((reaction) => reaction.userId === user.id) ?? null;
     const hasReacted = existingReaction?.emoji === emoji;
     try {
-      await fetcher(`/api/chat/messages/${message.id}/reactions`, {
+      await fetchChat(`/api/chat/messages/${message.id}/reactions`, {
         method: hasReacted ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emoji }),
@@ -1867,7 +1889,7 @@ export default function ChatInternoV2Client() {
     if (!searchQuery.trim() || !activeConversation?.id) return;
     setSearchLoading(true);
     try {
-      const url = new URL("/api/chat/search", window.location.origin);
+      const url = await buildChatUrl("/api/chat/search");
       url.searchParams.set("query", searchQuery.trim());
       url.searchParams.set("conversationId", activeConversation.id);
       const data = await fetcher<{ ok: boolean; items: SearchResult[] }>(url.pathname + url.search);
@@ -1906,7 +1928,7 @@ export default function ChatInternoV2Client() {
   const handleUpdateNotifSettings = async (level: "ALL" | "MENTIONS_ONLY" | "OFF", mutedUntil: string | null) => {
     if (!activeConversation?.id) return;
     try {
-      const res = await fetcher<{ ok: boolean; notifLevel: string; mutedUntil: string | null }>(
+      const res = await fetchChat<{ ok: boolean; notifLevel: string; mutedUntil: string | null }>(
         `/api/chat/conversations/${activeConversation.id}/notifications`,
         {
           method: "PATCH",
@@ -2161,12 +2183,11 @@ export default function ChatInternoV2Client() {
                 const lastPreview =
                   conversation.lastMessage?.body ??
                   (conversation.lastMessage ? "Anexo" : "Sem mensagens");
+                const safeMembers = Array.isArray(conversation.members) ? conversation.members : [];
                 const primaryMember =
                   conversation.type === "DIRECT"
-                    ? conversation.members.find((member) => member.userId !== user?.id) ??
-                      conversation.members[0] ??
-                      null
-                    : conversation.members[0] ?? null;
+                    ? safeMembers.find((member) => member.userId !== user?.id) ?? safeMembers[0] ?? null
+                    : safeMembers[0] ?? null;
                 const avatarName =
                   primaryMember?.fullName ||
                   (primaryMember?.username ? `@${primaryMember.username}` : title);
@@ -2465,15 +2486,19 @@ export default function ChatInternoV2Client() {
                                     className="rounded-xl border border-white/10 bg-black/20 p-2 text-[11px] text-white/70"
                                   >
                                     {att.type === "IMAGE" ? (
-                                      <Image
-                                        src={att.url}
-                                        alt="Anexo"
-                                        width={448}
-                                        height={112}
-                                        sizes="(max-width: 640px) 100vw, 50vw"
-                                        className="h-28 w-full rounded-lg object-cover"
-                                      />
-                                    ) : (
+                                      att.url ? (
+                                        <Image
+                                          src={att.url}
+                                          alt="Anexo"
+                                          width={448}
+                                          height={112}
+                                          sizes="(max-width: 640px) 100vw, 50vw"
+                                          className="h-28 w-full rounded-lg object-cover"
+                                        />
+                                      ) : (
+                                        <div className="h-28 w-full rounded-lg border border-white/10 bg-black/30" />
+                                      )
+                                    ) : att.url ? (
                                       <a
                                         href={att.url}
                                         className="text-white/80 underline"
@@ -2482,6 +2507,8 @@ export default function ChatInternoV2Client() {
                                       >
                                         {att.metadata?.name ? String(att.metadata.name) : "Abrir ficheiro"}
                                       </a>
+                                    ) : (
+                                      <span className="text-white/50">Anexo indisponível</span>
                                     )}
                                     <p className="mt-1 text-white/50">{att.mime}</p>
                                   </div>

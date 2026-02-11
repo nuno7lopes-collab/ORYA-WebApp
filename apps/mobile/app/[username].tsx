@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../components/icons/Ionicons";
@@ -21,6 +21,7 @@ import { useOrganizationFollowers, useUserFollowers, useUserFollowing } from "..
 import { FollowListModal } from "../components/profile/FollowListModal";
 import { ProfileHeader } from "../components/profile/ProfileHeader";
 import { normalizeUsernameInput } from "../lib/username";
+import { trackCrmEngagement } from "../lib/crm";
 
 export default function PublicProfileScreen() {
   const params = useLocalSearchParams<{ username?: string }>();
@@ -42,6 +43,7 @@ export default function PublicProfileScreen() {
   const topBar = useTopBarScroll({ hideOnScroll: false });
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
+  const viewSentRef = useRef(false);
 
   const data = profileQuery.data ?? null;
   const profile = data?.profile ?? null;
@@ -100,6 +102,13 @@ export default function PublicProfileScreen() {
     if (data.viewer.isFollowing) return "A seguir";
     return "Seguir";
   }, [data?.viewer]);
+
+  useEffect(() => {
+    if (!accessToken || viewSentRef.current) return;
+    if (!organizationId || isUser) return;
+    viewSentRef.current = true;
+    trackCrmEngagement({ type: "PROFILE_VIEWED", organizationId });
+  }, [accessToken, isUser, organizationId]);
 
   useFocusEffect(
     useCallback(() => {

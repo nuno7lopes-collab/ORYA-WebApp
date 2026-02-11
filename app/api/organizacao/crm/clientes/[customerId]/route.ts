@@ -38,14 +38,16 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
 
     const resolvedParams = await context.params;
     const customerId = resolvedParams.customerId;
-    const customer = await prisma.crmCustomer.findFirst({
+    const customer = await prisma.crmContact.findFirst({
       where: { id: customerId, organizationId: organization.id },
       select: {
         id: true,
         userId: true,
+        contactType: true,
         displayName: true,
         contactEmail: true,
         contactPhone: true,
+        marketingEmailOptIn: true,
         firstInteractionAt: true,
         lastActivityAt: true,
         lastPurchaseAt: true,
@@ -72,10 +74,10 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
       return jsonWrap({ ok: false, error: "Cliente não encontrado." }, { status: 404 });
     }
 
-    const consents = await prisma.userConsent.findMany({
+    const consents = await prisma.crmContactConsent.findMany({
       where: {
         organizationId: organization.id,
-        userId: customer.userId,
+        contactId: customer.id,
         type: { in: [ConsentType.MARKETING, ConsentType.CONTACT_EMAIL, ConsentType.CONTACT_SMS] },
       },
       select: { type: true, status: true, source: true, grantedAt: true, revokedAt: true, updatedAt: true },
@@ -89,19 +91,21 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
     const emailConsent = consentMap.get(ConsentType.CONTACT_EMAIL) ?? null;
     const smsConsent = consentMap.get(ConsentType.CONTACT_SMS) ?? null;
     const marketingConsent = consentMap.get(ConsentType.MARKETING) ?? null;
-    const marketingOptInResolved = marketingConsent?.status === ConsentStatus.GRANTED;
+    const marketingOptInResolved = marketingConsent
+      ? marketingConsent.status === ConsentStatus.GRANTED
+      : customer.marketingEmailOptIn;
 
     const interactions = await prisma.crmInteraction.findMany({
       where: {
         organizationId: organization.id,
-        userId: customer.userId,
+        contactId: customer.id,
       },
       orderBy: { occurredAt: "desc" },
       take: MAX_INTERACTIONS,
     });
 
-    const notes = await prisma.crmCustomerNote.findMany({
-      where: { organizationId: organization.id, customerId: customer.id },
+    const notes = await prisma.crmContactNote.findMany({
+      where: { organizationId: organization.id, contactId: customer.id },
       orderBy: { createdAt: "desc" },
       take: MAX_NOTES,
       select: {
@@ -124,6 +128,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
       customer: {
         id: customer.id,
         userId: customer.userId,
+        contactType: customer.contactType,
         displayName: customer.displayName || customer.user?.fullName || customer.user?.username || null,
         avatarUrl: customer.user?.avatarUrl ?? null,
         bio: customer.user?.bio ?? null,

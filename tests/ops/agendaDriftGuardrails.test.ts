@@ -17,6 +17,7 @@ const ALLOWLIST = new Set([
   "app/api/organizacao/reservas/[id]/checkout/route.ts",
   "app/api/organizacao/reservas/[id]/cancel/route.ts",
   "app/api/organizacao/reservas/[id]/no-show/route.ts",
+  "app/api/me/reservas/[id]/reschedule/respond/route.ts",
   "app/api/me/reservas/[id]/cancel/route.ts",
   "app/api/padel/event-categories/route.ts",
   "app/api/padel/calendar/route.ts",

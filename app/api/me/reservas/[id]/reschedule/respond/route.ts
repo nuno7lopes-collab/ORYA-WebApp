@@ -324,7 +324,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const { ip, userAgent } = getRequestMeta(req);
     const result = await prisma.$transaction(async (tx) => {
       const newPriceCents = Math.max(0, Math.round((booking.price ?? 0) + priceDeltaCents));
-      const updated = await updateBooking({
+      const updatedResult = (await updateBooking({
         tx,
         organizationId: booking.organizationId,
         actorUserId: user.id,
@@ -382,7 +382,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
             },
           },
         },
-      });
+      })) as { booking: any; outboxEventId: string };
+      const updated = updatedResult.booking;
 
       if (priceDeltaCents !== 0 || !updated.confirmationSnapshot) {
         const snapshotResult = await buildBookingConfirmationSnapshot({

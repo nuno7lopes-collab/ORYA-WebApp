@@ -17,7 +17,8 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type CustomerRow = {
   id: string;
-  userId: string;
+  userId: string | null;
+  contactType: string;
   displayName: string | null;
   avatarUrl: string | null;
   contactEmail: string | null;
@@ -40,6 +41,14 @@ type CustomerListResponse = {
   page: number;
   limit: number;
   items: CustomerRow[];
+};
+
+const CONTACT_TYPE_LABELS: Record<string, string> = {
+  CUSTOMER: "Cliente",
+  LEAD: "Lead",
+  FOLLOWER: "Seguidor",
+  STAFF: "Staff",
+  GUEST: "Convidado",
 };
 
 const PAGE_SIZE = 20;
@@ -196,6 +205,11 @@ export default function CrmClientesPage() {
                   <p className="text-[12px] text-white/60">
                     {item.contactEmail || item.contactPhone || "Sem contacto disponível"}
                   </p>
+                  {item.contactType ? (
+                    <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/45">
+                      {CONTACT_TYPE_LABELS[item.contactType] ?? item.contactType}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="text-right text-[12px] text-white/60">
                   <p>Última atividade</p>

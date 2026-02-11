@@ -82,6 +82,11 @@ Optional:
 Nota: o runtime usa os _LIVE/_TEST quando presentes; em dev/staging pode funcionar apenas com os
 fallbacks (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`).
 
+Checkout behavior guardrails:
+- Paid checkout without publishable key must fail fast on client with explicit code:
+  - `CONFIG_STRIPE_KEY_MISSING`
+- Free checkout (`amountCents=0`) must not depend on Stripe publishable key.
+
 ## Apple Sign-In
 Required:
 - APPLE_SIGNIN_SERVICE_ID

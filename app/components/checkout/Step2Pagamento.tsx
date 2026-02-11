@@ -33,6 +33,7 @@ type CheckoutData = {
     total?: number;
     guestName?: string;
     guestEmail?: string;
+    guestConsent?: boolean;
     guestPhone?: string | null;
     idempotencyKey?: string;
     purchaseId?: string | null;
@@ -56,6 +57,7 @@ type GuestInfo = {
   name: string;
   email: string;
   phone?: string;
+  consent?: boolean;
 };
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
@@ -109,13 +111,14 @@ export default function Step2Pagamento() {
   // Preferimos convidado por defeito para reduzir fricção
   const [purchaseMode, setPurchaseMode] = useState<"auth" | "guest">("guest");
   const [authInfo, setAuthInfo] = useState<string | null>(null);
-  const [guestErrors, setGuestErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
+  const [guestErrors, setGuestErrors] = useState<{ name?: string; email?: string; phone?: string; consent?: string }>({});
 
   // 👤 Guest form state
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [guestEmailConfirm, setGuestEmailConfirm] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
+  const [guestConsent, setGuestConsent] = useState(false);
   const [guestSubmitVersion, setGuestSubmitVersion] = useState(0);
   const [guestAttemptVersion, setGuestAttemptVersion] = useState(0);
   const [promoInput, setPromoInput] = useState("");
@@ -304,6 +307,9 @@ export default function Step2Pagamento() {
     if (typeof additional.guestPhone === "string") {
       setGuestPhone(additional.guestPhone);
     }
+    if (typeof (additional as Record<string, unknown>).guestConsent === "boolean") {
+      setGuestConsent(Boolean((additional as Record<string, unknown>).guestConsent));
+    }
     const method =
       (additional as Record<string, unknown>).paymentMethod === "card"
         ? "card"
@@ -401,7 +407,11 @@ export default function Step2Pagamento() {
     const guestEmailClean = guestEmail.trim();
     const guestPhoneClean = guestPhone.trim();
     const guestReady =
-      isGuestFlow && hasGuestSubmission && guestNameClean !== "" && guestEmailClean !== "";
+      isGuestFlow &&
+      hasGuestSubmission &&
+      guestNameClean !== "" &&
+      guestEmailClean !== "" &&
+      guestConsent;
 
     // Se não está logado e ainda não escolheu convidado, mostramos UI e não chamamos a API
     if (!userId && !guestReady) {
@@ -416,6 +426,7 @@ export default function Step2Pagamento() {
           name: guestNameClean,
           email: guestEmailClean,
           phone: guestPhoneClean || undefined,
+          consent: guestConsent,
         }
       : null;
 
@@ -434,6 +445,7 @@ export default function Step2Pagamento() {
             name: guestPayload.name,
             email: guestPayload.email,
             phone: guestPayload.phone ?? null,
+            consent: guestPayload.consent ?? false,
           }
         : null,
     });
@@ -1192,10 +1204,14 @@ export default function Step2Pagamento() {
         phoneInvalid: "Telemóvel inválido. Usa apenas dígitos e opcional + no início.",
       },
     );
-    setGuestErrors(validation.errors);
+    const nextErrors = {
+      ...validation.errors,
+      ...(guestConsent ? {} : { consent: "Precisas de aceitar a política de privacidade." }),
+    };
+    setGuestErrors(nextErrors);
 
-    if (validation.hasErrors) {
-      setError("Revê os dados para continuar como convidado.");
+    if (validation.hasErrors || !guestConsent) {
+      setError("Revê os dados e o consentimento para continuar como convidado.");
       return;
     }
 
@@ -1206,6 +1222,7 @@ export default function Step2Pagamento() {
         guestEmail: validation.normalized.email,
         guestEmailConfirm: guestEmailConfirm.trim(),
         guestPhone: validation.normalized.phone,
+        guestConsent: guestConsent,
         // Reset de estado para evitar reutilização de intents/purchase antigos
         purchaseId: null,
         paymentIntentId: undefined,
@@ -1370,12 +1387,14 @@ export default function Step2Pagamento() {
           guestEmail={guestEmail}
           guestEmailConfirm={guestEmailConfirm}
           guestPhone={guestPhone}
+          guestConsent={guestConsent}
           guestErrors={guestErrors}
           submitAttempt={guestAttemptVersion}
           onChangeName={setGuestName}
           onChangeEmail={setGuestEmail}
           onChangeEmailConfirm={setGuestEmailConfirm}
           onChangePhone={setGuestPhone}
+          onChangeConsent={setGuestConsent}
           ticketNameLabel={ticketNameLabel}
           ticketEmailLabel={ticketEmailLabel}
           ticketPluralWithArticle={ticketPluralWithArticle}

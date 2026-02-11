@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { getEntitlementEffectiveStatus } from "@/lib/entitlements/status";
+import { getUserIdentityIds } from "@/lib/ownership/identity";
 
-export type AccessIntent = "INVITE_TOKEN" | "VIEW";
+export type AccessIntent = "INVITE_TOKEN" | "VIEW" | "ENTRY";
 
 export type AccessInput = {
   eventId: number;
@@ -35,12 +36,16 @@ export async function evaluateEventAccess(input: AccessInput): Promise<AccessDec
     }
   }
 
-  if (policy.requiresEntitlementForEntry) {
+  if (policy.requiresEntitlementForEntry && intent === "ENTRY") {
     if (!userId) {
       return { allowed: false, reasonCode: "ENTITLEMENT_REQUIRED" };
     }
+    const identityIds = await getUserIdentityIds(userId);
+    if (!identityIds.length) {
+      return { allowed: false, reasonCode: "ENTITLEMENT_REQUIRED" };
+    }
     const entitlement = await prisma.entitlement.findFirst({
-      where: { eventId, ownerUserId: userId },
+      where: { eventId, ownerIdentityId: { in: identityIds } },
       select: { status: true },
       orderBy: { createdAt: "desc" },
     });

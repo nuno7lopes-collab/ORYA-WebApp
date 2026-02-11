@@ -17,10 +17,7 @@ const CONTEXT_TOKENS = [
   "getActiveOrganizationForUser",
 ];
 
-const ALLOWLIST = new Set<string>([
-  "app/api/organizacao/mensagens/broadcast/route.ts",
-  "app/api/organizacao/mensagens/history/route.ts",
-]);
+const ALLOWLIST = new Set<string>([]);
 
 const METADATA_ORG_ALLOWLIST = new Set<string>([
   "app/api/organizacao/payouts/webhook/route.ts",

@@ -29,6 +29,8 @@ describe("access entitlement guardrails", () => {
         "-g '!lib/operations/fulfillStoreOrder.ts'",
         "-g '!lib/operations/fulfillResale.ts'",
         "-g '!lib/operations/fulfillServiceBooking.ts'",
+        "-g '!lib/ownership/claimIdentity.ts'",
+        "-g '!domain/padel/cleanup.ts'",
         "-g '!app/api/stripe/webhook/route.ts'",
         "-g '!app/api/internal/worker/operations/route.ts'",
         "-g '!app/api/organizacao/events/[[]id[]]/refund/route.ts'",

@@ -15,7 +15,7 @@ export default async function GuestTicketPage({ params }: { params: { token: str
   const rawToken = typeof params.token === "string" ? params.token.trim() : "";
   if (!rawToken) {
     return (
-      <div className="min-h-screen bg-[#0b0f18] text-white flex items-center justify-center p-6">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white flex items-center justify-center p-6">
         <div className="max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/80">
           Link inválido.
         </div>
@@ -31,7 +31,7 @@ export default async function GuestTicketPage({ params }: { params: { token: str
 
   if (!access) {
     return (
-      <div className="min-h-screen bg-[#0b0f18] text-white flex items-center justify-center p-6">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white flex items-center justify-center p-6">
         <div className="max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/80">
           Este link de bilhete já não está disponível.
         </div>
@@ -42,7 +42,7 @@ export default async function GuestTicketPage({ params }: { params: { token: str
   const now = new Date();
   if (isGuestTicketAccessTokenExpired(access.expiresAt ?? null, now)) {
     return (
-      <div className="min-h-screen bg-[#0b0f18] text-white flex items-center justify-center p-6">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white flex items-center justify-center p-6">
         <div className="max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/80">
           Este link expirou. Contacta o suporte se precisares de ajuda.
         </div>
@@ -63,7 +63,7 @@ export default async function GuestTicketPage({ params }: { params: { token: str
 
   if (!event) {
     return (
-      <div className="min-h-screen bg-[#0b0f18] text-white flex items-center justify-center p-6">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white flex items-center justify-center p-6">
         <div className="max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/80">
           Evento não encontrado.
         </div>

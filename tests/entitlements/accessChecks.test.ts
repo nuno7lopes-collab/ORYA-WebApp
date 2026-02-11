@@ -4,8 +4,12 @@ import { EntitlementStatus, EntitlementType } from "@prisma/client";
 const prismaMock = vi.hoisted(() => ({
   entitlement: { findFirst: vi.fn() },
 }));
+const identityMock = vi.hoisted(() => ({
+  getUserIdentityIds: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
+vi.mock("@/lib/ownership/identity", () => identityMock);
 
 import {
   hasActiveEntitlementForEvent,
@@ -14,6 +18,8 @@ import {
 
 beforeEach(() => {
   prismaMock.entitlement.findFirst.mockReset();
+  identityMock.getUserIdentityIds.mockReset();
+  identityMock.getUserIdentityIds.mockResolvedValue(["identity-1"]);
 });
 
 describe("hasActiveEntitlementForEvent", () => {

@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthModal } from "./AuthModalContext";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
@@ -101,6 +109,9 @@ function AuthModalContent({
       : null;
 
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const subtitleId = useId();
 
   function clearPendingVerification() {
     setOtp("");
@@ -131,6 +142,14 @@ function AuthModalContent({
     setError(null);
     setMode("login");
   }
+
+  const canClose = !isOnboarding && dismissible;
+  const handleClose = useCallback(() => {
+    if (!dismissible || isOnboarding) return;
+    hardResetAuthState();
+    closeModal();
+    router.push(sanitizeRedirectPath(redirectTo, "/"));
+  }, [closeModal, dismissible, isOnboarding, redirectTo, router]);
 
   async function triggerOtpRetry(emailValue: string) {
     if (!emailValue || !isEmailLike(emailValue)) {
@@ -184,22 +203,96 @@ function AuthModalContent({
   }
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(e.target as Node) &&
-        !isOnboarding &&
-        dismissible
-      ) {
-        closeModal();
+    function handlePointerDown(event: PointerEvent) {
+      if (!canClose || !modalRef.current) return;
+      if (!modalRef.current.contains(event.target as Node)) {
+        handleClose();
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handlePointerDown);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [closeModal, dismissible, isOnboarding]);
+  }, [canClose, handleClose]);
+
+  useEffect(() => {
+    const modalNode = modalRef.current;
+    if (!modalNode) return;
+    const dialogNode = modalNode;
+
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    if (!previouslyFocusedRef.current) {
+      const activeElement = document.activeElement;
+      previouslyFocusedRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+    }
+
+    function handleDialogKeydown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (canClose) {
+          event.preventDefault();
+          handleClose();
+        }
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusableNodes = Array.from(
+        dialogNode.querySelectorAll<HTMLElement>(focusableSelector),
+      ).filter((node) => node.tabIndex !== -1 && !node.hasAttribute("disabled"));
+
+      if (focusableNodes.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusableNodes[0];
+      const last = focusableNodes[focusableNodes.length - 1];
+      const current = document.activeElement as HTMLElement | null;
+
+      if (!current || !dialogNode.contains(current)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+
+      if (event.shiftKey && current === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && current === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleDialogKeydown);
+    return () => {
+      document.removeEventListener("keydown", handleDialogKeydown);
+      if (
+        previouslyFocusedRef.current &&
+        document.contains(previouslyFocusedRef.current)
+      ) {
+        previouslyFocusedRef.current.focus();
+      }
+      previouslyFocusedRef.current = null;
+    };
+  }, [canClose, handleClose]);
+
+  useEffect(() => {
+    const modalNode = modalRef.current;
+    if (!modalNode) return;
+
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const autoTarget =
+      modalNode.querySelector<HTMLElement>("[data-autofocus='true']") ??
+      modalNode.querySelector<HTMLElement>(focusableSelector);
+    autoTarget?.focus();
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== "reset") {
@@ -433,54 +526,59 @@ function AuthModalContent({
       return;
     }
 
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier, password }),
-      credentials: "include",
-    });
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok || !data?.ok) {
-      const errorCode = getErrorCode(data);
-      const errorMessage = getErrorMessage(data);
-      if (errorCode === "EMAIL_NOT_CONFIRMED") {
-        const emailValue = isEmailLike(identifier) ? identifier : "";
-        if (typeof window !== "undefined" && emailValue) {
-          window.localStorage.setItem("orya_pending_email", emailValue);
-          window.localStorage.setItem("orya_pending_step", "verify");
-        }
-        setMode("verify");
-        setEmail(emailValue);
-        setVerifyOtpSent(false);
-        setError(
-          emailValue
-            ? "Email ainda não confirmado. Reenviei-te um novo código."
-            : "Email ainda não confirmado. Indica o teu email para receberes o código."
-        );
-        if (emailValue) {
-          await triggerOtpRetry(emailValue);
-        }
-      } else if (isRateLimited(errorCode)) {
-        setError(errorMessage ?? "Muitas tentativas. Tenta novamente dentro de minutos.");
-      } else {
-        setError(errorMessage ?? "Credenciais inválidas. Confirma username/email e password.");
-      }
-      setLoading(false);
-      return;
-    }
-
-    const session = data?.session;
-    if (session?.access_token && session?.refresh_token) {
-      await supabaseBrowser.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier, password }),
+        credentials: "include",
       });
-    }
+      const data = await res.json().catch(() => null);
 
-    clearPendingVerification();
-    await finishAuthAndMaybeOnboard();
-    setLoading(false);
+      if (!res.ok || !data?.ok) {
+        const errorCode = getErrorCode(data);
+        const errorMessage = getErrorMessage(data);
+        if (errorCode === "EMAIL_NOT_CONFIRMED") {
+          const emailValue = isEmailLike(identifier) ? identifier : "";
+          if (typeof window !== "undefined" && emailValue) {
+            window.localStorage.setItem("orya_pending_email", emailValue);
+            window.localStorage.setItem("orya_pending_step", "verify");
+          }
+          setMode("verify");
+          setEmail(emailValue);
+          setVerifyOtpSent(false);
+          setError(
+            emailValue
+              ? "Email ainda não confirmado. Reenviei-te um novo código."
+              : "Email ainda não confirmado. Indica o teu email para receberes o código."
+          );
+          if (emailValue) {
+            await triggerOtpRetry(emailValue);
+          }
+        } else if (isRateLimited(errorCode)) {
+          setError(errorMessage ?? "Muitas tentativas. Tenta novamente dentro de minutos.");
+        } else {
+          setError(errorMessage ?? "Credenciais inválidas. Confirma username/email e password.");
+        }
+        return;
+      }
+
+      const session = data?.session;
+      if (session?.access_token && session?.refresh_token) {
+        await supabaseBrowser.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        });
+      }
+
+      clearPendingVerification();
+      await finishAuthAndMaybeOnboard();
+    } catch (err) {
+      console.error("[AuthModal] login error:", err);
+      setError("Não foi possível iniciar sessão. Verifica a tua ligação e tenta novamente.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -804,25 +902,97 @@ function AuthModalContent({
     (mode === "reset" && (!email || !email.trim())) ||
     (mode === "onboarding" && !isOnboardingReady);
 
-  const handleClose = () => {
-    if (!dismissible || isOnboarding) return;
-    hardResetAuthState();
-    closeModal();
-    router.push(sanitizeRedirectPath(redirectTo, "/"));
+  const primaryDisabledHint = (() => {
+    if (!isPrimaryDisabled || loading) return null;
+    if (mode === "login") {
+      if (!email?.trim()) return "Indica o teu email ou username.";
+      if (!password) return "Indica a tua palavra-passe.";
+      return "Revê os dados para continuar.";
+    }
+    if (mode === "signup") {
+      if (!email?.trim()) return "Indica o teu email.";
+      if (!password) return "Indica a tua palavra-passe.";
+      if (password.length < 6) return "A palavra-passe deve ter pelo menos 6 caracteres.";
+      if (!confirmPassword) return "Confirma a palavra-passe.";
+      if (password !== confirmPassword) return "As palavras-passe devem coincidir.";
+      if (isSignupBlocked) return `Aguardar ${signupCooldown}s para tentar novamente.`;
+      return "Revê os dados para continuar.";
+    }
+    if (mode === "verify") {
+      if (!email?.trim()) return "Indica o teu email.";
+      if (!isEmailLike(email)) return "Indica um email válido.";
+      if (otp.trim().length < 6) return "Introduz o código completo.";
+      return "Revê os dados para continuar.";
+    }
+    if (mode === "reset") {
+      if (!email?.trim()) return "Indica o teu email para recuperar acesso.";
+      return "Revê os dados para continuar.";
+    }
+    if (mode === "onboarding") {
+      if (!fullName.trim()) return "Indica o teu nome completo.";
+      if (!onboardingValidation.valid) return onboardingValidation.error ?? "Username inválido.";
+      if (onboardingInterests.length === 0) return "Escolhe pelo menos um interesse.";
+    }
+    return null;
+  })();
+
+  const handlePrimarySubmit = async () => {
+    if (isPrimaryDisabled || loading) return;
+    if (mode === "login") {
+      await handleLogin();
+      return;
+    }
+    if (mode === "signup") {
+      await handleSignup();
+      return;
+    }
+    if (mode === "verify") {
+      await handleVerify();
+      return;
+    }
+    if (mode === "reset") {
+      await handleResetPassword();
+      return;
+    }
+    if (mode === "onboarding") {
+      await handleOnboardingSave();
+    }
   };
 
-  const canClose = !isOnboarding && dismissible;
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void handlePrimarySubmit();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl">
       <div
         ref={modalRef}
-        className="w-full max-w-md rounded-3xl border border-white/15 bg-black/80 p-6 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={subtitleId}
+        tabIndex={-1}
+        className="relative w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-white/15 bg-black/80 p-6 shadow-xl"
       >
-        <div className="mb-4 space-y-2">
+        {canClose && (
+          <button
+            type="button"
+            onClick={handleClose}
+            aria-label="Fechar"
+            className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-sm text-white/65 transition hover:border-white/30 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#6BFFFF]/60"
+          >
+            X
+          </button>
+        )}
+        <div className="mb-4 space-y-2 pr-10">
           <div className="space-y-1">
-            <h2 className="text-2xl font-semibold text-white leading-tight">{title}</h2>
-            <p className="text-sm text-white/70">{subtitle}</p>
+            <h2 id={titleId} className="text-2xl font-semibold leading-tight text-white">
+              {title}
+            </h2>
+            <p id={subtitleId} className="text-sm text-white/75">
+              {subtitle}
+            </p>
           </div>
 
           {(isLogin || isSignup) && (
@@ -853,6 +1023,7 @@ function AuthModalContent({
           )}
         </div>
 
+        <form onSubmit={handleFormSubmit}>
           {(mode === "login" || mode === "signup") && (
             <>
             <label className="block text-xs text-white/70 mb-1">
@@ -860,6 +1031,7 @@ function AuthModalContent({
             </label>
             <input
               type={mode === "login" ? "text" : "email"}
+              data-autofocus="true"
               value={email ?? ""}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -893,36 +1065,23 @@ function AuthModalContent({
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
-                className="text-[11px] text-white/70 hover:text-white"
+                className="text-[12px] text-white/70 hover:text-white"
               >
                 {showPassword ? "Ocultar" : "Mostrar"}
               </button>
             </div>
 
             {mode === "login" && (
-              <div className="mt-3 space-y-3">
-                <button
-                  type="button"
-                  disabled={isPrimaryDisabled}
-                  onClick={handleLogin}
-                  className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
-                >
-                  {loading ? "A processar…" : "Entrar"}
-                </button>
-                <div className="flex items-center justify-between text-[11px] text-white/70">
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between text-[12px] text-white/70">
                   <button
                     type="button"
                     onClick={() => setMode("reset")}
                     disabled={isAuthEmailSending}
-                    className="text-left text-[11px] text-white/70 hover:text-white disabled:opacity-60"
+                    className="text-left text-[12px] text-white/70 hover:text-white disabled:opacity-60"
                   >
                     Esqueceste a palavra-passe?
                   </button>
-                </div>
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-white/35">
-                  <span className="h-px flex-1 bg-white/10" />
-                  ou
-                  <span className="h-px flex-1 bg-white/10" />
                 </div>
               </div>
             )}
@@ -947,12 +1106,20 @@ function AuthModalContent({
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword((v) => !v)}
-                    className="text-[11px] text-white/70 hover:text-white"
+                    className="text-[12px] text-white/70 hover:text-white"
                   >
                     {showConfirmPassword ? "Ocultar" : "Mostrar"}
                   </button>
                 </div>
               </>
+            )}
+
+            {(mode === "login" || mode === "signup") && showGoogle && (
+              <div className="mt-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-white/40">
+                <span className="h-px flex-1 bg-white/10" />
+                ou continua com
+                <span className="h-px flex-1 bg-white/10" />
+              </div>
             )}
 
             {(mode === "login" || mode === "signup") && showGoogle && (
@@ -1056,11 +1223,25 @@ function AuthModalContent({
             )}
 
             {mode === "login" && loginOtpSent && (
-              <span className="mt-2 block text-emerald-300 text-[11px]">Email enviado.</span>
+              <span className="mt-2 block text-emerald-300 text-[12px]">Email enviado.</span>
             )}
 
-            <p className="mt-3 text-[10px] text-white/50 leading-snug">
-              Ao continuar, aceitas os termos.
+            <p className="mt-3 text-[12px] leading-snug text-white/60">
+              Ao continuar, aceitas os{" "}
+              <Link
+                href="/legal/termos"
+                className="text-white/80 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#6BFFFF]/60"
+              >
+                Termos
+              </Link>{" "}
+              e a{" "}
+              <Link
+                href="/legal/privacidade"
+                className="text-white/80 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#6BFFFF]/60"
+              >
+                Política de Privacidade
+              </Link>
+              .
             </p>
           </>
         )}
@@ -1074,6 +1255,7 @@ function AuthModalContent({
             <label className="block text-xs text-white/70 mb-1">Email</label>
             <input
               type="email"
+              data-autofocus="true"
               value={email ?? ""}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -1154,6 +1336,7 @@ function AuthModalContent({
             <label className="mt-4 block text-xs text-white/70 mb-1">Email</label>
             <input
               type="email"
+              data-autofocus="true"
               value={email ?? ""}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -1197,6 +1380,7 @@ function AuthModalContent({
             </label>
             <input
               type="text"
+              data-autofocus="true"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               autoComplete="name"
@@ -1329,7 +1513,7 @@ function AuthModalContent({
                   {resetPasswordSending ? "A enviar recuperação…" : "Recuperar password"}
                 </button>
                 {loginOtpSent && (
-                  <p className="text-emerald-300 text-[11px]">
+                  <p className="text-emerald-300 text-[12px]">
                     Verifica o teu email.
                   </p>
                 )}
@@ -1338,18 +1522,21 @@ function AuthModalContent({
           </div>
         )}
 
-        {mode === "signup" && isSignupBlocked && (
-          <p className="mt-2 text-[11px] text-white/60">
-            Aguardar {signupCooldown}s para tentar novamente.
-          </p>
-        )}
-
         <div className="mt-5 flex flex-col gap-2">
+          {mode === "login" && (
+            <button
+              type="submit"
+              disabled={isPrimaryDisabled}
+              className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
+            >
+              {loading ? "A processar…" : "Entrar"}
+            </button>
+          )}
+
           {mode === "signup" && (
             <button
-              type="button"
+              type="submit"
               disabled={isPrimaryDisabled}
-              onClick={handleSignup}
               className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading
@@ -1360,9 +1547,8 @@ function AuthModalContent({
 
           {mode === "verify" && (
             <button
-              type="button"
+              type="submit"
               disabled={isPrimaryDisabled}
-              onClick={handleVerify}
               className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading ? "A validar…" : "Confirmar código"}
@@ -1371,9 +1557,8 @@ function AuthModalContent({
 
           {mode === "reset" && (
             <button
-              type="button"
+              type="submit"
               disabled={isPrimaryDisabled || isAuthEmailSending}
-              onClick={handleResetPassword}
               className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {resetPasswordSending ? "A enviar recuperação…" : "Enviar link de recuperação"}
@@ -1382,34 +1567,29 @@ function AuthModalContent({
 
           {mode === "onboarding" && (
             <button
-              type="button"
+              type="submit"
               disabled={isPrimaryDisabled}
-              onClick={handleOnboardingSave}
               className={`${CTA_PRIMARY} w-full justify-center px-4 py-2.5 text-[13px] disabled:opacity-50`}
             >
               {loading ? "A guardar…" : "Guardar e continuar"}
             </button>
           )}
 
+          {primaryDisabledHint && !error && (
+            <p className="text-center text-[12px] text-white/60">{primaryDisabledHint}</p>
+          )}
+
           {mode === "reset" && (
             <button
               type="button"
               onClick={() => setMode("login")}
-              className="text-[11px] text-white/60 hover:text-white"
+              className="text-[12px] text-white/60 hover:text-white"
             >
               Voltar ao login
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={canClose ? handleClose : undefined}
-            disabled={!canClose}
-            className="text-[11px] text-white/50 hover:text-white disabled:opacity-60"
-          >
-            Fechar
-          </button>
         </div>
+        </form>
       </div>
     </div>
   );

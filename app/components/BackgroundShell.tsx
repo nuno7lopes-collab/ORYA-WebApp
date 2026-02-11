@@ -6,13 +6,9 @@ import { usePathname } from "next/navigation";
 import { BACKGROUND_CATALOG } from "@/lib/theme/catalog";
 
 const ORG_PREFIXES = ["/organizacao"];
-const EVENT_PREFIXES = ["/eventos/", "/resale/", "/inscricoes/"];
-const EVENT_EDITOR_PREFIXES = [
-  "/organizacao/eventos/",
-  "/organizacao/torneios/",
-  "/organizacao/padel/torneios/",
-];
+const EVENT_NON_SLUG_SEGMENTS = new Set(["nova"]);
 const LANDING_PREFIXES = ["/landing"];
+const FUNDO_1_BG_IMAGE = "linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%)";
 
 type BackgroundKey = "orya-bg-user" | "orya-bg-event" | "orya-bg-org" | "orya-bg-landing";
 
@@ -27,7 +23,7 @@ type BackgroundPreset = {
 
 const USER_BG_PRESET: BackgroundPreset = {
   color: "#0b1014",
-  image: "none",
+  image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
@@ -38,7 +34,7 @@ const USER_BG_PRESET: BackgroundPreset = {
 
 const LANDING_BG_PRESET: BackgroundPreset = {
   color: "#0b1014",
-  image: "none",
+  image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
@@ -61,7 +57,6 @@ const getCatalogLayerPreset = (id: string): BackgroundLayerPreset | null => {
 };
 
 const EVENT_BLUR_PRESET = getCatalogLayerPreset("event-cover-blur");
-const LANDING_FLOW_PRESET = getCatalogLayerPreset("landing-flow");
 
 const BG_PRESETS: Record<BackgroundKey, BackgroundPreset> = {
   "orya-bg-user": USER_BG_PRESET,
@@ -70,17 +65,18 @@ const BG_PRESETS: Record<BackgroundKey, BackgroundPreset> = {
   "orya-bg-landing": LANDING_BG_PRESET,
 };
 
-const isEventBlurRoute = (pathname: string | null) => {
+const isEventCoverRoute = (pathname: string | null) => {
   const current = pathname ?? "";
-  if (current === "/eventos" || current === "/eventos/") return false;
-  if (EVENT_PREFIXES.some((route) => current.startsWith(route))) return true;
-  return EVENT_EDITOR_PREFIXES.some((route) => current.startsWith(route));
+  const segments = current.split("/").filter(Boolean);
+  if (segments[0] !== "eventos") return false;
+  if (!segments[1]) return false;
+  return !EVENT_NON_SLUG_SEGMENTS.has(segments[1]);
 };
 
 const getBackgroundClass = (pathname: string | null): BackgroundKey => {
   const current = pathname ?? "";
 
-  if (isEventBlurRoute(current)) {
+  if (isEventCoverRoute(current)) {
     return "orya-bg-event";
   }
 
@@ -99,12 +95,7 @@ export function BackgroundShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const bgClass = getBackgroundClass(pathname);
   const preset = BG_PRESETS[bgClass];
-  const routeOverride =
-    bgClass === "orya-bg-landing"
-      ? LANDING_FLOW_PRESET
-      : bgClass === "orya-bg-event"
-        ? EVENT_BLUR_PRESET
-        : null;
+  const routeOverride = bgClass === "orya-bg-event" ? EVENT_BLUR_PRESET : null;
 
   const layerStyle: CSSProperties = routeOverride
     ? {

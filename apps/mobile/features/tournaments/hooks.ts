@@ -4,6 +4,10 @@ import {
   fetchOpenPairings,
   fetchPadelMatches,
   fetchPadelStandings,
+  fetchPadelSummary,
+  fetchPadelMyMatches,
+  fetchPadelDiscover,
+  fetchPadelRankings,
 } from "./api";
 
 export const usePadelStandings = (
@@ -55,5 +59,47 @@ export const useMyPairings = (eventId: number | null, enabled = true) => {
     queryFn: () => fetchMyPairings(eventId ?? undefined),
     enabled: enabled,
     staleTime: 20_000,
+  });
+};
+
+export const usePadelSummary = (enabled = true) => {
+  return useQuery({
+    queryKey: ["padel-me-summary"],
+    queryFn: () => fetchPadelSummary(),
+    enabled,
+    staleTime: 30_000,
+  });
+};
+
+export const usePadelMyMatches = (
+  params?: { scope?: "all" | "upcoming" | "past"; limit?: number },
+  enabled = true,
+) => {
+  return useQuery({
+    queryKey: ["padel-me-matches", params?.scope ?? "all", params?.limit ?? null],
+    queryFn: () => fetchPadelMyMatches(params),
+    enabled,
+    staleTime: 20_000,
+  });
+};
+
+export const usePadelDiscover = (params?: { q?: string; date?: string; limit?: number }, enabled = true) => {
+  return useQuery({
+    queryKey: ["padel-discover", params?.q ?? "", params?.date ?? "", params?.limit ?? null],
+    queryFn: () => fetchPadelDiscover(params),
+    enabled,
+    staleTime: 30_000,
+  });
+};
+
+export const usePadelRankings = (
+  params?: { scope?: "global" | "organization"; limit?: number; periodDays?: number },
+  enabled = true,
+) => {
+  return useQuery({
+    queryKey: ["padel-rankings", params?.scope ?? "global", params?.limit ?? null, params?.periodDays ?? null],
+    queryFn: () => fetchPadelRankings(params),
+    enabled,
+    staleTime: 60_000,
   });
 };

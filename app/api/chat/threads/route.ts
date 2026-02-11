@@ -20,6 +20,9 @@ async function _GET(req: NextRequest) {
       identityIds,
       email: user.email ?? null,
     });
+    if (!ownerClauses.length) {
+      return jsonWrap({ items: [] }, { status: 200 });
+    }
 
     const acceptedInvites = await prisma.chatEventInvite.findMany({
       where: {

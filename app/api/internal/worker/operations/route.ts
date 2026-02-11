@@ -36,6 +36,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { processNotificationOutboxBatch } from "@/domain/notifications/outboxProcessor";
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
 import { normalizeEmail } from "@/lib/utils/email";
+import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { ensureEventChatInvite } from "@/lib/chat/invites";
@@ -61,6 +62,7 @@ import { queuePairingRefund } from "@/domain/notifications/splitPayments";
 import { handleOwnerTransferOutboxEvent } from "@/domain/organization/ownerTransferOutbox";
 import { consumeAgendaMaterializationEvent } from "@/domain/agendaReadModel/consumer";
 import { handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
+import { handleCrmOutboxEvent } from "@/domain/crm/consumer";
 import { getCloseFriends } from "@/domain/social/closeFriends";
 import { releaseCronLock, tryAcquireCronLock } from "@/lib/cron/lock";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
@@ -248,8 +250,8 @@ function computeBackoffMs(backlogCount: number, oldestAgeMs: number | null) {
 }
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
+  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   const guest = normalizeEmail(params.guestEmail);
   if (guest) return `email:${guest}`;
   return "unknown";
@@ -394,7 +396,7 @@ async function processClaimGuestPurchase(op: OperationRecord) {
     },
   });
 
-  const newOwnerKey = buildOwnerKey({ ownerUserId: userId });
+  const newOwnerKey = buildOwnerKey({ ownerIdentityId: identity.id });
 
   await prisma.entitlement.updateMany({
     where: {
@@ -406,8 +408,8 @@ async function processClaimGuestPurchase(op: OperationRecord) {
       ],
     },
     data: {
-      ownerUserId: userId,
-      ownerIdentityId: null,
+      ownerUserId: null,
+      ownerIdentityId: identity.id,
       ownerKey: newOwnerKey,
       updatedAt: new Date(),
     },
@@ -416,7 +418,7 @@ async function processClaimGuestPurchase(op: OperationRecord) {
   const eligibleEntitlements = await prisma.entitlement.findMany({
     where: {
       purchaseId,
-      ownerUserId: userId,
+      ownerIdentityId: identity.id,
       eventId: { not: null },
       status: EntitlementStatus.ACTIVE,
       checkins: {
@@ -871,6 +873,19 @@ async function processOperation(op: OperationRecord) {
         attempts: op.attempts,
       });
       if (!eventType) throw new Error("OUTBOX_EVENT_MISSING_TYPE");
+      if (eventType === "CRM_INGEST_REQUESTED") {
+        const result = await handleCrmOutboxEvent({
+          eventType,
+          payload: eventPayload as any,
+        });
+        if (outboxEventId) {
+          await prisma.outboxEvent.update({
+            where: { eventId: outboxEventId },
+            data: { publishedAt: new Date(), nextAttemptAt: null },
+          });
+        }
+        return result;
+      }
       if (eventType.startsWith("payment.")) {
         const result = await handleFinanceOutboxEvent({
           eventType,
@@ -1247,6 +1262,14 @@ async function processUpsertLedger(op: OperationRecord) {
         : null;
   const ownerIdentityId = typeof payload.ownerIdentityId === "string" ? payload.ownerIdentityId : null;
   const guestEmail = typeof payload.guestEmail === "string" ? payload.guestEmail : null;
+  let resolvedOwnerIdentityId = ownerIdentityId;
+  if (!resolvedOwnerIdentityId && userId) {
+    const identity = await resolveIdentityForUser({ userId, email: guestEmail });
+    resolvedOwnerIdentityId = identity.id;
+  } else if (!resolvedOwnerIdentityId && guestEmail) {
+    const identity = await ensureEmailIdentity({ email: guestEmail });
+    resolvedOwnerIdentityId = identity.id;
+  }
   const subtotalCents = Number(payload.subtotalCents ?? 0);
   const discountCents = Number(payload.discountCents ?? 0);
   const platformFeeCents = Number(payload.platformFeeCents ?? 0);
@@ -1268,7 +1291,12 @@ async function processUpsertLedger(op: OperationRecord) {
 
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
 
-  const ownerKey = buildOwnerKey({ ownerUserId: userId, ownerIdentityId, guestEmail });
+  const entitlementOwnerUserId = resolvedOwnerIdentityId ? null : userId;
+  const ownerKey = buildOwnerKey({
+    ownerUserId: entitlementOwnerUserId,
+    ownerIdentityId: resolvedOwnerIdentityId,
+    guestEmail,
+  });
   const totalSubtotal = lines.reduce(
     (sum, line) => sum + Math.max(0, Number(line.unitPriceCents ?? 0)) * Math.max(1, Number(line.quantity ?? 0)),
     0,
@@ -1281,7 +1309,7 @@ async function processUpsertLedger(op: OperationRecord) {
         eventId: event.id,
         userId,
         ownerUserId: userId,
-        ownerIdentityId,
+        ownerIdentityId: resolvedOwnerIdentityId,
         purchaseId,
         promoCodeId,
         subtotalCents,
@@ -1298,7 +1326,7 @@ async function processUpsertLedger(op: OperationRecord) {
         eventId: event.id,
         userId,
         ownerUserId: userId,
-        ownerIdentityId,
+        ownerIdentityId: resolvedOwnerIdentityId,
         purchaseId,
         promoCodeId,
         subtotalCents,
@@ -1396,7 +1424,7 @@ async function processUpsertLedger(op: OperationRecord) {
             data: {
               userId: userId ?? null,
               ownerUserId: userId ?? null,
-              ownerIdentityId: ownerIdentityId ?? null,
+              ownerIdentityId: resolvedOwnerIdentityId ?? null,
               eventId: event.id,
               ticketTypeId: line.ticketTypeId,
               status: "ACTIVE",
@@ -1451,8 +1479,8 @@ async function processUpsertLedger(op: OperationRecord) {
           },
           update: {
             status: EntitlementStatus.ACTIVE,
-            ownerUserId: userId ?? null,
-            ownerIdentityId: ownerIdentityId ?? null,
+            ownerUserId: entitlementOwnerUserId,
+            ownerIdentityId: resolvedOwnerIdentityId ?? null,
             eventId: event.id,
             policyVersionApplied,
             snapshotTitle: event.title,
@@ -1467,8 +1495,8 @@ async function processUpsertLedger(op: OperationRecord) {
             saleLineId: saleLine.id,
             lineItemIndex: i,
             ownerKey,
-            ownerUserId: userId ?? null,
-            ownerIdentityId: ownerIdentityId ?? null,
+            ownerUserId: entitlementOwnerUserId,
+            ownerIdentityId: resolvedOwnerIdentityId ?? null,
             eventId: event.id,
             type: EntitlementType.EVENT_TICKET,
             status: EntitlementStatus.ACTIVE,

@@ -8,6 +8,7 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemption";
 import { logError, logWarn } from "@/lib/observability/logger";
 import { normalizeEmail } from "@/lib/utils/email";
+import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 
 function parseId(value: unknown) {
   const parsed = Number(value);
@@ -16,8 +17,9 @@ function parseId(value: unknown) {
 
 const DEFAULT_TIMEZONE = "Europe/Lisbon";
 
-function buildOwnerKey(params: { ownerUserId?: string | null; guestEmail?: string | null }) {
-  const { ownerUserId, guestEmail } = params;
+function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
+  const { ownerUserId, ownerIdentityId, guestEmail } = params;
+  if (ownerIdentityId) return `identity:${ownerIdentityId}`;
   if (ownerUserId) return `user:${ownerUserId}`;
   const normalized = normalizeEmail(guestEmail);
   if (normalized) return `email:${normalized}`;
@@ -54,7 +56,16 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
       : order.purchaseId) ?? `store_order_${order.id}`;
   const ownerUserId = order.userId ?? (typeof meta.userId === "string" ? meta.userId : null);
   const ownerEmail = order.customerEmail ?? (typeof meta.customerEmail === "string" ? meta.customerEmail : null);
-  const ownerKey = buildOwnerKey({ ownerUserId, guestEmail: ownerEmail });
+  let ownerIdentityId: string | null = null;
+  if (ownerUserId) {
+    const identity = await resolveIdentityForUser({ userId: ownerUserId, email: ownerEmail });
+    ownerIdentityId = identity.id;
+  } else if (ownerEmail) {
+    const identity = await ensureEmailIdentity({ email: ownerEmail });
+    ownerIdentityId = identity.id;
+  }
+  const entitlementOwnerUserId = ownerIdentityId ? null : ownerUserId;
+  const ownerKey = buildOwnerKey({ ownerUserId: entitlementOwnerUserId, ownerIdentityId, guestEmail: ownerEmail });
   const snapshotStartAt = order.createdAt ?? new Date();
   let paymentApplied = false;
 
@@ -106,8 +117,8 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
           },
           update: {
             status: EntitlementStatus.ACTIVE,
-            ownerUserId,
-            ownerIdentityId: null,
+            ownerUserId: entitlementOwnerUserId,
+            ownerIdentityId,
             purchaseId: resolvedPurchaseId,
             snapshotTitle: line.nameSnapshot,
             snapshotCoverUrl: null,
@@ -118,8 +129,8 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
           create: {
             type: EntitlementType.STORE_ITEM,
             status: EntitlementStatus.ACTIVE,
-            ownerUserId,
-            ownerIdentityId: null,
+            ownerUserId: entitlementOwnerUserId,
+            ownerIdentityId,
             ownerKey,
             purchaseId: resolvedPurchaseId,
             storeOrderLineId: line.id,
@@ -220,17 +231,19 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
     }
   });
 
-  if (order.store?.ownerOrganizationId && order.userId) {
+  if (order.store?.ownerOrganizationId && (order.userId || ownerIdentityId)) {
     try {
       await ingestCrmInteraction({
         organizationId: order.store.ownerOrganizationId,
-        userId: order.userId,
+        userId: order.userId ?? undefined,
+        emailIdentityId: ownerIdentityId ?? undefined,
         type: CrmInteractionType.STORE_ORDER_PAID,
         sourceType: CrmInteractionSource.STORE_ORDER,
         sourceId: resolvedPurchaseId,
         occurredAt: new Date(),
         amountCents: order.totalCents,
         currency: order.currency,
+        contactEmail: order.customerEmail ?? ownerEmail ?? undefined,
         metadata: { orderId: order.id, storeId: order.storeId },
       });
     } catch (err) {

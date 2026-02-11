@@ -4,18 +4,24 @@ const prismaMock = vi.hoisted(() => ({
   entitlement: { findFirst: vi.fn() },
 }));
 const getLatestPolicyForEvent = vi.hoisted(() => vi.fn());
+const identityMock = vi.hoisted(() => ({
+  getUserIdentityIds: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/checkin/accessPolicy", () => ({
   getLatestPolicyForEvent,
   requireLatestPolicyVersionForEvent: vi.fn().mockResolvedValue(1),
 }));
+vi.mock("@/lib/ownership/identity", () => identityMock);
 
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 
 beforeEach(() => {
   prismaMock.entitlement.findFirst.mockReset();
   getLatestPolicyForEvent.mockReset();
+  identityMock.getUserIdentityIds.mockReset();
+  identityMock.getUserIdentityIds.mockResolvedValue(["identity-1"]);
 });
 
 describe("evaluateEventAccess", () => {
@@ -46,7 +52,7 @@ describe("evaluateEventAccess", () => {
     expect(result.allowed).toBe(true);
   });
 
-  it("exige entitlement quando policy requer", async () => {
+  it("exige entitlement quando policy requer e intent ENTRY", async () => {
     getLatestPolicyForEvent.mockResolvedValue({
       inviteTokenAllowed: true,
       inviteIdentityMatch: "EMAIL",
@@ -56,12 +62,12 @@ describe("evaluateEventAccess", () => {
     });
     prismaMock.entitlement.findFirst.mockResolvedValue(null);
 
-    const result = await evaluateEventAccess({ eventId: 1, userId: "user-1" });
+    const result = await evaluateEventAccess({ eventId: 1, userId: "user-1", intent: "ENTRY" });
     expect(result.allowed).toBe(false);
     expect(result.reasonCode).toBe("ENTITLEMENT_REQUIRED");
   });
 
-  it("permite quando entitlement activo", async () => {
+  it("permite quando entitlement activo e intent ENTRY", async () => {
     getLatestPolicyForEvent.mockResolvedValue({
       inviteTokenAllowed: false,
       inviteIdentityMatch: "EMAIL",
@@ -71,7 +77,7 @@ describe("evaluateEventAccess", () => {
     });
     prismaMock.entitlement.findFirst.mockResolvedValue({ status: "ACTIVE" });
 
-    const result = await evaluateEventAccess({ eventId: 1, userId: "user-1" });
+    const result = await evaluateEventAccess({ eventId: 1, userId: "user-1", intent: "ENTRY" });
     expect(result.allowed).toBe(true);
   });
 

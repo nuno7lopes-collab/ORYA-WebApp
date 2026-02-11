@@ -27,6 +27,7 @@ const STATUS_FILTERS = [
   { key: "CHECKED_IN", label: "Check-in" },
   { key: "PENDING", label: "Pendentes" },
   { key: "REVOKED", label: "Revogados" },
+  { key: "CHARGEBACK_LOST", label: "Chargeback" },
   { key: "EXPIRED", label: "Expirados" },
   { key: "SUSPENDED", label: "Suspensos" },
 ];
@@ -47,6 +48,10 @@ const STATUS_META: Record<string, { label: string; tone: string }> = {
   REVOKED: {
     label: "Revogado",
     tone: "border-amber-400/50 bg-amber-500/10 text-amber-100",
+  },
+  CHARGEBACK_LOST: {
+    label: "Chargeback",
+    tone: "border-red-400/50 bg-red-500/10 text-red-100",
   },
   EXPIRED: {
     label: "Expirado",
@@ -274,7 +279,10 @@ export default function EventAttendeesPanel({
             const checkedInLabel = formatDateTime(item.checkedInAt);
             const refundedLabel = formatDateTime(item.refundedAt);
             const refundDisabled =
-              !item.purchaseId || item.status === "REFUNDED" || Boolean(item.refundedAt);
+              !item.purchaseId ||
+              item.status === "REFUNDED" ||
+              item.status === "CHARGEBACK_LOST" ||
+              Boolean(item.refundedAt);
 
             return (
               <div

@@ -1,11 +1,30 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { checkUsernameAvailability } from "@/lib/globalUsernames";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(req: NextRequest) {
   try {
+    if (!isSameOriginOrApp(req)) {
+      return jsonWrap({ ok: false, error: "Pedido não autorizado." }, { status: 403 });
+    }
+
+    const limiter = await rateLimit(req, {
+      windowMs: 5 * 60 * 1000,
+      max: 120,
+      keyPrefix: "username:check:ip",
+      requireDistributed: true,
+    });
+    if (!limiter.allowed) {
+      return jsonWrap(
+        { ok: false, error: "Muitas verificações. Tenta novamente dentro de alguns minutos." },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfter) } },
+      );
+    }
+
     const username = req.nextUrl.searchParams.get("username");
     if (!username) {
       return jsonWrap({ ok: false, error: "username é obrigatório" }, { status: 400 });

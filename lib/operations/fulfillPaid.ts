@@ -11,11 +11,12 @@ import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
 import { logError } from "@/lib/observability/logger";
+import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
+  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   const guest = normalizeEmail(params.guestEmail);
   if (guest) return `email:${guest}`;
   return "unknown";
@@ -92,8 +93,16 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   const idempotencyKey = typeof meta.idempotencyKey === "string" ? meta.idempotencyKey.trim() : "";
   const paymentDedupeKey = idempotencyKey || (purchaseId ? checkoutKey(purchaseId) : intent.id);
   const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
-  const ownerIdentityId = typeof meta.ownerIdentityId === "string" ? meta.ownerIdentityId : null;
-  const ownerEmail = typeof meta.emailNormalized === "string" ? meta.emailNormalized : null;
+  const ownerEmailRaw = typeof meta.emailNormalized === "string" ? meta.emailNormalized : null;
+  const ownerEmail = normalizeEmail(ownerEmailRaw);
+  let ownerIdentityId = typeof meta.ownerIdentityId === "string" ? meta.ownerIdentityId : null;
+  if (!ownerIdentityId && ownerUserId) {
+    const identity = await resolveIdentityForUser({ userId: ownerUserId, email: ownerEmail });
+    ownerIdentityId = identity.id;
+  } else if (!ownerIdentityId && ownerEmail) {
+    const identity = await ensureEmailIdentity({ email: ownerEmail });
+    ownerIdentityId = identity.id;
+  }
   const userId = ownerUserId;
   const eventId =
     typeof meta.eventId === "string" && Number.isFinite(Number(meta.eventId))
@@ -225,6 +234,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       if (!tt) continue;
       const qty = Math.max(1, Number(line.quantity ?? 0));
       const ownerKey = buildOwnerKey({ ownerUserId: userId, ownerIdentityId, guestEmail: ownerEmail });
+      const entitlementOwnerUserId = ownerIdentityId ? null : userId ?? null;
       const lineNetCents = line.lineNetCents ?? line.lineTotalCents ?? line.unitPriceCents * qty;
       const pricePerTicketCents = Math.round(lineNetCents / Math.max(1, qty));
       const totalPlatformFeeCents = line.platformFeeCents ?? 0;
@@ -307,7 +317,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
           },
           update: {
             status: EntitlementStatus.ACTIVE,
-            ownerUserId: userId ?? null,
+            ownerUserId: entitlementOwnerUserId,
             ownerIdentityId: ownerIdentityId ?? null,
             eventId: event.id,
             policyVersionApplied,
@@ -323,7 +333,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
             saleLineId: saleLine.id,
             lineItemIndex: i,
             ownerKey,
-            ownerUserId: userId ?? null,
+            ownerUserId: entitlementOwnerUserId,
             ownerIdentityId: ownerIdentityId ?? null,
             eventId: event.id,
             type: EntitlementType.EVENT_TICKET,
@@ -411,18 +421,20 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
     }
   }
 
-  if (event.organizationId && ownerUserId) {
+  if (event.organizationId && (ownerUserId || ownerIdentityId)) {
     try {
       const ticketCount = breakdown.lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
       await ingestCrmInteraction({
         organizationId: event.organizationId,
-        userId: ownerUserId,
+        userId: ownerUserId ?? undefined,
+        emailIdentityId: ownerIdentityId ?? undefined,
         type: CrmInteractionType.EVENT_TICKET,
         sourceType: CrmInteractionSource.TICKET,
         sourceId: purchaseId,
         occurredAt: new Date(),
         amountCents: breakdown.totalCents ?? intent.amount_received ?? intent.amount ?? 0,
         currency: breakdown.currency ?? intent.currency ?? "EUR",
+        contactEmail: ownerEmail ?? undefined,
         metadata: {
           eventId: event.id,
           purchaseId,

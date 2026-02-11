@@ -52,8 +52,10 @@ model Profile {
   notificationMutes                                                NotificationMute[]
   notificationPreference                                           NotificationPreference?
   crmCustomers                                                     CrmCustomer[]
+  crmContacts                                                      CrmContact[]
   crmInteractions                                                  CrmInteraction[]
   crmCustomerNotesAuthored                                         CrmCustomerNote[]
+  crmContactNotesAuthored                                          CrmContactNote[]
   crmSegmentsCreated                                               CrmSegment[]
   crmCampaignsCreated                                              CrmCampaign[]
   crmCampaignDeliveries                                            CrmCampaignDelivery[]
@@ -281,6 +283,10 @@ model Organization {
   serviceReviews           ServiceReview[]
   crmCustomers            CrmCustomer[]
   crmCustomerNotes        CrmCustomerNote[]
+  crmContacts             CrmContact[]
+  crmContactNotes         CrmContactNote[]
+  crmContactConsents      CrmContactConsent[]
+  crmContactPadel         CrmContactPadel[]
   crmInteractions         CrmInteraction[]
   crmSegments             CrmSegment[]
   crmCampaigns            CrmCampaign[]
@@ -1571,6 +1577,7 @@ model EmailIdentity {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   chatInvites    ChatInvite[]
+  crmContacts    CrmContact[]
 
   @@map("email_identities")
   @@schema("app_v3")
@@ -2109,6 +2116,7 @@ model Payment {
   @@unique([idempotencyKey], map: "payments_idempotency_key_unique")
   @@index([organizationId], map: "payments_org_idx")
   @@index([sourceType, sourceId], map: "payments_source_idx")
+  @@index([organizationId, sourceType, sourceId], map: "payments_org_source_idx")
   @@map("payments")
   @@schema("app_v3")
 }
@@ -2155,6 +2163,7 @@ model PaymentSnapshot {
 
   @@index([organizationId], map: "payment_snapshots_org_idx")
   @@index([sourceType, sourceId], map: "payment_snapshots_source_idx")
+  @@index([organizationId, sourceType, sourceId], map: "payment_snapshots_org_source_idx")
   @@map("payment_snapshots")
   @@schema("app_v3")
 }
@@ -2184,6 +2193,7 @@ model PaymentEvent {
   @@index([stripeEventId])
   @@index([stripePaymentIntentId])
   @@index([purchaseId])
+  @@index([purchaseId, stripePaymentIntentId], map: "payment_events_purchase_intent_idx")
   @@index([eventId])
   @@map("payment_events")
   @@schema("app_v3")
@@ -2676,6 +2686,7 @@ model PadelPlayerProfile {
   id            Int                 @id @default(autoincrement())
   organizationId   Int                 @map("organization_id")
   userId        String?             @map("user_id") @db.Uuid
+  crmContactId  String?             @map("crm_contact_id") @db.Uuid
   fullName      String              @map("full_name")
   email         String?             @db.Citext
   phone         String?
@@ -2691,10 +2702,13 @@ model PadelPlayerProfile {
   birthDate     DateTime?           @map("birth_date") @db.Timestamp(6)
   pairingSlots  PadelPairingSlot[]
   organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  crmContact       CrmContact?            @relation(fields: [crmContactId], references: [id], onDelete: SetNull)
   users         users?              @relation(fields: [userId], references: [id], onUpdate: NoAction)
   rankings      PadelRankingEntry[]
   availabilities CalendarAvailability[]
+  crmContactPadelLinks CrmContactPadel[]
 
+  @@index([organizationId, crmContactId], map: "padel_player_profiles_org_crm_contact_idx")
   @@map("padel_player_profiles")
   @@schema("app_v3")
 }
@@ -4528,11 +4542,131 @@ model CrmCustomer {
   @@schema("app_v3")
 }
 
+model CrmContact {
+  env                     String                         @default("prod")
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     Int                 @map("organization_id")
+  userId             String?             @map("user_id") @db.Uuid
+  emailIdentityId    String?             @map("email_identity_id") @db.Uuid
+  status             CrmContactStatus    @default(ACTIVE)
+  contactType        CrmContactType      @default(LEAD) @map("contact_type")
+  displayName        String?             @map("display_name")
+  contactEmail       String?             @map("contact_email") @db.Citext
+  contactPhone       String?             @map("contact_phone")
+  legalBasis         CrmContactLegalBasis? @map("legal_basis")
+  marketingEmailOptIn Boolean            @default(false) @map("marketing_email_opt_in")
+  marketingPushOptIn  Boolean            @default(false) @map("marketing_push_opt_in")
+  firstInteractionAt DateTime?           @map("first_interaction_at") @db.Timestamptz(6)
+  lastActivityAt     DateTime?           @map("last_activity_at") @db.Timestamptz(6)
+  lastPurchaseAt     DateTime?           @map("last_purchase_at") @db.Timestamptz(6)
+  totalSpentCents    Int                 @default(0) @map("total_spent_cents")
+  totalOrders        Int                 @default(0) @map("total_orders")
+  totalBookings      Int                 @default(0) @map("total_bookings")
+  totalAttendances   Int                 @default(0) @map("total_attendances")
+  totalTournaments   Int                 @default(0) @map("total_tournaments")
+  totalStoreOrders   Int                 @default(0) @map("total_store_orders")
+  tags               String[]            @default([])
+  notesCount         Int                 @default(0) @map("notes_count")
+  sourceType         String?             @map("source_type")
+  sourceId           String?             @map("source_id") @db.Text
+  externalId         String?             @map("external_id") @db.Text
+  customFields       Json?               @default("{}") @map("custom_fields")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         Profile?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  emailIdentity EmailIdentity?    @relation(fields: [emailIdentityId], references: [id], onDelete: SetNull)
+  interactions CrmInteraction[]
+  consents     CrmContactConsent[]
+  notes        CrmContactNote[]
+  padelProfile CrmContactPadel?
+  campaignDeliveries CrmCampaignDelivery[]
+  padelPlayerProfiles PadelPlayerProfile[]
+
+  @@unique([organizationId, userId], map: "crm_contacts_org_user_unique")
+  @@unique([organizationId, emailIdentityId], map: "crm_contacts_org_identity_unique")
+  @@index([organizationId, lastActivityAt], map: "crm_contacts_org_last_activity_idx")
+  @@index([organizationId, totalSpentCents], map: "crm_contacts_org_spent_idx")
+  @@index([organizationId, contactType], map: "crm_contacts_org_type_idx")
+  @@map("crm_contacts")
+  @@schema("app_v3")
+}
+
+model CrmContactConsent {
+  env                     String                         @default("prod")
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int           @map("organization_id")
+  contactId      String        @map("contact_id") @db.Uuid
+  type           ConsentType
+  status         ConsentStatus
+  source         String?       @map("source")
+  grantedAt      DateTime?     @map("granted_at") @db.Timestamptz(6)
+  revokedAt      DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  expiresAt      DateTime?     @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      CrmContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, contactId, type], map: "crm_contact_consents_org_contact_type_unique")
+  @@index([organizationId, contactId], map: "crm_contact_consents_org_contact_idx")
+  @@map("crm_contact_consents")
+  @@schema("app_v3")
+}
+
+model CrmContactNote {
+  env                     String                         @default("prod")
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int      @map("organization_id")
+  contactId      String   @map("contact_id") @db.Uuid
+  authorUserId   String   @map("author_user_id") @db.Uuid
+  body           String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      CrmContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  author       Profile      @relation(fields: [authorUserId], references: [id], onDelete: NoAction)
+
+  @@index([organizationId, contactId, createdAt], map: "crm_contact_notes_org_contact_idx")
+  @@map("crm_contact_notes")
+  @@schema("app_v3")
+}
+
+model CrmContactPadel {
+  env                     String                         @default("prod")
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int                 @map("organization_id")
+  contactId      String              @map("contact_id") @db.Uuid
+  playerProfileId Int?               @map("player_profile_id")
+  level          String?
+  preferredSide  PadelPreferredSide? @map("preferred_side")
+  clubName       String?             @map("club_name")
+  tournamentsCount Int               @default(0) @map("tournaments_count")
+  noShowCount    Int                 @default(0) @map("no_show_count")
+  updatedAt      DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      CrmContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  playerProfile PadelPlayerProfile? @relation(fields: [playerProfileId], references: [id], onDelete: SetNull)
+
+  @@unique([contactId], map: "crm_contact_padel_contact_unique")
+  @@index([organizationId, contactId], map: "crm_contact_padel_org_contact_idx")
+  @@map("crm_contact_padel")
+  @@schema("app_v3")
+}
+
 model CrmInteraction {
   env                     String                         @default("prod")
   id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int                 @map("organization_id")
-  userId         String              @map("user_id") @db.Uuid
+  contactId      String              @map("contact_id") @db.Uuid
+  userId         String?             @map("user_id") @db.Uuid
+  eventId        String?             @map("event_id") @db.Uuid
+  externalId     String?             @map("external_id") @db.Text
   type           CrmInteractionType
   sourceType     CrmInteractionSource @map("source_type")
   sourceId       String?             @map("source_id") @db.Text
@@ -4543,10 +4677,12 @@ model CrmInteraction {
   createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact      CrmContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user         Profile?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@unique([organizationId, sourceType, sourceId, type], map: "crm_interactions_org_source_type_unique")
-  @@index([organizationId, userId, occurredAt], map: "crm_interactions_org_user_time_idx")
+  @@unique([eventId], map: "crm_interactions_event_unique")
+  @@unique([organizationId, externalId], map: "crm_interactions_org_external_unique")
+  @@index([organizationId, contactId, occurredAt], map: "crm_interactions_org_contact_time_idx")
   @@index([organizationId, type, occurredAt], map: "crm_interactions_org_type_time_idx")
   @@index([sourceType, sourceId], map: "crm_interactions_source_idx")
   @@map("crm_interactions")
@@ -4630,7 +4766,8 @@ model CrmCampaignDelivery {
   id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId Int               @map("organization_id")
   campaignId     String            @map("campaign_id") @db.Uuid
-  userId         String            @map("user_id") @db.Uuid
+  contactId      String            @map("contact_id") @db.Uuid
+  userId         String?           @map("user_id") @db.Uuid
   notificationId String?           @map("notification_id") @db.Uuid
   status         CrmDeliveryStatus @default(SENT)
   sentAt         DateTime?         @map("sent_at") @db.Timestamptz(6)
@@ -4641,10 +4778,11 @@ model CrmCampaignDelivery {
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   campaign     CrmCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user         Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact      CrmContact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user         Profile?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
 
-  @@unique([campaignId, userId], map: "crm_campaign_deliveries_campaign_user_unique")
+  @@unique([campaignId, contactId], map: "crm_campaign_deliveries_campaign_contact_unique")
   @@index([organizationId, campaignId], map: "crm_campaign_deliveries_org_campaign_idx")
   @@map("crm_campaign_deliveries")
   @@schema("app_v3")
@@ -5778,6 +5916,7 @@ enum TicketStatus {
   TRANSFERRED
   RESALE_LISTED
   DISPUTED
+  CHARGEBACK_LOST
   CANCELLED
 
   @@schema("app_v3")
@@ -6177,6 +6316,32 @@ enum CrmCustomerStatus {
   @@schema("app_v3")
 }
 
+enum CrmContactStatus {
+  ACTIVE
+  SUPPRESSED
+  DELETED
+
+  @@schema("app_v3")
+}
+
+enum CrmContactType {
+  CUSTOMER
+  FOLLOWER
+  LEAD
+  GUEST
+  STAFF
+
+  @@schema("app_v3")
+}
+
+enum CrmContactLegalBasis {
+  CONSENT
+  CONTRACT
+  LEGITIMATE_INTEREST
+
+  @@schema("app_v3")
+}
+
 enum CrmInteractionType {
   EVENT_TICKET
   EVENT_CHECKIN
@@ -6191,6 +6356,12 @@ enum CrmInteractionType {
   MEMBERSHIP_RENEWED
   MEMBERSHIP_CANCELLED
   MANUAL_ADJUSTMENT
+  ORG_FOLLOWED
+  ORG_UNFOLLOWED
+  PROFILE_VIEWED
+  EVENT_VIEWED
+  EVENT_SAVED
+  FORM_SUBMITTED
 
   @@schema("app_v3")
 }
@@ -6205,6 +6376,10 @@ enum CrmInteractionSource {
   MEMBERSHIP
   TRANSACTION
   MANUAL
+  ORGANIZATION
+  PROFILE
+  FORM
+  SOCIAL
 
   @@schema("app_v3")
 }

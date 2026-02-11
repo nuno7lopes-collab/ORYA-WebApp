@@ -78,8 +78,8 @@ async function _GET(req: NextRequest) {
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
     const [totalCustomers, newCustomers, interactionAgg, campaignsSent] = await Promise.all([
-      prisma.crmCustomer.count({ where: { organizationId: organization.id } }),
-      prisma.crmCustomer.count({ where: { organizationId: organization.id, createdAt: { gte: since } } }),
+      prisma.crmContact.count({ where: { organizationId: organization.id } }),
+      prisma.crmContact.count({ where: { organizationId: organization.id, createdAt: { gte: since } } }),
       prisma.crmInteraction.groupBy({
         by: ["type"],
         where: { organizationId: organization.id, occurredAt: { gte: since } },

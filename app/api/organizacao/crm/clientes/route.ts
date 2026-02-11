@@ -58,48 +58,14 @@ async function _GET(req: NextRequest) {
     const lastActivityDays = parseNumber(params.get("lastActivityDays"));
     const marketingOptIn = parseBoolean(params.get("marketingOptIn"));
 
-    const filters: Prisma.CrmCustomerWhereInput[] = [];
+    const filters: Prisma.CrmContactWhereInput[] = [];
 
     if (query.length >= 2) {
       filters.push({
         OR: [
           { displayName: { contains: query, mode: "insensitive" } },
-          {
-            AND: [
-              { contactEmail: { contains: query, mode: "insensitive" } },
-              {
-                user: {
-                  is: {
-                    userConsents: {
-                      some: {
-                        organizationId: organization.id,
-                        type: ConsentType.CONTACT_EMAIL,
-                        status: ConsentStatus.GRANTED,
-                      },
-                    },
-                  },
-                },
-              },
-            ],
-          },
-          {
-            AND: [
-              { contactPhone: { contains: query, mode: "insensitive" } },
-              {
-                user: {
-                  is: {
-                    userConsents: {
-                      some: {
-                        organizationId: organization.id,
-                        type: ConsentType.CONTACT_SMS,
-                        status: ConsentStatus.GRANTED,
-                      },
-                    },
-                  },
-                },
-              },
-            ],
-          },
+          { contactEmail: { contains: query, mode: "insensitive" } },
+          { contactPhone: { contains: query, mode: "insensitive" } },
           { user: { is: { fullName: { contains: query, mode: "insensitive" } } } },
           { user: { is: { username: { contains: query, mode: "insensitive" } } } },
         ],
@@ -124,45 +90,19 @@ async function _GET(req: NextRequest) {
     }
 
     if (marketingOptIn === true) {
-      filters.push({
-        user: {
-          is: {
-            userConsents: {
-              some: {
-                organizationId: organization.id,
-                type: ConsentType.MARKETING,
-                status: ConsentStatus.GRANTED,
-              },
-            },
-          },
-        },
-      });
+      filters.push({ marketingEmailOptIn: true });
     } else if (marketingOptIn === false) {
-      filters.push({
-        NOT: {
-          user: {
-            is: {
-              userConsents: {
-                some: {
-                  organizationId: organization.id,
-                  type: ConsentType.MARKETING,
-                  status: ConsentStatus.GRANTED,
-                },
-              },
-            },
-          },
-        },
-      });
+      filters.push({ marketingEmailOptIn: false });
     }
 
-    const where: Prisma.CrmCustomerWhereInput = {
+    const where: Prisma.CrmContactWhereInput = {
       organizationId: organization.id,
       ...(filters.length ? { AND: filters } : {}),
     };
 
-    const [total, customers] = await Promise.all([
-      prisma.crmCustomer.count({ where }),
-      prisma.crmCustomer.findMany({
+    const [total, contacts] = await Promise.all([
+      prisma.crmContact.count({ where }),
+      prisma.crmContact.findMany({
         where,
         take: limit,
         skip: (page - 1) * limit,
@@ -170,9 +110,11 @@ async function _GET(req: NextRequest) {
         select: {
           id: true,
           userId: true,
+          contactType: true,
           displayName: true,
           contactEmail: true,
           contactPhone: true,
+          marketingEmailOptIn: true,
           lastActivityAt: true,
           totalSpentCents: true,
           totalOrders: true,
@@ -193,41 +135,40 @@ async function _GET(req: NextRequest) {
       }),
     ]);
 
-    const userIds = customers.map((item) => item.userId);
-    const consents = userIds.length
-      ? await prisma.userConsent.findMany({
+    const contactIds = contacts.map((item) => item.id);
+    const consents = contactIds.length
+      ? await prisma.crmContactConsent.findMany({
           where: {
             organizationId: organization.id,
-            userId: { in: userIds },
-            type: { in: [ConsentType.MARKETING, ConsentType.CONTACT_EMAIL, ConsentType.CONTACT_SMS] },
+            contactId: { in: contactIds },
+            type: { in: [ConsentType.CONTACT_EMAIL, ConsentType.CONTACT_SMS] },
           },
-          select: { userId: true, type: true, status: true },
+          select: { contactId: true, type: true, status: true },
         })
       : [];
 
     const consentMap = new Map<string, Map<ConsentType, ConsentStatus>>();
     for (const consent of consents) {
-      if (!consentMap.has(consent.userId)) {
-        consentMap.set(consent.userId, new Map());
+      if (!consentMap.has(consent.contactId)) {
+        consentMap.set(consent.contactId, new Map());
       }
-      consentMap.get(consent.userId)?.set(consent.type, consent.status);
+      consentMap.get(consent.contactId)?.set(consent.type, consent.status);
     }
 
-    const items = customers.map((item) => {
-      const consentsForUser = consentMap.get(item.userId);
-      const emailConsent = consentsForUser?.get(ConsentType.CONTACT_EMAIL) ?? null;
-      const smsConsent = consentsForUser?.get(ConsentType.CONTACT_SMS) ?? null;
-      const marketingConsent = consentsForUser?.get(ConsentType.MARKETING) ?? null;
-      const marketingOptInResolved = marketingConsent === ConsentStatus.GRANTED;
+    const items = contacts.map((item) => {
+      const consentsForContact = consentMap.get(item.id);
+      const emailConsent = consentsForContact?.get(ConsentType.CONTACT_EMAIL) ?? null;
+      const smsConsent = consentsForContact?.get(ConsentType.CONTACT_SMS) ?? null;
 
       return {
         id: item.id,
-        userId: item.userId,
+        userId: item.userId ?? null,
+        contactType: item.contactType,
         displayName: item.displayName || item.user?.fullName || item.user?.username || null,
         avatarUrl: item.user?.avatarUrl ?? null,
         contactEmail: emailConsent === ConsentStatus.GRANTED ? item.contactEmail : null,
         contactPhone: smsConsent === ConsentStatus.GRANTED ? item.contactPhone : null,
-        marketingOptIn: marketingOptInResolved,
+        marketingOptIn: Boolean(item.marketingEmailOptIn),
         lastActivityAt: item.lastActivityAt,
         totalSpentCents: item.totalSpentCents,
         totalOrders: item.totalOrders,

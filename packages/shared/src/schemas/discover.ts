@@ -96,6 +96,8 @@ const PublicPadelSnapshotSchema = z.object({
 const PublicPadelMetaSchema = z.object({
   v2Enabled: z.boolean().optional(),
   competitionState: z.string().nullable().optional(),
+  eligibilityType: z.string().nullable().optional(),
+  splitDeadlineHours: z.number().nullable().optional(),
   registrationStartsAt: z.string().nullable().optional(),
   registrationEndsAt: z.string().nullable().optional(),
   registrationStatus: z.string().nullable().optional(),

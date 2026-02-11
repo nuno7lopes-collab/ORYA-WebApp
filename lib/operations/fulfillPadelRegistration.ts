@@ -20,6 +20,7 @@ import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 
 type IntentLike = {
   id: string;
@@ -40,8 +41,8 @@ function extractPaymentMethodId(intent: IntentLike) {
 }
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; email?: string | null }) {
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
+  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   if (params.email) return `email:${params.email}`;
   return "unknown";
 }
@@ -131,6 +132,7 @@ export async function fulfillPadelRegistrationIntent(
     select: {
       id: true,
       eventId: true,
+      categoryId: true,
       organizationId: true,
       payment_mode: true,
       paymentMethodId: true,
@@ -168,8 +170,16 @@ export async function fulfillPadelRegistrationIntent(
 
   const paymentMethodId = extractPaymentMethodId(intent);
   const ownerUserId = typeof meta.ownerUserId === "string" ? meta.ownerUserId : null;
-  const ownerIdentityId = typeof meta.ownerIdentityId === "string" ? meta.ownerIdentityId : null;
-  const ownerEmail = normalizeEmail(typeof meta.emailNormalized === "string" ? meta.emailNormalized : null);
+  const ownerEmailRaw = typeof meta.emailNormalized === "string" ? meta.emailNormalized : null;
+  const ownerEmail = normalizeEmail(ownerEmailRaw);
+  let ownerIdentityId = typeof meta.ownerIdentityId === "string" ? meta.ownerIdentityId : null;
+  if (!ownerIdentityId && ownerUserId) {
+    const identity = await resolveIdentityForUser({ userId: ownerUserId, email: ownerEmail });
+    ownerIdentityId = identity.id;
+  } else if (!ownerIdentityId && ownerEmail) {
+    const identity = await ensureEmailIdentity({ email: ownerEmail });
+    ownerIdentityId = identity.id;
+  }
 
   const now = new Date();
   const paymentDedupeKey =
@@ -374,13 +384,16 @@ export async function fulfillPadelRegistrationIntent(
       const slot = line.pairingSlotId
         ? pairing.slots.find((s) => s.id === line.pairingSlotId)
         : null;
-      const entitlementOwnerUserId =
+      const rawEntitlementOwnerUserId =
         slot?.profileId ?? slot?.invitedUserId ?? ownerUserId ?? null;
       const entitlementEmail =
         normalizeEmail(slot?.invitedContact ?? null) ?? ownerEmail ?? null;
+      const resolvedIdentityId =
+        ownerIdentityId ?? payment.customerIdentityId ?? registration.buyerIdentityId ?? null;
+      const entitlementOwnerUserId = resolvedIdentityId ? null : rawEntitlementOwnerUserId;
       const ownerKey = buildOwnerKey({
         ownerUserId: entitlementOwnerUserId,
-        ownerIdentityId: ownerIdentityId ?? payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
+        ownerIdentityId: resolvedIdentityId,
         email: entitlementEmail,
       });
 
@@ -398,7 +411,7 @@ export async function fulfillPadelRegistrationIntent(
           update: {
             status: EntitlementStatus.ACTIVE,
             ownerUserId: entitlementOwnerUserId ?? null,
-            ownerIdentityId: ownerIdentityId ?? payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
+            ownerIdentityId: resolvedIdentityId,
             eventId: registration.eventId,
             policyVersionApplied,
             snapshotTitle: registration.event.title ?? "",
@@ -413,7 +426,7 @@ export async function fulfillPadelRegistrationIntent(
             lineItemIndex: i,
             ownerKey,
             ownerUserId: entitlementOwnerUserId ?? null,
-            ownerIdentityId: ownerIdentityId ?? payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
+            ownerIdentityId: resolvedIdentityId,
             eventId: registration.eventId,
             type: EntitlementType.PADEL_ENTRY,
             status: EntitlementStatus.ACTIVE,
@@ -462,19 +475,27 @@ export async function fulfillPadelRegistrationIntent(
     });
   });
 
-  if (ownerUserId) {
+  if (ownerUserId || ownerIdentityId) {
     const crmOrganizationId = registration.event.organizationId ?? pairing.organizationId;
     try {
       if (crmOrganizationId) {
         await ingestCrmInteraction({
           organizationId: crmOrganizationId,
-          userId: ownerUserId,
+          userId: ownerUserId ?? undefined,
+          emailIdentityId: ownerIdentityId ?? undefined,
           type: "PADEL_MATCH_PAYMENT",
           sourceType: CrmInteractionSource.EVENT,
           sourceId: purchaseId,
           occurredAt: new Date(),
           amountCents: intent.amount ?? 0,
           currency: (snapshot?.currency ?? registration.currency ?? "EUR").toUpperCase(),
+          contactEmail: ownerEmail ?? undefined,
+          metadata: {
+            eventId: registration.eventId,
+            pairingId: pairing.id,
+            registrationId: registration.id,
+            categoryId: pairing.categoryId ?? null,
+          },
         });
       }
     } catch {}

@@ -10,7 +10,7 @@ import {
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useQueryClient } from "@tanstack/react-query";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSurface } from "../../components/glass/GlassSurface";
@@ -52,6 +52,7 @@ const INTEREST_ICONS: Record<InterestId, string> = {
 export default function ProfileScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
+  const { t } = useTranslation();
   const [dataReady, setDataReady] = useState(false);
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
@@ -682,13 +683,15 @@ export default function ProfileScreen() {
                 onPress={() => setShowPadel((prev) => !prev)}
                 className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
                 accessibilityRole="button"
-                accessibilityLabel={showPadel ? "Ver perfil base" : "Ver perfil Padel"}
+                accessibilityLabel={
+                  showPadel ? t("events:padel.profile.toggleToBase") : t("events:padel.profile.toggleToPadel")
+                }
                 accessibilityState={{ selected: showPadel }}
               >
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="tennisball" size={14} color="rgba(255,255,255,0.85)" />
                   <Text className="text-white text-xs font-semibold">
-                    {showPadel ? "Perfil base" : "Perfil Padel"}
+                    {showPadel ? t("events:padel.profile.baseLabel") : t("events:padel.profile.padelLabel")}
                   </Text>
                 </View>
               </Pressable>
@@ -696,22 +699,36 @@ export default function ProfileScreen() {
 
             {showPadel ? (
               <GlassCard intensity={54}>
-                <Text className="text-white text-sm font-semibold mb-2">Perfil Padel</Text>
+                <Text className="text-white text-sm font-semibold mb-2">{t("events:padel.profile.title")}</Text>
                 {profile?.padelLevel ? (
-                  <Text className="text-white/70 text-sm">Nível: {profile.padelLevel}</Text>
+                  <Text className="text-white/70 text-sm">
+                    {t("events:padel.profile.levelLabel", { level: profile.padelLevel })}
+                  </Text>
                 ) : (
-                  <Text className="text-white/60 text-sm">Completa o teu perfil Padel para apareceres nos rankings.</Text>
+                  <Text className="text-white/60 text-sm">{t("events:padel.profile.levelMissing")}</Text>
                 )}
                 {!profile?.padelLevel ? (
                   <Pressable
                     onPress={() => router.push({ pathname: "/onboarding", params: { step: "padel" } })}
                     className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                     accessibilityRole="button"
-                    accessibilityLabel="Completar perfil Padel"
+                    accessibilityLabel={t("events:padel.profile.completeProfile")}
                   >
-                    <Text className="text-white text-sm font-semibold text-center">Completar perfil Padel</Text>
+                    <Text className="text-white text-sm font-semibold text-center">
+                      {t("events:padel.profile.completeProfile")}
+                    </Text>
                   </Pressable>
                 ) : null}
+                <Pressable
+                  onPress={() => router.push("/padel")}
+                  className="mt-3 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
+                  accessibilityRole="button"
+                  accessibilityLabel={t("events:padel.profile.openHub")}
+                >
+                  <Text className="text-white text-sm font-semibold text-center">
+                    {t("events:padel.profile.openHub")}
+                  </Text>
+                </Pressable>
               </GlassCard>
             ) : (
               <GlassCard intensity={52}>

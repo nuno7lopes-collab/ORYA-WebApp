@@ -72,7 +72,7 @@ async function _POST(req: NextRequest, context: { params: Promise<{ customerId: 
 
     const resolvedParams = await context.params;
     const customerId = resolvedParams.customerId;
-    const customer = await prisma.crmCustomer.findFirst({
+    const customer = await prisma.crmContact.findFirst({
       where: { id: customerId, organizationId: organization.id },
       select: { id: true },
     });
@@ -82,10 +82,10 @@ async function _POST(req: NextRequest, context: { params: Promise<{ customerId: 
     }
 
     const note = await prisma.$transaction(async (tx) => {
-      const created = await tx.crmCustomerNote.create({
+      const created = await tx.crmContactNote.create({
         data: {
           organizationId: organization.id,
-          customerId: customer.id,
+          contactId: customer.id,
           authorUserId: user.id,
           body,
         },
@@ -99,7 +99,7 @@ async function _POST(req: NextRequest, context: { params: Promise<{ customerId: 
         },
       });
 
-      await tx.crmCustomer.updateMany({
+      await tx.crmContact.updateMany({
         where: { id: customer.id, organizationId: organization.id },
         data: { notesCount: { increment: 1 } },
       });

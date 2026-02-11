@@ -21,12 +21,14 @@ type Step2AccessGateProps = {
   guestEmail: string;
   guestEmailConfirm: string;
   guestPhone: string;
-  guestErrors: { name?: string; email?: string; phone?: string };
+  guestConsent: boolean;
+  guestErrors: { name?: string; email?: string; phone?: string; consent?: string };
   submitAttempt: number;
   onChangeName: (value: string) => void;
   onChangeEmail: (value: string) => void;
   onChangeEmailConfirm: (value: string) => void;
   onChangePhone: (value: string) => void;
+  onChangeConsent: (value: boolean) => void;
   ticketNameLabel: string;
   ticketEmailLabel: string;
   ticketPluralWithArticle: string;
@@ -50,12 +52,14 @@ export default function Step2AccessGate({
   guestEmail,
   guestEmailConfirm,
   guestPhone,
+  guestConsent,
   guestErrors,
   submitAttempt,
   onChangeName,
   onChangeEmail,
   onChangeEmailConfirm,
   onChangePhone,
+  onChangeConsent,
   ticketNameLabel,
   ticketEmailLabel,
   ticketPluralWithArticle,
@@ -97,12 +101,14 @@ export default function Step2AccessGate({
           guestEmail={guestEmail}
           guestEmailConfirm={guestEmailConfirm}
           guestPhone={guestPhone}
+          guestConsent={guestConsent}
           guestErrors={guestErrors}
           submitAttempt={submitAttempt}
           onChangeName={onChangeName}
           onChangeEmail={onChangeEmail}
           onChangeEmailConfirm={onChangeEmailConfirm}
           onChangePhone={onChangePhone}
+          onChangeConsent={onChangeConsent}
           onContinue={onGuestContinue}
           ticketNameLabel={ticketNameLabel}
           ticketEmailLabel={ticketEmailLabel}

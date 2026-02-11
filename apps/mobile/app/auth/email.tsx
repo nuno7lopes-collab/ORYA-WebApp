@@ -37,27 +37,27 @@ const parseAuthError = (err: any, t: (key: string) => string) => {
   const message = String(err?.message ?? err ?? "");
   const lower = message.toLowerCase();
   if (lower.includes("invalid login credentials")) {
-    return { kind: "invalid_credentials", message: t("auth.email.errors.invalidCredentials") };
+    return { kind: "invalid_credentials", message: t("auth:email.errors.invalidCredentials") };
   }
   if (lower.includes("email") && lower.includes("confirm")) {
-    return { kind: "email_not_confirmed", message: t("auth.email.errors.emailNotConfirmed") };
+    return { kind: "email_not_confirmed", message: t("auth:email.errors.emailNotConfirmed") };
   }
   if (lower.includes("user") && lower.includes("already") || lower.includes("already registered")) {
-    return { kind: "user_exists", message: t("auth.email.errors.userExists") };
+    return { kind: "user_exists", message: t("auth:email.errors.userExists") };
   }
   if (lower.includes("signup") && lower.includes("disabled")) {
-    return { kind: "signup_disabled", message: t("auth.email.errors.signupDisabled") };
+    return { kind: "signup_disabled", message: t("auth:email.errors.signupDisabled") };
   }
   if (lower.includes("password")) {
     if (lower.includes("least") || lower.includes("mín") || lower.includes("min")) {
-      return { kind: "invalid_password", message: t("auth.email.errors.passwordMin") };
+      return { kind: "invalid_password", message: t("auth:email.errors.passwordMin") };
     }
-    return { kind: "invalid_password", message: message || t("auth.email.errors.invalidPassword") };
+    return { kind: "invalid_password", message: message || t("auth:email.errors.invalidPassword") };
   }
   if (lower.includes("email")) {
-    return { kind: "invalid_email", message: t("auth.email.errors.invalidEmail") };
+    return { kind: "invalid_email", message: t("auth:email.errors.invalidEmail") };
   }
-  return { kind: "unknown", message: t("auth.email.errors.unknown") };
+  return { kind: "unknown", message: t("auth:email.errors.unknown") };
 };
 
 
@@ -122,12 +122,12 @@ export default function AuthEmailScreen() {
     try {
       const normalizedEmail = normalizeEmail(email);
       if (!isValidEmail(normalizedEmail)) {
-        setFormError(t("auth.email.errors.invalidEmail"));
+        setFormError(t("auth:email.errors.invalidEmail"));
         trackEvent("auth_fail_email", { reason: "invalid_email" });
         return;
       }
       if (!password) {
-        setFormError(t("auth.email.errors.emptyPassword"));
+        setFormError(t("auth:email.errors.emptyPassword"));
         trackEvent("auth_fail_email", { reason: "empty_password" });
         return;
       }
@@ -153,9 +153,9 @@ export default function AuthEmailScreen() {
           return;
         }
         trackEvent("auth_success_email", { mode: "signup_pending" });
-        setInfoMessage(t("auth.email.linkSent"));
+        setInfoMessage(t("auth:email.linkSent"));
         setIsSignUp(false);
-        Alert.alert(t("auth.email.confirmEmailTitle"), t("auth.email.confirmEmailBody"));
+        Alert.alert(t("auth:email.confirmEmailTitle"), t("auth:email.confirmEmailBody"));
         return;
       }
 
@@ -164,7 +164,7 @@ export default function AuthEmailScreen() {
         password,
       });
       if (error) throw error;
-      if (!data?.session) throw new Error(t("auth.email.errors.sessionMissing"));
+      if (!data?.session) throw new Error(t("auth:email.errors.sessionMissing"));
       await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -176,18 +176,18 @@ export default function AuthEmailScreen() {
       trackEvent("auth_fail_email", { reason: parsed.kind });
 
       if (parsed.kind === "invalid_credentials") {
-        setFormError(t("auth.email.errors.invalidCredentials"));
+        setFormError(t("auth:email.errors.invalidCredentials"));
         return;
       }
 
       if (parsed.kind === "user_exists") {
-        setFormError(t("auth.email.errors.userExistsSignIn"));
+        setFormError(t("auth:email.errors.userExistsSignIn"));
         if (isSignUp) setIsSignUp(false);
         return;
       }
 
       if (parsed.kind === "email_not_confirmed") {
-        setFormError(t("auth.email.errors.emailNotConfirmed"));
+        setFormError(t("auth:email.errors.emailNotConfirmed"));
         return;
       }
 
@@ -201,7 +201,7 @@ export default function AuthEmailScreen() {
     if (loading || resetting) return;
     const normalized = normalizeEmail(email);
     if (!isValidEmail(normalized)) {
-      setFormError(t("auth.email.errors.invalidEmail"));
+      setFormError(t("auth:email.errors.invalidEmail"));
       return;
     }
     setResetting(true);
@@ -211,9 +211,9 @@ export default function AuthEmailScreen() {
       await supabase.auth.resetPasswordForEmail(normalized, {
         redirectTo: Linking.createURL("auth/callback"),
       });
-      setInfoMessage(t("auth.email.errors.resetSent"));
+      setInfoMessage(t("auth:email.errors.resetSent"));
     } catch {
-      setFormError(t("auth.email.errors.resetFailed"));
+      setFormError(t("auth:email.errors.resetFailed"));
     } finally {
       setResetting(false);
     }
@@ -270,7 +270,7 @@ export default function AuthEmailScreen() {
             <Pressable
               onPress={() => safeBack(router, navigation, "/auth")}
               accessibilityRole="button"
-              accessibilityLabel={t("common.actions.back")}
+              accessibilityLabel={t("common:actions.back")}
               style={styles.backButton}
             >
               <Ionicons name="chevron-back" size={20} color="rgba(148, 214, 255, 0.9)" />
@@ -278,13 +278,13 @@ export default function AuthEmailScreen() {
 
             <View style={styles.centerBlock}>
               <View style={styles.header}>
-                <Text style={styles.title}>{t("auth.email.title")}</Text>
-                <Text style={styles.subtitle}>{t("auth.email.subtitle")}</Text>
+                <Text style={styles.title}>{t("auth:email.title")}</Text>
+                <Text style={styles.subtitle}>{t("auth:email.subtitle")}</Text>
               </View>
 
               <GlassCard style={styles.card}>
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>{t("common.labels.email")}</Text>
+                  <Text style={styles.label}>{t("common:labels.email")}</Text>
                   <TextInput
                     style={styles.input}
                     autoCapitalize="none"
@@ -294,16 +294,16 @@ export default function AuthEmailScreen() {
                     autoComplete="email"
                     value={email}
                     onChangeText={setEmail}
-                    placeholder={t("auth.emailPlaceholder")}
+                    placeholder={t("auth:emailPlaceholder")}
                     placeholderTextColor="rgba(255,255,255,0.35)"
-                    accessibilityLabel={t("common.labels.email")}
+                    accessibilityLabel={t("common:labels.email")}
                     returnKeyType="next"
                     onSubmitEditing={() => passwordInputRef.current?.focus()}
                   />
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>{t("common.labels.password")}</Text>
+                  <Text style={styles.label}>{t("common:labels.password")}</Text>
                   <View style={styles.inputWrap}>
                     <TextInput
                       ref={passwordInputRef}
@@ -315,7 +315,7 @@ export default function AuthEmailScreen() {
                       onChangeText={setPassword}
                       placeholder="••••••••"
                       placeholderTextColor="rgba(255,255,255,0.35)"
-                      accessibilityLabel={t("common.labels.password")}
+                      accessibilityLabel={t("common:labels.password")}
                       returnKeyType="go"
                       onSubmitEditing={() => {
                         if (canSubmit) handleEmailAuth();
@@ -325,7 +325,7 @@ export default function AuthEmailScreen() {
                       onPress={() => setPasswordVisible((prev) => !prev)}
                       style={styles.passwordToggle}
                       accessibilityLabel={
-                        passwordVisible ? t("auth.email.hidePassword") : t("auth.email.showPassword")
+                        passwordVisible ? t("auth:email.hidePassword") : t("auth:email.showPassword")
                       }
                     >
                       <Ionicons
@@ -339,7 +339,7 @@ export default function AuthEmailScreen() {
 
                 {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
                 {infoMessage ? <Text style={styles.infoText}>{infoMessage}</Text> : null}
-                <Text style={styles.helperText}>{t("auth.email.helper")}</Text>
+                <Text style={styles.helperText}>{t("auth:email.helper")}</Text>
 
                 <Pressable
                   onPress={handleEmailAuth}
@@ -355,7 +355,7 @@ export default function AuthEmailScreen() {
                       <ActivityIndicator color="#0b0f17" />
                     ) : (
                       <Text style={[styles.primaryText, isSubmitDisabled ? styles.primaryTextDisabled : null]}>
-                        {isSignUp ? t("auth.email.signUp") : t("auth.email.signIn")}
+                        {isSignUp ? t("auth:email.signUp") : t("auth:email.signIn")}
                       </Text>
                     )}
                   </View>
@@ -368,7 +368,7 @@ export default function AuthEmailScreen() {
                   style={styles.toggleLink}
                 >
                   <Text style={styles.toggleText}>
-                    {isSignUp ? t("auth.email.toggleToSignIn") : t("auth.email.toggleToSignUp")}
+                    {isSignUp ? t("auth:email.toggleToSignIn") : t("auth:email.toggleToSignUp")}
                   </Text>
                 </Pressable>
 
@@ -380,7 +380,7 @@ export default function AuthEmailScreen() {
                     style={styles.resetLink}
                   >
                     <Text style={styles.resetText}>
-                      {resetting ? t("auth.email.sendingReset") : t("auth.email.resetPassword")}
+                      {resetting ? t("auth:email.sendingReset") : t("auth:email.resetPassword")}
                     </Text>
                   </Pressable>
                 ) : null}

@@ -6,7 +6,7 @@ import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { EntitlementStatus, EntitlementType, Prisma } from "@prisma/client";
 import crypto from "crypto";
-import { normalizeEmail } from "@/lib/utils/email";
+import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 import { isWalletPassEnabled } from "@/lib/wallet/pass";
@@ -79,20 +79,11 @@ async function _GET(req: NextRequest) {
     const andFilters: Prisma.EntitlementWhereInput[] = [];
 
     if (!isAdmin) {
-      const identities = await prisma.emailIdentity.findMany({
-        where: { userId },
-        select: { id: true },
-      });
-      const identityIds = identities.map((identity) => identity.id);
-      const normalizedEmail = normalizeEmail(data.user.email ?? null);
-      const ownerClauses: Prisma.EntitlementWhereInput[] = [{ ownerUserId: userId }];
-      if (identityIds.length) {
-        ownerClauses.push({ ownerIdentityId: { in: identityIds } });
+      const identityIds = await getUserIdentityIds(userId);
+      if (!identityIds.length) {
+        return jsonWrap({ items: [], nextCursor: null });
       }
-      if (normalizedEmail) {
-        ownerClauses.push({ ownerKey: `email:${normalizedEmail}` });
-      }
-      andFilters.push({ OR: ownerClauses });
+      andFilters.push({ ownerIdentityId: { in: identityIds } });
     }
 
     if (statusFilter.length) {

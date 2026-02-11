@@ -19,7 +19,7 @@ import { resolveEventInterestTags } from "../../features/events/interestTags";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { FlashList } from "@shopify/flash-list";
+import { SafeFlashList } from "../../components/lists/SafeFlashList";
 
 const MAP_BUTTON_SIZE = 44;
 const MAP_ICON_SIZE = 20;
@@ -149,13 +149,13 @@ export default function AgoraScreen() {
         <TopAppHeader
           scrollState={topBar}
           variant="title"
-          title={t("agora.title")}
+          title={t("agora:title")}
           titleAlign="center"
           leftSlot={<TopTicketsButton />}
           showNotifications
           showMessages={false}
         />
-        <FlashList
+        <SafeFlashList
           data={listData}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
@@ -175,16 +175,16 @@ export default function AgoraScreen() {
             <View>
               {isError ? (
                 <GlassCard className="mb-5" intensity={52}>
-                  <Text className="text-red-300 text-sm mb-3">{t("agora.error")}</Text>
+                  <Text className="text-red-300 text-sm mb-3">{t("agora:error")}</Text>
                   <Pressable
                     className="rounded-xl bg-white/10 px-4 py-3"
                     onPress={() => refetch()}
                     style={{ minHeight: tokens.layout.touchTarget }}
                     accessibilityRole="button"
-                    accessibilityLabel={t("common.actions.retry")}
+                    accessibilityLabel={t("common:actions.retry")}
                   >
                     <Text className="text-white text-sm font-semibold text-center">
-                      {t("common.actions.retry")}
+                      {t("common:actions.retry")}
                     </Text>
                   </Pressable>
                 </GlassCard>
@@ -195,16 +195,16 @@ export default function AgoraScreen() {
           ListEmptyComponent={
             !showSkeleton && !isError ? (
               <GlassCard intensity={50}>
-                <Text className="text-white/70 text-sm">{t("agora.empty")}</Text>
+                <Text className="text-white/70 text-sm">{t("agora:empty")}</Text>
                 <Pressable
                   onPress={() => navigation.navigate("index" as never)}
                   className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"
-                  accessibilityLabel={t("agora.ctaDiscover")}
+                  accessibilityLabel={t("agora:ctaDiscover")}
                 >
                   <Text className="text-white text-sm font-semibold text-center">
-                    {t("agora.ctaDiscover")}
+                    {t("agora:ctaDiscover")}
                   </Text>
                 </Pressable>
               </GlassCard>
@@ -252,7 +252,7 @@ export default function AgoraScreen() {
             <Pressable
               onPress={() => router.push("/map")}
               accessibilityRole="button"
-              accessibilityLabel={t("agora.openMap")}
+              accessibilityLabel={t("agora:openMap")}
               style={({ pressed }) => [styles.mapPill, pressed && styles.mapPressed]}
             >
               <View style={styles.mapCircle}>

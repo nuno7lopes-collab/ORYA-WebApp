@@ -14,13 +14,13 @@ export function AccountLinkModal({ visible, onClose, onContinueEmail }: AccountL
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
         <GlassCard style={styles.card}>
-          <Text style={styles.title}>{t("auth.accountLinkTitle")}</Text>
-          <Text style={styles.body}>{t("auth.accountLinkBody")}</Text>
+          <Text style={styles.title}>{t("auth:accountLinkTitle")}</Text>
+          <Text style={styles.body}>{t("auth:accountLinkBody")}</Text>
           <Pressable onPress={onContinueEmail} accessibilityRole="button" style={styles.primaryButton}>
-            <Text style={styles.primaryText}>{t("auth.accountLinkContinue")}</Text>
+            <Text style={styles.primaryText}>{t("auth:accountLinkContinue")}</Text>
           </Pressable>
           <Pressable onPress={onClose} accessibilityRole="button" style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("auth.accountLinkCancel")}</Text>
+            <Text style={styles.secondaryText}>{t("auth:accountLinkCancel")}</Text>
           </Pressable>
         </GlassCard>
       </View>

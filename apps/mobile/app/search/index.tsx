@@ -74,10 +74,11 @@ export default function SearchScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
-  const params = useLocalSearchParams<{ q?: string }>();
+  const params = useLocalSearchParams<{ q?: string; tab?: string; kind?: string }>();
   const initialQuery = typeof params.q === "string" ? params.q : "";
   const [query, setQuery] = useState(initialQuery);
   const [activeTab, setActiveTab] = useState<SearchTabKey>("all");
+  const [serviceKindFilter, setServiceKindFilter] = useState<string | null>(null);
   const debounced = useDebouncedValue(query, 280);
   const handleBack = useCallback(() => {
     safeBack(router, navigation, "/(tabs)/index");
@@ -108,6 +109,17 @@ export default function SearchScreen() {
   const allErrored = offersQuery.isError && usersQuery.isError && orgsQuery.isError;
 
   useEffect(() => {
+    const tabParamRaw = typeof params.tab === "string" ? params.tab : null;
+    const tabParam = tabParamRaw?.toLowerCase() ?? null;
+    if (tabParam && SEARCH_TABS.some((tab) => tab.key === tabParam)) {
+      setActiveTab(tabParam as SearchTabKey);
+    }
+    const kindParamRaw = typeof params.kind === "string" ? params.kind : null;
+    const kindParam = kindParamRaw?.toUpperCase() ?? null;
+    setServiceKindFilter(kindParam && ["COURT", "CLASS"].includes(kindParam) ? kindParam : null);
+  }, [params.kind, params.tab]);
+
+  useEffect(() => {
     const total = offers.length + users.length + organizations.length;
     if (total <= 24) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -131,7 +143,11 @@ export default function SearchScreen() {
 
     const filteredOffers = offers.filter((offer) => {
       if (activeTab === "events") return offer.type === "event";
-      if (activeTab === "services") return offer.type === "service";
+      if (activeTab === "services") {
+        if (offer.type !== "service") return false;
+        if (!serviceKindFilter) return true;
+        return offer.service.kind === serviceKindFilter;
+      }
       if (activeTab === "padel") {
         if (offer.type === "service") return offer.service.kind === "COURT";
         return (offer.event.categories ?? []).includes("PADEL");

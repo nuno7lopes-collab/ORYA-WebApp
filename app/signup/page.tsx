@@ -25,7 +25,7 @@ function SignupContent() {
   }, [redirectTo]);
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 text-white bg-[radial-gradient(circle_at_top,#1d2335,#0a0b12_55%,#05060a_100%)]">
+    <main className="min-h-screen flex items-center justify-center px-4 text-white bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)]">
       <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-2xl shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
         <div className="mx-auto mb-4 h-10 w-10 rounded-full border border-white/20 bg-white/10 grid place-items-center">
           <div className="h-3 w-3 rounded-full bg-white/70 animate-pulse" />

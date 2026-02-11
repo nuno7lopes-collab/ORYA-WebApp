@@ -155,7 +155,15 @@ async function _GET(req: NextRequest) {
         ticketTypes: { select: { price: true, status: true } },
         organization: { select: { publicName: true, username: true } },
         padelTournamentConfig: {
-          select: { format: true, eligibilityType: true, padelClubId: true, advancedSettings: true },
+          select: {
+            format: true,
+            eligibilityType: true,
+            padelClubId: true,
+            advancedSettings: true,
+            padelV2Enabled: true,
+            splitDeadlineHours: true,
+            lifecycleStatus: true,
+          },
         },
         padelCategoryLinks: {
           where: { isEnabled: true },
@@ -169,11 +177,16 @@ async function _GET(req: NextRequest) {
       const competitionState = resolvePadelCompetitionState({
         eventStatus: event.status,
         competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
-        lifecycleStatus: null,
+        lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
       });
       return competitionState === "DEVELOPMENT" || competitionState === "PUBLIC";
     });
     const computed = visibleEvents.map((event) => {
+      const competitionState = resolvePadelCompetitionState({
+        eventStatus: event.status,
+        competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
+        lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
+      });
       const ticketPrices = event.ticketTypes
         .map((t) => (typeof t.price === "number" ? t.price : null))
         .filter((p): p is number => p !== null);
@@ -200,6 +213,9 @@ async function _GET(req: NextRequest) {
         organizationName: event.organization?.publicName ?? event.organization?.username ?? null,
         format: event.padelTournamentConfig?.format ?? null,
         eligibility: event.padelTournamentConfig?.eligibilityType ?? null,
+        v2Enabled: event.padelTournamentConfig?.padelV2Enabled ?? null,
+        splitDeadlineHours: event.padelTournamentConfig?.splitDeadlineHours ?? null,
+        competitionState,
         levels,
         _priceFromCents: priceFromCents,
         isGratis,

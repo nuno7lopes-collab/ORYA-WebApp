@@ -11,6 +11,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveIdentityForUser } from "@/lib/ownership/identity";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
@@ -83,8 +84,8 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
     }
 
     const resolvedParams = await context.params;
-    const userId = resolvedParams.userId;
-    if (!userId) {
+    const subjectId = resolvedParams.userId;
+    if (!subjectId) {
       return fail(400, "Utilizador inválido.");
     }
 
@@ -102,29 +103,96 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
       return fail(400, "Payload inválido.");
     }
 
-    const [crmCustomer, existingConsent] = await Promise.all([
-      prisma.crmCustomer.findFirst({
-        where: { organizationId: organization.id, userId },
-        select: { id: true },
-      }),
-      prisma.userConsent.findFirst({
-        where: { organizationId: organization.id, userId },
-        select: { id: true },
-      }),
-    ]);
+    let contact = await prisma.crmContact.findFirst({
+      where: {
+        organizationId: organization.id,
+        OR: [{ id: subjectId }, { userId: subjectId }],
+      },
+      select: { id: true, userId: true, contactEmail: true, contactPhone: true },
+    });
 
-    if (!crmCustomer && !existingConsent) {
+    if (!contact) {
+      const profile = await prisma.profile.findUnique({
+        where: { id: subjectId },
+        select: { id: true, fullName: true, username: true },
+      });
+      if (profile) {
+        const identity = await resolveIdentityForUser({ userId: profile.id }).catch(() => ({ id: null }));
+        contact = await prisma.crmContact.create({
+          data: {
+            organizationId: organization.id,
+            userId: profile.id,
+            emailIdentityId: identity?.id ?? undefined,
+            displayName: profile.fullName || profile.username || undefined,
+            contactType: "LEAD",
+          },
+          select: { id: true, userId: true, contactEmail: true, contactPhone: true },
+        });
+      }
+    }
+
+    if (!contact) {
       return fail(404, "Cliente não encontrado.");
     }
 
     const status = granted ? ConsentStatus.GRANTED : ConsentStatus.REVOKED;
     const now = new Date();
 
-    const consent = await prisma.userConsent.upsert({
-      where: {
-        organizationId_userId_type: {
+    let userConsent:
+      | {
+          organizationId: number;
+          userId: string;
+          type: ConsentType;
+          status: ConsentStatus;
+          source: string | null;
+          grantedAt: Date | null;
+          revokedAt: Date | null;
+          updatedAt: Date;
+        }
+      | null = null;
+
+    if (contact.userId) {
+      userConsent = await prisma.userConsent.upsert({
+        where: {
+          organizationId_userId_type: {
+            organizationId: organization.id,
+            userId: contact.userId,
+            type: consentType,
+          },
+        },
+        update: {
+          status,
+          source,
+          grantedAt: granted ? now : null,
+          revokedAt: granted ? null : now,
+        },
+        create: {
           organizationId: organization.id,
-          userId,
+          userId: contact.userId,
+          type: consentType,
+          status,
+          source,
+          grantedAt: granted ? now : null,
+          revokedAt: granted ? null : now,
+        },
+        select: {
+          organizationId: true,
+          userId: true,
+          type: true,
+          status: true,
+          source: true,
+          grantedAt: true,
+          revokedAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    const contactConsent = await prisma.crmContactConsent.upsert({
+      where: {
+        organizationId_contactId_type: {
+          organizationId: organization.id,
+          contactId: contact.id,
           type: consentType,
         },
       },
@@ -136,7 +204,7 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
       },
       create: {
         organizationId: organization.id,
-        userId,
+        contactId: contact.id,
         type: consentType,
         status,
         source,
@@ -145,7 +213,7 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
       },
       select: {
         organizationId: true,
-        userId: true,
+        contactId: true,
         type: true,
         status: true,
         source: true,
@@ -156,26 +224,27 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
     });
 
     if (consentType === ConsentType.MARKETING) {
-      await prisma.crmCustomer.updateMany({
-        where: { organizationId: organization.id, userId },
-        data: {
-          marketingOptIn: granted,
-          marketingOptInAt: granted ? now : null,
-        },
+      await prisma.crmContact.update({
+        where: { id: contact.id },
+        data: { marketingEmailOptIn: granted },
       });
     }
 
     if (consentType === ConsentType.CONTACT_EMAIL) {
       let email: string | null = null;
       if (granted) {
-        const authUser = await prisma.users.findUnique({
-          where: { id: userId },
-          select: { email: true },
-        });
-        email = authUser?.email ?? null;
+        if (contact.userId) {
+          const authUser = await prisma.users.findUnique({
+            where: { id: contact.userId },
+            select: { email: true },
+          });
+          email = authUser?.email ?? null;
+        } else {
+          email = contact.contactEmail ?? null;
+        }
       }
-      await prisma.crmCustomer.updateMany({
-        where: { organizationId: organization.id, userId },
+      await prisma.crmContact.update({
+        where: { id: contact.id },
         data: { contactEmail: email },
       });
     }
@@ -183,14 +252,18 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
     if (consentType === ConsentType.CONTACT_SMS) {
       let phone: string | null = null;
       if (granted) {
-        const profile = await prisma.profile.findUnique({
-          where: { id: userId },
-          select: { contactPhone: true },
-        });
-        phone = profile?.contactPhone ?? null;
+        if (contact.userId) {
+          const profile = await prisma.profile.findUnique({
+            where: { id: contact.userId },
+            select: { contactPhone: true },
+          });
+          phone = profile?.contactPhone ?? null;
+        } else {
+          phone = contact.contactPhone ?? null;
+        }
       }
-      await prisma.crmCustomer.updateMany({
-        where: { organizationId: organization.id, userId },
+      await prisma.crmContact.update({
+        where: { id: contact.id },
         data: { contactPhone: phone },
       });
     }
@@ -199,15 +272,16 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
       organizationId: organization.id,
       actorUserId: actor.id,
       action: "CRM_CONSENT_UPDATE",
-      toUserId: userId,
+      toUserId: contact.userId ?? undefined,
       metadata: {
         type: consentType,
         status,
         source,
+        contactId: contact.id,
       },
     });
 
-    return respondOk(ctx, { consent });
+    return respondOk(ctx, { consent: userConsent ?? contactConsent });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "UNAUTHENTICATED");

@@ -11,7 +11,7 @@ export default async function PadelDuplasPage() {
   const acceptLanguage = headersList.get("accept-language");
   const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
   return (
-    <main className="min-h-screen bg-[#0b0f1d] text-white">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
       <section className="orya-page-width px-6 pb-8 pt-12 md:px-10">
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050810]/90 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

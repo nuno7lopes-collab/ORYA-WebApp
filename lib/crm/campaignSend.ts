@@ -1,18 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
-import { resolveSegmentUserIds } from "@/lib/crm/segmentQuery";
+import { resolveSegmentContactIds } from "@/lib/crm/segmentQuery";
 import { normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { sendCrmCampaignEmail } from "@/lib/emailSender";
 import { assertEmailReady } from "@/lib/emailClient";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import {
-  ConsentStatus,
-  ConsentType,
-  CrmCampaignStatus,
-  CrmDeliveryStatus,
-  NotificationType,
-} from "@prisma/client";
+import { CrmCampaignStatus, CrmDeliveryStatus, NotificationType } from "@prisma/client";
 
 const MAX_RECIPIENTS = 1000;
 const MAX_CAMPAIGNS_PER_DAY = 5;
@@ -118,7 +112,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       return await abort("Limite diario de campanhas atingido.", 429, "DAILY_LIMIT");
     }
 
-    let recipientUserIds: string[] = [];
+    let recipientContactIds: string[] = [];
     let estimatedTotal = 0;
 
     if (campaign.segmentId) {
@@ -130,14 +124,14 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         return await abort("Segmento invalido.", 400, "SEGMENT_INVALID");
       }
 
-      const resolved = await resolveSegmentUserIds({
+      const resolved = await resolveSegmentContactIds({
         organizationId: options.organizationId,
         rules: segment.rules,
-        maxUsers: MAX_RECIPIENTS,
+        maxContacts: MAX_RECIPIENTS,
       });
 
       estimatedTotal = resolved.total;
-      recipientUserIds = resolved.userIds;
+      recipientContactIds = resolved.contactIds;
 
       try {
         await prisma.crmSegment.update({
@@ -148,8 +142,17 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         console.warn("[crm][campanha] falha ao atualizar cache do segmento", err);
       }
     } else {
-      const payload = campaign.payload as { userIds?: unknown } | null;
-      if (payload?.userIds && Array.isArray(payload.userIds)) {
+      const payload = campaign.payload as { userIds?: unknown; contactIds?: unknown } | null;
+      if (payload?.contactIds && Array.isArray(payload.contactIds)) {
+        const uniqueContactIds = Array.from(
+          new Set(payload.contactIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)),
+        );
+        estimatedTotal = uniqueContactIds.length;
+        if (estimatedTotal > MAX_RECIPIENTS) {
+          return await abort("Segmento demasiado grande para envio imediato.", 413, "SEGMENT_TOO_LARGE");
+        }
+        recipientContactIds = uniqueContactIds;
+      } else if (payload?.userIds && Array.isArray(payload.userIds)) {
         const uniqueUserIds = Array.from(
           new Set(payload.userIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)),
         );
@@ -158,19 +161,19 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
           return await abort("Segmento demasiado grande para envio imediato.", 413, "SEGMENT_TOO_LARGE");
         }
         if (uniqueUserIds.length) {
-          const eligibleCustomers = await prisma.crmCustomer.findMany({
+          const eligibleContacts = await prisma.crmContact.findMany({
             where: {
               organizationId: options.organizationId,
               userId: { in: uniqueUserIds },
             },
-            select: { userId: true },
+            select: { id: true },
           });
-          recipientUserIds = eligibleCustomers.map((item) => item.userId);
+          recipientContactIds = eligibleContacts.map((item) => item.id);
         }
       }
     }
 
-    if (!recipientUserIds.length) {
+    if (!recipientContactIds.length) {
       return await abort("Segmento vazio.", 400, "SEGMENT_EMPTY");
     }
 
@@ -199,22 +202,30 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       }
     }
 
-    const consentEntries = await prisma.userConsent.findMany({
+    const contacts = await prisma.crmContact.findMany({
       where: {
         organizationId: options.organizationId,
-        userId: { in: recipientUserIds },
-        type: ConsentType.MARKETING,
-        status: ConsentStatus.GRANTED,
+        id: { in: recipientContactIds },
       },
-      select: { userId: true },
+      select: {
+        id: true,
+        userId: true,
+        contactEmail: true,
+        marketingEmailOptIn: true,
+      },
     });
 
-    const consentedSet = new Set(consentEntries.map((item) => item.userId));
-    let eligible = recipientUserIds.filter((userId) => consentedSet.has(userId));
+    let eligibleContacts = contacts.filter((contact) => contact.marketingEmailOptIn);
+    if (!eligibleContacts.length) {
+      return await abort("Sem destinatarios elegiveis.", 400, "NO_ELIGIBLE");
+    }
 
-    const prefs = eligible.length
+    const eligibleUserIds = eligibleContacts
+      .map((contact) => contact.userId)
+      .filter((id): id is string => typeof id === "string");
+    const prefs = eligibleUserIds.length
       ? await prisma.notificationPreference.findMany({
-          where: { userId: { in: eligible } },
+          where: { userId: { in: eligibleUserIds } },
           select: { userId: true, allowMarketingCampaigns: true, allowEmailNotifications: true },
         })
       : [];
@@ -224,14 +235,18 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         { allowMarketingCampaigns: pref.allowMarketingCampaigns, allowEmailNotifications: pref.allowEmailNotifications },
       ]),
     );
-    eligible = eligible.filter((userId) => {
-      const pref = prefsMap.get(userId);
+
+    eligibleContacts = eligibleContacts.filter((contact) => {
+      if (!contact.userId) {
+        return emailEnabled && Boolean(contact.contactEmail);
+      }
+      const pref = prefsMap.get(contact.userId);
       const allowMarketing = pref?.allowMarketingCampaigns ?? true;
       const allowEmail = pref?.allowEmailNotifications ?? true;
       return (inAppEnabled && allowMarketing) || (emailEnabled && allowEmail);
     });
 
-    if (!eligible.length) {
+    if (!eligibleContacts.length) {
       return await abort("Sem destinatarios elegiveis.", 400, "NO_ELIGIBLE");
     }
 
@@ -239,17 +254,17 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
     const recent = await prisma.crmCampaignDelivery.findMany({
       where: {
         organizationId: options.organizationId,
-        userId: { in: eligible },
+        contactId: { in: eligibleContacts.map((contact) => contact.id) },
         sentAt: { gte: cooldownStart },
       },
-      select: { userId: true },
-      distinct: ["userId"],
+      select: { contactId: true },
+      distinct: ["contactId"],
     });
 
-    const recentSet = new Set(recent.map((item) => item.userId));
-    eligible = eligible.filter((userId) => !recentSet.has(userId));
+    const recentSet = new Set(recent.map((item) => item.contactId));
+    eligibleContacts = eligibleContacts.filter((contact) => !recentSet.has(contact.id));
 
-    if (!eligible.length) {
+    if (!eligibleContacts.length) {
       return await abort("Sem destinatarios elegiveis.", 400, "NO_ELIGIBLE");
     }
 
@@ -262,17 +277,6 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       typeof campaignPayload.emailSubject === "string" && campaignPayload.emailSubject.trim()
         ? campaignPayload.emailSubject.trim()
         : title;
-
-    const emailMap = emailEnabled
-      ? new Map(
-          (
-            await prisma.users.findMany({
-              where: { id: { in: eligible } },
-              select: { id: true, email: true },
-            })
-          ).map((user) => [user.id, user.email ?? null]),
-        )
-      : new Map<string, string | null>();
 
     const organization = emailEnabled
       ? await prisma.organization.findUnique({
@@ -292,15 +296,16 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
     let sentCount = 0;
     let failedCount = 0;
 
-    for (const recipientId of eligible) {
-      const pref = prefsMap.get(recipientId);
+    for (const contact of eligibleContacts) {
+      const recipientId = contact.userId ?? null;
+      const pref = recipientId ? prefsMap.get(recipientId) : null;
       const allowMarketing = pref?.allowMarketingCampaigns ?? true;
       const allowEmail = pref?.allowEmailNotifications ?? true;
       let notificationId: string | null = null;
       let sentAny = false;
       const errors: string[] = [];
 
-      if (inAppEnabled && allowMarketing) {
+      if (inAppEnabled && allowMarketing && recipientId) {
         try {
           await createNotification({
             userId: recipientId,
@@ -324,7 +329,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       }
 
       if (emailEnabled && allowEmail) {
-        const email = emailMap.get(recipientId);
+        const email = contact.contactEmail ?? null;
         if (!email) {
           errors.push("EMAIL_MISSING");
         } else {
@@ -355,7 +360,8 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
             data: {
               organizationId: options.organizationId,
               campaignId: campaign.id,
-              userId: recipientId,
+              contactId: contact.id,
+              ...(recipientId ? { userId: recipientId } : {}),
               notificationId,
               status: CrmDeliveryStatus.SENT,
               sentAt,
@@ -373,7 +379,8 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
             data: {
               organizationId: options.organizationId,
               campaignId: campaign.id,
-              userId: recipientId,
+              contactId: contact.id,
+              ...(recipientId ? { userId: recipientId } : {}),
               status: CrmDeliveryStatus.FAILED,
               errorCode: errors[0] ? errors[0].split(":")[0] : "DELIVERY_FAILED",
               errorMessage: message.slice(0, 200),
@@ -395,7 +402,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       },
     });
 
-    return { ok: true, sentCount, failedCount, totalEligible: eligible.length };
+    return { ok: true, sentCount, failedCount, totalEligible: eligibleContacts.length };
   } catch (err) {
     if (locked && previousStatus) {
       try {

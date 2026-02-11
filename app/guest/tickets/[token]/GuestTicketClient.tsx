@@ -51,7 +51,7 @@ export default function GuestTicketClient({ event, purchaseId, items }: GuestTic
   const when = formatDate(event.startsAt, event.endsAt);
 
   return (
-    <div className="min-h-screen bg-[#0b0f18] text-white">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
       <div className="mx-auto flex max-w-xl flex-col gap-6 px-6 py-10">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
           <p className="text-xs uppercase tracking-[0.2em] text-white/50">Bilhetes ORYA</p>

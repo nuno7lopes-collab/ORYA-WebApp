@@ -112,7 +112,7 @@ function LoginContent() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 text-white bg-[radial-gradient(circle_at_top,#1d2335,#0a0b12_55%,#05060a_100%)]">
+    <main className="min-h-screen flex items-center justify-center px-4 text-white bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)]">
       <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-2xl shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
         <PendingDeleteBanner />
         {logoutFlag && (

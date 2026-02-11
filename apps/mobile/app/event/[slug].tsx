@@ -18,7 +18,7 @@ import { useNavigation } from "@react-navigation/native";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useEventDetail } from "../../features/events/hooks";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { api, ApiError, unwrapApiResponse } from "../../lib/api";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
@@ -36,22 +36,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
-import { useEventChatThread } from "../../features/chat/hooks";
+import { useChatThreads } from "../../features/chat/hooks";
 import { acceptMessageInvite } from "../../features/messages/api";
 import { useMessageInvites } from "../../features/messages/hooks";
 import { useProfileSummary } from "../../features/profile/hooks";
 import { sendEventSignal } from "../../features/events/signals";
-
-const EVENT_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
-  weekday: "short",
-  day: "2-digit",
-  month: "short",
-});
-
-const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
+import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
+import { trackCrmEngagement } from "../../lib/crm";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
@@ -59,12 +50,12 @@ const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
     const start = new Date(startsAt);
     const end = endsAt ? new Date(endsAt) : null;
 
-    const date = EVENT_DATE_FORMATTER.format(start);
-    const startTime = EVENT_TIME_FORMATTER.format(start);
+    const date = formatDate(start, { weekday: "short", day: "2-digit", month: "short" });
+    const startTime = formatTime(start);
 
     if (!end || Number.isNaN(end.getTime())) return `${date} · ${startTime}`;
 
-    const endTime = EVENT_TIME_FORMATTER.format(end);
+    const endTime = formatTime(end);
 
     return `${date} · ${startTime}–${endTime}`;
   } catch {
@@ -72,58 +63,71 @@ const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
   }
 };
 
-const resolveStatusLabel = (status?: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT") => {
+const resolveStatusLabel = (
+  status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT" | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) => {
   switch (status) {
     case "CANCELLED":
-      return "Cancelado";
+      return t("events:status.cancelled");
     case "PAST":
-      return "Terminado";
+      return t("events:status.ended");
     case "DRAFT":
-      return "Rascunho";
+      return t("events:status.draft");
     default:
-      return "Ativo";
+      return t("events:status.active");
   }
 };
 
-const formatTicketPrice = (priceCents: number, currency?: string | null): string => {
-  if (priceCents <= 0) return "Grátis";
+const formatTicketPrice = (
+  priceCents: number,
+  currency: string | null | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string => {
+  if (priceCents <= 0) return t("common:price.free");
   const amount = priceCents / 100;
-  const normalizedCurrency = currency?.toUpperCase() || "EUR";
-  return `${amount.toFixed(0)} ${normalizedCurrency}`;
+  return formatCurrency(amount, currency?.toUpperCase() || "EUR");
 };
 
-const resolveTicketStatusLabel = (status?: string | null, remaining?: number | null): string => {
-  if (status === "CLOSED") return "Fechado";
-  if (status === "UPCOMING") return "Brevemente";
-  if (status === "SOLD_OUT" || remaining === 0) return "Esgotado";
-  return "Disponível";
+const resolveTicketStatusLabel = (
+  status: string | null | undefined,
+  remaining: number | null | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string => {
+  if (status === "CLOSED") return t("events:tickets.closed");
+  if (status === "UPCOMING") return t("events:tickets.upcoming");
+  if (status === "SOLD_OUT" || remaining === 0) return t("events:tickets.soldOut");
+  return t("events:tickets.available");
 };
 
-const resolveAccessBadge = (mode?: string | null) => {
+const resolveAccessBadge = (mode: string | null | undefined, t: (key: string) => string) => {
   const normalized = mode?.toUpperCase();
-  if (normalized === "PUBLIC") return { label: "PÚBLICO", variant: "accent" as const };
-  if (normalized === "INVITE_ONLY") return { label: "CONVITE", variant: "muted" as const };
-  return { label: "UNLISTED", variant: "muted" as const };
+  if (normalized === "PUBLIC") return { label: t("events:access.public"), variant: "accent" as const };
+  if (normalized === "INVITE_ONLY") return { label: t("events:access.invite"), variant: "muted" as const };
+  return { label: t("events:access.unlisted"), variant: "muted" as const };
 };
 
-const resolvePadelRegistrationLabel = (status?: string | null) => {
+const resolvePadelRegistrationLabel = (status: string | null | undefined, t: (key: string) => string) => {
   const normalized = status?.toUpperCase();
-  if (normalized === "OPEN") return "Inscrições abertas";
-  if (normalized === "NOT_OPEN") return "Inscrições em breve";
-  if (normalized === "CLOSED") return "Inscrições encerradas";
-  if (normalized === "STARTED") return "Torneio em curso";
-  if (normalized === "UNPUBLISHED") return "Torneio não publicado";
-  return "Inscrições indisponíveis";
+  if (normalized === "OPEN") return t("events:padel.registration.open");
+  if (normalized === "NOT_OPEN") return t("events:padel.registration.notOpen");
+  if (normalized === "CLOSED") return t("events:padel.registration.closed");
+  if (normalized === "STARTED") return t("events:padel.registration.started");
+  if (normalized === "UNPUBLISHED") return t("events:padel.registration.unpublished");
+  return t("events:padel.registration.unavailable");
 };
 
-const resolvePadelPaymentModeLabel = (mode?: string | null): string | null => {
+const resolvePadelPaymentModeLabel = (
+  mode: string | null | undefined,
+  t: (key: string) => string,
+): string | null => {
   const normalized = mode?.toUpperCase();
-  if (normalized === "SPLIT") return "Split";
-  if (normalized === "FULL") return "Pago completo";
+  if (normalized === "SPLIT") return t("events:padel.payment.split");
+  if (normalized === "FULL") return t("events:padel.payment.full");
   return mode ?? null;
 };
 
-const resolvePairingLabel = (pairing?: any) => {
+const resolvePairingLabel = (pairing: any, t: (key: string, options?: Record<string, unknown>) => string) => {
   const explicitLabel = typeof pairing?.label === "string" ? pairing.label.trim() : "";
   if (explicitLabel) return explicitLabel;
   if (Array.isArray(pairing?.players)) {
@@ -133,12 +137,18 @@ const resolvePairingLabel = (pairing?: any) => {
     if (names.length) return names.join(" / ");
   }
   if (!pairing || !Array.isArray(pairing.slots)) {
-    return pairing?.id ? `Dupla ${pairing.id}` : "Dupla";
+    return pairing?.id
+      ? t("events:padel.pairing.withId", { id: pairing.id })
+      : t("events:padel.pairing.default");
   }
   const names = pairing.slots
     .map((slot: any) => slot?.playerProfile?.fullName || slot?.playerProfile?.username)
     .filter(Boolean) as string[];
-  if (names.length === 0) return pairing?.id ? `Dupla ${pairing.id}` : "Dupla";
+  if (names.length === 0) {
+    return pairing?.id
+      ? t("events:padel.pairing.withId", { id: pairing.id })
+      : t("events:padel.pairing.default");
+  }
   return names.join(" / ");
 };
 
@@ -146,23 +156,24 @@ const normalizeEmailValue = (value?: string | null) => value?.trim().toLowerCase
 const normalizeUsernameValue = (value?: string | null) =>
   value?.trim().replace(/^@+/, "").toLowerCase() ?? "";
 
-const mapInviteTokenReason = (reason?: string | null) => {
+const mapInviteTokenReason = (reason: string | null | undefined, t: (key: string) => string) => {
   switch ((reason ?? "").toUpperCase()) {
     case "INVITE_TOKEN_NOT_ALLOWED":
-      return "Este evento não aceita tokens de convite.";
+      return t("events:invite.tokenNotAllowed");
     case "INVITE_TOKEN_TTL_REQUIRED":
-      return "Convite expirado. Pede um novo convite.";
+      return t("events:invite.tokenExpired");
     case "INVITE_TOKEN_REQUIRES_EMAIL":
-      return "Este evento só aceita convites por email.";
+      return t("events:invite.tokenEmailOnly");
     case "INVITE_TOKEN_INVALID":
     case "INVITE_TOKEN_NOT_FOUND":
-      return "Token inválido ou expirado.";
+      return t("events:invite.tokenInvalid");
     default:
       return null;
   }
 };
 
 export default function EventDetail() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{
     slug?: string | string[];
     source?: string;
@@ -325,6 +336,9 @@ export default function EventDetail() {
     if (!eventId) return;
     if (!viewSentRef.current) {
       sendEventSignal({ eventId, signalType: "VIEW" });
+      if (accessToken) {
+        trackCrmEngagement({ type: "EVENT_VIEWED", eventId });
+      }
       viewSentRef.current = true;
     }
     const startAt = Date.now();
@@ -340,7 +354,7 @@ export default function EventDetail() {
     safeBack(router, navigation, fallbackRoute);
   };
   const accessMode = data?.accessPolicy?.mode ?? null;
-  const accessBadge = resolveAccessBadge(accessMode);
+  const accessBadge = resolveAccessBadge(accessMode, t);
   const isInviteOnly = accessMode?.toUpperCase() === "INVITE_ONLY";
   const inviteValid = inviteState.status === "valid";
   const inviteToken = inviteState.token ?? null;
@@ -386,7 +400,7 @@ export default function EventDetail() {
   const visiblePadelCategories = padelCategories.filter((category) => !category.isHidden);
   const registrationStatus = padelMeta?.registrationStatus ?? null;
   const registrationMessage =
-    padelMeta?.registrationMessage ?? resolvePadelRegistrationLabel(registrationStatus);
+    padelMeta?.registrationMessage ?? resolvePadelRegistrationLabel(registrationStatus, t);
   const registrationOpen = registrationStatus === "OPEN";
   const padelSnapshot = padelMeta?.snapshot ?? null;
   const padelActionsDisabled = gateLocked || !registrationOpen || !padelMeta?.v2Enabled;
@@ -416,7 +430,7 @@ export default function EventDetail() {
     async (token: string) => {
       const trimmed = token.trim();
       if (!trimmed || !slugValue) {
-        setInviteState({ status: "invalid", message: "Token inválido." });
+        setInviteState({ status: "invalid", message: t("events:invite.tokenInvalid") });
         return;
       }
       setInviteState({ status: "checking" });
@@ -431,10 +445,14 @@ export default function EventDetail() {
           ticketTypeId?: number | null;
         }>(response);
         if (!result.allow) {
-          const reasonMessage = mapInviteTokenReason(result.reason);
+          const reasonMessage = mapInviteTokenReason(result.reason, t);
           setInviteState({
             status: "invalid",
-            message: reasonMessage ?? (result.reason ? `Convite inválido (${result.reason}).` : "Convite inválido."),
+            message:
+              reasonMessage ??
+              (result.reason
+                ? t("events:invite.invalidWithReason", { reason: result.reason })
+                : t("events:invite.invalid")),
           });
           return;
         }
@@ -447,10 +465,13 @@ export default function EventDetail() {
               : null,
         });
       } catch (err: any) {
-        setInviteState({ status: "invalid", message: getUserFacingError(err, "Convite inválido.") });
+        setInviteState({
+          status: "invalid",
+          message: getUserFacingError(err, t("events:invite.invalid")),
+        });
       }
     },
-    [slugValue],
+    [slugValue, t],
   );
 
   const handleInviteCheck = useCallback(() => {
@@ -461,7 +482,7 @@ export default function EventDetail() {
     async (identifier: string) => {
       const trimmed = identifier.trim();
       if (!trimmed || !slugValue) {
-        setInviteIdentifierState({ status: "invalid", message: "Identificador inválido." });
+        setInviteIdentifierState({ status: "invalid", message: t("events:invite.identifierInvalid") });
         return;
       }
       setInviteIdentifierState({ status: "checking" });
@@ -481,14 +502,18 @@ export default function EventDetail() {
           let message: string | null = null;
           if (reasonCode === "INVITE_IDENTITY_MATCH_REQUIRED") {
             message = trimmed.includes("@")
-              ? "Este evento só aceita convites por username."
-              : "Este evento só aceita convites por email.";
+              ? t("events:invite.usernameOnly")
+              : t("events:invite.emailOnly");
           } else if (reasonCode === "USERNAME_NOT_FOUND") {
-            message = "Username não encontrado. Usa convite por email.";
+            message = t("events:invite.usernameNotFound");
           }
           setInviteIdentifierState({
             status: "not_invited",
-            message: message ?? (result.reason ? `Convite não encontrado (${result.reason}).` : "Convite não encontrado."),
+            message:
+              message ??
+              (result.reason
+                ? t("events:invite.notFoundWithReason", { reason: result.reason })
+                : t("events:invite.notFound")),
           });
           return;
         }
@@ -507,11 +532,11 @@ export default function EventDetail() {
       } catch (err: any) {
         setInviteIdentifierState({
           status: "invalid",
-          message: getUserFacingError(err, "Não foi possível validar o convite."),
+          message: getUserFacingError(err, t("events:invite.validateFailed")),
         });
       }
     },
-    [slugValue],
+    [slugValue, t],
   );
 
   const handleInviteIdentifierCheck = useCallback(() => {
@@ -579,9 +604,16 @@ export default function EventDetail() {
   }, [selectedTicket]);
 
   const ticketStatusLabel = useMemo(
-    () => resolveTicketStatusLabel(selectedTicket?.status ?? null, ticketRemaining),
-    [selectedTicket?.status, ticketRemaining],
+    () => resolveTicketStatusLabel(selectedTicket?.status ?? null, ticketRemaining, t),
+    [selectedTicket?.status, t, ticketRemaining],
   );
+  const ticketIsAvailable = useMemo(() => {
+    if (!selectedTicket) return false;
+    const status = selectedTicket.status ?? null;
+    if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING") return false;
+    if (ticketRemaining === 0) return false;
+    return true;
+  }, [selectedTicket, ticketRemaining]);
 
   const isFreeTicket = selectedTicket?.price === 0;
   const eventIsActive = useMemo(() => {
@@ -609,12 +641,12 @@ export default function EventDetail() {
   const canInitiateCheckout =
     Boolean(selectedTicket) &&
     hasPurchasableTickets &&
-    ticketStatusLabel === "Disponível" &&
+    ticketIsAvailable &&
     !isLoading &&
     !isError &&
     canAccessInvite &&
     eventIsActive;
-  const ctaLabel = isFreeTicket ? "Inscrever-me" : "Comprar";
+  const ctaLabel = isFreeTicket ? t("events:detail.ctaJoin") : t("events:detail.ctaBuy");
 
   const cover = data?.coverImageUrl ?? null;
   const category = data?.categories?.[0] ?? null;
@@ -623,8 +655,8 @@ export default function EventDetail() {
   const price =
     typeof data?.priceFrom === "number"
       ? data.priceFrom <= 0
-        ? "Grátis"
-        : `Desde ${data.priceFrom.toFixed(0)}€`
+        ? t("common:price.free")
+        : t("common:price.from", { price: formatCurrency(data.priceFrom, "EUR") })
       : null;
   const description = data?.description ?? data?.shortDescription ?? null;
   const showPreview = isLoading && !data && (eventTitleValue || previewCoverValue || previewDescription);
@@ -658,24 +690,28 @@ export default function EventDetail() {
     const lat = data.location?.lat ?? null;
     const lng = data.location?.lng ?? null;
     if (lat != null && lng != null) {
-      return `http://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(data.title ?? "Evento")}`;
+      return `http://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(
+        data.title ?? t("events:detail.fallbackTitle"),
+      )}`;
     }
     if (location) {
       return `http://maps.apple.com/?q=${encodeURIComponent(location)}`;
     }
     return null;
-  }, [data, location]);
+  }, [data, location, t]);
 
-  const chatQuery = useEventChatThread(
-    data?.id ?? null,
-    Boolean(session?.user?.id && data?.id),
-    accessToken,
-  );
+  const chatThreadsQuery = useChatThreads(Boolean(session?.user?.id), accessToken);
   const inviteQuery = useMessageInvites(
     data?.id ?? null,
     Boolean(session?.user?.id && data?.id),
     accessToken,
   );
+
+  const eventChatThread = useMemo(() => {
+    const eventId = data?.id ?? null;
+    if (!eventId) return null;
+    return chatThreadsQuery.data?.items?.find((item) => item.event.id === eventId) ?? null;
+  }, [chatThreadsQuery.data?.items, data?.id]);
 
   const padelEventId = data?.id ?? null;
   const padelEnabled = isPadelEvent && Boolean(padelEventId);
@@ -686,13 +722,13 @@ export default function EventDetail() {
   const matchesQuery = usePadelMatches(padelEventId, activeCategoryId, liveEnabled, liveEnabled);
 
   const chatStatusLabel = useMemo(() => {
-    const status = chatQuery.data?.thread.status;
-    if (status === "OPEN") return "Chat aberto";
-    if (status === "ANNOUNCEMENTS") return "Anúncios";
-    if (status === "READ_ONLY") return "Só leitura";
-    if (status === "CLOSED") return "Fechado";
-    return "Chat indisponível";
-  }, [chatQuery.data?.thread.status]);
+    const status = eventChatThread?.status;
+    if (status === "OPEN") return t("messages:status.open");
+    if (status === "ANNOUNCEMENTS") return t("messages:status.announcements");
+    if (status === "READ_ONLY") return t("messages:status.readOnly");
+    if (status === "CLOSED") return t("messages:status.closed");
+    return t("messages:thread.unavailable");
+  }, [eventChatThread?.status, t]);
 
   const pendingInvite = inviteQuery.data?.items?.[0] ?? null;
 
@@ -701,7 +737,7 @@ export default function EventDetail() {
     setInviteAccepting(true);
     try {
       const result = await acceptMessageInvite(pendingInvite.id, accessToken);
-      await Promise.all([chatQuery.refetch(), inviteQuery.refetch()]);
+      await Promise.all([chatThreadsQuery.refetch(), inviteQuery.refetch()]);
       if (result?.threadId && data?.id) {
         router.push({
           pathname: "/messages/[threadId]",
@@ -716,7 +752,10 @@ export default function EventDetail() {
         });
       }
     } catch (err) {
-      Alert.alert("Chat", getUserFacingError(err, "Não foi possível aceitar o convite."));
+      Alert.alert(
+        t("events:detail.chatTitle"),
+        getUserFacingError(err, t("events:invite.acceptChatFailed")),
+      );
     } finally {
       setInviteAccepting(false);
     }
@@ -749,15 +788,15 @@ export default function EventDetail() {
       return;
     }
     if (!activeCategoryId) {
-      Alert.alert("Inscrição", "Seleciona uma categoria para continuar.");
+      Alert.alert(t("events:padel.registrationTitle"), t("events:padel.categoryRequired"));
       return;
     }
     if (!registrationOpen) {
-      Alert.alert("Inscrição", registrationMessage);
+      Alert.alert(t("events:padel.registrationTitle"), registrationMessage);
       return;
     }
     if (joinMode === "INVITE_PARTNER" && !inviteContact.trim()) {
-      Alert.alert("Inscrição", "Indica o parceiro para enviar o convite.");
+      Alert.alert(t("events:padel.registrationTitle"), t("events:padel.partnerRequired"));
       return;
     }
     if (pairingBusy) return;
@@ -772,18 +811,21 @@ export default function EventDetail() {
         isPublicOpen: joinMode === "LOOKING_FOR_PARTNER",
       });
       if (result.waitlist) {
-        Alert.alert("Lista de espera", "Entraste na lista de espera. Vamos avisar assim que houver vaga.");
+        Alert.alert(t("events:padel.waitlistTitle"), t("events:padel.waitlistBody"));
       } else {
-        Alert.alert("Dupla criada", "A tua inscrição foi criada com sucesso.");
+        Alert.alert(t("events:padel.pairingCreatedTitle"), t("events:padel.pairingCreatedBody"));
       }
       await Promise.all([myPairingsQuery.refetch(), openPairingsQuery.refetch()]);
     } catch (err: any) {
       if (err?.message?.includes("PADEL_ONBOARDING_REQUIRED")) {
-        Alert.alert("Padel", "Completa o onboarding de Padel para continuar.");
+        Alert.alert(t("events:padel.onboardingRequiredTitle"), t("events:padel.onboardingRequiredBody"));
         router.push("/onboarding");
         return;
       }
-      Alert.alert("Erro", getUserFacingError(err, "Não foi possível criar a dupla."));
+      Alert.alert(
+        t("common:labels.error"),
+        getUserFacingError(err, t("events:padel.pairingCreateFailed")),
+      );
     } finally {
       setPairingBusy(false);
     }
@@ -798,10 +840,13 @@ export default function EventDetail() {
     setPairingBusy(true);
     try {
       await joinOpenPairing(pairingId);
-      Alert.alert("Dupla", "Entraste na dupla com sucesso.");
+      Alert.alert(t("events:padel.pairingTitle"), t("events:padel.joinSuccess"));
       await Promise.all([myPairingsQuery.refetch(), openPairingsQuery.refetch()]);
     } catch (err: any) {
-      Alert.alert("Dupla", getUserFacingError(err, "Não foi possível juntar-te à dupla."));
+      Alert.alert(
+        t("events:padel.pairingTitle"),
+        getUserFacingError(err, t("events:padel.joinFailed")),
+      );
     } finally {
       setPairingBusy(false);
     }
@@ -814,7 +859,10 @@ export default function EventDetail() {
       await acceptInvite(pairingId);
       await myPairingsQuery.refetch();
     } catch (err: any) {
-      Alert.alert("Convite", getUserFacingError(err, "Não foi possível aceitar o convite."));
+      Alert.alert(
+        t("events:invite.title"),
+        getUserFacingError(err, t("events:invite.acceptFailed")),
+      );
     } finally {
       setPairingActionBusy(false);
     }
@@ -827,7 +875,10 @@ export default function EventDetail() {
       await declineInvite(pairingId);
       await myPairingsQuery.refetch();
     } catch (err: any) {
-      Alert.alert("Convite", getUserFacingError(err, "Não foi possível recusar o convite."));
+      Alert.alert(
+        t("events:invite.title"),
+        getUserFacingError(err, t("events:invite.declineFailed")),
+      );
     } finally {
       setPairingActionBusy(false);
     }
@@ -853,7 +904,7 @@ export default function EventDetail() {
     const categoryLink =
       padelCategories.find((category) => category.id === (pairing.categoryId ?? activeCategoryId)) ?? null;
     if (!categoryLink?.linkId) {
-      Alert.alert("Inscrição", "Categoria inválida para pagamento.");
+      Alert.alert(t("events:padel.registrationTitle"), t("events:padel.invalidCategoryPayment"));
       return;
     }
     const idempotencyKey = buildCheckoutIdempotencyKey();
@@ -883,7 +934,7 @@ export default function EventDetail() {
           params: {
             purchaseId: response.purchaseId ?? "",
             paymentIntentId: response.paymentIntentId ?? "",
-            eventTitle: data.title ?? "Torneio",
+            eventTitle: data.title ?? t("events:padel.tournamentFallback"),
             slug: data.slug ?? "",
           },
         });
@@ -894,7 +945,7 @@ export default function EventDetail() {
         eventId: data.id,
         eventTitle: data.title,
         ticketTypeId: categoryLink.linkId,
-        ticketName: categoryLink.label ?? "Inscrição",
+        ticketName: categoryLink.label ?? t("events:padel.registrationTicketName"),
         quantity: 1,
         unitPriceCents: unitPrice,
         totalCents: total,
@@ -914,7 +965,10 @@ export default function EventDetail() {
       });
       router.push("/checkout");
     } catch (err: any) {
-      Alert.alert("Pagamento", getUserFacingError(err, "Não foi possível iniciar o pagamento."));
+      Alert.alert(
+        t("events:payment.title"),
+        getUserFacingError(err, t("events:payment.startFailed")),
+      );
     } finally {
       setPairingActionBusy(false);
     }
@@ -953,7 +1007,7 @@ export default function EventDetail() {
           <GlassCard intensity={52} padding={10}>
             <View className="flex-row items-center justify-between">
               <Text className="text-white text-sm font-semibold" numberOfLines={1} style={{ flex: 1 }}>
-                {data?.title ?? eventTitleValue ?? "Evento"}
+                {data?.title ?? eventTitleValue ?? t("events:detail.fallbackTitle")}
               </Text>
               <Ionicons name="sparkles-outline" size={16} color="rgba(255,255,255,0.7)" />
             </View>
@@ -972,7 +1026,7 @@ export default function EventDetail() {
             <Pressable
               onPress={handleBack}
               accessibilityRole="button"
-              accessibilityLabel="Voltar"
+              accessibilityLabel={t("common:actions.back")}
               style={{
                 width: tokens.layout.touchTarget,
                 height: tokens.layout.touchTarget,
@@ -1040,7 +1094,9 @@ export default function EventDetail() {
                 <View className="pt-6 gap-3">
                   <GlassCard intensity={50}>
                     <View className="gap-3">
-                      <Text className="text-white text-sm font-semibold">Informações principais</Text>
+                      <Text className="text-white text-sm font-semibold">
+                        {t("events:detail.mainInfo")}
+                      </Text>
                       <View className="flex-row flex-wrap gap-2">
                         {previewDate ? (
                           <View className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
@@ -1070,12 +1126,14 @@ export default function EventDetail() {
                           className="flex-row items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
                           style={{ minHeight: tokens.layout.touchTarget - 8 }}
                           accessibilityRole="button"
-                          accessibilityLabel={`Abrir organizador ${displayHost}`}
+                          accessibilityLabel={t("events:detail.openOrganizer", { name: displayHost })}
                           accessibilityState={{ disabled: !hostUsername }}
                         >
                           <View className="flex-row items-center gap-2">
                             <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.7)" />
-                            <Text className="text-white/80 text-sm">Organizador: {displayHost}</Text>
+                            <Text className="text-white/80 text-sm">
+                              {t("events:detail.organizer", { name: displayHost })}
+                            </Text>
                           </View>
                           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
                         </Pressable>
@@ -1086,11 +1144,13 @@ export default function EventDetail() {
                           className="self-start rounded-full border border-white/15 bg-white/5 px-3 py-2"
                           style={{ minHeight: tokens.layout.touchTarget - 8 }}
                           accessibilityRole="button"
-                          accessibilityLabel="Abrir no mapa"
+                          accessibilityLabel={t("common:actions.openMap")}
                         >
                           <View className="flex-row items-center gap-2">
                             <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
-                            <Text className="text-white/80 text-xs font-semibold">Abrir no mapa</Text>
+                            <Text className="text-white/80 text-xs font-semibold">
+                              {t("common:actions.openMap")}
+                            </Text>
                           </View>
                         </Pressable>
                       ) : null}
@@ -1110,17 +1170,19 @@ export default function EventDetail() {
               <GlassSurface intensity={50}>
                 <Text className="text-red-300 text-sm mb-3">
                   {error instanceof ApiError && error.status === 404
-                    ? "Evento não encontrado."
-                    : "Não foi possível carregar o evento."}
+                    ? t("events:detail.notFound")
+                    : t("events:detail.loadError")}
                 </Text>
                 <Pressable
                   onPress={() => refetch()}
                   className="rounded-xl bg-white/10 px-4 py-3"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"
-                  accessibilityLabel="Tentar novamente"
+                  accessibilityLabel={t("common:actions.retry")}
                 >
-                  <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+                  <Text className="text-white text-sm font-semibold text-center">
+                    {t("common:actions.retry")}
+                  </Text>
                 </Pressable>
               </GlassSurface>
             </View>
@@ -1153,9 +1215,11 @@ export default function EventDetail() {
                         <View className="flex-row items-center gap-2">
                           {category ? <GlassPill label={category} /> : null}
                           <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
-                          {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
+                          {data.isHighlighted ? (
+                            <GlassPill label={t("events:badges.featured")} variant="accent" />
+                          ) : null}
                         </View>
-                          <GlassPill label={resolveStatusLabel(data.status)} variant="muted" />
+                          <GlassPill label={resolveStatusLabel(data.status, t)} variant="muted" />
                         </View>
                         <View className="px-4 pb-4 gap-2">
                           <Text className="text-white text-2xl font-semibold">{data.title}</Text>
@@ -1177,7 +1241,9 @@ export default function EventDetail() {
                         <View className="flex-row items-center gap-2 self-start">
                           {category ? <GlassPill label={category} /> : null}
                           <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
-                          {data.isHighlighted ? <GlassPill label="DESTAQUE" variant="accent" /> : null}
+                          {data.isHighlighted ? (
+                            <GlassPill label={t("events:badges.featured")} variant="accent" />
+                          ) : null}
                         </View>
                         <View className="gap-2">
                           <Text className="text-white text-2xl font-semibold">{data.title}</Text>
@@ -1194,7 +1260,9 @@ export default function EventDetail() {
               <View className="px-5 pt-6 gap-4">
                 <GlassCard intensity={60}>
                   <View className="gap-3">
-                    <Text className="text-white text-sm font-semibold">Informações principais</Text>
+                    <Text className="text-white text-sm font-semibold">
+                      {t("events:detail.mainInfo")}
+                    </Text>
                     <View className="flex-row flex-wrap gap-2">
                       {date ? (
                         <View className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
@@ -1224,12 +1292,14 @@ export default function EventDetail() {
                         className="flex-row items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
                         style={{ minHeight: tokens.layout.touchTarget - 8 }}
                         accessibilityRole="button"
-                        accessibilityLabel={`Abrir organizador ${displayHost}`}
+                        accessibilityLabel={t("events:detail.openOrganizer", { name: displayHost })}
                         accessibilityState={{ disabled: !hostUsername }}
                       >
                         <View className="flex-row items-center gap-2">
                           <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.7)" />
-                          <Text className="text-white/80 text-sm">Organizador: {displayHost}</Text>
+                          <Text className="text-white/80 text-sm">
+                            {t("events:detail.organizer", { name: displayHost })}
+                          </Text>
                         </View>
                         <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
                       </Pressable>
@@ -1240,11 +1310,13 @@ export default function EventDetail() {
                         className="self-start rounded-full border border-white/15 bg-white/5 px-3 py-2"
                         style={{ minHeight: tokens.layout.touchTarget - 8 }}
                         accessibilityRole="button"
-                        accessibilityLabel="Abrir no mapa"
+                        accessibilityLabel={t("common:actions.openMap")}
                       >
                         <View className="flex-row items-center gap-2">
                           <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
-                          <Text className="text-white/80 text-xs font-semibold">Abrir no mapa</Text>
+                          <Text className="text-white/80 text-xs font-semibold">
+                            {t("common:actions.openMap")}
+                          </Text>
                         </View>
                       </Pressable>
                     ) : null}
@@ -1254,7 +1326,9 @@ export default function EventDetail() {
                 {description ? (
                   <GlassCard intensity={54}>
                     <View className="gap-2">
-                      <Text className="text-white text-sm font-semibold">Sobre o evento</Text>
+                      <Text className="text-white text-sm font-semibold">
+                        {t("events:detail.about")}
+                      </Text>
                       <Text className="text-white/75 text-sm">{description}</Text>
                     </View>
                   </GlassCard>
@@ -1263,33 +1337,37 @@ export default function EventDetail() {
                 <GlassCard intensity={58}>
                   <View className="gap-3">
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-white text-sm font-semibold">Chat do evento</Text>
+                      <Text className="text-white text-sm font-semibold">
+                        {t("events:detail.chatTitle")}
+                      </Text>
                       <Text className="text-white/60 text-xs">{chatStatusLabel}</Text>
                     </View>
                     {!session?.user?.id ? (
                       <View className="gap-2">
                         <Text className="text-white/65 text-sm">
-                          Inicia sessão para veres o chat dos participantes.
+                          {t("events:detail.chatSigninBody")}
                         </Text>
                         <Pressable
                           onPress={openAuth}
                           className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
                           style={{ minHeight: tokens.layout.touchTarget - 8 }}
                           accessibilityRole="button"
-                          accessibilityLabel="Entrar"
+                          accessibilityLabel={t("common:actions.signIn")}
                         >
-                          <Text className="text-white text-xs font-semibold">Entrar</Text>
+                          <Text className="text-white text-xs font-semibold">
+                            {t("common:actions.signIn")}
+                          </Text>
                         </Pressable>
                       </View>
-                    ) : chatQuery.isLoading || inviteQuery.isLoading ? (
-                      <Text className="text-white/60 text-sm">A carregar chat...</Text>
-                    ) : chatQuery.data ? (
+                    ) : chatThreadsQuery.isLoading || inviteQuery.isLoading ? (
+                      <Text className="text-white/60 text-sm">{t("events:detail.chatLoading")}</Text>
+                    ) : eventChatThread ? (
                       <Pressable
                         onPress={() =>
                           router.push({
                             pathname: "/messages/[threadId]",
                             params: {
-                              threadId: chatQuery.data.thread.id,
+                              threadId: eventChatThread.threadId,
                               eventId: String(data?.id ?? ""),
                               title: data?.title ?? "",
                               coverImageUrl: data?.coverImageUrl ?? "",
@@ -1301,16 +1379,16 @@ export default function EventDetail() {
                         className="rounded-2xl bg-white/90 px-4 py-3"
                         style={{ minHeight: tokens.layout.touchTarget }}
                         accessibilityRole="button"
-                        accessibilityLabel="Abrir chat"
+                        accessibilityLabel={t("events:detail.chatOpen")}
                       >
                         <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                          Abrir chat
+                          {t("events:detail.chatOpen")}
                         </Text>
                       </Pressable>
                     ) : pendingInvite ? (
                       <View className="gap-2">
                         <Text className="text-white/70 text-sm">
-                          Tens um convite para o chat deste evento.
+                          {t("events:invite.chatPending")}
                         </Text>
                         <Pressable
                           onPress={handleAcceptChatInvite}
@@ -1318,16 +1396,16 @@ export default function EventDetail() {
                           className="rounded-2xl bg-white/90 px-4 py-3 disabled:opacity-60"
                           style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
-                          accessibilityLabel="Aceitar convite"
+                          accessibilityLabel={t("events:invite.accept")}
                         >
                           <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                            {inviteAccepting ? "A aceitar..." : "Aceitar convite"}
+                            {inviteAccepting ? t("events:invite.accepting") : t("events:invite.accept")}
                           </Text>
-                        </Pressable>
-                      </View>
-                    ) : chatQuery.isError || !chatQuery.data ? (
+                          </Pressable>
+                        </View>
+                    ) : chatThreadsQuery.isError || !eventChatThread ? (
                       <Text className="text-white/60 text-sm">
-                        Chat disponível apenas para participantes do evento.
+                        {t("messages:thread.errors.participantsOnly")}
                       </Text>
                     ) : null}
                   </View>
@@ -1336,18 +1414,20 @@ export default function EventDetail() {
                 {isInviteOnly ? (
                   <GlassCard intensity={52}>
                     <View className="gap-3">
-                      <Text className="text-white text-sm font-semibold">Convite necessário</Text>
+                      <Text className="text-white text-sm font-semibold">
+                        {t("events:invite.requiredTitle")}
+                      </Text>
                       <Text className="text-white/65 text-sm">
-                        Introduz o token ou o email/username do convite para desbloquear o checkout.
+                        {t("events:invite.requiredBody")}
                       </Text>
                       <TextInput
                         value={inviteTokenInput}
                         onChangeText={setInviteTokenInput}
-                        placeholder="Token de convite"
+                        placeholder={t("events:invite.tokenPlaceholder")}
                         placeholderTextColor="rgba(255,255,255,0.4)"
                         autoCapitalize="none"
                         className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
-                        accessibilityLabel="Token de convite"
+                        accessibilityLabel={t("events:invite.tokenPlaceholder")}
                       />
                       <Pressable
                         onPress={handleInviteCheck}
@@ -1355,29 +1435,31 @@ export default function EventDetail() {
                         className="rounded-2xl bg-white/15 px-4 py-3"
                         style={{ minHeight: tokens.layout.touchTarget }}
                         accessibilityRole="button"
-                        accessibilityLabel="Validar convite"
+                        accessibilityLabel={t("events:invite.validateToken")}
                         accessibilityState={{ disabled: inviteState.status === "checking" }}
                       >
                         <Text className="text-white text-sm font-semibold text-center">
-                          {inviteState.status === "checking" ? "A validar..." : "Validar convite"}
+                          {inviteState.status === "checking"
+                            ? t("events:invite.validating")
+                            : t("events:invite.validateToken")}
                         </Text>
                       </Pressable>
                       {inviteState.status === "valid" ? (
-                        <GlassPill label="Convite confirmado" variant="accent" />
+                        <GlassPill label={t("events:invite.confirmed")} variant="accent" />
                       ) : inviteState.status === "invalid" ? (
                         <Text className="text-amber-200 text-xs">
-                          {inviteState.message ?? "Convite inválido."}
+                          {inviteState.message ?? t("events:invite.invalid")}
                         </Text>
                       ) : null}
                       <View className="h-px bg-white/10" />
                       <TextInput
                         value={inviteIdentifierInput}
                         onChangeText={setInviteIdentifierInput}
-                        placeholder="Email ou @username"
+                        placeholder={t("events:invite.identifierPlaceholder")}
                         placeholderTextColor="rgba(255,255,255,0.4)"
                         autoCapitalize="none"
                         className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
-                        accessibilityLabel="Email ou username do convite"
+                        accessibilityLabel={t("events:invite.identifierPlaceholder")}
                       />
                       <Pressable
                         onPress={handleInviteIdentifierCheck}
@@ -1385,41 +1467,47 @@ export default function EventDetail() {
                         className="rounded-2xl bg-white/15 px-4 py-3"
                         style={{ minHeight: tokens.layout.touchTarget }}
                         accessibilityRole="button"
-                        accessibilityLabel="Validar email ou username"
+                        accessibilityLabel={t("events:invite.validateIdentifier")}
                         accessibilityState={{ disabled: inviteIdentifierState.status === "checking" }}
                       >
                         <Text className="text-white text-sm font-semibold text-center">
-                          {inviteIdentifierState.status === "checking" ? "A validar..." : "Validar email/username"}
+                          {inviteIdentifierState.status === "checking"
+                            ? t("events:invite.validating")
+                            : t("events:invite.validateIdentifier")}
                         </Text>
                       </Pressable>
-                      {inviteIdentifierValid ? <GlassPill label="Convite confirmado" variant="accent" /> : null}
+                      {inviteIdentifierValid ? (
+                        <GlassPill label={t("events:invite.confirmed")} variant="accent" />
+                      ) : null}
                       {inviteIdentifierNeedsLogin ? (
                         <View className="gap-2">
                           <Text className="text-amber-200 text-xs">
-                            Convite encontrado. Inicia sessão para continuar.
+                            {t("events:invite.foundSignIn")}
                           </Text>
                           <Pressable
                             onPress={openAuth}
                             className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
                             style={{ minHeight: tokens.layout.touchTarget - 8 }}
                             accessibilityRole="button"
-                            accessibilityLabel="Entrar"
+                            accessibilityLabel={t("common:actions.signIn")}
                           >
-                            <Text className="text-white text-xs font-semibold">Entrar</Text>
+                            <Text className="text-white text-xs font-semibold">
+                              {t("common:actions.signIn")}
+                            </Text>
                           </Pressable>
                         </View>
                       ) : null}
                       {inviteIdentifierCheckingAccount ? (
-                        <Text className="text-white/60 text-xs">A confirmar convite...</Text>
+                        <Text className="text-white/60 text-xs">{t("events:invite.checking")}</Text>
                       ) : inviteIdentifierMismatch ? (
-                        <Text className="text-amber-200 text-xs">Convite não corresponde à tua conta.</Text>
+                        <Text className="text-amber-200 text-xs">{t("events:invite.mismatch")}</Text>
                       ) : inviteIdentifierState.status === "not_invited" ? (
                         <Text className="text-amber-200 text-xs">
-                          {inviteIdentifierState.message ?? "Convite não encontrado."}
+                          {inviteIdentifierState.message ?? t("events:invite.notFound")}
                         </Text>
                       ) : inviteIdentifierState.status === "invalid" ? (
                         <Text className="text-amber-200 text-xs">
-                          {inviteIdentifierState.message ?? "Identificador inválido."}
+                          {inviteIdentifierState.message ?? t("events:invite.identifierInvalid")}
                         </Text>
                       ) : null}
                     </View>
@@ -1431,20 +1519,27 @@ export default function EventDetail() {
                     {gateLocked ? (
                       <GlassCard intensity={50}>
                         <Text className="text-white/70 text-sm">
-                          Este torneio é por convite. Introduz o token ou email/username para desbloquear inscrições.
+                          {t("events:padel.inviteOnly")}
                         </Text>
+                        {!session?.user?.id ? (
+                          <Text className="text-amber-200 text-xs">
+                            {t("events:detail.signInToContinue")}
+                          </Text>
+                        ) : null}
                       </GlassCard>
                     ) : null}
 
                     <GlassCard intensity={56}>
                       <View className="gap-3">
-                        <Text className="text-white text-sm font-semibold">Resumo do torneio</Text>
+                        <Text className="text-white text-sm font-semibold">
+                          {t("events:padel.summaryTitle")}
+                        </Text>
                         <Text className="text-white/70 text-sm">{registrationMessage}</Text>
                         {padelMeta?.competitionState ? (
                           <View className="flex-row items-center gap-2">
                             <Ionicons name="trophy-outline" size={16} color="rgba(255,255,255,0.7)" />
                             <Text className="text-white/70 text-sm">
-                              Estado: {padelMeta.competitionState}
+                              {t("events:padel.statusLabel", { status: padelMeta.competitionState })}
                             </Text>
                           </View>
                         ) : null}
@@ -1463,7 +1558,9 @@ export default function EventDetail() {
                     {padelSnapshot?.timeline?.length ? (
                       <GlassCard intensity={52}>
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">Timeline</Text>
+                          <Text className="text-white text-sm font-semibold">
+                            {t("events:padel.timelineTitle")}
+                          </Text>
                           {padelSnapshot.timeline.map((item) => (
                             <View key={item.key} className="flex-row items-center justify-between">
                               <Text className="text-white/80 text-sm">{item.label}</Text>
@@ -1481,10 +1578,18 @@ export default function EventDetail() {
                     {visiblePadelCategories.length > 0 ? (
                       <GlassCard intensity={54}>
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">Categorias</Text>
+                          <Text className="text-white text-sm font-semibold">
+                            {t("events:padel.categoriesTitle")}
+                          </Text>
                           {visiblePadelCategories.map((category) => {
                             const isSelected = category.id === activeCategoryId;
                             const disabled = !category.isEnabled;
+                            const categoryA11yLabel = category.label
+                              ? t("events:padel.categoryLabel", { label: category.label })
+                              : t("events:padel.categorySelect");
+                            const capacityLabel = category.capacityTeams
+                              ? t("events:padel.capacityTeams", { count: category.capacityTeams })
+                              : t("events:padel.capacityUnlimited");
                             return (
                               <Pressable
                                 key={`padel-category-${category.linkId ?? category.id}`}
@@ -1497,7 +1602,7 @@ export default function EventDetail() {
                                 }
                                 style={{ minHeight: tokens.layout.touchTarget }}
                                 accessibilityRole="button"
-                                accessibilityLabel={category.label ? `Categoria ${category.label}` : "Selecionar categoria"}
+                                accessibilityLabel={categoryA11yLabel}
                                 accessibilityState={{ selected: isSelected, disabled }}
                               >
                                 <View className="flex-row items-center justify-between">
@@ -1512,15 +1617,21 @@ export default function EventDetail() {
                                     ) : null}
                                   </View>
                                   <GlassPill
-                                    label={`${formatTicketPrice(category.pricePerPlayerCents ?? 0, category.currency)} / jogador`}
+                                    label={`${formatTicketPrice(
+                                      category.pricePerPlayerCents ?? 0,
+                                      category.currency,
+                                      t,
+                                    )} / ${t("events:detail.perPlayer")}`}
                                     variant="muted"
                                   />
                                 </View>
                                 <View className="flex-row items-center justify-between pt-2">
                                   <Text className="text-white/60 text-xs">
-                                    {category.capacityTeams ? `${category.capacityTeams} equipas` : "Sem limite"}
+                                    {capacityLabel}
                                   </Text>
-                                  {disabled ? <GlassPill label="Indisponível" variant="muted" /> : null}
+                                  {disabled ? (
+                                    <GlassPill label={t("events:padel.categoryUnavailable")} variant="muted" />
+                                  ) : null}
                                 </View>
                               </Pressable>
                             );
@@ -1531,7 +1642,9 @@ export default function EventDetail() {
 
                     <GlassCard intensity={56}>
                       <View className="gap-3">
-                        <Text className="text-white text-sm font-semibold">Inscrição</Text>
+                        <Text className="text-white text-sm font-semibold">
+                          {t("events:padel.registrationSection")}
+                        </Text>
                         <View className="flex-row flex-wrap gap-2">
                           {(["FULL", "SPLIT"] as const).map((mode) => {
                             const active = paymentMode === mode;
@@ -1542,11 +1655,11 @@ export default function EventDetail() {
                                 className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
                                 style={{ minHeight: tokens.layout.touchTarget - 8 }}
                                 accessibilityRole="button"
-                                accessibilityLabel={resolvePadelPaymentModeLabel(mode)}
+                                accessibilityLabel={resolvePadelPaymentModeLabel(mode, t) ?? undefined}
                                 accessibilityState={{ selected: active }}
                               >
                                 <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
-                                  {resolvePadelPaymentModeLabel(mode)}
+                                  {resolvePadelPaymentModeLabel(mode, t)}
                                 </Text>
                               </Pressable>
                             );
@@ -1554,10 +1667,14 @@ export default function EventDetail() {
                         </View>
                         <View className="flex-row flex-wrap gap-2">
                           {([
-                            { key: "INVITE_PARTNER", label: "Convidar parceiro" },
-                            { key: "LOOKING_FOR_PARTNER", label: "Dupla aberta" },
+                            { key: "INVITE_PARTNER" },
+                            { key: "LOOKING_FOR_PARTNER" },
                           ] as const).map((option) => {
                             const active = joinMode === option.key;
+                            const label =
+                              option.key === "INVITE_PARTNER"
+                                ? t("events:padel.join.invitePartner")
+                                : t("events:padel.join.openPair");
                             return (
                               <Pressable
                                 key={option.key}
@@ -1565,11 +1682,11 @@ export default function EventDetail() {
                                 className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
                                 style={{ minHeight: tokens.layout.touchTarget - 8 }}
                                 accessibilityRole="button"
-                                accessibilityLabel={option.label}
+                                accessibilityLabel={label}
                                 accessibilityState={{ selected: active }}
                               >
                                 <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
-                                  {option.label}
+                                  {label}
                                 </Text>
                               </Pressable>
                             );
@@ -1579,11 +1696,11 @@ export default function EventDetail() {
                           <TextInput
                             value={inviteContact}
                             onChangeText={setInviteContact}
-                            placeholder="Email ou @username do parceiro"
+                            placeholder={t("events:padel.invitePlaceholder")}
                             placeholderTextColor="rgba(255,255,255,0.4)"
                             autoCapitalize="none"
                             className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
-                            accessibilityLabel="Email ou username do parceiro"
+                            accessibilityLabel={t("events:padel.invitePlaceholder")}
                           />
                         ) : null}
                         {!session?.user?.id ? (
@@ -1592,9 +1709,11 @@ export default function EventDetail() {
                             className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3"
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
-                            accessibilityLabel="Entrar para inscrever"
+                            accessibilityLabel={t("events:padel.signInToRegister")}
                           >
-                            <Text className="text-white text-sm font-semibold text-center">Entrar para inscrever</Text>
+                            <Text className="text-white text-sm font-semibold text-center">
+                              {t("events:padel.signInToRegister")}
+                            </Text>
                           </Pressable>
                         ) : (
                           <Pressable
@@ -1607,7 +1726,7 @@ export default function EventDetail() {
                             }
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
-                            accessibilityLabel="Criar dupla"
+                            accessibilityLabel={t("events:padel.createPairing")}
                             accessibilityState={{ disabled: padelActionsDisabled || pairingBusy }}
                           >
                             <Text
@@ -1616,7 +1735,7 @@ export default function EventDetail() {
                               }`}
                               style={padelActionsDisabled ? undefined : { color: "#0b101a" }}
                             >
-                              {pairingBusy ? "A criar dupla..." : "Criar dupla"}
+                              {pairingBusy ? t("events:padel.creatingPairing") : t("events:padel.createPairing")}
                             </Text>
                           </Pressable>
                         )}
@@ -1628,11 +1747,17 @@ export default function EventDetail() {
 
                     <GlassCard intensity={54}>
                       <View className="gap-3">
-                        <Text className="text-white text-sm font-semibold">Duplas abertas</Text>
+                        <Text className="text-white text-sm font-semibold">
+                          {t("events:padel.openPairingsTitle")}
+                        </Text>
                         {openPairingsQuery.isLoading ? (
-                          <Text className="text-white/60 text-sm">A carregar duplas abertas...</Text>
+                          <Text className="text-white/60 text-sm">
+                            {t("events:padel.openPairingsLoading")}
+                          </Text>
                         ) : (openPairingsQuery.data ?? []).length === 0 ? (
-                          <Text className="text-white/60 text-sm">Sem duplas abertas neste momento.</Text>
+                          <Text className="text-white/60 text-sm">
+                            {t("events:padel.openPairingsEmpty")}
+                          </Text>
                         ) : (
                           (openPairingsQuery.data ?? []).map((pairing) => (
                             <View key={`open-${pairing.id}`} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
@@ -1643,13 +1768,13 @@ export default function EventDetail() {
                                   </Text>
                                 ) : null}
                                 <Text className="text-white/60 text-xs">
-                                  {pairing.openSlots ?? 0} vaga(s)
+                                  {t("events:padel.openSlots", { count: pairing.openSlots ?? 0 })}
                                 </Text>
                               </View>
                               <View className="flex-row items-center justify-between pt-2">
                                 {pairing.deadlineAt && formatDateRange(pairing.deadlineAt) ? (
                                   <Text className="text-white/55 text-xs">
-                                    Deadline: {formatDateRange(pairing.deadlineAt)}
+                                    {t("events:padel.deadline", { date: formatDateRange(pairing.deadlineAt) })}
                                   </Text>
                                 ) : null}
                                 <Pressable
@@ -1658,10 +1783,12 @@ export default function EventDetail() {
                                   className="rounded-full border border-white/15 bg-white/10 px-3 py-2"
                                   style={{ minHeight: tokens.layout.touchTarget - 8 }}
                                   accessibilityRole="button"
-                                  accessibilityLabel="Juntar-me"
+                                  accessibilityLabel={t("common:actions.join")}
                                   accessibilityState={{ disabled: padelActionsDisabled || pairingBusy }}
                                 >
-                                  <Text className="text-white text-xs font-semibold">Juntar-me</Text>
+                                  <Text className="text-white text-xs font-semibold">
+                                    {t("common:actions.join")}
+                                  </Text>
                                 </Pressable>
                               </View>
                             </View>
@@ -1672,13 +1799,21 @@ export default function EventDetail() {
 
                     <GlassCard intensity={56}>
                       <View className="gap-3">
-                        <Text className="text-white text-sm font-semibold">Minha dupla</Text>
+                        <Text className="text-white text-sm font-semibold">
+                          {t("events:padel.myPairingTitle")}
+                        </Text>
                         {!session?.user?.id ? (
-                          <Text className="text-white/65 text-sm">Inicia sessão para ver as tuas duplas.</Text>
+                          <Text className="text-white/65 text-sm">
+                            {t("events:padel.signInToViewPairings")}
+                          </Text>
                         ) : myPairingsQuery.isLoading ? (
-                          <Text className="text-white/60 text-sm">A carregar a tua dupla...</Text>
+                          <Text className="text-white/60 text-sm">
+                            {t("events:padel.myPairingLoading")}
+                          </Text>
                         ) : (myPairingsQuery.data ?? []).length === 0 ? (
-                          <Text className="text-white/60 text-sm">Ainda não tens dupla neste torneio.</Text>
+                          <Text className="text-white/60 text-sm">
+                            {t("events:padel.myPairingEmpty")}
+                          </Text>
                         ) : (
                           (() => {
                             const pairingIdValue = pairingIdParam ? Number(pairingIdParam) : null;
@@ -1692,11 +1827,12 @@ export default function EventDetail() {
                             return (
                               <View className="gap-3">
                                 <Text className="text-white/70 text-sm">
-                                  {pairing.category?.label ?? "Categoria"} · {resolvePadelPaymentModeLabel(pairing.paymentMode)}
+                                  {pairing.category?.label ?? t("events:detail.categoryFallback")} ·{" "}
+                                  {resolvePadelPaymentModeLabel(pairing.paymentMode, t)}
                                 </Text>
                                 {invitePending ? (
                                   <Text className="text-amber-200 text-xs">
-                                    Completa os dados de Padel para aceitar o convite.
+                                    {t("events:padel.completeProfileToAccept")}
                                   </Text>
                                 ) : null}
                                 <View className="flex-row flex-wrap gap-2">
@@ -1708,10 +1844,12 @@ export default function EventDetail() {
                                         className="rounded-full bg-white/15 px-4 py-2"
                                         style={{ minHeight: tokens.layout.touchTarget - 8 }}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Aceitar convite"
+                                        accessibilityLabel={t("events:padel.acceptInvite")}
                                         accessibilityState={{ disabled: pairingActionBusy }}
                                       >
-                                        <Text className="text-white text-xs font-semibold">Aceitar convite</Text>
+                                        <Text className="text-white text-xs font-semibold">
+                                          {t("events:padel.acceptInvite")}
+                                        </Text>
                                       </Pressable>
                                       <Pressable
                                         onPress={() => handleDeclinePairingInvite(pairing.id)}
@@ -1719,10 +1857,12 @@ export default function EventDetail() {
                                         className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
                                         style={{ minHeight: tokens.layout.touchTarget - 8 }}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Recusar convite"
+                                        accessibilityLabel={t("events:padel.declineInvite")}
                                         accessibilityState={{ disabled: pairingActionBusy }}
                                       >
-                                        <Text className="text-white/80 text-xs font-semibold">Recusar</Text>
+                                        <Text className="text-white/80 text-xs font-semibold">
+                                          {t("events:padel.declineInvite")}
+                                        </Text>
                                       </Pressable>
                                     </>
                                   ) : null}
@@ -1732,9 +1872,11 @@ export default function EventDetail() {
                                       className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
                                       style={{ minHeight: tokens.layout.touchTarget - 8 }}
                                       accessibilityRole="button"
-                                      accessibilityLabel="Partilhar convite"
+                                      accessibilityLabel={t("events:padel.shareInvite")}
                                     >
-                                      <Text className="text-white/80 text-xs font-semibold">Partilhar convite</Text>
+                                      <Text className="text-white/80 text-xs font-semibold">
+                                        {t("events:padel.shareInvite")}
+                                      </Text>
                                     </Pressable>
                                   ) : null}
                                   {canPay ? (
@@ -1744,10 +1886,12 @@ export default function EventDetail() {
                                       className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
                                       style={{ minHeight: tokens.layout.touchTarget - 8 }}
                                       accessibilityRole="button"
-                                      accessibilityLabel="Pagar inscrição"
+                                      accessibilityLabel={t("events:padel.payRegistration")}
                                       accessibilityState={{ disabled: pairingActionBusy || padelActionsDisabled }}
                                     >
-                                      <Text className="text-white text-xs font-semibold">Pagar inscrição</Text>
+                                      <Text className="text-white text-xs font-semibold">
+                                        {t("events:padel.payRegistration")}
+                                      </Text>
                                     </Pressable>
                                   ) : null}
                                 </View>
@@ -1761,18 +1905,24 @@ export default function EventDetail() {
                     {liveEnabled ? (
                       <GlassCard intensity={54}>
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">Live</Text>
+                          <Text className="text-white text-sm font-semibold">
+                            {t("events:padel.liveTitle")}
+                          </Text>
                           {standingsQuery.isLoading ? (
-                            <Text className="text-white/60 text-sm">A carregar standings...</Text>
+                            <Text className="text-white/60 text-sm">
+                              {t("events:padel.standingsLoading")}
+                            </Text>
                           ) : Object.keys(standingsQuery.data ?? {}).length === 0 ? (
-                            <Text className="text-white/60 text-sm">Sem standings disponíveis.</Text>
+                            <Text className="text-white/60 text-sm">
+                              {t("events:padel.standingsEmpty")}
+                            </Text>
                           ) : (
                             Object.entries(standingsQuery.data ?? {}).map(([groupLabel, rows]) => {
                               const rowList = Array.isArray(rows) ? (rows as Array<any>) : [];
                               return (
                                 <View key={`standings-${groupLabel}`} className="gap-2">
                                 <Text className="text-white/70 text-xs uppercase tracking-[0.12em]">
-                                  Grupo {groupLabel}
+                                  {t("events:padel.groupLabel", { group: groupLabel })}
                                 </Text>
                                 {rowList.map((row, idx) => {
                                   const label =
@@ -1781,12 +1931,14 @@ export default function EventDetail() {
                                       .map((player) => player?.name || player?.username)
                                       .filter(Boolean)
                                       .join(" / ") ||
-                                    `Dupla ${row.pairingId}`;
+                                    t("events:padel.pairing.withId", { id: row.pairingId });
                                   return (
                                     <View key={`row-${groupLabel}-${row.pairingId}`} className="flex-row items-center justify-between">
                                       <Text className="text-white/80 text-sm">#{idx + 1} · {label}</Text>
                                       <Text className="text-white/60 text-xs">
-                                        {row.points} pts · {row.wins}V-{row.losses}D
+                                        {row.points} {t("events:padel.pointsShort")} · {row.wins}
+                                        {t("events:padel.winsShort")}-{row.losses}
+                                        {t("events:padel.lossesShort")}
                                       </Text>
                                     </View>
                                   );
@@ -1797,17 +1949,24 @@ export default function EventDetail() {
                           )}
                           <View className="h-px bg-white/10" />
                           {matchesQuery.isLoading ? (
-                            <Text className="text-white/60 text-sm">A carregar jogos...</Text>
+                            <Text className="text-white/60 text-sm">
+                              {t("events:padel.matchesLoading")}
+                            </Text>
                           ) : (matchesQuery.data ?? []).length === 0 ? (
-                            <Text className="text-white/60 text-sm">Sem jogos disponíveis.</Text>
+                            <Text className="text-white/60 text-sm">
+                              {t("events:padel.matchesEmpty")}
+                            </Text>
                           ) : (
                             (matchesQuery.data ?? []).slice(0, 6).map((match: any) => (
                               <View key={`match-${match.id}`} className="gap-1">
                                 <Text className="text-white/70 text-xs">
-                                  {match.groupLabel ? `Grupo ${match.groupLabel}` : "Jogo"}
+                                  {match.groupLabel
+                                    ? t("events:padel.groupLabel", { group: match.groupLabel })
+                                    : t("events:padel.matchLabel")}
                                 </Text>
                                 <Text className="text-white/80 text-sm">
-                                  {resolvePairingLabel(match.pairingA)} vs {resolvePairingLabel(match.pairingB)}
+                                  {resolvePairingLabel(match.pairingA, t)} {t("events:detail.vs")}{" "}
+                                  {resolvePairingLabel(match.pairingB, t)}
                                 </Text>
                               </View>
                             ))
@@ -1821,17 +1980,24 @@ export default function EventDetail() {
                     {gateLocked ? (
                       <GlassCard intensity={50}>
                         <Text className="text-white/70 text-sm">
-                          Evento por convite. Introduz o token ou email/username para ver os bilhetes.
+                          {t("events:invite.lockedTickets")}
                         </Text>
+                        {!session?.user?.id ? (
+                          <Text className="text-amber-200 text-xs">
+                            {t("events:detail.signInToContinue")}
+                          </Text>
+                        ) : null}
                       </GlassCard>
                     ) : (
                       <>
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">Bilhetes</Text>
+                          <Text className="text-white text-sm font-semibold">
+                            {t("events:tickets.title")}
+                          </Text>
                           {ticketTypes.length === 0 ? (
                             <GlassCard intensity={50}>
                               <Text className="text-white/70 text-sm">
-                                Bilhetes a publicar brevemente. Ativa notificações para saber quando abrirem.
+                                {t("events:tickets.comingSoon")}
                               </Text>
                             </GlassCard>
                           ) : (
@@ -1840,14 +2006,24 @@ export default function EventDetail() {
                                 ticket.totalQuantity != null
                                   ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0)
                                   : null;
-                              const statusLabel = resolveTicketStatusLabel(ticket.status ?? null, remaining);
+                              const status = ticket.status ?? null;
+                              const statusLabel = resolveTicketStatusLabel(
+                                status,
+                                remaining,
+                                t,
+                              );
                               const isSelected = ticket.id === selectedTicketId;
-                              const disabled = statusLabel === "Esgotado" || statusLabel === "Fechado";
+                              const isUnavailable =
+                                status === "CLOSED" ||
+                                status === "SOLD_OUT" ||
+                                status === "UPCOMING" ||
+                                remaining === 0;
+                              const disabled = isUnavailable;
                               const availability =
                                 remaining != null
                                   ? remaining <= 6
-                                    ? `Últimos ${remaining}`
-                                    : `${remaining} disponíveis`
+                                    ? t("events:tickets.lastSeats", { count: remaining })
+                                    : t("events:tickets.remaining", { count: remaining })
                                   : null;
 
                               return (
@@ -1857,7 +2033,7 @@ export default function EventDetail() {
                                   onPress={() => setSelectedTicketId(ticket.id)}
                                   className={isSelected ? "opacity-100" : "opacity-90"}
                                   accessibilityRole="button"
-                                  accessibilityLabel={`Selecionar ${ticket.name}`}
+                                  accessibilityLabel={t("events:tickets.selectTicket", { name: ticket.name })}
                                   accessibilityState={{ selected: isSelected, disabled }}
                                 >
                                   <GlassCard intensity={isSelected ? 68 : 52} highlight={isSelected}>
@@ -1873,7 +2049,10 @@ export default function EventDetail() {
                                             </Text>
                                           ) : null}
                                         </View>
-                                        <GlassPill label={formatTicketPrice(ticket.price, ticket.currency)} variant="muted" />
+                                        <GlassPill
+                                          label={formatTicketPrice(ticket.price, ticket.currency, t)}
+                                          variant="muted"
+                                        />
                                       </View>
                                       <View className="flex-row items-center gap-2">
                                         <GlassPill label={statusLabel} variant={disabled ? "muted" : "accent"} />
@@ -1894,17 +2073,21 @@ export default function EventDetail() {
                         {selectedTicket && hasPurchasableTickets ? (
                           <GlassCard intensity={60} highlight>
                             <View className="gap-4">
-                              <Text className="text-white text-sm font-semibold">Resumo da compra</Text>
+                              <Text className="text-white text-sm font-semibold">
+                                {t("events:checkout.summaryTitle")}
+                              </Text>
                               <View className="flex-row items-center justify-between">
                                 <Text className="text-white/70 text-sm">
                                   {selectedTicket.name}
                                 </Text>
                                 <Text className="text-white text-sm font-semibold">
-                                  {formatTicketPrice(selectedTicket.price, selectedTicket.currency)}
+                                  {formatTicketPrice(selectedTicket.price, selectedTicket.currency, t)}
                                 </Text>
                               </View>
                               <View className="flex-row items-center justify-between">
-                                <Text className="text-white/60 text-sm">Quantidade</Text>
+                                <Text className="text-white/60 text-sm">
+                                  {t("events:checkout.quantity")}
+                                </Text>
                                 <View className="flex-row items-center gap-3">
                                   <Pressable
                                     onPress={() => setTicketQuantity((prev) => Math.max(1, prev - 1))}
@@ -1912,7 +2095,7 @@ export default function EventDetail() {
                                     className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
                                     style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
                                     accessibilityRole="button"
-                                    accessibilityLabel="Diminuir quantidade"
+                                    accessibilityLabel={t("events:checkout.decreaseQuantity")}
                                     accessibilityState={{ disabled: maxQuantity <= 1 }}
                                   >
                                     <Ionicons name="remove" size={16} color="rgba(255,255,255,0.75)" />
@@ -1924,7 +2107,7 @@ export default function EventDetail() {
                                     className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
                                     style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
                                     accessibilityRole="button"
-                                    accessibilityLabel="Aumentar quantidade"
+                                    accessibilityLabel={t("events:checkout.increaseQuantity")}
                                     accessibilityState={{ disabled: maxQuantity <= 1 }}
                                   >
                                     <Ionicons name="add" size={16} color="rgba(255,255,255,0.85)" />
@@ -1932,17 +2115,21 @@ export default function EventDetail() {
                                 </View>
                               </View>
                               {isFreeTicket ? (
-                                <Text className="text-white/55 text-xs">Limite por pessoa: 1</Text>
+                                <Text className="text-white/55 text-xs">
+                                  {t("events:checkout.limitPerPerson", { count: 1 })}
+                                </Text>
                               ) : null}
                               <View className="flex-row items-center justify-between">
-                                <Text className="text-white/60 text-sm">Total</Text>
+                                <Text className="text-white/60 text-sm">
+                                  {t("events:checkout.total")}
+                                </Text>
                                 <Text className="text-white text-lg font-semibold">
-                                  {formatTicketPrice(totalCents, selectedTicket.currency)}
+                                  {formatTicketPrice(totalCents, selectedTicket.currency, t)}
                                 </Text>
                               </View>
                               {!session ? (
                                 <Text className="text-xs text-amber-200">
-                                  Inicia sessão para finalizar a inscrição.
+                                  {t("events:checkout.signInToComplete")}
                                 </Text>
                               ) : null}
                             </View>
@@ -1961,16 +2148,21 @@ export default function EventDetail() {
           <StickyCTA>
             {showFavoriteCTA ? (
               <View className="flex-row gap-3">
-                <FavoriteToggle eventId={data!.id} variant="button" label="Favoritar" style={{ flex: 1 }} />
+                <FavoriteToggle
+                  eventId={data!.id}
+                  variant="button"
+                  label={t("common:actions.favorite")}
+                  style={{ flex: 1 }}
+                />
                 <Pressable
                   onPress={handleShare}
                   className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"
-                  accessibilityLabel="Partilhar"
+                  accessibilityLabel={t("common:actions.share")}
                 >
                   <Ionicons name="share-outline" size={18} color="rgba(255,255,255,0.9)" />
-                  <Text className="text-white text-sm font-semibold">Partilhar</Text>
+                  <Text className="text-white text-sm font-semibold">{t("common:actions.share")}</Text>
                 </Pressable>
               </View>
             ) : (
@@ -2042,7 +2234,10 @@ export default function EventDetail() {
                       });
                       router.push("/checkout");
                     } catch (err) {
-                      Alert.alert("Erro", getUserFacingError(err, "Não foi possível concluir a inscrição."));
+                      Alert.alert(
+                        t("common:labels.error"),
+                        getUserFacingError(err, t("events:checkout.completeFailed")),
+                      );
                     } finally {
                       setInitiatingCheckout(false);
                     }
@@ -2086,7 +2281,7 @@ export default function EventDetail() {
                   <View className="flex-row items-center gap-2">
                     <ActivityIndicator color="#0b101a" />
                     <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                      A confirmar...
+                      {t("events:checkout.confirming")}
                     </Text>
                   </View>
                 ) : (
@@ -2101,7 +2296,7 @@ export default function EventDetail() {
             )}
             {!session?.user?.id && !showFavoriteCTA ? (
               <Text className="text-white/55 text-xs text-center">
-                Inicia sessão para continuar.
+                {t("events:detail.signInToContinue")}
               </Text>
             ) : null}
           </StickyCTA>

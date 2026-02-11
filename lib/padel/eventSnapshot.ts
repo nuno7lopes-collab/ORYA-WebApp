@@ -10,6 +10,10 @@ export type PadelEventSnapshot = {
   title: string;
   status: string;
   competitionState: PadelCompetitionState;
+  v2Enabled?: boolean | null;
+  eligibilityType?: string | null;
+  splitDeadlineHours?: number | null;
+  lifecycleStatus?: string | null;
   startsAt: string | null;
   endsAt: string | null;
   clubName: string | null;
@@ -94,6 +98,10 @@ export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEve
           numberOfCourts: true,
           partnerClubIds: true,
           advancedSettings: true,
+          padelV2Enabled: true,
+          eligibilityType: true,
+          splitDeadlineHours: true,
+          lifecycleStatus: true,
           club: { select: { id: true, name: true, addressRef: { select: { canonical: true } } } },
         },
       },
@@ -175,6 +183,10 @@ export async function buildPadelEventSnapshot(eventId: number): Promise<PadelEve
     title: event.title,
     status: event.status,
     competitionState,
+    v2Enabled: config?.padelV2Enabled ?? null,
+    eligibilityType: config?.eligibilityType ?? null,
+    splitDeadlineHours: config?.splitDeadlineHours ?? null,
+    lifecycleStatus: config?.lifecycleStatus ?? null,
     startsAt: event.startsAt?.toISOString() ?? null,
     endsAt: event.endsAt?.toISOString() ?? null,
     clubName: config?.club?.name || event.addressRef?.formattedAddress || null,

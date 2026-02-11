@@ -23,7 +23,6 @@ const ALLOWLIST: Record<string, string> = {
   "app/api/organizacao/organizations/settings/official-email/route.ts": "email setup endpoint",
   "app/api/organizacao/organizations/settings/official-email/confirm/route.ts": "email confirm endpoint",
   "app/api/organizacao/payouts/webhook/route.ts": "webhook (secret-gated)",
-  "app/api/organizacao/mensagens/broadcast/route.ts": "stub 501 (no-op)",
 };
 
 function walk(dir: string, files: string[] = []) {

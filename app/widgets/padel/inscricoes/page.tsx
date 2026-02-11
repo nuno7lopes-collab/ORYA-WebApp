@@ -14,7 +14,7 @@ export default async function WidgetInscricoesPage({ searchParams }: PageProps) 
   const locale = resolveLocale(lang);
   if (!slug) {
     return (
-      <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-4 text-white">
         <p className="text-sm text-white/70">{t("slugMissing", locale)}</p>
       </div>
     );
@@ -35,7 +35,7 @@ export default async function WidgetInscricoesPage({ searchParams }: PageProps) 
   });
   if (!event) {
     return (
-      <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-4 text-white">
         <p className="text-sm text-white/70">{t("eventNotFound", locale)}</p>
       </div>
     );
@@ -53,7 +53,7 @@ export default async function WidgetInscricoesPage({ searchParams }: PageProps) 
     competitionState === "PUBLIC";
 
   return (
-    <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-4 text-white">
       <div className="rounded-2xl border border-white/15 bg-white/5 p-4 space-y-3">
         <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{t("registrations", locale)}</p>
         <h1 className="text-base font-semibold">{event.title}</h1>

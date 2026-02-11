@@ -1,9 +1,9 @@
 import { Redirect, withLayoutContext } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { ActivityIndicator, Animated, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useCallback, useEffect, useState } from "react";
-import { FloatingTabBar } from "../../components/navigation/FloatingTabBar";
+import { FloatingTabBar, TAB_BAR_HEIGHT } from "../../components/navigation/FloatingTabBar";
 import { getOnboardingDone } from "../../lib/onboardingState";
 import { isAuthError, resolveOnboardingGate } from "../../lib/onboardingGate";
 import { supabase } from "../../lib/supabase";
@@ -109,17 +109,35 @@ export default function TabsLayout() {
     const activeRoute = props.state.routes[props.state.index]?.name ?? "agora";
     const activeKey = ((TAB_ORDER as readonly string[]).includes(activeRoute) ? activeRoute : "agora") as TabKey;
     const pagerProgress = Animated.subtract(props.position, 1);
+    const tabBarOpacity = props.position.interpolate({
+      inputRange: [0, 0.35, 1],
+      outputRange: [0, 0.55, 1],
+      extrapolate: "clamp",
+    });
+    const tabBarTranslateY = props.position.interpolate({
+      inputRange: [0, 1],
+      outputRange: [TAB_BAR_HEIGHT + 56, 0],
+      extrapolate: "clamp",
+    });
     return (
-      <FloatingTabBar
-        activeKey={activeKey}
-        onSelect={(key) => {
-          const route = props.state.routes.find((item) => item.name === key);
-          if (route) {
-            props.navigation.navigate(route.name);
-          }
-        }}
-        pagerProgress={pagerProgress}
-      />
+      <Animated.View
+        pointerEvents={activeRoute === "wallet" ? "none" : "box-none"}
+        style={[
+          StyleSheet.absoluteFillObject,
+          { opacity: tabBarOpacity, transform: [{ translateY: tabBarTranslateY }] },
+        ]}
+      >
+        <FloatingTabBar
+          activeKey={activeKey}
+          onSelect={(key) => {
+            const route = props.state.routes.find((item) => item.name === key);
+            if (route) {
+              props.navigation.navigate(route.name);
+            }
+          }}
+          pagerProgress={pagerProgress}
+        />
+      </Animated.View>
     );
   }, []);
 

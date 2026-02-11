@@ -76,7 +76,7 @@ describe("entitlements v7 compatibility", () => {
     });
     expect(resolveDisputeOutcome("lost")).toEqual({
       entitlementStatus: "REVOKED",
-      ticketStatus: "CANCELLED",
+      ticketStatus: "CHARGEBACK_LOST",
     });
   });
 });

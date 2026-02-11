@@ -10,12 +10,14 @@ type GuestDetailsFormProps = {
   guestEmail: string;
   guestEmailConfirm: string;
   guestPhone: string;
-  guestErrors: { name?: string; email?: string; phone?: string };
+  guestConsent: boolean;
+  guestErrors: { name?: string; email?: string; phone?: string; consent?: string };
   submitAttempt: number;
   onChangeName: (v: string) => void;
   onChangeEmail: (v: string) => void;
   onChangeEmailConfirm: (v: string) => void;
   onChangePhone: (v: string) => void;
+  onChangeConsent: (v: boolean) => void;
   onContinue: () => void;
   ticketNameLabel: string;
   ticketEmailLabel: string;
@@ -28,12 +30,14 @@ export default function GuestDetailsForm({
   guestEmail,
   guestEmailConfirm,
   guestPhone,
+  guestConsent,
   guestErrors,
   submitAttempt,
   onChangeName,
   onChangeEmail,
   onChangeEmailConfirm,
   onChangePhone,
+  onChangeConsent,
   onContinue,
   ticketNameLabel,
   ticketEmailLabel,
@@ -128,6 +132,20 @@ export default function GuestDetailsForm({
             inputMode: "tel",
           }}
         />
+        <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-[11px] text-white/70">
+          <input
+            type="checkbox"
+            checked={guestConsent}
+            onChange={(event) => onChangeConsent(event.target.checked)}
+            className="mt-0.5 h-3.5 w-3.5 accent-[#6BFFFF]"
+          />
+          <span className="leading-relaxed">
+            Concordo com a política de privacidade e autorizo o armazenamento do meu contacto para gerir esta compra.
+          </span>
+        </label>
+        {guestErrors.consent ? (
+          <p className="text-[11px] text-rose-200">{guestErrors.consent}</p>
+        ) : null}
       </div>
 
       <button

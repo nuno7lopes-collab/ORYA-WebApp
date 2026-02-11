@@ -28,7 +28,7 @@ export const resolveAppScheme = () => {
   }
 };
 
-export const buildReturnUrl = (path = "checkout-redirect") => {
+export const buildReturnUrl = (path = "checkout/success") => {
   try {
     return Linking.createURL(path);
   } catch {

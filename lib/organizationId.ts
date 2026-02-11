@@ -50,6 +50,12 @@ export function resolveOrganizationIdFromRequest(
   req: NextRequest,
   options?: { allowFallback?: boolean },
 ): number | null {
+  const pathMatch = req.nextUrl.pathname.match(/^\/(?:api\/)?org\/(\d+)(?:\/|$)/i);
+  if (pathMatch?.[1]) {
+    const fromPath = parseOrganizationId(pathMatch[1]);
+    if (fromPath) return fromPath;
+  }
+
   const resolved = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
   if (resolved) return resolved;
   const allowFallback = typeof options?.allowFallback === "boolean" ? options.allowFallback : null;

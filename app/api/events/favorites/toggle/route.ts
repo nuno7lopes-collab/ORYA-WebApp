@@ -5,6 +5,8 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -23,6 +25,14 @@ async function _POST(req: NextRequest) {
   const eventId = Number(body?.eventId);
   if (!Number.isFinite(eventId)) {
     return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, organizationId: true },
+  });
+  if (!event?.organizationId) {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
   const pref = await prisma.notificationPreference.findUnique({
@@ -56,6 +66,19 @@ async function _POST(req: NextRequest) {
     });
   } catch (err) {
     console.warn("[api/events/favorites/toggle] failed to create signal", err);
+  }
+
+  try {
+    await ingestCrmInteraction({
+      organizationId: event.organizationId,
+      userId: user.id,
+      type: CrmInteractionType.EVENT_SAVED,
+      sourceType: CrmInteractionSource.EVENT,
+      sourceId: String(event.id),
+      metadata: { eventId: event.id, organizationId: event.organizationId },
+    });
+  } catch (err) {
+    console.warn("[api/events/favorites/toggle] CRM ingest failed", err);
   }
 
   return jsonWrap({ ok: true, isFavorite: true, favorite }, { status: 200 });

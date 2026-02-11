@@ -31,7 +31,16 @@ type SegmentPreviewResponse = {
   ok: boolean;
   total: number;
   segment: { id: string; name: string };
-  items: Array<{ id: string; userId: string; displayName: string | null; avatarUrl: string | null; lastActivityAt: string | null; totalSpentCents: number; tags: string[] }>;
+  items: Array<{
+    id: string;
+    userId: string | null;
+    contactType: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    lastActivityAt: string | null;
+    totalSpentCents: number;
+    tags: string[];
+  }>;
 };
 
 function formatDate(value: string | null) {

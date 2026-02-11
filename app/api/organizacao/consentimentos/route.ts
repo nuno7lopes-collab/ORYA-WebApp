@@ -58,25 +58,27 @@ async function _GET(req: NextRequest) {
     const limit = parseLimit(params.get("limit"));
     const page = parsePage(params.get("page"));
 
-    const filters: Prisma.CrmCustomerWhereInput[] = [];
+    const filters: Prisma.CrmContactWhereInput[] = [];
     if (query.length >= 2) {
       filters.push({
         OR: [
           { displayName: { contains: query, mode: "insensitive" } },
+          { contactEmail: { contains: query, mode: "insensitive" } },
+          { contactPhone: { contains: query, mode: "insensitive" } },
           { user: { is: { fullName: { contains: query, mode: "insensitive" } } } },
           { user: { is: { username: { contains: query, mode: "insensitive" } } } },
         ],
       });
     }
 
-    const where: Prisma.CrmCustomerWhereInput = {
+    const where: Prisma.CrmContactWhereInput = {
       organizationId: organization.id,
       ...(filters.length ? { AND: filters } : {}),
     };
 
-    const [total, customers] = await Promise.all([
-      prisma.crmCustomer.count({ where }),
-      prisma.crmCustomer.findMany({
+    const [total, contacts] = await Promise.all([
+      prisma.crmContact.count({ where }),
+      prisma.crmContact.findMany({
         where,
         take: limit,
         skip: (page - 1) * limit,
@@ -85,21 +87,22 @@ async function _GET(req: NextRequest) {
           id: true,
           userId: true,
           displayName: true,
+          contactType: true,
           user: { select: { fullName: true, username: true, avatarUrl: true } },
         },
       }),
     ]);
 
-    const userIds = customers.map((item) => item.userId);
-    const consents = userIds.length
-      ? await prisma.userConsent.findMany({
+    const contactIds = contacts.map((item) => item.id);
+    const consents = contactIds.length
+      ? await prisma.crmContactConsent.findMany({
           where: {
             organizationId: organization.id,
-            userId: { in: userIds },
+            contactId: { in: contactIds },
             type: { in: CONSENT_TYPES },
           },
           select: {
-            userId: true,
+            contactId: true,
             type: true,
             status: true,
             source: true,
@@ -112,10 +115,10 @@ async function _GET(req: NextRequest) {
 
     const consentMap = new Map<string, Map<ConsentType, typeof consents[number]>>();
     for (const consent of consents) {
-      if (!consentMap.has(consent.userId)) {
-        consentMap.set(consent.userId, new Map());
+      if (!consentMap.has(consent.contactId)) {
+        consentMap.set(consent.contactId, new Map());
       }
-      consentMap.get(consent.userId)?.set(consent.type, consent);
+      consentMap.get(consent.contactId)?.set(consent.type, consent);
     }
 
     const emptyConsent = {
@@ -126,17 +129,18 @@ async function _GET(req: NextRequest) {
       updatedAt: null as Date | null,
     };
 
-    const items = customers.map((item) => {
-      const consentsForUser = consentMap.get(item.userId);
+    const items = contacts.map((item) => {
+      const consentsForContact = consentMap.get(item.id);
       return {
-        customerId: item.id,
-        userId: item.userId,
+        contactId: item.id,
+        userId: item.userId ?? null,
+        contactType: item.contactType,
         displayName: item.displayName || item.user?.fullName || item.user?.username || null,
         avatarUrl: item.user?.avatarUrl ?? null,
         consents: {
-          MARKETING: consentsForUser?.get(ConsentType.MARKETING) ?? emptyConsent,
-          CONTACT_EMAIL: consentsForUser?.get(ConsentType.CONTACT_EMAIL) ?? emptyConsent,
-          CONTACT_SMS: consentsForUser?.get(ConsentType.CONTACT_SMS) ?? emptyConsent,
+          MARKETING: consentsForContact?.get(ConsentType.MARKETING) ?? emptyConsent,
+          CONTACT_EMAIL: consentsForContact?.get(ConsentType.CONTACT_EMAIL) ?? emptyConsent,
+          CONTACT_SMS: consentsForContact?.get(ConsentType.CONTACT_SMS) ?? emptyConsent,
         },
       };
     });

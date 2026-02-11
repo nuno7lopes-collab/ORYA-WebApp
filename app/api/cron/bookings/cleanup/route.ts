@@ -84,6 +84,8 @@ async function _GET(req: NextRequest) {
         organizationId: true,
         serviceId: true,
         userId: true,
+        guestEmail: true,
+        availabilityId: true,
         price: true,
         currency: true,
       },
@@ -106,20 +108,25 @@ async function _GET(req: NextRequest) {
     }
 
     for (const booking of completedBookings) {
-      if (!booking.userId) {
+      if (!booking.userId && !booking.guestEmail) {
         continue;
       }
       try {
         await ingestCrmInteraction({
           organizationId: booking.organizationId,
-          userId: booking.userId,
+          userId: booking.userId ?? undefined,
           type: CrmInteractionType.BOOKING_COMPLETED,
           sourceType: CrmInteractionSource.BOOKING,
           sourceId: String(booking.id),
           occurredAt: now,
           amountCents: booking.price,
           currency: booking.currency,
-          metadata: { bookingId: booking.id, serviceId: booking.serviceId },
+          contactEmail: booking.guestEmail ?? undefined,
+          metadata: {
+            bookingId: booking.id,
+            serviceId: booking.serviceId,
+            availabilityId: booking.availabilityId ?? null,
+          },
         });
       } catch (err) {
         logWarn("cron.bookings.crm_interaction_failed", { error: String(err) });

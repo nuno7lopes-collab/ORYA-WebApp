@@ -135,6 +135,14 @@ export default function RootLayout() {
                       }}
                     />
                     <Stack.Screen
+                      name="padel/index"
+                      options={{
+                        animation: "fade_from_bottom",
+                        animationDuration: 380,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
                       name="checkout/index"
                       options={{
                         animation: "slide_from_right",

@@ -139,7 +139,7 @@ async function _GET(_: NextRequest, { params }: { params: Promise<{ token: strin
     orderBy: { pricePerPlayerCents: "asc" },
   });
 
-  const ticketTypes = categoryLinks.map((link) => ({
+  const categoryLinksPayload = categoryLinks.map((link) => ({
     id: link.id,
     name: link.category?.label ?? `Categoria ${link.padelCategoryId}`,
     price: link.pricePerPlayerCents ?? 0,
@@ -147,6 +147,7 @@ async function _GET(_: NextRequest, { params }: { params: Promise<{ token: strin
     padelCategoryId: link.padelCategoryId,
     format: link.format ?? null,
   }));
+  const ticketTypes = categoryLinksPayload;
 
   const padelEvent = await buildPadelEventSnapshot(pairing.eventId);
 
@@ -164,7 +165,15 @@ async function _GET(_: NextRequest, { params }: { params: Promise<{ token: strin
     })),
   };
   return jsonWrap(
-    { ok: true, pairing: pairingPayload, ticketTypes, organizationId: pairing.organizationId, status: "PREVIEW_ONLY", padelEvent },
+    {
+      ok: true,
+      pairing: pairingPayload,
+      categoryLinks: categoryLinksPayload,
+      ticketTypes,
+      organizationId: pairing.organizationId,
+      status: "PREVIEW_ONLY",
+      padelEvent,
+    },
     { status: 200 },
   );
 }

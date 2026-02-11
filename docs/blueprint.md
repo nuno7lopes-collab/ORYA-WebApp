@@ -754,7 +754,8 @@ D8.1) EventAccessPolicy é a única verdade de acesso (FECHADO)
 
 D8.2) Convites por token (guest checkout) — versão final (FECHADO)
 
-Convites permitem checkout como convidado via token **na WebApp, no site público e na app mobile**.
+Convites permitem checkout como convidado via token **na WebApp e no site público**.  
+A app mobile é **login‑only** (sem guest checkout).
 
 Regras fechadas
 1) InviteToken one‑time + expira
@@ -781,7 +782,7 @@ Regras fechadas
 
 6) Eventos VIP (login obrigatório)
 - Para eventos que exijam login: `guestCheckoutAllowed=false` e `mode=INVITE_ONLY` (sem exceções).
-- App mobile segue a mesma regra de `guestCheckoutAllowed`.
+- App mobile é sempre login obrigatório (independente de `guestCheckoutAllowed`).
 
 7) Guest Ticket Link (acesso sem conta) — FECHADO
 - Após compra guest, emitir `GuestTicketAccessToken` (guardar **apenas** `tokenHash`).
@@ -793,7 +794,7 @@ Regras fechadas
 UX recomendada
 - Página de convite (web): “Aceitar convite” → pede nome + email (pré‑preenchido se possível)
 - Pós‑compra (web): “Criar conta para guardar bilhetes e entrar mais rápido” (1 clique)
-- Mobile: permitir guest checkout quando `guestCheckoutAllowed=true`; login opcional.
+- Mobile: login obrigatório; guest checkout não é suportado.
 
 ⸻
 
@@ -2660,7 +2661,7 @@ Regras:
   - `USER` (userId)
   - `GUEST_EMAIL` (emailNormalizado + emailHash)
 - Permite:
-  - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy` **na WebApp, no site e na app mobile**
+  - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy` **na WebApp e no site** (app mobile é login‑only)
   - claim/merge posterior para user (quando o email for verificado)
   - RGPD delete/anonymize sem destruir ledger (ledger mantém apenas IDs/pseudónimos)
 
@@ -2729,7 +2730,8 @@ Quando um utilizador cria conta e **verifica o email**:
   - move (claim) todos os entitlements elegíveis para `Identity(USER)`
   - escreve `AuditLog` + `EventLog` (idempotencyKey = `emailHash+userId+batchVersion`)
 - Regra: o claim nunca altera o ledger; apenas ownership lógico de acesso.
-- Mobile (app): executar claim **automaticamente no login**, com cooldown local para evitar chamadas repetidas.
+- WebApp: executar claim **automaticamente no login** (callback/useUser).
+- Mobile (app): não executa claim automático (app é login‑only e não suporta guest checkout).
 
 7.8 Matriz de verdade (Payment × Ticket × Entitlement) — **FECHADO**
 Nota (escopo):
@@ -4583,6 +4585,31 @@ Any new feature MUST be evaluated against this threat model.
 ANEXO A — Padel (Plano de Excelência)
 Status Padel (2026-02-02): DONE (F1). F2/F3 mantidos como backlog explicito.
 
+## Padel — Estado e Decisões Reaprovadas (2026-02-10)
+- **C1 (Reservas ↔ Padel):** Padel usa CalendarBlock/CalendarAvailability (SSOT em Reservas). Padel não escreve diretamente na agenda.
+- **C3 (Check-in ↔ Entitlements):** Check-in sempre via `Entitlement` com `sourceType=PADEL_REGISTRATION`.
+- **C6 (Inscrições vs Bilhetes):** Padel nunca cria bilhetes; inscrições geram entitlements canónicos.
+- **D12 (Split 48/24 + grace):** split payment com janela 48h e expiração T‑24, grace de 1h, segundo charge via jobs.
+- **Onboarding Padel:** `gender` é obrigatório; `level` e `preferredSide` são opcionais e usados como sinalização.
+- **Pricing Padel:** categoria de inscrição usa **`padelCategoryLinkId`** (alias explícito de `ticketTypeId` para compatibilidade).
+
+### Gaps (F1–F3) confirmados após auditoria — FECHADOS (2026-02-10)
+- Mobile: Hub Padel dedicado (user), com overview, duplas, stats e CTAs para reservas/aulas — FECHADO. Evidência: `apps/mobile/app/padel/index.tsx`, `apps/mobile/app/_layout.tsx`, `apps/mobile/app/(tabs)/index.tsx`, `apps/mobile/app/(tabs)/profile.tsx`.
+- Mobile: exposição de rankings e partidas pessoais agregadas — FECHADO. Evidência: `apps/mobile/features/tournaments/api.ts`, `apps/mobile/features/tournaments/hooks.ts`, `apps/mobile/app/padel/index.tsx`.
+- Backend: endpoints agregadores user (`/api/padel/me/summary`, `/api/padel/me/matches`) — FECHADO. Evidência: `app/api/padel/me/summary/route.ts`, `app/api/padel/me/matches/route.ts`.
+- Higienização DB: rotina oficial para inconsistências e entitlements sem `policyVersionApplied` — FECHADO. Evidência: `domain/padel/cleanup.ts`, `app/api/internal/ops/padel/cleanup/route.ts`, `scripts/padel_cleanup.ts`.
+
+### Mapeamento Blueprint → Código/DB (2026-02-10)
+| Área | Estado | Evidência |
+| --- | --- | --- |
+| C1 Reservas ↔ Padel (agenda/slots) | VERIFIED | `prisma/schema.prisma` (CalendarBlock/CalendarAvailability), `app/api/padel/calendar/route.ts` |
+| C3 Check-in ↔ Entitlements | VERIFIED | `lib/checkin/accessPolicy.ts`, `lib/operations/fulfillPadelRegistration.ts` |
+| C6 Inscrições vs Bilhetes | VERIFIED | `app/api/padel/pairings/**`, `app/api/payments/intent/route.ts` |
+| D12 Split 48/24 + grace | VERIFIED | `domain/padelDeadlines.ts`, `app/api/cron/padel/expire/route.ts` |
+| Wizard Padel dedicado | VERIFIED | `app/organizacao/(dashboard)/padel/torneios/novo/**` |
+| Matchmaking/Waitlist | PARTIAL | `domain/padelWaitlist.ts`, `app/api/cron/padel/waitlist/route.ts` |
+| Rankings/Stats Padel | PARTIAL | `app/api/padel/rankings/route.ts`, `domain/padel/standings.ts` |
+
 **Nota de integração:** este anexo detalha o vertical Padel. Tudo o que for pagamento, identidade, entitlements, refunds, RBAC, endereços e notificações **obedece** às decisões e SSOTs do blueprint principal (v9). Se houver conflito, vence o `docs/ssot_registry.md`; na ausência de regra no registry, vence o blueprint.
 
 # ORYA — Padel (TO-BE) — Plano de Excelência
@@ -4792,7 +4819,7 @@ O Padel define apenas domínio/UX; owners e contratos permanecem os do v9.
 - **Standard:** pagamento total online (ou gratuito).
 
 **Regras mínimas:**
-- Reserva por utilizador ORYA ou guest booking (quando permitido por policy).
+- Reserva por utilizador ORYA; guest booking apenas em Web/Site quando permitido por policy (app mobile é login‑only).
 - Pagamento online obrigatório quando `price > 0`.
 - **Sem depósito** e **sem pagamento no local** (fora de scope v1+).
 - No-show fee configurável.
@@ -5308,7 +5335,7 @@ Padel não é um produto isolado; é uma **camada de domínio**. As ferramentas 
 - **Operação offline:** “imprimir e operar” + reconciliação pós-evento.
 - **Lock states:** quem pode mexer no quê em estado Live.
 - **Dispute flow:** resolução e auditoria com UX clara.
-- **Modelo de negócio:** guest booking e regras de cancelamento por janela.
+- **Modelo de negócio:** guest booking (apenas Web/Site; app mobile é login‑only) e regras de cancelamento por janela.
 - **No-show:** lembretes automáticos e penalizações.
 - **Métricas operacionais:** funil de reservas, funil split-pay, tempo até publicar, atrasos por court.
 
@@ -5468,7 +5495,7 @@ Este apêndice é o resumo operacional canónico. Conteúdo detalhado histórico
 
 ### UX/UI & Mobile (NÃO‑NORMATIVO)
 - UX focada em estados canónicos e fluxos fail‑closed.
-- Mobile é B2C; guest checkout permitido quando `guestCheckoutAllowed=true`.
+- Mobile é B2C e **login‑only**; guest checkout não é suportado.
 - Padel: UX centrada em matchmaking, estados de dupla e operação do clube.
 
 ### Planos Operacionais (OPERACIONAL)
@@ -5484,3 +5511,10 @@ Este apêndice é o resumo operacional canónico. Conteúdo detalhado histórico
 - Outbox + DLQ + replay como execução assíncrona canónica.
 - EventAccessPolicy versionada define regras de check‑in.
 - Official email verificado como gate de ações sensíveis.
+
+### Checkout V1 (Normativo)
+- Contrato fechado em `docs/checkout_contract_v1.md`.
+- Endpoint canónico de estado: `GET /api/checkout/status` aceita `checkoutId` como alias de `purchaseId`.
+- Endpoints de checkout de domínio devem manter compatibilidade e retornar campos canónicos aditivos (`purchaseId`, `status`, `final`, `freeCheckout`) sem quebrar clientes legados.
+- Mobile checkout é login-only e deve tratar `REQUIRES_ACTION` com auto-poll + fallback explícito (sem loop infinito).
+- Checkout gratuito (`amountCents=0`) não cria PaymentIntent Stripe; finaliza o domínio e retorna estado final.

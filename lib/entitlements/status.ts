@@ -1,7 +1,7 @@
 import { CheckinResultCode, EntitlementStatus } from "@prisma/client";
 
 export type EntitlementV7Status = "PENDING" | "ACTIVE" | "SUSPENDED" | "REVOKED" | "EXPIRED";
-export type TicketV7Status = "ACTIVE" | "DISPUTED" | "CANCELLED";
+export type TicketV7Status = "ACTIVE" | "DISPUTED" | "CANCELLED" | "CHARGEBACK_LOST";
 export type DisputeOutcome = "created" | "won" | "lost";
 
 const CONSUMED_CHECKIN_CODES = new Set<CheckinResultCode>([
@@ -74,6 +74,6 @@ export function resolveDisputeOutcome(outcome: DisputeOutcome): {
       return { entitlementStatus: "ACTIVE", ticketStatus: "ACTIVE" };
     case "lost":
     default:
-      return { entitlementStatus: "REVOKED", ticketStatus: "CANCELLED" };
+      return { entitlementStatus: "REVOKED", ticketStatus: "CHARGEBACK_LOST" };
   }
 }

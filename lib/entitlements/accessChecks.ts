@@ -1,6 +1,7 @@
 import { EntitlementType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getEntitlementEffectiveStatus } from "@/lib/entitlements/status";
+import { getUserIdentityIds } from "@/lib/ownership/identity";
 
 // Access decisions are Entitlement-first; ticket/booking state is operational, not proof.
 export type EntitlementGateResult = {
@@ -14,12 +15,13 @@ export async function hasActiveEntitlementForEvent(input: {
   userId: string;
   type?: EntitlementType;
 }) {
-  const ownerKey = `user:${input.userId}`;
+  const identityIds = await getUserIdentityIds(input.userId);
+  if (!identityIds.length) return false;
   const entitlement = await prisma.entitlement.findFirst({
     where: {
       eventId: input.eventId,
       type: input.type ?? EntitlementType.EVENT_TICKET,
-      ownerKey,
+      ownerIdentityId: { in: identityIds },
     },
     select: { status: true, checkins: { select: { resultCode: true } } },
     orderBy: { createdAt: "desc" },
@@ -38,10 +40,12 @@ export async function requireActiveEntitlementForTicket(input: {
   userId: string;
   eventId?: number | null;
 }): Promise<EntitlementGateResult> {
+  const identityIds = await getUserIdentityIds(input.userId);
+  if (!identityIds.length) return { ok: false, reason: "ENTITLEMENT_REQUIRED" };
   const entitlement = await prisma.entitlement.findFirst({
     where: {
       ticketId: input.ticketId,
-      ownerUserId: input.userId,
+      ownerIdentityId: { in: identityIds },
       ...(input.eventId ? { eventId: input.eventId } : {}),
     },
     select: { id: true, status: true },

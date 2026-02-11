@@ -100,9 +100,8 @@ const statusLabel = (value: string, consumedAt?: string | null) => {
   if (normalized === "PENDING") return "Pendente";
   if (normalized === "REVOKED") return "Revogado";
   if (normalized === "SUSPENDED") return "Suspenso";
+  if (normalized === "CHARGEBACK_LOST") return "Chargeback";
   if (normalized === "EXPIRED") return "Expirado";
-  if (normalized === "CHECKED_IN") return "Usado";
-  if (normalized === "USED") return "Usado";
   if (normalized === "CANCELLED") return "Cancelado";
   return value;
 };
@@ -123,6 +122,9 @@ const paymentStatusLabel = (value?: string | null): string | null => {
   if (normalized === "PENDING") return "Pendente";
   if (normalized === "FAILED") return "Falhado";
   if (normalized === "REFUNDED") return "Reembolsado";
+  if (normalized === "DISPUTED") return "Em disputa";
+  if (normalized === "CHARGEBACK_LOST") return "Chargeback";
+  if (normalized === "CHARGEBACK_WON") return "Disputa ganha";
   return value;
 };
 
@@ -207,14 +209,14 @@ export default function WalletDetailScreen() {
   const dateLabel = formatDate(data?.snapshot.startAt);
   const qrFallbackLabel = (() => {
     if (!data) return null;
-    if (data.consumedAt) return "Bilhete já foi usado.";
+    if (data.consumedAt) return "Este bilhete já foi usado.";
     if (data.actions?.canShowQr) return null;
     if (!data.snapshot.startAt) return null;
     const start = new Date(data.snapshot.startAt);
     if (Number.isNaN(start.getTime())) return null;
     const windowStart = new Date(start.getTime() - 6 * 60 * 60 * 1000);
     const windowLabel = formatShortDate(windowStart.toISOString());
-    return windowLabel ? `QR disponível a partir de ${windowLabel}` : null;
+    return windowLabel ? `O QR fica disponível a partir de ${windowLabel}.` : null;
   })();
   const handleBack = () => {
     safeBack(router, navigation, "/tickets");
@@ -433,7 +435,7 @@ export default function WalletDetailScreen() {
                       />
                     </View>
                     <Text className="text-white/65 text-xs text-center">
-                      QR válido por 1 hora. Atualiza se precisares de um novo.
+                      O QR vale por 1 hora. Se expirar, toca em Atualizar.
                     </Text>
                     <Pressable
                       onPress={() => refetch()}

@@ -33,9 +33,8 @@ const statusLabel = (value: string, consumedAt?: string | null) => {
   if (normalized === "PENDING") return "Pendente";
   if (normalized === "REVOKED") return "Revogado";
   if (normalized === "SUSPENDED") return "Suspenso";
+  if (normalized === "CHARGEBACK_LOST") return "Chargeback";
   if (normalized === "EXPIRED") return "Expirado";
-  if (normalized === "CHECKED_IN") return "Usado";
-  if (normalized === "USED") return "Usado";
   if (normalized === "CANCELLED") return "Cancelado";
   return value;
 };

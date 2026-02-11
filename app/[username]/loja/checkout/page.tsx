@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCheckoutClient from "@/components/storefront/StorefrontCheckoutClient";
 import StorefrontFooter from "@/components/storefront/StorefrontFooter";
@@ -31,59 +31,36 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
     redirect(`/${username}/loja/checkout`);
   }
 
-  const [profile, organization] = await Promise.all([
-    prisma.profile.findUnique({
-      where: { username },
-      select: { id: true, username: true, fullName: true },
-    }),
-    prisma.organization.findFirst({
-      where: { username, status: "ACTIVE" },
-      select: { id: true, username: true, publicName: true, businessName: true },
-    }),
-  ]);
+  const organization = await prisma.organization.findFirst({
+    where: { username, status: "ACTIVE" },
+    select: { id: true, username: true, publicName: true, businessName: true },
+  });
 
-  if (!profile && !organization) {
+  if (!organization) {
     notFound();
   }
 
-  const store = organization
-    ? await prisma.store.findFirst({
-        where: { ownerOrganizationId: organization.id },
-        select: {
-          id: true,
-          status: true,
-          showOnProfile: true,
-          catalogLocked: true,
-          currency: true,
-          supportEmail: true,
-          supportPhone: true,
-          returnPolicy: true,
-          privacyPolicy: true,
-          termsUrl: true,
-        },
-      })
-    : profile
-      ? await prisma.store.findFirst({
-          where: { ownerUserId: profile.id },
-          select: {
-            id: true,
-            status: true,
-            showOnProfile: true,
-            catalogLocked: true,
-            currency: true,
-            supportEmail: true,
-            supportPhone: true,
-            returnPolicy: true,
-            privacyPolicy: true,
-            termsUrl: true,
-          },
-        })
-      : null;
+  const store = await prisma.store.findFirst({
+    where: { ownerOrganizationId: organization.id },
+    select: {
+      id: true,
+      status: true,
+      showOnProfile: true,
+      catalogLocked: true,
+      checkoutEnabled: true,
+      currency: true,
+      supportEmail: true,
+      supportPhone: true,
+      returnPolicy: true,
+      privacyPolicy: true,
+      termsUrl: true,
+    },
+  });
 
   const storeEnabled = isStoreFeatureEnabled();
-  const storePublic = isStorePublic(store);
+  const storePublic = resolveStoreState(store) === "ACTIVE";
   const displayName =
-    organization?.publicName || organization?.businessName || organization?.username || profile?.fullName || profile?.username || "Loja";
+    organization.publicName || organization.businessName || organization.username || "Loja";
 
   if (!store || !storeEnabled || !storePublic || store.catalogLocked) {
     return (

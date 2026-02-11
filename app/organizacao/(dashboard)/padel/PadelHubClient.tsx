@@ -98,6 +98,7 @@ type Player = {
   crm?: {
     id: string;
     status: string;
+    contactType?: string | null;
     tags: string[];
     totalSpentCents: number;
     totalTournaments: number;

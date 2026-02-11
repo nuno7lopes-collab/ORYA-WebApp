@@ -276,7 +276,7 @@ export default function TicketDetailClient({ entitlementId }: Props) {
 
   if (!user || authRequired) {
     return (
-      <main className="min-h-screen bg-[radial-gradient(circle_at_12%_12%,rgba(120,160,255,0.16),transparent_55%),radial-gradient(circle_at_88%_18%,rgba(120,255,214,0.12),transparent_60%),linear-gradient(160deg,#090d1c,#0b0f1f)] text-white">
+      <main className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
         <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col items-center justify-center px-6 text-center">
           <p className="text-[11px] uppercase tracking-[0.4em] text-white/55">{t("ticketAuthKicker", locale)}</p>
           <h1 className="mt-4 text-3xl font-semibold">{t("ticketAuthTitle", locale)}</h1>
@@ -307,7 +307,7 @@ export default function TicketDetailClient({ entitlementId }: Props) {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_10%_20%,rgba(120,160,255,0.18),transparent_55%),radial-gradient(circle_at_85%_12%,rgba(120,255,214,0.14),transparent_60%),linear-gradient(160deg,#080b18,#0c1124)] text-white">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
       <div className="mx-auto w-full max-w-5xl px-6 pb-16 pt-10">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>

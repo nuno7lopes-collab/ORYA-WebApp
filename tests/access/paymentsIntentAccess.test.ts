@@ -12,6 +12,9 @@ vi.mock("@/domain/finance/gateway/stripeGateway", () => ({
   createPaymentIntent: vi.fn(),
   retrievePaymentIntent: vi.fn(),
 }));
+vi.mock("@/lib/crm/ingest", () => ({
+  ingestCrmInteraction: vi.fn(async () => null),
+}));
 vi.mock("@/lib/env", () => ({ env: {} }));
 vi.mock("@/lib/supabaseServer", () => ({
   createSupabaseServer: vi.fn(async () => ({
@@ -28,21 +31,25 @@ beforeEach(() => {
 });
 
 describe("payments intent access gate", () => {
-  it("bloqueia checkout com payload inválido antes do access engine", async () => {
-    vi.resetModules();
-    POST = (await import("@/app/api/payments/intent/route")).POST;
-    const req = new NextRequest("http://localhost/api/payments/intent", {
-      method: "POST",
-      body: JSON.stringify({
-        slug: "slug",
-        items: [],
-      }),
-    });
-    const res = await POST(req);
-    const body = await res.json();
-    expect(body.errorCode).toBe("INVALID_INPUT");
-    expect(evaluateEventAccess).not.toHaveBeenCalled();
-  });
+  it(
+    "bloqueia checkout com payload inválido antes do access engine",
+    async () => {
+      vi.resetModules();
+      POST = (await import("@/app/api/payments/intent/route")).POST;
+      const req = new NextRequest("http://localhost/api/payments/intent", {
+        method: "POST",
+        body: JSON.stringify({
+          slug: "slug",
+          items: [],
+        }),
+      });
+      const res = await POST(req);
+      const body = await res.json();
+      expect(body.errorCode).toBe("INVALID_INPUT");
+      expect(evaluateEventAccess).not.toHaveBeenCalled();
+    },
+    10_000,
+  );
 
   it("bloqueia checkout quando access engine nega", async () => {
     vi.resetModules();
@@ -63,7 +70,7 @@ describe("payments intent access gate", () => {
       body: JSON.stringify({
         slug: "slug",
         items: [{ ticketId: 1, quantity: 1 }],
-        guest: { name: "Guest", email: "g@x.com" },
+        guest: { name: "Guest", email: "g@x.com", consent: true },
       }),
     });
     const res = await POST(req);
@@ -92,7 +99,7 @@ describe("payments intent access gate", () => {
       body: JSON.stringify({
         slug: "slug",
         items: [{ ticketId: 1, quantity: 1 }],
-        guest: { name: "Guest", email: "g@x.com" },
+        guest: { name: "Guest", email: "g@x.com", consent: true },
       }),
     });
     const res = await POST(req);

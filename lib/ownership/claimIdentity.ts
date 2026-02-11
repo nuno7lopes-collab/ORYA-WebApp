@@ -31,13 +31,18 @@ export async function claimIdentity(email: string, userId: string, opts?: { requ
     // tickets
     await tx.ticket.updateMany({
       where: { ownerIdentityId: identity.id },
-      data: { ownerUserId: userId, ownerIdentityId: null },
+      data: { ownerUserId: userId },
+    });
+    // entitlements (SSOT)
+    await tx.entitlement.updateMany({
+      where: { ownerIdentityId: identity.id },
+      data: { ownerUserId: null, ownerKey: `identity:${identity.id}` },
     });
     // legacy summaries removidos no v7 (ledger + entitlements)
     // tournament_entries
     await tx.tournamentEntry.updateMany({
       where: { ownerIdentityId: identity.id },
-      data: { ownerUserId: userId, ownerIdentityId: null },
+      data: { ownerUserId: userId },
     });
   });
 }

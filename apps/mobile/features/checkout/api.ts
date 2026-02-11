@@ -47,6 +47,7 @@ export const createPairingCheckoutIntent = async (
     method: "POST",
     body: JSON.stringify({
       ticketTypeId: input.ticketTypeId,
+      padelCategoryLinkId: input.ticketTypeId,
       inviteToken: input.inviteToken ?? undefined,
       idempotencyKey: input.idempotencyKey ?? undefined,
     }),
@@ -55,10 +56,12 @@ export const createPairingCheckoutIntent = async (
 };
 
 export const fetchCheckoutStatus = async (params: {
+  checkoutId?: string | null;
   purchaseId?: string | null;
   paymentIntentId?: string | null;
 }): Promise<CheckoutStatusResponse> => {
   const query = new URLSearchParams();
+  if (params.checkoutId) query.set("checkoutId", params.checkoutId);
   if (params.purchaseId) query.set("purchaseId", params.purchaseId);
   if (params.paymentIntentId) query.set("paymentIntentId", params.paymentIntentId);
   const response = await api.request<unknown>(`/api/checkout/status?${query.toString()}`);

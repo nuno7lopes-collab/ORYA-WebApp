@@ -6,6 +6,9 @@ const ENABLE_CSP_REPORT_ONLY = process.env.CSP_REPORT_ONLY === "1";
 const SCRIPT_SRC = ["'self'", "'unsafe-inline'", "https:"];
 if (!IS_PROD) SCRIPT_SRC.push("'unsafe-eval'");
 
+const CONNECT_SRC = ["'self'", "https:", "wss:"];
+if (!IS_PROD) CONNECT_SRC.push("ws:");
+
 const CSP_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -17,7 +20,7 @@ const CSP_POLICY = [
   "font-src 'self' data: https:",
   "style-src 'self' 'unsafe-inline' https:",
   `script-src ${SCRIPT_SRC.join(" ")}`,
-  "connect-src 'self' https: wss:",
+  `connect-src ${CONNECT_SRC.join(" ")}`,
 ].join("; ");
 
 const nextConfig: NextConfig = {

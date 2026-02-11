@@ -972,7 +972,7 @@ async function _GET(req: NextRequest) {
       orderBy: { pricePerPlayerCents: "asc" },
     });
 
-    const ticketTypes = categoryLinks.map((link) => ({
+    const categoryLinksPayload = categoryLinks.map((link) => ({
       id: link.id,
       name: link.category?.label ?? `Categoria ${link.padelCategoryId}`,
       price: link.pricePerPlayerCents ?? 0,
@@ -980,10 +980,14 @@ async function _GET(req: NextRequest) {
       padelCategoryId: link.padelCategoryId,
       format: link.format ?? null,
     }));
+    const ticketTypes = categoryLinksPayload;
 
     const padelEvent = await buildPadelEventSnapshot(pairing.eventId);
 
-    return jsonWrap({ ok: true, pairing, ticketTypes, padelEvent }, { status: 200 });
+    return jsonWrap(
+      { ok: true, pairing, categoryLinks: categoryLinksPayload, ticketTypes, padelEvent },
+      { status: 200 },
+    );
   }
 
   if (!Number.isFinite(eventId)) {

@@ -6,6 +6,8 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { parseOrganizationId } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -23,9 +25,29 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
   }
 
-  await prisma.organization_follows.deleteMany({
+  const existing = await prisma.organization_follows.findFirst({
     where: { follower_id: user.id, organization_id: organizationId },
+    select: { id: true },
   });
+
+  if (existing) {
+    await prisma.organization_follows.deleteMany({
+      where: { follower_id: user.id, organization_id: organizationId },
+    });
+
+    try {
+      await ingestCrmInteraction({
+        organizationId,
+        userId: user.id,
+        type: CrmInteractionType.ORG_UNFOLLOWED,
+        sourceType: CrmInteractionSource.ORGANIZATION,
+        sourceId: String(organizationId),
+        metadata: { organizationId },
+      });
+    } catch (err) {
+      console.warn("[social/unfollow-organization] CRM ingest failed", err);
+    }
+  }
 
   return jsonWrap({ ok: true }, { status: 200 });
 }

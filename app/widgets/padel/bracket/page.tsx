@@ -29,7 +29,7 @@ export default async function WidgetBracketPage({ searchParams }: PageProps) {
 
   if (!url) {
     return (
-      <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-4 text-white">
         <p className="text-sm text-white/70">{t("eventMissing", locale)}</p>
       </div>
     );
@@ -50,7 +50,7 @@ export default async function WidgetBracketPage({ searchParams }: PageProps) {
         locale={locale}
       />
     ) : (
-      <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
+      <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-4 text-white">
         <p className="text-sm text-white/70">{t("eventMissing", locale)}</p>
       </div>
     )

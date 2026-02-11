@@ -1,5 +1,5 @@
 import { Stack, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
@@ -37,6 +37,31 @@ const toApiPaymentMethod = (method: CheckoutMethod): "card" | "mbway" => {
   return "card";
 };
 
+const CHECKOUT_CONFIG_ERROR = "CONFIG_STRIPE_KEY_MISSING: Stripe publishable key em falta para pagamentos.";
+const CHECKOUT_AUTOPOLL_TIMEOUT_MS = 20_000;
+
+const isPaymentSettled = (status?: string | null) => status === "PAID" || status === "SUCCEEDED";
+
+const isCheckoutFinal = (status?: string | null) =>
+  Boolean(
+    status &&
+      ["PAID", "SUCCEEDED", "FAILED", "REFUNDED", "DISPUTED", "CANCELED", "CANCELLED", "EXPIRED"].includes(status),
+  );
+
+const isCheckoutPollingState = (status?: string | null) =>
+  Boolean(status && ["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status));
+
+type StatusMeta = {
+  tone: "success" | "danger" | "warning" | "info";
+  title: string;
+  message: string;
+  actionLabel?: string;
+  action?: () => void;
+  secondaryActionLabel?: string;
+  secondaryAction?: () => void;
+  showSpinner?: boolean;
+};
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -53,7 +78,12 @@ export default function CheckoutScreen() {
   const [bookingStatus, setBookingStatus] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingChecking, setBookingChecking] = useState(false);
-  const returnUrl = useMemo(() => buildReturnUrl("checkout-redirect"), []);
+  const [bookingTimedOut, setBookingTimedOut] = useState(false);
+  const [requiresActionTimedOut, setRequiresActionTimedOut] = useState(false);
+  const [checkoutPollingStartedAt, setCheckoutPollingStartedAt] = useState<number | null>(null);
+  const [checkoutPollingTimedOut, setCheckoutPollingTimedOut] = useState(false);
+  const recoveredTrackedRef = useRef(false);
+  const returnUrl = useMemo(() => buildReturnUrl("checkout/success"), []);
 
   const draft = useCheckoutStore((state) => state.draft);
   const setPaymentMethod = useCheckoutStore((state) => state.setPaymentMethod);
@@ -84,11 +114,20 @@ export default function CheckoutScreen() {
       setError(null);
       setBookingStatus(null);
       setBookingError(null);
+      setBookingTimedOut(false);
+      setRequiresActionTimedOut(false);
+      setCheckoutPollingStartedAt(null);
+      setCheckoutPollingTimedOut(false);
+      recoveredTrackedRef.current = false;
       return;
     }
     if (!draft.purchaseId && !draft.paymentIntentId) {
       setCheckoutStatus(null);
       setError(null);
+      setRequiresActionTimedOut(false);
+      setCheckoutPollingStartedAt(null);
+      setCheckoutPollingTimedOut(false);
+      recoveredTrackedRef.current = false;
     }
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
@@ -100,14 +139,14 @@ export default function CheckoutScreen() {
   const isFreeCheckout = Boolean(draft && draft.totalCents <= 0);
   const isPadelRegistration = draft?.sourceType === "PADEL_REGISTRATION";
   const isServiceBooking = draft?.sourceType === "SERVICE_BOOKING";
-  const isGuestCheckout = Boolean(draft?.guest?.email);
   const itemLabel = isServiceBooking
     ? draft?.ticketName ?? "Reserva"
     : isPadelRegistration
       ? draft?.ticketName ?? "Inscrição"
       : draft?.ticketName ?? "Bilhete";
   const showPaymentMethods = Boolean(draft) && !isFreeCheckout;
-  const canPay = Boolean(draft && (session?.user?.id || isGuestCheckout) && (stripeKey || isFreeCheckout));
+  const missingStripeConfig = Boolean(draft && !isFreeCheckout && !stripeKey);
+  const canPay = Boolean(draft && session?.user?.id && (stripeKey || isFreeCheckout));
   const openAuth = useCallback(() => {
     router.push({ pathname: "/auth", params: { next: "/checkout" } });
   }, [router]);
@@ -158,11 +197,22 @@ export default function CheckoutScreen() {
     });
     setCheckoutStatus(null);
     setError(null);
+    setCheckoutPollingStartedAt(null);
+    setCheckoutPollingTimedOut(false);
+    setRequiresActionTimedOut(false);
+    recoveredTrackedRef.current = false;
   }, [draft?.paymentMethod]);
 
   const applyCheckoutStatus = useCallback((status: CheckoutStatusResponse) => {
     setCheckoutStatus(status);
     setError(null);
+    if (isCheckoutPollingState(status.status)) {
+      setCheckoutPollingStartedAt((previous) => previous ?? Date.now());
+      return;
+    }
+    setCheckoutPollingStartedAt(null);
+    setCheckoutPollingTimedOut(false);
+    setRequiresActionTimedOut(false);
   }, []);
 
   const runStatusCheck = useCallback(
@@ -190,12 +240,7 @@ export default function CheckoutScreen() {
     if (!draft?.bookingId) return null;
     setBookingChecking(true);
     try {
-      const endpoint =
-        isGuestCheckout && draft.serviceId
-          ? `/api/servicos/${draft.serviceId}/booking-status?bookingId=${draft.bookingId}&guestEmail=${encodeURIComponent(
-              draft.guest?.email ?? "",
-            )}`
-          : `/api/me/reservas/${draft.bookingId}`;
+      const endpoint = `/api/me/reservas/${draft.bookingId}`;
       const result = await api.requestRaw<{
         ok: boolean;
         booking?: { status?: string };
@@ -216,16 +261,22 @@ export default function CheckoutScreen() {
     } finally {
       setBookingChecking(false);
     }
-  }, [draft?.bookingId, draft?.guest?.email, draft?.serviceId, isGuestCheckout]);
+  }, [draft?.bookingId]);
 
   const pollBookingStatus = useCallback(async () => {
     if (!draft?.bookingId) return;
+    setBookingTimedOut(false);
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const status = await fetchBookingStatus();
       if (status === "CONFIRMED") return;
       if (status && ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(status)) return;
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
+    setBookingTimedOut(true);
+    trackEvent("booking_confirm_timeout", {
+      bookingId: draft.bookingId,
+      sourceType: draft.sourceType ?? null,
+    });
   }, [draft?.bookingId, fetchBookingStatus]);
 
   useEffect(() => {
@@ -239,16 +290,18 @@ export default function CheckoutScreen() {
   useEffect(() => {
     if (!isServiceBooking) return;
     if (!checkoutStatus) return;
-    if (checkoutStatus.status !== "PAID") return;
+    if (!isPaymentSettled(checkoutStatus.status)) return;
     pollBookingStatus();
   }, [checkoutStatus, isServiceBooking, pollBookingStatus]);
 
   useEffect(() => {
     if (!isServiceBooking || !bookingStatus) return;
     if (bookingStatus === "CONFIRMED") {
+      setBookingTimedOut(false);
       trackEvent("booking_confirmed", { bookingId: draft?.bookingId ?? null });
     }
     if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(bookingStatus)) {
+      setBookingTimedOut(false);
       trackEvent("booking_cancelled", { bookingId: draft?.bookingId ?? null });
     }
   }, [bookingStatus, draft?.bookingId, isServiceBooking]);
@@ -258,27 +311,78 @@ export default function CheckoutScreen() {
     if (!checkoutStatus) return;
     if (!draft) return;
     if (processing || checkingStatus) return;
-    if (checkoutStatus.status !== "PENDING" && checkoutStatus.status !== "PROCESSING") return;
+    if (!isCheckoutPollingState(checkoutStatus.status)) return;
+    if (checkoutPollingTimedOut || (checkoutStatus.status === "REQUIRES_ACTION" && requiresActionTimedOut)) return;
+    const now = Date.now();
+    const startedAt = checkoutPollingStartedAt ?? now;
+    if (!checkoutPollingStartedAt) {
+      setCheckoutPollingStartedAt(startedAt);
+    }
+    if (now - startedAt >= CHECKOUT_AUTOPOLL_TIMEOUT_MS) {
+      setCheckoutPollingTimedOut(true);
+      if (checkoutStatus.status === "REQUIRES_ACTION") {
+        setRequiresActionTimedOut(true);
+      }
+      recoveredTrackedRef.current = false;
+      trackEvent("checkout_stuck_timeout", {
+        sourceType: draft.sourceType ?? null,
+        method: resolvedMethod,
+        status: checkoutStatus.status ?? null,
+      });
+      return;
+    }
+    const intervalMs = checkoutStatus.status === "REQUIRES_ACTION" ? 2000 : 6000;
     const timer = setTimeout(() => {
       runStatusCheck();
-    }, 6000);
+    }, intervalMs);
     return () => clearTimeout(timer);
-  }, [checkoutStatus, checkingStatus, draft, isFocused, processing, runStatusCheck]);
+  }, [
+    checkoutPollingStartedAt,
+    checkoutPollingTimedOut,
+    checkoutStatus,
+    checkingStatus,
+    draft,
+    isFocused,
+    processing,
+    requiresActionTimedOut,
+    resolvedMethod,
+    runStatusCheck,
+  ]);
+
+  useEffect(() => {
+    if (!checkoutStatus) return;
+    if (!(checkoutPollingTimedOut || requiresActionTimedOut)) return;
+    if (!isCheckoutFinal(checkoutStatus.status)) return;
+    if (recoveredTrackedRef.current) return;
+    recoveredTrackedRef.current = true;
+    trackEvent("checkout_requires_action_recovered", {
+      sourceType: draft?.sourceType ?? null,
+      method: resolvedMethod,
+      status: checkoutStatus.status ?? null,
+    });
+    setCheckoutPollingTimedOut(false);
+    setRequiresActionTimedOut(false);
+    setCheckoutPollingStartedAt(null);
+  }, [checkoutPollingTimedOut, checkoutStatus, draft?.sourceType, requiresActionTimedOut, resolvedMethod]);
 
   const handlePay = async () => {
     if (!draft) return;
-    if (!session?.user?.id && !isGuestCheckout) {
+    if (!session?.user?.id) {
       openAuth();
       return;
     }
     if (!stripeKey && !isFreeCheckout) {
-      setError("Pagamentos indisponíveis. Atualiza as chaves Stripe.");
+      setError(CHECKOUT_CONFIG_ERROR);
       return;
     }
 
     setError(null);
     setCheckoutStatus(null);
+    setCheckoutPollingStartedAt(null);
+    setCheckoutPollingTimedOut(false);
     setProcessing(true);
+    setRequiresActionTimedOut(false);
+    recoveredTrackedRef.current = false;
     trackEvent("checkout_started", {
       sourceType: draft.sourceType ?? null,
       method: resolvedMethod,
@@ -302,17 +406,21 @@ export default function CheckoutScreen() {
             ok: boolean;
             clientSecret?: string | null;
             paymentIntentId?: string | null;
+            purchaseId?: string | null;
+            status?: string | null;
+            final?: boolean;
+            freeCheckout?: boolean;
             amountCents?: number | null;
             currency?: string | null;
             message?: string;
             error?: string;
           }>(`/api/servicos/${draft.serviceId}/checkout`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
             body: JSON.stringify({
               bookingId: draft.bookingId,
               paymentMethod: toApiPaymentMethod(resolvedMethod),
-              ...(isGuestCheckout ? { guest: draft.guest } : {}),
+              idempotencyKey,
             }),
           });
           const json = result.data;
@@ -324,14 +432,24 @@ export default function CheckoutScreen() {
           setIntent({
             clientSecret,
             paymentIntentId,
-            purchaseId: null,
+            purchaseId: json.purchaseId ?? null,
             breakdown: null,
-            freeCheckout: false,
+            freeCheckout: Boolean(json.freeCheckout),
             amountCents: typeof json.amountCents === "number" ? json.amountCents : null,
             currency: typeof json.currency === "string" ? json.currency : null,
           });
-          if ((json.amountCents ?? 0) <= 0) {
-            await runStatusCheck({ paymentIntentId });
+          if (json.status) {
+            setCheckoutStatus({
+              status: json.status as CheckoutStatusResponse["status"],
+              final: Boolean(json.final),
+              purchaseId: json.purchaseId ?? null,
+              paymentIntentId,
+            });
+          }
+          if (json.freeCheckout || (json.amountCents ?? 0) <= 0) {
+            if (json.purchaseId || paymentIntentId) {
+              await runStatusCheck({ purchaseId: json.purchaseId ?? undefined, paymentIntentId });
+            }
             await pollBookingStatus();
             setProcessing(false);
             return;
@@ -421,14 +539,39 @@ export default function CheckoutScreen() {
         return;
       }
 
-      await runStatusCheck({
+      let latestStatus = await runStatusCheck({
         purchaseId,
         paymentIntentId,
       });
-      trackEvent("checkout_payment_succeeded", {
-        sourceType: draft.sourceType ?? null,
-        method: resolvedMethod,
-      });
+      const pollStartedAt = Date.now();
+      while (
+        latestStatus &&
+        isCheckoutPollingState(latestStatus.status) &&
+        Date.now() - pollStartedAt < CHECKOUT_AUTOPOLL_TIMEOUT_MS
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        latestStatus = await runStatusCheck({
+          purchaseId,
+          paymentIntentId,
+        });
+      }
+      if (latestStatus && !isCheckoutFinal(latestStatus.status)) {
+        setCheckoutPollingTimedOut(true);
+        setCheckoutPollingStartedAt(pollStartedAt);
+        setRequiresActionTimedOut(true);
+        recoveredTrackedRef.current = false;
+        trackEvent("checkout_stuck_timeout", {
+          sourceType: draft.sourceType ?? null,
+          method: resolvedMethod,
+          status: latestStatus.status ?? null,
+        });
+      }
+      if (isPaymentSettled(latestStatus?.status)) {
+        trackEvent("checkout_payment_succeeded", {
+          sourceType: draft.sourceType ?? null,
+          method: resolvedMethod,
+        });
+      }
     } catch (err: any) {
       setError(getUserFacingError(err, "Não foi possível concluir o pagamento."));
       trackEvent("checkout_payment_failed", {
@@ -440,7 +583,7 @@ export default function CheckoutScreen() {
     }
   };
 
-  const statusMeta = useMemo(() => {
+  const statusMeta = useMemo<StatusMeta | null>(() => {
     if (!draft) return null;
     if (!checkoutStatus) {
       if (isExpired()) {
@@ -485,7 +628,7 @@ export default function CheckoutScreen() {
         },
       };
     }
-    if (status === "PAID") {
+    if (isPaymentSettled(status)) {
       return {
         tone: "success" as const,
         title: "Pagamento confirmado",
@@ -504,13 +647,13 @@ export default function CheckoutScreen() {
         showSpinner: isServiceBooking,
       };
     }
-    if (status === "FAILED") {
+    if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED" || status === "EXPIRED") {
       return {
         tone: "danger" as const,
-        title: "Pagamento falhou",
+        title: status === "EXPIRED" ? "Sessão expirada" : "Pagamento falhou",
         message: getUserFacingError(
           checkoutStatus.errorMessage,
-          "Não foi possível concluir o pagamento.",
+          status === "EXPIRED" ? "A sessão de checkout expirou. Tenta novamente." : "Não foi possível concluir o pagamento.",
         ),
         actionLabel: "Tentar novamente",
         action: () => {
@@ -522,12 +665,39 @@ export default function CheckoutScreen() {
       };
     }
     if (status === "REQUIRES_ACTION") {
+      const timedOut = requiresActionTimedOut || checkoutPollingTimedOut;
       return {
         tone: "warning" as const,
         title: "Ação necessária",
-        message: "Precisas de concluir o pagamento para confirmar a compra.",
-        actionLabel: "Continuar pagamento",
+        message: timedOut
+          ? "Ainda não recebemos confirmação final. Podes voltar a tentar ou atualizar o estado."
+          : "Precisas de concluir o pagamento para confirmar a compra.",
+        actionLabel: "Tentar novamente",
         action: () => handlePay(),
+        secondaryActionLabel: "Atualizar estado",
+        secondaryAction: () => runStatusCheck(),
+      };
+    }
+    if (checkoutPollingTimedOut) {
+      return {
+        tone: "warning" as const,
+        title: "Confirmação pendente",
+        message: "A confirmação está a demorar mais do que o esperado. Podes atualizar o estado ou tentar novamente.",
+        actionLabel: "Atualizar estado",
+        action: () => runStatusCheck(),
+        secondaryActionLabel: "Tentar novamente",
+        secondaryAction: () => handlePay(),
+      };
+    }
+    if (isServiceBooking && bookingTimedOut) {
+      return {
+        tone: "warning" as const,
+        title: "Pagamento confirmado",
+        message: "Ainda estamos a sincronizar a reserva. Atualiza o estado para confirmar o agendamento.",
+        actionLabel: "Atualizar reserva",
+        action: () => fetchBookingStatus(),
+        secondaryActionLabel: "Verificar novamente",
+        secondaryAction: () => pollBookingStatus(),
       };
     }
     if (status === "REFUNDED") {
@@ -574,7 +744,11 @@ export default function CheckoutScreen() {
     fetchBookingStatus,
     handlePay,
     isExpired,
+    isPaymentSettled,
     isServiceBooking,
+    bookingTimedOut,
+    checkoutPollingTimedOut,
+    requiresActionTimedOut,
     resetIntent,
     router,
     runStatusCheck,
@@ -729,6 +903,21 @@ export default function CheckoutScreen() {
                         </Text>
                       </Pressable>
                     ) : null}
+                    {statusMeta.secondaryAction ? (
+                      <Pressable
+                        onPress={statusMeta.secondaryAction}
+                        disabled={processing}
+                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                        style={{ minHeight: tokens.layout.touchTarget }}
+                        accessibilityRole="button"
+                        accessibilityLabel={statusMeta.secondaryActionLabel}
+                        accessibilityState={{ disabled: processing }}
+                      >
+                        <Text className="text-white text-sm font-semibold text-center">
+                          {statusMeta.secondaryActionLabel}
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </GlassCard>
               ) : null}
@@ -736,6 +925,12 @@ export default function CheckoutScreen() {
               {bookingError ? (
                 <GlassCard intensity={50}>
                   <Text className="text-amber-200 text-sm">{bookingError}</Text>
+                </GlassCard>
+              ) : null}
+
+              {missingStripeConfig ? (
+                <GlassCard intensity={50}>
+                  <Text className="text-amber-200 text-sm">{CHECKOUT_CONFIG_ERROR}</Text>
                 </GlassCard>
               ) : null}
 

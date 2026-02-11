@@ -347,8 +347,8 @@ async function issuePadelRegistrationEntitlements(
     ownerIdentityId?: string | null;
     email?: string | null;
   }) => {
-    if (params.ownerUserId) return `user:${params.ownerUserId}`;
     if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
+    if (params.ownerUserId) return `user:${params.ownerUserId}`;
     if (params.email) return `email:${params.email}`;
     return "unknown";
   };
@@ -357,11 +357,13 @@ async function issuePadelRegistrationEntitlements(
     const line = saleLine.padelRegistrationLine;
     if (!line) continue;
     const slot = line.pairingSlotId ? slotMap.get(line.pairingSlotId) : null;
-    const entitlementOwnerUserId = slot?.profileId ?? slot?.invitedUserId ?? null;
+    const entitlementOwnerUserIdRaw = slot?.profileId ?? slot?.invitedUserId ?? null;
     const entitlementEmail = normalizeEmail(slot?.invitedContact ?? null);
+    const resolvedIdentityId = payment.customerIdentityId ?? registration.buyerIdentityId ?? null;
+    const entitlementOwnerUserId = resolvedIdentityId ? null : entitlementOwnerUserIdRaw;
     const ownerKey = buildPadelOwnerKey({
       ownerUserId: entitlementOwnerUserId,
-      ownerIdentityId: payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
+      ownerIdentityId: resolvedIdentityId,
       email: entitlementEmail,
     });
 
@@ -379,7 +381,7 @@ async function issuePadelRegistrationEntitlements(
         update: {
           status: EntitlementStatus.ACTIVE,
           ownerUserId: entitlementOwnerUserId ?? null,
-          ownerIdentityId: payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
+          ownerIdentityId: resolvedIdentityId,
           eventId: event.id,
           policyVersionApplied,
           snapshotTitle: event.title,
@@ -394,7 +396,7 @@ async function issuePadelRegistrationEntitlements(
           lineItemIndex: i,
           ownerKey,
           ownerUserId: entitlementOwnerUserId ?? null,
-          ownerIdentityId: payment.customerIdentityId ?? registration.buyerIdentityId ?? null,
+          ownerIdentityId: resolvedIdentityId,
           eventId: event.id,
           type: EntitlementType.PADEL_ENTRY,
           status: EntitlementStatus.ACTIVE,
@@ -474,7 +476,7 @@ export async function applyPaymentStatusToEntitlements(
     REFUNDED: TicketStatus.REFUNDED,
     DISPUTED: TicketStatus.DISPUTED,
     CHARGEBACK_WON: TicketStatus.ACTIVE,
-    CHARGEBACK_LOST: TicketStatus.CANCELLED,
+    CHARGEBACK_LOST: TicketStatus.CHARGEBACK_LOST,
   };
 
   const targetStatus = statusMap[input.status] ?? null;

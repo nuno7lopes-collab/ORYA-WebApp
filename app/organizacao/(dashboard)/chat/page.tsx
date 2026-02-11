@@ -18,10 +18,8 @@ export default async function OrganizationChatPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
 }) {
-  const resolvedSearchParams =
-    typeof searchParams === "object" && typeof (searchParams as Promise<Record<string, string>>)?.then === "function"
-      ? await (searchParams as Promise<Record<string, string | string[] | undefined>>)
-      : (searchParams ?? {});
+  const resolvedSearchParams: Record<string, string | string[] | undefined> =
+    ((await Promise.resolve(searchParams)) ?? {}) as Record<string, string | string[] | undefined>;
   const { user } = await getCurrentUser();
 
   if (!user) {

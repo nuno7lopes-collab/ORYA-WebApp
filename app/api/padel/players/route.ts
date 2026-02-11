@@ -45,7 +45,13 @@ async function _GET(req: NextRequest) {
     new Set(players.map((player) => player.userId).filter((id): id is string => Boolean(id))),
   );
 
-  const [profiles, crmCustomers] = userIds.length
+  const contactIds = Array.from(
+    new Set(players.map((player) => player.crmContactId).filter((id): id is string => Boolean(id))),
+  );
+
+  const shouldFetchCrm = userIds.length > 0 || contactIds.length > 0;
+
+  const [profiles, crmContacts] = shouldFetchCrm
     ? await Promise.all([
         prisma.profile.findMany({
           where: { id: { in: userIds } },
@@ -62,17 +68,24 @@ async function _GET(req: NextRequest) {
             users: { select: { email: true } },
           },
         }),
-        prisma.crmCustomer.findMany({
-          where: { organizationId: organization.id, userId: { in: userIds } },
+        prisma.crmContact.findMany({
+          where: {
+            organizationId: organization.id,
+            OR: [
+              ...(userIds.length ? [{ userId: { in: userIds } }] : []),
+              ...(contactIds.length ? [{ id: { in: contactIds } }] : []),
+            ],
+          },
           select: {
             id: true,
             userId: true,
             status: true,
+            contactType: true,
             tags: true,
             totalSpentCents: true,
             totalTournaments: true,
             lastActivityAt: true,
-            marketingOptIn: true,
+            marketingEmailOptIn: true,
             displayName: true,
             contactEmail: true,
             contactPhone: true,
@@ -82,7 +95,8 @@ async function _GET(req: NextRequest) {
     : [[], []];
 
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
-  const crmMap = new Map(crmCustomers.map((customer) => [customer.userId, customer]));
+  const crmByUserId = new Map(crmContacts.filter((contact) => contact.userId).map((contact) => [contact.userId, contact]));
+  const crmById = new Map(crmContacts.map((contact) => [contact.id, contact]));
   const profileIds = players.map((player) => player.id);
 
   const pairingSlots = profileIds.length
@@ -143,19 +157,13 @@ async function _GET(req: NextRequest) {
   }
 
   const items = players.map((player) => {
-    if (!player.userId) {
-      return {
-        ...player,
-        gender: player.gender ?? null,
-        level: player.level ?? null,
-        tournamentsCount: pairingCountMap.get(player.id) ?? 0,
-        noShowCount: noShowCounts.get(player.id) ?? 0,
-        profile: null,
-        crm: null,
-      };
-    }
-    const profile = profileMap.get(player.userId) ?? null;
-    const crm = crmMap.get(player.userId) ?? null;
+    const profile = player.userId ? (profileMap.get(player.userId) ?? null) : null;
+    const crm =
+      player.crmContactId
+        ? crmById.get(player.crmContactId) ?? null
+        : player.userId
+          ? crmByUserId.get(player.userId) ?? null
+          : null;
     const pairingCount = pairingCountMap.get(player.id) ?? 0;
     const crmTotal = crm?.totalTournaments ?? 0;
     const tournamentsCount = Math.max(pairingCount, crmTotal);
@@ -185,11 +193,12 @@ async function _GET(req: NextRequest) {
         ? {
             id: crm.id,
             status: crm.status,
+            contactType: crm.contactType,
             tags: crm.tags,
             totalSpentCents: crm.totalSpentCents,
             totalTournaments: crm.totalTournaments,
             lastActivityAt: crm.lastActivityAt,
-            marketingOptIn: crm.marketingOptIn,
+            marketingOptIn: crm.marketingEmailOptIn,
           }
         : null,
     };
@@ -273,7 +282,7 @@ async function _POST(req: NextRequest) {
         });
       }
 
-      await prisma.crmCustomer.upsert({
+      await prisma.crmContact.upsert({
         where: {
           organizationId_userId: { organizationId: organization.id, userId: resolvedUserId },
         },

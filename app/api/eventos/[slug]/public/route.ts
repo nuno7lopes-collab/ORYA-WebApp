@@ -70,6 +70,8 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
           defaultCategoryId: true,
           advancedSettings: true,
           lifecycleStatus: true,
+          eligibilityType: true,
+          splitDeadlineHours: true,
         },
       },
       padelCategoryLinks: {
@@ -222,6 +224,8 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
       ? {
           v2Enabled: Boolean(padelConfig?.padelV2Enabled),
           competitionState,
+          eligibilityType: padelConfig?.eligibilityType ?? null,
+          splitDeadlineHours: padelConfig?.splitDeadlineHours ?? null,
           registrationStartsAt: registrationStartsAt?.toISOString() ?? null,
           registrationEndsAt: registrationEndsAt?.toISOString() ?? null,
           registrationStatus,

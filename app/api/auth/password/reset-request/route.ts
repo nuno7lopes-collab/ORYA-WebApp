@@ -64,11 +64,30 @@ async function _POST(req: NextRequest) {
       );
     }
 
+    const ipLimiter = await rateLimit(req, {
+      windowMs: 10 * 60 * 1000,
+      max: 20,
+      keyPrefix: "auth:reset-password:ip",
+      requireDistributed: true,
+    });
+    if (!ipLimiter.allowed) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: "RATE_LIMITED",
+          message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+          retryable: true,
+        },
+        { status: 429, headers: { "Retry-After": String(ipLimiter.retryAfter) } }
+      );
+    }
+
     const limiter = await rateLimit(req, {
       windowMs: 10 * 60 * 1000,
       max: 5,
       keyPrefix: "auth:reset-password",
       identifier: rawEmail,
+      requireDistributed: true,
     });
     if (!limiter.allowed) {
       return jsonWrap(

@@ -5,7 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import crypto from "crypto";
-import { normalizeEmail } from "@/lib/utils/email";
+import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -55,16 +55,9 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   const isAdmin = roles.includes("admin");
 
   if (!isAdmin) {
-    const identities = await prisma.emailIdentity.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-    const identityIds = identities.map((identity) => identity.id);
-    const normalizedEmail = normalizeEmail(data.user.email ?? null);
+    const identityIds = await getUserIdentityIds(userId);
     const isOwner =
-      ent.ownerUserId === userId ||
-      (identityIds.length > 0 && ent.ownerIdentityId && identityIds.includes(ent.ownerIdentityId)) ||
-      (normalizedEmail ? ent.ownerKey === `email:${normalizedEmail}` : false);
+      identityIds.length > 0 && ent.ownerIdentityId && identityIds.includes(ent.ownerIdentityId);
     if (!isOwner) {
       return jsonWrap({ error: "FORBIDDEN_WALLET_ACCESS" }, { status: 403 });
     }

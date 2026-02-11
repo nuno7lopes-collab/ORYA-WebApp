@@ -59,7 +59,8 @@ type CustomerDetailResponse = {
   ok: boolean;
   customer: {
     id: string;
-    userId: string;
+    userId: string | null;
+    contactType: string;
     displayName: string | null;
     avatarUrl: string | null;
     bio: string | null;
@@ -160,11 +161,11 @@ export default function CrmCustomerDetailPage() {
 
   const handleConsentToggle = async (type: ConsentTypeKey, granted: boolean) => {
     if (!customer) return;
-    const key = `${customer.userId}:${type}`;
+    const key = `${customer.id}:${type}`;
     setConsentSaving((prev) => ({ ...prev, [key]: true }));
     setError(null);
     try {
-      const res = await fetch(`/api/organizacao/consentimentos/${customer.userId}`, {
+      const res = await fetch(`/api/organizacao/consentimentos/${customer.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, granted }),
@@ -204,6 +205,11 @@ export default function CrmCustomerDetailPage() {
                   {customer.displayName || "Cliente sem nome"}
                 </p>
                 <p className="text-[12px] text-white/60">{customer.contactEmail || customer.contactPhone || "Contacto indisponível"}</p>
+                {customer.contactType ? (
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/45">
+                    {customer.contactType}
+                  </p>
+                ) : null}
                 {customer.bio ? <p className="mt-1 text-[12px] text-white/50">{customer.bio}</p> : null}
               </div>
               <div className="grid gap-2 text-[12px] text-white/70 sm:grid-cols-2">

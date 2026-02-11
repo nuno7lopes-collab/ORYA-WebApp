@@ -21,6 +21,7 @@ import { computePromoDiscountCents } from "@/lib/promoMath";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { finalizeFreeStoreCheckout } from "@/domain/finance/freeStoreCheckout";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -41,6 +42,7 @@ const checkoutSchema = z.object({
   shippingMethodId: z.number().int().positive().optional().nullable(),
   notes: z.string().trim().max(2000).optional().nullable(),
   purchaseId: z.string().trim().max(120).optional(),
+  idempotencyKey: z.string().trim().max(120).optional(),
   promoCode: z.string().trim().max(60).optional().nullable(),
 });
 
@@ -145,7 +147,6 @@ async function _POST(req: NextRequest) {
         catalogLocked: true,
         currency: true,
         ownerOrganizationId: true,
-        ownerUserId: true,
       },
     });
     if (!store) {
@@ -165,6 +166,8 @@ async function _POST(req: NextRequest) {
     }
 
     const payload = parsed.data;
+    const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
+    const idempotencyKey = (payload.idempotencyKey ?? idempotencyKeyHeader ?? "").trim() || null;
     const supabase = await createSupabaseServer();
     const { data } = await supabase.auth.getUser();
     const userId = data?.user?.id ?? null;
@@ -502,9 +505,6 @@ async function _POST(req: NextRequest) {
       if (store.ownerOrganizationId) {
         promoScopes.push({ organizationId: store.ownerOrganizationId });
       }
-      if (store.ownerUserId) {
-        promoScopes.push({ promoterUserId: store.ownerUserId });
-      }
       promoScopes.push({ organizationId: null });
 
       const promo = await prisma.promoCode.findFirst({
@@ -602,36 +602,30 @@ async function _POST(req: NextRequest) {
       return fail("ADDRESS_REQUIRED", "Morada obrigatoria.", 400);
     }
 
-    const organization = store.ownerOrganizationId
-      ? await prisma.organization.findUnique({
-          where: { id: store.ownerOrganizationId },
-          select: {
-            id: true,
-            orgType: true,
-            stripeAccountId: true,
-            stripeChargesEnabled: true,
-            stripePayoutsEnabled: true,
-            officialEmail: true,
-            officialEmailVerifiedAt: true,
-            feeMode: true,
-            platformFeeBps: true,
-            platformFeeFixedCents: true,
-          },
-        })
-      : null;
-    const platformOrganization =
-      organization || store.ownerOrganizationId
-        ? null
-        : await prisma.organization.findFirst({
-            where: { orgType: "PLATFORM" },
-            select: { id: true },
-          });
-    const organizationId = organization?.id ?? platformOrganization?.id ?? null;
-    if (!organizationId) {
+    if (!store.ownerOrganizationId) {
       throw new Error("STORE_ORG_NOT_FOUND");
     }
+    const organization = await prisma.organization.findUnique({
+      where: { id: store.ownerOrganizationId },
+      select: {
+        id: true,
+        orgType: true,
+        stripeAccountId: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+        officialEmail: true,
+        officialEmailVerifiedAt: true,
+        feeMode: true,
+        platformFeeBps: true,
+        platformFeeFixedCents: true,
+      },
+    });
+    if (!organization) {
+      throw new Error("STORE_ORG_NOT_FOUND");
+    }
+    const organizationId = organization.id;
 
-    const isPlatformOrg = organization?.orgType === "PLATFORM" || !organization;
+    const isPlatformOrg = organization.orgType === "PLATFORM";
 
     if (organization && subtotalCents > 0) {
       const gate = getPaidSalesGate({
@@ -838,6 +832,41 @@ async function _POST(req: NextRequest) {
       },
     };
 
+    if (totalCents <= 0) {
+      const freeCheckout = await finalizeFreeStoreCheckout({
+        orderId: order.id,
+        storeId: store.id,
+        purchaseId,
+        userId,
+        customerEmail: payload.customer.email ?? null,
+        currency: store.currency,
+      });
+      await prisma.storeOrder.update({
+        where: { id: order.id },
+        data: {
+          paymentIntentId: freeCheckout.paymentIntentId,
+          ...(providedPurchaseId ? {} : { purchaseId: freeCheckout.purchaseId }),
+        },
+      });
+
+      return respondOk(ctx, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        purchaseId: freeCheckout.purchaseId,
+        paymentIntentId: freeCheckout.paymentIntentId,
+        clientSecret: null,
+        amountCents: 0,
+        discountCents: orderDiscountCents,
+        currency: store.currency,
+        shippingCents,
+        shippingZoneId,
+        shippingMethodId,
+        freeCheckout: true,
+        status: "PAID",
+        final: true,
+      });
+    }
+
     let intent;
     try {
       const ensured = await ensurePaymentIntent({
@@ -880,6 +909,7 @@ async function _POST(req: NextRequest) {
           orgType: organization?.orgType ?? null,
         },
         requireStripe: !isPlatformOrg,
+        clientIdempotencyKey: idempotencyKey,
         resolvedSnapshot,
         buyerIdentityRef: userId ?? null,
         paymentEvent: {
@@ -928,6 +958,7 @@ async function _POST(req: NextRequest) {
     return respondOk(ctx, {
       orderId: order.id,
       orderNumber: order.orderNumber,
+      purchaseId,
       paymentIntentId: intent.id,
       clientSecret: intent.client_secret,
       amountCents: totalCents,
@@ -936,6 +967,9 @@ async function _POST(req: NextRequest) {
       shippingCents,
       shippingZoneId,
       shippingMethodId,
+      freeCheckout: false,
+      status: "REQUIRES_ACTION",
+      final: false,
     });
   } catch (err) {
     console.error("POST /api/store/checkout error:", err);

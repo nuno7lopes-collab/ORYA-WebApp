@@ -14,7 +14,12 @@ import { getPlatformFees } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import {
+  ConsentStatus,
+  ConsentType,
+  CrmInteractionSource,
+  CrmInteractionType,
   EntitlementStatus,
   EntitlementType,
   EventPricingMode,
@@ -146,6 +151,7 @@ type Guest = {
   name?: string;
   email?: string;
   phone?: string | null;
+  consent?: boolean | null;
 };
 
 function isValidEmail(email: string) {
@@ -948,12 +954,20 @@ async function _POST(req: NextRequest) {
     const guestEmailRaw = guest?.email?.trim() ?? "";
     const guestName = guest?.name?.trim() ?? "";
     const guestPhoneRaw = guest?.phone?.trim() ?? "";
+    const guestConsent = guest?.consent === true;
     const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
     const guestEmail = guestEmailRaw && isValidEmail(guestEmailRaw) ? guestEmailRaw : "";
 
     if (!userId) {
       if (!guestEmail || !guestName) {
         return intentError("AUTH_OR_GUEST_REQUIRED", "Precisas de iniciar sessão ou preencher nome e email para convidado.", { httpStatus: 400 });
+      }
+      if (!guestConsent) {
+        return intentError(
+          "CONSENT_REQUIRED",
+          "Tens de aceitar a política de privacidade para continuar como convidado.",
+          { httpStatus: 400 },
+        );
       }
       if (!isValidEmail(guestEmailRaw)) {
         return intentError("INVALID_GUEST_EMAIL", "Email inválido para checkout como convidado.", { httpStatus: 400 });
@@ -1038,6 +1052,48 @@ async function _POST(req: NextRequest) {
 
     if (!event) {
       return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
+    }
+
+    if (!userId && guestEmail && guestConsent && eventOrganizationId) {
+      const consentNow = new Date();
+      const consents = [
+        {
+          type: ConsentType.CONTACT_EMAIL,
+          status: ConsentStatus.GRANTED,
+          source: "CHECKOUT_GUEST",
+          grantedAt: consentNow,
+        },
+        ...(guestPhone
+          ? [
+              {
+                type: ConsentType.CONTACT_SMS,
+                status: ConsentStatus.GRANTED,
+                source: "CHECKOUT_GUEST",
+                grantedAt: consentNow,
+              },
+            ]
+          : []),
+      ];
+
+      try {
+        await ingestCrmInteraction({
+          organizationId: eventOrganizationId,
+          userId: null,
+          type: CrmInteractionType.FORM_SUBMITTED,
+          sourceType: CrmInteractionSource.FORM,
+          sourceId: String(event.id),
+          externalId: `guest-consent:${event.id}:${guestEmail.toLowerCase()}`,
+          occurredAt: consentNow,
+          contactEmail: guestEmail,
+          contactPhone: guestPhone || null,
+          displayName: guestName || null,
+          contactType: "GUEST",
+          legalBasis: "CONSENT",
+          consents,
+        });
+      } catch (err) {
+        logWarn("payments.intent.guest_consent_crm_failed", { eventId: event.id, error: err });
+      }
     }
     if (eventOrganizationId == null) {
       return intentError("EVENT_ORG_NOT_FOUND", "Organização do evento não encontrada.", {

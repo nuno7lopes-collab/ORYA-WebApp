@@ -11,7 +11,7 @@ import {
   LayoutAnimation,
   View,
 } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import { SafeFlashList } from "../../components/lists/SafeFlashList";
 import { tokens, useTranslation } from "@orya/shared";
 import { useDebouncedValue, useDiscoverFeed } from "../../features/discover/hooks";
 import { useDiscoverStore } from "../../features/discover/store";
@@ -498,7 +498,7 @@ export default function DiscoverScreen() {
           showNotifications={false}
           showMessages={false}
         />
-        <FlashList
+        <SafeFlashList
           contentContainerStyle={{ paddingHorizontal: GRID_PADDING, paddingBottom: tabBarPadding, paddingTop: topPadding }}
           data={listData}
           keyExtractor={keyExtractor}
@@ -597,6 +597,27 @@ export default function DiscoverScreen() {
                   </Text>
                 </Pressable>
               </View>
+            </View>
+
+            <View className="px-5 pb-4">
+              <Pressable
+                onPress={() => router.push("/padel")}
+                className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3"
+                accessibilityRole="button"
+                accessibilityLabel={t("events:padel.hub.openLabel")}
+              >
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2">
+                    <Ionicons name="tennisball" size={16} color="rgba(255,255,255,0.9)" />
+                    <Text style={{ color: "rgba(255,255,255,0.9)", fontWeight: "600", fontSize: 13 }}>
+                      {t("events:padel.hub.title")}
+                    </Text>
+                  </View>
+                  <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+                    {t("common:actions.explore")}
+                  </Text>
+                </View>
+              </Pressable>
             </View>
 
             {hasActiveFilters ? (

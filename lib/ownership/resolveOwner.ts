@@ -1,5 +1,5 @@
-import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/utils/email";
+import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 
 export type OwnerInput = {
   sessionUserId?: string | null;
@@ -9,41 +9,24 @@ export type OwnerInput = {
 export async function resolveOwner(input: OwnerInput) {
   const sessionUserId = input.sessionUserId?.trim() || null;
   const guestEmail = normalizeEmail(input.guestEmail);
-  const client: any = prisma as any;
-  const hasEmailIdentity =
-    client.emailIdentity &&
-    typeof client.emailIdentity.findUnique === "function" &&
-    typeof client.emailIdentity.create === "function";
 
   if (sessionUserId) {
-    return { ownerUserId: sessionUserId, ownerIdentityId: null, emailNormalized: guestEmail };
+    const identity = await resolveIdentityForUser({ userId: sessionUserId });
+    return {
+      ownerUserId: sessionUserId,
+      ownerIdentityId: identity.id,
+      emailNormalized: identity.emailNormalized,
+    };
   }
 
   if (!guestEmail) {
     return { ownerUserId: null, ownerIdentityId: null, emailNormalized: null };
   }
 
-  // Procura/gera EmailIdentity
-  if (!hasEmailIdentity) {
-    return { ownerUserId: null, ownerIdentityId: null, emailNormalized: guestEmail };
-  }
-
-  let identity = await client.emailIdentity.findUnique({
-    where: { emailNormalized: guestEmail },
-    select: { id: true, userId: true, emailVerifiedAt: true },
-  });
-
-  if (!identity) {
-    identity = await client.emailIdentity.create({
-      data: { emailNormalized: guestEmail },
-      select: { id: true, userId: true, emailVerifiedAt: true },
-    });
-  }
-
-  // Claim automático se já tiver user e verificado
-  if (identity.userId && identity.emailVerifiedAt) {
-    return { ownerUserId: identity.userId, ownerIdentityId: null, emailNormalized: guestEmail };
-  }
-
-  return { ownerUserId: null, ownerIdentityId: identity.id, emailNormalized: guestEmail };
+  const identity = await ensureEmailIdentity({ email: guestEmail });
+  return {
+    ownerUserId: identity.emailVerifiedAt ? identity.userId : null,
+    ownerIdentityId: identity.id,
+    emailNormalized: guestEmail,
+  };
 }

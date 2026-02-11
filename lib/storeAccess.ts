@@ -4,8 +4,16 @@ import { env } from "@/lib/env";
 type StoreLike = {
   status?: StoreStatus | null;
   showOnProfile?: boolean | null;
+  catalogLocked?: boolean | null;
   checkoutEnabled?: boolean | null;
 } | null;
+
+export type StoreResolvedState =
+  | "DISABLED"
+  | "HIDDEN"
+  | "LOCKED"
+  | "CHECKOUT_DISABLED"
+  | "ACTIVE";
 
 export function isStoreFeatureEnabled() {
   return env.storeEnabled;
@@ -15,18 +23,23 @@ export function isStoreDigitalEnabled() {
   return env.storeDigitalEnabled;
 }
 
+export function resolveStoreState(store: StoreLike): StoreResolvedState {
+  if (!store || store.status !== StoreStatus.OPEN) return "DISABLED";
+  if (!store.showOnProfile) return "HIDDEN";
+  if (store.catalogLocked) return "LOCKED";
+  if (!store.checkoutEnabled) return "CHECKOUT_DISABLED";
+  return "ACTIVE";
+}
+
 export function isStoreOpen(store: StoreLike) {
-  return store?.status === StoreStatus.OPEN;
+  return resolveStoreState(store) !== "DISABLED";
 }
 
 export function isStorePublic(store: StoreLike) {
-  return store?.status === StoreStatus.OPEN && Boolean(store?.showOnProfile);
+  const state = resolveStoreState(store);
+  return state === "LOCKED" || state === "CHECKOUT_DISABLED" || state === "ACTIVE";
 }
 
 export function canCheckoutStore(store: StoreLike) {
-  return (
-    store?.status === StoreStatus.OPEN &&
-    Boolean(store?.checkoutEnabled) &&
-    Boolean(store?.showOnProfile)
-  );
+  return resolveStoreState(store) === "ACTIVE";
 }

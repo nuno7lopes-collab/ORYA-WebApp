@@ -616,7 +616,7 @@ html[data-theme-mode="light"] body:is([data-orya-bg="orya-bg-user"], [data-orya-
 
 body {
   background-color: var(--background);
-  background-image: none;
+  background-image: linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%);
   color: var(--foreground);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "SF Pro Display", -apple-system, sans-serif;
@@ -1482,6 +1482,7 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
   --landing-pink: #ff5fd7;
   --landing-violet: #7a4dff;
   background-color: var(--landing-ink);
+  background-image: linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%);
 }
 
 .landing-shell[data-landing-mirror="true"] {

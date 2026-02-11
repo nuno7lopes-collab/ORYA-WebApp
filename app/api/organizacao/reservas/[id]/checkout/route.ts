@@ -18,6 +18,7 @@ import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
 
 const HOLD_MINUTES = 10;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -44,6 +45,14 @@ async function _POST(
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id }, select: { id: true } });
+    const payload = await req.json().catch(() => ({}));
+    const paymentMethodRaw =
+      typeof payload?.paymentMethod === "string" ? payload.paymentMethod.trim().toLowerCase() : null;
+    const paymentMethod: "mbway" | "card" = paymentMethodRaw === "mbway" ? "mbway" : "card";
+    const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
+    const idempotencyKey =
+      (typeof payload?.idempotencyKey === "string" ? payload.idempotencyKey : idempotencyKeyHeader || "").trim() ||
+      null;
     if (!profile) {
       return fail("PROFILE_NOT_FOUND", "Perfil não encontrado.", 403);
     }
@@ -246,6 +255,28 @@ async function _POST(
       },
     };
 
+    if (totalCents <= 0) {
+      const freeCheckout = await finalizeFreeServiceBooking({
+        bookingId: booking.id,
+        serviceId: booking.serviceId,
+        organizationId: booking.organizationId,
+        userId: booking.userId ?? profile.id,
+        guestEmail: booking.guestEmail ?? null,
+        currency,
+        paymentMethod,
+      });
+      return respondOk(ctx, {
+        paymentIntentId: freeCheckout.paymentIntentId,
+        purchaseId: freeCheckout.purchaseId,
+        clientSecret: null,
+        amountCents: 0,
+        currency,
+        freeCheckout: true,
+        status: "PAID",
+        final: true,
+      });
+    }
+
     let intent;
     try {
       const ensured = await ensurePaymentIntent({
@@ -255,7 +286,7 @@ async function _POST(
         amountCents: totalCents,
         currency,
         intentParams: {
-          automatic_payment_methods: { enabled: true },
+          payment_method_types: paymentMethod === "mbway" ? ["mb_way"] : ["card"],
           description: `Reserva serviço ${booking.serviceId}`,
         },
         metadata: {
@@ -282,6 +313,7 @@ async function _POST(
           orgType: booking.service.organization.orgType ?? null,
         },
         requireStripe: !isPlatformOrg,
+        clientIdempotencyKey: idempotencyKey,
         resolvedSnapshot,
         buyerIdentityRef: booking.userId ?? null,
         paymentEvent: {
@@ -327,9 +359,13 @@ async function _POST(
 
     return respondOk(ctx, {
       paymentIntentId: intent.id,
+      purchaseId,
       clientSecret: intent.client_secret,
       amountCents: totalCents,
       currency,
+      freeCheckout: false,
+      status: "REQUIRES_ACTION",
+      final: false,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

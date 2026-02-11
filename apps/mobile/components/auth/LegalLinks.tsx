@@ -11,10 +11,11 @@ export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
   return (
     <Text style={styles.text}>
       <Trans
-        i18nKey="auth.legal.text"
+        i18nKey="auth:legal.text"
         components={{
           terms: (
             <Text
+              key="terms"
               style={styles.link}
               accessibilityRole="link"
               onPress={() => Linking.openURL(termsUrl)}
@@ -22,6 +23,7 @@ export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
           ),
           privacy: (
             <Text
+              key="privacy"
               style={styles.link}
               accessibilityRole="link"
               onPress={() => Linking.openURL(privacyUrl)}

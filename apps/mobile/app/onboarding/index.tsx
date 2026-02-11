@@ -17,7 +17,7 @@ import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import { AuthBackground } from "../../components/liquid/AuthBackground";
 import { GlassCard } from "../../components/auth/GlassCard";
 import { PrimaryButton } from "../../components/onboarding/PrimaryButton";
@@ -34,7 +34,7 @@ import {
   type OnboardingDraft,
 } from "../../lib/onboardingDraft";
 import { getActiveSession } from "../../lib/session";
-import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "../../lib/username";
+import { sanitizeUsername, validateUsername } from "../../lib/username";
 import { getUserFacingError } from "../../lib/errors";
 import {
   INTEREST_OPTIONS,
@@ -104,6 +104,7 @@ const withTimeout = async <T,>(promise: Promise<T>, ms: number, label = "timeout
 };
 
 export default function OnboardingScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams<{ step?: string }>();
   const queryClient = useQueryClient();
@@ -149,6 +150,21 @@ export default function OnboardingScreen() {
   }, [params?.step]);
   const USERNAME_DEBOUNCE_MS = 300;
   const USERNAME_TIMEOUT_MS = 6500;
+  const genderLabels = useMemo(
+    () => ({
+      MALE: t("onboarding:padel.genders.male"),
+      FEMALE: t("onboarding:padel.genders.female"),
+    }),
+    [t],
+  );
+  const sideLabels = useMemo(
+    () => ({
+      ESQUERDA: t("onboarding:padel.sides.left"),
+      DIREITA: t("onboarding:padel.sides.right"),
+      QUALQUER: t("onboarding:padel.sides.any"),
+    }),
+    [t],
+  );
 
   const cancelUsernameCheck = (invalidate = true) => {
     if (invalidate) usernameRequestIdRef.current += 1;
@@ -376,8 +392,7 @@ export default function OnboardingScreen() {
   const ensureUsernameAvailable = async () => {
     if (!usernameValidation.valid) {
       setUsernameStatus("invalid");
-      const message = "error" in usernameValidation ? usernameValidation.error : null;
-      Alert.alert("Username inválido", message || USERNAME_RULES_HINT);
+      Alert.alert(t("onboarding:errors.usernameInvalidTitle"), t("onboarding:basic.usernameHint"));
       return false;
     }
     if (usernameStatus === "available") return true;
@@ -404,9 +419,9 @@ export default function OnboardingScreen() {
       if (!result.available) {
         const message =
           result.reason === "reserved"
-            ? "Este username está reservado."
-            : "Este username já está a ser utilizado.";
-        Alert.alert("Username indisponível", message);
+            ? t("onboarding:errors.usernameReserved")
+            : t("onboarding:errors.usernameTaken");
+        Alert.alert(t("onboarding:errors.usernameUnavailableTitle"), message);
       }
       return result.available;
     } catch (err: any) {
@@ -414,9 +429,9 @@ export default function OnboardingScreen() {
       setUsernameStatus("error");
       const message =
         String(err?.message ?? "").includes("timeout") || String(err?.message ?? "").includes("abort")
-          ? "Verificação demorou demasiado. Tenta novamente."
-          : "Não foi possível verificar agora.";
-      Alert.alert("Erro", message);
+          ? t("onboarding:errors.usernameCheckTimeout")
+          : t("onboarding:errors.usernameCheckFailed");
+      Alert.alert(t("common:labels.error"), message);
       return false;
     } finally {
       if (usernameInflightRef.current?.requestId === requestId) {
@@ -450,7 +465,10 @@ export default function OnboardingScreen() {
     try {
       const usernameOk = await ensureUsernameAvailable();
       if (!usernameOk) {
-        Alert.alert("Username indisponível", "Escolhe outro username para concluir.");
+        Alert.alert(
+          t("onboarding:errors.usernameUnavailableTitle"),
+          t("onboarding:errors.usernameUnavailableBody"),
+        );
         return;
       }
       const accessToken = await resolveAccessToken();
@@ -502,14 +520,17 @@ export default function OnboardingScreen() {
       router.replace("/agora");
     } catch (err: any) {
       const raw = String(err?.message ?? "");
-      const message = "Não foi possível concluir o onboarding. Tenta novamente.";
+      const message = t("onboarding:errors.finalizeFailed");
       if (
         raw.includes("USERNAME_TAKEN") ||
         raw.toLowerCase().includes("username") ||
         raw.toLowerCase().includes("utilizado")
       ) {
         setUsernameStatus("taken");
-        Alert.alert("Username indisponível", "Escolhe outro username para concluir.");
+        Alert.alert(
+          t("onboarding:errors.usernameUnavailableTitle"),
+          t("onboarding:errors.usernameUnavailableBody"),
+        );
         setStep("basic");
         return;
       }
@@ -517,7 +538,7 @@ export default function OnboardingScreen() {
         await handleAuthError();
         return;
       }
-      Alert.alert("Erro", message);
+      Alert.alert(t("common:labels.error"), message);
     }
   };
 
@@ -547,14 +568,20 @@ export default function OnboardingScreen() {
         rawMessage.includes("já está")
       ) {
         setUsernameStatus("taken");
-        Alert.alert("Username indisponível", "Este username já está a ser utilizado.");
+        Alert.alert(
+          t("onboarding:errors.usernameUnavailableTitle"),
+          t("onboarding:errors.usernameTaken"),
+        );
         return;
       }
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
       }
-      Alert.alert("Erro", getUserFacingError(err, "Não foi possível guardar o perfil."));
+      Alert.alert(
+        t("common:labels.error"),
+        getUserFacingError(err, t("onboarding:errors.profileSaveFailed")),
+      );
     } finally {
       setSavingStep(null);
     }
@@ -572,7 +599,10 @@ export default function OnboardingScreen() {
         await handleAuthError();
         return;
       }
-      Alert.alert("Erro", getUserFacingError(err, "Não foi possível guardar os interesses."));
+      Alert.alert(
+        t("common:labels.error"),
+        getUserFacingError(err, t("onboarding:errors.interestsSaveFailed")),
+      );
     } finally {
       setSavingStep(null);
     }
@@ -580,7 +610,7 @@ export default function OnboardingScreen() {
 
   const handlePadelContinue = async () => {
     if (!canContinuePadel) {
-      Alert.alert("Faltam dados", "Seleciona o género e o lado preferido.");
+      Alert.alert(t("onboarding:errors.missingDataTitle"), t("onboarding:errors.padelMissing"));
       return;
     }
     setSavingStep("padel");
@@ -601,7 +631,10 @@ export default function OnboardingScreen() {
         await handleAuthError();
         return;
       }
-      Alert.alert("Erro", getUserFacingError(err, "Não foi possível guardar o perfil de padel."));
+      Alert.alert(
+        t("common:labels.error"),
+        getUserFacingError(err, t("onboarding:errors.padelSaveFailed")),
+      );
     } finally {
       setSavingStep(null);
     }
@@ -659,7 +692,7 @@ export default function OnboardingScreen() {
         await handleAuthError();
         return;
       }
-      setLocationError("Não foi possível obter localização agora.");
+      setLocationError(t("onboarding:errors.locationFailed"));
     } finally {
       if (isActive()) setSavingStep(null);
     }
@@ -691,17 +724,17 @@ export default function OnboardingScreen() {
     const showHint = hasUsername && usernameStatus === "invalid";
     const statusMessage =
       usernameStatus === "checking"
-        ? "A verificar…"
+        ? t("onboarding:status.checking")
         : usernameStatus === "available"
-          ? "Disponível"
+          ? t("onboarding:status.available")
         : usernameStatus === "reserved"
-            ? "Reservado"
+            ? t("onboarding:status.reserved")
             : usernameStatus === "taken"
-              ? "Indisponível"
+              ? t("onboarding:status.taken")
               : usernameStatus === "invalid"
-                ? ("error" in usernameValidation ? usernameValidation.error : null) || "Username inválido."
+                ? t("onboarding:status.invalid")
                 : usernameStatus === "error"
-                  ? "Não foi possível verificar agora."
+                  ? t("onboarding:status.error")
                   : "";
     const tone =
       usernameStatus === "available"
@@ -718,7 +751,7 @@ export default function OnboardingScreen() {
     return (
       <View style={styles.helperStack}>
         {showHint ? (
-          <Text style={styles.helperHint}>Usa 3-15 caracteres, minúsculas, números, _ ou .</Text>
+          <Text style={styles.helperHint}>{t("onboarding:basic.usernameHint")}</Text>
         ) : null}
         {statusMessage ? (
           <View style={styles.helperRow}>
@@ -738,15 +771,15 @@ export default function OnboardingScreen() {
 
   const renderBasicStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <Text style={styles.cardTitle}>Quem és?</Text>
+      <Text style={styles.cardTitle}>{t("onboarding:basic.title")}</Text>
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Nome completo</Text>
+        <Text style={styles.fieldLabel}>{t("onboarding:basic.nameLabel")}</Text>
         <TextInput
           ref={nameInputRef}
           value={fullName}
           onChangeText={setFullName}
-          placeholder="Ex: Sofia Almeida"
+          placeholder={t("onboarding:basic.namePlaceholder")}
           placeholderTextColor={tokens.colors.textMuted}
           autoCapitalize="words"
           textContentType="name"
@@ -754,12 +787,12 @@ export default function OnboardingScreen() {
           blurOnSubmit={false}
           onSubmitEditing={() => usernameInputRef.current?.focus()}
           style={styles.input}
-          accessibilityLabel="Nome completo"
+          accessibilityLabel={t("onboarding:basic.nameLabel")}
         />
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Username</Text>
+        <Text style={styles.fieldLabel}>{t("onboarding:basic.usernameLabel")}</Text>
         <TextInput
           ref={usernameInputRef}
           value={username}
@@ -767,7 +800,7 @@ export default function OnboardingScreen() {
             const next = sanitizeUsername(value);
             setUsername(next);
           }}
-          placeholder="ex: orya.sofia"
+          placeholder={t("onboarding:basic.usernamePlaceholder")}
           placeholderTextColor={tokens.colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -775,7 +808,7 @@ export default function OnboardingScreen() {
           autoComplete="username"
           returnKeyType="done"
           style={styles.input}
-          accessibilityLabel="Username"
+          accessibilityLabel={t("onboarding:basic.usernameLabel")}
         />
         {renderUsernameStatus()}
       </View>
@@ -784,13 +817,14 @@ export default function OnboardingScreen() {
 
   const renderInterestsStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <Text style={styles.cardTitle}>Interesses</Text>
-      <Text style={styles.cardSubtitle}>Escolhe pelo menos 1.</Text>
+      <Text style={styles.cardTitle}>{t("onboarding:interests.title")}</Text>
+      <Text style={styles.cardSubtitle}>{t("onboarding:interests.subtitle")}</Text>
 
       <View style={styles.interestGrid}>
         {INTEREST_OPTIONS.map((interest, idx) => {
           const active = interests.includes(interest.id);
           const isPadel = interest.id === "padel";
+          const interestLabel = t(`common:interests.${interest.id}`);
           return (
             <Pressable
               key={interest.id}
@@ -803,7 +837,7 @@ export default function OnboardingScreen() {
                 idx === 0 ? styles.interestChipFirst : null,
               ]}
               accessibilityRole="button"
-              accessibilityLabel={interest.label}
+              accessibilityLabel={interestLabel}
               accessibilityState={{ selected: active }}
             >
               {active ? (
@@ -819,14 +853,14 @@ export default function OnboardingScreen() {
                 />
               </View>
               <Text style={[styles.interestLabel, active ? styles.interestLabelActive : null]}>
-                {interest.label}
+                {interestLabel}
               </Text>
             </Pressable>
           );
         })}
       </View>
       <Text style={styles.helperMeta}>
-        {interests.length}/{MAX_INTERESTS} selecionados
+        {t("onboarding:interests.selectedCount", { count: interests.length, total: MAX_INTERESTS })}
       </Text>
     </GlassCard>
   );
@@ -834,22 +868,23 @@ export default function OnboardingScreen() {
   const renderPadelStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
       <View style={styles.cardHeaderRow}>
-        <Text style={styles.cardTitle}>Padel</Text>
+        <Text style={styles.cardTitle}>{t("onboarding:padel.title")}</Text>
         <Pressable
           onPress={handlePadelSkip}
           style={styles.skipLink}
           accessibilityRole="button"
-          accessibilityLabel="Saltar padel"
+          accessibilityLabel={t("onboarding:padel.skip")}
         >
-          <Text style={styles.skipText}>Saltar</Text>
+          <Text style={styles.skipText}>{t("onboarding:padel.skip")}</Text>
         </Pressable>
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Género</Text>
+        <Text style={styles.fieldLabel}>{t("onboarding:padel.gender")}</Text>
         <View style={styles.optionRow}>
           {PADEL_GENDERS.map((gender) => {
             const active = padelGender === gender.id;
+            const label = genderLabels[gender.id];
             return (
               <Pressable
                 key={gender.id}
@@ -861,7 +896,7 @@ export default function OnboardingScreen() {
                   pressed ? styles.optionChipPressed : null,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={gender.label}
+                accessibilityLabel={label}
                 accessibilityState={{ selected: active }}
               >
                 <View style={styles.optionContent}>
@@ -869,7 +904,7 @@ export default function OnboardingScreen() {
                     <Ionicons name="checkmark-circle" size={16} color="#0b0f17" />
                   ) : null}
                   <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
-                    {gender.label}
+                    {label}
                   </Text>
                 </View>
               </Pressable>
@@ -879,10 +914,11 @@ export default function OnboardingScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Lado preferido</Text>
+        <Text style={styles.fieldLabel}>{t("onboarding:padel.side")}</Text>
         <View style={styles.optionRow}>
           {PADEL_SIDES.map((side) => {
             const active = padelSide === side.id;
+            const label = sideLabels[side.id];
             return (
               <Pressable
                 key={side.id}
@@ -894,7 +930,7 @@ export default function OnboardingScreen() {
                   pressed ? styles.optionChipPressed : null,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={side.label}
+                accessibilityLabel={label}
                 accessibilityState={{ selected: active }}
               >
                 <View style={styles.optionContent}>
@@ -902,7 +938,7 @@ export default function OnboardingScreen() {
                     <Ionicons name="checkmark-circle" size={16} color="#0b0f17" />
                   ) : null}
                   <Text style={[styles.optionLabel, active ? styles.optionLabelActive : null]}>
-                    {side.label}
+                    {label}
                   </Text>
                 </View>
               </Pressable>
@@ -912,7 +948,7 @@ export default function OnboardingScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Nível (opcional)</Text>
+        <Text style={styles.fieldLabel}>{t("onboarding:padel.levelOptional")}</Text>
         <View style={styles.levelGrid}>
           {PADEL_LEVELS.map((level) => {
             const active = padelLevel === level;
@@ -927,7 +963,7 @@ export default function OnboardingScreen() {
                   pressed ? styles.optionChipPressed : null,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={`Nível ${level}`}
+                accessibilityLabel={t("onboarding:padel.levelOption", { level })}
                 accessibilityState={{ selected: active }}
               >
                 <View style={styles.optionContent}>
@@ -946,44 +982,44 @@ export default function OnboardingScreen() {
 
   const renderLocationStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <Text style={styles.cardTitle}>Localização</Text>
-      <Text style={styles.cardSubtitle}>Para sugerir eventos e serviços perto de ti.</Text>
+      <Text style={styles.cardTitle}>{t("onboarding:location.title")}</Text>
+      <Text style={styles.cardSubtitle}>{t("onboarding:location.subtitle")}</Text>
 
       {locationError ? (
-        <Text style={styles.errorText}>Não foi possível obter localização agora.</Text>
+        <Text style={styles.errorText}>{t("onboarding:errors.locationFailed")}</Text>
       ) : null}
 
       <View style={styles.locationActions}>
         {locationError ? (
           <>
             <PrimaryButton
-              label={savingStep === "location" ? "A guardar..." : "Tentar novamente"}
+              label={savingStep === "location" ? t("common:actions.saving") : t("common:actions.retry")}
               onPress={() => handleLocationFlow("allow")}
               disabled={savingStep === "location"}
               loading={savingStep === "location"}
-              accessibilityLabel="Tentar novamente localização"
+              accessibilityLabel={t("common:actions.retry")}
             />
             <SecondaryButton
-              label="Continuar sem localização"
+              label={t("onboarding:location.skipWithout")}
               onPress={() => handleLocationFlow("skip")}
               disabled={savingStep === "location"}
-              accessibilityLabel="Continuar sem localização"
+              accessibilityLabel={t("onboarding:location.skipWithout")}
             />
           </>
         ) : (
           <>
             <PrimaryButton
-              label={savingStep === "location" ? "A guardar..." : "Permitir"}
+              label={savingStep === "location" ? t("common:actions.saving") : t("onboarding:location.allowShort")}
               onPress={() => handleLocationFlow("allow")}
               disabled={savingStep === "location"}
               loading={savingStep === "location"}
-              accessibilityLabel="Permitir localização"
+              accessibilityLabel={t("onboarding:location.allow")}
             />
             <SecondaryButton
-              label="Agora não"
+              label={t("onboarding:location.notNow")}
               onPress={() => handleLocationFlow("skip")}
               disabled={savingStep === "location"}
-              accessibilityLabel="Agora não"
+              accessibilityLabel={t("onboarding:location.notNow")}
             />
           </>
         )}
@@ -1023,14 +1059,14 @@ export default function OnboardingScreen() {
                 onPress={handleBack}
                 style={styles.backButton}
                 accessibilityRole="button"
-                accessibilityLabel="Voltar"
+                accessibilityLabel={t("common:actions.back")}
               >
                 <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
               </Pressable>
             </View>
 
             <View style={styles.header}>
-              <Text style={styles.title}>Bem-vindo à ORYA</Text>
+              <Text style={styles.title}>{t("onboarding:welcomeTitle")}</Text>
             </View>
 
             <StepProgress total={steps.length} current={stepIndex} />
@@ -1046,7 +1082,7 @@ export default function OnboardingScreen() {
             <View style={styles.actions}>
               {step === "basic" ? (
                 <PrimaryButton
-                  label={savingStep === "basic" ? "A guardar..." : "Continuar"}
+                  label={savingStep === "basic" ? t("common:actions.saving") : t("common:actions.continue")}
                   onPress={handleBasicContinue}
                   disabled={!canContinueBasic || savingStep === "basic"}
                   loading={savingStep === "basic"}
@@ -1054,7 +1090,9 @@ export default function OnboardingScreen() {
               ) : null}
               {step === "interests" ? (
                 <PrimaryButton
-                  label={savingStep === "interests" ? "A guardar..." : "Continuar"}
+                  label={
+                    savingStep === "interests" ? t("common:actions.saving") : t("common:actions.continue")
+                  }
                   onPress={handleInterestsContinue}
                   disabled={!canContinueInterests || savingStep === "interests"}
                   loading={savingStep === "interests"}
@@ -1063,7 +1101,7 @@ export default function OnboardingScreen() {
               {step === "padel" ? (
                 <View style={styles.padelActions}>
                   <PrimaryButton
-                    label={savingStep === "padel" ? "A guardar..." : "Continuar"}
+                    label={savingStep === "padel" ? t("common:actions.saving") : t("common:actions.continue")}
                     onPress={handlePadelContinue}
                     disabled={!canContinuePadel || savingStep === "padel"}
                     loading={savingStep === "padel"}

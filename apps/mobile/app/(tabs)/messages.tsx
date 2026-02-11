@@ -14,7 +14,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Image } from "expo-image";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TopTicketsButton } from "../../components/navigation/TopTicketsButton";
-import { FlashList } from "@shopify/flash-list";
+import { SafeFlashList } from "../../components/lists/SafeFlashList";
 import { formatDate } from "../../lib/formatters";
 
 export default function MessagesTabScreen() {
@@ -43,10 +43,10 @@ export default function MessagesTabScreen() {
   }, []);
 
   const resolveStatusLabel = (status?: string | null) => {
-    if (status === "OPEN") return t("messages.status.open");
-    if (status === "ANNOUNCEMENTS") return t("messages.status.announcements");
-    if (status === "READ_ONLY") return t("messages.status.readOnly");
-    return t("messages.status.closed");
+    if (status === "OPEN") return t("messages:status.open");
+    if (status === "ANNOUNCEMENTS") return t("messages:status.announcements");
+    if (status === "READ_ONLY") return t("messages:status.readOnly");
+    return t("messages:status.closed");
   };
 
   return (
@@ -54,13 +54,13 @@ export default function MessagesTabScreen() {
       <TopAppHeader
         scrollState={topBar}
         variant="title"
-        title={t("messages.title")}
+        title={t("messages:title")}
         titleAlign="center"
         leftSlot={<TopTicketsButton />}
         showNotifications
         showMessages={false}
       />
-      <FlashList
+      <SafeFlashList
         contentContainerStyle={{
           paddingTop: topPadding,
           paddingBottom: tabBarPadding,
@@ -81,19 +81,19 @@ export default function MessagesTabScreen() {
         refreshing={inboxQuery.isFetching}
         ListHeaderComponent={
           <View className="pb-4">
-            <Text className="text-white/60 text-sm">{t("messages.subtitle")}</Text>
+            <Text className="text-white/60 text-sm">{t("messages:subtitle")}</Text>
             {session?.user?.id ? (
               <Pressable
                 onPress={() => router.push("/messages/requests")}
                 className="mt-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel={t("messages.requests")}
+                accessibilityLabel={t("messages:requests")}
               >
                 <Text className="text-white text-sm font-semibold text-center">
                   {requestsCount > 0
-                    ? t("messages.requestsWithCount", { count: requestsCount })
-                    : t("messages.requests")}
+                    ? t("messages:requestsWithCount", { count: requestsCount })
+                    : t("messages:requests")}
                 </Text>
               </Pressable>
             ) : null}
@@ -103,18 +103,18 @@ export default function MessagesTabScreen() {
           !session?.user?.id ? (
             <GlassCard intensity={55}>
               <Text className="text-white text-sm font-semibold mb-2">
-                {t("messages.signin.title")}
+                {t("messages:signin.title")}
               </Text>
-              <Text className="text-white/65 text-sm">{t("messages.signin.body")}</Text>
+              <Text className="text-white/65 text-sm">{t("messages:signin.body")}</Text>
               <Pressable
                 onPress={openAuth}
                 className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel={t("common.actions.signIn")}
+                accessibilityLabel={t("common:actions.signIn")}
               >
                 <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                  {t("common.actions.signIn")}
+                  {t("common:actions.signIn")}
                 </Text>
               </Pressable>
               <Pressable
@@ -122,10 +122,10 @@ export default function MessagesTabScreen() {
                 className="mt-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel={t("messages.signin.ctaExplore")}
+                accessibilityLabel={t("messages:signin.ctaExplore")}
               >
                 <Text className="text-center text-sm font-semibold text-white">
-                  {t("messages.signin.ctaExplore")}
+                  {t("messages:signin.ctaExplore")}
                 </Text>
               </Pressable>
             </GlassCard>
@@ -137,31 +137,31 @@ export default function MessagesTabScreen() {
             </View>
           ) : inboxQuery.isError ? (
             <GlassCard intensity={55}>
-              <Text className="text-red-300 text-sm mb-2">{t("messages.errors.load")}</Text>
+              <Text className="text-red-300 text-sm mb-2">{t("messages:errors.load")}</Text>
               <Pressable
                 onPress={() => inboxQuery.refetch()}
                 className="rounded-2xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel={t("common.actions.retry")}
+                accessibilityLabel={t("common:actions.retry")}
               >
                 <Text className="text-white text-sm font-semibold text-center">
-                  {t("common.actions.retry")}
+                  {t("common:actions.retry")}
                 </Text>
               </Pressable>
             </GlassCard>
           ) : (
             <GlassCard intensity={50}>
-              <Text className="text-white/70 text-sm">{t("messages.empty.title")}</Text>
+              <Text className="text-white/70 text-sm">{t("messages:empty.title")}</Text>
               <Pressable
                 onPress={() => router.push("/(tabs)/index")}
                 className="mt-4 rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel={t("messages.empty.ctaExplore")}
+                accessibilityLabel={t("messages:empty.ctaExplore")}
               >
                 <Text className="text-white text-sm font-semibold text-center">
-                  {t("messages.empty.ctaExplore")}
+                  {t("messages:empty.ctaExplore")}
                 </Text>
               </Pressable>
             </GlassCard>
@@ -205,7 +205,7 @@ export default function MessagesTabScreen() {
               onPress={openThread}
               className="mb-3"
               accessibilityRole="button"
-              accessibilityLabel={`${t("common.actions.open")} ${item.title}`}
+              accessibilityLabel={`${t("common:actions.open")} ${item.title}`}
             >
               <GlassCard intensity={58} padding={14}>
                 <View className="flex-row gap-3">
@@ -244,7 +244,7 @@ export default function MessagesTabScreen() {
                       <Text className="text-white/60 text-xs">{item.subtitle}</Text>
                     ) : null}
                     <Text className="text-white/65 text-xs" numberOfLines={1}>
-                      {lastMessage?.body ?? t("messages.lastMessageEmpty")}
+                      {lastMessage?.body ?? t("messages:lastMessageEmpty")}
                     </Text>
                   </View>
                   <View className="items-end justify-between">
@@ -255,13 +255,13 @@ export default function MessagesTabScreen() {
                     ) : (
                       <Text className="text-[11px] uppercase tracking-[0.16em] text-white/45">
                         {item.unreadCount
-                          ? t("messages.unreadCount", { count: item.unreadCount })
-                          : t("messages.title")}
+                          ? t("messages:unreadCount", { count: item.unreadCount })
+                          : t("messages:title")}
                       </Text>
                     )}
                     {isMuted ? (
                       <Text className="text-[10px] uppercase tracking-[0.16em] text-white/35">
-                        {t("messages.thread.muted")}
+                        {t("messages:thread.muted")}
                       </Text>
                     ) : null}
                     <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />

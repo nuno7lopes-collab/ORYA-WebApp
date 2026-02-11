@@ -3,6 +3,28 @@ import * as Localization from "expo-localization";
 import { useEffect, useState } from "react";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale, i18n, initI18n } from "@orya/shared";
 
+const globalIntl = (globalThis as typeof globalThis & { Intl?: Record<string, unknown> }).Intl ?? {};
+if (!(globalThis as typeof globalThis & { Intl?: Record<string, unknown> }).Intl) {
+  (globalThis as typeof globalThis & { Intl?: Record<string, unknown> }).Intl = globalIntl;
+}
+
+try {
+  if (typeof (globalIntl as { getCanonicalLocales?: unknown }).getCanonicalLocales === "undefined") {
+    require("@formatjs/intl-getcanonicallocales/polyfill");
+  }
+  if (typeof (globalIntl as { Locale?: unknown }).Locale === "undefined") {
+    require("@formatjs/intl-locale/polyfill");
+  }
+  if (typeof (globalIntl as { PluralRules?: unknown }).PluralRules === "undefined") {
+    require("@formatjs/intl-pluralrules/polyfill");
+    require("@formatjs/intl-pluralrules/locale-data/en");
+    require("@formatjs/intl-pluralrules/locale-data/es");
+    require("@formatjs/intl-pluralrules/locale-data/pt");
+  }
+} catch (error) {
+  console.warn("[i18n] Intl polyfill failed", error);
+}
+
 const LOCALE_STORAGE_KEY = "orya.locale";
 
 const normalizeLocale = (tag?: string | null): Locale | null => {

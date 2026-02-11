@@ -15,11 +15,11 @@ export function HelpSheet({ visible, onClose }: HelpSheetProps) {
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.sheet}>
           <GlassCard>
-            <Text style={styles.title}>{t("auth.helpSheet.title")}</Text>
-            <Text style={styles.body}>{t("auth.helpSheet.body1")}</Text>
-            <Text style={styles.body}>{t("auth.helpSheet.body2")}</Text>
+            <Text style={styles.title}>{t("auth:helpSheet.title")}</Text>
+            <Text style={styles.body}>{t("auth:helpSheet.body1")}</Text>
+            <Text style={styles.body}>{t("auth:helpSheet.body2")}</Text>
             <Pressable onPress={onClose} accessibilityRole="button" style={styles.closeButton}>
-              <Text style={styles.closeText}>{t("auth.helpSheet.close")}</Text>
+              <Text style={styles.closeText}>{t("auth:helpSheet.close")}</Text>
             </Pressable>
           </GlassCard>
         </View>

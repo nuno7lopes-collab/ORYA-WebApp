@@ -5,6 +5,7 @@ export type CheckoutStatus =
   | "PROCESSING"
   | "REQUIRES_ACTION"
   | "PAID"
+  | "CANCELED"
   | "FAILED"
   | "REFUNDED"
   | "DISPUTED";
@@ -55,7 +56,9 @@ export function deriveCheckoutStatusFromPayment(params: {
     case PaymentStatus.CHARGEBACK_LOST:
       return "DISPUTED";
     case PaymentStatus.FAILED:
+      return "FAILED";
     case PaymentStatus.CANCELLED:
+      return "CANCELED";
     default:
       return "FAILED";
   }

@@ -85,7 +85,7 @@ export function FiltersBottomSheet({
     ],
     [t],
   );
-  const EVENT_TYPE_OPTIONS: Array<Option<\"all\" | \"events\" | \"padel\">> = useMemo(
+  const EVENT_TYPE_OPTIONS: Array<Option<"all" | "events" | "padel">> = useMemo(
     () => [
       { key: "all", label: t("discover:priceFilters.all") },
       { key: "events", label: t("discover:worlds.events") },

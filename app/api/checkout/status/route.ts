@@ -9,9 +9,42 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Status = CheckoutStatus;
 
-const FINAL_STATUSES: Status[] = ["PAID", "FAILED", "REFUNDED", "DISPUTED"];
+type CheckoutStatusV1 = "PENDING" | "PROCESSING" | "REQUIRES_ACTION" | "SUCCEEDED" | "FAILED" | "CANCELED" | "EXPIRED";
+
+const FINAL_STATUSES: Status[] = ["PAID", "FAILED", "REFUNDED", "DISPUTED", "CANCELED"];
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
+
+function normalizeStatusV1(status: Status): CheckoutStatusV1 {
+  if (status === "PAID") return "SUCCEEDED";
+  if (status === "CANCELED") return "CANCELED";
+  if (status === "FAILED" || status === "REFUNDED" || status === "DISPUTED") return "FAILED";
+  return status;
+}
+
+function buildStatusPayload(params: {
+  status: Status;
+  purchaseId: string | null;
+  paymentIntentId: string | null;
+  final: boolean;
+  retryable: boolean;
+  nextAction: string;
+  errorMessage: string | null;
+}) {
+  return {
+    status: params.status,
+    statusV1: normalizeStatusV1(params.status),
+    final: params.final,
+    checkoutId: params.purchaseId,
+    purchaseId: params.purchaseId,
+    paymentIntentId: params.paymentIntentId,
+    code: params.status,
+    retryable: params.retryable,
+    nextAction: params.nextAction,
+    errorMessage: params.errorMessage,
+  };
+}
+
 function cleanParam(v: string | null) {
   const s = (v ?? "").trim();
   return s ? s : null;
@@ -20,7 +53,8 @@ function cleanParam(v: string | null) {
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const url = new URL(req.url);
-  const purchaseId = cleanParam(url.searchParams.get("purchaseId"));
+  const checkoutId = cleanParam(url.searchParams.get("checkoutId"));
+  const purchaseId = cleanParam(url.searchParams.get("purchaseId")) ?? checkoutId;
   const paymentIntentIdRaw = cleanParam(url.searchParams.get("paymentIntentId"));
   // Free checkout não tem PaymentIntent Stripe; alguns flows antigos guardam um placeholder.
   const paymentIntentId =
@@ -72,16 +106,15 @@ async function _GET(req: NextRequest) {
         const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
         return respondOk(
           ctx,
-          {
+          buildStatusPayload({
             status,
             final,
             purchaseId: payment.id,
             paymentIntentId,
-            code: status,
             retryable,
             nextAction,
             errorMessage: null,
-          },
+          }),
           { status: 200, headers: NO_STORE_HEADERS },
         );
       }
@@ -101,16 +134,15 @@ async function _GET(req: NextRequest) {
         const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
         return respondOk(
           ctx,
-          {
+          buildStatusPayload({
             status,
             final,
             purchaseId: resolvedPaymentId,
             paymentIntentId,
-            code: status,
             retryable,
             nextAction,
             errorMessage: null,
-          },
+          }),
           { status: 200, headers: NO_STORE_HEADERS },
         );
       }
@@ -156,16 +188,15 @@ async function _GET(req: NextRequest) {
               : "NONE";
         return respondOk(
           ctx,
-          {
+          buildStatusPayload({
             status: mappedOp,
             final,
-            purchaseId: op.purchaseId ?? purchaseId ?? paymentIntentId,
+            purchaseId: op.purchaseId ?? purchaseId ?? paymentIntentId ?? null,
             paymentIntentId: op.paymentIntentId ?? paymentIntentId,
-            code: mappedOp,
             retryable: !final,
             nextAction,
             errorMessage: op.lastError ?? null,
-          },
+          }),
           { status: 200, headers: NO_STORE_HEADERS },
         );
       }
@@ -201,16 +232,15 @@ async function _GET(req: NextRequest) {
       const status: Status = "PROCESSING";
       return respondOk(
         ctx,
-        {
+        buildStatusPayload({
           status,
           final: false,
-          purchaseId: paymentEvent.purchaseId ?? purchaseId ?? paymentIntentId,
+          purchaseId: paymentEvent.purchaseId ?? purchaseId ?? paymentIntentId ?? null,
           paymentIntentId: paymentEvent.stripePaymentIntentId ?? paymentIntentId,
-          code: status,
           retryable: true,
           nextAction: "NONE",
           errorMessage: paymentEvent.errorMessage ?? null,
-        },
+        }),
         { status: 200, headers: NO_STORE_HEADERS },
       );
     }
@@ -220,16 +250,15 @@ async function _GET(req: NextRequest) {
     // -------------------------
     return respondOk(
       ctx,
-      {
-        status: "PENDING" as Status,
+      buildStatusPayload({
+        status: "PENDING",
         final: false,
         purchaseId: purchaseId ?? paymentIntentId,
         paymentIntentId,
-        code: "PENDING",
         retryable: true,
         nextAction: "NONE",
         errorMessage: null,
-      },
+      }),
       { status: 200, headers: NO_STORE_HEADERS },
     );
   } catch (err) {

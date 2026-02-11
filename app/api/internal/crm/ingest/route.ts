@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
-import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import { consumeCrmEventLog } from "@/domain/crm/consumer";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { requireOrganizationIdFromPayload } from "@/lib/organizationId";
 import { logError } from "@/lib/observability/logger";
-
-function parseDate(value: unknown): Date | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  return null;
-}
 
 async function _POST(req: NextRequest) {
   try {
@@ -23,72 +12,20 @@ async function _POST(req: NextRequest) {
     }
 
     const payload = (await req.json().catch(() => null)) as {
-      organizationId?: unknown;
-      userId?: unknown;
-      type?: unknown;
-      sourceType?: unknown;
-      sourceId?: unknown;
-      occurredAt?: unknown;
-      amountCents?: unknown;
-      currency?: unknown;
-      metadata?: unknown;
-      displayName?: unknown;
-      contactEmail?: unknown;
-      contactPhone?: unknown;
+      eventLogId?: unknown;
     } | null;
 
-    const organizationIdResult = requireOrganizationIdFromPayload({
-      payload: (payload ?? null) as Record<string, unknown> | null,
-      actorId: typeof payload?.userId === "string" ? payload.userId : null,
-      jobName: "crm-ingest",
-      requestId:
-        req.headers.get("x-request-id") ||
-        req.headers.get("x-correlation-id") ||
-        req.headers.get("x-amzn-trace-id") ||
-        null,
-    });
-    if (!organizationIdResult.ok) {
-      return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
-    }
-    const organizationId = organizationIdResult.organizationId;
-    const userId = typeof payload?.userId === "string" ? payload.userId : null;
-    const type =
-      typeof payload?.type === "string" && Object.values(CrmInteractionType).includes(payload.type as CrmInteractionType)
-        ? (payload.type as CrmInteractionType)
-        : null;
-    const sourceType =
-      typeof payload?.sourceType === "string" && Object.values(CrmInteractionSource).includes(payload.sourceType as CrmInteractionSource)
-        ? (payload.sourceType as CrmInteractionSource)
-        : null;
-    const sourceId = typeof payload?.sourceId === "string" ? payload.sourceId : null;
-    const occurredAt = parseDate(payload?.occurredAt) ?? new Date();
-    const amountCents = typeof payload?.amountCents === "number" ? payload.amountCents : null;
-    const currency = typeof payload?.currency === "string" ? payload.currency.toUpperCase() : "EUR";
-    const metadata =
-      payload?.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
-        ? (payload.metadata as Record<string, unknown>)
-        : {};
-
-    if (!organizationId || !userId || !type || !sourceType) {
-      return jsonWrap({ ok: false, error: "INVALID_PAYLOAD" }, { status: 400 });
+    const eventLogId = typeof payload?.eventLogId === "string" ? payload.eventLogId : null;
+    if (!eventLogId) {
+      return jsonWrap({ ok: false, error: "EVENTLOG_ID_REQUIRED" }, { status: 400 });
     }
 
-    const result = await ingestCrmInteraction({
-      organizationId,
-      userId,
-      type,
-      sourceType,
-      sourceId,
-      occurredAt,
-      amountCents,
-      currency,
-      metadata,
-      displayName: typeof payload?.displayName === "string" ? payload.displayName.trim() : null,
-      contactEmail: typeof payload?.contactEmail === "string" ? payload.contactEmail.trim() : null,
-      contactPhone: typeof payload?.contactPhone === "string" ? payload.contactPhone.trim() : null,
-    });
+    const result = await consumeCrmEventLog(eventLogId);
+    if (!result.ok) {
+      return jsonWrap({ ok: false, error: result.code ?? "INGEST_FAILED" }, { status: 400 });
+    }
 
-    return jsonWrap({ ok: true, deduped: result.deduped, customerId: result.customerId });
+    return jsonWrap({ ok: true, deduped: Boolean(result.deduped) });
   } catch (err) {
     logError("internal.crm.ingest_error", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

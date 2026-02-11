@@ -70,11 +70,30 @@ async function _POST(req: NextRequest) {
       );
     }
 
+    const ipLimiter = await rateLimit(req, {
+      windowMs: 10 * 60 * 1000,
+      max: 20,
+      keyPrefix: "auth:send-otp:ip",
+      requireDistributed: true,
+    });
+    if (!ipLimiter.allowed) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: "RATE_LIMITED",
+          message: "Muitas tentativas. Tenta novamente dentro de alguns minutos.",
+          retryable: true,
+        },
+        { status: 429, headers: { "Retry-After": String(ipLimiter.retryAfter) } }
+      );
+    }
+
     const limiter = await rateLimit(req, {
       windowMs: 10 * 60 * 1000,
       max: 5,
       keyPrefix: "auth:send-otp",
       identifier: rawEmail,
+      requireDistributed: true,
     });
     if (!limiter.allowed) {
       return jsonWrap(
@@ -174,9 +193,6 @@ async function _POST(req: NextRequest) {
               ok: false,
               errorCode: "OTP_GENERATION_FAILED",
               message: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
-              details: typeof loginRes.error === "object"
-                ? (loginRes.error as unknown as Record<string, unknown>)
-                : undefined,
             },
             { status: 500 },
           );
@@ -207,7 +223,6 @@ async function _POST(req: NextRequest) {
             ok: false,
             errorCode: "OTP_GENERATION_FAILED",
             message: "Não foi possível gerar o código. Tenta novamente dentro de alguns minutos.",
-            details: typeof error === "object" ? (error as unknown as Record<string, unknown>) : undefined,
           },
           { status: 500 },
         );

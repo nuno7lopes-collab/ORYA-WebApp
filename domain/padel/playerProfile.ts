@@ -1,5 +1,47 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { recordCrmIngestOutbox } from "@/domain/crm/outbox";
+
+async function recordPadelProfileCrmEvent(params: {
+  organizationId: number;
+  playerProfileId: number;
+  userId?: string | null;
+  email?: string | null;
+  displayName?: string | null;
+  tx?: Prisma.TransactionClient | PrismaClient;
+}) {
+  const { organizationId, playerProfileId, userId, email, displayName, tx } = params;
+  const eventId = crypto.randomUUID();
+  const client = tx ?? prisma;
+  const log = await appendEventLog(
+    {
+      eventId,
+      organizationId,
+      eventType: "crm.padel_profile",
+      eventVersion: "1.0.0",
+      idempotencyKey: `${playerProfileId}:${eventId}`,
+      actorUserId: userId ?? null,
+      payload: {
+        playerProfileId,
+        userId: userId ?? null,
+        email: email ?? null,
+        displayName: displayName ?? null,
+      },
+    },
+    client,
+  );
+  if (!log) return;
+  await recordCrmIngestOutbox(
+    {
+      eventLogId: log.id,
+      organizationId,
+      correlationId: String(playerProfileId),
+    },
+    client,
+  );
+}
 
 export async function upsertPadelPlayerProfile(params: {
   organizationId: number;
@@ -53,26 +95,17 @@ export async function upsertPadelPlayerProfile(params: {
             level: level ?? profile?.padelLevel ?? undefined,
           },
         });
-        await prisma.crmCustomer.upsert({
-          where: { organizationId_userId: { organizationId, userId: resolvedUserId } },
-          update: {
-            ...(resolvedName ? { displayName: resolvedName } : {}),
-            ...(resolvedEmail ? { contactEmail: resolvedEmail } : {}),
-            ...(resolvedPhone ? { contactPhone: resolvedPhone } : {}),
-          },
-          create: {
-            organizationId,
-            userId: resolvedUserId,
-            status: "ACTIVE",
-            displayName: resolvedName || undefined,
-            contactEmail: resolvedEmail || undefined,
-            contactPhone: resolvedPhone ?? undefined,
-          },
+        await recordPadelProfileCrmEvent({
+          organizationId,
+          playerProfileId: existing.id,
+          userId: resolvedUserId,
+          email: resolvedEmail ?? null,
+          displayName: resolvedName ?? null,
         });
         return;
       }
 
-      await prisma.padelPlayerProfile.create({
+      const created = await prisma.padelPlayerProfile.create({
         data: {
           organizationId,
           userId: resolvedUserId,
@@ -83,22 +116,14 @@ export async function upsertPadelPlayerProfile(params: {
           gender: gender ?? profile?.gender ?? undefined,
           level: level ?? profile?.padelLevel ?? undefined,
         },
+        select: { id: true },
       });
-      await prisma.crmCustomer.upsert({
-        where: { organizationId_userId: { organizationId, userId: resolvedUserId } },
-        update: {
-          ...(resolvedName ? { displayName: resolvedName } : {}),
-          ...(resolvedEmail ? { contactEmail: resolvedEmail } : {}),
-          ...(resolvedPhone ? { contactPhone: resolvedPhone } : {}),
-        },
-        create: {
-          organizationId,
-          userId: resolvedUserId,
-          status: "ACTIVE",
-          displayName: resolvedName || undefined,
-          contactEmail: resolvedEmail || undefined,
-          contactPhone: resolvedPhone ?? undefined,
-        },
+      await recordPadelProfileCrmEvent({
+        organizationId,
+        playerProfileId: created.id,
+        userId: resolvedUserId,
+        email: resolvedEmail ?? null,
+        displayName: resolvedName ?? null,
       });
       return;
     }
@@ -122,10 +147,17 @@ export async function upsertPadelPlayerProfile(params: {
           level: level ?? undefined,
         },
       });
+      await recordPadelProfileCrmEvent({
+        organizationId,
+        playerProfileId: existing.id,
+        userId: null,
+        email: emailClean ?? null,
+        displayName: fullName ?? null,
+      });
       return;
     }
 
-    await prisma.padelPlayerProfile.create({
+    const created = await prisma.padelPlayerProfile.create({
       data: {
         organizationId,
         fullName,
@@ -134,6 +166,14 @@ export async function upsertPadelPlayerProfile(params: {
         gender: gender ?? undefined,
         level: level ?? undefined,
       },
+      select: { id: true },
+    });
+    await recordPadelProfileCrmEvent({
+      organizationId,
+      playerProfileId: created.id,
+      userId: null,
+      email: emailClean ?? null,
+      displayName: fullName ?? null,
     });
   } catch (err) {
     console.warn("[padel] upsertPadelPlayerProfile falhou (ignorado)", err);
@@ -150,15 +190,6 @@ export async function ensurePadelPlayerProfileId(
     select: { id: true },
   });
   if (existing) {
-    await tx.crmCustomer.upsert({
-      where: { organizationId_userId: { organizationId, userId } },
-      update: {},
-      create: {
-        organizationId,
-        userId,
-        status: "ACTIVE",
-      },
-    });
     return existing.id;
   }
   const [profile, authUser] = await Promise.all([
@@ -192,21 +223,13 @@ export async function ensurePadelPlayerProfileId(
     },
     select: { id: true },
   });
-  await tx.crmCustomer.upsert({
-    where: { organizationId_userId: { organizationId, userId } },
-    update: {
-      ...(name ? { displayName: name } : {}),
-      ...(email ? { contactEmail: email } : {}),
-      ...(profile?.contactPhone ? { contactPhone: profile.contactPhone } : {}),
-    },
-    create: {
-      organizationId,
-      userId,
-      status: "ACTIVE",
-      displayName: name || undefined,
-      contactEmail: email || undefined,
-      contactPhone: profile?.contactPhone ?? undefined,
-    },
+  await recordPadelProfileCrmEvent({
+    organizationId,
+    playerProfileId: created.id,
+    userId,
+    email,
+    displayName: name,
+    tx,
   });
   return created.id;
 }

@@ -121,18 +121,20 @@ async function _GET(req: NextRequest) {
       email: user.email ?? null,
     });
 
-    const acceptedInvites = await prisma.chatEventInvite.findMany({
-      where: {
-        status: "ACCEPTED",
-        userId: user.id,
-        entitlement: {
-          status: "ACTIVE",
-          OR: ownerClauses,
-          checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
-        },
-      },
-      select: { eventId: true },
-    });
+    const acceptedInvites = ownerClauses.length
+      ? await prisma.chatEventInvite.findMany({
+          where: {
+            status: "ACCEPTED",
+            userId: user.id,
+            entitlement: {
+              status: "ACTIVE",
+              OR: ownerClauses,
+              checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
+            },
+          },
+          select: { eventId: true },
+        })
+      : [];
 
     const eventIds = Array.from(new Set(acceptedInvites.map((invite) => invite.eventId).filter(Boolean))) as number[];
 

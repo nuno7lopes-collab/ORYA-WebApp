@@ -58,17 +58,17 @@ type UnifiedMessage = {
 };
 
 const resolveStatusLabel = (status: string | null | undefined, t: (key: string) => string) => {
-  if (status === "OPEN") return t("messages.status.open");
-  if (status === "ANNOUNCEMENTS") return t("messages.status.announcements");
-  if (status === "READ_ONLY") return t("messages.status.readOnly");
-  return t("messages.status.closed");
+  if (status === "OPEN") return t("messages:status.open");
+  if (status === "ANNOUNCEMENTS") return t("messages:status.announcements");
+  if (status === "READ_ONLY") return t("messages:status.readOnly");
+  return t("messages:status.closed");
 };
 
 const resolveChatError = (err: unknown, fallback: string, t: (key: string) => string) => {
   const message = err instanceof Error ? err.message : String(err ?? "");
-  if (message.includes("READ_ONLY")) return t("messages.thread.errors.readOnly");
-  if (message.includes("FORBIDDEN")) return t("messages.thread.errors.participantsOnly");
-  if (message.includes("UNAUTHENTICATED")) return t("messages.thread.errors.signInRequired");
+  if (message.includes("READ_ONLY")) return t("messages:thread.errors.readOnly");
+  if (message.includes("FORBIDDEN")) return t("messages:thread.errors.participantsOnly");
+  if (message.includes("UNAUTHENTICATED")) return t("messages:thread.errors.signInRequired");
   return getUserFacingError(err, fallback);
 };
 
@@ -193,18 +193,18 @@ export default function ChatThreadScreen() {
 
   const eventTitle = useMemo(() => {
     const raw = Array.isArray(params.title) ? params.title[0] : params.title;
-    return raw ?? threadQuery.data?.event.title ?? t("messages.thread.eventTitleFallback");
+    return raw ?? threadQuery.data?.event.title ?? t("messages:thread.eventTitleFallback");
   }, [params.title, threadQuery.data?.event.title, t]);
 
   const conversationTitle = useMemo(() => {
     const raw = Array.isArray(params.title) ? params.title[0] : params.title;
     if (raw) return raw;
-    if (!conversation) return t("messages.thread.conversationTitleFallback");
+    if (!conversation) return t("messages:thread.conversationTitleFallback");
     if (conversation.title) return conversation.title;
     const other = members.find((member) => member.userId !== userId);
     return (
       other?.fullName?.trim() ||
-      (other?.username ? `@${other.username}` : t("messages.thread.conversationTitleFallback"))
+      (other?.username ? `@${other.username}` : t("messages:thread.conversationTitleFallback"))
     );
   }, [conversation, members, params.title, t, userId]);
 
@@ -241,7 +241,7 @@ export default function ChatThreadScreen() {
         }
       }
     } catch (err) {
-      setError(resolveChatError(err, t("messages.thread.errors.load"), t));
+      setError(resolveChatError(err, t("messages:thread.errors.load"), t));
     } finally {
       setLoading(false);
     }
@@ -270,7 +270,7 @@ export default function ChatThreadScreen() {
         setCursor(response.nextCursor ?? null);
       }
     } catch (err) {
-      setError(resolveChatError(err, t("messages.thread.errors.loadMore"), t));
+      setError(resolveChatError(err, t("messages:thread.errors.loadMore"), t));
     } finally {
       setLoadingMore(false);
     }
@@ -398,7 +398,7 @@ export default function ChatThreadScreen() {
       setInput("");
       setAutoScroll(true);
     } catch (err) {
-      setError(resolveChatError(err, t("messages.thread.errors.send"), t));
+      setError(resolveChatError(err, t("messages:thread.errors.send"), t));
     } finally {
       setSending(false);
     }
@@ -408,7 +408,7 @@ export default function ChatThreadScreen() {
     async (messageId: string, createdAt: string) => {
       const elapsed = Date.now() - new Date(createdAt).getTime();
       if (elapsed > UNDO_WINDOW_MS) {
-        Alert.alert(t("messages.thread.undoPromptTitle"), t("messages.thread.errors.undoExpired"));
+        Alert.alert(t("messages:thread.undoPromptTitle"), t("messages:thread.errors.undoExpired"));
         return;
       }
       try {
@@ -426,8 +426,8 @@ export default function ChatThreadScreen() {
         );
       } catch (err) {
         Alert.alert(
-          t("messages.thread.undoPromptTitle"),
-          getUserFacingError(err, t("messages.thread.errors.undoFailed")),
+          t("messages:thread.undoPromptTitle"),
+          getUserFacingError(err, t("messages:thread.errors.undoFailed")),
         );
       }
     },
@@ -447,10 +447,10 @@ export default function ChatThreadScreen() {
   const openMuteMenu = useCallback(() => {
     const now = Date.now();
     const presets = [
-      { label: t("messages.thread.mute.options.1h"), value: now + 60 * 60 * 1000 },
-      { label: t("messages.thread.mute.options.8h"), value: now + 8 * 60 * 60 * 1000 },
-      { label: t("messages.thread.mute.options.1w"), value: now + 7 * 24 * 60 * 60 * 1000 },
-      { label: t("messages.thread.mute.options.forever"), value: now + 365 * 24 * 60 * 60 * 1000 },
+      { label: t("messages:thread.mute.options.1h"), value: now + 60 * 60 * 1000 },
+      { label: t("messages:thread.mute.options.8h"), value: now + 8 * 60 * 60 * 1000 },
+      { label: t("messages:thread.mute.options.1w"), value: now + 7 * 24 * 60 * 60 * 1000 },
+      { label: t("messages:thread.mute.options.forever"), value: now + 365 * 24 * 60 * 60 * 1000 },
     ];
     const buttons = presets.map((preset) => ({
       text: preset.label,
@@ -466,8 +466,8 @@ export default function ChatThreadScreen() {
           }
         } catch (err) {
           Alert.alert(
-            t("settings.sections.notifications.title"),
-            getUserFacingError(err, t("messages.thread.errors.muteFailed")),
+            t("settings:sections.notifications.title"),
+            getUserFacingError(err, t("messages:thread.errors.muteFailed")),
           );
         }
       },
@@ -475,7 +475,7 @@ export default function ChatThreadScreen() {
 
     if (mutedUntil) {
       buttons.unshift({
-        text: t("messages.thread.mute.remove"),
+        text: t("messages:thread.mute.remove"),
         onPress: async () => {
           try {
             if (isEvent) {
@@ -487,17 +487,17 @@ export default function ChatThreadScreen() {
             }
           } catch (err) {
             Alert.alert(
-              t("settings.sections.notifications.title"),
-              getUserFacingError(err, t("messages.thread.errors.muteUpdateFailed")),
+              t("settings:sections.notifications.title"),
+              getUserFacingError(err, t("messages:thread.errors.muteUpdateFailed")),
             );
           }
         },
       });
     }
 
-    Alert.alert(t("messages.thread.mute.title"), t("messages.thread.mute.chooseDuration"), [
+    Alert.alert(t("messages:thread.mute.title"), t("messages:thread.mute.chooseDuration"), [
       ...buttons,
-      { text: t("common.actions.cancel"), style: "cancel" },
+      { text: t("common:actions.cancel"), style: "cancel" },
     ]);
   }, [accessToken, isEvent, mutedUntil, t, threadId]);
 
@@ -508,18 +508,18 @@ export default function ChatThreadScreen() {
         <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: insets.bottom + 24 }}>
           <GlassCard intensity={55} className="mt-5">
             <Text className="text-white text-sm font-semibold mb-2">
-              {t("messages.thread.signinTitle")}
+              {t("messages:thread.signinTitle")}
             </Text>
-            <Text className="text-white/65 text-sm">{t("messages.thread.signinBody")}</Text>
+            <Text className="text-white/65 text-sm">{t("messages:thread.signinBody")}</Text>
             <Pressable
               onPress={openAuth}
               className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
-              accessibilityLabel={t("common.actions.signIn")}
+              accessibilityLabel={t("common:actions.signIn")}
             >
               <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                {t("common.actions.signIn")}
+                {t("common:actions.signIn")}
               </Text>
             </Pressable>
           </GlassCard>
@@ -532,7 +532,7 @@ export default function ChatThreadScreen() {
     <Pressable
       onPress={() => safeBack(router, navigation, "/messages")}
       accessibilityRole="button"
-      accessibilityLabel="Voltar"
+      accessibilityLabel={t("common:actions.back")}
       style={({ pressed }) => [
         {
           width: tokens.layout.touchTarget,
@@ -552,7 +552,7 @@ export default function ChatThreadScreen() {
     <Pressable
       onPress={openMuteMenu}
       accessibilityRole="button"
-      accessibilityLabel="Silenciar conversa"
+      accessibilityLabel={t("messages:thread.mute.title")}
       style={({ pressed }) => [
         {
           width: tokens.layout.touchTarget,
@@ -621,9 +621,9 @@ export default function ChatThreadScreen() {
                     }
                     className="rounded-full border border-white/15 px-3 py-1"
                     accessibilityRole="button"
-                    accessibilityLabel="Ver evento"
+                    accessibilityLabel={t("messages:thread.viewEvent")}
                   >
-                    <Text className="text-white/70 text-[11px]">Ver evento</Text>
+                    <Text className="text-white/70 text-[11px]">{t("messages:thread.viewEvent")}</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -654,14 +654,14 @@ export default function ChatThreadScreen() {
                   </Text>
                   <Text className="text-white/60 text-xs mt-1">
                     {conversation?.contextType === "BOOKING"
-                      ? "Reserva"
+                      ? t("messages:thread.context.booking")
                       : conversation?.contextType === "SERVICE"
-                        ? "Serviço"
+                        ? t("messages:thread.context.service")
                         : conversation?.contextType === "ORG_CONTACT"
-                          ? "Organização"
+                          ? t("messages:thread.context.org")
                           : conversation?.contextType === "USER_GROUP"
-                            ? "Grupo"
-                            : "Mensagem"}
+                            ? t("messages:thread.context.group")
+                            : t("messages:thread.context.message")}
                   </Text>
                 </View>
               </View>
@@ -670,11 +670,13 @@ export default function ChatThreadScreen() {
 
           {!canPost ? (
             <GlassCard intensity={48} className="mt-4">
-              <Text className="text-white text-sm font-semibold mb-1">Chat em modo leitura</Text>
+              <Text className="text-white text-sm font-semibold mb-1">
+                {t("messages:thread.readOnly.title")}
+              </Text>
               <Text className="text-white/65 text-sm">
                 {conversationReadOnlyReason === "BOOKING_INACTIVE"
-                  ? "A reserva já não está ativa."
-                  : "Apenas administradores podem enviar mensagens neste momento."}
+                  ? t("messages:thread.readOnly.bookingInactive")
+                  : t("messages:thread.readOnly.adminsOnly")}
               </Text>
             </GlassCard>
           ) : null}
@@ -692,9 +694,11 @@ export default function ChatThreadScreen() {
                 className="rounded-2xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel="Tentar novamente"
+                accessibilityLabel={t("common:actions.retry")}
               >
-                <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+                <Text className="text-white text-sm font-semibold text-center">
+                  {t("common:actions.retry")}
+                </Text>
               </Pressable>
             </GlassCard>
           ) : (
@@ -713,17 +717,17 @@ export default function ChatThreadScreen() {
                   disabled={loadingMore}
                   className="self-center rounded-full border border-white/15 px-4 py-2"
                   accessibilityRole="button"
-                  accessibilityLabel="Carregar mensagens antigas"
+                  accessibilityLabel={t("messages:thread.loadOlder")}
                   accessibilityState={{ disabled: loadingMore }}
                 >
                   <Text className="text-white/70 text-xs">
-                    {loadingMore ? "A carregar..." : "Carregar mensagens antigas"}
+                    {loadingMore ? t("common:actions.loading") : t("messages:thread.loadOlder")}
                   </Text>
                 </Pressable>
               ) : null}
               {messages.length === 0 ? (
                 <Text className="text-white/60 text-sm text-center">
-                  Ainda não há mensagens. Diz olá.
+                  {t("messages:thread.empty")}
                 </Text>
               ) : null}
               {messages.map((message) => {
@@ -734,7 +738,9 @@ export default function ChatThreadScreen() {
                   return (
                     <View key={message.id} className="items-center">
                       <GlassCard intensity={55} padding={12}>
-                        <Text className="text-white text-xs font-semibold">Anúncio</Text>
+                        <Text className="text-white text-xs font-semibold">
+                          {t("messages:thread.announcement")}
+                        </Text>
                         <Text className="text-white/75 text-sm mt-1">{message.body}</Text>
                         <Text className="text-white/50 text-[11px] mt-2">{formatTime(message.createdAt)}</Text>
                       </GlassCard>
@@ -755,7 +761,7 @@ export default function ChatThreadScreen() {
                         disabled={!message.sender?.username}
                         style={{ marginRight: 8 }}
                         accessibilityRole="button"
-                        accessibilityLabel="Abrir perfil"
+                        accessibilityLabel={t("messages:thread.openProfile")}
                         accessibilityState={{ disabled: !message.sender?.username }}
                       >
                         <AvatarCircle
@@ -769,10 +775,10 @@ export default function ChatThreadScreen() {
                     <Pressable
                       onLongPress={() => {
                         if (!isMine) return;
-                        Alert.alert("Mensagem", "Anular envio?", [
-                          { text: "Cancelar", style: "cancel" },
+                        Alert.alert(t("messages:thread.undoPromptTitle"), t("messages:thread.undoPromptBody"), [
+                          { text: t("common:actions.cancel"), style: "cancel" },
                           {
-                            text: "Anular",
+                            text: t("messages:thread.undoAction"),
                             style: "destructive",
                             onPress: () => handleUndo(message.id, message.createdAt),
                           },
@@ -796,14 +802,14 @@ export default function ChatThreadScreen() {
                             disabled={!message.sender?.username}
                             style={{ alignSelf: "flex-start" }}
                             accessibilityRole="button"
-                            accessibilityLabel="Abrir perfil"
+                            accessibilityLabel={t("messages:thread.openProfile")}
                             accessibilityState={{ disabled: !message.sender?.username }}
                           >
                             <Text className="text-white/70 text-[11px] mb-1">{message.sender.fullName}</Text>
                           </Pressable>
                         ) : null}
                         <Text className="text-white text-sm">
-                          {isDeleted ? "Mensagem removida" : message.body}
+                          {isDeleted ? t("messages:thread.messageDeleted") : message.body}
                         </Text>
                         <Text className="text-white/45 text-[10px] mt-1 text-right">
                           {formatTime(message.createdAt)}
@@ -826,19 +832,19 @@ export default function ChatThreadScreen() {
         >
           {isEvent && threadQuery.isError && !threadQuery.data ? (
             <Text className="text-white/60 text-xs text-center">
-              Chat disponível apenas para participantes.
+              {t("messages:thread.errors.participantsOnly")}
             </Text>
           ) : canPost ? (
             <View className="flex-row items-end gap-2">
               <TextInput
                 value={input}
                 onChangeText={setInput}
-                placeholder="Escreve uma mensagem"
+                placeholder={t("messages:thread.inputPlaceholder")}
                 placeholderTextColor="rgba(255,255,255,0.4)"
                 className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
                 multiline
                 style={{ minHeight: tokens.layout.touchTarget }}
-                accessibilityLabel="Mensagem"
+                accessibilityLabel={t("messages:thread.send")}
               />
               <Pressable
                 onPress={handleSend}
@@ -846,7 +852,7 @@ export default function ChatThreadScreen() {
                 className="rounded-2xl bg-white/90 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
-                accessibilityLabel="Enviar mensagem"
+                accessibilityLabel={t("messages:thread.send")}
                 accessibilityState={{ disabled: sending || !input.trim() }}
               >
                 {sending ? (
@@ -858,9 +864,11 @@ export default function ChatThreadScreen() {
             </View>
           ) : (
             <Text className="text-white/60 text-xs text-center">
-              {statusLabel === "Só leitura" || statusLabel === "Fechado" || conversationReadOnlyReason
-                ? "Este chat está em modo leitura."
-                : "Apenas organizadores podem publicar anúncios."}
+              {conversationReadOnlyReason ||
+              threadQuery.data?.thread.status === "READ_ONLY" ||
+              threadQuery.data?.thread.status === "CLOSED"
+                ? t("messages:thread.readOnly.footer")
+                : t("messages:thread.readOnly.announcementsOnly")}
             </Text>
           )}
         </View>

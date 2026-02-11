@@ -50,6 +50,9 @@ async function _POST(req: NextRequest, context: { params: { inviteId: string } }
       identityIds,
       email: user.email ?? null,
     });
+    if (!ownerClauses.length) {
+      return jsonWrap({ error: "CHECKIN_REQUIRED" }, { status: 403 });
+    }
 
     const entitlement = await prisma.entitlement.findFirst({
       where: {

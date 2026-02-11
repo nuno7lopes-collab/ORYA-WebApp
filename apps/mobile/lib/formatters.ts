@@ -42,10 +42,10 @@ export const formatRelativeDay = (value?: string): string | null => {
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const diffDays = Math.round((startDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-  if (diffDays === 0) return i18n.t("common.time.today");
-  if (diffDays === 1) return i18n.t("common.time.tomorrow");
-  if (diffDays > 1 && diffDays <= 6) return i18n.t("common.time.inDays", { count: diffDays });
-  if (diffDays < 0) return i18n.t("common.time.ended");
+  if (diffDays === 0) return i18n.t("common:time.today");
+  if (diffDays === 1) return i18n.t("common:time.tomorrow");
+  if (diffDays > 1 && diffDays <= 6) return i18n.t("common:time.inDays", { count: diffDays });
+  if (diffDays < 0) return i18n.t("common:time.ended");
   return null;
 };
 
@@ -55,20 +55,20 @@ export const formatRelativeHours = (value?: string | null): string | null => {
   if (Number.isNaN(date.getTime())) return null;
   const now = new Date();
   const diffMs = date.getTime() - now.getTime();
-  if (diffMs <= 0) return i18n.t("common.time.available");
+  if (diffMs <= 0) return i18n.t("common:time.available");
   const diffHours = Math.floor(diffMs / (60 * 60 * 1000));
-  if (diffHours < 1) return i18n.t("common.time.today");
-  if (diffHours < 24) return i18n.t("common.time.inHours", { count: diffHours });
+  if (diffHours < 1) return i18n.t("common:time.today");
+  if (diffHours < 24) return i18n.t("common:time.inHours", { count: diffHours });
   return formatRelativeDay(value);
 };
 
 export const formatDistanceKmValue = (distance: number): string => {
   const locale = resolveLocale();
-  if (distance < 1) return i18n.t("common.units.kmShort");
+  if (distance < 1) return i18n.t("common:units.kmShort");
   if (distance < 10) {
     const value = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(distance);
-    return i18n.t("common.units.km", { value });
+    return i18n.t("common:units.km", { value });
   }
   const value = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.round(distance));
-  return i18n.t("common.units.km", { value });
+  return i18n.t("common:units.km", { value });
 };

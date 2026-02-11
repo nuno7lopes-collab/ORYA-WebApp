@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
-import { EntitlementStatus, OrganizationMemberRole, Prisma } from "@prisma/client";
+import { EntitlementStatus, OrganizationMemberRole, Prisma, TicketStatus } from "@prisma/client";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -112,7 +112,10 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     ? statusFilterRaw.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
   const wantsCheckedIn = statusFilter.includes("CHECKED_IN");
-  const entitlementStatusFilter = statusFilter.filter((s) => s !== "CHECKED_IN") as EntitlementStatus[];
+  const wantsChargebackLost = statusFilter.includes("CHARGEBACK_LOST");
+  const entitlementStatusFilter = statusFilter.filter(
+    (s) => s !== "CHECKED_IN" && s !== "CHARGEBACK_LOST",
+  ) as EntitlementStatus[];
   const search = searchParams.get("search")?.trim();
   const cursor = parseCursor(searchParams.get("cursor"));
   const pageSizeRaw = Number(searchParams.get("pageSize"));
@@ -128,6 +131,9 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     }
     if (wantsCheckedIn) {
       statusClauses.push({ checkins: { some: {} } });
+    }
+    if (wantsChargebackLost) {
+      statusClauses.push({ ticket: { status: TicketStatus.CHARGEBACK_LOST } });
     }
     if (statusClauses.length) {
       where.AND.push({ OR: statusClauses });
@@ -165,6 +171,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       type: true,
       ownerKey: true,
       ownerUserId: true,
+      ownerIdentityId: true,
       purchaseId: true,
       ticketId: true,
       snapshotTitle: true,
@@ -173,6 +180,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       ticket: {
         select: {
           id: true,
+          status: true,
           guestLink: { select: { guestName: true, guestEmail: true } },
         },
       },
@@ -193,16 +201,28 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       })
     : null;
 
-  const ownerIds = Array.from(
-    new Set(pageItems.map((item) => item.ownerUserId).filter(Boolean) as string[]),
+  const ownerIds = new Set(pageItems.map((item) => item.ownerUserId).filter(Boolean) as string[]);
+  const identityIds = Array.from(
+    new Set(pageItems.map((item) => item.ownerIdentityId).filter(Boolean) as string[]),
   );
-  const profiles = ownerIds.length
+  const identities = identityIds.length
+    ? await prisma.emailIdentity.findMany({
+        where: { id: { in: identityIds } },
+        select: { id: true, userId: true, emailNormalized: true },
+      })
+    : [];
+  for (const identity of identities) {
+    if (identity.userId) ownerIds.add(identity.userId);
+  }
+  const profileIds = Array.from(ownerIds);
+  const profiles = profileIds.length
     ? await prisma.profile.findMany({
-        where: { id: { in: ownerIds } },
+        where: { id: { in: profileIds } },
         select: { id: true, fullName: true, username: true, users: { select: { email: true } } },
       })
     : [];
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+  const identityMap = new Map(identities.map((identity) => [identity.id, identity]));
   const purchaseIds = Array.from(
     new Set(pageItems.map((item) => item.purchaseId).filter(Boolean) as string[]),
   );
@@ -227,25 +247,35 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       emailVerified: true,
       isGuestOwner: false,
     });
-    const profile = e.ownerUserId ? profileMap.get(e.ownerUserId) : null;
+    const identity = e.ownerIdentityId ? identityMap.get(e.ownerIdentityId) : null;
+    const resolvedProfileId = e.ownerUserId ?? identity?.userId ?? null;
+    const profile = resolvedProfileId ? profileMap.get(resolvedProfileId) : null;
     const guestName = e.ticket?.guestLink?.guestName?.trim();
     const guestEmail = e.ticket?.guestLink?.guestEmail?.trim();
+    const identityEmail = identity?.emailNormalized ?? null;
     const holderName =
       profile?.fullName?.trim() ||
       profile?.username?.trim() ||
       profile?.users?.email?.trim() ||
       guestName ||
       guestEmail ||
+      identityEmail ||
       (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null) ||
       "Participante";
     const holderEmail =
       profile?.users?.email?.trim() ||
       guestEmail ||
+      identityEmail ||
       (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null);
 
     const consumedAt = e.checkins?.[0]?.checkedInAt ?? null;
+    const ticketStatus = e.ticket?.status ?? null;
     const displayStatus =
-      consumedAt && e.status === "ACTIVE" ? "CHECKED_IN" : e.status;
+      ticketStatus === TicketStatus.CHARGEBACK_LOST
+        ? "CHARGEBACK_LOST"
+        : consumedAt && e.status === "ACTIVE"
+          ? "CHECKED_IN"
+          : e.status;
 
     return {
       entitlementId: e.id,

@@ -69,7 +69,24 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!user) return fail("UNAUTHENTICATED", "Sessão inválida.", 401);
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const categoryLinkId = body && typeof body.ticketTypeId === "number" ? body.ticketTypeId : null;
+  const ticketTypeId =
+    body && typeof body.ticketTypeId === "number" ? body.ticketTypeId : null;
+  const padelCategoryLinkId =
+    body && typeof body.padelCategoryLinkId === "number"
+      ? body.padelCategoryLinkId
+      : null;
+  if (
+    ticketTypeId &&
+    padelCategoryLinkId &&
+    ticketTypeId !== padelCategoryLinkId
+  ) {
+    return fail(
+      "CATEGORY_LINK_CONFLICT",
+      "Categoria inválida.",
+      400,
+    );
+  }
+  const categoryLinkId = padelCategoryLinkId ?? ticketTypeId ?? null;
   const inviteToken = typeof body?.inviteToken === "string" ? body.inviteToken : null;
   const idempotencyKey = typeof body?.idempotencyKey === "string" ? body.idempotencyKey : null;
   if (!categoryLinkId) return fail("MISSING_CATEGORY_LINK", "Categoria inválida.", 400);

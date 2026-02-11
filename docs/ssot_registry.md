@@ -217,7 +217,7 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 **Contrato SSOT**
 - `EventAccessPolicy` é a única fonte de verdade para regras de acesso/check‑in.
 - Check‑in sempre valida policy version aplicada.
-- **Plataforma:** guest checkout é permitido na WebApp, no site público e na app mobile quando `guestCheckoutAllowed=true`.
+- **Plataforma:** guest checkout é permitido na WebApp e no site público quando `guestCheckoutAllowed=true`. A app mobile é **login-only** (checkout sempre com sessão).
 - **Restrição:** `inviteTokenAllowed=true` exige `inviteIdentityMatch=EMAIL|BOTH` (USERNAME não suporta tokens).
 - **Integridade:** convites por username só para utilizadores existentes; sem conta → convite por email.
 
@@ -235,6 +235,8 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 - `Entitlement` é a fonte de verdade de acesso (tickets/registrations/booking são origem, não prova).
 - Refunds/chargebacks atualizam Entitlement (REVOKED/SUSPENDED) e Ticket (REFUNDED/DISPUTED) de forma canónica.
  - Guest bookings criam Entitlement com owner por email (claim posterior liga a conta).
+ - `ownerIdentityId` é canónico para acesso; `ownerUserId` é auxiliar. `ownerKey` deve ser `identity:<id>` sempre que possível.
+ - Chargeback perdido mapeia `TicketStatus.CHARGEBACK_LOST`.
 
 **Estado:** VERIFIED (static)
 **Evidência:** `domain/finance/fulfillment.ts`, `app/api/stripe/webhook/route.ts`,
@@ -249,11 +251,51 @@ Controlo directo de payouts foi desativado; payouts são geridos pelo Stripe (St
 **Contrato SSOT**
 - Padel nunca cria bilhetes; inscrições geram entitlements canónicos.
 - Check‑in usa entitlement (sourceType `PADEL_REGISTRATION`).
+- Pricing Padel usa `padelCategoryLinkId` (alias explícito de `ticketTypeId` apenas por compatibilidade).
 
 **Estado:** VERIFIED (static)
 **Evidência:** `app/api/payments/intent/route.ts`, `lib/operations/fulfillPadelRegistration.ts`,
 `app/api/stripe/webhook/route.ts`, `app/api/padel/pairings/route.ts`.
 **Nota:** linkage legacy a Ticket removida (slots/pareamentos sem `ticketId`); Padel usa inscrições + Entitlements.
+
+---
+
+## C1 — Reservas ↔ Padel (agenda e slots)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Padel cria bloqueios/slots via contrato; SSOT da agenda é Reservas.
+- Padel nunca escreve diretamente na agenda fora do contrato.
+- Bloqueios e indisponibilidades são `CalendarBlock` e `CalendarAvailability`.
+
+**Estado:** VERIFIED (static)
+**Evidência:** `docs/blueprint.md`, `prisma/schema.prisma`, `app/api/padel/calendar/route.ts`.
+
+---
+
+## C3 — Check-in ↔ Eventos/Reservas/Padel (via Entitlement)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Check‑in valida sempre `Entitlement`.
+- `PADEL_REGISTRATION` gera `EntitlementType.PADEL_ENTRY`.
+- `policyVersionApplied` obrigatório quando associado a evento.
+
+**Estado:** VERIFIED (static)
+**Evidência:** `lib/checkin/accessPolicy.ts`, `lib/operations/fulfillPadelRegistration.ts`, `prisma/schema.prisma`.
+
+---
+
+## D12 — Split Payment Padel (48/24 + grace)
+**Fonte:** `docs/blueprint.md`
+
+**Contrato SSOT**
+- Janela default 48h para split; expira T‑24h.
+- Grace de 1h para transição de matchmaking.
+- Segundo charge e expiração são processados por jobs idempotentes.
+
+**Estado:** VERIFIED (static)
+**Evidência:** `domain/padelDeadlines.ts`, `app/api/cron/padel/expire/route.ts`, `lib/operations/fulfillPadelSecondCharge.ts`.
 
 ---
 
@@ -716,3 +758,18 @@ Se necessário, gerar sob demanda via `scripts/audit_api_ui_coverage.ts`.
 - Read‑models: `stripeFeeCents` só é preenchido quando fee real está disponível (sem estimativas).
 - Padel: split D12 corrigido (48h vs T‑24) e `requiresEntitlementForEntry` forçado para eventos Padel.
 - Padel: alias `padel-hub` removido do UI e purge total dedicado (`scripts/purge_padel_total.js`).
+
+## Registro de alterações (2026-02-10)
+- Checkout status canónico atualizado:
+  - `GET /api/checkout/status` aceita `checkoutId` (alias de `purchaseId`).
+  - Resposta inclui `checkoutId` e `statusV1` sem quebrar `status` legado.
+  - `PaymentStatus.CANCELLED` passa a mapear para `status=CANCELED`.
+- Mobile checkout hardening:
+  - `returnURL` alinhado para `checkout/success`.
+  - Auto-poll de `REQUIRES_ACTION` com timeout e fallback explícito.
+  - Erro explícito `CONFIG_STRIPE_KEY_MISSING` para checkout pago sem publishable key.
+- Reservas (user/org) e Store:
+  - `amountCents=0` com finalização explícita sem criação de Stripe intent.
+  - Resposta de checkout inclui campos canónicos aditivos: `purchaseId`, `status`, `final`, `freeCheckout`.
+  - `clientIdempotencyKey` propagado para `ensurePaymentIntent`.
+- Contrato fechado documentado em `docs/checkout_contract_v1.md`.

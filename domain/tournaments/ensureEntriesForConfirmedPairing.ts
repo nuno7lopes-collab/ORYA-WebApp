@@ -85,6 +85,7 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
             eventId: pairing.eventId,
             pairingId: pairing.id,
             entryId,
+            categoryId: pairing.categoryId ?? null,
           },
         }),
       ),

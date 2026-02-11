@@ -13,16 +13,22 @@ import { safeBack } from "../../lib/navigation";
 import { trackEvent } from "../../lib/analytics";
 
 const resolveStatusCopy = (status?: string | null) => {
-  if (status === "PAID") {
+  if (status === "PAID" || status === "SUCCEEDED") {
     return {
       title: "Bilhete confirmado",
       message: "O bilhete é teu e já está disponível na carteira.",
     };
   }
-  if (status === "FAILED") {
+  if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED" || status === "EXPIRED") {
     return {
       title: "Não foi possível concluir",
       message: "Houve um problema ao confirmar a inscrição.",
+    };
+  }
+  if (status === "REQUIRES_ACTION") {
+    return {
+      title: "Ação necessária",
+      message: "Falta concluir a autenticação de pagamento para confirmar a inscrição.",
     };
   }
   return {
@@ -92,21 +98,21 @@ export default function CheckoutSuccessScreen() {
 
   useEffect(() => {
     if (!status) return;
-    if (status.status !== "PENDING" && status.status !== "PROCESSING") return;
+    if (!["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status.status)) return;
     const timer = setTimeout(() => {
       runStatusCheck();
-    }, 4000);
+    }, status.status === "REQUIRES_ACTION" ? 2000 : 4000);
     return () => clearTimeout(timer);
   }, [runStatusCheck, status]);
 
   useEffect(() => {
     if (!status) return;
-    if (status.status === "PAID") {
+    if (status.status === "PAID" || status.status === "SUCCEEDED") {
       trackEvent("checkout_payment_succeeded", {
         purchaseId: status.purchaseId ?? null,
         paymentIntentId: status.paymentIntentId ?? null,
       });
-    } else if (status.status === "FAILED") {
+    } else if (["FAILED", "CANCELED", "CANCELLED", "EXPIRED"].includes(status.status)) {
       trackEvent("checkout_payment_failed", {
         purchaseId: status.purchaseId ?? null,
         paymentIntentId: status.paymentIntentId ?? null,
@@ -115,7 +121,7 @@ export default function CheckoutSuccessScreen() {
   }, [status]);
 
   const copy = resolveStatusCopy(status?.status ?? null);
-  const isPaid = status?.status === "PAID";
+  const isPaid = status?.status === "PAID" || status?.status === "SUCCEEDED";
 
   return (
     <>

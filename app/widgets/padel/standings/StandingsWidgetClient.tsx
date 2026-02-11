@@ -98,7 +98,7 @@ export default function StandingsWidgetClient({
   const groups = useMemo(() => Object.entries(standings), [standings]);
 
   return (
-    <div className="min-h-screen bg-[#0b0f1d] px-4 py-4 text-white">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-4 text-white">
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{t("standings", resolvedLocale)}</p>

@@ -5,8 +5,6 @@ import { getActiveSession } from "./session";
 import { resetOnboardingDone } from "./onboardingState";
 import { clearOnboardingDraft } from "./onboardingDraft";
 import { perfMark, perfMeasure } from "./perf";
-import { api } from "./api";
-import { safeAsyncStorage } from "./storage";
 
 type AuthState = {
   loading: boolean;
@@ -24,7 +22,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any | null>(null);
   const sessionRef = useRef<any | null>(null);
-  const claimInFlight = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     sessionRef.current = session;
@@ -69,34 +66,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       subscription.remove();
     };
   }, []);
-
-  useEffect(() => {
-    const userId = session?.user?.id ?? null;
-    if (!userId) return;
-
-    const cooldownMs = 24 * 60 * 60 * 1000;
-    const storageKey = `orya:claim-guest:${userId}`;
-
-    const runClaim = async () => {
-      if (claimInFlight.current.has(userId)) return;
-      const lastRaw = await safeAsyncStorage.getItem(storageKey);
-      const last = lastRaw ? Number(lastRaw) : null;
-      if (last && Number.isFinite(last) && Date.now() - last < cooldownMs) {
-        return;
-      }
-      claimInFlight.current.add(userId);
-      await safeAsyncStorage.setItem(storageKey, String(Date.now()));
-      try {
-        await api.request("/api/me/claim-guest", { method: "POST" });
-      } catch (err) {
-        console.warn("[auth] claim-guest falhou", err);
-      } finally {
-        claimInFlight.current.delete(userId);
-      }
-    };
-
-    runClaim();
-  }, [session?.user?.id]);
 
   const value = useMemo(
     () => ({

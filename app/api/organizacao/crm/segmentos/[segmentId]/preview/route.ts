@@ -7,7 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
-import { resolveSegmentUserIds } from "@/lib/crm/segmentQuery";
+import { resolveSegmentContactIds } from "@/lib/crm/segmentQuery";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
@@ -47,10 +47,10 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
       return jsonWrap({ ok: false, error: "Segmento não encontrado." }, { status: 404 });
     }
 
-    const resolved = await resolveSegmentUserIds({
+    const resolved = await resolveSegmentContactIds({
       organizationId: organization.id,
       rules: segment.rules,
-      maxUsers: MAX_SAMPLE,
+      maxContacts: MAX_SAMPLE,
     });
 
     try {
@@ -62,15 +62,16 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
       console.warn("[crm][segment-preview] falha ao atualizar cache do segmento", err);
     }
 
-    const items = resolved.userIds.length
-      ? await prisma.crmCustomer.findMany({
+    const items = resolved.contactIds.length
+      ? await prisma.crmContact.findMany({
           where: {
             organizationId: organization.id,
-            userId: { in: resolved.userIds },
+            id: { in: resolved.contactIds },
           },
           select: {
             id: true,
             userId: true,
+            contactType: true,
             displayName: true,
             lastActivityAt: true,
             totalSpentCents: true,
@@ -84,7 +85,8 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
 
     const mapped = items.map((item) => ({
       id: item.id,
-      userId: item.userId,
+      userId: item.userId ?? null,
+      contactType: item.contactType,
       displayName: item.displayName || item.user?.fullName || item.user?.username || null,
       avatarUrl: item.user?.avatarUrl ?? null,
       lastActivityAt: item.lastActivityAt,

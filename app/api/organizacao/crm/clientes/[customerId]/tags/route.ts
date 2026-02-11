@@ -78,7 +78,7 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ customerId: s
 
     const resolvedParams = await context.params;
     const customerId = resolvedParams.customerId;
-    const updated = await prisma.crmCustomer.updateMany({
+    const updated = await prisma.crmContact.updateMany({
       where: { id: customerId, organizationId: organization.id },
       data: { tags: uniqueTags },
     });

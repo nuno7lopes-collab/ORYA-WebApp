@@ -117,7 +117,7 @@ describe("handleStripeWebhook", () => {
       expect.objectContaining({ data: { status: "REVOKED" } })
     );
     expect(prismaMock.ticket.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "CANCELLED" } })
+      expect.objectContaining({ data: { status: "CHARGEBACK_LOST" } })
     );
     expect(recordOutboxEvent).toHaveBeenCalled();
   });

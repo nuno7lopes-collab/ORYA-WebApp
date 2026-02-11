@@ -9,6 +9,9 @@ type RebuildResult = {
   consentReset: number;
   consentUpdated: number;
   contactsUpdated: number;
+  contactTotalsUpdated: number;
+  contactNotesUpdated: number;
+  contactNotesZeroed: number;
 };
 
 export async function rebuildCrmCustomers(options?: { organizationId?: number | null }): Promise<RebuildResult> {
@@ -172,6 +175,76 @@ export async function rebuildCrmCustomers(options?: { organizationId?: number | 
       ${orgFilterAlias}
   `);
 
+  const contactTotalsUpdated = await prisma.$executeRaw(Prisma.sql`
+    UPDATE app_v3.crm_contacts c
+    SET
+      first_interaction_at = s.first_interaction_at,
+      last_activity_at = s.last_activity_at,
+      last_purchase_at = s.last_purchase_at,
+      total_spent_cents = s.total_spent_cents,
+      total_orders = s.total_orders,
+      total_bookings = s.total_bookings,
+      total_attendances = s.total_attendances,
+      total_tournaments = s.total_tournaments,
+      total_store_orders = s.total_store_orders,
+      updated_at = now()
+    FROM (
+      SELECT
+        organization_id,
+        contact_id,
+        MIN(occurred_at) AS first_interaction_at,
+        MAX(occurred_at) AS last_activity_at,
+        MAX(CASE
+          WHEN type IN (
+            'STORE_ORDER_PAID'::app_v3."CrmInteractionType",
+            'EVENT_TICKET'::app_v3."CrmInteractionType",
+            'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
+            'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType"
+          ) THEN occurred_at
+        END) AS last_purchase_at,
+        COALESCE(SUM(CASE
+          WHEN type IN (
+            'STORE_ORDER_PAID'::app_v3."CrmInteractionType",
+            'EVENT_TICKET'::app_v3."CrmInteractionType",
+            'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
+            'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType"
+          ) THEN amount_cents ELSE 0 END), 0) AS total_spent_cents,
+        COUNT(CASE WHEN type = 'EVENT_TICKET'::app_v3."CrmInteractionType" THEN 1 END) AS total_orders,
+        COUNT(CASE WHEN type = 'BOOKING_CONFIRMED'::app_v3."CrmInteractionType" THEN 1 END) AS total_bookings,
+        COUNT(CASE WHEN type = 'EVENT_CHECKIN'::app_v3."CrmInteractionType" THEN 1 END) AS total_attendances,
+        COUNT(CASE WHEN type = 'PADEL_TOURNAMENT_ENTRY'::app_v3."CrmInteractionType" THEN 1 END) AS total_tournaments,
+        COUNT(CASE WHEN type = 'STORE_ORDER_PAID'::app_v3."CrmInteractionType" THEN 1 END) AS total_store_orders
+      FROM app_v3.crm_interactions
+      WHERE contact_id IS NOT NULL
+      ${orgFilter}
+      GROUP BY organization_id, contact_id
+    ) s
+    WHERE c.organization_id = s.organization_id AND c.id = s.contact_id
+  `);
+
+  const contactNotesUpdated = await prisma.$executeRaw(Prisma.sql`
+    UPDATE app_v3.crm_contacts c
+    SET notes_count = COALESCE(n.notes_count, 0)
+    FROM (
+      SELECT organization_id, contact_id, COUNT(*) AS notes_count
+      FROM app_v3.crm_contact_notes
+      WHERE 1=1
+      ${orgFilter}
+      GROUP BY organization_id, contact_id
+    ) n
+    WHERE c.id = n.contact_id AND c.organization_id = n.organization_id
+  `);
+
+  const contactNotesZeroed = await prisma.$executeRaw(Prisma.sql`
+    UPDATE app_v3.crm_contacts c
+    SET notes_count = 0
+    WHERE ${organizationId ? Prisma.sql`c.organization_id = ${organizationId}` : Prisma.sql`TRUE`}
+      AND NOT EXISTS (
+        SELECT 1 FROM app_v3.crm_contact_notes n
+        WHERE n.contact_id = c.id
+      )
+  `);
+
   return {
     inserted: Number(inserted),
     updated: Number(updated),
@@ -180,5 +253,8 @@ export async function rebuildCrmCustomers(options?: { organizationId?: number | 
     consentReset: Number(consentReset),
     consentUpdated: Number(consentUpdated),
     contactsUpdated: Number(contactsUpdated),
+    contactTotalsUpdated: Number(contactTotalsUpdated),
+    contactNotesUpdated: Number(contactNotesUpdated),
+    contactNotesZeroed: Number(contactNotesZeroed),
   };
 }

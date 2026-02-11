@@ -3,7 +3,15 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { AddressSourceProvider } from "@prisma/client";
+import {
+  AddressSourceProvider,
+  ConsentStatus,
+  ConsentType,
+  CrmContactLegalBasis,
+  CrmContactType,
+  CrmInteractionSource,
+  CrmInteractionType,
+} from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isUnauthenticatedError } from "@/lib/security";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
@@ -20,6 +28,7 @@ import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -96,6 +105,7 @@ async function _POST(
     const guestEmailRaw = typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
     const guestNameRaw = typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
     const guestPhoneRaw = typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
+    const guestConsent = guestInput?.consent === true;
     const guestEmailNormalized = normalizeEmail(guestEmailRaw);
     const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
     const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
@@ -178,6 +188,12 @@ async function _POST(
           { status: 400 },
         );
       }
+      if (!guestConsent) {
+        return jsonWrap(
+          { ok: false, error: "CONSENT_REQUIRED", message: "Tens de aceitar a política de privacidade." },
+          { status: 400 },
+        );
+      }
       if (!EMAIL_REGEX.test(guestEmailRaw)) {
         return jsonWrap({ ok: false, error: "INVALID_GUEST_EMAIL", message: "Email inválido." }, { status: 400 });
       }
@@ -186,6 +202,52 @@ async function _POST(
           { ok: false, error: "PHONE_REQUIRED", message: "Telemóvel obrigatório para reservar." },
           { status: 400 },
         );
+      }
+    }
+
+    if (!user && guestEmail && guestConsent) {
+      const consentNow = new Date();
+      const consents = [
+        {
+          type: ConsentType.CONTACT_EMAIL,
+          status: ConsentStatus.GRANTED,
+          source: "BOOKING_GUEST",
+          grantedAt: consentNow,
+        },
+        ...(guestPhone
+          ? [
+              {
+                type: ConsentType.CONTACT_SMS,
+                status: ConsentStatus.GRANTED,
+                source: "BOOKING_GUEST",
+                grantedAt: consentNow,
+              },
+            ]
+          : []),
+      ];
+
+      try {
+        await ingestCrmInteraction({
+          organizationId: service.organizationId,
+          userId: null,
+          type: CrmInteractionType.FORM_SUBMITTED,
+          sourceType: CrmInteractionSource.FORM,
+          sourceId: String(service.id),
+          externalId: `guest-consent:service:${service.id}:${guestEmailNormalized ?? guestEmail}`,
+          occurredAt: consentNow,
+          contactEmail: guestEmail,
+          contactPhone: guestPhone || null,
+          displayName: guestNameRaw || null,
+          contactType: CrmContactType.GUEST,
+          legalBasis: CrmContactLegalBasis.CONSENT,
+          consents,
+          metadata: {
+            serviceId: service.id,
+            organizationId: service.organizationId,
+          },
+        });
+      } catch (err) {
+        console.warn("[reservas/reservar] CRM consent ingest failed", err);
       }
     }
 

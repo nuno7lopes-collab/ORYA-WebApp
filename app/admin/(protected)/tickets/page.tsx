@@ -80,6 +80,8 @@ function statusBadgeClasses(status: string) {
       return "bg-sky-500/12 text-sky-100 border-sky-400/30";
     case "REFUNDED":
       return "bg-amber-500/12 text-amber-100 border-amber-400/30";
+    case "CHARGEBACK_LOST":
+      return "bg-red-500/12 text-red-100 border-red-400/30";
     case "CANCELLED":
       return "bg-rose-500/12 text-rose-100 border-rose-400/30";
     case "RESALE_LISTED":
@@ -98,6 +100,8 @@ function statusLabel(status?: string | null) {
       return "Check-in";
     case "REFUNDED":
       return "Reembolsado";
+    case "CHARGEBACK_LOST":
+      return "Chargeback";
     case "CANCELLED":
       return "Cancelado";
     case "RESALE_LISTED":
@@ -310,6 +314,7 @@ export default function AdminTicketsPage() {
                   <option value="ACTIVE">Ativos</option>
                   <option value="CHECKED_IN">Check-in</option>
                   <option value="REFUNDED">Reembolsados</option>
+                  <option value="CHARGEBACK_LOST">Chargeback</option>
                   <option value="CANCELLED">Cancelados</option>
                   <option value="RESALE_LISTED">Em revenda</option>
                 </select>

@@ -51,6 +51,19 @@ async function resolveInviteAccess(
   if (invite.revokedAt || invite.status === "REVOKED") {
     return { ok: true as const, writeAllowed: false as const };
   }
+  if (!ownerClauses.length) {
+    await prisma.$transaction([
+      prisma.chatEventInvite.update({
+        where: { id: invite.id },
+        data: { status: "REVOKED", revokedAt: now, updatedAt: now },
+      }),
+      prisma.chatMember.updateMany({
+        where: { threadId, userId },
+        data: { accessRevokedAt: now },
+      }),
+    ]);
+    return { ok: true as const, writeAllowed: false as const };
+  }
 
   const entitlement = await prisma.entitlement.findFirst({
     where: {

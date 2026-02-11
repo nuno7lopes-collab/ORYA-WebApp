@@ -1,5 +1,18 @@
 export type CheckoutMethod = "card" | "mbway" | "apple_pay";
 
+export type CheckoutStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "REQUIRES_ACTION"
+  | "PAID"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "REFUNDED"
+  | "DISPUTED"
+  | "CANCELED"
+  | "CANCELLED"
+  | "EXPIRED";
+
 export type CheckoutLine = {
   ticketTypeId?: number;
   name: string;
@@ -31,11 +44,6 @@ export type CheckoutDraft = {
   bookingStartsAt?: string | null;
   pendingExpiresAt?: string | null;
   bookingExpiresAt?: string | null;
-  guest?: {
-    name?: string | null;
-    email?: string | null;
-    phone?: string | null;
-  } | null;
   sourceType?: string;
   paymentScenario?: string | null;
   pairingId?: number | null;
@@ -72,8 +80,10 @@ export type CheckoutIntentResponse = {
 };
 
 export type CheckoutStatusResponse = {
-  status: string;
+  status: CheckoutStatus;
+  statusV1?: "PENDING" | "PROCESSING" | "REQUIRES_ACTION" | "SUCCEEDED" | "FAILED" | "CANCELED" | "EXPIRED";
   final: boolean;
+  checkoutId?: string | null;
   purchaseId?: string | null;
   paymentIntentId?: string | null;
   code?: string;

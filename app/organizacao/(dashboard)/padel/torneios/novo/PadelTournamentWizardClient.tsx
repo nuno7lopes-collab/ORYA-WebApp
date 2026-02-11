@@ -590,7 +590,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   };
 
   return (
-    <div className="min-h-screen bg-[#05070f] py-10 text-white">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] py-10 text-white">
       <div className="mx-auto w-full max-w-5xl space-y-8 px-4">
         <header className="space-y-2">
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Padel Wizard</p>

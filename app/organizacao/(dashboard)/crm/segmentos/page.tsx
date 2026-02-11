@@ -24,6 +24,8 @@ const NUMBER_FIELDS = new Set([
   "totalAttendances",
   "totalTournaments",
   "totalStoreOrders",
+  "padel.tournamentsCount",
+  "padel.noShowCount",
 ]);
 
 const FIELD_OPTIONS = [
@@ -35,6 +37,13 @@ const FIELD_OPTIONS = [
   { value: "totalAttendances", label: "Total check-ins" },
   { value: "totalTournaments", label: "Total torneios" },
   { value: "totalStoreOrders", label: "Total compras loja" },
+  { value: "contactType", label: "Tipo de contacto" },
+  { value: "sourceType", label: "Origem do contacto" },
+  { value: "padel.level", label: "Padel nível" },
+  { value: "padel.preferredSide", label: "Padel lado preferido" },
+  { value: "padel.clubName", label: "Padel clube" },
+  { value: "padel.tournamentsCount", label: "Padel torneios (contagem)" },
+  { value: "padel.noShowCount", label: "Padel no-shows (contagem)" },
   { value: "tag", label: "Tag" },
   { value: "interactionType", label: "Tipo de interação" },
   { value: "marketingOptIn", label: "Marketing opt-in" },
@@ -56,6 +65,14 @@ const OP_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
   ],
   interactionType: [{ value: "in", label: "Inclui" }],
   marketingOptIn: [{ value: "eq", label: "É" }],
+  contactType: [
+    { value: "eq", label: "É" },
+    { value: "in", label: "Inclui" },
+  ],
+  sourceType: [
+    { value: "eq", label: "É" },
+    { value: "in", label: "Inclui" },
+  ],
   default: [{ value: "eq", label: "Igual" }],
 };
 
@@ -68,6 +85,12 @@ const INTERACTION_TYPES = [
   "BOOKING_CANCELLED",
   "BOOKING_COMPLETED",
   "STORE_ORDER_PAID",
+  "ORG_FOLLOWED",
+  "ORG_UNFOLLOWED",
+  "PROFILE_VIEWED",
+  "EVENT_VIEWED",
+  "EVENT_SAVED",
+  "FORM_SUBMITTED",
 ];
 
 type SegmentRow = {
@@ -107,6 +130,8 @@ function resolveOpOptions(field: string) {
   if (field === "tag") return OP_OPTIONS.tag;
   if (field === "interactionType") return OP_OPTIONS.interactionType;
   if (field === "marketingOptIn") return OP_OPTIONS.marketingOptIn;
+  if (field === "contactType") return OP_OPTIONS.contactType;
+  if (field === "sourceType") return OP_OPTIONS.sourceType;
   return OP_OPTIONS.default;
 }
 
@@ -150,6 +175,18 @@ export default function CrmSegmentosPage() {
           value = rawValue
             .split(",")
             .map((v) => v.trim().toUpperCase())
+            .filter(Boolean);
+        }
+        if (field === "contactType") {
+          value = rawValue
+            .split(",")
+            .map((v) => v.trim().toUpperCase())
+            .filter(Boolean);
+        }
+        if (field === "sourceType") {
+          value = rawValue
+            .split(",")
+            .map((v) => v.trim())
             .filter(Boolean);
         }
 

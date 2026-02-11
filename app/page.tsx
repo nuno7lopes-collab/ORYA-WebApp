@@ -155,7 +155,7 @@ export default async function HomePage() {
   const heroVideoSrc = "/videos/app-hero.mp4";
 
   return (
-    <main className="min-h-0 bg-[#0b1014] text-white flex flex-col">
+    <main className="min-h-0 bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white flex flex-col">
       <MobileTopBar />
 
       <section className="orya-page-width px-4 md:px-8 pt-24 pb-12 lg:pt-24">

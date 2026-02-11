@@ -1,9 +1,9 @@
 // app/api/auth/me/route.ts
-import { NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import type { User } from "@supabase/supabase-js";
 import { setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { normalizeProfileAvatarUrl } from "@/lib/profileMedia";
@@ -74,22 +74,36 @@ async function _GET() {
 
     const userId = user.id;
 
-    // Garantir Profile 1-1 com auth.users e prefs (upsert evita corrida concorrente)
-    const [initialProfile, notificationPrefs] = await Promise.all([
-      prisma.profile.upsert({
-        where: { id: userId },
-        create: {
-          id: userId,
-          username: null,
-          fullName: userMetadata.full_name ?? userMetadata.name ?? null,
-          avatarUrl: normalizeProfileAvatarUrl(userMetadata.avatar_url ?? null),
-          roles: ["user"],
-          visibility: "PUBLIC",
-        },
-        update: {},
-      }),
-      getNotificationPrefs(userId).catch(() => null),
-    ]);
+    // Garantir Profile 1-1 com auth.users sem writes recorrentes no endpoint de leitura.
+    const notificationPrefsPromise = getNotificationPrefs(userId).catch(() => null);
+    let initialProfile = await prisma.profile.findUnique({ where: { id: userId } });
+    if (!initialProfile) {
+      try {
+        initialProfile = await prisma.profile.create({
+          data: {
+            id: userId,
+            username: null,
+            fullName: userMetadata.full_name ?? userMetadata.name ?? null,
+            avatarUrl: normalizeProfileAvatarUrl(userMetadata.avatar_url ?? null),
+            roles: ["user"],
+            visibility: "PUBLIC",
+          },
+        });
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === "P2002"
+        ) {
+          initialProfile = await prisma.profile.findUnique({ where: { id: userId } });
+        } else {
+          throw err;
+        }
+      }
+    }
+    if (!initialProfile) {
+      throw new Error("PROFILE_INIT_FAILED");
+    }
+    const notificationPrefs = await notificationPrefsPromise;
     let profile = initialProfile;
 
     const pendingUsername = typeof userMetadata.pending_username === "string" ? userMetadata.pending_username : null;

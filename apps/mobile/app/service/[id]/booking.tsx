@@ -104,16 +104,12 @@ export default function ServiceBookingScreen() {
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [pendingSlot, setPendingSlot] = useState<AvailabilitySlot | null>(null);
-  const [guestName, setGuestName] = useState("");
-  const [guestEmail, setGuestEmail] = useState("");
-  const [guestPhone, setGuestPhone] = useState("");
 
   const assignmentMode = useMemo(
     () => resolveAssignmentMode(service?.kind ?? null, service?.organization?.reservationAssignmentMode ?? null),
     [service?.kind, service?.organization?.reservationAssignmentMode],
   );
-  const guestAllowed = Boolean(service?.policy?.guestBookingAllowed);
-  const isGuest = !session?.user?.id;
+  const isAuthenticated = Boolean(session?.user?.id);
 
   const availableProfessionals = useMemo(() => {
     const professionals = service?.professionals ?? [];
@@ -275,7 +271,7 @@ export default function ServiceBookingScreen() {
   const reserveSlot = useCallback(async (slotOverride?: AvailabilitySlot) => {
     const slot = slotOverride ?? selectedSlot;
     if (!serviceId || !service || !slot) return;
-    if (isGuest && !guestAllowed) {
+    if (!isAuthenticated) {
       openAuth();
       return;
     }
@@ -285,11 +281,6 @@ export default function ServiceBookingScreen() {
       if (service.locationMode === "CHOOSE_AT_BOOKING" && !addressSelection?.addressId) {
         throw new Error("Seleciona uma morada antes de reservar.");
       }
-      if (isGuest) {
-        if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim()) {
-          throw new Error("Nome, email e telemóvel são obrigatórios.");
-        }
-      }
       const payload = buildBookingPayload({
         startsAt: slot.startsAt,
         professionalId: assignmentMode === "PROFESSIONAL" ? selectedProfessionalId : null,
@@ -298,16 +289,6 @@ export default function ServiceBookingScreen() {
         selectedAddons: selectedAddonsPayload,
         packageId: selectedPackageId,
       });
-      const payloadWithGuest = isGuest
-        ? {
-            ...payload,
-            guest: {
-              name: guestName.trim(),
-              email: guestEmail.trim(),
-              phone: guestPhone.trim(),
-            },
-          }
-        : payload;
       const result = await api.requestRaw<{
         ok: boolean;
         booking?: { id?: number; startsAt?: string; pendingExpiresAt?: string | null };
@@ -316,15 +297,13 @@ export default function ServiceBookingScreen() {
       }>(`/api/servicos/${serviceId}/reservar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payloadWithGuest),
+        body: JSON.stringify(payload),
       });
       const json = result.data;
       if (!result.ok || !json?.ok) {
         if (json?.error === "PHONE_REQUIRED") {
-          if (!isGuest) {
-            setPhoneRequired(true);
-            setPendingSlot(slot);
-          }
+          setPhoneRequired(true);
+          setPendingSlot(slot);
           throw new Error(json?.message || "Telemóvel obrigatório para reservar.");
         }
         throw new Error(json?.message || json?.error || "Não foi possível criar a pré-reserva.");
@@ -341,9 +320,6 @@ export default function ServiceBookingScreen() {
         bookingStartsAt: json.booking?.startsAt ?? slot.startsAt,
         pendingExpiresAt: json.booking?.pendingExpiresAt ?? null,
         bookingExpiresAt: json.booking?.pendingExpiresAt ?? null,
-        guest: isGuest
-          ? { name: guestName.trim(), email: guestEmail.trim(), phone: guestPhone.trim() }
-          : null,
         sourceType: "SERVICE_BOOKING",
         ticketName: "Reserva",
         quantity: 1,
@@ -375,11 +351,7 @@ export default function ServiceBookingScreen() {
     addressSelection?.addressId,
     assignmentMode,
     basePriceCents,
-    guestAllowed,
-    guestEmail,
-    guestName,
-    guestPhone,
-    isGuest,
+    isAuthenticated,
     openAuth,
     router,
     selectedAddonsPayload,
@@ -435,8 +407,7 @@ export default function ServiceBookingScreen() {
   const canReserve =
     Boolean(selectedSlot) &&
     (!phoneRequired) &&
-    (!service || service.locationMode !== "CHOOSE_AT_BOOKING" || Boolean(addressSelection?.addressId)) &&
-    (!isGuest || (guestName.trim() && guestEmail.trim() && guestPhone.trim()));
+    (!service || service.locationMode !== "CHOOSE_AT_BOOKING" || Boolean(addressSelection?.addressId));
 
   if (isLoading) {
     return (
@@ -753,40 +724,6 @@ export default function ServiceBookingScreen() {
               </View>
             </GlassCard>
 
-            {isGuest && guestAllowed ? (
-              <GlassCard intensity={50}>
-                <View className="gap-3">
-                  <Text className="text-white text-sm font-semibold">Dados do convidado</Text>
-                  <View className="gap-2">
-                    <TextInput
-                      value={guestName}
-                      onChangeText={setGuestName}
-                      placeholder="Nome"
-                      placeholderTextColor="rgba(255,255,255,0.45)"
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
-                    />
-                    <TextInput
-                      value={guestEmail}
-                      onChangeText={setGuestEmail}
-                      placeholder="Email"
-                      placeholderTextColor="rgba(255,255,255,0.45)"
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
-                    />
-                    <TextInput
-                      value={guestPhone}
-                      onChangeText={setGuestPhone}
-                      placeholder="Telemóvel"
-                      placeholderTextColor="rgba(255,255,255,0.45)"
-                      keyboardType="phone-pad"
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white"
-                    />
-                  </View>
-                </View>
-              </GlassCard>
-            ) : null}
-
             {selectedDay ? (
               <GlassCard intensity={50}>
                 <View className="gap-3">
@@ -900,7 +837,7 @@ export default function ServiceBookingScreen() {
                     </Text>
                   )}
                 </Pressable>
-                {!session?.user?.id && !guestAllowed ? (
+                {!session?.user?.id ? (
                   <Text className="text-white/60 text-xs text-center">Inicia sessão para concluir.</Text>
                 ) : null}
               </View>

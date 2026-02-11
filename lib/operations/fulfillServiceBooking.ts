@@ -15,6 +15,7 @@ import {
 } from "@/lib/reservas/confirmationSnapshot";
 import { normalizeEmail } from "@/lib/utils/email";
 import { updateBooking } from "@/domain/bookings/commands";
+import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 
 function parseNumber(value: unknown) {
   const parsed = Number(value);
@@ -48,8 +49,8 @@ const extractSnapshotCreatedAt = (snapshot: unknown, fallback: Date) => {
 const DEFAULT_TIMEZONE = "Europe/Lisbon";
 
 function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
+  if (params.ownerUserId) return `user:${params.ownerUserId}`;
   const guest = normalizeEmail(params.guestEmail);
   if (guest) return `email:${guest}`;
   return "unknown";
@@ -332,7 +333,7 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
 
     const newPriceCents = Math.max(0, Math.round((booking.price ?? 0) + request.priceDeltaCents));
     const actorUserId = request.respondedByUserId ?? booking.userId ?? null;
-    const { booking: updated } = await updateBooking({
+    const { booking: updated } = (await updateBooking({
       tx,
       bookingId: booking.id,
       organizationId: booking.organizationId,
@@ -390,7 +391,7 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
           },
         },
       },
-    });
+    })) as { booking: any; outboxEventId: string };
 
     if (request.priceDeltaCents !== 0 || !updated.confirmationSnapshot) {
       const snapshotResult = await buildBookingConfirmationSnapshot({
@@ -525,7 +526,16 @@ async function upsertBookingEntitlement(params: {
 }) {
   const { tx, booking, purchaseId, ownerUserId = null, ownerIdentityId = null, guestEmail = null } = params;
   if (!ownerUserId && !ownerIdentityId && !guestEmail) return;
-  const ownerKey = buildOwnerKey({ ownerUserId, ownerIdentityId, guestEmail });
+  let resolvedIdentityId = ownerIdentityId;
+  if (!resolvedIdentityId && ownerUserId) {
+    const identity = await resolveIdentityForUser({ userId: ownerUserId, email: guestEmail, tx });
+    resolvedIdentityId = identity.id;
+  } else if (!resolvedIdentityId && guestEmail) {
+    const identity = await ensureEmailIdentity({ email: guestEmail, tx });
+    resolvedIdentityId = identity.id;
+  }
+  const entitlementOwnerUserId = resolvedIdentityId ? null : ownerUserId;
+  const ownerKey = buildOwnerKey({ ownerUserId: entitlementOwnerUserId, ownerIdentityId: resolvedIdentityId, guestEmail });
   const snapshotTitle = booking.service?.title ?? `Reserva ${booking.id}`;
   const snapshotCoverUrl = booking.service?.coverImageUrl ?? null;
   const snapshotVenueName =
@@ -543,8 +553,8 @@ async function upsertBookingEntitlement(params: {
     },
     update: {
       status: EntitlementStatus.ACTIVE,
-      ownerUserId,
-      ownerIdentityId,
+      ownerUserId: entitlementOwnerUserId,
+      ownerIdentityId: resolvedIdentityId,
       purchaseId,
       snapshotTitle,
       snapshotCoverUrl,
@@ -556,8 +566,8 @@ async function upsertBookingEntitlement(params: {
     create: {
       type: EntitlementType.SERVICE_BOOKING,
       status: EntitlementStatus.ACTIVE,
-      ownerUserId,
-      ownerIdentityId,
+      ownerUserId: entitlementOwnerUserId,
+      ownerIdentityId: resolvedIdentityId,
       ownerKey,
       purchaseId,
       bookingId: booking.id,
@@ -737,14 +747,32 @@ export async function fulfillServiceBookingIntent(
   const amountCents = intent.amount_received ?? intent.amount ?? 0;
 
   let crmPayload:
-    | { organizationId: number; userId: string; bookingId: number; amountCents: number; currency: string }
+    | {
+        organizationId: number;
+        userId?: string | null;
+        bookingId: number;
+        amountCents: number;
+        currency: string;
+        serviceId?: number | null;
+        availabilityId?: number | null;
+        guestEmail?: string | null;
+      }
     | null = null;
 
   try {
     const txnResult = await prisma.$transaction(async (tx) => {
       const now = new Date();
       let crmPayload:
-        | { organizationId: number; userId: string; bookingId: number; amountCents: number; currency: string }
+        | {
+            organizationId: number;
+            userId?: string | null;
+            bookingId: number;
+            amountCents: number;
+            currency: string;
+            serviceId?: number | null;
+            availabilityId?: number | null;
+            guestEmail?: string | null;
+          }
         | null = null;
       if (bookingId) {
         const result = await confirmPendingBooking({
@@ -833,15 +861,16 @@ export async function fulfillServiceBookingIntent(
         });
 
         const resolvedUserId = userId ?? booking.userId;
-        crmPayload = resolvedUserId
-          ? {
-              organizationId: booking.organizationId,
-              userId: resolvedUserId,
-              bookingId: booking.id,
-              amountCents,
-              currency: (intent.currency ?? "eur").toUpperCase(),
-            }
-          : null;
+        crmPayload = {
+          organizationId: booking.organizationId,
+          userId: resolvedUserId ?? undefined,
+          bookingId: booking.id,
+          amountCents,
+          currency: (intent.currency ?? "eur").toUpperCase(),
+          serviceId: booking.serviceId ?? null,
+          availabilityId: booking.availabilityId ?? null,
+          guestEmail: booking.guestEmail ?? null,
+        };
         return { crmPayload };
       }
 
@@ -1091,14 +1120,19 @@ export async function fulfillServiceBookingIntent(
     try {
       await ingestCrmInteraction({
         organizationId: crmPayload.organizationId,
-        userId: crmPayload.userId,
+        userId: crmPayload.userId ?? undefined,
         type: CrmInteractionType.BOOKING_CONFIRMED,
         sourceType: CrmInteractionSource.BOOKING,
         sourceId: String(crmPayload.bookingId),
         occurredAt: new Date(),
         amountCents: crmPayload.amountCents,
         currency: crmPayload.currency,
-        metadata: { bookingId: crmPayload.bookingId },
+        contactEmail: crmPayload.guestEmail ?? undefined,
+        metadata: {
+          bookingId: crmPayload.bookingId,
+          serviceId: crmPayload.serviceId ?? null,
+          availabilityId: crmPayload.availabilityId ?? null,
+        },
       });
     } catch (err) {
       logError("fulfill_service_booking.crm_interaction_failed", err, { bookingId: crmPayload.bookingId });

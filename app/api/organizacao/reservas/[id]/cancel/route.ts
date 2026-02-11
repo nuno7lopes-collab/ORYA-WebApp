@@ -56,7 +56,19 @@ async function _POST(
           paymentIntentId: string;
         }>;
         snapshotTimezone: string;
-        crmPayload: { organizationId: number; userId: string; bookingId: number } | null;
+        crmPayload:
+          | {
+              organizationId: number;
+              userId?: string | null;
+              bookingId: number;
+              guestEmail?: string | null;
+              serviceId?: number | null;
+              availabilityId?: number | null;
+              courtId?: number | null;
+              resourceId?: number | null;
+              professionalId?: number | null;
+            }
+          | null;
       };
 
   const resolved = await params;
@@ -124,6 +136,7 @@ async function _POST(
         select: {
           id: true,
           userId: true,
+          guestEmail: true,
           status: true,
           startsAt: true,
           paymentIntentId: true,
@@ -303,11 +316,17 @@ async function _POST(
         refundAmountCents,
         splitRefunds,
         snapshotTimezone: booking.snapshotTimezone,
-        crmPayload: booking.userId
+        crmPayload: booking.userId || booking.guestEmail
           ? {
               organizationId: organization.id,
-              userId: booking.userId,
+              userId: booking.userId ?? undefined,
               bookingId: booking.id,
+              guestEmail: booking.guestEmail ?? null,
+              serviceId: booking.serviceId ?? null,
+              availabilityId: booking.availabilityId ?? null,
+              courtId: booking.courtId ?? null,
+              resourceId: booking.resourceId ?? null,
+              professionalId: booking.professionalId ?? null,
             }
           : null,
       };
@@ -370,13 +389,19 @@ async function _POST(
       try {
         await ingestCrmInteraction({
           organizationId: crmPayload.organizationId,
-          userId: crmPayload.userId,
+          userId: crmPayload.userId ?? undefined,
           type: CrmInteractionType.BOOKING_CANCELLED,
           sourceType: CrmInteractionSource.BOOKING,
           sourceId: String(crmPayload.bookingId),
           occurredAt: new Date(),
+          contactEmail: crmPayload.guestEmail ?? undefined,
           metadata: {
             bookingId: crmPayload.bookingId,
+            serviceId: crmPayload.serviceId ?? null,
+            availabilityId: crmPayload.availabilityId ?? null,
+            courtId: crmPayload.courtId ?? null,
+            resourceId: crmPayload.resourceId ?? null,
+            professionalId: crmPayload.professionalId ?? null,
             canceledBy: "ORG",
           },
         });

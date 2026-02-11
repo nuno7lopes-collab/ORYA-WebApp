@@ -28,6 +28,9 @@ async function _GET(req: NextRequest) {
       identityIds,
       email: user.email ?? null,
     });
+    if (!ownerClauses.length) {
+      return jsonWrap({ items: [] }, { status: 200 });
+    }
 
     await prisma.chatEventInvite.updateMany({
       where: { status: "PENDING", expiresAt: { lte: now } },

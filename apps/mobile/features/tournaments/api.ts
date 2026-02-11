@@ -63,6 +63,79 @@ export type PadelMyPairing = {
 
 export type PadelMatch = Record<string, any>;
 
+export type PadelDiscoverItem = {
+  id: number;
+  slug: string | null;
+  title: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  coverImageUrl?: string | null;
+  locationFormattedAddress?: string | null;
+  addressId?: string | null;
+  priceFrom?: number | null;
+  organizationName?: string | null;
+  format?: string | null;
+  eligibility?: string | null;
+  v2Enabled?: boolean | null;
+  splitDeadlineHours?: number | null;
+  competitionState?: string | null;
+  levels?: Array<{ id: number; label: string }> | null;
+};
+
+export type PadelMeSummary = {
+  profile: {
+    id: string;
+    fullName: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+    gender: string | null;
+    padelLevel: string | null;
+    padelPreferredSide: string | null;
+    padelClubName: string | null;
+  } | null;
+  onboarding: { missing: Record<string, boolean>; completed: boolean };
+  stats: {
+    matchesPlayed: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    tournaments: number;
+    pairingsActive: number;
+    waitlistCount: number;
+  };
+  pairings: Array<Record<string, any>>;
+  waitlist: Array<Record<string, any>>;
+};
+
+export type PadelMeMatch = {
+  id: number;
+  status: string | null;
+  startTime?: string | null;
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
+  courtName?: string | null;
+  pairingSide?: "A" | "B" | null;
+  winnerSide?: "A" | "B" | null;
+  isWinner?: boolean | null;
+  scoreSets?: unknown;
+  score?: unknown;
+  event?: {
+    id: number;
+    title: string | null;
+    slug: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    coverImageUrl?: string | null;
+  } | null;
+  category?: { id: number; label: string | null } | null;
+};
+
+export type PadelRankingRow = {
+  position: number;
+  points: number;
+  player: { id: number; fullName: string | null; level: string | null };
+};
+
 const parseItems = <T>(payload: unknown, key: string): T[] => {
   if (!payload || typeof payload !== "object") return [];
   const raw = (payload as Record<string, unknown>)[key];
@@ -164,4 +237,58 @@ export const declineInvite = async (pairingId: number) => {
     method: "POST",
   });
   return unwrapApiResponse(response);
+};
+
+export const fetchPadelSummary = async (): Promise<PadelMeSummary> => {
+  const response = await api.request<unknown>("/api/padel/me/summary");
+  return unwrapApiResponse(response) as PadelMeSummary;
+};
+
+export const fetchPadelMyMatches = async (params?: {
+  scope?: "all" | "upcoming" | "past";
+  limit?: number;
+}): Promise<PadelMeMatch[]> => {
+  const query = new URLSearchParams();
+  if (params?.scope) query.set("scope", params.scope);
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  const response = await api.request<unknown>(
+    `/api/padel/me/matches${query.toString() ? `?${query.toString()}` : ""}`,
+  );
+  const unwrapped = unwrapApiResponse<{ items?: PadelMeMatch[] }>(response);
+  return parseItems<PadelMeMatch>(unwrapped, "items");
+};
+
+export const fetchPadelDiscover = async (params?: {
+  q?: string;
+  date?: string;
+  limit?: number;
+}): Promise<{ items: PadelDiscoverItem[]; levels: Array<{ id: number; label: string }> }> => {
+  const query = new URLSearchParams();
+  if (params?.q) query.set("q", params.q);
+  if (params?.date) query.set("date", params.date);
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  const response = await api.request<unknown>(
+    `/api/padel/discover${query.toString() ? `?${query.toString()}` : ""}`,
+  );
+  const unwrapped = unwrapApiResponse<{ items?: PadelDiscoverItem[]; levels?: Array<{ id: number; label: string }> }>(response);
+  return {
+    items: parseItems<PadelDiscoverItem>(unwrapped, "items"),
+    levels: Array.isArray(unwrapped.levels) ? unwrapped.levels : [],
+  };
+};
+
+export const fetchPadelRankings = async (params?: {
+  scope?: "global" | "organization";
+  limit?: number;
+  periodDays?: number;
+}): Promise<PadelRankingRow[]> => {
+  const query = new URLSearchParams();
+  if (params?.scope) query.set("scope", params.scope);
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params?.periodDays === "number") query.set("periodDays", String(params.periodDays));
+  const response = await api.request<unknown>(
+    `/api/padel/rankings${query.toString() ? `?${query.toString()}` : ""}`,
+  );
+  const unwrapped = unwrapApiResponse<{ items?: PadelRankingRow[] }>(response);
+  return parseItems<PadelRankingRow>(unwrapped, "items");
 };

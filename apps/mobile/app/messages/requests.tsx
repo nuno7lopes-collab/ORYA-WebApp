@@ -31,7 +31,7 @@ export default function MessageRequestsScreen() {
     <Pressable
       onPress={() => safeBack(router, navigation, "/messages")}
       accessibilityRole="button"
-      accessibilityLabel={t("common.actions.back")}
+      accessibilityLabel={t("common:actions.back")}
       style={({ pressed }) => [
         {
           width: tokens.layout.touchTarget,
@@ -70,7 +70,7 @@ export default function MessageRequestsScreen() {
       <TopAppHeader
         scrollState={topBar}
         variant="title"
-        title={t("messages.requests")}
+        title={t("messages:requests")}
         leftSlot={backButton}
         showNotifications
         showMessages={false}
@@ -79,9 +79,9 @@ export default function MessageRequestsScreen() {
         {!session?.user?.id ? (
           <GlassCard intensity={55} className="mt-5">
             <Text className="text-white text-sm font-semibold mb-2">
-              {t("messages.requestsScreen.signinTitle")}
+              {t("messages:requestsScreen.signinTitle")}
             </Text>
-            <Text className="text-white/65 text-sm">{t("messages.requestsScreen.signinBody")}</Text>
+            <Text className="text-white/65 text-sm">{t("messages:requestsScreen.signinBody")}</Text>
           </GlassCard>
         ) : requestsQuery.isLoading ? (
           <View className="mt-5 gap-3">
@@ -91,36 +91,36 @@ export default function MessageRequestsScreen() {
           </View>
         ) : requestsQuery.isError ? (
           <GlassCard intensity={55} className="mt-5">
-            <Text className="text-red-300 text-sm mb-2">{t("messages.requestsScreen.error")}</Text>
+            <Text className="text-red-300 text-sm mb-2">{t("messages:requestsScreen.error")}</Text>
             <Pressable
               onPress={() => requestsQuery.refetch()}
               className="rounded-2xl bg-white/10 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
-              accessibilityLabel={t("common.actions.retry")}
+              accessibilityLabel={t("common:actions.retry")}
             >
               <Text className="text-white text-sm font-semibold text-center">
-                {t("common.actions.retry")}
+                {t("common:actions.retry")}
               </Text>
             </Pressable>
           </GlassCard>
         ) : items.length === 0 ? (
           <GlassCard intensity={52} className="mt-5">
-            <Text className="text-white/70 text-sm">{t("messages.requestsScreen.empty")}</Text>
+            <Text className="text-white/70 text-sm">{t("messages:requestsScreen.empty")}</Text>
           </GlassCard>
         ) : (
           <View className="mt-4 gap-3">
             {items.map((request) => {
               const name =
                 request.requester.fullName?.trim() ||
-                (request.requester.username ? `@${request.requester.username}` : t("messages.requestsScreen.userFallback"));
+                (request.requester.username ? `@${request.requester.username}` : t("messages:requestsScreen.userFallback"));
               return (
                 <GlassCard key={request.id} intensity={58} padding={14}>
                   <View className="gap-3">
                     <View>
                       <Text className="text-white text-sm font-semibold">{name}</Text>
                       <Text className="text-white/60 text-xs mt-1">
-                        {t("messages.requestsScreen.requestLabel")}
+                        {t("messages:requestsScreen.requestLabel")}
                       </Text>
                     </View>
                     <View className="flex-row gap-2">
@@ -129,10 +129,10 @@ export default function MessageRequestsScreen() {
                         className="flex-1 rounded-2xl bg-white/90 px-4 py-2"
                         style={{ minHeight: tokens.layout.touchTarget - 6 }}
                         accessibilityRole="button"
-                        accessibilityLabel={t("common.actions.accept")}
+                        accessibilityLabel={t("common:actions.accept")}
                       >
                         <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                          {t("common.actions.accept")}
+                          {t("common:actions.accept")}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -140,10 +140,10 @@ export default function MessageRequestsScreen() {
                         className="flex-1 rounded-2xl border border-white/15 bg-white/5 px-4 py-2"
                         style={{ minHeight: tokens.layout.touchTarget - 6 }}
                         accessibilityRole="button"
-                        accessibilityLabel={t("common.actions.decline")}
+                        accessibilityLabel={t("common:actions.decline")}
                       >
                         <Text className="text-center text-sm font-semibold text-white">
-                          {t("common.actions.decline")}
+                          {t("common:actions.decline")}
                         </Text>
                       </Pressable>
                     </View>

@@ -21,8 +21,9 @@ import {
 } from "@/lib/organizationCategories";
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
-import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
+import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { OrganizationFormStatus, type Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
@@ -34,6 +35,7 @@ import type { Metadata } from "next";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { normalizeUsernameInput } from "@/lib/username";
+import CrmEngagementTracker from "@/app/components/crm/CrmEngagementTracker";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -679,12 +681,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
     const store = await prisma.store.findFirst({
       where: { ownerOrganizationId: organizationProfile.id },
-      select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+      select: { id: true, status: true, showOnProfile: true, catalogLocked: true, checkoutEnabled: true, currency: true },
     });
     const storeEnabled = isStoreFeatureEnabled();
-    const storeVisibleOnProfile = Boolean(store?.showOnProfile);
+    const storeState = resolveStoreState(store);
+    const storeVisibleOnProfile = storeState !== "DISABLED" && storeState !== "HIDDEN";
     const storeId = store?.id ?? null;
-    const storePublic = storeEnabled && !!store && isStorePublic(store) && !store.catalogLocked;
+    const storePublic = storeEnabled && storeState === "ACTIVE";
     const [storeProducts, storeProductsCount] = storePublic && storeId !== null
       ? await Promise.all([
           prisma.storeProduct.findMany({
@@ -1060,13 +1063,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           description: "A funcionalidade da loja esta temporariamente desativada.",
           tone: "amber",
         }
-      : store?.catalogLocked
+      : storeState === "LOCKED"
         ? {
             label: "Catalogo fechado",
             description: "O catalogo esta em manutencao e sera atualizado em breve.",
             tone: "amber",
           }
-        : store?.status !== "OPEN"
+        : storeState === "DISABLED" || storeState === "HIDDEN" || storeState === "CHECKOUT_DISABLED"
           ? {
               label: "Loja fechada",
               description: "Volta em breve para veres os produtos disponiveis.",
@@ -1310,6 +1313,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
     return (
       <main className="relative min-h-screen w-full overflow-hidden text-white">
+        {viewerId ? (
+          <CrmEngagementTracker
+            type="PROFILE_VIEWED"
+            organizationId={organizationProfile.id}
+            enabled
+          />
+        ) : null}
         <section className="relative flex flex-col gap-8 py-10">
           <OrganizationProfileHeader
             name={orgDisplayName}
@@ -1548,16 +1558,21 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
   if (canSeePrivateTimeline && (prisma as any).entitlement) {
     try {
+      const identityIds = await getUserIdentityIds(resolvedProfile.id);
+      const ownerFilter =
+        identityIds.length > 0
+          ? { ownerIdentityId: { in: identityIds } }
+          : { ownerUserId: resolvedProfile.id };
       const [total, upcoming, past, recentEntitlements] = await Promise.all([
-        (prisma as any).entitlement.count({ where: { ownerUserId: resolvedProfile.id } }),
+        (prisma as any).entitlement.count({ where: ownerFilter }),
         (prisma as any).entitlement.count({
-          where: { ownerUserId: resolvedProfile.id, snapshotStartAt: { gte: now } },
+          where: { ...ownerFilter, snapshotStartAt: { gte: now } },
         }),
         (prisma as any).entitlement.count({
-          where: { ownerUserId: resolvedProfile.id, snapshotStartAt: { lt: now } },
+          where: { ...ownerFilter, snapshotStartAt: { lt: now } },
         }),
         (prisma as any).entitlement.findMany({
-          where: { ownerUserId: resolvedProfile.id },
+          where: ownerFilter,
           orderBy: [{ snapshotStartAt: "desc" }],
           take: 4,
           select: {

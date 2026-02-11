@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   softBlockFindMany: vi.fn(),
   bookingFindMany: vi.fn(),
   matchFindMany: vi.fn(),
+  classSessionFindMany: vi.fn(),
   hardBlockFindMany: vi.fn(),
   agendaFindMany: vi.fn(),
   agendaUpsert: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock("@/lib/prisma", () => ({
     softBlock: { findMany: mocks.softBlockFindMany },
     booking: { findMany: mocks.bookingFindMany },
     eventMatchSlot: { findMany: mocks.matchFindMany },
+    classSession: { findMany: mocks.classSessionFindMany },
     calendarBlock: { findMany: mocks.hardBlockFindMany },
     agendaItem: {
       findMany: mocks.agendaFindMany,
@@ -62,6 +64,9 @@ describe("agenda rebuild", () => {
           status: "PENDING",
         },
       ])
+      .mockResolvedValueOnce([]);
+    mocks.classSessionFindMany
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     mocks.hardBlockFindMany
       .mockResolvedValueOnce([{ id: 4, startAt: start, endAt: end, label: "Manut" }])

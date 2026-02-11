@@ -3,6 +3,7 @@ import { EntitlementStatus, PaymentEventSource } from "@prisma/client";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
+import { resolveIdentityForUser } from "@/lib/ownership/identity";
 
 type IntentLike = {
   id: string;
@@ -28,6 +29,10 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
   if (!resaleId || !ticketId || !buyerUserId) return false;
 
   try {
+    const buyerIdentity = await resolveIdentityForUser({ userId: buyerUserId });
+    const buyerIdentityId = buyerIdentity.id;
+    const ownerKey = buyerIdentityId ? `identity:${buyerIdentityId}` : `user:${buyerUserId}`;
+
     await prisma.$transaction(async (tx) => {
       const resale = await tx.ticketResale.findUnique({
         where: { id: resaleId },
@@ -62,17 +67,17 @@ export async function fulfillResaleIntent(intent: IntentLike): Promise<boolean> 
         data: {
           userId: buyerUserId,
           ownerUserId: buyerUserId,
-          ownerIdentityId: null,
+          ownerIdentityId: buyerIdentityId,
           status: "ACTIVE",
         },
       });
 
-      const ownerKey = `user:${buyerUserId}`;
+      const entitlementOwnerUserId = buyerIdentityId ? null : buyerUserId;
       const updated = await tx.entitlement.updateMany({
         where: { ticketId: resale.ticketId },
         data: {
-          ownerUserId: buyerUserId,
-          ownerIdentityId: null,
+          ownerUserId: entitlementOwnerUserId,
+          ownerIdentityId: buyerIdentityId,
           ownerKey,
           purchaseId: purchaseId ?? undefined,
           status: EntitlementStatus.ACTIVE,

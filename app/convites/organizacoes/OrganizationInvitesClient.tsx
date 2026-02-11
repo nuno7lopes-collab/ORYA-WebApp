@@ -150,7 +150,7 @@ export default function OrganizationInvitesClient({
   };
 
   return (
-    <div className="min-h-screen w-full bg-[radial-gradient(circle_at_top,_rgba(94,234,212,0.12),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(167,139,250,0.18),_transparent_60%),linear-gradient(135deg,_#02040d,_#0b1225_55%,_#09091b)] px-4 py-10 text-white md:px-8 lg:px-12">
+    <div className="min-h-screen w-full bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-10 text-white md:px-8 lg:px-12">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_28px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

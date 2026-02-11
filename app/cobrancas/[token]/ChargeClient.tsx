@@ -196,7 +196,7 @@ export default function ChargeClient({ token }: { token: string }) {
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0F16] px-4 py-12 text-white">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-12 text-white">
       <div className="mx-auto w-full max-w-3xl space-y-6">
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Cobrança extra</p>

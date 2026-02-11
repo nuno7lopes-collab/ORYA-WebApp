@@ -1,4 +1,4 @@
-import { ConsentStatus, ConsentType, CrmInteractionType, Prisma } from "@prisma/client";
+import { CrmInteractionType, Prisma } from "@prisma/client";
 
 export type SegmentLogic = "AND" | "OR";
 
@@ -28,6 +28,9 @@ const NUMBER_FIELDS = new Set([
   "totalTournaments",
   "totalStoreOrders",
 ]);
+
+const PADEL_STRING_FIELDS = new Set(["level", "preferredSide", "clubName"]);
+const PADEL_NUMBER_FIELDS = new Set(["tournamentsCount", "noShowCount"]);
 
 function parseNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -116,15 +119,15 @@ export function normalizeSegmentDefinition(raw: unknown): SegmentDefinition {
   };
 }
 
-export function buildCustomerFilters(
+export function buildContactFilters(
   definition: SegmentDefinition,
   options?: { organizationId?: number | null },
 ): {
   logic: SegmentLogic;
-  filters: Prisma.CrmCustomerWhereInput[];
+  filters: Prisma.CrmContactWhereInput[];
   interactionRules: InteractionRule[];
 } {
-  const filters: Prisma.CrmCustomerWhereInput[] = [];
+  const filters: Prisma.CrmContactWhereInput[] = [];
   const interactionRules: InteractionRule[] = [];
   const organizationId =
     typeof options?.organizationId === "number" && Number.isFinite(options.organizationId)
@@ -184,26 +187,55 @@ export function buildCustomerFilters(
 
     if (field === "marketingOptIn") {
       if (typeof rule.value === "boolean") {
-        if (organizationId) {
-          const consentFilter: Prisma.CrmCustomerWhereInput = {
-            user: {
-              is: {
-                userConsents: {
-                  some: {
-                    organizationId,
-                    type: ConsentType.MARKETING,
-                    status: ConsentStatus.GRANTED,
-                  },
-                },
-              },
-            },
-          };
-          filters.push(rule.value ? consentFilter : { NOT: consentFilter });
-        } else {
-          filters.push({ marketingOptIn: rule.value });
+        filters.push({ marketingEmailOptIn: rule.value });
+      }
+      continue;
+    }
+
+    if (field === "contactType") {
+      if (typeof rule.value === "string") {
+        filters.push({ contactType: rule.value as any });
+      } else if (Array.isArray(rule.value)) {
+        const values = rule.value.filter((item): item is string => typeof item === "string");
+        if (values.length) {
+          filters.push({ contactType: { in: values as any } });
         }
       }
       continue;
+    }
+
+    if (field === "sourceType") {
+      if (typeof rule.value === "string") {
+        filters.push({ sourceType: rule.value });
+      } else if (Array.isArray(rule.value)) {
+        const values = rule.value.filter((item): item is string => typeof item === "string");
+        if (values.length) {
+          filters.push({ sourceType: { in: values } });
+        }
+      }
+      continue;
+    }
+
+    if (field.startsWith("padel.")) {
+      const padelField = field.slice(6);
+      if (PADEL_STRING_FIELDS.has(padelField)) {
+        if (typeof rule.value === "string") {
+          filters.push({ padelProfile: { is: { [padelField]: { equals: rule.value, mode: "insensitive" } } } });
+        }
+        continue;
+      }
+      if (PADEL_NUMBER_FIELDS.has(padelField)) {
+        const numberValue = parseNumber(rule.value);
+        if (numberValue === null) continue;
+        if (op === "gte") {
+          filters.push({ padelProfile: { is: { [padelField]: { gte: numberValue } } } });
+        } else if (op === "lte") {
+          filters.push({ padelProfile: { is: { [padelField]: { lte: numberValue } } } });
+        } else {
+          filters.push({ padelProfile: { is: { [padelField]: numberValue } } });
+        }
+        continue;
+      }
     }
 
     if (field === "interactionType") {

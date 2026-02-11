@@ -295,7 +295,7 @@ export default function InviteClient({ token }: { token: string }) {
   }, [paymentMethod]);
 
   return (
-    <main className="min-h-screen w-full bg-[#0b0f1d] text-white">
+    <main className="min-h-screen w-full bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-10">
         <div>
           <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">{t("serviceInviteKicker", locale)}</p>
